@@ -15,7 +15,7 @@ export const InputArea: React.FC<InputAreaProps> = ({ onSendMessage, disabled })
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 150)}px`;
     }
   }, [text]);
 
@@ -35,24 +35,24 @@ export const InputArea: React.FC<InputAreaProps> = ({ onSendMessage, disabled })
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 pb-6">
+    <div className="w-full px-4 pb-4">
       
       {/* RAG / Context Controls Toolbar (Visual Only) */}
-      <div className="flex items-center gap-2 mb-2 px-1">
+      <div className="flex items-center gap-2 mb-2 px-1 overflow-x-auto no-scrollbar">
         <button 
           onClick={() => setIsRagEnabled(!isRagEnabled)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${isRagEnabled ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-neutral-100 text-neutral-500 border border-neutral-200'}`}
+          className={`flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium transition-all ${isRagEnabled ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-neutral-100 text-neutral-500 border border-neutral-200'}`}
         >
-          <Database size={12} />
-          {isRagEnabled ? 'Context Active' : 'Context Off'}
+          <Database size={10} />
+          {isRagEnabled ? 'Context On' : 'Context Off'}
         </button>
-        <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50">
-          <Globe size={12} />
-          <span>Web Search</span>
+        <button className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50">
+          <Globe size={10} />
+          <span>Web</span>
         </button>
       </div>
 
-      <div className="relative group rounded-3xl bg-white shadow-sm border border-neutral-200 focus-within:ring-2 focus-within:ring-brand-500/20 focus-within:border-brand-500 transition-all duration-200">
+      <div className="relative group rounded-2xl bg-white shadow-sm border border-neutral-200 focus-within:ring-2 focus-within:ring-brand-500/20 focus-within:border-brand-500 transition-all duration-200">
         
         {/* Text Input */}
         <textarea
@@ -60,36 +60,36 @@ export const InputArea: React.FC<InputAreaProps> = ({ onSendMessage, disabled })
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Enter your message..."
+          placeholder="Type a message..."
           rows={1}
           disabled={disabled}
-          className="w-full max-h-[200px] py-4 pl-4 pr-12 bg-transparent border-none resize-none focus:ring-0 text-neutral-800 placeholder:text-neutral-400 text-base"
-          style={{ minHeight: '56px' }}
+          className="w-full max-h-[150px] py-3 pl-3 pr-10 bg-transparent border-none resize-none focus:ring-0 text-neutral-800 placeholder:text-neutral-400 text-sm"
+          style={{ minHeight: '44px' }}
         />
 
         {/* Action Buttons */}
-        <div className="absolute bottom-2 right-2 flex items-center gap-2">
+        <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1">
           {text.length === 0 && (
-             <button className="p-2 text-neutral-400 hover:text-neutral-600 transition-colors rounded-full hover:bg-neutral-100">
-               <Paperclip size={20} />
+             <button className="p-1.5 text-neutral-400 hover:text-neutral-600 transition-colors rounded-full hover:bg-neutral-100">
+               <Paperclip size={16} />
              </button>
           )}
           <button 
             onClick={handleSend}
             disabled={!text.trim() || disabled}
             className={`
-              h-10 w-10 flex items-center justify-center rounded-full transition-all duration-200
+              h-8 w-8 flex items-center justify-center rounded-full transition-all duration-200
               ${text.trim() ? 'bg-black text-white hover:scale-105 hover:bg-neutral-800' : 'bg-neutral-200 text-neutral-400 cursor-not-allowed'}
             `}
           >
-            <ArrowUp size={20} strokeWidth={2.5} />
+            <ArrowUp size={16} strokeWidth={2.5} />
           </button>
         </div>
       </div>
       
-      <div className="mt-3 text-center">
-        <p className="text-[11px] text-neutral-400">
-          I can make mistakes. Remember to double-check important information.
+      <div className="mt-2 text-center">
+        <p className="text-[10px] text-neutral-400 truncate">
+          AI checks are recommended.
         </p>
       </div>
     </div>
