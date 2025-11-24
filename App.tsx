@@ -4,6 +4,7 @@ import { Header } from './components/layout/Header';
 import { ChatArea } from './components/chat/ChatArea';
 import { InputArea } from './components/chat/InputArea';
 import { MainContent } from './components/layout/MainContent';
+import { SettingsPage } from './components/settings/SettingsPage';
 import { Conversation, Message, ModelOption, DatabaseStatus } from './types';
 import { Menu, MessageCircle, X } from 'lucide-react';
 
@@ -29,6 +30,7 @@ const MOCK_MESSAGES: Record<string, Message[]> = {
 };
 
 const App: React.FC = () => {
+  const [currentView, setCurrentView] = useState<'workspace' | 'settings'>('workspace');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isChatOpen, setIsChatOpen] = useState(true); // State for right chat sidebar
   const [activeConversationId, setActiveConversationId] = useState<string>('1');
@@ -67,6 +69,7 @@ const App: React.FC = () => {
   };
 
   const handleNewChat = () => {
+    setCurrentView('workspace');
     setActiveConversationId('1');
     setMessages([]);
     if (window.innerWidth < 768) setSidebarOpen(false);
@@ -88,10 +91,15 @@ const App: React.FC = () => {
         conversations={MOCK_CONVERSATIONS}
         activeConversationId={activeConversationId}
         onSelectConversation={(id) => {
+          setCurrentView('workspace');
           setActiveConversationId(id);
           if (window.innerWidth < 768) setSidebarOpen(false);
         }}
         onNewChat={handleNewChat}
+        onSettingsClick={() => {
+          setCurrentView('settings');
+          if (window.innerWidth < 768) setSidebarOpen(false);
+        }}
       />
 
       {/* Main App Container */}
@@ -107,65 +115,68 @@ const App: React.FC = () => {
            </button>
         )}
 
-        {/* Global Header */}
-        <Header 
-          sidebarOpen={sidebarOpen}
-          toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-          selectedModel={selectedModel}
-          onModelChange={setSelectedModel}
-          dbStatus={dbStatus}
-          models={MOCK_MODELS}
-        />
+        {currentView === 'workspace' ? (
+          <>
+            {/* Global Header */}
+            <Header 
+              sidebarOpen={sidebarOpen}
+              toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+              selectedModel={selectedModel}
+              onModelChange={setSelectedModel}
+              dbStatus={dbStatus}
+              models={MOCK_MODELS}
+            />
 
-        {/* Split View Content Area */}
-        <div className="flex-1 flex overflow-hidden relative">
-          
-          {/* Center: Main Content / Artifacts */}
-          <div className="flex-1 flex flex-col min-w-0 bg-neutral-50/50">
-             <MainContent />
-          </div>
-
-          {/* Right: Chat Interface (Minimizable) */}
-          {/* We use a container that transitions width/transform or simply conditionally renders. 
-              Conditional rendering is cleaner for 'minimizing' to nothing. */}
-          {isChatOpen && (
-            <div className="w-full md:w-[400px] lg:w-[450px] flex flex-col bg-white border-l border-neutral-200 shadow-xl z-20 absolute md:relative right-0 h-full animate-in slide-in-from-right duration-300">
+            {/* Split View Content Area */}
+            <div className="flex-1 flex overflow-hidden relative">
               
-              {/* Chat Header for Close Button */}
-              <div className="h-12 border-b border-neutral-100 flex items-center justify-between px-4 bg-white/50 backdrop-blur-sm">
-                <span className="text-sm font-medium text-neutral-600">Assistant</span>
-                <button 
-                  onClick={() => setIsChatOpen(false)}
-                  className="p-1.5 hover:bg-neutral-100 rounded-md text-neutral-400 hover:text-neutral-600 transition-colors"
-                  title="Minimize chat"
+              {/* Center: Main Content / Artifacts */}
+              <div className="flex-1 flex flex-col min-w-0 bg-neutral-50/50">
+                 <MainContent />
+              </div>
+
+              {/* Right: Chat Interface (Minimizable) */}
+              {isChatOpen && (
+                <div className="w-full md:w-[400px] lg:w-[450px] flex flex-col bg-white border-l border-neutral-200 shadow-xl z-20 absolute md:relative right-0 h-full animate-in slide-in-from-right duration-300">
+                  
+                  {/* Chat Header for Close Button */}
+                  <div className="h-12 border-b border-neutral-100 flex items-center justify-between px-4 bg-white/50 backdrop-blur-sm">
+                    <span className="text-sm font-medium text-neutral-600">Assistant</span>
+                    <button 
+                      onClick={() => setIsChatOpen(false)}
+                      className="p-1.5 hover:bg-neutral-100 rounded-md text-neutral-400 hover:text-neutral-600 transition-colors"
+                      title="Minimize chat"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  <ChatArea 
+                    messages={messages} 
+                    isEmpty={messages.length === 0} 
+                  />
+                  
+                  <div className="flex-shrink-0 bg-white pt-2 border-t border-neutral-100">
+                    <InputArea onSendMessage={handleSendMessage} />
+                  </div>
+                </div>
+              )}
+
+              {/* Floating Chat Toggle (Visible when chat is closed) */}
+              {!isChatOpen && (
+                <button
+                  onClick={() => setIsChatOpen(true)}
+                  className="absolute bottom-6 right-6 h-14 w-14 bg-black text-white rounded-full shadow-lg hover:bg-neutral-800 transition-all hover:scale-105 flex items-center justify-center z-30"
+                  title="Open Chat"
                 >
-                  <X size={18} />
+                  <MessageCircle size={28} />
                 </button>
-              </div>
-
-              <ChatArea 
-                messages={messages} 
-                isEmpty={messages.length === 0} 
-              />
-              
-              <div className="flex-shrink-0 bg-white pt-2 border-t border-neutral-100">
-                <InputArea onSendMessage={handleSendMessage} />
-              </div>
+              )}
             </div>
-          )}
-
-          {/* Floating Chat Toggle (Visible when chat is closed) */}
-          {!isChatOpen && (
-            <button
-              onClick={() => setIsChatOpen(true)}
-              className="absolute bottom-6 right-6 h-14 w-14 bg-black text-white rounded-full shadow-lg hover:bg-neutral-800 transition-all hover:scale-105 flex items-center justify-center z-30"
-              title="Open Chat"
-            >
-              <MessageCircle size={28} />
-            </button>
-          )}
-
-        </div>
+          </>
+        ) : (
+          <SettingsPage onBack={() => setCurrentView('workspace')} />
+        )}
 
       </div>
     </div>

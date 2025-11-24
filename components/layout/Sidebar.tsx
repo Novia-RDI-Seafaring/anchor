@@ -17,6 +17,7 @@ interface SidebarProps {
   activeConversationId: string | null;
   onSelectConversation: (id: string) => void;
   onNewChat: () => void;
+  onSettingsClick: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -25,7 +26,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   conversations,
   activeConversationId,
   onSelectConversation,
-  onNewChat
+  onNewChat,
+  onSettingsClick
 }) => {
   
   if (!isOpen) {
@@ -68,7 +70,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <Plus size={18} />
           <span>New Chat</span>
         </AgButton>
-        <AgButton variant="ghost" className="w-full justify-start gap-3">
+        <AgButton variant="ghost" className="w-full justify-start gap-3" onClick={onSettingsClick}>
           <Settings size={18} />
           <span>Settings</span>
         </AgButton>
