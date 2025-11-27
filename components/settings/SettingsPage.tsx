@@ -3,7 +3,6 @@ import {
   ArrowLeft, 
   Bot, 
   Settings2, 
-  Save, 
   Database, 
   Check, 
   X, 
@@ -11,27 +10,14 @@ import {
   HardDrive, 
   Globe, 
   Layout, 
-  Trash2, 
   RefreshCw,
   AlertTriangle
 } from 'lucide-react';
-import { AgCard, AgButton, AgInput, AgSelect, AgBadge } from '../ui/AgComponents';
+import { AgCard, AgInput, AgSelect, AgBadge, AgToggle } from '../ui/AgComponents';
 
 interface SettingsPageProps {
   onBack: () => void;
 }
-
-const Toggle: React.FC<{ checked: boolean; onChange: (checked: boolean) => void; label?: string }> = ({ checked, onChange, label }) => (
-  <button 
-    onClick={() => onChange(!checked)}
-    className="flex items-center justify-between w-full group"
-  >
-    {label && <span className="text-sm text-neutral-700">{label}</span>}
-    <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${checked ? 'bg-brand-600' : 'bg-neutral-200'}`}>
-      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
-    </div>
-  </button>
-);
 
 export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
   // State for form controls
@@ -45,18 +31,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
   });
 
   return (
-    <div className="flex-1 h-full bg-neutral-50/50 overflow-y-auto p-4 md:p-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
+    <div className="flex-1 h-full bg-neutral-50/50 dark:bg-neutral-950 overflow-y-auto p-4 md:p-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
       <div className="max-w-7xl mx-auto">
         
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
           <button 
             onClick={onBack}
-            className="p-2 hover:bg-neutral-200 rounded-full text-neutral-600 transition-colors"
+            className="p-2 hover:bg-neutral-200 dark:hover:bg-neutral-800 rounded-full text-neutral-600 dark:text-neutral-400 transition-colors"
           >
             <ArrowLeft size={20} />
           </button>
-          <div className="flex items-center gap-2 text-xl font-bold text-neutral-900">
+          <div className="flex items-center gap-2 text-xl font-bold text-neutral-900 dark:text-white">
             <Settings2 className="h-6 w-6" />
             <h1>Settings</h1>
           </div>
@@ -66,22 +52,22 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
           
           {/* Column 1: AI Assistant Configuration */}
           <div className="space-y-6">
-            <AgCard className="p-6 border-neutral-200 shadow-sm">
+            <AgCard className="p-6 border-neutral-200 dark:border-neutral-800 shadow-sm">
               <div className="flex items-center gap-2 mb-6">
-                <div className="h-8 w-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                <div className="h-8 w-8 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
                   <Bot size={20} />
                 </div>
-                <h2 className="text-lg font-bold text-neutral-900">AI Assistant Configuration</h2>
+                <h2 className="text-lg font-bold text-neutral-900 dark:text-white">AI Assistant Configuration</h2>
               </div>
 
               <div className="space-y-6">
                 
                 {/* System Prompt */}
                 <div>
-                  <label className="block text-sm font-semibold text-neutral-700 mb-2">Configuration</label>
+                  <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-2">Configuration</label>
                   <label className="block text-xs text-neutral-500 mb-1">System Prompt</label>
                   <textarea 
-                    className="w-full h-24 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none resize-none"
+                    className="w-full h-24 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none resize-none dark:text-neutral-100"
                     defaultValue="You are a knowledgeable and helpful assistant. CRITICAL: You must ONLY use information from the provided documents to answer questions."
                   />
                   <p className="text-xs text-neutral-500 mt-1">This defines how your AI agent will behave and respond to questions.</p>
@@ -89,7 +75,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
 
                 {/* Model Selection */}
                 <div>
-                  <label className="block text-sm font-semibold text-neutral-700 mb-2">Model Selection</label>
+                  <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-2">Model Selection</label>
                   <label className="block text-xs text-neutral-500 mb-1">Select AI Model</label>
                   <AgSelect 
                     options={[{ id: 'llama3.2', label: 'LlamaStack - ollama/llama3.2:3b' }]}
@@ -97,7 +83,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                     onChange={() => {}}
                     className="w-full"
                   />
-                  <div className="flex items-center gap-1.5 mt-2 text-xs text-emerald-600">
+                  <div className="flex items-center gap-1.5 mt-2 text-xs text-emerald-600 dark:text-emerald-500">
                     <Check size={12} strokeWidth={3} />
                     <span>Found 4 available model(s)</span>
                   </div>
@@ -105,7 +91,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
 
                 {/* Advanced Settings */}
                 <div>
-                  <label className="block text-sm font-semibold text-neutral-700 mb-4">Advanced Settings</label>
+                  <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-4">Advanced Settings</label>
                   
                   <div className="space-y-4">
                     <AgInput 
@@ -128,60 +114,60 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
 
                 {/* MCP Tools */}
                 <div>
-                  <label className="block text-sm font-semibold text-neutral-700 mb-2">MCP Tools</label>
+                  <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-2">MCP Tools</label>
                   <p className="text-xs text-neutral-500 mb-4">Select which MCP (Model Context Protocol) tools to enable for your agent:</p>
 
                   <div className="space-y-3">
                     <div className="flex items-center justify-between py-2">
                        <div className="flex items-center gap-2">
-                         <div className="h-5 w-5 rounded border border-neutral-300"></div> {/* Checkbox placeholder */}
-                         <span className="text-sm font-medium text-neutral-700">Enable MCP Tools</span>
+                         <div className="h-5 w-5 rounded border border-neutral-300 dark:border-neutral-600"></div> {/* Checkbox placeholder */}
+                         <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Enable MCP Tools</span>
                        </div>
                     </div>
 
-                    <div className="space-y-2 bg-neutral-50 p-4 rounded-lg border border-neutral-100">
-                      <div className="flex items-center justify-between p-2 bg-white rounded border border-neutral-100">
+                    <div className="space-y-2 bg-neutral-50 dark:bg-neutral-800/50 p-4 rounded-lg border border-neutral-100 dark:border-neutral-800">
+                      <div className="flex items-center justify-between p-2 bg-white dark:bg-neutral-900 rounded border border-neutral-100 dark:border-neutral-800">
                         <div className="flex items-center gap-2">
                           <HardDrive size={16} className="text-purple-400" />
                           <div>
-                            <div className="text-sm font-medium text-neutral-700">Filesystem</div>
+                            <div className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Filesystem</div>
                             <div className="text-[10px] text-neutral-400">Endpoint: http://localhost:8000/sse</div>
                           </div>
                         </div>
-                        <Toggle checked={mcpTools.filesystem} onChange={(c) => setMcpTools({...mcpTools, filesystem: c})} />
+                        <AgToggle checked={mcpTools.filesystem} onChange={(c) => setMcpTools({...mcpTools, filesystem: c})} />
                       </div>
 
-                      <div className="flex items-center justify-between p-2 bg-white rounded border border-neutral-100">
+                      <div className="flex items-center justify-between p-2 bg-white dark:bg-neutral-900 rounded border border-neutral-100 dark:border-neutral-800">
                         <div className="flex items-center gap-2">
                           <Globe size={16} className="text-purple-400" />
                           <div>
-                            <div className="text-sm font-medium text-neutral-700">Web_Search</div>
+                            <div className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Web_Search</div>
                             <div className="text-[10px] text-neutral-400">Endpoint: https://mcp.search-provider.com/sse</div>
                           </div>
                         </div>
-                        <Toggle checked={mcpTools.webSearch} onChange={(c) => setMcpTools({...mcpTools, webSearch: c})} />
+                        <AgToggle checked={mcpTools.webSearch} onChange={(c) => setMcpTools({...mcpTools, webSearch: c})} />
                       </div>
 
-                      <div className="flex items-center justify-between p-2 bg-white rounded border border-neutral-100">
+                      <div className="flex items-center justify-between p-2 bg-white dark:bg-neutral-900 rounded border border-neutral-100 dark:border-neutral-800">
                         <div className="flex items-center gap-2">
                           <Database size={16} className="text-purple-400" />
                           <div>
-                            <div className="text-sm font-medium text-neutral-700">Database</div>
+                            <div className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Database</div>
                             <div className="text-[10px] text-neutral-400">Endpoint:</div>
                           </div>
                         </div>
-                        <Toggle checked={mcpTools.database} onChange={(c) => setMcpTools({...mcpTools, database: c})} />
+                        <AgToggle checked={mcpTools.database} onChange={(c) => setMcpTools({...mcpTools, database: c})} />
                       </div>
 
-                      <div className="flex items-center justify-between p-2 bg-white rounded border border-neutral-100">
+                      <div className="flex items-center justify-between p-2 bg-white dark:bg-neutral-900 rounded border border-neutral-100 dark:border-neutral-800">
                         <div className="flex items-center gap-2">
                           <Layout size={16} className="text-purple-400" />
                           <div>
-                            <div className="text-sm font-medium text-neutral-700">Markitdown</div>
+                            <div className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Markitdown</div>
                             <div className="text-[10px] text-neutral-400">Endpoint: http://localhost:8001/sse</div>
                           </div>
                         </div>
-                        <Toggle checked={mcpTools.markitdown} onChange={(c) => setMcpTools({...mcpTools, markitdown: c})} />
+                        <AgToggle checked={mcpTools.markitdown} onChange={(c) => setMcpTools({...mcpTools, markitdown: c})} />
                       </div>
                     </div>
                   </div>
@@ -189,36 +175,36 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
 
                 {/* Status Section */}
                 <div>
-                   <label className="block text-sm font-semibold text-neutral-700 mb-3">Status</label>
+                   <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-3">Status</label>
                    <label className="block text-xs text-neutral-500 mb-2">Current Configuration</label>
                    
-                   <div className="bg-neutral-50 rounded-lg p-4 space-y-2 text-sm border border-neutral-100">
+                   <div className="bg-neutral-50 dark:bg-neutral-800/50 rounded-lg p-4 space-y-2 text-sm border border-neutral-100 dark:border-neutral-800">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-neutral-700">System Prompt:</span>
-                        <span className="text-emerald-600">Configured</span>
+                        <span className="font-medium text-neutral-700 dark:text-neutral-300">System Prompt:</span>
+                        <span className="text-emerald-600 dark:text-emerald-500">Configured</span>
                         <Check size={14} className="text-emerald-500" />
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-neutral-700">Selected Model:</span>
-                        <span className="text-emerald-600">ollama/llama3.2:3b</span>
+                        <span className="font-medium text-neutral-700 dark:text-neutral-300">Selected Model:</span>
+                        <span className="text-emerald-600 dark:text-emerald-500">ollama/llama3.2:3b</span>
                         <Check size={14} className="text-emerald-500" />
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-neutral-700">Temperature:</span>
-                        <span className="text-neutral-600">{temperature}</span>
+                        <span className="font-medium text-neutral-700 dark:text-neutral-300">Temperature:</span>
+                        <span className="text-neutral-600 dark:text-neutral-400">{temperature}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-neutral-700">Max Tokens:</span>
-                        <span className="text-neutral-600">{maxTokens}</span>
+                        <span className="font-medium text-neutral-700 dark:text-neutral-300">Max Tokens:</span>
+                        <span className="text-neutral-600 dark:text-neutral-400">{maxTokens}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-neutral-700">MCP Tools:</span>
-                        <span className="text-red-500">Disabled</span>
-                        <X size={14} className="text-red-500" />
+                        <span className="font-medium text-neutral-700 dark:text-neutral-300">MCP Tools:</span>
+                        <span className="text-red-500 dark:text-red-400">Disabled</span>
+                        <X size={14} className="text-red-500 dark:text-red-400" />
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-neutral-700">Knowledge Base:</span>
-                        <span className="text-emerald-600">Enabled</span>
+                        <span className="font-medium text-neutral-700 dark:text-neutral-300">Knowledge Base:</span>
+                        <span className="text-emerald-600 dark:text-emerald-500">Enabled</span>
                         <Check size={14} className="text-emerald-500" />
                       </div>
                    </div>
@@ -230,30 +216,31 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
 
           {/* Column 2: Knowledge Base Management */}
           <div className="space-y-6">
-            <AgCard className="p-6 border-neutral-200 shadow-sm">
+            <AgCard className="p-6 border-neutral-200 dark:border-neutral-800 shadow-sm">
               <div className="flex items-center gap-2 mb-6">
-                <div className="h-8 w-8 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center">
+                <div className="h-8 w-8 rounded-lg bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 flex items-center justify-center">
                   <Database size={20} />
                 </div>
-                <h2 className="text-lg font-bold text-neutral-900">Knowledge Base Management</h2>
+                <h2 className="text-lg font-bold text-neutral-900 dark:text-white">Knowledge Base Management</h2>
               </div>
 
               <div className="space-y-6">
                 
                 {/* Basic Info */}
                 <div>
-                  <label className="block text-sm font-semibold text-neutral-700 mb-3">Basic Info</label>
+                  <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-3">Basic Info</label>
                   
                   <div className="space-y-4">
                     <AgInput 
                       label="What are you working on?"
                       placeholder="MyKnowledgebase"
+                      defaultValue="MyKnowledgebase"
                     />
 
                     <div>
-                      <label className="block text-sm font-medium text-neutral-700 mb-1">What are you trying to achieve?</label>
+                      <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">What are you trying to achieve?</label>
                       <textarea 
-                        className="w-full h-20 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none resize-none"
+                        className="w-full h-20 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none resize-none dark:text-neutral-100"
                         defaultValue="A collection of organized, factual documents for quick retrieval. Use this knowledgebase to find authoritative context."
                       />
                     </div>
@@ -266,14 +253,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                   <AgInput 
                     placeholder="C:\Users\lamjat\Documents\Novia_Work_Projects\2025\KB\d"
                     disabled
-                    className="bg-neutral-50 text-neutral-500"
+                    className="bg-neutral-50 dark:bg-neutral-800 text-neutral-500"
                   />
                   <p className="text-xs text-neutral-500 mt-1">Configure DOCUMENTS_DIR in .env file</p>
                 </div>
 
                 {/* Add URL */}
-                <div className="bg-neutral-50 p-4 rounded-lg border border-neutral-100">
-                  <label className="block text-sm font-bold text-neutral-900 mb-3">Add URL to Knowledge Base</label>
+                <div className="bg-neutral-50 dark:bg-neutral-800/50 p-4 rounded-lg border border-neutral-100 dark:border-neutral-800">
+                  <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-3">Add URL to Knowledge Base</label>
                   <div className="space-y-3">
                     <AgInput placeholder="https://stackoverflow.com/... or any URL" />
                     <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors w-full md:w-auto">
@@ -284,12 +271,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
 
                 {/* Management */}
                 <div>
-                  <label className="block text-sm font-semibold text-neutral-700 mb-3">Management</label>
+                  <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-3">Management</label>
                   
                   <div className="space-y-4">
                     <div>
                       <label className="block text-xs text-neutral-500 mb-2">Knowledge-base status</label>
-                      <button className="flex items-center gap-2 px-3 py-1.5 border border-neutral-300 rounded text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+                      <button className="flex items-center gap-2 px-3 py-1.5 border border-neutral-300 dark:border-neutral-700 rounded text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800">
                         <Settings2 size={14} />
                         Check Status
                       </button>
@@ -298,10 +285,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                     <div>
                       <label className="block text-xs text-neutral-500 mb-2">Add documents to knowledge base</label>
                       <div className="flex rounded-md shadow-sm">
-                        <button className="relative inline-flex items-center rounded-l-md bg-neutral-800 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-700 focus:z-10">
+                        <button className="relative inline-flex items-center rounded-l-md bg-neutral-800 dark:bg-neutral-700 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-700 dark:hover:bg-neutral-600 focus:z-10">
                           CHOOSE FILES
                         </button>
-                        <div className="relative -ml-px flex w-full items-center rounded-r-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-500">
+                        <div className="relative -ml-px flex w-full items-center rounded-r-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm text-neutral-500">
                           No file chosen
                         </div>
                       </div>
@@ -309,8 +296,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
 
                     <div>
                       <label className="block text-xs text-neutral-500 mb-2">Documents in knowledge base</label>
-                      <div className="border border-neutral-200 rounded-md p-2 bg-white">
-                        <div className="flex items-center gap-2 px-2 py-1 text-sm text-neutral-700 bg-neutral-50 rounded">
+                      <div className="border border-neutral-200 dark:border-neutral-700 rounded-md p-2 bg-white dark:bg-neutral-900">
+                        <div className="flex items-center gap-2 px-2 py-1 text-sm text-neutral-700 dark:text-neutral-300 bg-neutral-50 dark:bg-neutral-800 rounded">
                            <FileText size={14} className="text-neutral-400" />
                            dummy.pdf
                         </div>
@@ -322,28 +309,28 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
 
                 {/* Danger Zone */}
                 <div>
-                  <label className="block text-sm font-bold text-red-600 mb-2">Danger Zone</label>
+                  <label className="block text-sm font-bold text-red-600 dark:text-red-400 mb-2">Danger Zone</label>
                   <p className="text-xs text-neutral-500 mb-4">These actions are permanent and cannot be undone. Please proceed with caution.</p>
                   
-                  <div className="border border-red-200 rounded-lg p-4 bg-red-50/10 space-y-4">
+                  <div className="border border-red-200 dark:border-red-900/50 rounded-lg p-4 bg-red-50/10 dark:bg-red-900/10 space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="text-sm font-medium text-neutral-900">Reingest all documents</div>
+                        <div className="text-sm font-medium text-neutral-900 dark:text-white">Reingest all documents</div>
                         <div className="text-xs text-neutral-500">Reingests documents in the knowledgebase</div>
                       </div>
-                      <button className="px-3 py-1.5 border border-red-200 text-red-600 rounded text-xs font-medium hover:bg-red-50 transition-colors">
+                      <button className="px-3 py-1.5 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 rounded text-xs font-medium hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">
                         Reingest documents
                       </button>
                     </div>
 
-                    <div className="h-px bg-red-100 w-full" />
+                    <div className="h-px bg-red-100 dark:bg-red-900/30 w-full" />
 
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="text-sm font-medium text-neutral-900">Reset knowledge base</div>
+                        <div className="text-sm font-medium text-neutral-900 dark:text-white">Reset knowledge base</div>
                         <div className="text-xs text-neutral-500">Resets the knowledge base</div>
                       </div>
-                      <button className="px-3 py-1.5 border border-red-200 text-red-600 rounded text-xs font-medium hover:bg-red-50 transition-colors">
+                      <button className="px-3 py-1.5 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 rounded text-xs font-medium hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">
                         Reset
                       </button>
                     </div>

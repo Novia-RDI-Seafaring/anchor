@@ -23,7 +23,7 @@ export const Header: React.FC<HeaderProps> = ({
   ];
 
   return (
-    <header className="h-16 border-b border-neutral-100 bg-white/80 backdrop-blur-sm flex items-center justify-between px-4 md:px-6 z-10 sticky top-0">
+    <header className="h-16 border-b border-neutral-100 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm flex items-center justify-between px-4 md:px-6 z-10 sticky top-0">
       
       {/* Left: Database Status Indicator */}
       <div className="flex items-center gap-4">
@@ -43,10 +43,10 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right: Model Selector */}
       <div className="flex items-center gap-4">
-        <div className="hidden md:flex items-center text-xs text-neutral-400 gap-1 mr-2">
+        <div className="hidden md:flex items-center text-xs text-neutral-400 dark:text-neutral-500 gap-1 mr-2">
            <span>RAG Pipeline</span>
-           <span className="w-px h-3 bg-neutral-300 mx-1"></span>
-           <span className="text-green-600 font-medium">Ready</span>
+           <span className="w-px h-3 bg-neutral-300 dark:bg-neutral-700 mx-1"></span>
+           <span className="text-green-600 dark:text-green-500 font-medium">Ready</span>
         </div>
         <AgSelect 
           options={models}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { ChatArea } from './components/chat/ChatArea';
@@ -32,16 +32,23 @@ const MOCK_MESSAGES: Record<string, Message[]> = {
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<'workspace' | 'settings'>('workspace');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [isChatOpen, setIsChatOpen] = useState(true); // State for right chat sidebar
+  const [isChatOpen, setIsChatOpen] = useState(true);
   const [activeConversationId, setActiveConversationId] = useState<string>('1');
   const [selectedModel, setSelectedModel] = useState<string>('llama3.2');
+  const [isDarkMode, setIsDarkMode] = useState(false);
   
-  // Local state for messages to allow adding new ones
   const [messages, setMessages] = useState<Message[]>([]);
 
-  // Simulate loading messages when conversation changes
+  // Dark mode effect
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
+
   React.useEffect(() => {
-    // In a real app, this would be an API call
     const loadedMessages = MOCK_MESSAGES[activeConversationId] || [];
     setMessages(loadedMessages);
   }, [activeConversationId]);
@@ -56,7 +63,6 @@ const App: React.FC = () => {
     
     setMessages(prev => [...prev, newMessage]);
 
-    // Mock assistant response
     setTimeout(() => {
       const response: Message = {
         id: (Date.now() + 1).toString(),
@@ -82,7 +88,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen w-full bg-white overflow-hidden text-neutral-900 font-sans relative">
+    <div className="flex h-screen w-full bg-white dark:bg-neutral-950 overflow-hidden text-neutral-900 dark:text-neutral-50 font-sans relative">
       
       {/* Left Sidebar (Navigation) */}
       <Sidebar 
@@ -98,18 +104,21 @@ const App: React.FC = () => {
         onNewChat={handleNewChat}
         onSettingsClick={() => {
           setCurrentView('settings');
+          setIsChatOpen(false);
           if (window.innerWidth < 768) setSidebarOpen(false);
         }}
+        isDarkMode={isDarkMode}
+        toggleDarkMode={() => setIsDarkMode(!isDarkMode)}
       />
 
       {/* Main App Container */}
-      <div className="flex-1 flex flex-col h-full relative min-w-0 bg-white">
+      <div className="flex-1 flex flex-col h-full relative min-w-0 bg-white dark:bg-neutral-950">
         
         {/* Mobile Header Toggle */}
         {!sidebarOpen && (
            <button 
              onClick={() => setSidebarOpen(true)}
-             className="md:hidden absolute top-4 left-4 z-50 p-2 bg-white shadow-md rounded-md border border-neutral-100 text-neutral-600"
+             className="md:hidden absolute top-4 left-4 z-50 p-2 bg-white dark:bg-neutral-900 shadow-md rounded-md border border-neutral-100 dark:border-neutral-800 text-neutral-600 dark:text-neutral-400"
            >
              <Menu size={20} />
            </button>
@@ -131,20 +140,20 @@ const App: React.FC = () => {
             <div className="flex-1 flex overflow-hidden relative">
               
               {/* Center: Main Content / Artifacts */}
-              <div className="flex-1 flex flex-col min-w-0 bg-neutral-50/50">
+              <div className="flex-1 flex flex-col min-w-0 bg-neutral-50/50 dark:bg-neutral-950">
                  <MainContent />
               </div>
 
               {/* Right: Chat Interface (Minimizable) */}
               {isChatOpen && (
-                <div className="w-full md:w-[400px] lg:w-[450px] flex flex-col bg-white border-l border-neutral-200 shadow-xl z-20 absolute md:relative right-0 h-full animate-in slide-in-from-right duration-300">
+                <div className="w-full md:w-[400px] lg:w-[450px] flex flex-col bg-white dark:bg-neutral-900 border-l border-neutral-200 dark:border-neutral-800 shadow-xl z-20 absolute md:relative right-0 h-full animate-in slide-in-from-right duration-300">
                   
                   {/* Chat Header for Close Button */}
-                  <div className="h-12 border-b border-neutral-100 flex items-center justify-between px-4 bg-white/50 backdrop-blur-sm">
-                    <span className="text-sm font-medium text-neutral-600">Assistant</span>
+                  <div className="h-12 border-b border-neutral-100 dark:border-neutral-800 flex items-center justify-between px-4 bg-white/50 dark:bg-neutral-900/50 backdrop-blur-sm">
+                    <span className="text-sm font-medium text-neutral-600 dark:text-neutral-400">Assistant</span>
                     <button 
                       onClick={() => setIsChatOpen(false)}
-                      className="p-1.5 hover:bg-neutral-100 rounded-md text-neutral-400 hover:text-neutral-600 transition-colors"
+                      className="p-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
                       title="Minimize chat"
                     >
                       <X size={18} />
@@ -156,7 +165,7 @@ const App: React.FC = () => {
                     isEmpty={messages.length === 0} 
                   />
                   
-                  <div className="flex-shrink-0 bg-white pt-2 border-t border-neutral-100">
+                  <div className="flex-shrink-0 bg-white dark:bg-neutral-900 pt-2 border-t border-neutral-100 dark:border-neutral-800">
                     <InputArea onSendMessage={handleSendMessage} />
                   </div>
                 </div>
@@ -166,7 +175,7 @@ const App: React.FC = () => {
               {!isChatOpen && (
                 <button
                   onClick={() => setIsChatOpen(true)}
-                  className="absolute bottom-6 right-6 h-14 w-14 bg-black text-white rounded-full shadow-lg hover:bg-neutral-800 transition-all hover:scale-105 flex items-center justify-center z-30"
+                  className="absolute bottom-6 right-6 h-14 w-14 bg-black dark:bg-neutral-100 text-white dark:text-neutral-900 rounded-full shadow-lg hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-all hover:scale-105 flex items-center justify-center z-30"
                   title="Open Chat"
                 >
                   <MessageCircle size={28} />
@@ -175,7 +184,10 @@ const App: React.FC = () => {
             </div>
           </>
         ) : (
-          <SettingsPage onBack={() => setCurrentView('workspace')} />
+          <SettingsPage onBack={() => {
+            setCurrentView('workspace');
+            setIsChatOpen(true);
+          }} />
         )}
 
       </div>
