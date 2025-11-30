@@ -36,3 +36,59 @@ build/
 *.njsproj
 *.sln
 *.sw?
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+*.egg
+*.egg-info/
+dist/
+*.whl
+
+# Python Virtual Environments (uv manages these, but ignore if manually created)
+venv/
+env/
+ENV/
+.venv/
+.ENV/
+
+# Python Testing & Coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.hypothesis/
+
+# User uploads (documents, PDFs)
+uploads/
+!uploads/.gitkeep
+
+# TypeScript
+*.tsbuildinfo
+
+# OS-specific
+Thumbs.db
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Docling processing artifacts (if any temp files created)
+*.docling-tmp
+docling_cache/
+
+# Logfire cache (observability tool)
+.logfire/
+logfire_cache/
