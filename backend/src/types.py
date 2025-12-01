@@ -24,6 +24,24 @@ from pydantic_ai.providers import Provider
 
 from openai import AsyncOpenAI
 
+# =====
+# State
+# =====
+class RAGState(BaseModel):
+  """State for RAG-powered conversation."""
+  conversation_history: list[dict[str, str]] = Field(
+    default_factory=list,
+    description='The conversation history',
+  )
+  current_sources: list[str] = Field(
+    default_factory=list,
+    description='Sources from the most recent knowledge base query',
+  )
+  vector_db_status: str = Field(
+    default='disconnected',
+    description='Status of the vector database connection',
+  )
+
 __all__ = [
     # modules and global variables
     'os', 'uuid', 'base64',
@@ -46,5 +64,7 @@ __all__ = [
     
     # openai
     'AsyncOpenAI',
+    
+    # State
+    'RAGState',
 ]
-
