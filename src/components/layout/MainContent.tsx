@@ -35,14 +35,32 @@ export const MainContent: React.FC = () => {
       }
 
       // Find latest RAG tool output
-      // We check for ToolReturnMessage and specifically for our tool
-      // if (!data && (msg as any).isToolReturnMessage && (msg as any).isToolReturnMessage()) {
-      // Check for ResultMessage with our tool's actionName
       if (!data) {
-        const toolMsg = msg as any; // Cast to access tool-specific props if needed, or just use properties
-        if (toolMsg.toolName === 'query_knowledge_base' && toolMsg.result) {
+        const toolMsg = msg as any; // Cast to access tool-specific props
+
+        // Debug log to see what messages look like
+        if (toolMsg.role === 'function' || toolMsg.type === 'function' || toolMsg.toolName || toolMsg.name) {
+          console.log("Found potential tool message:", toolMsg);
+        }
+
+        // Check for various properties that might identify the tool
+        const isRagTool =
+          toolMsg.toolName === 'query_knowledge_base' ||
+          toolMsg.name === 'query_knowledge_base' ||
+          (toolMsg.actionName === 'query_knowledge_base'); // Some versions might use actionName
+
+        if (isRagTool && (toolMsg.result || toolMsg.content)) {
           try {
-            data = JSON.parse(toolMsg.result);
+            const contentToParse = toolMsg.result || toolMsg.content;
+            console.log("Parsing RAG data from:", contentToParse);
+
+            // Handle case where content might already be an object
+            if (typeof contentToParse === 'object') {
+              data = contentToParse;
+            } else {
+              data = JSON.parse(contentToParse);
+            }
+            console.log("Parsed RAG data:", data);
           } catch (e) {
             console.error("Failed to parse tool result", e);
           }
