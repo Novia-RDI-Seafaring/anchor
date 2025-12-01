@@ -1,41 +1,92 @@
-import React from 'react';
-import { 
-  Anchor, 
-  Plus, 
-  Settings, 
-  MessageSquare, 
-  PanelLeftClose, 
+import React, { useState } from 'react';
+import {
+  Anchor,
+  Plus,
+  Settings,
+  MessageSquare,
+  PanelLeftClose,
   PanelLeftOpen,
   Moon,
-  Sun
+  Sun,
+  Trash2,
+  Edit2,
+  Check,
+  X
 } from 'lucide-react';
 import { AgButton } from '../ui/AgComponents';
-import { Conversation } from '../../types';
+import { useApp } from '@/contexts/AppContext';
 
 interface SidebarProps {
   isOpen: boolean;
   toggleSidebar: () => void;
-  conversations: Conversation[];
-  activeConversationId: string | null;
-  onSelectConversation: (id: string) => void;
-  onNewChat: () => void;
   onSettingsClick: () => void;
-  isDarkMode: boolean;
-  toggleDarkMode: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   isOpen,
   toggleSidebar,
-  conversations,
-  activeConversationId,
-  onSelectConversation,
-  onNewChat,
   onSettingsClick,
-  isDarkMode,
-  toggleDarkMode
 }) => {
-  
+  const {
+    conversations,
+    activeConversationId,
+    setActiveConversationId,
+    createNewConversation,
+    deleteConversation,
+    updateConversation,
+    isDarkMode,
+    toggleDarkMode
+  } = useApp();
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+
+  const onNewChat = () => {
+    createNewConversation();
+  };
+
+  const onSelectConversation = (id: string) => {
+    setActiveConversationId(id);
+  };
+
+  const handleStartEdit = (id: string, currentTitle: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingId(id);
+    setEditTitle(currentTitle);
+  };
+
+  const handleSaveEdit = (id: string, e?: React.MouseEvent | React.KeyboardEvent) => {
+    e?.stopPropagation();
+    if (editTitle.trim()) {
+      updateConversation(id, { title: editTitle.trim() });
+    }
+    setEditingId(null);
+    setEditTitle('');
+  };
+
+  const handleCancelEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingId(null);
+    setEditTitle('');
+  };
+
+  const handleDelete = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('Are you sure you want to delete this conversation?')) {
+      deleteConversation(id);
+    }
+  };
+
+  const handleKeyDown = (id: string, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSaveEdit(id, e);
+    } else if (e.key === 'Escape') {
+      e.stopPropagation();
+      setEditingId(null);
+      setEditTitle('');
+    }
+  };
+
   if (!isOpen) {
     return (
       <div className="hidden md:flex flex-col items-center py-4 w-16 border-r border-neutral-200 dark:border-neutral-800 h-screen bg-neutral-50/50 dark:bg-neutral-900/50">
@@ -88,36 +139,87 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Conversations List */}
       <div className="flex-1 overflow-y-auto px-3 pb-4">
         <div className="flex items-center justify-between px-2 mb-2">
-           <h3 className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Conversations</h3>
-           <button className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300">
-             <MessageSquare size={14} />
-           </button>
+          <h3 className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Conversations</h3>
+          <button className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300">
+            <MessageSquare size={14} />
+          </button>
         </div>
-       
+
         <div className="space-y-1">
           {conversations.map((conv) => (
-            <button
+            <div
               key={conv.id}
-              onClick={() => onSelectConversation(conv.id)}
               className={`
-                w-full text-left px-3 py-3 rounded-lg transition-colors group
-                ${activeConversationId === conv.id 
-                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-900 dark:text-brand-100 shadow-sm border border-brand-100 dark:border-brand-900' 
+                w-full text-left px-3 py-2.5 rounded-lg transition-colors group relative
+                ${activeConversationId === conv.id
+                  ? 'bg-brand-50 dark:bg-brand-900/20 text-brand-900 dark:text-brand-100 shadow-sm border border-brand-100 dark:border-brand-900'
                   : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 border border-transparent'}
               `}
             >
-              <div className="font-medium text-sm truncate">{conv.title}</div>
-              <div className={`text-xs mt-0.5 truncate ${activeConversationId === conv.id ? 'text-brand-600/70 dark:text-brand-300/70' : 'text-neutral-400 dark:text-neutral-500'}`}>
-                {conv.preview}
-              </div>
-            </button>
+              {editingId === conv.id ? (
+                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="text"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(conv.id, e)}
+                    autoFocus
+                    className="flex-1 px-2 py-1 text-sm bg-white dark:bg-neutral-800 border border-brand-300 dark:border-brand-700 rounded focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <button
+                    onClick={(e) => handleSaveEdit(conv.id, e)}
+                    className="p-1 hover:bg-green-100 dark:hover:bg-green-900/30 rounded text-green-600 dark:text-green-400"
+                    title="Save"
+                  >
+                    <Check size={14} />
+                  </button>
+                  <button
+                    onClick={handleCancelEdit}
+                    className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-red-600 dark:text-red-400"
+                    title="Cancel"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : (
+                <div
+                  onClick={() => onSelectConversation(conv.id)}
+                  className="w-full text-left cursor-pointer"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm truncate">{conv.title}</div>
+                      <div className={`text-xs mt-0.5 truncate ${activeConversationId === conv.id ? 'text-brand-600/70 dark:text-brand-300/70' : 'text-neutral-400 dark:text-neutral-500'}`}>
+                        {conv.preview}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => handleStartEdit(conv.id, conv.title, e)}
+                        className="p-1.5 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded text-blue-600 dark:text-blue-400"
+                        title="Rename"
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                      <button
+                        onClick={(e) => handleDelete(conv.id, e)}
+                        className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded text-red-600 dark:text-red-400"
+                        title="Delete"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           ))}
         </div>
       </div>
-      
+
       {/* Sidebar Footer */}
       <div className="p-4 border-t border-neutral-200 dark:border-neutral-800">
-        <button 
+        <button
           onClick={toggleDarkMode}
           className="flex items-center justify-between w-full px-3 py-2 text-sm text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md transition-colors mb-2"
         >

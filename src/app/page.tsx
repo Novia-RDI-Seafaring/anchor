@@ -10,6 +10,7 @@ import { DatabaseStatus } from '@/types';
 import { Menu, MessageCircle } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { MOCK_CONVERSATIONS, MOCK_MODELS } from '@/lib/mock-data';
+import { CopilotKit } from "@copilotkit/react-core";
 
 export default function Home() {
     // Global state from Context
@@ -26,6 +27,7 @@ export default function Home() {
         setSelectedModel,
         activeConversationId,
         setActiveConversationId,
+        conversations
     } = useApp();
 
     const handleNewChat = useCallback(() => {
@@ -52,6 +54,8 @@ export default function Home() {
         label: 'Error loading DBs'
     };
 
+    const currentConversation = conversations.find(c => c.id === activeConversationId);
+
     return (
         <div className="flex h-screen w-full bg-white dark:bg-neutral-950 overflow-hidden text-neutral-900 dark:text-neutral-50 font-sans relative">
 
@@ -59,13 +63,7 @@ export default function Home() {
             <Sidebar
                 isOpen={sidebarOpen}
                 toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-                conversations={MOCK_CONVERSATIONS}
-                activeConversationId={activeConversationId}
-                onSelectConversation={handleSelectConversation}
-                onNewChat={handleNewChat}
                 onSettingsClick={handleSettingsClick}
-                isDarkMode={isDarkMode}
-                toggleDarkMode={toggleDarkMode}
             />
 
             {/* Main App Container */}
@@ -94,30 +92,37 @@ export default function Home() {
                         />
 
                         {/* Split View Content Area */}
-                        <div className="flex-1 flex overflow-hidden relative">
+                        <CopilotKit
+                            runtimeUrl="/api/copilotkit"
+                            agent="my_agent"
+                            key={activeConversationId}
+                        >
+                            <div className="flex-1 flex overflow-hidden relative">
 
-                            {/* Center: Main Content / Artifacts */}
-                            <div className="flex-1 flex flex-col min-w-0 bg-neutral-50/50 dark:bg-neutral-950">
-                                <MainContent />
+                                {/* Center: Main Content / Artifacts */}
+                                <div className="flex-1 flex flex-col min-w-0 bg-neutral-50/50 dark:bg-neutral-950">
+                                    <MainContent />
+                                </div>
+
+                                {/* Right: Chat Interface (Minimizable) */}
+                                <ChatInterface
+                                    isOpen={isChatOpen}
+                                    onClose={() => setIsChatOpen(false)}
+                                    initialMessages={currentConversation?.messages || []}
+                                />
+
+                                {/* Floating Chat Toggle (Visible when chat is closed) */}
+                                {!isChatOpen && (
+                                    <button
+                                        onClick={() => setIsChatOpen(true)}
+                                        className="absolute bottom-6 right-6 h-14 w-14 bg-black dark:bg-neutral-100 text-white dark:text-neutral-900 rounded-full shadow-lg hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-all hover:scale-105 flex items-center justify-center z-30"
+                                        title="Open Chat"
+                                    >
+                                        <MessageCircle size={28} />
+                                    </button>
+                                )}
                             </div>
-
-                            {/* Right: Chat Interface (Minimizable) */}
-                            <ChatInterface
-                                isOpen={isChatOpen}
-                                onClose={() => setIsChatOpen(false)}
-                            />
-
-                            {/* Floating Chat Toggle (Visible when chat is closed) */}
-                            {!isChatOpen && (
-                                <button
-                                    onClick={() => setIsChatOpen(true)}
-                                    className="absolute bottom-6 right-6 h-14 w-14 bg-black dark:bg-neutral-100 text-white dark:text-neutral-900 rounded-full shadow-lg hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-all hover:scale-105 flex items-center justify-center z-30"
-                                    title="Open Chat"
-                                >
-                                    <MessageCircle size={28} />
-                                </button>
-                            )}
-                        </div>
+                        </CopilotKit>
                     </>
                 ) : (
                     <SettingsPage onBack={() => {

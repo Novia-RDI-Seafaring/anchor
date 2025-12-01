@@ -1,6 +1,8 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useConversationHistory } from '@/hooks/useConversationHistory';
+import { Conversation } from '@/types';
 
 interface AppContextType {
     currentView: 'workspace' | 'settings';
@@ -15,6 +17,10 @@ interface AppContextType {
     setSelectedModel: (model: string) => void;
     activeConversationId: string;
     setActiveConversationId: (id: string) => void;
+    conversations: Conversation[];
+    createNewConversation: () => string;
+    deleteConversation: (id: string) => void;
+    updateConversation: (id: string, updates: Partial<Conversation>) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -25,7 +31,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const [isChatOpen, setIsChatOpen] = useState(true);
     const [isDarkMode, setIsDarkMode] = useState(false);
     const [selectedModel, setSelectedModel] = useState('llama3.2');
-    const [activeConversationId, setActiveConversationId] = useState('1');
+
+    const {
+        conversations,
+        activeId: activeConversationId,
+        setActiveId: setActiveConversationId,
+        createNewConversation,
+        deleteConversation,
+        updateConversation
+    } = useConversationHistory();
 
     const toggleDarkMode = () => setIsDarkMode((prev: boolean) => !prev);
 
@@ -46,8 +60,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             toggleDarkMode,
             selectedModel,
             setSelectedModel,
-            activeConversationId,
+            activeConversationId: activeConversationId || '',
             setActiveConversationId,
+            conversations,
+            createNewConversation,
+            deleteConversation,
+            updateConversation
         }}>
             {children}
         </AppContext.Provider>

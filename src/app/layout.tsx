@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { CopilotKit } from "@copilotkit/react-core";
 import "./globals.css";
 import "@copilotkit/react-ui/styles.css";
 import { AppProvider } from "@/contexts/AppContext";
@@ -19,11 +18,9 @@ export default function RootLayout({
         <html lang="en">
             <body suppressHydrationWarning>
                 <ErrorBoundary>
-                    <CopilotKit runtimeUrl="/api/copilotkit" agent="my_agent">
-                        <AppProvider>
-                            {children}
-                        </AppProvider>
-                    </CopilotKit>
+                    <AppProvider>
+                        {children}
+                    </AppProvider>
                 </ErrorBoundary>
             </body>
         </html>

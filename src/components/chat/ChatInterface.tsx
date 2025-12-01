@@ -8,10 +8,22 @@ import { X } from 'lucide-react';
 interface ChatInterfaceProps {
     isOpen: boolean;
     onClose: () => void;
+    initialMessages?: any[];
 }
 
-export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
-    const { visibleMessages, appendMessage } = useCopilotChat();
+export function ChatInterface({ isOpen, onClose, initialMessages }: ChatInterfaceProps) {
+    const sanitizedMessages = React.useMemo(() => {
+        if (!initialMessages) return [];
+        return initialMessages.map(msg => {
+            if (msg.role) return msg;
+            // Fix for messages with missing role (e.g. deserialized ActionExecutionMessage)
+            return { ...msg, role: Role.Assistant };
+        });
+    }, [initialMessages]);
+
+    const { visibleMessages, appendMessage } = useCopilotChat({
+        initialMessages: sanitizedMessages
+    });
 
     // Convert CopilotKit messages to UI messages
     const messages = visibleMessages.map((msg, index) => {

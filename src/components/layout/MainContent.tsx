@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { useApp } from '@/contexts/AppContext';
 import { AgCard, AgButton, AgBadge } from '../ui/AgComponents';
 import { BarChart3, Table, Image as ImageIcon, FileText, Download, MoreHorizontal, Share2, Database, ExternalLink } from 'lucide-react';
 import { useCopilotChat } from "@copilotkit/react-core";
@@ -18,6 +19,41 @@ interface ToolResult {
 
 export const MainContent: React.FC = () => {
   const { visibleMessages } = useCopilotChat();
+  const { activeConversationId, updateConversation, conversations } = useApp();
+
+  // Persist messages and update title
+  React.useEffect(() => {
+    if (!activeConversationId || visibleMessages.length === 0) return;
+
+    const currentConv = conversations.find(c => c.id === activeConversationId);
+    if (!currentConv) return;
+
+    // Check if we need to update (simple check: length changed or last message different)
+    // For now, just update on every change to visibleMessages. 
+    // Optimization: could check deep equality or length.
+
+    const updates: any = {
+      messages: visibleMessages,
+      lastMessageAt: 'Just now',
+      preview: `${visibleMessages.length} messages · Just now`
+    };
+
+    // Auto-generate title if it's the first user message and title is default
+    if (currentConv.title === 'New Conversation' && visibleMessages.length > 0) {
+      const firstUserMsg = visibleMessages.find(m => m.isTextMessage() && m.role === 'user');
+      if (firstUserMsg) {
+        const content = (firstUserMsg as TextMessage).content;
+        updates.title = content.length > 30 ? content.substring(0, 30) + '...' : content;
+      }
+    }
+
+    updateConversation(activeConversationId, updates);
+
+  }, [visibleMessages, activeConversationId, updateConversation]);
+  // Note: 'conversations' is not in dependency array to avoid loop, but we access it inside.
+  // Ideally we should use a ref or pass a callback to updateConversation that checks the current state.
+  // But since updateConversation updates state, it will trigger re-render.
+  // If visibleMessages is stable, this effect won't run.
 
   const { latestResponse, ragData } = useMemo(() => {
     let response: string | null = null;
