@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Components - Anchor UI Documentation</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="container">
+        <aside class="sidebar">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Search documentation...">
+                <div class="search-results" id="searchResults"></div>
+            </div>
+
+            <h2>Documentation</h2>
+            <nav id="nav"></nav>
+        </aside>
+
+        <main class="main-content">
+            <h1>Component Overview</h1>
+
+            <h2>Frontend Components</h2>
+
+            <h3>Layout Components</h3>
+
+            <h4>Sidebar (src/components/layout/Sidebar.tsx)</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Navigation and conversation management</li>
+                <li><strong>Features:</strong>
+                    <ul>
+                        <li>Conversation list with edit/delete</li>
+                        <li>New chat button</li>
+                        <li>Settings access</li>
+                        <li>Dark mode toggle</li>
+                        <li>Collapsible on mobile</li>
+                    </ul>
+                </li>
+                <li><strong>State:</strong> Uses AppContext for conversations and settings</li>
+            </ul>
+
+            <h4>Header (src/components/layout/Header.tsx)</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Document selection and model configuration</li>
+                <li><strong>Features:</strong>
+                    <ul>
+                        <li>Document dropdown selector</li>
+                        <li>Model selector</li>
+                        <li>RAG pipeline status</li>
+                        <li>Document count display</li>
+                    </ul>
+                </li>
+                <li><strong>API Calls:</strong> Fetches documents, sets active document</li>
+            </ul>
+
+            <h4>MainContent (src/components/layout/MainContent.tsx)</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Display workspace with artifacts and context</li>
+                <li><strong>Features:</strong>
+                    <ul>
+                        <li>Source documents grid</li>
+                        <li>Active document display</li>
+                        <li>Retrieved context chunks</li>
+                        <li>Similarity scores</li>
+                    </ul>
+                </li>
+                <li><strong>Data Source:</strong> CopilotKit visibleMessages and tool results</li>
+            </ul>
+
+            <h3>Chat Components</h3>
+
+            <h4>ChatInterface (src/components/chat/ChatInterface.tsx)</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Main chat container</li>
+                <li><strong>Features:</strong>
+                    <ul>
+                        <li>Minimizable panel</li>
+                        <li>Message display</li>
+                        <li>Input area integration</li>
+                        <li>CopilotKit integration</li>
+                    </ul>
+                </li>
+                <li><strong>Props:</strong> isOpen, onClose, initialMessages</li>
+            </ul>
+
+            <h4>ChatArea (src/components/chat/ChatArea.tsx)</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Display conversation messages</li>
+                <li><strong>Features:</strong>
+                    <ul>
+                        <li>User and assistant message bubbles</li>
+                        <li>Empty state with welcome message</li>
+                        <li>Memoized for performance</li>
+                        <li>Auto-scrolling</li>
+                    </ul>
+                </li>
+                <li><strong>Props:</strong> messages, isEmpty</li>
+            </ul>
+
+            <h4>InputArea (src/components/chat/InputArea.tsx)</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Message input and file upload</li>
+                <li><strong>Features:</strong>
+                    <ul>
+                        <li>Auto-resizing textarea</li>
+                        <li>Context controls (RAG toggle, Web)</li>
+                        <li>File upload with status</li>
+                        <li>Keyboard shortcuts (Enter to send)</li>
+                    </ul>
+                </li>
+                <li><strong>API Calls:</strong> Document upload endpoint</li>
+            </ul>
+
+            <h3>Settings Components</h3>
+
+            <h4>SettingsPage (src/components/settings/SettingsPage.tsx)</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Application configuration</li>
+                <li><strong>Sections:</strong>
+                    <ul>
+                        <li>AI Assistant Configuration</li>
+                        <li>Knowledge Base Management</li>
+                    </ul>
+                </li>
+                <li><strong>Features:</strong>
+                    <ul>
+                        <li>System prompt editor</li>
+                        <li>Model selection</li>
+                        <li>Temperature and token controls</li>
+                        <li>MCP tools configuration</li>
+                        <li>Document upload/management</li>
+                        <li>Danger zone operations</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h3>UI Components</h3>
+
+            <h4>AgComponents (src/components/ui/AgComponents.tsx)</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Reusable UI components from AG-UI</li>
+                <li><strong>Components:</strong>
+                    <ul>
+                        <li>AgButton - Styled buttons</li>
+                        <li>AgCard - Card containers</li>
+                        <li>AgInput - Text inputs</li>
+                        <li>AgSelect - Dropdown selectors</li>
+                        <li>AgBadge - Status badges</li>
+                        <li>AgToggle - Toggle switches</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h3>Context Components</h3>
+
+            <h4>AppContext (src/contexts/AppContext.tsx)</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Global application state</li>
+                <li><strong>State:</strong>
+                    <ul>
+                        <li>Current view (workspace/settings)</li>
+                        <li>Sidebar open/closed</li>
+                        <li>Chat open/closed</li>
+                        <li>Dark mode</li>
+                        <li>Selected model</li>
+                        <li>Active conversation</li>
+                        <li>Conversations list</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h3>Hooks</h3>
+
+            <h4>useConversationHistory (src/hooks/useConversationHistory.ts)</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Manage conversation persistence</li>
+                <li><strong>Features:</strong>
+                    <ul>
+                        <li>LocalStorage persistence</li>
+                        <li>Create/update/delete conversations</li>
+                        <li>Active conversation tracking</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h2>Backend Components</h2>
+
+            <h3>Core Services</h3>
+
+            <h4>DocumentService (src/document_service.py)</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Document orchestration</li>
+                <li><strong>Methods:</strong>
+                    <ul>
+                        <li>upload_file() - Process file uploads</li>
+                        <li>upload_url() - Process URL content</li>
+                        <li>process_document() - Convert, chunk, embed</li>
+                        <li>list_documents() - Get all documents</li>
+                        <li>delete_document() - Remove document</li>
+                        <li>search() - Vector similarity search</li>
+                        <li>get_stats() - Knowledge base statistics</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h4>VectorStore (src/vector_store.py)</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Vector database operations</li>
+                <li><strong>Methods:</strong>
+                    <ul>
+                        <li>add_document() - Register document</li>
+                        <li>add_chunks() - Store chunks with embeddings</li>
+                        <li>search() - Similarity search</li>
+                        <li>list_documents() - Query documents</li>
+                        <li>delete_document() - Remove document and chunks</li>
+                        <li>reset() - Clear all data</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h4>EmbeddingsService (src/embeddings.py)</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Generate text embeddings</li>
+                <li><strong>Model:</strong> OpenAI text-embedding-3-large</li>
+                <li><strong>Methods:</strong>
+                    <ul>
+                        <li>embed_text() - Single text embedding</li>
+                        <li>embed_texts() - Batch embeddings</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h3>Agent Components</h3>
+
+            <h4>Agent (src/agent.py)</h4>
+            <ul>
+                <li><strong>Purpose:</strong> PydanticAI agent definition</li>
+                <li><strong>Configuration:</strong>
+                    <ul>
+                        <li>Model selection</li>
+                        <li>System prompt</li>
+                        <li>State management</li>
+                        <li>Tool registration</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h4>RAG Tools (src/tools/rag_tools.py)</h4>
+            <ul>
+                <li><strong>query_knowledge_base:</strong> Vector similarity search</li>
+                <li><strong>check_db_status:</strong> Database health check</li>
+                <li><strong>add_to_conversation:</strong> Message history</li>
+            </ul>
+
+            <h3>Processing Components</h3>
+
+            <h4>DoclingConverter (src/docling_processing/docling_converter.py)</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Convert documents to markdown</li>
+                <li><strong>Supported:</strong> PDF, DOCX</li>
+                <li><strong>Features:</strong> Table preservation, fast mode</li>
+            </ul>
+
+            <h4>MarkdownFormatter (src/docling_processing/formatters.py)</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Chunk markdown content</li>
+                <li><strong>Strategy:</strong> Configurable chunk size and overlap</li>
+            </ul>
+
+            <h3>API Components</h3>
+
+            <h4>FastAPI App (main.py)</h4>
+            <ul>
+                <li><strong>Endpoints:</strong>
+                    <ul>
+                        <li>/agent - AG-UI agent endpoint</li>
+                        <li>/api/documents/* - Document management</li>
+                        <li>/api/search - Knowledge base search</li>
+                        <li>/api/stats - Statistics</li>
+                        <li>/api/active-document - Document filter</li>
+                        <li>/health - Health check</li>
+                    </ul>
+                </li>
+            </ul>
+
+            <h2>Component Relationships</h2>
+
+            <h3>Frontend Flow</h3>
+            <pre><code>page.tsx (Root)
+├── AppProvider (Context)
+├── Sidebar
+├── Header
+├── MainContent
+│   └── Uses CopilotKit messages
+└── ChatInterface
+    ├── ChatArea
+    └── InputArea</code></pre>
+
+            <h3>Backend Flow</h3>
+            <pre><code>main.py (FastAPI)
+├── /agent (AG-UI)
+│   └── agent.py (PydanticAI)
+│       └── tools/rag_tools.py
+│           └── DocumentService
+│               ├── DoclingConverter
+│               ├── MarkdownFormatter
+│               ├── EmbeddingsService
+│               └── VectorStore
+└── /api/* (REST)
+    └── DocumentService</code></pre>
+
+            <h2>Data Flow Between Components</h2>
+
+            <h3>Chat Message</h3>
+            <ol>
+                <li>InputArea → ChatInterface</li>
+                <li>ChatInterface → CopilotKit</li>
+                <li>CopilotKit → Next.js API</li>
+                <li>Next.js API → FastAPI /agent</li>
+                <li>Agent → query_knowledge_base tool</li>
+                <li>Tool → DocumentService.search()</li>
+                <li>DocumentService → VectorStore.search()</li>
+                <li>Results flow back through layers</li>
+                <li>MainContent displays results</li>
+            </ol>
+
+            <h2>Component Best Practices</h2>
+
+            <h3>Frontend</h3>
+            <ul>
+                <li>Use TypeScript for type safety</li>
+                <li>Memoize expensive components</li>
+                <li>Extract reusable logic to hooks</li>
+                <li>Keep components focused and small</li>
+            </ul>
+
+            <h3>Backend</h3>
+            <ul>
+                <li>Use async/await for I/O</li>
+                <li>Implement singleton pattern for services</li>
+                <li>Validate inputs with Pydantic</li>
+                <li>Handle errors gracefully</li>
+            </ul>
+
+            <h2>Related Documentation</h2>
+            <ul>
+                <li><a href="architecture.html">Architecture</a> - System design</li>
+                <li><a href="api-reference.html">API Reference</a> - Backend APIs</li>
+                <li><a href="contributing.html">Contributing</a> - Development guide</li>
+            </ul>
+        </main>
+    </div>
+    <script src="nav.js"></script>
+</body>
+
+</html>

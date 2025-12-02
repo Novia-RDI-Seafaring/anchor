@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knowledge Base - Anchor UI Documentation</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <aside class="sidebar">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Search documentation...">
+                <div class="search-results" id="searchResults"></div>
+            </div>
+            
+            <h2>Documentation</h2>
+            <nav id="nav"></nav>
+        </aside>
+        
+        <main class="main-content">
+            <h1>Knowledge Base Management</h1>
+            
+            <h2>Overview</h2>
+            <p>The Knowledge Base is the core of Anchor UI. It stores your documents, processes them into searchable chunks, and enables the RAG (Retrieval-Augmented Generation) functionality that powers intelligent responses.</p>
+            
+            <h2>Supported File Formats</h2>
+            <p>Anchor UI supports the following document formats:</p>
+            <table>
+                <tr>
+                    <th>Format</th>
+                    <th>Extension</th>
+                    <th>Processing</th>
+                </tr>
+                <tr>
+                    <td>PDF</td>
+                    <td>.pdf</td>
+                    <td>Full text extraction, tables preserved</td>
+                </tr>
+                <tr>
+                    <td>Microsoft Word</td>
+                    <td>.docx</td>
+                    <td>Text and formatting extraction</td>
+                </tr>
+                <tr>
+                    <td>Plain Text</td>
+                    <td>.txt</td>
+                    <td>Direct text processing</td>
+                </tr>
+                <tr>
+                    <td>Markdown</td>
+                    <td>.md</td>
+                    <td>Markdown-aware processing</td>
+                </tr>
+                <tr>
+                    <td>HTML</td>
+                    <td>.html</td>
+                    <td>HTML content extraction</td>
+                </tr>
+            </table>
+            
+            <h2>Uploading Documents</h2>
+            
+            <h3>Method 1: Chat Input Area</h3>
+            <ol>
+                <li>Open the chat interface</li>
+                <li>When the input is empty, click the paperclip icon (📎)</li>
+                <li>Select one or more files from your computer</li>
+                <li>Files will automatically upload and process</li>
+                <li>You'll see upload status notifications</li>
+            </ol>
+            
+            <h3>Method 2: Settings Page</h3>
+            <ol>
+                <li>Navigate to Settings (gear icon in sidebar)</li>
+                <li>Go to "Knowledge Base Management" section</li>
+                <li>Click "CHOOSE FILES" button</li>
+                <li>Select your documents</li>
+                <li>Click "Upload" to process</li>
+            </ol>
+            
+            <h3>Upload Process</h3>
+            <p>When you upload a document, Anchor UI:</p>
+            <ol>
+                <li><strong>Saves the file</strong> to the uploads directory</li>
+                <li><strong>Generates a document ID</strong> (MD5 hash of filename and content)</li>
+                <li><strong>Registers the document</strong> in the database</li>
+                <li><strong>Converts to markdown</strong> using Docling (for PDF/DOCX)</li>
+                <li><strong>Chunks the content</strong> into searchable segments</li>
+                <li><strong>Generates embeddings</strong> using OpenAI</li>
+                <li><strong>Stores in vector database</strong> for similarity search</li>
+            </ol>
+            
+            <h2>Adding URLs</h2>
+            <p>You can add web pages directly to your knowledge base:</p>
+            <ol>
+                <li>Go to Settings → Knowledge Base Management</li>
+                <li>Find the "Add URL to Knowledge Base" section</li>
+                <li>Enter a valid URL (e.g., <code>https://example.com/article</code>)</li>
+                <li>Click "Add URL to Knowledge Base"</li>
+                <li>The page content will be fetched and processed like a document</li>
+            </ol>
+            
+            <h3>URL Processing</h3>
+            <ul>
+                <li>Content is fetched via HTTP/HTTPS</li>
+                <li>HTML is extracted and converted</li>
+                <li>Filename is derived from the URL path</li>
+                <li>Source URL is stored in metadata</li>
+            </ul>
+            
+            <h2>Document Processing</h2>
+            
+            <h3>Chunking Strategy</h3>
+            <p>Documents are split into chunks for efficient search:</p>
+            <ul>
+                <li><strong>Chunk Size:</strong> Default 512 tokens (configurable)</li>
+                <li><strong>Overlap:</strong> 50 tokens between chunks for context</li>
+                <li><strong>Metadata:</strong> Each chunk stores position, document ID, and custom metadata</li>
+            </ul>
+            
+            <h3>Embedding Generation</h3>
+            <p>Each chunk is converted to a vector embedding:</p>
+            <ul>
+                <li><strong>Model:</strong> OpenAI text-embedding-3-large</li>
+                <li><strong>Dimensions:</strong> 3072-dimensional vectors</li>
+                <li><strong>Storage:</strong> PostgreSQL pgvector extension</li>
+            </ul>
+            
+            <h2>Viewing Documents</h2>
+            
+            <h3>Document List</h3>
+            <p>View all documents in Settings → Knowledge Base Management:</p>
+            <ul>
+                <li>Document filename</li>
+                <li>Number of chunks</li>
+                <li>Source type (file or URL)</li>
+                <li>Processing status</li>
+            </ul>
+            
+            <h3>Document Statistics</h3>
+            <p>The Knowledge Base shows:</p>
+            <ul>
+                <li><strong>Total Documents:</strong> Count of all uploaded documents</li>
+                <li><strong>Processed Documents:</strong> Successfully processed count</li>
+                <li><strong>Total Chunks:</strong> Sum of all chunks across documents</li>
+                <li><strong>Status:</strong> Connection status to vector database</li>
+            </ul>
+            
+            <h2>Selecting Active Document</h2>
+            
+            <h3>Document Filter</h3>
+            <p>Use the document selector in the header to focus queries:</p>
+            <ol>
+                <li>Click the document dropdown in the header</li>
+                <li>Select "All Documents" or a specific document</li>
+                <li>All subsequent RAG queries will be filtered to the selected document</li>
+                <li>The filter persists until changed</li>
+            </ol>
+            
+            <h3>Use Cases</h3>
+            <ul>
+                <li>Ask questions about a specific manual or guide</li>
+                <li>Compare information across documents</li>
+                <li>Focus on recent uploads</li>
+                <li>Isolate testing to one document</li>
+            </ul>
+            
+            <h2>Managing Documents</h2>
+            
+            <h3>Deleting Documents</h3>
+            <ol>
+                <li>Go to Settings → Knowledge Base Management</li>
+                <li>Find the document in the list</li>
+                <li>Hover over the document row</li>
+                <li>Click the delete icon (🗑️)</li>
+                <li>Confirm deletion</li>
+            </ol>
+            
+            <p><strong>Note:</strong> Deleting a document removes:</p>
+            <ul>
+                <li>The document record from the database</li>
+                <li>All associated chunks and embeddings</li>
+                <li>The physical file from the uploads directory</li>
+            </ul>
+            
+            <h3>Reingesting Documents</h3>
+            <p>Re-process all documents in your knowledge base:</p>
+            <ol>
+                <li>Go to Settings → Knowledge Base Management</li>
+                <li>Scroll to "Danger Zone"</li>
+                <li>Click "Reingest documents"</li>
+                <li>Confirm the action</li>
+                <li>All documents will be re-processed (chunks regenerated)</li>
+            </ol>
+            
+            <p><strong>When to Reingest:</strong></p>
+            <ul>
+                <li>After changing chunk size or overlap settings</li>
+                <li>If document processing seems incorrect</li>
+                <li>After updating embedding models</li>
+                <li>To refresh document metadata</li>
+            </ul>
+            
+            <h3>Resetting Knowledge Base</h3>
+            <p><strong>⚠️ Warning: This action is permanent and cannot be undone!</strong></p>
+            <ol>
+                <li>Go to Settings → Knowledge Base Management</li>
+                <li>Scroll to "Danger Zone"</li>
+                <li>Click "Reset"</li>
+                <li>Confirm the action</li>
+                <li>All documents and chunks will be deleted</li>
+            </ol>
+            
+            <h2>Best Practices</h2>
+            
+            <h3>Document Organization</h3>
+            <ul>
+                <li>Use descriptive filenames - they appear in search results</li>
+                <li>Upload related documents together</li>
+                <li>Keep documents updated - delete outdated versions</li>
+                <li>Organize by topic or project</li>
+            </ul>
+            
+            <h3>Optimizing Search Quality</h3>
+            <ul>
+                <li>Upload well-structured documents (proper headings, sections)</li>
+                <li>Avoid very large single documents - split if possible</li>
+                <li>Ensure documents contain relevant, searchable content</li>
+                <li>Use consistent terminology across documents</li>
+            </ul>
+            
+            <h3>Storage Management</h3>
+            <ul>
+                <li>Monitor chunk count - more chunks = more storage</li>
+                <li>Regularly review and remove unused documents</li>
+                <li>Consider document size vs. value</li>
+                <li>Archive old documents if needed</li>
+            </ul>
+            
+            <h2>Troubleshooting</h2>
+            
+            <h3>Upload Fails</h3>
+            <ul>
+                <li>Check file format is supported</li>
+                <li>Verify file is not corrupted</li>
+                <li>Ensure uploads directory is writable</li>
+                <li>Check file size limits</li>
+            </ul>
+            
+            <h3>Processing Errors</h3>
+            <ul>
+                <li>Verify OpenAI API key is set</li>
+                <li>Check database connection</li>
+                <li>Review backend logs for errors</li>
+                <li>Try reingesting the document</li>
+            </ul>
+            
+            <h3>No Search Results</h3>
+            <ul>
+                <li>Verify document was processed (check chunk count)</li>
+                <li>Ensure document filter isn't excluding results</li>
+                <li>Try broader search terms</li>
+                <li>Check similarity threshold settings</li>
+            </ul>
+            
+            <h2>Related Documentation</h2>
+            <ul>
+                <li><a href="user-guide.html">User Guide</a> - General usage instructions</li>
+                <li><a href="chat-interface.html">Chat Interface</a> - Querying your knowledge base</li>
+                <li><a href="settings.html">Settings</a> - Configuration options</li>
+                <li><a href="architecture.html">Architecture</a> - System design details</li>
+            </ul>
+        </main>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>
+

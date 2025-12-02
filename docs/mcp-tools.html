@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Tools - Anchor UI Documentation</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <aside class="sidebar">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Search documentation...">
+                <div class="search-results" id="searchResults"></div>
+            </div>
+            
+            <h2>Documentation</h2>
+            <nav id="nav"></nav>
+        </aside>
+        
+        <main class="main-content">
+            <h1>MCP Tools (Model Context Protocol)</h1>
+            
+            <h2>What is MCP?</h2>
+            <p><strong>Model Context Protocol (MCP)</strong> is a standardized protocol that enables AI assistants to securely access external tools and data sources. It provides a way for AI models to interact with filesystems, databases, web services, and other resources through a consistent interface.</p>
+            
+            <h3>Key Concepts</h3>
+            <ul>
+                <li><strong>Tools:</strong> Functions the agent can call to perform actions</li>
+                <li><strong>Resources:</strong> Data sources the agent can access</li>
+                <li><strong>Prompts:</strong> Templates for common interactions</li>
+                <li><strong>Servers:</strong> MCP servers provide tools and resources</li>
+            </ul>
+            
+            <h2>MCP in Anchor UI</h2>
+            <p>Anchor UI supports MCP tools through the Settings page. You can enable or disable specific MCP servers to extend your agent's capabilities.</p>
+            
+            <h3>Available MCP Tools</h3>
+            
+            <h4>1. Filesystem</h4>
+            <ul>
+                <li><strong>Purpose:</strong> File system operations (read, write, list directories)</li>
+                <li><strong>Endpoint:</strong> <code>http://localhost:8000/sse</code></li>
+                <li><strong>Use Cases:</strong>
+                    <ul>
+                        <li>Reading configuration files</li>
+                        <li>Writing generated content to files</li>
+                        <li>Listing directory contents</li>
+                        <li>File manipulation tasks</li>
+                    </ul>
+                </li>
+            </ul>
+            
+            <h4>2. Web Search</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Internet search capabilities</li>
+                <li><strong>Endpoint:</strong> <code>https://mcp.search-provider.com/sse</code></li>
+                <li><strong>Use Cases:</strong>
+                    <ul>
+                        <li>Finding current information online</li>
+                        <li>Researching topics not in knowledge base</li>
+                        <li>Verifying facts</li>
+                        <li>Getting latest updates</li>
+                    </ul>
+                </li>
+            </ul>
+            
+            <h4>3. Database</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Database query operations</li>
+                <li><strong>Endpoint:</strong> (Configurable)</li>
+                <li><strong>Use Cases:</strong>
+                    <ul>
+                        <li>Querying structured data</li>
+                        <li>Accessing external databases</li>
+                        <li>Data analysis tasks</li>
+                        <li>Integration with existing systems</li>
+                    </ul>
+                </li>
+            </ul>
+            
+            <h4>4. Markitdown</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Document conversion and processing</li>
+                <li><strong>Endpoint:</strong> <code>http://localhost:8001/sse</code></li>
+                <li><strong>Use Cases:</strong>
+                    <ul>
+                        <li>Converting documents to markdown</li>
+                        <li>Processing various file formats</li>
+                        <li>Extracting structured content</li>
+                    </ul>
+                </li>
+            </ul>
+            
+            <h2>Enabling MCP Tools</h2>
+            
+            <h3>Step-by-Step</h3>
+            <ol>
+                <li>Navigate to Settings (gear icon in sidebar)</li>
+                <li>Scroll to "MCP Tools" section</li>
+                <li>Toggle individual tools on/off using the switches</li>
+                <li>Tools are enabled/disabled immediately</li>
+            </ol>
+            
+            <h3>Configuration</h3>
+            <p>Each MCP tool requires:</p>
+            <ul>
+                <li><strong>Server Endpoint:</strong> URL where the MCP server is running</li>
+                <li><strong>Authentication:</strong> May require API keys or tokens</li>
+                <li><strong>Network Access:</strong> Backend must be able to reach the endpoint</li>
+            </ul>
+            
+            <h2>How MCP Works</h2>
+            
+            <h3>Architecture</h3>
+            <p>The MCP integration follows this flow:</p>
+            <ol>
+                <li>User enables MCP tools in Settings</li>
+                <li>Frontend sends configuration to backend</li>
+                <li>Backend connects to MCP servers</li>
+                <li>Agent receives available tools</li>
+                <li>Agent can call tools during conversations</li>
+                <li>Tool results are returned to the agent</li>
+                <li>Agent incorporates results into response</li>
+            </ol>
+            
+            <h3>Tool Execution</h3>
+            <p>When the agent needs to use an MCP tool:</p>
+            <ol>
+                <li>Agent identifies need for external data/action</li>
+                <li>Agent calls appropriate MCP tool</li>
+                <li>MCP server executes the operation</li>
+                <li>Results are returned to the agent</li>
+                <li>Agent uses results to generate response</li>
+            </ol>
+            
+            <h2>Security Considerations</h2>
+            
+            <h3>Access Control</h3>
+            <ul>
+                <li>MCP tools have access to configured resources</li>
+                <li>Filesystem tools can read/write files</li>
+                <li>Web search may access external APIs</li>
+                <li>Database tools can query databases</li>
+            </ul>
+            
+            <h3>Best Practices</h3>
+            <ul>
+                <li>Only enable tools you need</li>
+                <li>Use secure endpoints (HTTPS when possible)</li>
+                <li>Restrict filesystem access to safe directories</li>
+                <li>Monitor tool usage in logs</li>
+                <li>Use authentication for sensitive tools</li>
+            </ul>
+            
+            <h2>Setting Up MCP Servers</h2>
+            
+            <h3>Local MCP Servers</h3>
+            <p>For local development, you may need to run MCP servers:</p>
+            <ol>
+                <li>Install MCP server packages</li>
+                <li>Configure server endpoints</li>
+                <li>Start servers on specified ports</li>
+                <li>Update endpoint URLs in Settings</li>
+            </ol>
+            
+            <h3>Remote MCP Servers</h3>
+            <p>For production or shared servers:</p>
+            <ul>
+                <li>Ensure servers are accessible from backend</li>
+                <li>Configure authentication if required</li>
+                <li>Use secure connections (HTTPS)</li>
+                <li>Monitor server health and availability</li>
+            </ul>
+            
+            <h2>Use Cases</h2>
+            
+            <h3>Filesystem Tool</h3>
+            <p>Example scenarios:</p>
+            <ul>
+                <li>"Read the configuration file and summarize settings"</li>
+                <li>"Save this analysis to a file"</li>
+                <li>"List all Python files in the project directory"</li>
+            </ul>
+            
+            <h3>Web Search Tool</h3>
+            <p>Example scenarios:</p>
+            <ul>
+                <li>"Search for the latest version of library X"</li>
+                <li>"Find current best practices for Y"</li>
+                <li>"What's the current status of project Z?"</li>
+            </ul>
+            
+            <h3>Database Tool</h3>
+            <p>Example scenarios:</p>
+            <ul>
+                <li>"Query the user database for active accounts"</li>
+                <li>"Get sales data for last quarter"</li>
+                <li>"Find all records matching criteria X"</li>
+            </ul>
+            
+            <h2>Troubleshooting</h2>
+            
+            <h3>Tools Not Working</h3>
+            <ul>
+                <li>Verify MCP server is running</li>
+                <li>Check endpoint URL is correct</li>
+                <li>Review backend logs for connection errors</li>
+                <li>Test endpoint accessibility</li>
+            </ul>
+            
+            <h3>Connection Errors</h3>
+            <ul>
+                <li>Check network connectivity</li>
+                <li>Verify firewall settings</li>
+                <li>Check SSL/TLS certificates</li>
+                <li>Review authentication credentials</li>
+            </ul>
+            
+            <h3>Tool Execution Failures</h3>
+            <ul>
+                <li>Check tool permissions</li>
+                <li>Verify input parameters</li>
+                <li>Review server logs</li>
+                <li>Test tool manually if possible</li>
+            </ul>
+            
+            <h2>Future Enhancements</h2>
+            <p>Planned improvements for MCP integration:</p>
+            <ul>
+                <li>Custom MCP server configuration</li>
+                <li>Tool usage analytics</li>
+                <li>Permission management</li>
+                <li>Tool result caching</li>
+                <li>Visual tool execution tracking</li>
+            </ul>
+            
+            <h2>Related Documentation</h2>
+            <ul>
+                <li><a href="settings.html">Settings</a> - Configuration options</li>
+                <li><a href="features.html">Features</a> - Overall capabilities</li>
+                <li><a href="architecture.html">Architecture</a> - System design</li>
+                <li><a href="api-reference.html">API Reference</a> - Backend APIs</li>
+            </ul>
+            
+            <h2>External Resources</h2>
+            <ul>
+                <li><a href="https://modelcontextprotocol.io" target="_blank">MCP Official Documentation</a></li>
+                <li><a href="https://github.com/modelcontextprotocol" target="_blank">MCP GitHub</a></li>
+            </ul>
+        </main>
+    </div>
+    <script src="nav.js"></script>
+</body>
+</html>
+

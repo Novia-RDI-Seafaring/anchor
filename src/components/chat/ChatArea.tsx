@@ -24,33 +24,66 @@ const ChatAreaComponent: React.FC<ChatAreaProps> = ({ messages, isEmpty }) => {
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-6 scroll-smooth">
-      {messages.map((msg) => (
-        <div
-          key={msg.id}
-          className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-        >
-          {msg.role === 'assistant' && (
-            <div className="w-6 h-6 rounded-full bg-teal-600 dark:bg-teal-500 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm text-white">
-              <Bot size={14} />
-            </div>
-          )}
+      {messages.map((msg, index) => {
+        const isLast = index === messages.length - 1;
+        const isEmpty = !msg.content || msg.content.trim() === '';
 
-          <div className={`
-            relative px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm max-w-[90%]
-            ${msg.role === 'user'
-              ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 rounded-tr-sm'
-              : 'bg-white border border-neutral-200 text-neutral-800 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-100 rounded-tl-sm'}
-          `}>
-            <div className="whitespace-pre-wrap">{msg.content}</div>
+        // If it's empty and NOT the last message, hide it (it's a ghost message)
+        if (isEmpty && !isLast) {
+          return null;
+        }
+
+        // If it's empty, IS the last message, and is from assistant, show loading
+        if (isEmpty && isLast && msg.role === 'assistant') {
+          return (
+            <div key={msg.id} className="flex gap-3 justify-start animate-pulse">
+              <div className="w-6 h-6 rounded-full bg-teal-600 dark:bg-teal-500 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm text-white opacity-50">
+                <Bot size={14} />
+              </div>
+              <div className="bg-white border border-neutral-200 text-neutral-400 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-500 rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm shadow-sm">
+                <div className="flex gap-1 items-center h-5">
+                  <span className="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                  <span className="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                  <span className="w-1.5 h-1.5 bg-current rounded-full animate-bounce"></span>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        // If it's empty, IS the last message, but from user, we probably shouldn't show it either
+        if (isEmpty && isLast && msg.role === 'user') {
+          return null;
+        }
+
+        return (
+          <div
+            key={msg.id}
+            className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+          >
+            {msg.role === 'assistant' && (
+              <div className="w-6 h-6 rounded-full bg-teal-600 dark:bg-teal-500 flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm text-white">
+                <Bot size={14} />
+              </div>
+            )}
+
+            <div className={`
+              relative px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm max-w-[90%]
+              ${msg.role === 'user'
+                ? 'bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900 rounded-tr-sm'
+                : 'bg-white border border-neutral-200 text-neutral-800 dark:bg-neutral-800 dark:border-neutral-700 dark:text-neutral-100 rounded-tl-sm'}
+            `}>
+              <div className="whitespace-pre-wrap">{msg.content}</div>
+            </div>
+
+            {msg.role === 'user' && (
+              <div className="w-6 h-6 rounded-full bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <User size={14} className="text-neutral-500 dark:text-neutral-400" />
+              </div>
+            )}
           </div>
-
-          {msg.role === 'user' && (
-            <div className="w-6 h-6 rounded-full bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center flex-shrink-0 mt-0.5">
-              <User size={14} className="text-neutral-500 dark:text-neutral-400" />
-            </div>
-          )}
-        </div>
-      ))}
+        );
+      })}
       <div className="h-2" /> {/* Spacer at bottom */}
     </div>
   );

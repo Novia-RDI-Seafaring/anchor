@@ -13,7 +13,7 @@ interface AgInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 interface AgSelectProps {
-  options: { id: string; label: string; [key: string]: any }[];
+  options: { id: string; label: string;[key: string]: any }[];
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
@@ -30,15 +30,15 @@ interface AgToggleProps {
 
 // --- Components ---
 
-export const AgButton: React.FC<AgButtonProps> = ({ 
-  children, 
-  variant = 'primary', 
-  size = 'md', 
-  className = '', 
-  ...props 
-}) => {
-  const baseStyles = "inline-flex items-center justify-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:opacity-50 disabled:pointer-events-none";
-  
+export const AgButton: React.FC<AgButtonProps> = ({
+  children,
+  variant = 'primary',
+  size = 'md',
+  className = '',
+  ...props
+}) => { // remove justify-center from the baseStyles 
+  const baseStyles = "inline-flex items-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:opacity-50 disabled:pointer-events-none";
+
   const variants = {
     primary: "bg-black text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200 shadow-sm",
     secondary: "bg-neutral-100 text-neutral-900 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700",
@@ -54,8 +54,8 @@ export const AgButton: React.FC<AgButtonProps> = ({
   };
 
   return (
-    <button 
-      className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${className}`} 
+    <button
+      className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${className}`}
       {...props}
     >
       {children}
@@ -76,11 +76,11 @@ export const AgInput: React.FC<AgInputProps> = ({ label, error, className = '', 
   );
 };
 
-export const AgSelect: React.FC<AgSelectProps> = ({ 
-  options, 
-  value, 
-  onChange, 
-  placeholder = "Select...", 
+export const AgSelect: React.FC<AgSelectProps> = ({
+  options,
+  value,
+  onChange,
+  placeholder = "Select...",
   icon,
   align = 'left',
   className = ''
@@ -117,7 +117,7 @@ export const AgSelect: React.FC<AgSelectProps> = ({
       </button>
 
       {isOpen && (
-        <div 
+        <div
           className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} z-50 mt-2 w-56 origin-top-right rounded-md bg-white dark:bg-neutral-900 shadow-lg ring-1 ring-black ring-opacity-5 dark:ring-neutral-800 focus:outline-none`}
         >
           <div className="py-1">
@@ -128,11 +128,10 @@ export const AgSelect: React.FC<AgSelectProps> = ({
                   onChange(option.id);
                   setIsOpen(false);
                 }}
-                className={`group flex w-full items-center justify-between px-4 py-2 text-sm text-left ${
-                  option.id === value 
-                    ? 'bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white font-medium' 
-                    : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800'
-                }`}
+                className={`group flex w-full items-center justify-between px-4 py-2 text-sm text-left ${option.id === value
+                  ? 'bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white font-medium'
+                  : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800'
+                  }`}
               >
                 <span>{option.label}</span>
                 {option.id === value && <Check className="h-4 w-4 text-brand-600 dark:text-brand-400" />}
@@ -146,7 +145,7 @@ export const AgSelect: React.FC<AgSelectProps> = ({
 };
 
 export const AgToggle: React.FC<AgToggleProps> = ({ checked, onChange, label }) => (
-  <button 
+  <button
     onClick={() => onChange(!checked)}
     className="flex items-center justify-between w-full group focus:outline-none"
     role="switch"
@@ -173,7 +172,7 @@ export const AgBadge: React.FC<{ children: React.ReactNode; variant?: 'default' 
     error: "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-100 dark:border-red-900/50",
     success: "bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-100 dark:border-green-900/50"
   };
-  
+
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[variant]}`}>
       {children}
