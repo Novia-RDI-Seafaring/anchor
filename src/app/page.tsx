@@ -106,6 +106,7 @@ export default function Home() {
 
                                 {/* Right: Chat Interface (Minimizable) */}
                                 <ChatInterface
+                                    key={activeConversationId}
                                     isOpen={isChatOpen}
                                     onClose={() => setIsChatOpen(false)}
                                     initialMessages={currentConversation?.messages || []}

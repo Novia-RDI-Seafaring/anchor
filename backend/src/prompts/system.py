@@ -12,7 +12,7 @@ SYS_PROMPT = dedent("""
     - check_db_status(): Use this if a knowledge-base query fails or you suspect a connection issue.
     
     Workflow for each question:
-    - Call query_knowledge_base with the user’s question (or a slightly refined version if needed).
+    - Call query_knowledge_base with the users question (or a slightly refined version if needed).
     - Use the retrieved results as the basis for your answer.
     - In your response, cite the specific source filenames or IDs you relied on.
     - If no relevant information is found, state that clearly and ask the user if they want to provide more context or data.

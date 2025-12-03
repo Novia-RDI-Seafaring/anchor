@@ -28,15 +28,41 @@ export const MainContent: React.FC = () => {
     const currentConv = conversations.find(c => c.id === activeConversationId);
     if (!currentConv) return;
 
+    // Only update if messages actually changed (avoid unnecessary updates)
+    const currentMessages = currentConv.messages || [];
+    if (currentMessages.length === visibleMessages.length) {
+      // Simple check - could be improved with deep equality
+      return;
+    }
+
+    const updates: any = {
+      messages: visibleMessages.map(msg => {
+        // Serialize messages properly for storage
+        if (msg.isTextMessage()) {
+          const textMsg = msg as TextMessage;
+          return {
+            id: msg.id,
+            role: textMsg.role,
+            content: textMsg.content,
+            type: 'text'
+          };
+        }
+        // For other message types, store as-is (they should be serializable)
+        return msg;
+      }),
+      lastMessageAt: 'Just now',
+      preview: `${visibleMessages.length} messages · Just now`
+    };
+
     // Check if we need to update (simple check: length changed or last message different)
     // For now, just update on every change to visibleMessages. 
     // Optimization: could check deep equality or length.
 
-    const updates: any = {
-      messages: visibleMessages,
-      lastMessageAt: 'Just now',
-      preview: `${visibleMessages.length} messages · Just now`
-    };
+    //const updates: any = {
+    //  messages: visibleMessages,
+    //  lastMessageAt: 'Just now',
+    //  preview: `${visibleMessages.length} messages · Just now`
+    //};
 
     // Auto-generate title if it's the first user message and title is default
     if (currentConv.title === 'New Conversation' && visibleMessages.length > 0) {
@@ -49,7 +75,7 @@ export const MainContent: React.FC = () => {
 
     updateConversation(activeConversationId, updates);
 
-  }, [visibleMessages, activeConversationId, updateConversation]);
+  }, [visibleMessages, activeConversationId, updateConversation, conversations]);
   // Note: 'conversations' is not in dependency array to avoid loop, but we access it inside.
   // Ideally we should use a ref or pass a callback to updateConversation that checks the current state.
   // But since updateConversation updates state, it will trigger re-render.

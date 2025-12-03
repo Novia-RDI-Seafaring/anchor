@@ -1,9 +1,10 @@
 import React from 'react';
 import { ChatArea } from '@/components/chat/ChatArea';
 import { InputArea } from '@/components/chat/InputArea';
-import { Message, Role, TextMessage } from "@copilotkit/runtime-client-gql";
 import { useCopilotChat } from "@copilotkit/react-core";
+import { TextMessage, Role } from "@copilotkit/runtime-client-gql";
 import { X } from 'lucide-react';
+
 
 interface ChatInterfaceProps {
     isOpen: boolean;
@@ -17,31 +18,34 @@ export function ChatInterface({ isOpen, onClose, initialMessages }: ChatInterfac
         return initialMessages.map(msg => {
             if (msg.role) return msg;
             // Fix for messages with missing role (e.g. deserialized ActionExecutionMessage)
-            return { ...msg, role: Role.Assistant };
+            return { ...msg, role: 'assistant' };
         });
     }, [initialMessages]);
 
     const { visibleMessages, appendMessage } = useCopilotChat({
         initialMessages: sanitizedMessages
-    });
+    }) as any;
 
     // Convert CopilotKit messages to UI messages
-    const messages = visibleMessages.map((msg, index) => {
-        const isTextMsg = msg.isTextMessage();
-        const textMsg = isTextMsg ? (msg as TextMessage) : null;
-        const isUser = textMsg?.role === Role.User;
-        const content = isTextMsg ? (msg as TextMessage).content : '';
+    const uiMessages = visibleMessages.map((msg: any, index: number) => {
+        const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
 
         return {
             id: msg.id || index.toString(),
-            role: (isUser ? 'user' : 'assistant') as 'user' | 'assistant',
-            content: content,
+            role: (msg.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+            content: content || '',
             timestamp: new Date()
         };
     });
 
     const handleSendMessage = (text: string) => {
-        appendMessage(new TextMessage({ role: Role.User, content: text }));
+        return appendMessage(
+            new TextMessage({
+                id: crypto.randomUUID(),
+                role: Role.User,
+                content: text,
+            })
+        );
     };
 
     if (!isOpen) return null;
@@ -61,8 +65,8 @@ export function ChatInterface({ isOpen, onClose, initialMessages }: ChatInterfac
             </div>
 
             <ChatArea
-                messages={messages}
-                isEmpty={messages.length === 0}
+                messages={uiMessages}
+                isEmpty={uiMessages.length === 0}
             />
             <InputArea onSendMessage={handleSendMessage} />
         </div>
