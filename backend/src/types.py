@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import uuid
 import base64
+from enum import Enum
 from typing import List, Optional, Dict, Literal, Any, Type, TypeVar, Union, Callable, Generic, Tuple, get_type_hints, get_origin, get_args
 from functools import wraps
 from inspect import signature, Parameter, Signature
@@ -25,6 +26,30 @@ from pydantic_ai.providers import Provider
 from openai import AsyncOpenAI
 
 # =====
+# UI Component Types
+# =====
+class UIComponentType(str, Enum):
+  """Types of UI components the agent can request to render."""
+  LIST = "list"
+  TABLE = "table"
+  IMAGE = "image"
+  PAGE_PREVIEW = "page_preview"
+  MARKDOWN_TABLE = "markdown_table"
+
+class UIComponentData(BaseModel):
+  """Data for a UI component to be rendered by the frontend."""
+  component_type: UIComponentType = Field(
+    description='Type of UI component to render'
+  )
+  data: Dict[str, Any] = Field(
+    description='Component-specific data payload'
+  )
+  metadata: Optional[Dict[str, Any]] = Field(
+    default=None,
+    description='Optional metadata about the component'
+  )
+
+# =====
 # State
 # =====
 class RAGState(BaseModel):
@@ -41,10 +66,19 @@ class RAGState(BaseModel):
     default='disconnected',
     description='Status of the vector database connection',
   )
+  # UI rendering state
+  active_ui_components: list[UIComponentData] = Field(
+    default_factory=list,
+    description='Active UI components to render with their data'
+  )
+  render_mode: str = Field(
+    default='auto',
+    description='How the agent decided to render: auto, list, table, etc.'
+  )
 
 __all__ = [
     # modules and global variables
-    'os', 'uuid', 'base64',
+    'os', 'uuid', 'base64', 'Enum',
     # typing
     'List', 'Optional', 'Dict', 'Literal', 'Any', 'Type', 'TypeVar', 'Union', 'Callable', 'Generic', 'Tuple', 
     'get_type_hints', 'get_origin', 'get_args',
@@ -64,6 +98,9 @@ __all__ = [
     
     # openai
     'AsyncOpenAI',
+    
+    # UI Components
+    'UIComponentType', 'UIComponentData',
     
     # State
     'RAGState',

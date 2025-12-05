@@ -16,7 +16,7 @@ load_dotenv()
 from src.logger import log_rag_query, log_agent_tool_call, log_error
 
 # Import tools
-from src.tools.rag_tools import query_knowledge_base, check_db_status, add_to_conversation
+from src.tools.rag_tools import query_knowledge_base, check_db_status, add_to_conversation, render_ui_component
 
 # =====
 # Agent
@@ -31,6 +31,7 @@ agent = Agent(
 agent.tool(query_knowledge_base)
 agent.tool(check_db_status)
 agent.tool(add_to_conversation)
+agent.tool(render_ui_component)
 
 # Export state for type compatibility with main.py
 AppState = RAGState

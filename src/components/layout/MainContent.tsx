@@ -2,8 +2,9 @@ import React, { useMemo } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { AgCard, AgButton, AgBadge } from '../ui/AgComponents';
 import { BarChart3, Table, Image as ImageIcon, FileText, Download, MoreHorizontal, Share2, Database, ExternalLink } from 'lucide-react';
-import { useCopilotChat } from "@copilotkit/react-core";
+import { useCopilotChat, useCoAgent } from "@copilotkit/react-core";
 import { Message, TextMessage } from "@copilotkit/runtime-client-gql";
+import { ComponentRenderer } from '../kb/ComponentRenderer';
 
 interface Chunk {
   content: string;
@@ -20,6 +21,11 @@ interface ToolResult {
 export const MainContent: React.FC = () => {
   const { visibleMessages } = useCopilotChat();
   const { activeConversationId, updateConversation, conversations } = useApp();
+  const { state } = useCoAgent({
+    name: "my_agent",
+    initialState: { active_ui_components: [], render_mode: "auto" }
+  });
+  const uiComponents = state?.active_ui_components || [];
 
   // Persist messages and update title
   React.useEffect(() => {
@@ -222,6 +228,18 @@ export const MainContent: React.FC = () => {
             </div>
           </AgCard>
         </div>
+
+        {/* Knowledge Base Results - UI Components */}
+        {uiComponents.length > 0 && (
+          <div className="space-y-4 mt-6">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-sm font-semibold text-neutral-900 dark:text-white uppercase tracking-wider">Knowledge Base Results</h2>
+            </div>
+            {uiComponents.map((component: any, idx: number) => (
+              <ComponentRenderer key={idx} component={component} />
+            ))}
+          </div>
+        )}
 
         {/* Retrieved Context Chunks */}
         {ragData?.chunks && ragData.chunks.length > 0 && (

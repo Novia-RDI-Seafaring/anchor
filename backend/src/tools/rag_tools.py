@@ -1,4 +1,5 @@
 import time
+from typing import Optional
 from src.types import (
     os, BaseModel, Field, Agent, RunContext, 
     StateDeps, EventType, StateSnapshotEvent, RAGState
@@ -29,6 +30,7 @@ async def query_knowledge_base(
   try:
     # Import here to avoid circular imports
     from src.document_service import get_document_service
+    from pydantic_ai import ToolReturn
     import main
     
     # Get active document filter
@@ -50,17 +52,23 @@ async def query_knowledge_base(
     
     sources = list(set(r["filename"] for r in results))
     
-    # Update context state
+    # Update state with sources
     ctx.deps.state.current_sources = sources
     
     # Log query performance
     duration_ms = (time.time() - start_time) * 1000
     log_rag_query(query, top_k, len(chunks), duration_ms)
     
-    return {
-      "chunks": chunks,
-      "sources": sources
-    }
+    # Return with state update
+    return ToolReturn(
+        return_value={"chunks": chunks, "sources": sources},
+        metadata=[
+            StateSnapshotEvent(
+                type=EventType.STATE_SNAPSHOT,
+                snapshot=ctx.deps.state,
+            )
+        ]
+    )
     
   except Exception as e:
     log_error("Error in query_knowledge_base", e, {"query": query, "top_k": top_k})
@@ -100,3 +108,66 @@ async def add_to_conversation(
     type=EventType.STATE_SNAPSHOT,
     snapshot=ctx.deps.state,
   )
+
+
+async def render_ui_component(
+  ctx: RunContext[StateDeps[RAGState]],
+  component_type: str,
+  data: dict,
+  metadata: Optional[dict] = None
+) -> StateSnapshotEvent:
+  """
+  Render a UI component to display information from the knowledge base.
+  The agent should call this tool after processing query results to display
+  the information in an appropriate format (list, table, image, or page preview).
+  
+  Args:
+    component_type: Type of component to render - one of: 'list', 'table', 'image', 'page_preview', 'markdown_table'
+    data: Component-specific data payload (structure depends on component_type)
+    metadata: Optional metadata about the component
+    
+  Returns:
+    StateSnapshotEvent with updated state
+  """
+  from src.types import UIComponentData, UIComponentType
+  
+  log_agent_tool_call("render_ui_component", {
+    "component_type": component_type,
+    "has_data": bool(data),
+    "has_metadata": bool(metadata)
+  })
+  
+  try:
+    # Validate and convert component_type
+    try:
+      ui_component_type = UIComponentType(component_type)
+    except ValueError:
+      # Invalid component type, default to list
+      ui_component_type = UIComponentType.LIST
+    
+    # Create UI component data
+    ui_component = UIComponentData(
+      component_type=ui_component_type,
+      data=data,
+      metadata=metadata or {}
+    )
+    
+    # Update state with new UI component (replace existing ones)
+    ctx.deps.state.active_ui_components = [ui_component]
+    ctx.deps.state.render_mode = component_type
+    
+    return StateSnapshotEvent(
+      type=EventType.STATE_SNAPSHOT,
+      snapshot=ctx.deps.state,
+    )
+    
+  except Exception as e:
+    log_error("Error in render_ui_component", e, {
+      "component_type": component_type,
+      "data_keys": list(data.keys()) if isinstance(data, dict) else "not_dict"
+    })
+    # Return state snapshot even on error
+    return StateSnapshotEvent(
+      type=EventType.STATE_SNAPSHOT,
+      snapshot=ctx.deps.state,
+    )
