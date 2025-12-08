@@ -15,6 +15,7 @@ from .vector_store import get_vector_store
 from .embeddings import get_embeddings_service
 from .docling_processing.docling_converter import DoclingConverter
 from .docling_processing.formatters import MarkdownFormatter
+from .page_image_service import get_page_image_service
 
 
 class DocumentService:
@@ -210,11 +211,24 @@ class DocumentService:
         
         print(f"DocumentService: Stored {chunk_count} chunks for {doc['filename']}")
         
+        # Generate and store page images for PDF files
+        page_count = 0
+        if file_path.lower().endswith('.pdf'):
+            try:
+                print(f"DocumentService: Generating page images for {doc['filename']}...")
+                page_image_service = get_page_image_service()
+                page_images = page_image_service.generate_page_images(file_path)
+                page_count = await vector_store.add_page_images(document_id, page_images)
+                print(f"DocumentService: Stored {page_count} page images")
+            except Exception as e:
+                print(f"DocumentService: Failed to generate page images: {e}")
+        
         return {
             "document_id": document_id,
             "filename": doc["filename"],
             "status": "processed",
-            "chunks": chunk_count
+            "chunks": chunk_count,
+            "pages": page_count
         }
     
     async def list_documents(self) -> List[Dict[str, Any]]:

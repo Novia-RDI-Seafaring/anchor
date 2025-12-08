@@ -69,6 +69,11 @@ htmlcov/
 # User uploads (documents, PDFs)
 uploads/
 !uploads/.gitkeep
+test_chunking/
+
+# Docling processing artifacts (if any temp files created)
+*.docling-tmp
+docling_cache/
 
 # TypeScript
 *.tsbuildinfo

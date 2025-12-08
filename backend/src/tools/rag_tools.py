@@ -44,8 +44,10 @@ async def query_knowledge_base(
     chunks = []
     for r in results:
         chunks.append({
+            "id": r.get("id"),  # Include chunk ID for page image queries
             "content": r["content"],
             "filename": r["filename"],
+            "document_id": r.get("document_id"),  # Include document_id for page preview
             "similarity": r.get("similarity", 0.0),
             "metadata": r.get("metadata", {})
         })
@@ -144,6 +146,18 @@ async def render_ui_component(
     except ValueError:
       # Invalid component type, default to list
       ui_component_type = UIComponentType.LIST
+    
+    # For page_preview, auto-inject document_id if not provided
+    if ui_component_type == UIComponentType.PAGE_PREVIEW:
+      import main
+      if not data.get("document_id") and main._active_document_id:
+        data = dict(data)  # Make a copy to avoid mutating original
+        data["document_id"] = main._active_document_id
+        print(f"render_ui_component: Auto-injected document_id: {main._active_document_id}")
+      
+      # Also try to get page_numbers from metadata if not provided
+      if not data.get("page_numbers") and data.get("page"):
+        data["page_numbers"] = [data["page"]]
     
     # Create UI component data
     ui_component = UIComponentData(

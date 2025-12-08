@@ -6,6 +6,8 @@ from typing import Optional
 from src.agent import agent, StateDeps, AppState
 from src.config import get_settings
 from src.document_service import get_document_service
+from src.vector_store import get_vector_store
+from typing import List
 
 
 # Create main FastAPI app
@@ -130,6 +132,47 @@ async def get_stats():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ===== Page Images API =====
+
+@app.get("/api/documents/{document_id}/pages/{page_number}/image")
+async def get_page_image(document_id: str, page_number: int):
+    """Get a page image as Base64."""
+    try:
+        vector_store = await get_vector_store()
+        image_data = await vector_store.get_page_image(document_id, page_number)
+        if not image_data:
+            raise HTTPException(status_code=404, detail="Page image not found")
+        return {"success": True, **image_data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class PageImagesRequest(BaseModel):
+    page_numbers: List[int]
+
+
+@app.post("/api/documents/{document_id}/pages/images")
+async def get_page_images(document_id: str, request: PageImagesRequest):
+    """Get multiple page images as Base64."""
+    try:
+        vector_store = await get_vector_store()
+        images = await vector_store.get_page_images_for_pages(document_id, request.page_numbers)
+        return {"success": True, "images": images}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/chunks/{chunk_id}/pages/images")
+async def get_page_images_by_chunk(chunk_id: int):
+    """Get page images for a specific chunk by chunk ID."""
+    try:
+        vector_store = await get_vector_store()
+        images = await vector_store.get_page_images_by_chunk_id(chunk_id)
+        return {"success": True, "images": images, "count": len(images)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ===== Active Document Filter =====
 

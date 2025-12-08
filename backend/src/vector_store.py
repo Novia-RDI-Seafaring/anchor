@@ -97,6 +97,20 @@ class VectorStore:
                 # Index creation may fail on empty table, that's OK
                 pass
             
+            # Page images table for storing rendered PDF page images
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS page_images (
+                    id SERIAL PRIMARY KEY,
+                    document_id TEXT NOT NULL,
+                    page_number INTEGER NOT NULL,
+                    image_base64 TEXT NOT NULL,
+                    width INTEGER,
+                    height INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(document_id, page_number)
+                );
+            """)
+            
             print("VectorStore: Tables initialized")
     
     async def add_document(
@@ -187,6 +201,7 @@ class VectorStore:
                 # Filter by specific document
                 rows = await conn.fetch("""
                     SELECT 
+                        c.id,
                         c.content,
                         c.metadata,
                         c.document_id,
@@ -203,6 +218,7 @@ class VectorStore:
                 # Search all documents
                 rows = await conn.fetch("""
                     SELECT 
+                        c.id,
                         c.content,
                         c.metadata,
                         c.document_id,
@@ -271,6 +287,161 @@ class VectorStore:
                 "total_chunks": chunk_count,
                 "status": "connected"
             }
+    
+    async def add_page_images(
+        self,
+        document_id: str,
+        page_images: List[Dict[str, Any]]
+    ) -> int:
+        """
+        Store page images for a document.
+        
+        Args:
+            document_id: The document ID
+            page_images: List of dicts with page_number, image_base64, width, height
+            
+        Returns:
+            Number of pages stored
+        """
+        async with self.pool.acquire() as conn:
+            # Delete existing page images for this document
+            await conn.execute(
+                "DELETE FROM page_images WHERE document_id = $1",
+                document_id
+            )
+            
+            # Insert new page images
+            for img in page_images:
+                await conn.execute("""
+                    INSERT INTO page_images (document_id, page_number, image_base64, width, height)
+                    VALUES ($1, $2, $3, $4, $5)
+                """, document_id, img['page_number'], img['image_base64'], 
+                    img.get('width'), img.get('height'))
+            
+            # Update document page count
+            await conn.execute("""
+                UPDATE documents 
+                SET page_count = $2, updated_at = CURRENT_TIMESTAMP
+                WHERE document_id = $1
+            """, document_id, len(page_images))
+            
+            return len(page_images)
+    
+    async def get_page_image(
+        self,
+        document_id: str,
+        page_number: int
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get a single page image.
+        
+        Args:
+            document_id: The document ID
+            page_number: 1-indexed page number
+            
+        Returns:
+            Dict with image_base64, width, height or None if not found
+        """
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT image_base64, width, height
+                FROM page_images
+                WHERE document_id = $1 AND page_number = $2
+            """, document_id, page_number)
+            
+            if row:
+                return {
+                    "image_base64": row['image_base64'],
+                    "width": row['width'],
+                    "height": row['height'],
+                    "page_number": page_number
+                }
+            return None
+    
+    async def get_page_images_for_pages(
+        self,
+        document_id: str,
+        page_numbers: List[int]
+    ) -> List[Dict[str, Any]]:
+        """
+        Get multiple page images.
+        
+        Args:
+            document_id: The document ID
+            page_numbers: List of 1-indexed page numbers
+            
+        Returns:
+            List of dicts with page_number, image_base64, width, height
+        """
+        if not page_numbers:
+            return []
+        
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT page_number, image_base64, width, height
+                FROM page_images
+                WHERE document_id = $1 AND page_number = ANY($2)
+                ORDER BY page_number
+            """, document_id, page_numbers)
+            
+            return [
+                {
+                    "page_number": row['page_number'],
+                    "image_base64": row['image_base64'],
+                    "width": row['width'],
+                    "height": row['height']
+                }
+                for row in rows
+            ]
+    
+    async def get_page_images_by_chunk_id(self, chunk_id: int) -> List[Dict[str, Any]]:
+        """
+        Get page images for a specific chunk by chunk ID.
+        
+        Retrieves the chunk's document_id and page_numbers from metadata,
+        then fetches the corresponding page images.
+        
+        Args:
+            chunk_id: The chunk ID (primary key from chunks table)
+            
+        Returns:
+            List of dicts with page_number, image_base64, width, height
+        """
+        async with self.pool.acquire() as conn:
+            # First, get the chunk's document_id and page_numbers from metadata
+            chunk_row = await conn.fetchrow("""
+                SELECT document_id, metadata
+                FROM chunks
+                WHERE id = $1
+            """, chunk_id)
+            
+            if not chunk_row:
+                return []
+            
+            document_id = chunk_row['document_id']
+            metadata = chunk_row['metadata'] or {}
+            page_numbers = metadata.get('page_numbers', [])
+            
+            if not page_numbers:
+                return []
+            
+            # Now get the page images for those pages
+            rows = await conn.fetch("""
+                SELECT page_number, image_base64, width, height
+                FROM page_images
+                WHERE document_id = $1 AND page_number = ANY($2)
+                ORDER BY page_number
+            """, document_id, page_numbers)
+            
+            return [
+                {
+                    "page_number": row['page_number'],
+                    "image_base64": row['image_base64'],
+                    "width": row['width'],
+                    "height": row['height']
+                }
+                for row in rows
+            ]
     
     async def close(self):
         """Close the connection pool."""

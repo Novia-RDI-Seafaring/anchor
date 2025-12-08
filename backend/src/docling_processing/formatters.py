@@ -17,19 +17,37 @@ class HTMLFormatter:
         return conversion_result.document.export_to_html()
 
     def create_chunks(self, conversion_result, chunk_size: int) -> List[Dict]:
-        """Create chunks using Docling's HybridChunker."""
+        """Create chunks using Docling's HybridChunker with page provenance."""
         chunker = HybridChunker(max_tokens=chunk_size)
         chunk_iter = chunker.chunk(dl_doc=conversion_result.document)
         
         chunks = []
         for chunk in chunk_iter:
             enriched_text = chunker.contextualize(chunk=chunk)
+            
+            # Extract page numbers and bounding boxes from chunk provenance
+            page_numbers = set()
+            bboxes = []
+            if hasattr(chunk, 'meta') and hasattr(chunk.meta, 'doc_items'):
+                for doc_item in chunk.meta.doc_items:
+                    if hasattr(doc_item, 'prov') and doc_item.prov:
+                        for prov in doc_item.prov:
+                            if hasattr(prov, 'page_no'):
+                                page_numbers.add(prov.page_no)
+                            if hasattr(prov, 'bbox'):
+                                bboxes.append({
+                                    'page_no': prov.page_no if hasattr(prov, 'page_no') else None,
+                                    'bbox': list(prov.bbox.as_tuple()) if hasattr(prov.bbox, 'as_tuple') else None
+                                })
+            
             chunks.append({
                 "content": enriched_text,
                 "mime_type": "text/html",
                 "metadata": {
                     "chunk_type": "hybrid_chunk",
                     "content_length": len(enriched_text),
+                    "page_numbers": sorted(page_numbers) if page_numbers else [],
+                    "bboxes": bboxes,
                 }
             })
         return chunks
@@ -68,19 +86,37 @@ class MarkdownFormatter:
         return conversion_result.document.export_to_markdown()
 
     def create_chunks(self, conversion_result, chunk_size: int) -> List[Dict]:
-        """Create chunks using Docling's HybridChunker."""
+        """Create chunks using Docling's HybridChunker with page provenance."""
         chunker = HybridChunker(max_tokens=chunk_size)
         chunk_iter = chunker.chunk(dl_doc=conversion_result.document)
         
         chunks = []
         for chunk in chunk_iter:
             enriched_text = chunker.contextualize(chunk=chunk)
+            
+            # Extract page numbers and bounding boxes from chunk provenance
+            page_numbers = set()
+            bboxes = []
+            if hasattr(chunk, 'meta') and hasattr(chunk.meta, 'doc_items'):
+                for doc_item in chunk.meta.doc_items:
+                    if hasattr(doc_item, 'prov') and doc_item.prov:
+                        for prov in doc_item.prov:
+                            if hasattr(prov, 'page_no'):
+                                page_numbers.add(prov.page_no)
+                            if hasattr(prov, 'bbox'):
+                                bboxes.append({
+                                    'page_no': prov.page_no if hasattr(prov, 'page_no') else None,
+                                    'bbox': list(prov.bbox.as_tuple()) if hasattr(prov.bbox, 'as_tuple') else None
+                                })
+            
             chunks.append({
                 "content": enriched_text,
                 "mime_type": "text/plain",
                 "metadata": {
                     "chunk_type": "hybrid_chunk",
                     "content_length": len(enriched_text),
+                    "page_numbers": sorted(page_numbers) if page_numbers else [],
+                    "bboxes": bboxes,
                 }
             })
         return chunks

@@ -15,6 +15,8 @@ interface ComponentRendererProps {
 }
 
 export const ComponentRenderer: React.FC<ComponentRendererProps> = ({ component }) => {
+    console.log("ComponentRenderer received:", component.component_type, component.data);  // Add this
+    // ...
     switch (component.component_type) {
         case 'list':
             return <ListDisplay data={component.data} />;

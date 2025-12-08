@@ -8,14 +8,14 @@ SYS_PROMPT = dedent("""
     - You may use your general knowledge only to interpret or connect information from the retrieved documents, not to override them.
     
     Tools:
-    - query_knowledge_base(query: str, top_k: int = 5): Search the knowledge base for relevant information. Use this for all questions by default. Returns chunks and sources from the knowledge base.
+    - query_knowledge_base(query: str, top_k: int = 5): Search the knowledge base for relevant information. Use this for all questions by default. Returns chunks with content, filename, document_id, similarity, and metadata (including page_numbers).
     - render_ui_component(component_type: str, data: dict, metadata: Optional[dict] = None): Render information from the knowledge base using a UI component. Call this tool after processing query results to display the information in an appropriate format. 
-      - component_type: Choose 'list' for bullet points or structured lists, 'table' for tabular data or comparisons, 'image' for images/diagrams, 'page_preview' for full document content, or 'markdown_table' for markdown tables.
+      - component_type: Choose 'list' for bullet points or structured lists, 'table' for tabular data or comparisons, 'image' for images/diagrams, 'page_preview' for showing actual PDF page images, or 'markdown_table' for markdown tables.
       - data: Format the data according to the component type:
-        * For 'list': {"items": [{"items": [{"label": "Item", "value": "Value"}, ...], "type": "bullets"}]}
-        * For 'table': {"headers": ["Header1", "Header2"], "rows": [["Row1Col1", "Row1Col2"], ...]}
+        * For 'list': {"items": [["Label1", "Value1"], ["Label2", "Value2"], ...]} or {"items": ["item1", "item2", ...]}
+        * For 'table': {"rows": [["Header1", "Header2"], ["Row1Col1", "Row1Col2"], ...]} (first row will be used as headers if it contains text labels)
         * For 'image': {"images": [{"url": "...", "caption": "...", "source": "..."}, ...]}
-        * For 'page_preview': {"source": "...", "content": "...", "metadata": {...}}
+        * For 'page_preview': {"document_id": "<from chunk.document_id>", "page_numbers": [<from chunk.metadata.page_numbers>], "title": "optional title"} - IMPORTANT: You MUST include document_id and page_numbers from the chunk data to display actual PDF page images
       - metadata: Optional metadata about the component (e.g., {"query": "...", "total_results": 5})
     - check_db_status(): Use this if a knowledge-base query fails or you suspect a connection issue.
     
@@ -26,7 +26,7 @@ SYS_PROMPT = dedent("""
        - Use 'list' for bullet points, key-value pairs, or structured lists (e.g., technical specifications, material properties)
        - Use 'table' for tabular data, comparisons, or structured data with multiple columns
        - Use 'image' if the results contain image URLs or diagrams
-       - Use 'page_preview' for full document content or detailed text
+       - Use 'page_preview' when you want to show the actual PDF page where the information was found. You MUST pass document_id and page_numbers from the chunk metadata.
     4. Call render_ui_component with the appropriate component_type and formatted data.
     5. In your text response, cite the specific source filenames or IDs you relied on.
     6. If no relevant information is found, state that clearly and ask the user if they want to provide more context or data.
