@@ -55,8 +55,9 @@ async def query_knowledge_base(
     
     sources = list(set(r["filename"] for r in results))
     
-    # Update state with sources
+    # Update state with sources and chunks
     ctx.deps.state.current_sources = sources
+    ctx.deps.state.last_chunks = chunks
     
     # Log query performance
     duration_ms = (time.time() - start_time) * 1000
@@ -94,9 +95,14 @@ async def check_db_status(ctx: RunContext[StateDeps[RAGState]]) -> StateSnapshot
     # TODO: Implement actual health check
     ctx.deps.state.vector_db_status = "connected"  # Placeholder
     
-    return StateSnapshotEvent(
-      type=EventType.STATE_SNAPSHOT,
-      snapshot=ctx.deps.state,
+    return ToolReturn(
+      return_value={"status": "connected"},
+      metadata=[
+        StateSnapshotEvent(
+          type=EventType.STATE_SNAPSHOT,
+          snapshot=ctx.deps.state,
+        )
+      ]
     )
   except Exception as e:
     log_error("Error in check_db_status", e)
@@ -115,9 +121,14 @@ async def add_to_conversation(
     "content": content
   })
   
-  return StateSnapshotEvent(
-    type=EventType.STATE_SNAPSHOT,
-    snapshot=ctx.deps.state,
+  return ToolReturn(
+    return_value={"success": True},
+    metadata=[
+      StateSnapshotEvent(
+        type=EventType.STATE_SNAPSHOT,
+        snapshot=ctx.deps.state,
+      )
+    ]
   )
 
 
@@ -134,7 +145,7 @@ async def render_ui_component(
   
   Args:
     component_type: Type of component to render - one of: 'list', 'table', 'image', 'page_preview', 'markdown_table'
-    data: Component-specific data payload (structure depends on component_type)
+    data: Component-specific data payload. For 'page_preview', it may include 'bboxes' list.
     metadata: Optional metadata about the component
     
   Returns:
@@ -166,8 +177,28 @@ async def render_ui_component(
         print(f"render_ui_component: Auto-injected document_id: {active_doc_id}")
       
       # Also try to get page_numbers from metadata if not provided
-      if not data.get("page_numbers") and data.get("page"):
-        data["page_numbers"] = [data["page"]]
+      # Also try to get page_numbers from metadata if not provided
+      if not data.get("page_numbers"):
+        if data.get("page"):
+            data["page_numbers"] = [data["page"]]
+        elif data.get("page_number"):
+            data["page_numbers"] = [data["page_number"]]
+        # Fallback: Try to infer page_numbers from last_chunks if document_id matches
+        elif ctx.deps.state.last_chunks and data.get("document_id"):
+             target_doc_id = data.get("document_id")
+             inferred_pages = set()
+             for chunk in ctx.deps.state.last_chunks:
+                 if chunk.get("document_id") == target_doc_id:
+                     # Check page_numbers list in chunk
+                     if chunk.get("page_numbers"):
+                         inferred_pages.update(chunk["page_numbers"])
+                     # Check metadata
+                     elif chunk.get("metadata", {}).get("page_no"):
+                          inferred_pages.add(chunk["metadata"]["page_no"])
+             
+             if inferred_pages:
+                 data["page_numbers"] = list(inferred_pages)
+                 print(f"render_ui_component: Inferred page_numbers from chunks: {data['page_numbers']}")
         
       # Validation: document_id is mandatory for page_preview
       if not data.get("document_id"):
@@ -175,6 +206,57 @@ async def render_ui_component(
           "For 'page_preview' component, you MUST provide 'document_id'. "
           "Extract specific 'document_id' from the relevant chunk in the query results."
         )
+      
+      # Auto-inject bboxes if missing, using last_chunks
+      if not data.get("bboxes") and ctx.deps.state.last_chunks:
+         print(f"render_ui_component: Attempting to inject bboxes for doc {data.get('document_id')}")
+         injected_bboxes = []
+         target_doc_id = data.get("document_id")
+         target_pages = data.get("page_numbers", [])
+         
+         # Strategy: For each target page, find the FIRST (highest ranking) chunk that provides bboxes.
+         # This avoids cluttering the view with bboxes from less relevant chunks.
+         pages_covered = set()
+         target_pages_set = set(target_pages) if target_pages else None
+         
+         for chunk in ctx.deps.state.last_chunks:
+             if chunk.get("document_id") == target_doc_id:
+                 meta = chunk.get("metadata", {})
+                 chunk_bboxes = meta.get("bboxes", [])
+                 
+                 if not chunk_bboxes:
+                     continue
+                     
+                 # Check which pages this chunk covers
+                 chunk_pages = set()
+                 relevant_bboxes = []
+                 
+                 for bbox in chunk_bboxes:
+                     p_no = bbox.get("page_no")
+                     if p_no is None: 
+                         continue
+                         
+                     # If specific pages requested, must match
+                     if target_pages_set and p_no not in target_pages_set:
+                         continue
+                         
+                     # If we already have a top-ranking chunk for this page, skip this bbox
+                     if p_no in pages_covered:
+                         continue
+                         
+                     chunk_pages.add(p_no)
+                     relevant_bboxes.append(bbox)
+                
+                 if relevant_bboxes:
+                     injected_bboxes.extend(relevant_bboxes)
+                     pages_covered.update(chunk_pages)
+         
+         if injected_bboxes:
+             # De-duplicate bboxes? Maybe not strictly necessary for display but good for perf.
+             # Simple list assignment for now.
+             data = dict(data)
+             data["bboxes"] = injected_bboxes
+             print(f"render_ui_component: Injected {len(injected_bboxes)} bboxes from top-ranked chunks")
     
     # Create UI component data
     ui_component = UIComponentData(
@@ -187,30 +269,58 @@ async def render_ui_component(
     ctx.deps.state.active_ui_components = [ui_component]
     ctx.deps.state.render_mode = component_type
     
-    return StateSnapshotEvent(
-      type=EventType.STATE_SNAPSHOT,
-      snapshot=ctx.deps.state,
+    # Return ToolReturn to signal success to the agent framework
+    return ToolReturn(
+        return_value={"success": True, "component_type": component_type},
+        metadata=[
+            StateSnapshotEvent(
+                type=EventType.STATE_SNAPSHOT,
+                snapshot=ctx.deps.state,
+            )
+        ]
     )
     
-    ctx.deps.state.render_mode = component_type
-    
-    return StateSnapshotEvent(
-      type=EventType.STATE_SNAPSHOT,
-      snapshot=ctx.deps.state,
-    )
+    # Dead code removed here
+
 
   except ValueError as e:
-    # Re-raise validation errors so the agent sees them and can correct itself
-    log_error("Validation Error in render_ui_component", e)
-    raise e
+    # Do NOT raise exception, as it causes "tool exceeded max retries" error in the agent
+    log_error("Validation Error in render_ui_component (returning fallback)", e)
+    
+    # Fallback: Render a list with the data we have, or an error message
+    from src.types import UIComponentData, UIComponentType
+    
+    error_component = UIComponentData(
+      component_type=UIComponentType.LIST,
+      data={"items": [{"title": "Error rendering component", "description": str(e)}], "title": "Display Error"},
+      metadata={"error": str(e)}
+    )
+    
+    ctx.deps.state.active_ui_components = [error_component]
+    ctx.deps.state.render_mode = "list"
+    
+    return ToolReturn(
+        return_value={"success": False, "error": str(e)},
+        metadata=[
+            StateSnapshotEvent(
+                type=EventType.STATE_SNAPSHOT,
+                snapshot=ctx.deps.state,
+            )
+        ]
+    )
     
   except Exception as e:
     log_error("Error in render_ui_component", e, {
       "component_type": component_type,
       "data_keys": list(data.keys()) if isinstance(data, dict) else "not_dict"
     })
-    # Return state snapshot even on error
-    return StateSnapshotEvent(
-      type=EventType.STATE_SNAPSHOT,
-      snapshot=ctx.deps.state,
+    # Return state snapshot even on error, wrapped in ToolReturn
+    return ToolReturn(
+        return_value={"success": False, "error": str(e)},
+        metadata=[
+            StateSnapshotEvent(
+                type=EventType.STATE_SNAPSHOT,
+                snapshot=ctx.deps.state,
+            )
+        ]
     )

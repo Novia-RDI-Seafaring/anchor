@@ -75,6 +75,11 @@ class RAGState(BaseModel):
     default='auto',
     description='How the agent decided to render: auto, list, table, etc.'
   )
+  # RAG context storage for tools
+  last_chunks: list[dict[str, Any]] = Field(
+    default_factory=list,
+    description='Chunks from the most recent knowledge base query, used for context injection'
+  )
 
 __all__ = [
     # modules and global variables

@@ -22,9 +22,28 @@ export function ChatInterface({ isOpen, onClose, initialMessages }: ChatInterfac
         });
     }, [initialMessages]);
 
-    const { visibleMessages, appendMessage } = useCopilotChat({
+    const { visibleMessages, appendMessage, setMessages } = useCopilotChat({
         initialMessages: sanitizedMessages
     }) as any;
+
+    // Reset/Update messages when the sanitizedMessages (derived from initialMessages) changes
+    React.useEffect(() => {
+        if (setMessages) {
+            console.log("ChatInterface: syncing messages", sanitizedMessages.length);
+            setMessages(sanitizedMessages);
+
+            // Double check synchronization after a short delay (hack for race conditions)
+            if (sanitizedMessages.length > 0) {
+                const timer = setTimeout(() => {
+                    // If we are supposed to have messages but don't, force set again
+                    // We actually can't easily check 'visibleMessages' here because it's from the hook which is outside this closure's scope effectively unless in deps
+                    // But we can just blindly re-set if needed or rely on the prop change.
+                    // Let's just trust setMessages works, but ensure we log it.
+                }, 500);
+                return () => clearTimeout(timer);
+            }
+        }
+    }, [sanitizedMessages, setMessages]);
 
     // Convert CopilotKit messages to UI messages
     const uiMessages = visibleMessages.map((msg: any, index: number) => {

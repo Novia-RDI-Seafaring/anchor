@@ -3,6 +3,8 @@ import { AgSelect, AgBadge } from '../ui/AgComponents';
 import { Database, Cpu, FileText } from 'lucide-react';
 import { DatabaseStatus, ModelOption } from '../../types';
 
+// Use environment variable or default to localhost:8001
+// Ensure we don't end up with 'undefined' string
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001';
 
 interface Document {
@@ -20,9 +22,9 @@ interface HeaderProps {
   models: ModelOption[];
 }
 
-export const Header: React.FC<HeaderProps> = ({ 
-  selectedModel, 
-  onModelChange, 
+export const Header: React.FC<HeaderProps> = ({
+  selectedModel,
+  onModelChange,
   dbStatus,
   models
 }) => {
@@ -31,21 +33,27 @@ export const Header: React.FC<HeaderProps> = ({
 
   // Fetch documents list
   useEffect(() => {
+    let mounted = true;
     const fetchDocs = async () => {
       try {
         const res = await fetch(`${API_URL}/api/documents`);
         if (res.ok) {
           const data = await res.json();
-          setDocuments(data.documents || []);
+          if (mounted) setDocuments(data.documents || []);
         }
       } catch (err) {
-        console.error('Failed to fetch documents:', err);
+        // Silently fail or log debug only to avoid console spam during dev if backend is down
+        console.warn('Failed to fetch documents (backend might be down):', err);
       }
     };
+
     fetchDocs();
     // Refresh every 30 seconds
     const interval = setInterval(fetchDocs, 30000);
-    return () => clearInterval(interval);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   // Handle document selection
@@ -63,20 +71,20 @@ export const Header: React.FC<HeaderProps> = ({
   // Build document options for selector
   const docOptions = [
     { id: 'all', label: 'All Documents' },
-    ...documents.map(doc => ({ 
-      id: doc.document_id, 
-      label: `${doc.filename} (${doc.chunk_count} chunks)` 
+    ...documents.map(doc => ({
+      id: doc.document_id,
+      label: `${doc.filename} (${doc.chunk_count} chunks)`
     }))
   ];
 
   return (
     <header className="h-16 border-b border-neutral-100 dark:border-neutral-800 bg-white/80 dark:bg-neutral-900/80 backdrop-blur-sm flex items-center justify-between px-4 md:px-6 z-10 sticky top-0">
-      
+
       {/* Left: Document Selector */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
           <FileText size={16} className="text-neutral-500" />
-          <AgSelect 
+          <AgSelect
             options={docOptions}
             value={selectedDocId}
             onChange={handleDocSelect}
@@ -98,7 +106,7 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="w-px h-3 bg-neutral-300 dark:bg-neutral-700 mx-1"></span>
           <span className="text-green-600 dark:text-green-500 font-medium">Ready</span>
         </div>
-        <AgSelect 
+        <AgSelect
           options={models}
           value={selectedModel}
           onChange={onModelChange}

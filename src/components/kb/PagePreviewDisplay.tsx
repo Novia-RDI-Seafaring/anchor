@@ -7,12 +7,14 @@ interface PagePreviewDisplayProps {
         document_id?: string;
         page_numbers?: number[];
         page?: number;  // LLM sometimes sends single page number
+        page_number?: number; // Alternative single page number field
         title?: string;
         content?: string;
         content_preview?: string;
         preview?: string;  // LLM sometimes uses this field
         source?: string;
         sections?: any[];  // Can be strings, arrays, or objects
+        bboxes?: { bbox: number[]; page_no: number }[]; // Bounding boxes
     };
 }
 
@@ -32,7 +34,7 @@ export const PagePreviewDisplay: React.FC<PagePreviewDisplayProps> = ({ data }) 
     const [error, setError] = useState<string | null>(null);
 
     // Normalize page_numbers - accept both page_numbers array and single page number
-    const pageNumbers = data?.page_numbers || (data?.page ? [data.page] : []);
+    const pageNumbers = data?.page_numbers || (data?.page ? [data.page] : []) || (data?.page_number ? [data.page_number] : []);
 
     // Check if we can fetch page images (need document_id and page_numbers)
     const canFetchImages = data?.document_id && pageNumbers.length > 0;
@@ -108,13 +110,24 @@ export const PagePreviewDisplay: React.FC<PagePreviewDisplayProps> = ({ data }) 
                         </h3>
                     </div>
                 )}
-                {/* Page image */}
-                <div className="relative bg-neutral-100 dark:bg-neutral-900">
-                    <img
-                        src={`data:image/png;base64,${currentImage.image_base64}`}
-                        alt={`Page ${currentImage.page_number}`}
-                        className="w-full h-auto max-h-[600px] object-contain mx-auto"
-                    />
+                {/* Page image and Bounding Boxes */}
+                <div className="relative bg-neutral-100 dark:bg-neutral-900 border-x border-neutral-200 dark:border-neutral-700 flex justify-center p-4 overflow-auto">
+                    {/* Wrapper must fit image exactly for overlay to be correct */}
+                    <div className="relative inline-block">
+                        <img
+                            src={`data:image/png;base64,${currentImage.image_base64}`}
+                            alt={`Page ${currentImage.page_number}`}
+                            className="block max-w-full max-h-[800px] w-auto h-auto"
+                        />
+                        {/* Bounding Boxes Overlay */}
+                        {data.bboxes && data.bboxes.length > 0 && currentImage.width && currentImage.height && (
+                            <BoundingBoxOverlay
+                                bboxes={data.bboxes.filter(b => b.page_no === currentImage.page_number)}
+                                pageWidth={currentImage.width}
+                                pageHeight={currentImage.height}
+                            />
+                        )}
+                    </div>
                 </div>
 
                 {/* Navigation bar - only show if multiple pages */}
@@ -144,6 +157,7 @@ export const PagePreviewDisplay: React.FC<PagePreviewDisplayProps> = ({ data }) 
             </AgCard>
         );
     }
+
 
     // Fallback: Show content preview if no images available
     const content = data.content || data.content_preview || data.preview;
@@ -257,5 +271,91 @@ export const PagePreviewDisplay: React.FC<PagePreviewDisplayProps> = ({ data }) 
                 )}
             </div>
         </AgCard>
+    );
+};
+
+// BoundingBoxOverlay component
+interface BoundingBoxOverlayProps {
+    bboxes: { bbox: number[]; page_no: number }[];
+    pageWidth: number;
+    pageHeight: number;
+}
+
+const BoundingBoxOverlay: React.FC<BoundingBoxOverlayProps> = ({ bboxes, pageWidth, pageHeight }) => {
+    if (!bboxes || bboxes.length === 0) return null;
+
+    // Detection of coordinate system and scaling:
+    // 1. Docling/PyMuPDF bboxes are in PDF Points (72 DPI).
+    // 2. Our backend renders images at scale=4.0 (approx 300 DPI).
+    // So pageWidth/pageHeight (pixels) are ~4x larger than bbox coordinates.
+    // 3. Docling PyMuPDF backend usually implies Bottom-Left origin for PDF coords.
+
+    // We can assume standard A4 is ~595pt width. 
+    // If pageWidth is > 2000, we are definitely in high-res pixel space.
+
+    // Calculate scale factor:
+    // If we assume the bbox IS in PDF points, we need to normalize it to the image size.
+    // But we don't know the PDF point size directly from the frontend prop 'pageWidth' (which is pixels).
+    // LUCKILY: The ratio is constant.
+    // left % = (x0 / pdfWidth) * 100
+    // But we have x0 (pdf points) and pageWidth (pixels).
+    // We need pdfWidth.
+    // We can estimate pdfWidth if we assume standard 72 vs 300 dpi ratio (scale 4.16?) or just usage scale=4.0 from python code.
+
+    // Better approach: 
+    // If x0 is e.g. 50, and pageWidth is 2480.
+    // If we just do 50/2480, it's tiny (2%).
+    // We need to scale x0 by the same factor the image was scaled.
+    // The Python code says `scale = 4.0`.
+    // So `x0_pixels = x0_points * 4.0`.
+
+    const SCALE_FACTOR = 4.0; // From backend PageImageService
+
+    return (
+        <div className="absolute inset-0 pointer-events-none">
+            {bboxes.map((item, idx) => {
+                const [x0, y0, x1, y1] = item.bbox;
+                if (x0 === undefined || y0 === undefined || x1 === undefined || y1 === undefined) return null;
+
+                // 1. Scale PDF points to Image Pixels
+                const scaledX0 = x0 * SCALE_FACTOR;
+                const scaledY0 = y0 * SCALE_FACTOR;
+                const scaledX1 = x1 * SCALE_FACTOR;
+                const scaledY1 = y1 * SCALE_FACTOR;
+
+                // 2. Normalize to Percentage (0-100) relative to image size
+                // Coordinate System:
+                // Frontend Image: Top-Left (0,0)
+                // PDF Source: Bottom-Left (0,0) (Standard PDF)
+
+                // For Bottom-Left origin:
+                // y0_pdf is distance from bottom.
+                // y1_pdf is distance from bottom (y1 > y0).
+
+                // Top-Left equivalent:
+                // top_px = pageHeight - y1_px
+                // bottom_px = pageHeight - y0_px
+
+                const left = (scaledX0 / pageWidth) * 100;
+                const width = ((scaledX1 - scaledX0) / pageWidth) * 100;
+
+                // Converson for Bottom-Left Origin
+                const top = ((pageHeight - scaledY1) / pageHeight) * 100;
+                const height = ((scaledY1 - scaledY0) / pageHeight) * 100;
+
+                return (
+                    <div
+                        key={idx}
+                        className="absolute border-2 border-red-500 bg-red-500/20 z-10"
+                        style={{
+                            left: `${left}%`,
+                            top: `${top}%`,
+                            width: `${width}%`,
+                            height: `${height}%`,
+                        }}
+                    />
+                );
+            })}
+        </div>
     );
 };
