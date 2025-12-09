@@ -8,6 +8,7 @@ from src.config import get_settings
 from src.document_service import get_document_service
 from src.vector_store import get_vector_store
 from typing import List
+from src.active_document import get_active_document_id, set_active_document_id
 
 
 # Create main FastAPI app
@@ -176,19 +177,16 @@ async def get_page_images_by_chunk(chunk_id: int):
 
 # ===== Active Document Filter =====
 
-_active_document_id: Optional[str] = None
-
 @app.get("/api/active-document")
 async def get_active_document():
     """Get the currently active document filter."""
-    return {"document_id": _active_document_id}
+    return {"document_id": get_active_document_id()}
 
 @app.post("/api/active-document")
 async def set_active_document(document_id: Optional[str] = None):
     """Set the active document filter for RAG queries."""
-    global _active_document_id
-    _active_document_id = document_id if document_id != 'all' else None
-    return {"success": True, "document_id": _active_document_id}
+    set_active_document_id(document_id)
+    return {"success": True, "document_id": get_active_document_id()}
 
 
 # ===== Health Check =====

@@ -5,6 +5,7 @@ from src.types import (
     StateDeps, EventType, StateSnapshotEvent, RAGState
 )
 from src.logger import log_rag_query, log_agent_tool_call, log_error
+from pydantic_ai import ToolReturn
 
 async def query_knowledge_base(
   ctx: RunContext[StateDeps[RAGState]], 
@@ -20,7 +21,8 @@ async def query_knowledge_base(
     top_k: Number of results to retrieve (default: 5)
   
   Returns:
-    Dictionary with 'chunks' (rich objects) and 'sources' from the knowledge base
+    Dictionary with 'chunks' (list of dicts) and 'sources' from the knowledge base.
+    Each chunk contains: id, content, filename, document_id, similarity, metadata.
   """
   start_time = time.time()
   
@@ -30,11 +32,10 @@ async def query_knowledge_base(
   try:
     # Import here to avoid circular imports
     from src.document_service import get_document_service
-    from pydantic_ai import ToolReturn
-    import main
+    from src.active_document import get_active_document_id
     
     # Get active document filter
-    active_doc_id = main._active_document_id
+    active_doc_id = get_active_document_id()
     
     # Query the vector store with optional document filter
     service = await get_document_service()
@@ -74,8 +75,16 @@ async def query_knowledge_base(
     
   except Exception as e:
     log_error("Error in query_knowledge_base", e, {"query": query, "top_k": top_k})
-    # Return empty results on error rather than failing
-    return {"chunks": [], "sources": []}
+    # Return empty results on error with consistent type
+    return ToolReturn(
+        return_value={"chunks": [], "sources": []},
+        metadata=[
+            StateSnapshotEvent(
+                type=EventType.STATE_SNAPSHOT,
+                snapshot=ctx.deps.state,
+            )
+        ]
+    )
 
 async def check_db_status(ctx: RunContext[StateDeps[RAGState]]) -> StateSnapshotEvent:
   """Check the status of the vector database connection."""
@@ -132,6 +141,7 @@ async def render_ui_component(
     StateSnapshotEvent with updated state
   """
   from src.types import UIComponentData, UIComponentType
+  from src.active_document import get_active_document_id
   
   log_agent_tool_call("render_ui_component", {
     "component_type": component_type,
@@ -149,15 +159,22 @@ async def render_ui_component(
     
     # For page_preview, auto-inject document_id if not provided
     if ui_component_type == UIComponentType.PAGE_PREVIEW:
-      import main
-      if not data.get("document_id") and main._active_document_id:
+      active_doc_id = get_active_document_id()
+      if not data.get("document_id") and active_doc_id:
         data = dict(data)  # Make a copy to avoid mutating original
-        data["document_id"] = main._active_document_id
-        print(f"render_ui_component: Auto-injected document_id: {main._active_document_id}")
+        data["document_id"] = active_doc_id
+        print(f"render_ui_component: Auto-injected document_id: {active_doc_id}")
       
       # Also try to get page_numbers from metadata if not provided
       if not data.get("page_numbers") and data.get("page"):
         data["page_numbers"] = [data["page"]]
+        
+      # Validation: document_id is mandatory for page_preview
+      if not data.get("document_id"):
+        raise ValueError(
+          "For 'page_preview' component, you MUST provide 'document_id'. "
+          "Extract specific 'document_id' from the relevant chunk in the query results."
+        )
     
     # Create UI component data
     ui_component = UIComponentData(
@@ -174,6 +191,18 @@ async def render_ui_component(
       type=EventType.STATE_SNAPSHOT,
       snapshot=ctx.deps.state,
     )
+    
+    ctx.deps.state.render_mode = component_type
+    
+    return StateSnapshotEvent(
+      type=EventType.STATE_SNAPSHOT,
+      snapshot=ctx.deps.state,
+    )
+
+  except ValueError as e:
+    # Re-raise validation errors so the agent sees them and can correct itself
+    log_error("Validation Error in render_ui_component", e)
+    raise e
     
   except Exception as e:
     log_error("Error in render_ui_component", e, {

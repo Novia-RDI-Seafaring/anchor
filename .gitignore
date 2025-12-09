@@ -66,10 +66,11 @@ htmlcov/
 .tox/
 .hypothesis/
 
-# User uploads (documents, PDFs)
+# User uploads, Test Scripts (documents, PDFs)
 uploads/
 !uploads/.gitkeep
 test_chunking/
+test_scripts/
 
 # Docling processing artifacts (if any temp files created)
 *.docling-tmp

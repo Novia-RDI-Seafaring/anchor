@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     pgvector_user: str = "postgres"
     pgvector_password: str = ""
     pgsslmode: str = "disable"
+    db_schema: str = "anchor" # or use "public"
     
     # ===== Vector DB Settings =====
     vector_db_collection: str = "documents"
