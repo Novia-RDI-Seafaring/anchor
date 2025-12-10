@@ -186,19 +186,29 @@ async def render_ui_component(
         # Fallback: Try to infer page_numbers from last_chunks if document_id matches
         elif ctx.deps.state.last_chunks and data.get("document_id"):
              target_doc_id = data.get("document_id")
-             inferred_pages = set()
+             inferred_pages = []
+             seen_pages = set()
+             
              for chunk in ctx.deps.state.last_chunks:
                  if chunk.get("document_id") == target_doc_id:
+                     pages_to_add = []
                      # Check page_numbers list in chunk
                      if chunk.get("page_numbers"):
-                         inferred_pages.update(chunk["page_numbers"])
-                     # Check metadata
+                         pages_to_add = chunk["page_numbers"]
+                     # Check metadata for page_numbers (list) or page_no (int)
+                     elif chunk.get("metadata", {}).get("page_numbers"):
+                         pages_to_add = chunk["metadata"]["page_numbers"]
                      elif chunk.get("metadata", {}).get("page_no"):
-                          inferred_pages.add(chunk["metadata"]["page_no"])
+                          pages_to_add = [chunk["metadata"]["page_no"]]
+                     
+                     for p in pages_to_add:
+                         if p not in seen_pages:
+                             inferred_pages.append(p)
+                             seen_pages.add(p)
              
              if inferred_pages:
-                 data["page_numbers"] = list(inferred_pages)
-                 print(f"render_ui_component: Inferred page_numbers from chunks: {data['page_numbers']}")
+                 data["page_numbers"] = inferred_pages
+                 print(f"render_ui_component: Inferred page_numbers from chunks (ordered): {data['page_numbers']}")
         
       # Validation: document_id is mandatory for page_preview
       if not data.get("document_id"):
@@ -206,57 +216,25 @@ async def render_ui_component(
           "For 'page_preview' component, you MUST provide 'document_id'. "
           "Extract specific 'document_id' from the relevant chunk in the query results."
         )
-      
       # Auto-inject bboxes if missing, using last_chunks
+      injected_bboxes = []
       if not data.get("bboxes") and ctx.deps.state.last_chunks:
-         print(f"render_ui_component: Attempting to inject bboxes for doc {data.get('document_id')}")
-         injected_bboxes = []
-         target_doc_id = data.get("document_id")
-         target_pages = data.get("page_numbers", [])
-         
-         # Strategy: For each target page, find the FIRST (highest ranking) chunk that provides bboxes.
-         # This avoids cluttering the view with bboxes from less relevant chunks.
-         pages_covered = set()
-         target_pages_set = set(target_pages) if target_pages else None
-         
-         for chunk in ctx.deps.state.last_chunks:
-             if chunk.get("document_id") == target_doc_id:
-                 meta = chunk.get("metadata", {})
-                 chunk_bboxes = meta.get("bboxes", [])
-                 
-                 if not chunk_bboxes:
-                     continue
-                     
-                 # Check which pages this chunk covers
-                 chunk_pages = set()
-                 relevant_bboxes = []
-                 
-                 for bbox in chunk_bboxes:
-                     p_no = bbox.get("page_no")
-                     if p_no is None: 
-                         continue
-                         
-                     # If specific pages requested, must match
-                     if target_pages_set and p_no not in target_pages_set:
-                         continue
-                         
-                     # If we already have a top-ranking chunk for this page, skip this bbox
-                     if p_no in pages_covered:
-                         continue
-                         
-                     chunk_pages.add(p_no)
-                     relevant_bboxes.append(bbox)
-                
-                 if relevant_bboxes:
-                     injected_bboxes.extend(relevant_bboxes)
-                     pages_covered.update(chunk_pages)
-         
-         if injected_bboxes:
-             # De-duplicate bboxes? Maybe not strictly necessary for display but good for perf.
-             # Simple list assignment for now.
-             data = dict(data)
-             data["bboxes"] = injected_bboxes
-             print(f"render_ui_component: Injected {len(injected_bboxes)} bboxes from top-ranked chunks")
+        print(f"render_ui_component: Attempting to inject bboxes for doc {data.get('document_id')}")
+        target_doc_id = data.get("document_id")
+        
+        # Find the first chunk that matches the document_id (highest relevance)
+        # and use ONLY its bboxes to avoid clutter.
+        top_chunk = next((c for c in ctx.deps.state.last_chunks if c.get("document_id") == target_doc_id), None)
+        
+        if top_chunk:
+          meta = top_chunk.get("metadata", {})
+          injected_bboxes = meta.get("bboxes", [])
+          if injected_bboxes:
+            print(f"render_ui_component: Injected {len(injected_bboxes)} bboxes from top-ranked chunk {top_chunk.get('id')}")
+      
+      if injected_bboxes:
+          data = dict(data)
+          data["bboxes"] = injected_bboxes
     
     # Create UI component data
     ui_component = UIComponentData(

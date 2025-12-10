@@ -139,6 +139,21 @@
 
             <h3>UI Components</h3>
 
+            <h4>PagePreviewDisplay (src/components/kb/PagePreviewDisplay.tsx)</h4>
+            <ul>
+                <li><strong>Purpose:</strong> Render high-fidelity PDF page images found in search results.</li>
+                <li><strong>Features:</strong>
+                    <ul>
+                        <li>Fetches rendered page images (300 DPI) from backend</li>
+                        <li><strong>BoundingBoxOverlay:</strong> Renders precise red boxes over the image to highlight
+                            answers</li>
+                        <li><strong>Coordinate System:</strong> Handles conversion between PDF Points (Bottom-Left) and
+                            Image Pixels (Top-Left)</li>
+                        <li>Fallback to text preview if image generation fails</li>
+                    </ul>
+                </li>
+            </ul>
+
             <h4>AgComponents (src/components/ui/AgComponents.tsx)</h4>
             <ul>
                 <li><strong>Purpose:</strong> Reusable UI components from AG-UI</li>

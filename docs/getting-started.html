@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Getting Started - Anchor UI Documentation</title>
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <div class="container">
         <aside class="sidebar">
@@ -13,38 +15,42 @@
                 <input type="text" id="searchInput" placeholder="Search documentation...">
                 <div class="search-results" id="searchResults"></div>
             </div>
-            
+
             <h2>Documentation</h2>
             <nav id="nav"></nav>
         </aside>
-        
+
         <main class="main-content">
             <h1>Getting Started</h1>
-            
+
             <h2>Prerequisites</h2>
             <p>Before you begin, ensure you have the following installed:</p>
             <ul>
-                <li><strong>Node.js</strong> (v18 or higher) - <a href="https://nodejs.org/" target="_blank">Download</a></li>
-                <li><strong>Python</strong> (v3.12 or higher) - <a href="https://www.python.org/downloads/" target="_blank">Download</a></li>
-                <li><strong>PostgreSQL</strong> (v12 or higher) with <strong>pgvector</strong> extension - <a href="https://www.postgresql.org/download/" target="_blank">Download</a></li>
-                <li><strong>uv</strong> (Python package manager) - <a href="https://github.com/astral-sh/uv" target="_blank">Installation Guide</a></li>
+                <li><strong>Node.js</strong> (v18 or higher) - <a href="https://nodejs.org/"
+                        target="_blank">Download</a></li>
+                <li><strong>Python</strong> (v3.12 or higher) - <a href="https://www.python.org/downloads/"
+                        target="_blank">Download</a></li>
+                <li><strong>PostgreSQL</strong> (v12 or higher) with <strong>pgvector</strong> extension - <a
+                        href="https://www.postgresql.org/download/" target="_blank">Download</a></li>
+                <li><strong>uv</strong> (Python package manager) - <a href="https://github.com/astral-sh/uv"
+                        target="_blank">Installation Guide</a></li>
             </ul>
-            
+
             <h2>Installation</h2>
-            
+
             <h3>1. Clone the Repository</h3>
             <pre><code>git clone https://github.com/your-org/anchor-ui.git
 cd anchor-ui</code></pre>
-            
+
             <h3>2. Install Frontend Dependencies</h3>
             <pre><code>npm install</code></pre>
-            
+
             <h3>3. Install Backend Dependencies</h3>
             <pre><code>cd backend
 uv sync</code></pre>
-            
+
             <h2>Configuration</h2>
-            
+
             <h3>Database Setup</h3>
             <p>First, set up PostgreSQL with the pgvector extension:</p>
             <pre><code># Connect to PostgreSQL
@@ -58,7 +64,7 @@ CREATE DATABASE anchor_ui;
 
 # Enable pgvector extension
 CREATE EXTENSION vector;</code></pre>
-            
+
             <h3>Environment Variables</h3>
             <p>Create a <code>.env</code> file in the <code>backend</code> directory:</p>
             <pre><code># Database Configuration
@@ -94,26 +100,27 @@ UPLOADS_DIR=../uploads
 
 # Logfire (Observability - optional)
 LOGFIRE_TOKEN=your_logfire_token</code></pre>
-            
+
             <h3>Frontend Environment Variables</h3>
             <p>Create a <code>.env.local</code> file in the root directory:</p>
             <pre><code># Backend URL (default: http://localhost:8001)
 NEXT_PUBLIC_BACKEND_URL=http://localhost:8001</code></pre>
-            
+
             <h2>Running the Application</h2>
-            
+
             <h3>Development Mode</h3>
             <p>From the root directory, run:</p>
             <pre><code>npm run dev</code></pre>
-            <p>This command starts both the frontend (Next.js on port 3000) and backend (FastAPI on port 8001) concurrently.</p>
-            
+            <p>This command starts both the frontend (Next.js on port 3000) and backend (FastAPI on port 8001)
+                concurrently.</p>
+
             <h3>Individual Services</h3>
             <p>You can also run services separately:</p>
             <ul>
                 <li><strong>Frontend only:</strong> <code>npm run dev:ui</code></li>
                 <li><strong>Backend only:</strong> <code>npm run dev:agent</code></li>
             </ul>
-            
+
             <h2>Verification</h2>
             <p>Once the application is running:</p>
             <ol>
@@ -121,44 +128,48 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:8001</code></pre>
                 <li>You should see the Anchor UI interface</li>
                 <li>Check the backend health: <code>http://localhost:8001/health</code></li>
             </ol>
-            
+
             <h2>First Steps</h2>
             <ol>
-                <li><strong>Upload a Document:</strong> Click the paperclip icon in the chat input or go to Settings → Knowledge Base Management</li>
+                <li><strong>Upload a Document:</strong> Click the paperclip icon in the chat input or go to Settings →
+                    Knowledge Base Management</li>
                 <li><strong>Wait for Processing:</strong> Documents are automatically processed and embedded</li>
                 <li><strong>Start Chatting:</strong> Ask questions about your uploaded documents</li>
+                <li><strong>Verify visually:</strong> Look for the "Page Preview" card with red bounding boxes to verify
+                    answers source</li>
             </ol>
-            
+
             <h2>Troubleshooting</h2>
-            
+
             <h3>Database Connection Issues</h3>
             <ul>
                 <li>Verify PostgreSQL is running: <code>pg_isready</code></li>
                 <li>Check connection credentials in <code>.env</code></li>
-                <li>Ensure pgvector extension is installed: <code>SELECT * FROM pg_extension WHERE extname = 'vector';</code></li>
+                <li>Ensure pgvector extension is installed:
+                    <code>SELECT * FROM pg_extension WHERE extname = 'vector';</code></li>
             </ul>
-            
+
             <h3>Backend Not Starting</h3>
             <ul>
                 <li>Check Python version: <code>python --version</code> (should be 3.12+)</li>
                 <li>Verify dependencies: <code>cd backend && uv sync</code></li>
                 <li>Check port 8001 is not in use</li>
             </ul>
-            
+
             <h3>Frontend Not Starting</h3>
             <ul>
                 <li>Check Node.js version: <code>node --version</code> (should be 18+)</li>
                 <li>Clear cache: <code>rm -rf node_modules .next && npm install</code></li>
                 <li>Check port 3000 is not in use</li>
             </ul>
-            
+
             <h3>Document Upload Fails</h3>
             <ul>
                 <li>Ensure <code>uploads</code> directory exists and is writable</li>
                 <li>Check file format is supported (PDF, DOCX, TXT, MD, HTML)</li>
                 <li>Verify OpenAI API key is set correctly</li>
             </ul>
-            
+
             <h2>Next Steps</h2>
             <ul>
                 <li>Read the <a href="user-guide.html">User Guide</a> to learn how to use Anchor UI</li>
@@ -169,6 +180,5 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:8001</code></pre>
     </div>
     <script src="nav.js"></script>
 </body>
+
 </html>
-
-

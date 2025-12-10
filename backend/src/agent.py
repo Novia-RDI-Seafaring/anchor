@@ -25,13 +25,14 @@ agent = Agent(
   model = get_default_responses_model(), # OpenAIResponsesModel(os.getenv('LLM_MODEL', 'gpt-4o-mini')),
   deps_type=StateDeps[RAGState],
   system_prompt=SYSTEM_PROMPT,
+  tools=[check_db_status, query_knowledge_base, add_to_conversation, render_ui_component]
 )
 
 # Register tools
-agent.tool(query_knowledge_base)
-agent.tool(check_db_status)
-agent.tool(add_to_conversation)
-agent.tool(render_ui_component)
+# agent.tool(check_db_status)
+# agent.tool(query_knowledge_base)
+# agent.tool(add_to_conversation)
+# agent.tool(render_ui_component)
 
 # Export state for type compatibility with main.py
 AppState = RAGState

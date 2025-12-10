@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>User Guide - Anchor UI Documentation</title>
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <div class="container">
         <aside class="sidebar">
@@ -13,19 +15,20 @@
                 <input type="text" id="searchInput" placeholder="Search documentation...">
                 <div class="search-results" id="searchResults"></div>
             </div>
-            
+
             <h2>Documentation</h2>
             <nav id="nav"></nav>
         </aside>
-        
+
         <main class="main-content">
             <h1>User Guide</h1>
-            
+
             <h2>Overview</h2>
-            <p>Anchor UI provides an intuitive interface for interacting with your knowledge base through natural language. This guide will help you make the most of all features.</p>
-            
+            <p>Anchor UI provides an intuitive interface for interacting with your knowledge base through natural
+                language. This guide will help you make the most of all features.</p>
+
             <h2>Interface Overview</h2>
-            
+
             <h3>Main Components</h3>
             <ul>
                 <li><strong>Sidebar:</strong> Navigation, conversations, and settings access</li>
@@ -33,19 +36,19 @@
                 <li><strong>Workspace:</strong> Displays retrieved documents and agent responses</li>
                 <li><strong>Chat Panel:</strong> Interactive conversation interface</li>
             </ul>
-            
+
             <h2>Working with Documents</h2>
-            
+
             <h3>Uploading Documents</h3>
             <p>You can upload documents in two ways:</p>
-            
+
             <h4>Method 1: From Chat Input</h4>
             <ol>
                 <li>Click the paperclip icon (📎) in the chat input area</li>
                 <li>Select one or more files (PDF, DOCX, TXT, MD, HTML)</li>
                 <li>Wait for upload confirmation - files are automatically processed</li>
             </ol>
-            
+
             <h4>Method 2: From Settings</h4>
             <ol>
                 <li>Click "Settings" in the sidebar</li>
@@ -53,7 +56,7 @@
                 <li>Click "CHOOSE FILES" and select your documents</li>
                 <li>Click "Upload" to process</li>
             </ol>
-            
+
             <h3>Adding URLs</h3>
             <ol>
                 <li>Go to Settings → Knowledge Base Management</li>
@@ -61,7 +64,7 @@
                 <li>Click "Add URL to Knowledge Base"</li>
                 <li>The webpage content will be fetched and processed</li>
             </ol>
-            
+
             <h3>Selecting Active Document</h3>
             <p>To focus queries on a specific document:</p>
             <ol>
@@ -69,9 +72,9 @@
                 <li>Select "All Documents" or a specific document</li>
                 <li>All subsequent queries will be filtered to the selected document</li>
             </ol>
-            
+
             <h2>Using the Chat Interface</h2>
-            
+
             <h3>Starting a Conversation</h3>
             <ol>
                 <li>Click "New Chat" in the sidebar or use the floating chat button</li>
@@ -79,31 +82,32 @@
                 <li>Press Enter or click the send button (↑)</li>
                 <li>The assistant will query your knowledge base and respond</li>
             </ol>
-            
+
             <h3>Context Controls</h3>
             <p>The chat input includes context control buttons:</p>
             <ul>
                 <li><strong>Context On/Off:</strong> Toggle RAG (knowledge base) context</li>
                 <li><strong>Web:</strong> Enable web search capabilities (coming soon)</li>
             </ul>
-            
+
             <h3>Best Practices for Queries</h3>
             <ul>
-                <li><strong>Be specific:</strong> "What is the maximum operating temperature?" vs "Tell me about temperature"</li>
+                <li><strong>Be specific:</strong> "What is the maximum operating temperature?" vs "Tell me about
+                    temperature"</li>
                 <li><strong>Ask follow-ups:</strong> Build on previous questions in the conversation</li>
                 <li><strong>Reference documents:</strong> "According to the manual, how do I..."</li>
                 <li><strong>Use natural language:</strong> No need for special syntax or commands</li>
             </ul>
-            
+
             <h2>Managing Conversations</h2>
-            
+
             <h3>Creating New Conversations</h3>
             <ul>
                 <li>Click "New Chat" button in the sidebar</li>
                 <li>Or use the keyboard shortcut (if configured)</li>
                 <li>Each conversation maintains its own history</li>
             </ul>
-            
+
             <h3>Renaming Conversations</h3>
             <ol>
                 <li>Hover over a conversation in the sidebar</li>
@@ -111,16 +115,16 @@
                 <li>Type the new name</li>
                 <li>Press Enter or click the checkmark (✓)</li>
             </ol>
-            
+
             <h3>Deleting Conversations</h3>
             <ol>
                 <li>Hover over a conversation in the sidebar</li>
                 <li>Click the delete icon (🗑️)</li>
                 <li>Confirm deletion in the dialog</li>
             </ol>
-            
+
             <h2>Viewing Results</h2>
-            
+
             <h3>Workspace View</h3>
             <p>The main workspace displays:</p>
             <ul>
@@ -128,7 +132,7 @@
                 <li><strong>Active Document:</strong> The main response from the assistant</li>
                 <li><strong>Retrieved Context:</strong> Chunks from the knowledge base with similarity scores</li>
             </ul>
-            
+
             <h3>Understanding Similarity Scores</h3>
             <p>Each retrieved chunk shows a similarity score (0.0 to 1.0):</p>
             <ul>
@@ -136,9 +140,19 @@
                 <li><strong>Medium scores (0.4-0.7):</strong> Moderately relevant</li>
                 <li><strong>Lower scores (&lt;0.4):</strong> Less relevant (may be filtered out)</li>
             </ul>
-            
+
+            <h3>Visual Verification</h3>
+            <p>For questions answered from PDF documents, Anchor UI displays a visual confirmation:</p>
+            <ul>
+                <li><strong>Page Preview:</strong> A high-quality image of the actual page from the document.</li>
+                <li><strong>Red Bounding Boxes:</strong> Highlight the specific text or section used to generate the
+                    answer.</li>
+                <li><strong>Usage:</strong> Use this to instantly verify that the AI is interpreting the table, chart,
+                    or text correctly.</li>
+            </ul>
+
             <h2>Settings Configuration</h2>
-            
+
             <h3>AI Assistant Configuration</h3>
             <p>In Settings, you can configure:</p>
             <ul>
@@ -148,7 +162,7 @@
                 <li><strong>Max Tokens:</strong> Limit response length</li>
                 <li><strong>MCP Tools:</strong> Enable/disable Model Context Protocol tools</li>
             </ul>
-            
+
             <h3>Knowledge Base Management</h3>
             <p>Manage your documents:</p>
             <ul>
@@ -159,7 +173,7 @@
                 <li><strong>Reingest:</strong> Re-process all documents</li>
                 <li><strong>Reset:</strong> Clear entire knowledge base (dangerous!)</li>
             </ul>
-            
+
             <h2>Keyboard Shortcuts</h2>
             <table>
                 <tr>
@@ -183,32 +197,32 @@
                     <td>Click chat button or close button</td>
                 </tr>
             </table>
-            
+
             <h2>Tips and Tricks</h2>
-            
+
             <h3>Maximizing Search Quality</h3>
             <ul>
                 <li>Upload well-structured documents for better chunking</li>
                 <li>Use descriptive filenames - they appear in search results</li>
                 <li>Break large documents into logical sections</li>
             </ul>
-            
+
             <h3>Improving Responses</h3>
             <ul>
                 <li>Enable "Context On" for document-based queries</li>
                 <li>Select a specific document when asking about it</li>
                 <li>Ask follow-up questions to refine results</li>
             </ul>
-            
+
             <h3>Managing Storage</h3>
             <ul>
                 <li>Regularly review and delete unused documents</li>
                 <li>Monitor chunk count in document list</li>
                 <li>Use "Reingest" if document processing seems incorrect</li>
             </ul>
-            
+
             <h2>Common Workflows</h2>
-            
+
             <h3>Research Workflow</h3>
             <ol>
                 <li>Upload research papers or documents</li>
@@ -217,7 +231,7 @@
                 <li>Review retrieved chunks for sources</li>
                 <li>Save important conversations</li>
             </ol>
-            
+
             <h3>Documentation Q&A</h3>
             <ol>
                 <li>Upload technical documentation</li>
@@ -225,7 +239,7 @@
                 <li>Ask "How do I..." or "What is..." questions</li>
                 <li>Get answers with source citations</li>
             </ol>
-            
+
             <h2>Next Steps</h2>
             <ul>
                 <li>Explore <a href="features.html">Features</a> for detailed capabilities</li>
@@ -236,6 +250,5 @@
     </div>
     <script src="nav.js"></script>
 </body>
+
 </html>
-
-

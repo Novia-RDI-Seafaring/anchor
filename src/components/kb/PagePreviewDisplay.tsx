@@ -36,16 +36,22 @@ export const PagePreviewDisplay: React.FC<PagePreviewDisplayProps> = ({ data }) 
     // Normalize page_numbers - accept both page_numbers array and single page number
     const pageNumbers = data?.page_numbers || (data?.page ? [data.page] : []) || (data?.page_number ? [data.page_number] : []);
 
+    //console.log('[PagePreview] Received data:', data);
+    //console.log('[PagePreview] Normalized pageNumbers:', pageNumbers);
+
     // Check if we can fetch page images (need document_id and page_numbers)
     const canFetchImages = data?.document_id && pageNumbers.length > 0;
+    //console.log('[PagePreview] canFetchImages:', canFetchImages, 'docId:', data?.document_id);
 
     useEffect(() => {
         if (!canFetchImages) {
+            //console.warn('[PagePreview] Cannot fetch images: missing document_id or page_numbers');
             return;
         }
 
         const fetchPageImages = async () => {
             try {
+                //console.log('[PagePreview] Fetching images for:', { docId: data.document_id, pageNumbers });
                 setLoading(true);
                 setError(null);
 
@@ -56,16 +62,20 @@ export const PagePreviewDisplay: React.FC<PagePreviewDisplayProps> = ({ data }) 
                 });
 
                 if (!response.ok) {
+                    //console.error('[PagePreview] API error:', response.status, response.statusText);
                     throw new Error('Failed to fetch page images');
                 }
 
                 const result = await response.json();
+                //console.log('[PagePreview] API result:', result);
                 if (result.success && result.images && result.images.length > 0) {
                     setImages(result.images);
                 } else {
+                    //console.warn('[PagePreview] No images returned in result');
                     setError('No images available for this page');
                 }
             } catch (err) {
+                //console.error('[PagePreview] Fetch exception:', err);
                 setError(err instanceof Error ? err.message : 'Failed to load images');
             } finally {
                 setLoading(false);
@@ -74,6 +84,24 @@ export const PagePreviewDisplay: React.FC<PagePreviewDisplayProps> = ({ data }) 
 
         fetchPageImages();
     }, [data?.document_id, pageNumbers, canFetchImages]);
+
+    // Effect to set initial page index based on relevance (pageNumbers[0])
+    useEffect(() => {
+        if (images.length > 0 && pageNumbers.length > 0) {
+            // content ordering is by relevance (pageNumbers[0] is most relevant)
+            // images ordering is often separate (e.g. by page number)
+            // Find index of the most relevant page in the images array
+            const mostRelevantPage = pageNumbers[0];
+            const index = images.findIndex(img => img.page_number === mostRelevantPage);
+
+            if (index !== -1) {
+                setCurrentIndex(index);
+            } else {
+                // If specific page not found, default to 0
+                setCurrentIndex(0);
+            }
+        }
+    }, [images, pageNumbers]);
 
     const goToPrevious = () => {
         setCurrentIndex((prev) => (prev > 0 ? prev - 1 : prev));
