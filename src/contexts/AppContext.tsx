@@ -15,6 +15,8 @@ interface AppContextType {
     toggleDarkMode: () => void;
     selectedModel: string;
     setSelectedModel: (model: string) => void;
+    isRagEnabled: boolean;
+    setIsRagEnabled: (enabled: boolean) => void;
     activeConversationId: string;
     setActiveConversationId: (id: string) => void;
     conversations: Conversation[];
@@ -30,7 +32,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [isChatOpen, setIsChatOpen] = useState(true);
     const [isDarkMode, setIsDarkMode] = useState(false);
-    const [selectedModel, setSelectedModel] = useState('llama3.2');
+    const [selectedModel, setSelectedModel] = useState('');
+    const [isRagEnabled, setIsRagEnabled] = useState(true);
 
     const {
         conversations,
@@ -60,6 +63,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             toggleDarkMode,
             selectedModel,
             setSelectedModel,
+            isRagEnabled,
+            setIsRagEnabled,
             activeConversationId: activeConversationId || '',
             setActiveConversationId,
             conversations,

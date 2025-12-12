@@ -20,4 +20,9 @@ dependencies = [
     "aiofiles>=24.1.0",
     "httpx>=0.27.0",
     "python-multipart>=0.0.9",
+    "tiktoken>=0.12.0",
+    "ipykernel>=7.1.0",
+    "pandas>=2.3.3",
+    "plotly>=6.5.0",
+    "nbformat>=5.10.4",
 ]

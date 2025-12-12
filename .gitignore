@@ -72,6 +72,13 @@ uploads/
 test_chunking/
 test_scripts/
 
+# Documentation (temporary/working files)
+backend/evals/findings.md
+backend/FLOW_DIAGRAM.md
+backend/SQL_PLAN.md
+backend/SYSTEM_FLOW.md
+notes_docs/DIAGRAM.md
+
 # Docling processing artifacts (if any temp files created)
 *.docling-tmp
 docling_cache/

@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  ArrowLeft, 
-  Bot, 
-  Settings2, 
-  Database, 
-  Check, 
-  X, 
-  FileText, 
-  HardDrive, 
-  Globe, 
-  Layout, 
+import {
+  ArrowLeft,
+  Bot,
+  Settings2,
+  Database,
+  Check,
+  X,
+  FileText,
+  HardDrive,
+  Globe,
+  Layout,
   RefreshCw,
   AlertTriangle,
   Loader2,
@@ -17,6 +17,8 @@ import {
   Upload
 } from 'lucide-react';
 import { AgCard, AgInput, AgSelect, AgBadge, AgToggle } from '../ui/AgComponents';
+import { ModelOption } from '@/types';
+import { useApp } from '@/contexts/AppContext';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001';
 
@@ -55,31 +57,53 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
   // Knowledge base state
   const [documents, setDocuments] = useState<Document[]>([]);
   const [stats, setStats] = useState<KBStats | null>(null);
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [selectedEmbeddingModel, setSelectedEmbeddingModel] = useState<string>('');
   const [urlInput, setUrlInput] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { selectedModel, setSelectedModel } = useApp();
 
   // Fetch documents and stats
   const fetchData = useCallback(async () => {
     try {
-      const [docsRes, statsRes] = await Promise.all([
+      const [docsRes, statsRes, modelsRes] = await Promise.all([
         fetch(`${API_URL}/api/documents`),
-        fetch(`${API_URL}/api/stats`)
+        fetch(`${API_URL}/api/stats`),
+        fetch(`${API_URL}/api/models`)
       ]);
-      
+
       if (docsRes.ok) {
         const docsData = await docsRes.json();
         setDocuments(docsData.documents || []);
       }
-      
+
       if (statsRes.ok) {
         const statsData = await statsRes.json();
         setStats(statsData);
+      }
+
+      if (modelsRes.ok) {
+        const modelsData = await modelsRes.json();
+        if (modelsData.models && modelsData.models.length > 0) {
+          setModels(modelsData.models);
+          const chatModels = modelsData.models.filter((m: ModelOption) => m.type === 'chat' || !m.type);
+          if (chatModels.length > 0 && (!selectedModel || !chatModels.some((m: ModelOption) => m.id === selectedModel))) {
+            setSelectedModel(chatModels[0].id);
+          }
+          // Initialize embedding model if not set
+          const embeddings = modelsData.models.filter((m: ModelOption) => m.type === 'embedding');
+          if (embeddings.length > 0) {
+            // ideally fetching active one from backend, effectively defaulted to first one or previously selected?
+            // Since we don't have get-config yet, we just default to first if local state is empty
+            setSelectedEmbeddingModel(prev => prev || embeddings[0].id);
+          }
+        }
       }
     } catch (err) {
       console.error('Failed to fetch KB data:', err);
@@ -104,22 +128,22 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
   // Upload file
   const handleFileUpload = async () => {
     if (!selectedFile) return;
-    
+
     setIsLoading(true);
     setLoadingAction('upload');
     setError(null);
-    
+
     try {
       const formData = new FormData();
       formData.append('file', selectedFile);
-      
+
       const res = await fetch(`${API_URL}/api/documents/upload`, {
         method: 'POST',
         body: formData
       });
-      
+
       if (!res.ok) throw new Error('Upload failed');
-      
+
       setSuccess(`Uploaded and processed: ${selectedFile.name}`);
       setSelectedFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -135,20 +159,20 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
   // Add URL
   const handleAddUrl = async () => {
     if (!urlInput.trim()) return;
-    
+
     setIsLoading(true);
     setLoadingAction('url');
     setError(null);
-    
+
     try {
       const res = await fetch(`${API_URL}/api/documents/url`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: urlInput })
       });
-      
+
       if (!res.ok) throw new Error('Failed to add URL');
-      
+
       setSuccess('URL added to knowledge base');
       setUrlInput('');
       await fetchData();
@@ -164,14 +188,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
   const handleDeleteDocument = async (documentId: string) => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
       const res = await fetch(`${API_URL}/api/documents/${documentId}`, {
         method: 'DELETE'
       });
-      
+
       if (!res.ok) throw new Error('Delete failed');
-      
+
       await fetchData();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed');
@@ -183,18 +207,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
   // Reingest all
   const handleReingest = async () => {
     if (!confirm('This will re-process all documents. Continue?')) return;
-    
+
     setIsLoading(true);
     setLoadingAction('reingest');
     setError(null);
-    
+
     try {
       const res = await fetch(`${API_URL}/api/documents/reingest`, {
         method: 'POST'
       });
-      
+
       if (!res.ok) throw new Error('Reingest failed');
-      
+
       const data = await res.json();
       setSuccess(`Reingested ${data.processed} documents`);
       await fetchData();
@@ -206,21 +230,63 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
     }
   };
 
+  // Handle embedding change
+  const handleEmbeddingChange = async (modelId: string) => {
+    if (!modelId) return;
+
+    const model = models.find(m => m.id === modelId);
+    if (!model) return;
+
+    if (!confirm(`Switching to ${model.label}. This will require re-ingesting your documents. Continue?`)) {
+      return;
+    }
+
+    setSelectedEmbeddingModel(modelId);
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`${API_URL}/api/config/embedding`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model_id: model.id,
+          provider: model.provider
+        })
+      });
+
+      if (!res.ok) throw new Error("Failed to update embedding model");
+
+      setSuccess(`Embedding model updated to ${model.label}`);
+
+      // Optionally auto-trigger re-ingest? Or let user do it via Danger Zone. 
+      // The warning earlier says "requires re-ingesting".
+      // I will prompt them about re-ingesting now or later.
+      // For now, simple success message is safer.
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update embedding model");
+      // Revert selection?
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Reset knowledge base
   const handleReset = async () => {
     if (!confirm('This will DELETE ALL documents and chunks. This cannot be undone. Continue?')) return;
-    
+
     setIsLoading(true);
     setLoadingAction('reset');
     setError(null);
-    
+
     try {
       const res = await fetch(`${API_URL}/api/documents/reset`, {
         method: 'DELETE'
       });
-      
+
       if (!res.ok) throw new Error('Reset failed');
-      
+
       const data = await res.json();
       setSuccess(`Deleted ${data.documents_deleted} documents and ${data.chunks_deleted} chunks`);
       await fetchData();
@@ -235,10 +301,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
   return (
     <div className="flex-1 h-full bg-neutral-50/50 dark:bg-neutral-950 overflow-y-auto p-4 md:p-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
       <div className="max-w-7xl mx-auto">
-        
+
         {/* Header */}
         <div className="flex items-center gap-4 mb-8">
-          <button 
+          <button
             onClick={onBack}
             className="p-2 hover:bg-neutral-200 dark:hover:bg-neutral-800 rounded-full text-neutral-600 dark:text-neutral-400 transition-colors"
           >
@@ -265,7 +331,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          
+
           {/* Column 1: AI Assistant Configuration */}
           <div className="space-y-6">
             <AgCard className="p-6 border-neutral-200 dark:border-neutral-800 shadow-sm">
@@ -277,12 +343,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
               </div>
 
               <div className="space-y-6">
-                
+
                 {/* System Prompt */}
                 <div>
                   <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-2">Configuration</label>
                   <label className="block text-xs text-neutral-500 mb-1">System Prompt</label>
-                  <textarea 
+                  <textarea
                     className="w-full h-24 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none resize-none dark:text-neutral-100"
                     defaultValue="You are a knowledgeable and helpful assistant. CRITICAL: You must ONLY use information from the provided documents to answer questions."
                   />
@@ -290,27 +356,55 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                 </div>
 
                 {/* Model Selection */}
+                {/* Chat Model Selection */}
                 <div>
-                  <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-2">Model Selection</label>
-                  <label className="block text-xs text-neutral-500 mb-1">Select AI Model</label>
-                  <AgSelect 
-                    options={[{ id: 'llama3.2', label: 'LlamaStack - ollama/llama3.2:3b' }]}
-                    value="llama3.2"
-                    onChange={() => {}}
+                  <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-2">Chat Model</label>
+                  <label className="block text-xs text-neutral-500 mb-1">Select AI Chat Model</label>
+                  <AgSelect
+                    options={models.filter(m => m.type === 'chat' || !m.type)}
+                    value={selectedModel}
+                    onChange={(id) => setSelectedModel(id)}
                     className="w-full"
                   />
                   <div className="flex items-center gap-1.5 mt-2 text-xs text-emerald-600 dark:text-emerald-500">
                     <Check size={12} strokeWidth={3} />
-                    <span>Found 4 available model(s)</span>
+                    <span>Found {models.filter(m => m.type === 'chat' || !m.type).length} available model(s)</span>
                   </div>
+                </div>
+
+                {/* Embedding Model Selection */}
+                <div>
+                  <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-2">Embedding Model</label>
+                  <label className="block text-xs text-neutral-500 mb-1">Select Embedding Model (RAG)</label>
+
+                  {models.filter(m => m.type === 'embedding').length > 0 ? (
+                    <>
+                      <AgSelect
+                        options={models.filter(m => m.type === 'embedding')}
+                        value={models.find(m => m.type === 'embedding' && m.id === selectedEmbeddingModel)?.id || ''}
+                        onChange={handleEmbeddingChange}
+                        className="w-full"
+                      />
+                      <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg flex gap-2">
+                        <AlertTriangle size={16} className="text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5" />
+                        <div className="text-xs text-amber-700 dark:text-amber-400">
+                          <span className="font-semibold">Warning:</span> Changing the embedding model requires re-ingesting all documents. The vector store index is incompatible between different models.
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-sm text-neutral-400 italic border border-neutral-200 dark:border-neutral-800 rounded-md p-3">
+                      No embedding models found. Ensure Ollama is running with an embedding model (e.g., nomic-embed-text) or Azure is configured.
+                    </div>
+                  )}
                 </div>
 
                 {/* Advanced Settings */}
                 <div>
                   <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-4">Advanced Settings</label>
-                  
+
                   <div className="space-y-4">
-                    <AgInput 
+                    <AgInput
                       label="Temperature"
                       value={temperature}
                       onChange={(e) => setTemperature(e.target.value)}
@@ -318,7 +412,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                     />
                     <p className="text-xs text-neutral-500 -mt-2">Controls randomness (0.0 = focused, 1.0 = creative)</p>
 
-                    <AgInput 
+                    <AgInput
                       label="Max Tokens"
                       value={maxTokens}
                       onChange={(e) => setMaxTokens(e.target.value)}
@@ -335,10 +429,10 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
 
                   <div className="space-y-3">
                     <div className="flex items-center justify-between py-2">
-                       <div className="flex items-center gap-2">
-                         <div className="h-5 w-5 rounded border border-neutral-300 dark:border-neutral-600"></div>
-                         <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Enable MCP Tools</span>
-                       </div>
+                      <div className="flex items-center gap-2">
+                        <div className="h-5 w-5 rounded border border-neutral-300 dark:border-neutral-600"></div>
+                        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Enable MCP Tools</span>
+                      </div>
                     </div>
 
                     <div className="space-y-2 bg-neutral-50 dark:bg-neutral-800/50 p-4 rounded-lg border border-neutral-100 dark:border-neutral-800">
@@ -350,7 +444,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                             <div className="text-[10px] text-neutral-400">Endpoint: http://localhost:8000/sse</div>
                           </div>
                         </div>
-                        <AgToggle checked={mcpTools.filesystem} onChange={(c) => setMcpTools({...mcpTools, filesystem: c})} />
+                        <AgToggle checked={mcpTools.filesystem} onChange={(c) => setMcpTools({ ...mcpTools, filesystem: c })} />
                       </div>
 
                       <div className="flex items-center justify-between p-2 bg-white dark:bg-neutral-900 rounded border border-neutral-100 dark:border-neutral-800">
@@ -361,7 +455,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                             <div className="text-[10px] text-neutral-400">Endpoint: https://mcp.search-provider.com/sse</div>
                           </div>
                         </div>
-                        <AgToggle checked={mcpTools.webSearch} onChange={(c) => setMcpTools({...mcpTools, webSearch: c})} />
+                        <AgToggle checked={mcpTools.webSearch} onChange={(c) => setMcpTools({ ...mcpTools, webSearch: c })} />
                       </div>
 
                       <div className="flex items-center justify-between p-2 bg-white dark:bg-neutral-900 rounded border border-neutral-100 dark:border-neutral-800">
@@ -372,7 +466,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                             <div className="text-[10px] text-neutral-400">Endpoint:</div>
                           </div>
                         </div>
-                        <AgToggle checked={mcpTools.database} onChange={(c) => setMcpTools({...mcpTools, database: c})} />
+                        <AgToggle checked={mcpTools.database} onChange={(c) => setMcpTools({ ...mcpTools, database: c })} />
                       </div>
 
                       <div className="flex items-center justify-between p-2 bg-white dark:bg-neutral-900 rounded border border-neutral-100 dark:border-neutral-800">
@@ -383,7 +477,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                             <div className="text-[10px] text-neutral-400">Endpoint: http://localhost:8001/sse</div>
                           </div>
                         </div>
-                        <AgToggle checked={mcpTools.markitdown} onChange={(c) => setMcpTools({...mcpTools, markitdown: c})} />
+                        <AgToggle checked={mcpTools.markitdown} onChange={(c) => setMcpTools({ ...mcpTools, markitdown: c })} />
                       </div>
                     </div>
                   </div>
@@ -391,50 +485,50 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
 
                 {/* Status Section */}
                 <div>
-                   <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-3">Status</label>
-                   <label className="block text-xs text-neutral-500 mb-2">Current Configuration</label>
-                   
-                   <div className="bg-neutral-50 dark:bg-neutral-800/50 rounded-lg p-4 space-y-2 text-sm border border-neutral-100 dark:border-neutral-800">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-neutral-700 dark:text-neutral-300">System Prompt:</span>
-                        <span className="text-emerald-600 dark:text-emerald-500">Configured</span>
-                        <Check size={14} className="text-emerald-500" />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-neutral-700 dark:text-neutral-300">Selected Model:</span>
-                        <span className="text-emerald-600 dark:text-emerald-500">ollama/llama3.2:3b</span>
-                        <Check size={14} className="text-emerald-500" />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-neutral-700 dark:text-neutral-300">Temperature:</span>
-                        <span className="text-neutral-600 dark:text-neutral-400">{temperature}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-neutral-700 dark:text-neutral-300">Max Tokens:</span>
-                        <span className="text-neutral-600 dark:text-neutral-400">{maxTokens}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-neutral-700 dark:text-neutral-300">MCP Tools:</span>
-                        <span className="text-red-500 dark:text-red-400">Disabled</span>
-                        <X size={14} className="text-red-500 dark:text-red-400" />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-neutral-700 dark:text-neutral-300">Knowledge Base:</span>
-                        {stats?.status === 'connected' ? (
-                          <>
-                            <span className="text-emerald-600 dark:text-emerald-500">
-                              {stats.total_documents} docs, {stats.total_chunks} chunks
-                            </span>
-                            <Check size={14} className="text-emerald-500" />
-                          </>
-                        ) : (
-                          <>
-                            <span className="text-amber-600 dark:text-amber-500">Connecting...</span>
-                            <Loader2 size={14} className="text-amber-500 animate-spin" />
-                          </>
-                        )}
-                      </div>
-                   </div>
+                  <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-3">Status</label>
+                  <label className="block text-xs text-neutral-500 mb-2">Current Configuration</label>
+
+                  <div className="bg-neutral-50 dark:bg-neutral-800/50 rounded-lg p-4 space-y-2 text-sm border border-neutral-100 dark:border-neutral-800">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-neutral-700 dark:text-neutral-300">System Prompt:</span>
+                      <span className="text-emerald-600 dark:text-emerald-500">Configured</span>
+                      <Check size={14} className="text-emerald-500" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-neutral-700 dark:text-neutral-300">Selected Model:</span>
+                      <span className="text-emerald-600 dark:text-emerald-500">{models.find(m => m.id === selectedModel)?.label || selectedModel}</span>
+                      <Check size={14} className="text-emerald-500" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-neutral-700 dark:text-neutral-300">Temperature:</span>
+                      <span className="text-neutral-600 dark:text-neutral-400">{temperature}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-neutral-700 dark:text-neutral-300">Max Tokens:</span>
+                      <span className="text-neutral-600 dark:text-neutral-400">{maxTokens}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-neutral-700 dark:text-neutral-300">MCP Tools:</span>
+                      <span className="text-red-500 dark:text-red-400">Disabled</span>
+                      <X size={14} className="text-red-500 dark:text-red-400" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-neutral-700 dark:text-neutral-300">Knowledge Base:</span>
+                      {stats?.status === 'connected' ? (
+                        <>
+                          <span className="text-emerald-600 dark:text-emerald-500">
+                            {stats.total_documents} docs, {stats.total_chunks} chunks
+                          </span>
+                          <Check size={14} className="text-emerald-500" />
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-amber-600 dark:text-amber-500">Connecting...</span>
+                          <Loader2 size={14} className="text-amber-500 animate-spin" />
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
               </div>
@@ -452,13 +546,13 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
               </div>
 
               <div className="space-y-6">
-                
+
                 {/* Basic Info */}
                 <div>
                   <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-3">Basic Info</label>
-                  
+
                   <div className="space-y-4">
-                    <AgInput 
+                    <AgInput
                       label="What are you working on?"
                       placeholder="MyKnowledgebase"
                       defaultValue="MyKnowledgebase"
@@ -466,7 +560,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
 
                     <div>
                       <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">What are you trying to achieve?</label>
-                      <textarea 
+                      <textarea
                         className="w-full h-20 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 focus:outline-none resize-none dark:text-neutral-100"
                         defaultValue="A collection of organized, factual documents for quick retrieval. Use this knowledgebase to find authoritative context."
                       />
@@ -478,12 +572,12 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                 <div className="bg-neutral-50 dark:bg-neutral-800/50 p-4 rounded-lg border border-neutral-100 dark:border-neutral-800">
                   <label className="block text-sm font-bold text-neutral-900 dark:text-white mb-3">Add URL to Knowledge Base</label>
                   <div className="space-y-3">
-                    <AgInput 
+                    <AgInput
                       placeholder="https://stackoverflow.com/... or any URL"
                       value={urlInput}
                       onChange={(e) => setUrlInput(e.target.value)}
                     />
-                    <button 
+                    <button
                       onClick={handleAddUrl}
                       disabled={isLoading || !urlInput.trim()}
                       className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors w-full md:w-auto flex items-center justify-center gap-2"
@@ -497,11 +591,11 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                 {/* Management */}
                 <div>
                   <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-3">Management</label>
-                  
+
                   <div className="space-y-4">
                     <div>
                       <label className="block text-xs text-neutral-500 mb-2">Knowledge-base status</label>
-                      <button 
+                      <button
                         onClick={fetchData}
                         className="flex items-center gap-2 px-3 py-1.5 border border-neutral-300 dark:border-neutral-700 rounded text-sm font-medium text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800"
                       >
@@ -521,7 +615,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                       />
                       <div className="flex gap-2">
                         <div className="flex rounded-md shadow-sm flex-1">
-                          <button 
+                          <button
                             onClick={() => fileInputRef.current?.click()}
                             className="relative inline-flex items-center rounded-l-md bg-neutral-800 dark:bg-neutral-700 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-700 dark:hover:bg-neutral-600 focus:z-10"
                           >
@@ -552,7 +646,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                         ) : (
                           <div className="space-y-1">
                             {documents.map((doc) => (
-                              <div 
+                              <div
                                 key={doc.document_id}
                                 className="flex items-center justify-between gap-2 px-2 py-1.5 text-sm text-neutral-700 dark:text-neutral-300 bg-neutral-50 dark:bg-neutral-800 rounded group"
                               >
@@ -581,14 +675,14 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                 <div>
                   <label className="block text-sm font-bold text-red-600 dark:text-red-400 mb-2">Danger Zone</label>
                   <p className="text-xs text-neutral-500 mb-4">These actions are permanent and cannot be undone. Please proceed with caution.</p>
-                  
+
                   <div className="border border-red-200 dark:border-red-900/50 rounded-lg p-4 bg-red-50/10 dark:bg-red-900/10 space-y-4">
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="text-sm font-medium text-neutral-900 dark:text-white">Reingest all documents</div>
                         <div className="text-xs text-neutral-500">Reingests documents in the knowledgebase</div>
                       </div>
-                      <button 
+                      <button
                         onClick={handleReingest}
                         disabled={isLoading || documents.length === 0}
                         className="px-3 py-1.5 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 rounded text-xs font-medium hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors disabled:opacity-50 flex items-center gap-1"
@@ -605,7 +699,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                         <div className="text-sm font-medium text-neutral-900 dark:text-white">Reset knowledge base</div>
                         <div className="text-xs text-neutral-500">Resets the knowledge base</div>
                       </div>
-                      <button 
+                      <button
                         onClick={handleReset}
                         disabled={isLoading}
                         className="px-3 py-1.5 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 rounded text-xs font-medium hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors disabled:opacity-50 flex items-center gap-1"

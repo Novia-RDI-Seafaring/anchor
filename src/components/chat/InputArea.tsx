@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, memo, useCallback } from 'react';
 import { ArrowUp, Paperclip, Database, Globe, X, Loader2, FileText } from 'lucide-react';
+import { useApp } from '@/contexts/AppContext';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001';
 
@@ -16,10 +17,10 @@ interface UploadingFile {
 
 const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled }) => {
   const [text, setText] = useState('');
-  const [isRagEnabled, setIsRagEnabled] = useState(true);
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { isRagEnabled, setIsRagEnabled } = useApp();
 
   // Auto-resize textarea
   useEffect(() => {
@@ -46,7 +47,7 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
 
   const toggleRag = useCallback(() => {
     setIsRagEnabled(prev => !prev);
-  }, []);
+  }, [setIsRagEnabled]);
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;

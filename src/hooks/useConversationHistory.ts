@@ -39,7 +39,7 @@ export const useConversationHistory = () => {
             id: crypto.randomUUID(),
             title: 'New Conversation',
             lastMessageAt: 'Just now',
-            preview: '0 messages · Just now',
+            preview: '0 messages - Just now',
             messages: [] // We'll need to extend the type to include messages if we want to persist them fully here
         };
 
@@ -59,7 +59,7 @@ export const useConversationHistory = () => {
                     id: crypto.randomUUID(),
                     title: 'New Conversation',
                     lastMessageAt: 'Just now',
-                    preview: '0 messages · Just now'
+                    preview: '0 messages - Just now'
                 };
                 setActiveId(newConv.id);
                 return [newConv];

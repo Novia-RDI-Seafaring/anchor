@@ -34,6 +34,8 @@
                         href="https://www.postgresql.org/download/" target="_blank">Download</a></li>
                 <li><strong>uv</strong> (Python package manager) - <a href="https://github.com/astral-sh/uv"
                         target="_blank">Installation Guide</a></li>
+                <li><strong>Ollama</strong> (Optional, for local models) - <a href="https://ollama.com/"
+                        target="_blank">Download</a></li>
             </ul>
 
             <h2>Installation</h2>
@@ -98,6 +100,10 @@ SIMILARITY_THRESHOLD=0.3
 # Document Storage
 UPLOADS_DIR=../uploads
 
+# Ollama Configuration (Optional - for local models)
+OLLAMA_URL=http://localhost:11434
+# OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+
 # Logfire (Observability - optional)
 LOGFIRE_TOKEN=your_logfire_token</code></pre>
 
@@ -146,7 +152,8 @@ NEXT_PUBLIC_BACKEND_URL=http://localhost:8001</code></pre>
                 <li>Verify PostgreSQL is running: <code>pg_isready</code></li>
                 <li>Check connection credentials in <code>.env</code></li>
                 <li>Ensure pgvector extension is installed:
-                    <code>SELECT * FROM pg_extension WHERE extname = 'vector';</code></li>
+                    <code>SELECT * FROM pg_extension WHERE extname = 'vector';</code>
+                </li>
             </ul>
 
             <h3>Backend Not Starting</h3>

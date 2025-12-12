@@ -17,6 +17,7 @@ export interface ModelOption {
     id: string;
     label: string;
     provider: string;
+    type?: 'chat' | 'embedding';
 }
 
 export interface DatabaseStatus {

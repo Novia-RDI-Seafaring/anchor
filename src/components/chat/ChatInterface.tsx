@@ -4,6 +4,7 @@ import { InputArea } from '@/components/chat/InputArea';
 import { useCopilotChat } from "@copilotkit/react-core";
 import { TextMessage, Role } from "@copilotkit/runtime-client-gql";
 import { X } from 'lucide-react';
+import { useApp } from '@/contexts/AppContext';
 
 
 interface ChatInterfaceProps {
@@ -13,6 +14,8 @@ interface ChatInterfaceProps {
 }
 
 export function ChatInterface({ isOpen, onClose, initialMessages }: ChatInterfaceProps) {
+    const { isRagEnabled } = useApp();
+
     const sanitizedMessages = React.useMemo(() => {
         if (!initialMessages) return [];
         return initialMessages.map(msg => {
@@ -23,7 +26,10 @@ export function ChatInterface({ isOpen, onClose, initialMessages }: ChatInterfac
     }, [initialMessages]);
 
     const { visibleMessages, appendMessage, setMessages } = useCopilotChat({
-        initialMessages: sanitizedMessages
+        initialMessages: sanitizedMessages,
+        headers: {
+            'X-RAG-Enabled': isRagEnabled ? '1' : '0'
+        }
     }) as any;
 
     // Reset/Update messages when the sanitizedMessages (derived from initialMessages) changes

@@ -6,6 +6,8 @@ from src.types import (
 )
 from src.logger import log_rag_query, log_agent_tool_call, log_error
 from pydantic_ai import ToolReturn
+from evals.trace_logger import log_event
+from evals.token_utils import estimate_tokens, estimate_tokens_bulk
 
 async def query_knowledge_base(
   ctx: RunContext[StateDeps[RAGState]], 
@@ -62,6 +64,23 @@ async def query_knowledge_base(
     # Log query performance
     duration_ms = (time.time() - start_time) * 1000
     log_rag_query(query, top_k, len(chunks), duration_ms)
+    log_event({
+        "type": "retrieval",
+        "query_len": len(query),
+        "query_tokens_est": estimate_tokens(query),
+        "top_k": top_k,
+        "result_count": len(chunks),
+        "total_chunk_chars": sum(len(c.get("content", "")) for c in chunks),
+        "total_chunk_tokens": estimate_tokens_bulk((c.get("content", "") for c in chunks)),
+        "doc_ids": list({c.get("document_id") for c in chunks if c.get("document_id")}),
+        "latency_ms": duration_ms,
+    })
+    log_event({
+        "type": "state",
+        "conversation_len": len(ctx.deps.state.conversation_history),
+        "last_chunks_len": len(ctx.deps.state.last_chunks),
+        "ui_components_len": len(ctx.deps.state.active_ui_components),
+    })
     
     # Return with state update
     return ToolReturn(
@@ -120,6 +139,15 @@ async def add_to_conversation(
     "role": role,
     "content": content
   })
+  try:
+    log_event({
+        "type": "state",
+        "conversation_len": len(ctx.deps.state.conversation_history),
+        "last_chunks_len": len(ctx.deps.state.last_chunks),
+        "ui_components_len": len(ctx.deps.state.active_ui_components),
+    })
+  except Exception:
+    pass
   
   return ToolReturn(
     return_value={"success": True},
@@ -210,11 +238,32 @@ async def render_ui_component(
                  data["page_numbers"] = inferred_pages
                  print(f"render_ui_component: Inferred page_numbers from chunks (ordered): {data['page_numbers']}")
         
-      # Validation: document_id is mandatory for page_preview
+      # Validation: document_id is mandatory for page_preview. Instead of raising (which triggers tool retries),
+      # emit a friendly error component so the UI can surface the issue without exploding the stream.
       if not data.get("document_id"):
-        raise ValueError(
-          "For 'page_preview' component, you MUST provide 'document_id'. "
-          "Extract specific 'document_id' from the relevant chunk in the query results."
+        error_component = UIComponentData(
+          component_type=UIComponentType.LIST,
+          data={
+            "items": [
+              {
+                "title": "Page preview unavailable",
+                "description": "Missing document_id for page preview. Ensure the chunk includes document_id and page numbers."
+              }
+            ],
+            "title": "Display Error"
+          },
+          metadata={"error": "missing_document_id"}
+        )
+        ctx.deps.state.active_ui_components = [error_component]
+        ctx.deps.state.render_mode = "list"
+        return ToolReturn(
+          return_value={"success": False, "error": "missing_document_id"},
+          metadata=[
+            StateSnapshotEvent(
+              type=EventType.STATE_SNAPSHOT,
+              snapshot=ctx.deps.state,
+            )
+          ]
         )
       # Auto-inject bboxes if missing, using last_chunks
       injected_bboxes = []
@@ -261,38 +310,19 @@ async def render_ui_component(
     # Dead code removed here
 
 
-  except ValueError as e:
-    # Do NOT raise exception, as it causes "tool exceeded max retries" error in the agent
-    log_error("Validation Error in render_ui_component (returning fallback)", e)
-    
-    # Fallback: Render a list with the data we have, or an error message
-    from src.types import UIComponentData, UIComponentType
-    
+  except Exception as e:
+    # Catch-all to avoid throwing up to the agent (which triggers retries).
+    log_error("Error in render_ui_component (returning fallback)", e, {
+      "component_type": component_type,
+      "data_keys": list(data.keys()) if isinstance(data, dict) else "not_dict"
+    })
     error_component = UIComponentData(
       component_type=UIComponentType.LIST,
       data={"items": [{"title": "Error rendering component", "description": str(e)}], "title": "Display Error"},
       metadata={"error": str(e)}
     )
-    
     ctx.deps.state.active_ui_components = [error_component]
     ctx.deps.state.render_mode = "list"
-    
-    return ToolReturn(
-        return_value={"success": False, "error": str(e)},
-        metadata=[
-            StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=ctx.deps.state,
-            )
-        ]
-    )
-    
-  except Exception as e:
-    log_error("Error in render_ui_component", e, {
-      "component_type": component_type,
-      "data_keys": list(data.keys()) if isinstance(data, dict) else "not_dict"
-    })
-    # Return state snapshot even on error, wrapped in ToolReturn
     return ToolReturn(
         return_value={"success": False, "error": str(e)},
         metadata=[

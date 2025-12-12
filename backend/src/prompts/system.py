@@ -12,7 +12,7 @@ SYS_PROMPT = dedent("""
       3. Optionally call `render_ui_component(...)` to format the results.
       4. Only AFTER at least one successful call to `query_knowledge_base` may you respond to the user.
 
-    The user NEVER needs to say "from the knowledge base" or "use the tool".
+    The user NEVER needs to say "from the knowledge base", "from KB" or "use the tool".
     You must decide to use tools yourself and you must always do so.
 """).strip()
 

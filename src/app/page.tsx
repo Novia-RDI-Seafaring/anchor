@@ -9,8 +9,11 @@ import { ChatInterface } from '@/components/chat/ChatInterface';
 import { DatabaseStatus } from '@/types';
 import { Menu, MessageCircle } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
-import { MOCK_CONVERSATIONS, MOCK_MODELS } from '@/lib/mock-data';
 import { CopilotKit } from "@copilotkit/react-core";
+import { ModelOption } from '@/types';
+
+// Use environment variable or default to localhost:8001
+const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001';
 
 export default function Home() {
     // Global state from Context
@@ -29,6 +32,34 @@ export default function Home() {
         setActiveConversationId,
         conversations
     } = useApp();
+
+    // Models state
+    const [models, setModels] = React.useState<ModelOption[]>([]);
+
+    // Fetch models on mount
+    React.useEffect(() => {
+        const fetchModels = async () => {
+            try {
+                const res = await fetch(`${API_URL}/api/models`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.models && data.models.length > 0) {
+                        setModels(data.models);
+                        // If current selected model is not in list, select first one
+                        const currentExists = data.models.some((m: ModelOption) => m.id === selectedModel);
+                        if (!currentExists && data.models.length > 0) {
+                            setSelectedModel(data.models[0].id);
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to fetch models:', err);
+                // Fallback to default models happens automatically via initial state
+            }
+        };
+
+        fetchModels();
+    }, [selectedModel, setSelectedModel]);
 
     const handleNewChat = useCallback(() => {
         setCurrentView('workspace');
@@ -88,12 +119,12 @@ export default function Home() {
                             selectedModel={selectedModel}
                             onModelChange={setSelectedModel}
                             dbStatus={dbStatus}
-                            models={MOCK_MODELS}
+                            models={models}
                         />
 
                         {/* Split View Content Area */}
                         <CopilotKit
-                            runtimeUrl="/api/copilotkit"
+                            runtimeUrl={`/api/copilotkit?model=${selectedModel}`}
                             agent="my_agent"
                             key={activeConversationId}
                         >

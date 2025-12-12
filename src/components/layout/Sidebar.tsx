@@ -232,7 +232,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </button>
         <div className="text-xs text-neutral-400 dark:text-neutral-600 text-center mt-2">
-          v1.0.4 · AG-UI
+          v1.0.4 - AG-UI
         </div>
       </div>
     </div>

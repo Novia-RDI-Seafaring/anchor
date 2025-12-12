@@ -23,6 +23,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi import Request
+from src.request_context import set_current_model_id
+
+@app.middleware("http")
+async def model_context_middleware(request: Request, call_next):
+    # Extract 'model' query param
+    model_param = request.query_params.get("model")
+    if model_param:
+        # print(f"Middleware: Setting model to {model_param}")
+        set_current_model_id(model_param)
+        
+    response = await call_next(request)
+    return response
+
 # Mount the AG-UI agent
 ag_ui_app = agent.to_ag_ui(deps=StateDeps(AppState()))
 app.mount("/agent", ag_ui_app)
@@ -195,6 +209,45 @@ async def set_active_document(document_id: Optional[str] = None):
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+
+# ===== Models API =====
+
+@app.get("/api/models")
+async def get_models():
+    """Get available models from configured providers (Azure, Ollama)."""
+    try:
+        from src.models_service import get_all_models
+        models = await get_all_models()
+        return {"success": True, "models": models}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class UpdateEmbeddingRequest(BaseModel):
+    model_id: str
+    provider: str
+
+@app.post("/api/config/embedding")
+async def update_embedding_model(request: UpdateEmbeddingRequest):
+    """Update the active embedding model."""
+    try:
+        from src.embeddings import get_embeddings_service
+        
+        # Parse model_id which might be "ollama:nomic-embed-text"
+        model_name = request.model_id
+        if ":" in model_name: 
+            # strip prefix if present in ID but not actual model name for Ollama
+            # For Ollama service we expect just the name
+            if request.provider == "Ollama" and model_name.startswith("ollama:"):
+                model_name = model_name.replace("ollama:", "")
+        
+        service = get_embeddings_service()
+        service.set_model(model_name, request.provider.lower())
+        
+        return {"success": True, "message": f"Embedding model updated to {model_name}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

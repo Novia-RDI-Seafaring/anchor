@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Features - Anchor UI Documentation</title>
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <div class="container">
         <aside class="sidebar">
@@ -13,27 +15,28 @@
                 <input type="text" id="searchInput" placeholder="Search documentation...">
                 <div class="search-results" id="searchResults"></div>
             </div>
-            
+
             <h2>Documentation</h2>
             <nav id="nav"></nav>
         </aside>
-        
+
         <main class="main-content">
             <h1>Features</h1>
-            
+
             <h2>Core Features</h2>
-            
+
             <h3>📚 Knowledge Base Management</h3>
             <p>Anchor UI provides comprehensive document management capabilities:</p>
             <ul>
                 <li><strong>Multi-format Support:</strong> Upload PDF, DOCX, TXT, MD, and HTML files</li>
                 <li><strong>URL Import:</strong> Add web pages directly to your knowledge base</li>
-                <li><strong>Automatic Processing:</strong> Documents are automatically converted, chunked, and embedded</li>
+                <li><strong>Automatic Processing:</strong> Documents are automatically converted, chunked, and embedded
+                </li>
                 <li><strong>Document Filtering:</strong> Focus queries on specific documents or search across all</li>
                 <li><strong>Bulk Operations:</strong> Re-process all documents or reset the knowledge base</li>
                 <li><strong>Statistics Dashboard:</strong> View document and chunk counts</li>
             </ul>
-            
+
             <h3>💬 Intelligent Chat Interface</h3>
             <p>Natural language interaction with your knowledge base:</p>
             <ul>
@@ -44,7 +47,7 @@
                 <li><strong>Source Citations:</strong> View which documents informed each response</li>
                 <li><strong>Minimizable Panel:</strong> Collapse chat to focus on workspace</li>
             </ul>
-            
+
             <h3>🔍 Semantic Search</h3>
             <p>Advanced vector-based search capabilities:</p>
             <ul>
@@ -55,20 +58,22 @@
                 <li><strong>Document-Specific Search:</strong> Query within a single document</li>
                 <li><strong>Fast Retrieval:</strong> HNSW index for efficient similarity search</li>
             </ul>
-            
+
             <h3>⚙️ Flexible Configuration</h3>
             <p>Customize your AI assistant to your needs:</p>
             <ul>
-                <li><strong>Model Selection:</strong> Choose from available LLM models</li>
+                <li><strong>Chat Model Selection:</strong> Choose from available LLM models (OpenAI, Azure, Ollama)
+                    directly in the header</li>
+                <li><strong>Embedding Model:</strong> Configure specialized embedding models via Settings</li>
                 <li><strong>Temperature Control:</strong> Adjust creativity vs. consistency (0.0-1.0)</li>
                 <li><strong>Token Limits:</strong> Set maximum response length</li>
                 <li><strong>System Prompts:</strong> Define assistant behavior and instructions</li>
                 <li><strong>MCP Integration:</strong> Enable Model Context Protocol tools</li>
                 <li><strong>RAG Parameters:</strong> Configure chunk size, overlap, and top-k results</li>
             </ul>
-            
+
             <h2>User Interface Features</h2>
-            
+
             <h3>🌙 Dark Mode</h3>
             <p>Comfortable viewing in any lighting condition:</p>
             <ul>
@@ -76,7 +81,7 @@
                 <li>Persistent preference across sessions</li>
                 <li>Optimized color schemes for readability</li>
             </ul>
-            
+
             <h3>📱 Responsive Design</h3>
             <p>Works seamlessly across devices:</p>
             <ul>
@@ -84,7 +89,7 @@
                 <li>Adaptive layouts for different screen sizes</li>
                 <li>Touch-optimized controls</li>
             </ul>
-            
+
             <h3>🎨 Modern UI Components</h3>
             <p>Built with AG-UI components for consistency:</p>
             <ul>
@@ -93,9 +98,9 @@
                 <li>Smooth animations and transitions</li>
                 <li>Accessible keyboard navigation</li>
             </ul>
-            
+
             <h2>Document Processing Features</h2>
-            
+
             <h3>📄 Docling Integration</h3>
             <p>Advanced document conversion:</p>
             <ul>
@@ -105,7 +110,7 @@
                 <li><strong>Fast Mode:</strong> Optimized for speed</li>
                 <li><strong>Fallback Handling:</strong> Graceful degradation for unsupported formats</li>
             </ul>
-            
+
             <h3>✂️ Intelligent Chunking</h3>
             <p>Smart text segmentation:</p>
             <ul>
@@ -120,12 +125,13 @@
             <ul>
                 <li><strong>High-Fidelity Rendering:</strong> View actual PDF pages, not just text</li>
                 <li><strong>Answer Highlighting:</strong> Red bounding boxes show the exact paragraphs used</li>
-                <li><strong>Contextual Verification:</strong> Instantly verify AI claims against the source document</li>
+                <li><strong>Contextual Verification:</strong> Instantly verify AI claims against the source document
+                </li>
                 <li><strong>Seamless Integration:</strong> Appears automatically when relevant to your query</li>
             </ul>
-            
+
             <h2>Backend Features</h2>
-            
+
             <h3>🚀 FastAPI Backend</h3>
             <p>High-performance API server:</p>
             <ul>
@@ -134,7 +140,7 @@
                 <li>CORS support for frontend integration</li>
                 <li>Health check endpoints</li>
             </ul>
-            
+
             <h3>🗄️ PostgreSQL + pgvector</h3>
             <p>Robust vector database:</p>
             <ul>
@@ -144,7 +150,7 @@
                 <li>Connection pooling</li>
                 <li>JSONB metadata storage</li>
             </ul>
-            
+
             <h3>🤖 PydanticAI Agent</h3>
             <p>Powerful AI agent framework:</p>
             <ul>
@@ -154,9 +160,9 @@
                 <li>Streaming responses</li>
                 <li>Error handling and logging</li>
             </ul>
-            
+
             <h2>Integration Features</h2>
-            
+
             <h3>🔌 CopilotKit Integration</h3>
             <p>Seamless frontend-backend communication:</p>
             <ul>
@@ -165,7 +171,7 @@
                 <li>Message history management</li>
                 <li>Error boundary handling</li>
             </ul>
-            
+
             <h3>🌐 AG-UI Protocol</h3>
             <p>Standardized agent communication:</p>
             <ul>
@@ -174,9 +180,9 @@
                 <li>Tool execution tracking</li>
                 <li>Multi-agent support (future)</li>
             </ul>
-            
+
             <h2>Developer Features</h2>
-            
+
             <h3>📝 TypeScript Frontend</h3>
             <ul>
                 <li>Full type safety</li>
@@ -184,7 +190,7 @@
                 <li>Next.js 15 App Router</li>
                 <li>Context-based state management</li>
             </ul>
-            
+
             <h3>🐍 Python Backend</h3>
             <ul>
                 <li>Type hints throughout</li>
@@ -192,7 +198,7 @@
                 <li>Async/await patterns</li>
                 <li>Modular architecture</li>
             </ul>
-            
+
             <h3>🔍 Observability</h3>
             <ul>
                 <li>Logfire integration (optional)</li>
@@ -200,7 +206,7 @@
                 <li>Error tracking</li>
                 <li>Performance monitoring</li>
             </ul>
-            
+
             <h2>Upcoming Features</h2>
             <p>Features planned for future releases:</p>
             <ul>
@@ -213,7 +219,7 @@
                 <li>API authentication</li>
                 <li>Plugin system</li>
             </ul>
-            
+
             <h2>Related Documentation</h2>
             <ul>
                 <li><a href="knowledge-base.html">Knowledge Base</a> - Detailed document management</li>
@@ -225,6 +231,5 @@
     </div>
     <script src="nav.js"></script>
 </body>
+
 </html>
-
-

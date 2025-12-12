@@ -107,7 +107,7 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="text-green-600 dark:text-green-500 font-medium">Ready</span>
         </div>
         <AgSelect
-          options={models}
+          options={models.filter(m => m.type === 'chat' || !m.type)}
           value={selectedModel}
           onChange={onModelChange}
           align="right"

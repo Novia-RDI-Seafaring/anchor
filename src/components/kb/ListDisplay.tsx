@@ -105,7 +105,7 @@ export const ListDisplay: React.FC<ListDisplayProps> = ({ data }) => {
 
                             return (
                                 <li key={idx} className="text-sm flex gap-2 items-start">
-                                    <span className="text-brand-600 dark:text-brand-400 mt-0.5 flex-shrink-0">•</span>
+                                    <span className="text-brand-600 dark:text-brand-400 mt-0.5 flex-shrink-0">-</span>
                                     <div className="flex-1 min-w-0">
                                         <span className="font-medium text-neutral-900 dark:text-white">
                                             {label}:
@@ -120,7 +120,7 @@ export const ListDisplay: React.FC<ListDisplayProps> = ({ data }) => {
 
                         return (
                             <li key={idx} className="text-sm flex gap-2 items-start">
-                                <span className="text-brand-600 dark:text-brand-400 mt-0.5 flex-shrink-0">•</span>
+                                <span className="text-brand-600 dark:text-brand-400 mt-0.5 flex-shrink-0">-</span>
                                 <span className="text-neutral-700 dark:text-neutral-300 flex-1">
                                     {item}
                                 </span>

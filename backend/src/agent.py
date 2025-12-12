@@ -10,7 +10,7 @@ from .prompts.system import SYS_PROMPT as SYSTEM_PROMPT
 
 # load environment variables
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)
 
 # Import logger
 from src.logger import log_rag_query, log_agent_tool_call, log_error

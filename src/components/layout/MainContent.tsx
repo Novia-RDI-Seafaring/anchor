@@ -78,7 +78,7 @@ export const MainContent: React.FC = () => {
         return msg;
       }),
       lastMessageAt: 'Just now',
-      preview: `${visibleMessages.length} messages · Just now`
+      preview: `${visibleMessages.length} messages - Just now`
     };
 
     // 4. Auto-generate title if it's the first user message and title is default
@@ -234,7 +234,9 @@ export const MainContent: React.FC = () => {
             <div className="p-6 md:p-10 bg-white dark:bg-neutral-900 min-h-[500px] text-sm md:text-base">
               <div className="prose prose-neutral dark:prose-invert prose-sm md:prose-base max-w-none">
                 {latestResponse ? (
-                  <div dangerouslySetInnerHTML={{ __html: latestResponse.replace(/\n/g, '<br/>') }} />
+                  <div className="whitespace-pre-line break-words">
+                    {latestResponse}
+                  </div>
                 ) : (
                   <p className="text-neutral-500 italic">Waiting for agent response...</p>
                 )}

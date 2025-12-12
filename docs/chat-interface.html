@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chat Interface - Anchor UI Documentation</title>
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <div class="container">
         <aside class="sidebar">
@@ -13,32 +15,35 @@
                 <input type="text" id="searchInput" placeholder="Search documentation...">
                 <div class="search-results" id="searchResults"></div>
             </div>
-            
+
             <h2>Documentation</h2>
             <nav id="nav"></nav>
         </aside>
-        
+
         <main class="main-content">
             <h1>Chat Interface</h1>
-            
+
             <h2>Overview</h2>
-            <p>The Chat Interface is your primary way to interact with Anchor UI. It provides a natural language interface to query your knowledge base and receive intelligent, context-aware responses.</p>
-            
+            <p>The Chat Interface is your primary way to interact with Anchor UI. It provides a natural language
+                interface to query your knowledge base and receive intelligent, context-aware responses.</p>
+
             <h2>Interface Components</h2>
-            
+
             <h3>Chat Panel</h3>
             <p>The chat panel appears on the right side of the workspace (or full-width on mobile):</p>
             <ul>
-                <li><strong>Header:</strong> Shows "Assistant" title and close/minimize button</li>
+                <li><strong>Header:</strong> Shows "Assistant" title, close/minimize button, and <strong>Model
+                        Selector</strong></li>
                 <li><strong>Chat Area:</strong> Displays conversation messages</li>
                 <li><strong>Input Area:</strong> Text input with controls and file upload</li>
             </ul>
-            
+
             <h3>Floating Chat Button</h3>
-            <p>When the chat panel is closed, a floating button appears in the bottom-right corner. Click it to reopen the chat.</p>
-            
+            <p>When the chat panel is closed, a floating button appears in the bottom-right corner. Click it to reopen
+                the chat.</p>
+
             <h2>Starting a Conversation</h2>
-            
+
             <h3>New Chat</h3>
             <ol>
                 <li>Click "New Chat" in the sidebar, or</li>
@@ -46,7 +51,7 @@
                 <li>Type your question in the input area</li>
                 <li>Press Enter or click the send button (↑)</li>
             </ol>
-            
+
             <h3>Empty State</h3>
             <p>When starting a new conversation, you'll see:</p>
             <ul>
@@ -54,9 +59,9 @@
                 <li>A brief description of capabilities</li>
                 <li>An empty message history</li>
             </ul>
-            
+
             <h2>Message Display</h2>
-            
+
             <h3>User Messages</h3>
             <p>Your messages appear:</p>
             <ul>
@@ -65,7 +70,7 @@
                 <li>In a dark background (light in dark mode)</li>
                 <li>With rounded corners (rounded-tr-sm)</li>
             </ul>
-            
+
             <h3>Assistant Messages</h3>
             <p>Assistant responses appear:</p>
             <ul>
@@ -75,9 +80,9 @@
                 <li>With rounded corners (rounded-tl-sm)</li>
                 <li>Streamed in real-time as they're generated</li>
             </ul>
-            
+
             <h2>Input Area Features</h2>
-            
+
             <h3>Text Input</h3>
             <ul>
                 <li><strong>Auto-resizing:</strong> Expands up to 150px height as you type</li>
@@ -89,7 +94,7 @@
                     </ul>
                 </li>
             </ul>
-            
+
             <h3>Context Controls</h3>
             <p>Toolbar above the input with toggle buttons:</p>
             <ul>
@@ -101,7 +106,7 @@
                 </li>
                 <li><strong>Web:</strong> Enable web search (coming soon)</li>
             </ul>
-            
+
             <h3>File Upload</h3>
             <p>Upload documents directly from chat:</p>
             <ol>
@@ -110,7 +115,7 @@
                 <li>Files upload and process automatically</li>
                 <li>Status notifications show progress</li>
             </ol>
-            
+
             <h3>Upload Status</h3>
             <p>File uploads show status indicators:</p>
             <ul>
@@ -119,9 +124,9 @@
                 <li><strong>Error:</strong> Red background with error message</li>
             </ul>
             <p>Status notifications auto-dismiss after a few seconds.</p>
-            
+
             <h2>How RAG Works in Chat</h2>
-            
+
             <h3>Query Process</h3>
             <p>When you send a message with Context enabled:</p>
             <ol>
@@ -134,7 +139,7 @@
                 <li>The LLM generates a response based on the context</li>
                 <li>Response is streamed back to the chat</li>
             </ol>
-            
+
             <h3>Active Document Filter</h3>
             <p>If you've selected a specific document in the header:</p>
             <ul>
@@ -142,9 +147,9 @@
                 <li>Only chunks from the selected document are retrieved</li>
                 <li>Useful for focused questions about specific documents</li>
             </ul>
-            
+
             <h2>Conversation Management</h2>
-            
+
             <h3>Multiple Conversations</h3>
             <p>Anchor UI supports multiple concurrent conversations:</p>
             <ul>
@@ -153,16 +158,16 @@
                 <li>Click a conversation to switch to it</li>
                 <li>Messages persist across page reloads</li>
             </ul>
-            
+
             <h3>Conversation Titles</h3>
             <ul>
                 <li>Titles auto-generate from the first user message</li>
                 <li>Truncated to 30 characters if too long</li>
                 <li>Can be manually edited in the sidebar</li>
             </ul>
-            
+
             <h2>Workspace Integration</h2>
-            
+
             <h3>Retrieved Context Display</h3>
             <p>The main workspace shows:</p>
             <ul>
@@ -170,7 +175,7 @@
                 <li><strong>Active Document:</strong> The formatted assistant response</li>
                 <li><strong>Retrieved Context:</strong> Chunks with similarity scores</li>
             </ul>
-            
+
             <h3>Synchronization</h3>
             <p>Chat and workspace are synchronized:</p>
             <ul>
@@ -178,9 +183,9 @@
                 <li>Retrieved chunks appear in the workspace</li>
                 <li>Source documents are highlighted</li>
             </ul>
-            
+
             <h2>Best Practices</h2>
-            
+
             <h3>Effective Queries</h3>
             <ul>
                 <li><strong>Be specific:</strong> "What is the maximum operating temperature for component X?"</li>
@@ -188,23 +193,23 @@
                 <li><strong>Ask follow-ups:</strong> Build on previous questions</li>
                 <li><strong>Reference context:</strong> "According to the manual..."</li>
             </ul>
-            
+
             <h3>Context Usage</h3>
             <ul>
                 <li>Keep Context ON for document-based questions</li>
                 <li>Turn Context OFF for general AI questions</li>
                 <li>Select specific documents when asking about them</li>
             </ul>
-            
+
             <h3>File Management</h3>
             <ul>
                 <li>Upload files before asking questions about them</li>
                 <li>Wait for upload confirmation</li>
                 <li>Check processing status in Settings</li>
             </ul>
-            
+
             <h2>Troubleshooting</h2>
-            
+
             <h3>Messages Not Sending</h3>
             <ul>
                 <li>Check backend is running (port 8001)</li>
@@ -212,7 +217,7 @@
                 <li>Check browser console for errors</li>
                 <li>Ensure input is not disabled</li>
             </ul>
-            
+
             <h3>No Response from Assistant</h3>
             <ul>
                 <li>Check backend logs for errors</li>
@@ -220,7 +225,7 @@
                 <li>Check database connection</li>
                 <li>Ensure documents are processed</li>
             </ul>
-            
+
             <h3>Context Not Working</h3>
             <ul>
                 <li>Verify "Context On" is enabled</li>
@@ -228,7 +233,7 @@
                 <li>Try broader search terms</li>
                 <li>Check similarity threshold settings</li>
             </ul>
-            
+
             <h2>Keyboard Shortcuts</h2>
             <table>
                 <tr>
@@ -248,7 +253,7 @@
                     <td>Click input area</td>
                 </tr>
             </table>
-            
+
             <h2>Related Documentation</h2>
             <ul>
                 <li><a href="user-guide.html">User Guide</a> - General usage</li>
@@ -260,6 +265,5 @@
     </div>
     <script src="nav.js"></script>
 </body>
+
 </html>
-
-
