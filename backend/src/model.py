@@ -52,17 +52,53 @@ def get_default_model(model_name: str = default_model, provider: Provider[AsyncO
     )
 
 
-from datetime import timedelta
-from typing import Any, AsyncIterator, Iterator, Sequence
-import time
 
-from pydantic_ai.messages import ModelMessage, ModelResponse
-from pydantic_ai.models import Model, ModelRequestParameters
-from pydantic_ai.settings import ModelSettings
-from src.request_context import get_current_model_id
-from pydantic_ai.models.openai import OpenAIResponsesModel # This import is not used in the new get_default_responses_model, but was in the old one. Keeping it for now.
-from evals.trace_logger import log_event
-from evals.token_utils import estimate_tokens
+
+
+def _last_user_prompt_index(messages: list[ModelMessage]) -> int | None:
+    for idx in range(len(messages) - 1, -1, -1):
+        msg = messages[idx]
+        if getattr(msg, "kind", None) != "request":
+            continue
+        parts = getattr(msg, "parts", None) or []
+        for part in parts:
+            if getattr(part, "part_kind", None) == "user-prompt":
+                return idx
+    return None
+
+
+def _tool_seen_since(messages: list[ModelMessage], *, since_idx: int, tool_name: str) -> bool:
+    for msg in messages[since_idx + 1 :]:
+        for part in getattr(msg, "parts", None) or []:
+            kind = getattr(part, "part_kind", None)
+            if kind in {"tool-call", "builtin-tool-call", "tool-return", "builtin-tool-return"}:
+                if getattr(part, "tool_name", None) == tool_name:
+                    return True
+    return False
+
+
+def _enforce_tools_for_turn(messages: list[ModelMessage], model_request_parameters: ModelRequestParameters) -> ModelRequestParameters:
+    """
+    Enforce that each user turn triggers KB retrieval before the model can answer with plain text.
+
+    This addresses cases where models ignore the system prompt and answer generically without calling tools.
+    """
+    if os.getenv("ENFORCE_RAG_TOOLING", "1").strip().lower() in {"0", "false", "no", "n"}:
+        return model_request_parameters
+
+    user_idx = _last_user_prompt_index(messages)
+    if user_idx is None:
+        return model_request_parameters
+
+    has_kb = _tool_seen_since(messages, since_idx=user_idx, tool_name="query_knowledge_base")
+    has_render = _tool_seen_since(messages, since_idx=user_idx, tool_name="render_ui_component")
+    require_render = os.getenv("ENFORCE_UI_RENDER", "0").strip().lower() in {"1", "true", "yes", "y"}
+
+    # Force tool calling until retrieval (and optionally rendering) has happened for this user prompt.
+    # Requiring rendering by default can cause tool-call loops if the model keeps choosing retrieval again.
+    if not has_kb or (require_render and not has_render):
+        return replace(model_request_parameters, allow_text_output=False)
+    return model_request_parameters
 
 class DynamicChatModel(Model):
     """
@@ -143,6 +179,8 @@ class DynamicChatModel(Model):
         model = self._get_current_model()
         model_name = getattr(model, "model_name", None)
         provider = getattr(model, "_provider", default_provider)
+        if model_request_parameters is not None:
+            model_request_parameters = _enforce_tools_for_turn(messages, model_request_parameters)
 
         # Estimate prompt tokens best-effort
         try:
@@ -194,10 +232,69 @@ class DynamicChatModel(Model):
         model_request_parameters: ModelRequestParameters | None,
         *args,
         **kwargs,
-    ) -> AsyncIterator[Any]:
-        return self._get_current_model().request_stream(
-            messages, model_settings, model_request_parameters, *args, **kwargs
-        )
+    ) -> Any:
+        model = self._get_current_model()
+        model_name = getattr(model, "model_name", None)
+        provider = getattr(model, "_provider", default_provider)
+        if model_request_parameters is not None:
+            model_request_parameters = _enforce_tools_for_turn(messages, model_request_parameters)
+
+        stream_or_cm = model.request_stream(messages, model_settings, model_request_parameters, *args, **kwargs)
+
+        # pydantic-ai's streaming API may return either an async iterator or an async context manager.
+        # Wrap both forms while preserving the original protocol.
+        if hasattr(stream_or_cm, "__aenter__") and hasattr(stream_or_cm, "__aexit__"):
+
+            @asynccontextmanager
+            async def _cm():
+                started = time.perf_counter()
+                try:
+                    async with stream_or_cm as stream:
+                        yield stream
+                finally:
+                    latency_ms = (time.perf_counter() - started) * 1000
+                    try:
+                        log_event(
+                            {
+                                "type": "llm_call",
+                                "model": model_name,
+                                "provider": provider,
+                                "message_count": len(messages) if messages else 0,
+                                "prompt_tokens_est": 0,
+                                "usage": {},
+                                "latency_ms": latency_ms,
+                                "stream": True,
+                            }
+                        )
+                    except Exception:
+                        pass
+
+            return _cm()
+
+        async def _gen() -> AsyncIterator[Any]:
+            started = time.perf_counter()
+            try:
+                async for item in stream_or_cm:
+                    yield item
+            finally:
+                latency_ms = (time.perf_counter() - started) * 1000
+                try:
+                    log_event(
+                        {
+                            "type": "llm_call",
+                            "model": model_name,
+                            "provider": provider,
+                            "message_count": len(messages) if messages else 0,
+                            "prompt_tokens_est": 0,
+                            "usage": {},
+                            "latency_ms": latency_ms,
+                            "stream": True,
+                        }
+                    )
+                except Exception:
+                    pass
+
+        return _gen()
 
 def get_default_responses_model(model_name: str | None = None, provider: str | None = None):
     """

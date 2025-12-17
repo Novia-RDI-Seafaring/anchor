@@ -1,5 +1,6 @@
 import time
 from typing import Optional
+import json
 from src.types import (
     os, BaseModel, Field, Agent, RunContext, 
     StateDeps, EventType, StateSnapshotEvent, RAGState
@@ -195,6 +196,26 @@ async def render_ui_component(
     except ValueError:
       # Invalid component type, default to list
       ui_component_type = UIComponentType.LIST
+
+    # Idempotency guard: if the UI is already showing a component, prevent a loop.
+    # While we previously checked for EXACT payload match, the agent sometimes varies the payload slightly
+    # (e.g. "title") causing a loop. We now block *any* repeated render_ui_component call if one is active.
+    # This enforces the "one render per turn" rule strictly.
+    if ctx.deps.state.active_ui_components:
+        return ToolReturn(
+            return_value={
+                "success": True,
+                "component_type": component_type,
+                "already_rendered": True,
+                "note": "A UI component is already active. You MUST NOT call render_ui_component again. Respond to the user now.",
+            },
+            metadata=[
+                StateSnapshotEvent(
+                    type=EventType.STATE_SNAPSHOT,
+                    snapshot=ctx.deps.state,
+                )
+            ]
+        )
     
     # For page_preview, auto-inject document_id if not provided
     if ui_component_type == UIComponentType.PAGE_PREVIEW:

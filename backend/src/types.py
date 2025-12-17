@@ -1,29 +1,53 @@
 """Shared types and imports for agent framework."""
 from __future__ import annotations
-import os
-import uuid
+
+# Standard library
 import base64
+import os
+import time
+import uuid
+from contextlib import asynccontextmanager
+from dataclasses import replace
+from datetime import timedelta
 from enum import Enum
-from typing import List, Optional, Dict, Literal, Any, Type, TypeVar, Union, Callable, Generic, Tuple, get_type_hints, get_origin, get_args
 from functools import wraps
-from inspect import signature, Parameter, Signature
-from pydantic import BaseModel, Field
-from dotenv import load_dotenv
+from inspect import Parameter, Signature, signature
 from logging import getLogger
 from pathlib import Path
+from typing import (
+    Any, AsyncIterator, Callable, Dict, Generic, Iterator, List, Literal,
+    Optional, Sequence, Tuple, Type, TypeVar, Union, get_args, get_origin,
+    get_type_hints
+)
+
+# Third party
+from dotenv import load_dotenv
+from openai import AsyncOpenAI
+from pydantic import BaseModel, Field
 from rich.console import Console
 
-from ag_ui.core import EventType, StateSnapshotEvent # type: ignore
-from pydantic_ai import Agent, BinaryContent, AgentRunResult, UserPromptPart, ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart
-from pydantic_ai.tools import Tool # type: ignore
+# pydantic_ai
+from pydantic_ai import (
+    Agent, AgentRunResult, BinaryContent, ModelRequest, ModelResponse,
+    TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
+)
+from pydantic_ai._run_context import AgentDepsT, RunContext
 from pydantic_ai.ag_ui import StateDeps
-from pydantic_ai._run_context import RunContext, AgentDepsT
-from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models import KnownModelName, Model, ModelRequestParameters
+from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.output import OutputDataT
-from pydantic_ai.models import Model, KnownModelName
 from pydantic_ai.providers import Provider
+from pydantic_ai.settings import ModelSettings
+from pydantic_ai.tools import Tool  # type: ignore
 
-from openai import AsyncOpenAI
+# ag_ui
+from ag_ui.core import EventType, StateSnapshotEvent  # type: ignore
+
+# Local application
+from evals.token_utils import estimate_tokens
+from evals.trace_logger import log_event
+from src.request_context import get_current_model_id
 
 # =====
 # UI Component Types
@@ -109,4 +133,9 @@ __all__ = [
     
     # State
     'RAGState',
+    
+    # Moved from model.py
+    'timedelta', 'AsyncIterator', 'Iterator', 'Sequence', 'asynccontextmanager', 'time', 'replace',
+    'ModelMessage', 'ModelRequestParameters', 'ModelSettings', 'get_current_model_id',
+    'OpenAIResponsesModel', 'log_event', 'estimate_tokens',
 ]

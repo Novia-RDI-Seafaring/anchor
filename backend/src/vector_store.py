@@ -155,6 +155,37 @@ class VectorStore:
                 metadata_json)
             
             return dict(row)
+
+    async def find_document_by_content_hash(self, content_hash: str) -> Optional[Dict[str, Any]]:
+        """Find the most recent document with a given content hash (metadata.content_hash)."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT *
+                FROM "{self.settings.db_schema}".documents
+                WHERE metadata->>'content_hash' = $1
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                content_hash,
+            )
+            return dict(row) if row else None
+
+    async def find_document_by_source_url(self, url: str) -> Optional[Dict[str, Any]]:
+        """Find the most recent URL-sourced document with a given source_url (metadata.source_url)."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"""
+                SELECT *
+                FROM "{self.settings.db_schema}".documents
+                WHERE source_type = 'url'
+                  AND metadata->>'source_url' = $1
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                url,
+            )
+            return dict(row) if row else None
     
     async def add_chunks(
         self,
@@ -573,4 +604,3 @@ async def get_vector_store() -> VectorStore:
         _vector_store = VectorStore()
         await _vector_store.initialize()
     return _vector_store
-

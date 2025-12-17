@@ -15,12 +15,33 @@ Lightweight instrumentation for RAG/LLM calls. Traces are written to `backend/ev
    ```bash
    python backend/evals/summarize.py
    ```
-4. Clear logs between runs:
-   ```bash
-   python -c "from evals.trace_logger import clear_log; clear_log()"
-   ```
+4. Visualize (dashboard notebook):
+   - Open `backend/evals/runs_dashboard.ipynb` and run all cells.
+5. Clear logs between runs:
+    ```bash
+    python -c "from evals.trace_logger import clear_log; clear_log()"
+    ```
+
+## Eval runners
+
+These runners generate additional `*_eval_*` events in `logs/runs.jsonl`.
+
+- Retrieval accuracy:
+  - Dataset: `backend/evals/datasets/retrieval_gold.jsonl`
+  - Run: `python backend/evals/run_retrieval_eval.py --dataset backend/evals/datasets/retrieval_gold.jsonl`
+- Answer groundedness (agent + LLM judge):
+  - Dataset: `backend/evals/datasets/qa_gold.jsonl`
+  - Run (example): `python backend/evals/run_groundedness_eval.py --model-id azure:novia-gpt-5-nano --grader-model my-o4-mini`
+
+## Tips
+- If you are repeatedly ingesting the same documents for experiments, set `SKIP_DUPLICATE_INGEST=1` on the backend to skip duplicate ingests (based on `content_hash` / `source_url`).
+- For groundedness scoring, keep a stable grader model (typically an Azure deployment) so comparisons across Azure/Ollama runs are meaningful.
 
 ## Files
-- `trace_logger.py` – appends JSONL logs.
-- `token_utils.py` – token estimations with `tiktoken` fallback.
-- `summarize.py` – aggregates logs (token/latency stats).
+- `runs_dashboard.ipynb` - visualizes `logs/runs.jsonl` (tables + charts + HTML export).
+- `trace_logger.py` - appends JSONL logs.
+- `token_utils.py` - token estimations with `tiktoken` fallback.
+- `summarize.py` - aggregates logs (token/latency stats).
+- `run_retrieval_eval.py` - runs retrieval accuracy cases (recall/MRR).
+- `run_groundedness_eval.py` - runs agent answers + LLM judge grading.
+- `datasets/` - JSONL datasets for eval runners.

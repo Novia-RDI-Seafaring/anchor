@@ -57,17 +57,30 @@ class DocumentService:
         Returns:
             Document info dict
         """
+        skip_duplicates = os.getenv("SKIP_DUPLICATE_INGEST", "0").strip().lower() in {"1", "true", "yes", "y"}
+
+        # Generate content hash early so we can optionally skip duplicates across filename changes
+        content_hash = hashlib.md5(content).hexdigest()
+
+        # If enabled, skip ingest when the same bytes were already ingested (metadata.content_hash match)
+        vector_store = await get_vector_store()
+        if skip_duplicates:
+            existing = await vector_store.find_document_by_content_hash(content_hash)
+            if existing:
+                # If caller wants processing and the existing doc isn't processed yet, process it now.
+                if process_immediately and existing.get("status") != "processed":
+                    await self.process_document(existing["document_id"])
+                    refreshed = await vector_store.get_document(existing["document_id"])
+                    return refreshed or existing
+                return existing
+
         # Save file to uploads directory
         file_path = self.uploads_dir / filename
         async with aiofiles.open(file_path, 'wb') as f:
             await f.write(content)
         
         # Generate document ID
-        content_hash = hashlib.md5(content).hexdigest()
         document_id = self._generate_document_id(filename, content_hash)
-        
-        # Get vector store and add document record
-        vector_store = await get_vector_store()
         
         # Determine mime type
         ext = Path(filename).suffix.lower()
@@ -108,6 +121,17 @@ class DocumentService:
             Document info dict
         """
         import httpx
+
+        skip_duplicates = os.getenv("SKIP_DUPLICATE_INGEST", "0").strip().lower() in {"1", "true", "yes", "y"}
+        vector_store = await get_vector_store()
+        if skip_duplicates:
+            existing = await vector_store.find_document_by_source_url(url)
+            if existing:
+                if existing.get("status") != "processed":
+                    await self.process_document(existing["document_id"])
+                    refreshed = await vector_store.get_document(existing["document_id"])
+                    return refreshed or existing
+                return existing
         
         # Fetch URL content
         async with httpx.AsyncClient() as client:
@@ -130,8 +154,6 @@ class DocumentService:
         async with aiofiles.open(file_path, 'wb') as f:
             await f.write(content)
         
-        # Add to vector store
-        vector_store = await get_vector_store()
         doc_info = await vector_store.add_document(
             document_id=document_id,
             filename=filename,
@@ -304,4 +326,3 @@ async def get_document_service() -> DocumentService:
     if _document_service is None:
         _document_service = DocumentService()
     return _document_service
-
