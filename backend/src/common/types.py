@@ -47,7 +47,7 @@ from ag_ui.core import EventType, StateSnapshotEvent  # type: ignore
 # Local application
 from evals.token_utils import estimate_tokens
 from evals.trace_logger import log_event
-from src.request_context import get_current_model_id
+from .context import get_current_model_id
 
 # =====
 # UI Component Types

@@ -1,14 +1,13 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
-from src.agent import agent, StateDeps, AppState
-from src.config import get_settings
-from src.document_service import get_document_service
-from src.vector_store import get_vector_store
-from typing import List
-from src.active_document import get_active_document_id, set_active_document_id
+from src.agent.core import agent, StateDeps, AppState
+from src.common.config import get_settings
+from src.documents.service import get_document_service
+from src.documents.store import get_vector_store
+from src.common.active_document import get_active_document_id, set_active_document_id
 
 
 # Create main FastAPI app
@@ -24,7 +23,7 @@ app.add_middleware(
 )
 
 from fastapi import Request
-from src.request_context import set_current_model_id
+from src.common.context import set_current_model_id
 
 @app.middleware("http")
 async def model_context_middleware(request: Request, call_next):
@@ -218,8 +217,10 @@ async def health_check():
 async def get_models():
     """Get available models from configured providers (Azure, Ollama)."""
     try:
-        from src.models_service import get_all_models
+        from src.agent.discovery import get_all_models
+        print("API: Fetching models...")
         models = await get_all_models()
+        print(f"API: Found {len(models)} models: {[m['id'] for m in models]}")
         return {"success": True, "models": models}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -232,7 +233,7 @@ class UpdateEmbeddingRequest(BaseModel):
 async def update_embedding_model(request: UpdateEmbeddingRequest):
     """Update the active embedding model."""
     try:
-        from src.embeddings import get_embeddings_service
+        from src.documents.embeddings import get_embeddings_service
         
         # Parse model_id which might be "ollama:nomic-embed-text"
         model_name = request.model_id

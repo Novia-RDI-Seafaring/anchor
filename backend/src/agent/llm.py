@@ -1,4 +1,25 @@
-from .types import *
+from __future__ import annotations
+
+import os
+import time
+import re
+from contextlib import asynccontextmanager
+from dataclasses import replace
+from logging import getLogger
+from typing import Any, AsyncIterator, Literal
+
+from dotenv import load_dotenv
+from openai import AsyncOpenAI
+from pydantic_ai import ModelResponse
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models import Model, ModelRequestParameters
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers import Provider
+from pydantic_ai.settings import ModelSettings
+
+from evals.token_utils import estimate_tokens
+from evals.trace_logger import log_event
+from src.common.context import get_current_model_id
 
 logger = getLogger(__name__)
 # Load environment variables
@@ -77,6 +98,57 @@ def _tool_seen_since(messages: list[ModelMessage], *, since_idx: int, tool_name:
     return False
 
 
+def _tool_call_count_since(messages: list[ModelMessage], *, since_idx: int) -> int:
+    count = 0
+    for msg in messages[since_idx + 1 :]:
+        for part in getattr(msg, "parts", None) or []:
+            kind = getattr(part, "part_kind", None)
+            if kind in {"tool-call", "builtin-tool-call"}:
+                count += 1
+    return count
+
+
+def _last_user_prompt_text(messages: list[ModelMessage]) -> str | None:
+    idx = _last_user_prompt_index(messages)
+    if idx is None:
+        return None
+    msg = messages[idx]
+    parts = getattr(msg, "parts", None) or []
+    for part in parts:
+        if getattr(part, "part_kind", None) == "user-prompt":
+            return getattr(part, "content", None)
+    return None
+
+
+_GREETING_RE = re.compile(r"^[a-zA-Z][a-zA-Z\s\.\!\?]{0,24}$")
+_GREETINGS = {
+    "hi",
+    "hello",
+    "hey",
+    "yo",
+    "sup",
+    "hiya",
+    "good morning",
+    "good afternoon",
+    "good evening",
+}
+
+
+def _is_greeting(text: str) -> bool:
+    s = text.strip().lower()
+    if not s:
+        return False
+    if s in _GREETINGS:
+        return True
+    # Very short greetings like "hi", "hey", "yo", "hola"
+    if len(s) <= 4 and s.isalpha():
+        return True
+    # "hi!" / "hello." etc (avoid matching real queries)
+    if len(s) <= 25 and _GREETING_RE.match(text.strip()) and any(g in s for g in ("hi", "hello", "hey")):
+        return True
+    return False
+
+
 def _enforce_tools_for_turn(messages: list[ModelMessage], model_request_parameters: ModelRequestParameters) -> ModelRequestParameters:
     """
     Enforce that each user turn triggers KB retrieval before the model can answer with plain text.
@@ -90,9 +162,29 @@ def _enforce_tools_for_turn(messages: list[ModelMessage], model_request_paramete
     if user_idx is None:
         return model_request_parameters
 
+    user_text = _last_user_prompt_text(messages)
+    if user_text and _is_greeting(user_text):
+        return model_request_parameters
+
     has_kb = _tool_seen_since(messages, since_idx=user_idx, tool_name="query_knowledge_base")
     has_render = _tool_seen_since(messages, since_idx=user_idx, tool_name="render_ui_component")
     require_render = os.getenv("ENFORCE_UI_RENDER", "0").strip().lower() in {"1", "true", "yes", "y"}
+
+    # Guard against infinite tool-call loops: if the model has already made several tool calls
+    # for this user message but still hasn't called retrieval, stop enforcing and let it answer.
+    max_tool_calls = int(os.getenv("ENFORCE_RAG_MAX_TOOL_CALLS", "4"))
+    if not has_kb and _tool_call_count_since(messages, since_idx=user_idx) >= max_tool_calls:
+        try:
+            log_event(
+                {
+                    "type": "rag_enforcement_bailed_out",
+                    "reason": "max_tool_calls_exceeded",
+                    "max_tool_calls": max_tool_calls,
+                }
+            )
+        except Exception:
+            pass
+        return model_request_parameters
 
     # Force tool calling until retrieval (and optionally rendering) has happened for this user prompt.
     # Requiring rendering by default can cause tool-call loops if the model keeps choosing retrieval again.

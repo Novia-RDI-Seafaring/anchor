@@ -1,14 +1,17 @@
 import time
 from typing import Optional
 import json
-from src.types import (
-    os, BaseModel, Field, Agent, RunContext, 
-    StateDeps, EventType, StateSnapshotEvent, RAGState
-)
-from src.logger import log_rag_query, log_agent_tool_call, log_error
+from typing import Any
+
+from ag_ui.core import EventType, StateSnapshotEvent  # type: ignore
+from pydantic_ai._run_context import RunContext
+from pydantic_ai.ag_ui import StateDeps
+from src.common.logger import log_rag_query, log_agent_tool_call, log_error
 from pydantic_ai import ToolReturn
 from evals.trace_logger import log_event
 from evals.token_utils import estimate_tokens, estimate_tokens_bulk
+
+from ..types import RAGState, UIComponentData, UIComponentType
 
 async def query_knowledge_base(
   ctx: RunContext[StateDeps[RAGState]], 
@@ -34,8 +37,8 @@ async def query_knowledge_base(
   
   try:
     # Import here to avoid circular imports
-    from src.document_service import get_document_service
-    from src.active_document import get_active_document_id
+    from src.documents.service import get_document_service
+    from src.common.active_document import get_active_document_id
     
     # Get active document filter
     active_doc_id = get_active_document_id()
@@ -164,8 +167,8 @@ async def add_to_conversation(
 async def render_ui_component(
   ctx: RunContext[StateDeps[RAGState]],
   component_type: str,
-  data: dict,
-  metadata: Optional[dict] = None
+  data: Any,
+  metadata: Any = None,
 ) -> StateSnapshotEvent:
   """
   Render a UI component to display information from the knowledge base.
@@ -180,8 +183,17 @@ async def render_ui_component(
   Returns:
     StateSnapshotEvent with updated state
   """
-  from src.types import UIComponentData, UIComponentType
-  from src.active_document import get_active_document_id
+  from src.common.active_document import get_active_document_id
+
+  # Be permissive with tool inputs: models sometimes send `data` as a list/string instead of an object.
+  # If we reject the call, CopilotKit/pydantic-ai will retry and can get stuck.
+  if not isinstance(data, dict):
+    if isinstance(data, list):
+      data = {"items": data}
+    else:
+      data = {"value": data}
+  if metadata is not None and not isinstance(metadata, dict):
+    metadata = {"value": metadata}
   
   log_agent_tool_call("render_ui_component", {
     "component_type": component_type,

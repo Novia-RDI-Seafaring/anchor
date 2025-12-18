@@ -10,8 +10,8 @@ from typing import Any
 
 from evals.metrics import RetrievalCaseResult, first_hit_rank, mrr, recall_at_k
 from evals.trace_logger import log_event
-from src.active_document import set_active_document_id
-from src.document_service import get_document_service
+from src.common.active_document import set_active_document_id
+from src.documents.service import get_document_service
 
 
 @dataclass(frozen=True)

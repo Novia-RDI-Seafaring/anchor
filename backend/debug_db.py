@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 # Add src to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from src.vector_store import get_vector_store
-from src.embeddings import get_embeddings_service
+from src.documents.store import get_vector_store
+from src.documents.embeddings import get_embeddings_service
 
 async def main():
     load_dotenv()

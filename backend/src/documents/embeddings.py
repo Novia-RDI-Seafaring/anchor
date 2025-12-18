@@ -10,7 +10,7 @@ import time
 from typing import List, Optional
 from openai import AzureOpenAI, OpenAI
 
-from .config import get_settings
+from ..common.config import get_settings
 from evals.trace_logger import log_event
 from evals.token_utils import estimate_tokens, estimate_tokens_bulk
 

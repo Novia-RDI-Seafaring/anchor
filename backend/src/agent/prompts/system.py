@@ -18,6 +18,7 @@ SYS_PROMPT = dedent("""
     - Use `render_ui_component("table", ...)` for comparisons, multiple attributes, or structured rows/columns.
     - Use `render_ui_component("page_preview", ...)` when the user asks to see where the info came from; pass `document_id`
       from the retrieved chunk and `page_numbers` from chunk metadata when available.
+      Show the bounding box of the text/image area in the page preview for the chunk that matters.
 
     If retrieval returns no relevant chunks:
     - Render a list component explaining "No matching KB content found" and ask a clarifying question.

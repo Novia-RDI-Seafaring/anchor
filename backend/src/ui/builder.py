@@ -1,5 +1,5 @@
 """UI Logic for determining and formatting UI components based on search results."""
-from src.types import UIComponentType
+from src.agent.types import UIComponentType
 
 
 

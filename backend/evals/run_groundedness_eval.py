@@ -11,9 +11,10 @@ from typing import Any
 from evals.grader import build_grader, build_grader_prompt
 from evals.metrics import RetrievalCaseResult, first_hit_rank
 from evals.trace_logger import log_event
-from src.active_document import set_active_document_id
-from src.agent import AppState, StateDeps, agent
-from src.request_context import set_current_model_id
+
+from src.common.active_document import set_active_document_id
+from src.agent.core import AppState, StateDeps, agent
+from src.common.context import set_current_model_id
 
 
 @dataclass(frozen=True)
