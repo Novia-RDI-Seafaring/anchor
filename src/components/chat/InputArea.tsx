@@ -46,8 +46,8 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
   }, [handleSend]);
 
   const toggleRag = useCallback(() => {
-    setIsRagEnabled(prev => !prev);
-  }, [setIsRagEnabled]);
+    setIsRagEnabled(!isRagEnabled);
+  }, [setIsRagEnabled, isRagEnabled]);
 
   const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -70,7 +70,7 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
         if (!res.ok) throw new Error('Upload failed');
 
         // Update status to success
-        setUploadingFiles(prev => 
+        setUploadingFiles(prev =>
           prev.map(f => f.file === file ? { ...f, status: 'success' } : f)
         );
 
@@ -81,11 +81,11 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
 
       } catch (err) {
         // Update status to error
-        setUploadingFiles(prev => 
-          prev.map(f => f.file === file ? { 
-            ...f, 
-            status: 'error', 
-            error: err instanceof Error ? err.message : 'Upload failed' 
+        setUploadingFiles(prev =>
+          prev.map(f => f.file === file ? {
+            ...f,
+            status: 'error',
+            error: err instanceof Error ? err.message : 'Upload failed'
           } : f)
         );
 
@@ -111,15 +111,14 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
       {uploadingFiles.length > 0 && (
         <div className="mb-2 space-y-1">
           {uploadingFiles.map((upload, idx) => (
-            <div 
+            <div
               key={`${upload.file.name}-${idx}`}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs ${
-                upload.status === 'uploading' 
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs ${upload.status === 'uploading'
                   ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
                   : upload.status === 'success'
-                  ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
-                  : 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300'
-              }`}
+                    ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                }`}
             >
               {upload.status === 'uploading' ? (
                 <Loader2 size={12} className="animate-spin" />
@@ -130,7 +129,7 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
               {upload.status === 'uploading' && <span>Uploading...</span>}
               {upload.status === 'success' && <span>Added to KB</span>}
               {upload.status === 'error' && <span>{upload.error}</span>}
-              <button 
+              <button
                 onClick={() => removeUploadingFile(upload.file)}
                 className="p-0.5 hover:bg-black/10 rounded"
               >
@@ -150,7 +149,7 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
           <Database size={10} />
           {isRagEnabled ? 'Context On' : 'Context Off'}
         </button>
-        
+
         <button className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-700">
           <Globe size={10} />
           <span>Web</span>
@@ -185,7 +184,7 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
         {/* Action Buttons */}
         <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1">
           {text.length === 0 && (
-            <button 
+            <button
               onClick={() => fileInputRef.current?.click()}
               className="p-1.5 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors rounded-full hover:bg-neutral-100 dark:hover:bg-neutral-800"
               title="Upload file to knowledge base"

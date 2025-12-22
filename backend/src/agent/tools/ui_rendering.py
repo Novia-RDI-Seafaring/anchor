@@ -1,170 +1,17 @@
-import time
-from typing import Optional
-import json
+"""UI rendering tools for displaying knowledge base results."""
 from typing import Any
 
 from ag_ui.core import EventType, StateSnapshotEvent  # type: ignore
 from pydantic_ai._run_context import RunContext
 from pydantic_ai.ag_ui import StateDeps
-from src.common.logger import log_rag_query, log_agent_tool_call, log_error
 from pydantic_ai import ToolReturn
-from evals.trace_logger import log_event
-from evals.token_utils import estimate_tokens, estimate_tokens_bulk
 
-from ..types import RAGState, UIComponentData, UIComponentType
+from src.core.logging import log_agent_tool_call, log_error
 
-async def query_knowledge_base(
-  ctx: RunContext[StateDeps[RAGState]], 
-  query: str,
-  top_k: int = 5
-) -> dict[str, list]:
-  """
-  Query the vector database for relevant context.
-  Uses the active document filter if set by the user.
-  
-  Args:
-    query: The search query
-    top_k: Number of results to retrieve (default: 5)
-  
-  Returns:
-    Dictionary with 'chunks' (list of dicts) and 'sources' from the knowledge base.
-    Each chunk contains: id, content, filename, document_id, similarity, metadata.
-  """
-  start_time = time.time()
-  
-  # Log tool call
-  log_agent_tool_call("query_knowledge_base", {"query": query, "top_k": top_k})
-  
-  try:
-    # Import here to avoid circular imports
-    from src.documents.service import get_document_service
-    from src.common.active_document import get_active_document_id
-    
-    # Get active document filter
-    active_doc_id = get_active_document_id()
-    
-    # Query the vector store with optional document filter
-    service = await get_document_service()
-    results = await service.search(query, top_k=top_k, document_id=active_doc_id)
-    
-    # Extract chunks and sources with rich data
-    chunks = []
-    for r in results:
-        chunks.append({
-            "id": r.get("id"),  # Include chunk ID for page image queries
-            "content": r["content"],
-            "filename": r["filename"],
-            "document_id": r.get("document_id"),  # Include document_id for page preview
-            "similarity": r.get("similarity", 0.0),
-            "metadata": r.get("metadata", {})
-        })
-    
-    sources = list(set(r["filename"] for r in results))
-    
-    # Update state with sources and chunks
-    ctx.deps.state.current_sources = sources
-    ctx.deps.state.last_chunks = chunks
-    
-    # Log query performance
-    duration_ms = (time.time() - start_time) * 1000
-    log_rag_query(query, top_k, len(chunks), duration_ms)
-    log_event({
-        "type": "retrieval",
-        "query_len": len(query),
-        "query_tokens_est": estimate_tokens(query),
-        "top_k": top_k,
-        "result_count": len(chunks),
-        "total_chunk_chars": sum(len(c.get("content", "")) for c in chunks),
-        "total_chunk_tokens": estimate_tokens_bulk((c.get("content", "") for c in chunks)),
-        "doc_ids": list({c.get("document_id") for c in chunks if c.get("document_id")}),
-        "latency_ms": duration_ms,
-    })
-    log_event({
-        "type": "state",
-        "conversation_len": len(ctx.deps.state.conversation_history),
-        "last_chunks_len": len(ctx.deps.state.last_chunks),
-        "ui_components_len": len(ctx.deps.state.active_ui_components),
-    })
-    
-    # Return with state update
-    return ToolReturn(
-        return_value={"chunks": chunks, "sources": sources},
-        metadata=[
-            StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=ctx.deps.state,
-            )
-        ]
-    )
-    
-  except Exception as e:
-    log_error("Error in query_knowledge_base", e, {"query": query, "top_k": top_k})
-    # Return empty results on error with consistent type
-    return ToolReturn(
-        return_value={"chunks": [], "sources": []},
-        metadata=[
-            StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=ctx.deps.state,
-            )
-        ]
-    )
-
-async def check_db_status(ctx: RunContext[StateDeps[RAGState]]) -> StateSnapshotEvent:
-  """Check the status of the vector database connection."""
-  log_agent_tool_call("check_db_status", {})
-  
-  try:
-    # TODO: Implement actual health check
-    ctx.deps.state.vector_db_status = "connected"  # Placeholder
-    
-    return ToolReturn(
-      return_value={"status": "connected"},
-      metadata=[
-        StateSnapshotEvent(
-          type=EventType.STATE_SNAPSHOT,
-          snapshot=ctx.deps.state,
-        )
-      ]
-    )
-  except Exception as e:
-    log_error("Error in check_db_status", e)
-    raise
-
-async def add_to_conversation(
-  ctx: RunContext[StateDeps[RAGState]], 
-  role: str, 
-  content: str
-) -> StateSnapshotEvent:
-  """Add a message to the conversation history."""
-  log_agent_tool_call("add_to_conversation", {"role": role, "content_length": len(content)})
-  
-  ctx.deps.state.conversation_history.append({
-    "role": role,
-    "content": content
-  })
-  try:
-    log_event({
-        "type": "state",
-        "conversation_len": len(ctx.deps.state.conversation_history),
-        "last_chunks_len": len(ctx.deps.state.last_chunks),
-        "ui_components_len": len(ctx.deps.state.active_ui_components),
-    })
-  except Exception:
-    pass
-  
-  return ToolReturn(
-    return_value={"success": True},
-    metadata=[
-      StateSnapshotEvent(
-        type=EventType.STATE_SNAPSHOT,
-        snapshot=ctx.deps.state,
-      )
-    ]
-  )
+from ..state import RAGState, UIComponentData, UIComponentType
 
 
-async def render_ui_component(
+async def render_component(
   ctx: RunContext[StateDeps[RAGState]],
   component_type: str,
   data: Any,
@@ -183,7 +30,7 @@ async def render_ui_component(
   Returns:
     StateSnapshotEvent with updated state
   """
-  from src.common.active_document import get_active_document_id
+  from src.core.context import get_active_document_id
 
   # Be permissive with tool inputs: models sometimes send `data` as a list/string instead of an object.
   # If we reject the call, CopilotKit/pydantic-ai will retry and can get stuck.
@@ -195,7 +42,7 @@ async def render_ui_component(
   if metadata is not None and not isinstance(metadata, dict):
     metadata = {"value": metadata}
   
-  log_agent_tool_call("render_ui_component", {
+  log_agent_tool_call("render_component", {
     "component_type": component_type,
     "has_data": bool(data),
     "has_metadata": bool(metadata)
@@ -211,7 +58,7 @@ async def render_ui_component(
 
     # Idempotency guard: if the UI is already showing a component, prevent a loop.
     # While we previously checked for EXACT payload match, the agent sometimes varies the payload slightly
-    # (e.g. "title") causing a loop. We now block *any* repeated render_ui_component call if one is active.
+    # (e.g. "title") causing a loop. We now block *any* repeated render_component call if one is active.
     # This enforces the "one render per turn" rule strictly.
     if ctx.deps.state.active_ui_components:
         return ToolReturn(
@@ -219,7 +66,7 @@ async def render_ui_component(
                 "success": True,
                 "component_type": component_type,
                 "already_rendered": True,
-                "note": "A UI component is already active. You MUST NOT call render_ui_component again. Respond to the user now.",
+                "note": "A UI component is already active. You MUST NOT call render_component again. Respond to the user now.",
             },
             metadata=[
                 StateSnapshotEvent(
@@ -235,9 +82,8 @@ async def render_ui_component(
       if not data.get("document_id") and active_doc_id:
         data = dict(data)  # Make a copy to avoid mutating original
         data["document_id"] = active_doc_id
-        print(f"render_ui_component: Auto-injected document_id: {active_doc_id}")
+        print(f"render_component: Auto-injected document_id: {active_doc_id}")
       
-      # Also try to get page_numbers from metadata if not provided
       # Also try to get page_numbers from metadata if not provided
       if not data.get("page_numbers"):
         if data.get("page"):
@@ -269,7 +115,7 @@ async def render_ui_component(
              
              if inferred_pages:
                  data["page_numbers"] = inferred_pages
-                 print(f"render_ui_component: Inferred page_numbers from chunks (ordered): {data['page_numbers']}")
+                 print(f"render_component: Inferred page_numbers from chunks (ordered): {data['page_numbers']}")
         
       # Validation: document_id is mandatory for page_preview. Instead of raising (which triggers tool retries),
       # emit a friendly error component so the UI can surface the issue without exploding the stream.
@@ -298,10 +144,11 @@ async def render_ui_component(
             )
           ]
         )
+        
       # Auto-inject bboxes if missing, using last_chunks
       injected_bboxes = []
       if not data.get("bboxes") and ctx.deps.state.last_chunks:
-        print(f"render_ui_component: Attempting to inject bboxes for doc {data.get('document_id')}")
+        print(f"render_component: Attempting to inject bboxes for doc {data.get('document_id')}")
         target_doc_id = data.get("document_id")
         
         # Find the first chunk that matches the document_id (highest relevance)
@@ -312,7 +159,7 @@ async def render_ui_component(
           meta = top_chunk.get("metadata", {})
           injected_bboxes = meta.get("bboxes", [])
           if injected_bboxes:
-            print(f"render_ui_component: Injected {len(injected_bboxes)} bboxes from top-ranked chunk {top_chunk.get('id')}")
+            print(f"render_component: Injected {len(injected_bboxes)} bboxes from top-ranked chunk {top_chunk.get('id')}")
       
       if injected_bboxes:
           data = dict(data)
@@ -339,13 +186,10 @@ async def render_ui_component(
             )
         ]
     )
-    
-    # Dead code removed here
-
 
   except Exception as e:
     # Catch-all to avoid throwing up to the agent (which triggers retries).
-    log_error("Error in render_ui_component (returning fallback)", e, {
+    log_error("Error in render_component (returning fallback)", e, {
       "component_type": component_type,
       "data_keys": list(data.keys()) if isinstance(data, dict) else "not_dict"
     })

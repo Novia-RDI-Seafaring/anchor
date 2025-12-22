@@ -10,10 +10,10 @@ import aiofiles
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 
-from ..common.config import get_settings
-from .store import get_vector_store
+from ..core.config import get_settings
+from .vector_store import get_vector_store
 from .embeddings import get_embeddings_service
-from .docling.docling_converter import DoclingConverter
+from .docling.converter import DoclingConverter
 from .docling.formatters import MarkdownFormatter
 from .images import get_page_image_service
 

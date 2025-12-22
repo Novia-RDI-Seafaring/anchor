@@ -1,4 +1,4 @@
-# system.py
+"""System prompts for the RAG agent."""
 from textwrap import dedent
 
 SYS_PROMPT = dedent("""
@@ -26,8 +26,8 @@ SYS_PROMPT = dedent("""
 """).strip()
 
 
-# old system prompt
-SYS_PROMPT1 = dedent("""
+# Alternative prompts (kept for reference/experimentation)
+SYS_PROMPT_DETAILED = dedent("""
     You are a RAG-powered AI assistant with access to a technical knowledge base.
 
     Core behavior:
@@ -65,7 +65,7 @@ SYS_PROMPT1 = dedent("""
 """).strip()
 
 
-SYS_PROMPT2 = dedent("""
+SYS_PROMPT_MINIMAL = dedent("""
     You are a RAG-powered AI assistant with access to a knowledge base containing technical documents and information.
     
     CRITICAL INSTRUCTIONS:
@@ -87,3 +87,5 @@ SYS_PROMPT2 = dedent("""
     
     Remember: Your primary job is to retrieve and present information from the knowledge base, not to rely on your training data.
 """).strip()
+
+__all__ = ["SYS_PROMPT", "SYS_PROMPT_DETAILED", "SYS_PROMPT_MINIMAL"]

@@ -34,7 +34,7 @@ export const POST = async (req: NextRequest) => {
             my_agent: new HttpAgent({
                 url: url
             }),
-        },
+        } as any,  // Type cast for compatibility with CopilotKit 1.50
     });
 
     const { handleRequest } = copilotRuntimeNextJSAppRouterEndpoint({

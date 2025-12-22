@@ -19,7 +19,7 @@ from pydantic_ai.settings import ModelSettings
 
 from evals.token_utils import estimate_tokens
 from evals.trace_logger import log_event
-from src.common.context import get_current_model_id
+from src.core.context import get_current_model_id
 
 logger = getLogger(__name__)
 # Load environment variables

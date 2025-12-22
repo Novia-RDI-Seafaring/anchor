@@ -19,7 +19,7 @@ interface ToolResult {
 }
 
 export const MainContent: React.FC = () => {
-  const { visibleMessages } = useCopilotChat();
+  const { visibleMessages = [] } = useCopilotChat() as any;
   const { activeConversationId, updateConversation, conversations } = useApp();
   const { state } = useCoAgent({
     name: "my_agent",
@@ -104,6 +104,11 @@ export const MainContent: React.FC = () => {
   const { latestResponse, ragData } = useMemo(() => {
     let response: string | null = null;
     let data: ToolResult | null = null;
+
+    // Guard: If visibleMessages is undefined or null, return early
+    if (!visibleMessages || !Array.isArray(visibleMessages)) {
+      return { latestResponse: null, ragData: null };
+    }
 
     // Iterate backwards to find the latest relevant messages
     for (let i = visibleMessages.length - 1; i >= 0; i--) {

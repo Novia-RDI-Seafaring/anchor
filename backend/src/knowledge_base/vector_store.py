@@ -11,7 +11,7 @@ import hashlib
 import asyncpg
 import json
 
-from ..common.config import get_settings
+from ..core.config import get_settings
 
 
 class VectorStore:
