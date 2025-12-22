@@ -25,14 +25,6 @@ class DocumentService:
         self.settings = get_settings()
         self.uploads_dir = Path(self.settings.uploads_dir).resolve()
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Initialize Docling converter
-        self.converter = DoclingConverter(
-            preserve_images=False,  # Faster processing
-            preserve_tables=True,
-            enable_ocr=False,
-            table_mode="fast"
-        )
         self.formatter = MarkdownFormatter()
     
     def _generate_document_id(self, filename: str, content_hash: Optional[str] = None) -> str:
@@ -40,11 +32,105 @@ class DocumentService:
         base = f"{filename}-{content_hash or ''}"
         return hashlib.md5(base.encode()).hexdigest()[:12]
     
+    def _extract_images_from_docling(self, conversion_result) -> List[Dict[str, Any]]:
+        """
+        Extract images (figures, diagrams) from Docling conversion result.
+        
+        Args:
+            conversion_result: Docling conversion result object
+            
+        Returns:
+            List of image dicts with base64 data, captions, and metadata
+        """
+        import base64
+        import io
+        
+        extracted_images = []
+        
+        try:
+            document = conversion_result.document
+            
+            # Iterate through document items to find pictures
+            for item, level in document.iterate_items():
+                # Check if item is a picture/figure
+                if hasattr(item, 'label') and str(item.label).lower() in ['picture', 'figure', 'image']:
+                    try:
+                        # Get image data if available
+                        image_data = None
+                        if hasattr(item, 'image') and item.image:
+                            # Convert PIL image to base64
+                            pil_image = item.image.pil_image if hasattr(item.image, 'pil_image') else item.image
+                            if pil_image:
+                                buffer = io.BytesIO()
+                                pil_image.save(buffer, format='PNG', optimize=True)
+                                image_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                                buffer.close()
+                        
+                        # Skip if no image data
+                        if not image_data:
+                            continue
+                        
+                        # Get caption from item text or nearby text
+                        caption = item.text if hasattr(item, 'text') else None
+                        
+                        # Get page number and bounding box from provenance
+                        page_number = None
+                        bbox = None
+                        if hasattr(item, 'prov') and item.prov:
+                            for prov in item.prov:
+                                if hasattr(prov, 'page_no'):
+                                    page_number = prov.page_no
+                                if hasattr(prov, 'bbox') and hasattr(prov.bbox, 'as_tuple'):
+                                    bbox = {
+                                        'coordinates': list(prov.bbox.as_tuple())
+                                    }
+                                break
+                        
+                        # Determine image type from label
+                        image_type = 'figure'
+                        label_lower = str(item.label).lower()
+                        if 'diagram' in label_lower:
+                            image_type = 'diagram'
+                        elif 'chart' in label_lower:
+                            image_type = 'chart'
+                        
+                        # Get dimensions
+                        width = pil_image.width if pil_image else None
+                        height = pil_image.height if pil_image else None
+                        
+                        extracted_images.append({
+                            'image_type': image_type,
+                            'page_number': page_number,
+                            'image_base64': image_data,
+                            'caption': caption,
+                            'alt_text': caption,  # Use caption as alt text
+                            'bbox': bbox,
+                            'width': width,
+                            'height': height,
+                            'metadata': {
+                                'label': str(item.label),
+                                'level': level
+                            }
+                        })
+                        
+                    except Exception as e:
+                        print(f"DocumentService: Failed to extract individual image: {e}")
+                        continue
+                        
+        except Exception as e:
+            print(f"DocumentService: Error iterating document items: {e}")
+        
+        return extracted_images
+    
     async def upload_file(
         self,
         filename: str,
         content: bytes,
-        process_immediately: bool = True
+        process_immediately: bool = True,
+        preserve_images: bool = True,
+        preserve_tables: bool = True,
+        enable_ocr: bool = False,
+        table_mode: str = "fast"
     ) -> Dict[str, Any]:
         """
         Upload and optionally process a file.
@@ -53,6 +139,10 @@ class DocumentService:
             filename: Original filename
             content: File content as bytes
             process_immediately: Whether to process right away
+            preserve_images: Enable image extraction
+            preserve_tables: Enable table extraction
+            enable_ocr: Enable OCR for scanned documents
+            table_mode: Table extraction mode ('fast' or 'accurate')
             
         Returns:
             Document info dict
@@ -100,7 +190,13 @@ class DocumentService:
             source_type="file",
             mime_type=mime_type,
             file_size=len(content),
-            metadata={"content_hash": content_hash}
+            metadata={
+                "content_hash": content_hash,
+                "preserve_images": preserve_images,
+                "preserve_tables": preserve_tables,
+                "enable_ocr": enable_ocr,
+                "table_mode": table_mode
+            }
         )
         
         # Process if requested
@@ -191,9 +287,24 @@ class DocumentService:
         
         print(f"DocumentService: Processing {doc['filename']}...")
         
+        # Get processing options from metadata or use defaults
+        metadata = doc.get("metadata", {})
+        preserve_images = metadata.get("preserve_images", True)
+        preserve_tables = metadata.get("preserve_tables", True)
+        enable_ocr = metadata.get("enable_ocr", False)
+        table_mode = metadata.get("table_mode", "fast")
+        
+        # Create converter with user-specified options
+        converter = DoclingConverter(
+            preserve_images=preserve_images,
+            preserve_tables=preserve_tables,
+            enable_ocr=enable_ocr,
+            table_mode=table_mode
+        )
+        
         # Convert with Docling
         try:
-            conversion_result = self.converter.convert_document(file_path)
+            conversion_result = converter.convert_document(file_path)
             
             # Get chunks using HybridChunker
             chunks = self.formatter.create_chunks(
@@ -233,6 +344,18 @@ class DocumentService:
         
         print(f"DocumentService: Stored {chunk_count} chunks for {doc['filename']}")
         
+        # Extract and store document images (diagrams, figures) from Docling result
+        image_count = 0
+        if 'conversion_result' in locals() and conversion_result:
+            try:
+                print(f"DocumentService: Extracting images from {doc['filename']}...")
+                extracted_images = self._extract_images_from_docling(conversion_result)
+                if extracted_images:
+                    image_count = await vector_store.add_document_images(document_id, extracted_images)
+                    print(f"DocumentService: Stored {image_count} extracted images")
+            except Exception as e:
+                print(f"DocumentService: Failed to extract images: {e}")
+        
         # Generate and store page images for PDF files
         page_count = 0
         if file_path.lower().endswith('.pdf'):
@@ -250,7 +373,8 @@ class DocumentService:
             "filename": doc["filename"],
             "status": "processed",
             "chunks": chunk_count,
-            "pages": page_count
+            "pages": page_count,
+            "images": image_count
         }
     
     async def list_documents(self) -> List[Dict[str, Any]]:

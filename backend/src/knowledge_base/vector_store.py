@@ -122,6 +122,30 @@ class VectorStore:
                 );
             """)
             
+            # Document images table for storing extracted diagrams/figures
+            await conn.execute(f"""
+                CREATE TABLE IF NOT EXISTS "{self.settings.db_schema}".document_images (
+                    id SERIAL PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES "{self.settings.db_schema}".documents(document_id) ON DELETE CASCADE,
+                    image_type TEXT DEFAULT 'figure',
+                    page_number INTEGER,
+                    image_base64 TEXT NOT NULL,
+                    caption TEXT,
+                    alt_text TEXT,
+                    bbox JSONB,
+                    width INTEGER,
+                    height INTEGER,
+                    metadata JSONB DEFAULT '{{}}',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            
+            # Create index for faster queries by document_id and image_type
+            await conn.execute(f"""
+                CREATE INDEX IF NOT EXISTS document_images_doc_id_idx 
+                ON "{self.settings.db_schema}".document_images(document_id);
+            """)
+            
             print("VectorStore: Tables initialized")
     
     async def add_document(
@@ -345,10 +369,62 @@ class VectorStore:
                                 res_images.append(image_map[key])
                         
                         res['page_images'] = res_images
+                    
+                    # Also fetch extracted diagrams/figures from the same pages
+                    # Collect all unique (document_id, page_numbers) pairs from results
+                    doc_page_map = {}
+                    for res in results:
+                        doc_id = res['document_id']
+                        meta = res.get('metadata') or {}
+                        page_nums = meta.get('page_numbers', [])
+                        if not page_nums and 'page_number' in meta:
+                            page_nums = [meta['page_number']]
+                        
+                        if doc_id not in doc_page_map:
+                            doc_page_map[doc_id] = set()
+                        doc_page_map[doc_id].update(page_nums)
+                    
+                    # Fetch document images for these pages
+                    for doc_id, page_nums in doc_page_map.items():
+                        if page_nums:
+                            diagram_rows = await conn.fetch(f"""
+                                SELECT id, image_type, page_number, image_base64, caption, alt_text, 
+                                       bbox, width, height, metadata
+                                FROM "{self.settings.db_schema}".document_images
+                                WHERE document_id = $1 AND page_number = ANY($2)
+                                ORDER BY page_number, id
+                            """, doc_id, list(page_nums))
+                            
+                            # Attach diagrams to the corresponding results
+                            for res in results:
+                                if res['document_id'] == doc_id:
+                                    res['document_images'] = [
+                                        {
+                                            "id": row['id'],
+                                            "image_type": row['image_type'],
+                                            "page_number": row['page_number'],
+                                            "image_base64": row['image_base64'],
+                                            "caption": row['caption'],
+                                            "alt_text": row['alt_text'],
+                                            "bbox": row['bbox'],
+                                            "width": row['width'],
+                                            "height": row['height'],
+                                            "metadata": row['metadata']
+                                        }
+                                        for row in diagram_rows
+                                        if row['page_number'] in (res.get('metadata', {}).get('page_numbers', []) or 
+                                                                   [res.get('metadata', {}).get('page_number')] if 'page_number' in res.get('metadata', {}) else [])
+                                    ]
                 else:
                     # No images to fetch implies no page numbers found, init empty list
                     for res in results:
                         res['page_images'] = []
+                        res['document_images'] = []
+            else:
+                # No results, return empty
+                for res in results:
+                    res['page_images'] = []
+                    res['document_images'] = []
             
             return results
     
@@ -372,9 +448,9 @@ class VectorStore:
             return dict(row) if row else None
     
     async def delete_document(self, document_id: str) -> bool:
-        """Delete a document and its associated chunks and page images."""
+        """Delete a document and its associated chunks, page images, and document images."""
         async with self.pool.acquire() as conn:
-            # Delete in order: chunks, page_images, then document
+            # Delete in order: chunks, page_images, document_images, then document
             # This ensures referential integrity even without FK constraints
             await conn.execute(
                 f"DELETE FROM \"{self.settings.db_schema}\".chunks WHERE document_id = $1",
@@ -384,6 +460,10 @@ class VectorStore:
                 f"DELETE FROM \"{self.settings.db_schema}\".page_images WHERE document_id = $1",
                 document_id
             )
+            await conn.execute(
+                f"DELETE FROM \"{self.settings.db_schema}\".document_images WHERE document_id = $1",
+                document_id
+            )
             result = await conn.execute(
                 f"DELETE FROM \"{self.settings.db_schema}\".documents WHERE document_id = $1",
                 document_id
@@ -391,21 +471,24 @@ class VectorStore:
             return result == "DELETE 1"
     
     async def reset(self) -> Dict[str, int]:
-        """Delete all documents, chunks, and page images."""
+        """Delete all documents, chunks, page images, and document images."""
         async with self.pool.acquire() as conn:
             chunks_deleted = await conn.fetchval(f"SELECT COUNT(*) FROM \"{self.settings.db_schema}\".chunks")
             docs_deleted = await conn.fetchval(f"SELECT COUNT(*) FROM \"{self.settings.db_schema}\".documents")
             page_images_deleted = await conn.fetchval(f"SELECT COUNT(*) FROM \"{self.settings.db_schema}\".page_images")
+            document_images_deleted = await conn.fetchval(f"SELECT COUNT(*) FROM \"{self.settings.db_schema}\".document_images")
             
-            # Delete in order: chunks, page_images, then documents
+            # Delete in order: chunks, page_images, document_images, then documents
             await conn.execute(f"DELETE FROM \"{self.settings.db_schema}\".chunks")
             await conn.execute(f"DELETE FROM \"{self.settings.db_schema}\".page_images")
+            await conn.execute(f"DELETE FROM \"{self.settings.db_schema}\".document_images")
             await conn.execute(f"DELETE FROM \"{self.settings.db_schema}\".documents")
             
             return {
                 "documents_deleted": docs_deleted,
                 "chunks_deleted": chunks_deleted,
-                "page_images_deleted": page_images_deleted
+                "page_images_deleted": page_images_deleted,
+                "document_images_deleted": document_images_deleted
             }
     
     async def get_stats(self) -> Dict[str, Any]:
@@ -583,6 +666,153 @@ class VectorStore:
                     "image_base64": row['image_base64'],
                     "width": row['width'],
                     "height": row['height']
+                }
+                for row in rows
+            ]
+    
+    async def add_document_images(
+        self,
+        document_id: str,
+        images: List[Dict[str, Any]]
+    ) -> int:
+        """
+        Store extracted images (diagrams, figures) from a document.
+        
+        Args:
+            document_id: The document ID
+            images: List of dicts with:
+                - image_type: Type of image (figure, diagram, chart, etc.)
+                - page_number: Page number where image was found
+                - image_base64: Base64-encoded image data
+                - caption: Extracted caption text (optional)
+                - alt_text: Alternative text (optional)
+                - bbox: Bounding box coordinates as dict (optional)
+                - width: Image width (optional)
+                - height: Image height (optional)
+                - metadata: Additional metadata (optional)
+            
+        Returns:
+            Number of images stored
+        """
+        async with self.pool.acquire() as conn:
+            # Delete existing document images for this document
+            await conn.execute(
+                f"DELETE FROM \"{self.settings.db_schema}\".document_images WHERE document_id = $1",
+                document_id
+            )
+            
+            # Insert new document images
+            for img in images:
+                bbox_json = json.dumps(img.get('bbox')) if img.get('bbox') else None
+                metadata_json = json.dumps(img.get('metadata', {}))
+                
+                await conn.execute(f"""
+                    INSERT INTO "{self.settings.db_schema}".document_images 
+                    (document_id, image_type, page_number, image_base64, caption, alt_text, bbox, width, height, metadata)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10::jsonb)
+                """, 
+                    document_id,
+                    img.get('image_type', 'figure'),
+                    img.get('page_number'),
+                    img['image_base64'],
+                    img.get('caption'),
+                    img.get('alt_text'),
+                    bbox_json,
+                    img.get('width'),
+                    img.get('height'),
+                    metadata_json
+                )
+            
+            return len(images)
+    
+    async def get_document_images(
+        self,
+        document_id: str,
+        image_type: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get extracted images for a document.
+        
+        Args:
+            document_id: The document ID
+            image_type: Optional filter by image type
+            
+        Returns:
+            List of dicts with image data and metadata
+        """
+        async with self.pool.acquire() as conn:
+            if image_type:
+                rows = await conn.fetch(f"""
+                    SELECT id, image_type, page_number, image_base64, caption, alt_text, 
+                           bbox, width, height, metadata, created_at
+                    FROM "{self.settings.db_schema}".document_images
+                    WHERE document_id = $1 AND image_type = $2
+                    ORDER BY page_number, id
+                """, document_id, image_type)
+            else:
+                rows = await conn.fetch(f"""
+                    SELECT id, image_type, page_number, image_base64, caption, alt_text, 
+                           bbox, width, height, metadata, created_at
+                    FROM "{self.settings.db_schema}".document_images
+                    WHERE document_id = $1
+                    ORDER BY page_number, id
+                """, document_id)
+            
+            return [
+                {
+                    "id": row['id'],
+                    "image_type": row['image_type'],
+                    "page_number": row['page_number'],
+                    "image_base64": row['image_base64'],
+                    "caption": row['caption'],
+                    "alt_text": row['alt_text'],
+                    "bbox": row['bbox'],
+                    "width": row['width'],
+                    "height": row['height'],
+                    "metadata": row['metadata']
+                }
+                for row in rows
+            ]
+    
+    async def search_images_by_pages(
+        self,
+        document_id: str,
+        page_numbers: List[int]
+    ) -> List[Dict[str, Any]]:
+        """
+        Get extracted images for specific pages of a document.
+        
+        Args:
+            document_id: The document ID
+            page_numbers: List of page numbers
+            
+        Returns:
+            List of dicts with image data and metadata
+        """
+        if not page_numbers:
+            return []
+        
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(f"""
+                SELECT id, image_type, page_number, image_base64, caption, alt_text, 
+                       bbox, width, height, metadata
+                FROM "{self.settings.db_schema}".document_images
+                WHERE document_id = $1 AND page_number = ANY($2)
+                ORDER BY page_number, id
+            """, document_id, page_numbers)
+            
+            return [
+                {
+                    "id": row['id'],
+                    "image_type": row['image_type'],
+                    "page_number": row['page_number'],
+                    "image_base64": row['image_base64'],
+                    "caption": row['caption'],
+                    "alt_text": row['alt_text'],
+                    "bbox": row['bbox'],
+                    "width": row['width'],
+                    "height": row['height'],
+                    "metadata": row['metadata']
                 }
                 for row in rows
             ]

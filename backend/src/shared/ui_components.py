@@ -55,15 +55,17 @@ def determine_component_type(query: str, results: list) -> UIComponentType:
     """
     query_lower = query.lower()
     
-    # First, check if any results contain images in metadata
+    # First, check if any results contain extracted document images (diagrams, figures)
     if results:
         for r in results:
+            if r.get("document_images") and len(r.get("document_images", [])) > 0:
+                return UIComponentType.IMAGE
             metadata = r.get("metadata", {})
             if "image_url" in metadata or "image_base64" in metadata:
                 return UIComponentType.IMAGE
     
-    # Image keywords in query (if no images found in metadata)
-    if any(kw in query_lower for kw in ['image', 'picture', 'photo', 'diagram', 'figure']):
+    # Image keywords in query (diagram, figure, chart, illustration)
+    if any(kw in query_lower for kw in ['image', 'picture', 'photo', 'diagram', 'figure', 'chart', 'illustration', 'graphic']):
         return UIComponentType.IMAGE
     
     # Analyze content structure across all results
@@ -317,10 +319,23 @@ def _format_as_page_preview(results: list) -> dict:
 
 
 def _format_as_image(results: list) -> dict:
-    """Format results as image gallery."""
+    """Format results as image gallery, including extracted diagrams and figures."""
     images = []
     
     for r in results:
+        # First, check for extracted document images (diagrams, figures, charts)
+        document_images = r.get("document_images", [])
+        for img in document_images:
+            images.append({
+                "url": f"data:image/png;base64,{img['image_base64']}",
+                "caption": img.get('caption') or f"{img.get('image_type', 'Figure').title()} from {r.get('filename', 'document')}",
+                "source": r.get("filename", ""),
+                "similarity": r.get("similarity", 0.0),
+                "image_type": img.get('image_type', 'figure'),
+                "page_number": img.get('page_number')
+            })
+        
+        # Also check metadata for image_url or image_base64 (legacy support)
         metadata = r.get("metadata", {})
         
         if "image_url" in metadata:

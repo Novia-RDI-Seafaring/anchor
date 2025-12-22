@@ -1,5 +1,6 @@
 """Document management API routes."""
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form
+from typing import Optional
 
 from src.knowledge_base.service import get_document_service
 from src.knowledge_base.vector_store import get_vector_store
@@ -9,13 +10,37 @@ router = APIRouter(prefix="/api", tags=["documents"])
 
 
 @router.post("/documents/upload")
-async def upload_document(file: UploadFile = File(...)):
-    """Upload and process a document."""
+async def upload_document(
+    file: UploadFile = File(...),
+    preserve_images: Optional[str] = Form("true"),
+    preserve_tables: Optional[str] = Form("true"),
+    enable_ocr: Optional[str] = Form("false"),
+    table_mode: Optional[str] = Form("fast")
+):
+    """Upload and process a document with configurable processing options."""
     try:
+        # Convert string form values to appropriate types
+        preserve_images_bool = preserve_images.lower() == "true"
+        preserve_tables_bool = preserve_tables.lower() == "true"
+        enable_ocr_bool = enable_ocr.lower() == "true"
+        
+        # Validate table_mode
+        if table_mode not in ["fast", "accurate"]:
+            raise HTTPException(status_code=400, detail="table_mode must be 'fast' or 'accurate'")
+        
         content = await file.read()
         service = await get_document_service()
-        result = await service.upload_file(file.filename, content)
+        result = await service.upload_file(
+            file.filename,
+            content,
+            preserve_images=preserve_images_bool,
+            preserve_tables=preserve_tables_bool,
+            enable_ocr=enable_ocr_bool,
+            table_mode=table_mode
+        )
         return {"success": True, "document": result}
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()

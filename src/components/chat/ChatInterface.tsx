@@ -2,12 +2,37 @@ import React from 'react';
 import { CopilotChat } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
 import { X } from 'lucide-react';
+import { InputArea } from '../chat/InputArea';
+import { useCopilotChat } from '@copilotkit/react-core';
+import { TextMessage } from '@copilotkit/runtime-client-gql';
 
 interface ChatInterfaceProps {
     isOpen: boolean;
     onClose: () => void;
     initialMessages?: any[];
 }
+
+// Adapter to make InputArea compatible with CopilotKit's Input component interface
+const InputAreaAdapter = (props: any) => {
+    // ts-expect-error - appendMessage is deprecated but sendMessage is not yet available in this version
+    const { appendMessage } = useCopilotChat();
+
+    const handleSendMessage = (text: string) => {
+        // Create a proper TextMessage instance for CopilotKit
+        const message = new TextMessage({
+            role: 'user' as any, // Type assertion needed due to MessageRole enum
+            content: text
+        });
+        appendMessage(message);
+    };
+
+    return (
+        <InputArea
+            onSendMessage={handleSendMessage}
+            disabled={props.inProgress}
+        />
+    );
+};
 
 export function ChatInterface({ isOpen, onClose, initialMessages }: ChatInterfaceProps) {
     if (!isOpen) return null;
@@ -36,6 +61,7 @@ export function ChatInterface({ isOpen, onClose, initialMessages }: ChatInterfac
                         title: "",
                         initial: "How can I help you today?"
                     }}
+                    Input={InputAreaAdapter}
                 />
             </div>
         </div>

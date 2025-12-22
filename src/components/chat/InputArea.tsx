@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, memo, useCallback } from 'react';
 import { ArrowUp, Paperclip, Database, Globe, X, Loader2, FileText } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
+import { UploadOptionsModal, UploadOptions } from '../modals/UploadOptionsModal';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001';
 
@@ -18,6 +19,8 @@ interface UploadingFile {
 const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled }) => {
   const [text, setText] = useState('');
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
+  const [showOptionsModal, setShowOptionsModal] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<FileList | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { isRagEnabled, setIsRagEnabled } = useApp();
@@ -49,18 +52,32 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
     setIsRagEnabled(!isRagEnabled);
   }, [setIsRagEnabled, isRagEnabled]);
 
-  const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    // Process each file
-    for (const file of Array.from(files)) {
+    // Store files and show options modal
+    setPendingFiles(files);
+    setShowOptionsModal(true);
+  }, []);
+
+  const handleUploadWithOptions = useCallback(async (options: UploadOptions) => {
+    setShowOptionsModal(false);
+
+    if (!pendingFiles) return;
+
+    // Process each file with the selected options
+    for (const file of Array.from(pendingFiles)) {
       // Add to uploading state
       setUploadingFiles(prev => [...prev, { file, status: 'uploading' }]);
 
       try {
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('preserve_images', String(options.preserveImages));
+        formData.append('preserve_tables', String(options.preserveTables));
+        formData.append('enable_ocr', String(options.enableOcr));
+        formData.append('table_mode', options.tableMode);
 
         const res = await fetch(`${API_URL}/api/documents/upload`, {
           method: 'POST',
@@ -96,9 +113,10 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
       }
     }
 
-    // Reset input
+    // Clear pending files and reset input
+    setPendingFiles(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
-  }, []);
+  }, [pendingFiles]);
 
   const removeUploadingFile = useCallback((file: File) => {
     setUploadingFiles(prev => prev.filter(f => f.file !== file));
@@ -114,10 +132,10 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
             <div
               key={`${upload.file.name}-${idx}`}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs ${upload.status === 'uploading'
-                  ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
-                  : upload.status === 'success'
-                    ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
-                    : 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300'
+                : upload.status === 'success'
+                  ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300'
                 }`}
             >
               {upload.status === 'uploading' ? (
@@ -210,6 +228,18 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
           AI checks are recommended.
         </p>
       </div>
+
+      {/* Upload Options Modal */}
+      <UploadOptionsModal
+        isOpen={showOptionsModal}
+        files={pendingFiles}
+        onClose={() => {
+          setShowOptionsModal(false);
+          setPendingFiles(null);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }}
+        onConfirm={handleUploadWithOptions}
+      />
     </div>
   );
 };
