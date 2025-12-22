@@ -5,11 +5,7 @@ import {
   Settings2,
   Database,
   Check,
-  X,
   FileText,
-  HardDrive,
-  Globe,
-  Layout,
   RefreshCw,
   AlertTriangle,
   Loader2,
@@ -47,12 +43,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
   // State for form controls
   const [temperature, setTemperature] = useState('0.7');
   const [maxTokens, setMaxTokens] = useState('2048');
-  const [mcpTools, setMcpTools] = useState({
-    filesystem: false,
-    webSearch: false,
-    database: false,
-    markitdown: false
-  });
 
   // Knowledge base state
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -422,67 +412,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                   </div>
                 </div>
 
-                {/* MCP Tools */}
-                <div>
-                  <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-2">MCP Tools</label>
-                  <p className="text-xs text-neutral-500 mb-4">Select which MCP (Model Context Protocol) tools to enable for your agent:</p>
-
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between py-2">
-                      <div className="flex items-center gap-2">
-                        <div className="h-5 w-5 rounded border border-neutral-300 dark:border-neutral-600"></div>
-                        <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Enable MCP Tools</span>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 bg-neutral-50 dark:bg-neutral-800/50 p-4 rounded-lg border border-neutral-100 dark:border-neutral-800">
-                      <div className="flex items-center justify-between p-2 bg-white dark:bg-neutral-900 rounded border border-neutral-100 dark:border-neutral-800">
-                        <div className="flex items-center gap-2">
-                          <HardDrive size={16} className="text-purple-400" />
-                          <div>
-                            <div className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Filesystem</div>
-                            <div className="text-[10px] text-neutral-400">Endpoint: http://localhost:8000/sse</div>
-                          </div>
-                        </div>
-                        <AgToggle checked={mcpTools.filesystem} onChange={(c) => setMcpTools({ ...mcpTools, filesystem: c })} />
-                      </div>
-
-                      <div className="flex items-center justify-between p-2 bg-white dark:bg-neutral-900 rounded border border-neutral-100 dark:border-neutral-800">
-                        <div className="flex items-center gap-2">
-                          <Globe size={16} className="text-purple-400" />
-                          <div>
-                            <div className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Web_Search</div>
-                            <div className="text-[10px] text-neutral-400">Endpoint: https://mcp.search-provider.com/sse</div>
-                          </div>
-                        </div>
-                        <AgToggle checked={mcpTools.webSearch} onChange={(c) => setMcpTools({ ...mcpTools, webSearch: c })} />
-                      </div>
-
-                      <div className="flex items-center justify-between p-2 bg-white dark:bg-neutral-900 rounded border border-neutral-100 dark:border-neutral-800">
-                        <div className="flex items-center gap-2">
-                          <Database size={16} className="text-purple-400" />
-                          <div>
-                            <div className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Database</div>
-                            <div className="text-[10px] text-neutral-400">Endpoint:</div>
-                          </div>
-                        </div>
-                        <AgToggle checked={mcpTools.database} onChange={(c) => setMcpTools({ ...mcpTools, database: c })} />
-                      </div>
-
-                      <div className="flex items-center justify-between p-2 bg-white dark:bg-neutral-900 rounded border border-neutral-100 dark:border-neutral-800">
-                        <div className="flex items-center gap-2">
-                          <Layout size={16} className="text-purple-400" />
-                          <div>
-                            <div className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Markitdown</div>
-                            <div className="text-[10px] text-neutral-400">Endpoint: http://localhost:8001/sse</div>
-                          </div>
-                        </div>
-                        <AgToggle checked={mcpTools.markitdown} onChange={(c) => setMcpTools({ ...mcpTools, markitdown: c })} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
                 {/* Status Section */}
                 <div>
                   <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-3">Status</label>
@@ -506,11 +435,6 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-neutral-700 dark:text-neutral-300">Max Tokens:</span>
                       <span className="text-neutral-600 dark:text-neutral-400">{maxTokens}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-neutral-700 dark:text-neutral-300">MCP Tools:</span>
-                      <span className="text-red-500 dark:text-red-400">Disabled</span>
-                      <X size={14} className="text-red-500 dark:text-red-400" />
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-neutral-700 dark:text-neutral-300">Knowledge Base:</span>

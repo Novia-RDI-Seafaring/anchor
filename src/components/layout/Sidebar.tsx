@@ -127,7 +127,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <Plus size={18} />
           <span>New Chat</span>
         </AgButton>
-        <AgButton variant="ghost" className="w-full justify-start gap-3 hidden" onClick={onSettingsClick}>
+        <AgButton variant="ghost" className="w-full justify-start gap-3" onClick={onSettingsClick}>
           <Settings size={18} />
           <span>Settings</span>
         </AgButton>
