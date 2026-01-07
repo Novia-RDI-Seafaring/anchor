@@ -57,24 +57,30 @@ async def render_component(
       ui_component_type = UIComponentType.LIST
 
     # Idempotency guard: if the UI is already showing a component, prevent a loop.
-    # While we previously checked for EXACT payload match, the agent sometimes varies the payload slightly
-    # (e.g. "title") causing a loop. We now block *any* repeated render_component call if one is active.
-    # This enforces the "one render per turn" rule strictly.
+    # However, allow replacement if the component_type OR significant data has changed.
+    # We compare the target component_type with the active one.
     if ctx.deps.state.active_ui_components:
-        return ToolReturn(
-            return_value={
-                "success": True,
-                "component_type": component_type,
-                "already_rendered": True,
-                "note": "A UI component is already active. You MUST NOT call render_component again. Respond to the user now.",
-            },
-            metadata=[
-                StateSnapshotEvent(
-                    type=EventType.STATE_SNAPSHOT,
-                    snapshot=ctx.deps.state,
+        active_comp = ctx.deps.state.active_ui_components[0]
+        # Only block if it's the EXACT same component type and effectively the same data.
+        # This allows switching from 'list' to 'page_preview'.
+        if active_comp.component_type.value == component_type:
+             # Basic idempotency: if the content is the same, don't re-render.
+             # This prevents the model from getting stuck in a tool-call loop.
+             if active_comp.data == data:
+                return ToolReturn(
+                    return_value={
+                        "success": True,
+                        "component_type": component_type,
+                        "already_rendered": True,
+                        "note": "This exact component is already active. You MUST NOT call render_component again with these identical parameters. Respond to the user now.",
+                    },
+                    metadata=[
+                        StateSnapshotEvent(
+                            type=EventType.STATE_SNAPSHOT,
+                            snapshot=ctx.deps.state,
+                        )
+                    ]
                 )
-            ]
-        )
     
     # For page_preview, auto-inject document_id if not provided
     if ui_component_type == UIComponentType.PAGE_PREVIEW:

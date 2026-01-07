@@ -18,8 +18,7 @@ agent = Agent(
     model=get_default_responses_model(),
     deps_type=StateDeps[RAGState],
     system_prompt=SYSTEM_PROMPT,
-    tools=[get_database_status, search_knowledge_base, add_message, render_component],
+    tools=[get_database_status, search_knowledge_base, render_component],
 )
-
 
 AppState = RAGState

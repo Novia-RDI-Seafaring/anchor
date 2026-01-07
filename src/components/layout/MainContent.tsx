@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { AgCard, AgButton, AgBadge } from '../ui/AgComponents';
-import { BarChart3, Table, Image as ImageIcon, FileText, Download, MoreHorizontal, Share2, Database, ExternalLink } from 'lucide-react';
+import { BarChart3, Table, Image as ImageIcon, FileText, MoreHorizontal, Share2, Database, ExternalLink } from 'lucide-react';
 import { useCopilotChat, useCoAgent } from "@copilotkit/react-core";
 import { Message, TextMessage } from "@copilotkit/runtime-client-gql";
 import { ComponentRenderer } from '../kb/ComponentRenderer';
@@ -63,7 +63,7 @@ export const MainContent: React.FC = () => {
     }
 
     const updates: any = {
-      messages: visibleMessages.map(msg => {
+      messages: visibleMessages.map((msg: Message) => {
         // Serialize messages properly for storage
         if (msg.isTextMessage()) {
           const textMsg = msg as TextMessage;
@@ -83,7 +83,7 @@ export const MainContent: React.FC = () => {
 
     // 4. Auto-generate title if it's the first user message and title is default
     if (currentConv.title === 'New Conversation' && visibleMessages.length > 0) {
-      const firstUserMsg = visibleMessages.find(m => m.isTextMessage() && m.role === 'user');
+      const firstUserMsg = visibleMessages.find((m: Message) => m.isTextMessage() && m.role === 'user');
       if (firstUserMsg) {
         const content = (firstUserMsg as TextMessage).content;
         updates.title = content.length > 30 ? content.substring(0, 30) + '...' : content;
@@ -101,27 +101,20 @@ export const MainContent: React.FC = () => {
   // We accepted the risk in the original code. To fix it properly, we should probably pass the "current" state state into the update check or use a ref.
   // For now, I will re-add conversations but rely on the GUARD clauses above to break the infinite loop (equality checks).
 
-  const { latestResponse, ragData } = useMemo(() => {
-    let response: string | null = null;
+  const ragData = useMemo(() => {
     let data: ToolResult | null = null;
 
     // Guard: If visibleMessages is undefined or null, return early
     if (!visibleMessages || !Array.isArray(visibleMessages)) {
-      return { latestResponse: null, ragData: null };
+      return null;
     }
 
-    // Iterate backwards to find the latest relevant messages
+    // Iterate backwards to find the latest RAG tool output
     for (let i = visibleMessages.length - 1; i >= 0; i--) {
       const msg = visibleMessages[i];
 
       if (!msg) continue;
 
-      // Find latest assistant text response
-      if (!response && msg.isTextMessage() && msg.role === 'assistant') {
-        response = (msg as TextMessage).content;
-      }
-
-      // Find latest RAG tool output
       if (!data) {
         const toolMsg = msg as any; // Cast to access tool-specific props
 
@@ -132,9 +125,9 @@ export const MainContent: React.FC = () => {
 
         // Check for various properties that might identify the tool
         const isRagTool =
-          toolMsg.toolName === 'query_knowledge_base' ||
-          toolMsg.name === 'query_knowledge_base' ||
-          (toolMsg.actionName === 'query_knowledge_base'); // Some versions might use actionName
+          toolMsg.toolName === 'search_knowledge_base' ||
+          toolMsg.name === 'search_knowledge_base' ||
+          (toolMsg.actionName === 'search_knowledge_base'); // Some versions might use actionName
 
         if (isRagTool && (toolMsg.result || toolMsg.content)) {
           try {
@@ -154,10 +147,10 @@ export const MainContent: React.FC = () => {
         }
       }
 
-      if (response && data) break;
+      if (data) break;
     }
 
-    return { latestResponse: response, ragData: data };
+    return data;
   }, [visibleMessages]);
 
   return (
@@ -214,41 +207,7 @@ export const MainContent: React.FC = () => {
           </div>
         )}
 
-        {/* Active Document (Agent Response) */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between px-1">
-            <h2 className="text-sm font-semibold text-neutral-900 dark:text-white uppercase tracking-wider">Active Document</h2>
-          </div>
 
-          <AgCard className="overflow-hidden bg-white dark:bg-neutral-900 shadow-sm ring-1 ring-black/5 dark:ring-white/5">
-            <div className="border-b border-neutral-100 dark:border-neutral-800 bg-neutral-50/30 dark:bg-neutral-900/30 px-4 py-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FileText size={16} className="text-brand-600 dark:text-brand-400" />
-                <span className="text-sm font-medium text-neutral-700 dark:text-neutral-200">
-                  {ragData?.sources?.[0] || 'Response'}
-                </span>
-              </div>
-              <div className="flex gap-2">
-                <AgButton variant="ghost" size="sm" className="h-8 w-8 p-0">
-                  <Download size={16} />
-                </AgButton>
-                <AgButton variant="secondary" size="sm" className="text-xs h-8">Edit</AgButton>
-              </div>
-            </div>
-
-            <div className="p-6 md:p-10 bg-white dark:bg-neutral-900 min-h-[500px] text-sm md:text-base">
-              <div className="prose prose-neutral dark:prose-invert prose-sm md:prose-base max-w-none">
-                {latestResponse ? (
-                  <div className="whitespace-pre-line break-words">
-                    {latestResponse}
-                  </div>
-                ) : (
-                  <p className="text-neutral-500 italic">Waiting for agent response...</p>
-                )}
-              </div>
-            </div>
-          </AgCard>
-        </div>
 
         {/* Knowledge Base Results - UI Components */}
         {uiComponents.length > 0 && (

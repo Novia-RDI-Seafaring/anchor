@@ -166,8 +166,8 @@ def _enforce_tools_for_turn(messages: list[ModelMessage], model_request_paramete
     if user_text and _is_greeting(user_text):
         return model_request_parameters
 
-    has_kb = _tool_seen_since(messages, since_idx=user_idx, tool_name="query_knowledge_base")
-    has_render = _tool_seen_since(messages, since_idx=user_idx, tool_name="render_ui_component")
+    has_kb = _tool_seen_since(messages, since_idx=user_idx, tool_name="search_knowledge_base")
+    has_render = _tool_seen_since(messages, since_idx=user_idx, tool_name="render_component")
     require_render = os.getenv("ENFORCE_UI_RENDER", "0").strip().lower() in {"1", "true", "yes", "y"}
 
     # Guard against infinite tool-call loops: if the model has already made several tool calls
@@ -186,10 +186,15 @@ def _enforce_tools_for_turn(messages: list[ModelMessage], model_request_paramete
             pass
         return model_request_parameters
 
-    # Force tool calling until retrieval (and optionally rendering) has happened for this user prompt.
-    # Requiring rendering by default can cause tool-call loops if the model keeps choosing retrieval again.
-    if not has_kb or (require_render and not has_render):
+    # Force tool calling until retrieval (or rendering) has happened for this user prompt.
+    # If the model has already rendered a component (e.g. for a follow-up), allow text response.
+    if not has_kb and not has_render:
         return replace(model_request_parameters, allow_text_output=False)
+    
+    # If require_render is on, and we have neither retrieval nor render, block text.
+    if require_render and not has_kb and not has_render:
+        return replace(model_request_parameters, allow_text_output=False)
+        
     return model_request_parameters
 
 class DynamicChatModel(Model):
