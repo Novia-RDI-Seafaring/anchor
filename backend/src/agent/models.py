@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import os
 import time
-import re
 from contextlib import asynccontextmanager
-from dataclasses import replace
 from logging import getLogger
 from typing import Any, AsyncIterator, Literal
 
@@ -20,6 +18,7 @@ from pydantic_ai.settings import ModelSettings
 from evals.token_utils import estimate_tokens
 from evals.trace_logger import log_event
 from src.core.context import get_current_model_id
+from .utils import enforce_tools_for_turn
 
 logger = getLogger(__name__)
 # Load environment variables
@@ -75,134 +74,11 @@ def get_default_model(model_name: str = default_model, provider: Provider[AsyncO
 
 
 
-
-def _last_user_prompt_index(messages: list[ModelMessage]) -> int | None:
-    for idx in range(len(messages) - 1, -1, -1):
-        msg = messages[idx]
-        if getattr(msg, "kind", None) != "request":
-            continue
-        parts = getattr(msg, "parts", None) or []
-        for part in parts:
-            if getattr(part, "part_kind", None) == "user-prompt":
-                return idx
-    return None
-
-
-def _tool_seen_since(messages: list[ModelMessage], *, since_idx: int, tool_name: str) -> bool:
-    for msg in messages[since_idx + 1 :]:
-        for part in getattr(msg, "parts", None) or []:
-            kind = getattr(part, "part_kind", None)
-            if kind in {"tool-call", "builtin-tool-call", "tool-return", "builtin-tool-return"}:
-                if getattr(part, "tool_name", None) == tool_name:
-                    return True
-    return False
-
-
-def _tool_call_count_since(messages: list[ModelMessage], *, since_idx: int) -> int:
-    count = 0
-    for msg in messages[since_idx + 1 :]:
-        for part in getattr(msg, "parts", None) or []:
-            kind = getattr(part, "part_kind", None)
-            if kind in {"tool-call", "builtin-tool-call"}:
-                count += 1
-    return count
-
-
-def _last_user_prompt_text(messages: list[ModelMessage]) -> str | None:
-    idx = _last_user_prompt_index(messages)
-    if idx is None:
-        return None
-    msg = messages[idx]
-    parts = getattr(msg, "parts", None) or []
-    for part in parts:
-        if getattr(part, "part_kind", None) == "user-prompt":
-            return getattr(part, "content", None)
-    return None
-
-
-_GREETING_RE = re.compile(r"^[a-zA-Z][a-zA-Z\s\.\!\?]{0,24}$")
-_GREETINGS = {
-    "hi",
-    "hello",
-    "hey",
-    "yo",
-    "sup",
-    "hiya",
-    "good morning",
-    "good afternoon",
-    "good evening",
-}
-
-
-def _is_greeting(text: str) -> bool:
-    s = text.strip().lower()
-    if not s:
-        return False
-    if s in _GREETINGS:
-        return True
-    # Very short greetings like "hi", "hey", "yo", "hola"
-    if len(s) <= 4 and s.isalpha():
-        return True
-    # "hi!" / "hello." etc (avoid matching real queries)
-    if len(s) <= 25 and _GREETING_RE.match(text.strip()) and any(g in s for g in ("hi", "hello", "hey")):
-        return True
-    return False
-
-
-def _enforce_tools_for_turn(messages: list[ModelMessage], model_request_parameters: ModelRequestParameters) -> ModelRequestParameters:
-    """
-    Enforce that each user turn triggers KB retrieval before the model can answer with plain text.
-
-    This addresses cases where models ignore the system prompt and answer generically without calling tools.
-    """
-    if os.getenv("ENFORCE_RAG_TOOLING", "1").strip().lower() in {"0", "false", "no", "n"}:
-        return model_request_parameters
-
-    user_idx = _last_user_prompt_index(messages)
-    if user_idx is None:
-        return model_request_parameters
-
-    user_text = _last_user_prompt_text(messages)
-    if user_text and _is_greeting(user_text):
-        return model_request_parameters
-
-    has_kb = _tool_seen_since(messages, since_idx=user_idx, tool_name="search_knowledge_base")
-    has_render = _tool_seen_since(messages, since_idx=user_idx, tool_name="render_component")
-    require_render = os.getenv("ENFORCE_UI_RENDER", "0").strip().lower() in {"1", "true", "yes", "y"}
-
-    # Guard against infinite tool-call loops: if the model has already made several tool calls
-    # for this user message but still hasn't called retrieval, stop enforcing and let it answer.
-    max_tool_calls = int(os.getenv("ENFORCE_RAG_MAX_TOOL_CALLS", "4"))
-    if not has_kb and _tool_call_count_since(messages, since_idx=user_idx) >= max_tool_calls:
-        try:
-            log_event(
-                {
-                    "type": "rag_enforcement_bailed_out",
-                    "reason": "max_tool_calls_exceeded",
-                    "max_tool_calls": max_tool_calls,
-                }
-            )
-        except Exception:
-            pass
-        return model_request_parameters
-
-    # Force tool calling until retrieval (or rendering) has happened for this user prompt.
-    # If the model has already rendered a component (e.g. for a follow-up), allow text response.
-    if not has_kb and not has_render:
-        return replace(model_request_parameters, allow_text_output=False)
-    
-    # If require_render is on, and we have neither retrieval nor render, block text.
-    if require_render and not has_kb and not has_render:
-        return replace(model_request_parameters, allow_text_output=False)
-        
-    return model_request_parameters
-
 class DynamicChatModel(Model):
     """
-    A wrapper model that dynamically selects the underlying model 
-    based on the current request context.
+    A Model wrapper that dynamically switches between different LLM models
+    based on runtime context (e.g., from a global variable or database).
     """
-    
     def __init__(self, default_model: Model):
         self.default_model = default_model
         self._model_cache = {}
@@ -212,16 +88,11 @@ class DynamicChatModel(Model):
         if not model_id:
             return self.default_model
             
-        # If it's the same as default, return default
-        # (This check is simplistic as default_model might not expose its name easily in a standard way,
-        # but let's assume we want to switch if ID is present)
-        
         if model_id in self._model_cache:
             return self._model_cache[model_id]
             
         # Create new model instance
-        # Handle "ollama:", "azure:", etc. prefixes
-        provider = "openai" # default
+        provider = "openai"  # default
         model_name = model_id
         
         if model_id.startswith("ollama:"):
@@ -231,96 +102,43 @@ class DynamicChatModel(Model):
             provider = "azure"
             model_name = model_id.split(":", 1)[1]
             
-        # Instantiate OpenAIResponsesModel (ag-ui wrapper)
-        # Note: ag-ui uses OpenAIResponsesModel which wraps pydantic_ai.models.openai.OpenAIModel
-        # We need to return a Model compatible object.
-        
-        # We'll use the same helper as before but with explicit params
         from pydantic_ai.models.openai import OpenAIModel
         
         print(f"DynamicChatModel: Switching to {model_name} (provider: {provider})")
         
         if provider == "ollama":
-             # For Ollama, we rely on pydantic_ai's native support
-             # It likely defaults to localhost:11434 or uses env vars.
-             new_model = OpenAIModel(
-                 model_name,
-                 provider='ollama'
-             )
+            new_model = OpenAIModel(model_name, provider='ollama')
         else:
-             # Azure or OpenAI
-             new_model = OpenAIModel(
-                 model_name,
-                 provider=provider
-             )
+            new_model = OpenAIModel(model_name, provider=provider)
 
         self._model_cache[model_id] = new_model
         return new_model
 
     @property
     def model_name(self) -> str:
-        return self._get_current_model().model_name
+        # Note: This is sync but _get_current_model is async now
+        # For property access, we'll need to handle this carefully
+        # Since model_name is typically accessed synchronously, we keep cached model
+        model_id = get_current_model_id()
+        if not model_id or model_id not in self._model_cache:
+            return self.default_model.model_name
+        return self._model_cache[model_id].model_name
 
     @property
     def system(self) -> str | None:
-        return self._get_current_model().system
+        model_id = get_current_model_id()
+        if not model_id or model_id not in self._model_cache:
+            return self.default_model.system
+        return self._model_cache[model_id].system
 
     async def request(
         self,
         messages: list[ModelMessage],
-        model_settings: ModelSettings | None,
-        model_request_parameters: ModelRequestParameters | None,
-        *args,
-        **kwargs,
-    ) -> tuple[ModelResponse, Any]:
-        model = self._get_current_model()
-        model_name = getattr(model, "model_name", None)
-        provider = getattr(model, "_provider", default_provider)
-        if model_request_parameters is not None:
-            model_request_parameters = _enforce_tools_for_turn(messages, model_request_parameters)
-
-        # Estimate prompt tokens best-effort
-        try:
-            prompt_tokens_est = 0
-            for m in messages:
-                content = getattr(m, "content", None)
-                if isinstance(content, str):
-                    prompt_tokens_est += estimate_tokens(content, model_name=model_name)
-                elif isinstance(content, list):
-                    # Some message bodies may be lists of parts; join as text for estimation
-                    prompt_tokens_est += estimate_tokens(" ".join(str(p) for p in content), model_name=model_name)
-        except Exception:
-            prompt_tokens_est = 0
-
-        started = time.perf_counter()
-        response, meta = await model.request(
-            messages, model_settings, model_request_parameters, *args, **kwargs
-        )
-        latency_ms = (time.perf_counter() - started) * 1000
-
-        # Extract usage if available
-        usage = {}
-        try:
-            resp_data = getattr(response, "response_data", None)
-            if resp_data and isinstance(resp_data, dict):
-                usage = resp_data.get("usage", {}) or {}
-        except Exception:
-            usage = {}
-
-        try:
-            log_event({
-                "type": "llm_call",
-                "model": model_name,
-                "provider": provider,
-                "message_count": len(messages) if messages else 0,
-                "prompt_tokens_est": prompt_tokens_est,
-                "usage": usage,
-                "latency_ms": latency_ms,
-            })
-        except Exception:
-            pass
-
-        return response, meta
+        model_settings: ModelSettings | None = None
+    ) -> tuple[ModelResponse, Usage]:
+        """Make async request with thread-safe model retrieval."""
+        current_model = self._get_current_model()  # Now synchronous
+        return await current_model.request(messages, model_settings)
 
     def request_stream(
         self,
@@ -334,7 +152,7 @@ class DynamicChatModel(Model):
         model_name = getattr(model, "model_name", None)
         provider = getattr(model, "_provider", default_provider)
         if model_request_parameters is not None:
-            model_request_parameters = _enforce_tools_for_turn(messages, model_request_parameters)
+            model_request_parameters = enforce_tools_for_turn(messages, model_request_parameters)
 
         stream_or_cm = model.request_stream(messages, model_settings, model_request_parameters, *args, **kwargs)
 

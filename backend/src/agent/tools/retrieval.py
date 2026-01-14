@@ -1,5 +1,6 @@
 """Knowledge base retrieval tools for querying the vector database."""
 import time
+from typing import Optional, Any
 
 from ag_ui.core import EventType, StateSnapshotEvent  # type: ignore
 from pydantic_ai._run_context import RunContext
@@ -131,3 +132,116 @@ async def get_database_status(ctx: RunContext[StateDeps[RAGState]]) -> StateSnap
   except Exception as e:
     log_error("Error in get_database_status", e)
     raise
+
+
+async def list_documents(
+  ctx: RunContext[StateDeps[RAGState]]
+) -> dict[str, Any]:
+  """
+  List all documents currently available in the knowledge base.
+  Use this to find a document_id if one is not provided.
+  
+  Returns:
+    Dictionary with 'documents' list.
+  """
+  log_agent_tool_call("list_documents", {})
+  
+  try:
+    from src.knowledge_base.service import get_document_service
+    service = await get_document_service()
+    documents = await service.list_documents()
+    
+    return {
+        "documents": documents
+    }
+  except Exception as e:
+    log_error("Error in list_documents", e)
+    return {"error": str(e)}
+
+
+async def list_document_toc(
+  ctx: RunContext[StateDeps[RAGState]],
+  document_id: Optional[str] = None
+) -> dict[str, Any]:
+  """
+  Retrieve the Table of Contents (TOC) for a specific document.
+  If document_id is not provided, uses the active document.
+  
+  Args:
+    document_id: Optional ID of the document to get the TOC for.
+    
+  Returns:
+    Dictionary with 'toc' (list of items) and 'filename'.
+  """
+  log_agent_tool_call("list_document_toc", {"document_id": document_id})
+  
+  try:
+    from src.knowledge_base.service import get_document_service
+    from src.knowledge_base.vector_store import get_vector_store
+    from src.core.context import get_active_document_id
+    
+    doc_id = document_id or get_active_document_id()
+    if not doc_id:
+        return {"error": "No document ID provided and no active document set. Please provide a document_id or use search first."}
+    
+    vector_store = await get_vector_store()
+    toc = await vector_store.get_toc(doc_id)
+    doc_info = await vector_store.get_document(doc_id)
+    
+    return {
+        "toc": toc or [],
+        "filename": doc_info.get("filename") if doc_info else "Unknown",
+        "document_id": doc_id
+    }
+  except Exception as e:
+    log_error("Error in list_document_toc", e, {"document_id": document_id})
+    return {"error": str(e)}
+
+
+async def get_section_content(
+  ctx: RunContext[StateDeps[RAGState]],
+  section_name: str,
+  document_id: Optional[str] = None
+) -> dict[str, Any]:
+  """
+  Retrieve all text content associated with a specific section or subsection.
+  Useful for reading a whole chapter or section at once.
+  
+  Args:
+    section_name: The name of the section or heading to retrieve (from TOC).
+    document_id: Optional ID of the document. Uses active document if not set.
+    
+  Returns:
+    Dictionary with 'content' (concatenated text) and 'chunks'.
+  """
+  log_agent_tool_call("get_section_content", {"section_name": section_name, "document_id": document_id})
+  
+  try:
+    from src.knowledge_base.vector_store import get_vector_store
+    from src.core.context import get_active_document_id
+    
+    doc_id = document_id or get_active_document_id()
+    if not doc_id:
+        return {"error": "No document ID provided and no active document set."}
+    
+    vector_store = await get_vector_store()
+    chunks = await vector_store.get_chunks_by_section(doc_id, section_name)
+    
+    if not chunks:
+        return {"error": f"No content found for section '{section_name}' in this document."}
+    
+    full_content = "\n\n".join([c["content"] for c in chunks])
+    
+    # Strictly limit content to avoid overwhelming the model or prompting it to 'fetch more'
+    if len(full_content) > 15000:
+        full_content = full_content[:15000] + "... [Content truncated for brevity]"
+    
+    return {
+        "section_name": section_name,
+        "content": full_content,
+        "chunk_count": len(chunks),
+        "document_id": doc_id
+    }
+  except Exception as e:
+    log_error("Error in get_section_content", e, {"section_name": section_name})
+    return {"error": str(e)}

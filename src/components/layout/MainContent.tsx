@@ -27,44 +27,46 @@ export const MainContent: React.FC = () => {
   });
   const uiComponents = state?.active_ui_components || [];
 
+  // Use ref to track latest conversations without causing effect re-runs
+  const conversationsRef = React.useRef(conversations);
+
+  React.useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
   // Persist messages and update title
   React.useEffect(() => {
-    // 1. Basic Guard: No active conversation or no messages to verify
+    // 1. Basic Guard: No active conversation
     if (!activeConversationId) return;
 
-    const currentConv = conversations.find(c => c.id === activeConversationId);
+    // Use ref to get latest conversations without dependency
+    const currentConv = conversationsRef.current.find(c => c.id === activeConversationId);
     if (!currentConv) return;
 
     const currentMessages = currentConv.messages || [];
 
-    // 2. Guard: Avoid overwriting a populated conversation with an empty state immediately after switch
-    // If the tool effectively just loaded and visibleMessages is empty, but we expect messages, ignore.
+    // 2. Guard: Avoid overwriting populated conversation with empty state
     if (visibleMessages.length === 0 && currentMessages.length > 0) {
       return;
     }
 
-    // 3. Optimization: Check if content actually changed to avoid loop/re-renders
-    // Simple length check first
+    // 3. Optimization: Check if content actually changed
     if (currentMessages.length === visibleMessages.length) {
-      // Deep check for last message equality (ID and Content) assuming append-only mostly
       const lastMsgIdx = visibleMessages.length - 1;
       if (lastMsgIdx >= 0) {
         const lastVisible = visibleMessages[lastMsgIdx] as any;
         const lastStored = currentMessages[lastMsgIdx];
 
-        // Safe access with optional chaining
         if (lastVisible?.id === lastStored?.id && lastVisible?.content === lastStored?.content) {
-          return;
+          return; // No change
         }
       } else {
-        // Both empty
-        return;
+        return; // Both empty
       }
     }
 
     const updates: any = {
       messages: visibleMessages.map((msg: Message) => {
-        // Serialize messages properly for storage
         if (msg.isTextMessage()) {
           const textMsg = msg as TextMessage;
           return {
@@ -74,14 +76,13 @@ export const MainContent: React.FC = () => {
             type: 'text'
           };
         }
-        // For other message types, store as-is
         return msg;
       }),
       lastMessageAt: 'Just now',
       preview: `${visibleMessages.length} messages - Just now`
     };
 
-    // 4. Auto-generate title if it's the first user message and title is default
+    // 4. Auto-generate title from first user message
     if (currentConv.title === 'New Conversation' && visibleMessages.length > 0) {
       const firstUserMsg = visibleMessages.find((m: Message) => m.isTextMessage() && m.role === 'user');
       if (firstUserMsg) {
@@ -90,68 +91,29 @@ export const MainContent: React.FC = () => {
       }
     }
 
+    // Safe to call since updateConversation uses functional state updates
     updateConversation(activeConversationId, updates);
 
   }, [visibleMessages, activeConversationId, updateConversation]);
-  // removed 'conversations' from deps to avoid aggressive cycles, relying on internal state updates via updateConversation logic
-  // CAUTION: We need 'conversations' to find 'currentConv'. If we exclude it, 'currentConv' might be stale in closure.
-  // HOWEVER, 'updateConversation' inside useConversationHistory uses functional state update (prev => ...), so it is safe to call.
-  // The 'READ' part (finding currentConv) DOES need fresh conversations. 
-  // To fix the dependency loop, strict React requires 'conversations'. 
-  // We accepted the risk in the original code. To fix it properly, we should probably pass the "current" state state into the update check or use a ref.
-  // For now, I will re-add conversations but rely on the GUARD clauses above to break the infinite loop (equality checks).
 
+  // Extract RAG data from agent state instead of messages
   const ragData = useMemo(() => {
-    let data: ToolResult | null = null;
+    // Get sources and chunks from agent state (with type assertion)
+    const agentState = state as any; // State type varies, use any for flexibility
+    const sources = agentState?.current_sources || [];
+    const chunks = agentState?.last_chunks || [];
 
-    // Guard: If visibleMessages is undefined or null, return early
-    if (!visibleMessages || !Array.isArray(visibleMessages)) {
-      return null;
+    console.log("Agent state - sources:", sources, "chunks:", chunks?.length);
+
+    if (sources.length > 0 || chunks.length > 0) {
+      return {
+        sources: sources,
+        chunks: chunks
+      };
     }
 
-    // Iterate backwards to find the latest RAG tool output
-    for (let i = visibleMessages.length - 1; i >= 0; i--) {
-      const msg = visibleMessages[i];
-
-      if (!msg) continue;
-
-      if (!data) {
-        const toolMsg = msg as any; // Cast to access tool-specific props
-
-        // Debug log to see what messages look like
-        if (toolMsg.role === 'function' || toolMsg.type === 'function' || toolMsg.toolName || toolMsg.name) {
-          console.log("Found potential tool message:", toolMsg);
-        }
-
-        // Check for various properties that might identify the tool
-        const isRagTool =
-          toolMsg.toolName === 'search_knowledge_base' ||
-          toolMsg.name === 'search_knowledge_base' ||
-          (toolMsg.actionName === 'search_knowledge_base'); // Some versions might use actionName
-
-        if (isRagTool && (toolMsg.result || toolMsg.content)) {
-          try {
-            const contentToParse = toolMsg.result || toolMsg.content;
-            console.log("Parsing RAG data from:", contentToParse);
-
-            // Handle case where content might already be an object
-            if (typeof contentToParse === 'object') {
-              data = contentToParse;
-            } else {
-              data = JSON.parse(contentToParse);
-            }
-            console.log("Parsed RAG data:", data);
-          } catch (e) {
-            console.error("Failed to parse tool result", e);
-          }
-        }
-      }
-
-      if (data) break;
-    }
-
-    return data;
-  }, [visibleMessages]);
+    return null;
+  }, [state]);
 
   return (
     <div className="flex-1 h-full bg-neutral-50/50 dark:bg-neutral-950 overflow-y-auto p-4 md:p-8 scroll-smooth border-r border-neutral-200 dark:border-neutral-800">
@@ -177,7 +139,7 @@ export const MainContent: React.FC = () => {
         {/* Sources Grid (formerly Mock Cards) */}
         {ragData?.sources && ragData.sources.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {ragData.sources.map((source, idx) => (
+            {ragData.sources.map((source: string, idx: number) => (
               <AgCard key={idx} className="p-4 hover:shadow-md transition-all duration-200 cursor-pointer group border-neutral-200/60 dark:border-neutral-800">
                 <div className="flex justify-between items-start mb-3">
                   <div className="h-10 w-10 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg flex items-center justify-center group-hover:bg-blue-100 dark:group-hover:bg-blue-900/50 transition-colors">
@@ -233,7 +195,7 @@ export const MainContent: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 gap-3">
-              {ragData.chunks.map((chunk, idx) => (
+              {ragData.chunks.map((chunk: Chunk, idx: number) => (
                 <AgCard key={idx} className="p-4 bg-slate-50 dark:bg-neutral-800 border-indigo-100/50 dark:border-indigo-900/30 hover:border-indigo-200 dark:hover:border-indigo-800 transition-colors">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">

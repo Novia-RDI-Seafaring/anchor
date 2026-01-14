@@ -7,32 +7,59 @@ const STORAGE_KEY = 'anchor_conversations';
 export const useConversationHistory = () => {
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [activeId, setActiveId] = useState<string | null>(null);
+    const [isInitialized, setIsInitialized] = useState(false);
 
-    // Load from local storage on mount
+    // Load from local storage on mount - ONCE ONLY
     useEffect(() => {
+        if (isInitialized) return;
+
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored) {
             try {
                 const parsed = JSON.parse(stored);
                 setConversations(parsed);
-                if (parsed.length > 0 && !activeId) {
+                if (parsed.length > 0) {
                     setActiveId(parsed[0].id);
                 }
             } catch (e) {
                 console.error("Failed to parse conversations", e);
+                // Create default conversation on parse error
+                const defaultConv: Conversation = {
+                    id: crypto.randomUUID(),
+                    title: 'New Conversation',
+                    lastMessageAt: 'Just now',
+                    preview: '0 messages - Just now',
+                    messages: []
+                };
+                setConversations([defaultConv]);
+                setActiveId(defaultConv.id);
             }
         } else {
-            // Initialize with a default conversation if empty
-            createNewConversation();
+            // No stored data - create initial conversation
+            const initialConv: Conversation = {
+                id: crypto.randomUUID(),
+                title: 'New Conversation',
+                lastMessageAt: 'Just now',
+                preview: '0 messages - Just now',
+                messages: []
+            };
+            setConversations([initialConv]);
+            setActiveId(initialConv.id);
         }
-    }, []);
 
-    // Save to local storage whenever conversations change
+        setIsInitialized(true);
+    }, [isInitialized]);
+
+    // Save to local storage with debounce for performance
     useEffect(() => {
-        if (conversations.length > 0) {
+        if (!isInitialized || conversations.length === 0) return;
+
+        const timeoutId = setTimeout(() => {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
-        }
-    }, [conversations]);
+        }, 300); // Debounce 300ms
+
+        return () => clearTimeout(timeoutId);
+    }, [conversations, isInitialized]);
 
     const createNewConversation = useCallback(() => {
         const newConv: Conversation = {
@@ -40,7 +67,7 @@ export const useConversationHistory = () => {
             title: 'New Conversation',
             lastMessageAt: 'Just now',
             preview: '0 messages - Just now',
-            messages: [] // We'll need to extend the type to include messages if we want to persist them fully here
+            messages: []
         };
 
         setConversations(prev => [newConv, ...prev]);
@@ -59,7 +86,8 @@ export const useConversationHistory = () => {
                     id: crypto.randomUUID(),
                     title: 'New Conversation',
                     lastMessageAt: 'Just now',
-                    preview: '0 messages - Just now'
+                    preview: '0 messages - Just now',
+                    messages: []
                 };
                 setActiveId(newConv.id);
                 return [newConv];

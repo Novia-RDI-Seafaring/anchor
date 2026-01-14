@@ -25,9 +25,15 @@ class HTMLFormatter:
         for chunk in chunk_iter:
             enriched_text = chunker.contextualize(chunk=chunk)
             
-            # Extract page numbers and bounding boxes from chunk provenance
+            # Extract page numbers, bounding boxes, and headings from chunk provenance/meta
             page_numbers = set()
             bboxes = []
+            headings = []
+            
+            # Extract headings context
+            if hasattr(chunk, 'meta') and hasattr(chunk.meta, 'headings'):
+                headings = [str(h) for h in chunk.meta.headings]
+            
             if hasattr(chunk, 'meta') and hasattr(chunk.meta, 'doc_items'):
                 for doc_item in chunk.meta.doc_items:
                     if hasattr(doc_item, 'prov') and doc_item.prov:
@@ -48,6 +54,7 @@ class HTMLFormatter:
                     "content_length": len(enriched_text),
                     "page_numbers": sorted(page_numbers) if page_numbers else [],
                     "bboxes": bboxes,
+                    "headings": headings,
                 }
             })
         return chunks
@@ -94,9 +101,15 @@ class MarkdownFormatter:
         for chunk in chunk_iter:
             enriched_text = chunker.contextualize(chunk=chunk)
             
-            # Extract page numbers and bounding boxes from chunk provenance
+            # Extract page numbers, bounding boxes, and headings from chunk provenance/meta
             page_numbers = set()
             bboxes = []
+            headings = []
+            
+            # Extract headings context
+            if hasattr(chunk, 'meta') and hasattr(chunk.meta, 'headings'):
+                headings = [str(h) for h in chunk.meta.headings]
+            
             if hasattr(chunk, 'meta') and hasattr(chunk.meta, 'doc_items'):
                 for doc_item in chunk.meta.doc_items:
                     if hasattr(doc_item, 'prov') and doc_item.prov:
@@ -117,6 +130,7 @@ class MarkdownFormatter:
                     "content_length": len(enriched_text),
                     "page_numbers": sorted(page_numbers) if page_numbers else [],
                     "bboxes": bboxes,
+                    "headings": headings,
                 }
             })
         return chunks

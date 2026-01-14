@@ -71,13 +71,14 @@ uploads/
 !uploads/.gitkeep
 test_chunking/
 test_scripts/
+notes_docs/
+diagrams/*
 
 # Documentation (temporary/working files)
+backend/diagrams/
+backend/undecided_files/
 backend/evals/findings.md
-backend/FLOW_DIAGRAM.md
-backend/SQL_PLAN.md
-backend/SYSTEM_FLOW.md
-notes_docs/DIAGRAM.md
+notes_docs/
 
 # Docling processing artifacts (if any temp files created)
 *.docling-tmp

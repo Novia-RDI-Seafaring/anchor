@@ -2,8 +2,7 @@ import React, { useState, useRef, useEffect, memo, useCallback } from 'react';
 import { ArrowUp, Paperclip, Database, Globe, X, Loader2, FileText } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { UploadOptionsModal, UploadOptions } from '../modals/UploadOptionsModal';
-
-const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001';
+import { API_URL } from '@/lib/api-config';
 
 interface InputAreaProps {
   onSendMessage: (text: string) => void;

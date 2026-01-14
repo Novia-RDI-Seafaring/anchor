@@ -25,8 +25,8 @@ MODEL_DIMENSIONS = {
     "azure-text-embedding-3-large": 3072,
     # Ollama models (variable, but commonly these)
     "nomic-embed-text": 768,
-    "mxbai-embed-large": 1024,
-    "snowflake-arctic-embed": 1024,
+    # "mxbai-embed-large": 1024,
+    # "snowflake-arctic-embed": 1024,
     "all-minilm": 384,
 }
 

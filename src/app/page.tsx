@@ -127,6 +127,7 @@ export default function Home() {
                             runtimeUrl={`/api/copilotkit?model=${selectedModel}`}
                             agent="my_agent"
                             key={activeConversationId}
+                        //  showDevConsole={false}  // DISABLE DEV CONSOLE FOR THE COPILOTKIT
                         >
                             <div className="flex-1 flex overflow-hidden relative">
 

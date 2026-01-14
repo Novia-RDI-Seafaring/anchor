@@ -28,9 +28,20 @@ class DocumentService:
         self.formatter = MarkdownFormatter()
     
     def _generate_document_id(self, filename: str, content_hash: Optional[str] = None) -> str:
-        """Generate a unique document ID."""
-        base = f"{filename}-{content_hash or ''}"
-        return hashlib.md5(base.encode()).hexdigest()[:12]
+        """
+        Generate a unique document ID using SHA256 for better security.
+        Format: <timestamp_ms>-<hash_prefix>
+        """
+        from datetime import datetime
+        
+        # Include timestamp for uniqueness and rough chronological ordering
+        timestamp_ms = int(datetime.utcnow().timestamp() * 1000)
+        base = f"{filename}-{content_hash or ''}-{timestamp_ms}"
+        
+        # Use SHA256 instead of MD5 for better collision resistance
+        hash_digest = hashlib.sha256(base.encode()).hexdigest()[:16]
+        
+        return f"{timestamp_ms}-{hash_digest}"
     
     def _extract_images_from_docling(self, conversion_result) -> List[Dict[str, Any]]:
         """
@@ -119,8 +130,138 @@ class DocumentService:
                         
         except Exception as e:
             print(f"DocumentService: Error iterating document items: {e}")
-        
+            
         return extracted_images
+    
+    def _extract_toc_from_docling(self, conversion_result) -> List[Dict[str, Any]]:
+        """
+        Extract Table of Contents from Docling conversion result.
+        Primarily looks for DOCUMENT_INDEX label.
+        
+        Args:
+            conversion_result: Docling conversion result object
+            
+        Returns:
+            List of TOC items with text, level, and page number
+        """
+        toc_items = []
+        try:
+            from docling_core.types.doc.labels import DocItemLabel # type: ignore
+            
+            document = conversion_result.document
+            
+            # Step 1: Look for explicit DOCUMENT_INDEX items
+            index_item_count = 0
+            for item, level in document.iterate_items():
+                if hasattr(item, 'label') and item.label == DocItemLabel.DOCUMENT_INDEX:
+                    index_item_count += 1
+                    page_no = None
+                    if hasattr(item, 'prov') and item.prov:
+                        page_no = item.prov[0].page_no if hasattr(item.prov[0], 'page_no') else None
+                    
+                    # Try multiple ways to extract text
+                    text_content = ""
+                    extraction_method = None
+                    
+                    # Method 1: Direct text attribute
+                    if hasattr(item, 'text') and item.text:
+                        text_content = item.text
+                        extraction_method = "direct_text"
+                    # Method 2: Try self_text if available
+                    elif hasattr(item, 'self_text') and item.self_text:
+                        text_content = item.self_text
+                        extraction_method = "self_text"
+                    # Method 3: Try to get text from children
+                    elif hasattr(item, 'children') and item.children:
+                        child_texts = []
+                        for child in item.children:
+                            if hasattr(child, 'text') and child.text:
+                                child_texts.append(child.text)
+                        if child_texts:
+                            text_content = ' '.join(child_texts).strip()
+                            extraction_method = f"children({len(child_texts)})"
+                    
+                    if extraction_method:
+                        print(f"DocumentService: TOC item extracted via {extraction_method}: '{text_content[:50]}...' (page {page_no})")
+                    else:
+                        print(f"DocumentService: TOC item has NO text content (page {page_no}) - tried all methods")
+                    
+                    toc_items.append({
+                        "text": text_content,
+                        "level": level,
+                        "page_no": page_no,
+                        "type": "index_item"
+                    })
+            
+            if index_item_count > 0:
+                print(f"DocumentService: Found {index_item_count} DOCUMENT_INDEX items")
+            
+            # Step 2: If we found DOCUMENT_INDEX items but they all have empty text,
+            # or if no DOCUMENT_INDEX was found, fallback to headings
+            has_valid_text = any(item.get("text", "").strip() for item in toc_items)
+            
+            if not toc_items or not has_valid_text:
+                print(f"DocumentService: TOC extraction - using heading fallback (found {len(toc_items)} DOCUMENT_INDEX items with empty text)")
+                toc_items = []  # Clear empty items
+                
+                heading_count = 0
+                for item, level in document.iterate_items():
+                    # Skip if this is a table item - tables can be mislabeled as headers
+                    if hasattr(item, 'label'):
+                        label_str = str(item.label)
+                        if 'TABLE' in label_str.upper():
+                            continue  # Skip table items
+                        
+                        if item.label in [DocItemLabel.SECTION_HEADER, DocItemLabel.TITLE]:
+                            page_no = None
+                            if hasattr(item, 'prov') and item.prov:
+                                page_no = item.prov[0].page_no if hasattr(item.prov[0], 'page_no') else None
+                            
+                            # Use self_text first (cleaner, without children)
+                            # Then fallback to text if self_text is not available
+                            text_content = ""
+                            if hasattr(item, 'self_text') and item.self_text:
+                                text_content = item.self_text.strip()
+                            elif hasattr(item, 'text') and item.text:
+                                text_content = item.text.strip()
+                            
+                            # Filter out content that looks like tables (contains | or multiple newlines)
+                            # or is too long to be a heading (>200 chars)
+                            if text_content and len(text_content) <= 200:
+                                # Check if it looks like table content
+                                if '|' not in text_content and '\n\n' not in text_content:
+                                    # Infer heading level from numbering pattern
+                                    # e.g., "1." → level 1, "1.1" → level 2, "1.1.1" → level 3
+                                    inferred_level = level  # Default to Docling's level
+                                    
+                                    # Try to extract numbered pattern at start
+                                    import re
+                                    number_pattern = re.match(r'^(\d+(?:\.\d+)*)', text_content.strip())
+                                    if number_pattern:
+                                        numbering = number_pattern.group(1)
+                                        # Count dots to determine level
+                                        # "1" → 0 dots → level 1
+                                        # "1.1" → 1 dot → level 2
+                                        # "1.1.1" → 2 dots → level 3
+                                        dot_count = numbering.count('.')
+                                        inferred_level = dot_count + 1
+                                    
+                                    heading_count += 1
+                                    toc_items.append({
+                                        "text": text_content,
+                                        "level": inferred_level,  # Use inferred level from numbering
+                                        "page_no": page_no,
+                                        "type": str(item.label)
+                                    })
+                
+                print(f"DocumentService: Extracted {heading_count} headings for TOC (filtered {heading_count} potential headings)")
+                        
+        except Exception as e:
+            print(f"DocumentService: Error extracting TOC: {e}")
+            import traceback
+            traceback.print_exc()
+            
+        return toc_items
     
     async def upload_file(
         self,
@@ -346,15 +487,25 @@ class DocumentService:
         
         # Extract and store document images (diagrams, figures) from Docling result
         image_count = 0
+        toc_count = 0
         if 'conversion_result' in locals() and conversion_result:
             try:
+                # Extract and store TOC
+                print(f"DocumentService: Extracting TOC from {doc['filename']}...")
+                toc_items = self._extract_toc_from_docling(conversion_result)
+                if toc_items:
+                    await vector_store.add_toc(document_id, toc_items)
+                    toc_count = len(toc_items)
+                    print(f"DocumentService: Stored {toc_count} TOC items")
+
+                # Extract and store images
                 print(f"DocumentService: Extracting images from {doc['filename']}...")
                 extracted_images = self._extract_images_from_docling(conversion_result)
                 if extracted_images:
                     image_count = await vector_store.add_document_images(document_id, extracted_images)
                     print(f"DocumentService: Stored {image_count} extracted images")
             except Exception as e:
-                print(f"DocumentService: Failed to extract images: {e}")
+                print(f"DocumentService: Failed to extract structural metadata: {e}")
         
         # Generate and store page images for PDF files
         page_count = 0
@@ -374,7 +525,8 @@ class DocumentService:
             "status": "processed",
             "chunks": chunk_count,
             "pages": page_count,
-            "images": image_count
+            "images": image_count,
+            "toc": toc_count
         }
     
     async def list_documents(self) -> List[Dict[str, Any]]:

@@ -18,8 +18,16 @@ async def get_active_document():
 
 @router.post("/active-document")
 async def set_active_document(document_id: Optional[str] = None):
-    """Set the active document filter for RAG queries."""
+    """
+    Set the active document filter for RAG queries.
+    Accepts document_id as query parameter (?document_id=xxx).
+    """
+    # Handle empty string as None (when user selects "All Documents")
+    if document_id == '':
+        document_id = None
+    
     set_active_document_id(document_id)
+    print(f"API: Set active document filter to: {document_id or 'All Documents'}")
     return {"success": True, "document_id": get_active_document_id()}
 
 

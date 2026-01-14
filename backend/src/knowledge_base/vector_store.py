@@ -12,6 +12,7 @@ import asyncpg
 import json
 
 from ..core.config import get_settings
+from ..core.security import validate_embedding_values
 
 
 class VectorStore:
@@ -139,6 +140,17 @@ class VectorStore:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
+
+            # Document TOC table for storing Table of Contents / Index
+            await conn.execute(f"""
+                CREATE TABLE IF NOT EXISTS "{self.settings.db_schema}".document_toc (
+                    id SERIAL PRIMARY KEY,
+                    document_id TEXT NOT NULL REFERENCES "{self.settings.db_schema}".documents(document_id) ON DELETE CASCADE,
+                    toc_json JSONB NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(document_id)
+                );
+            """)
             
             # Create index for faster queries by document_id and image_type
             await conn.execute(f"""
@@ -147,6 +159,20 @@ class VectorStore:
             """)
             
             print("VectorStore: Tables initialized")
+    
+    def _parse_metadata(self, metadata: Any) -> Dict[str, Any]:
+        """Safely parse metadata if it's a JSON string, otherwise return as dict."""
+        if metadata is None:
+            return {}
+        if isinstance(metadata, dict):
+            return metadata
+        if isinstance(metadata, str):
+            try:
+                import json
+                return json.loads(metadata)
+            except Exception:
+                return {}
+        return {}
     
     async def add_document(
         self,
@@ -178,7 +204,10 @@ class VectorStore:
             """, document_id, filename, file_path, source_type, mime_type, file_size, 
                 metadata_json)
             
-            return dict(row)
+            result = dict(row)
+            if "metadata" in result:
+                result["metadata"] = self._parse_metadata(result["metadata"])
+            return result
 
     async def find_document_by_content_hash(self, content_hash: str) -> Optional[Dict[str, Any]]:
         """Find the most recent document with a given content hash (metadata.content_hash)."""
@@ -193,7 +222,11 @@ class VectorStore:
                 """,
                 content_hash,
             )
-            return dict(row) if row else None
+            if row:
+                result = dict(row)
+                result["metadata"] = self._parse_metadata(result.get("metadata"))
+                return result
+            return None
 
     async def find_document_by_source_url(self, url: str) -> Optional[Dict[str, Any]]:
         """Find the most recent URL-sourced document with a given source_url (metadata.source_url)."""
@@ -209,7 +242,11 @@ class VectorStore:
                 """,
                 url,
             )
-            return dict(row) if row else None
+            if row:
+                result = dict(row)
+                result["metadata"] = self._parse_metadata(result.get("metadata"))
+                return result
+            return None
     
     async def add_chunks(
         self,
@@ -228,12 +265,15 @@ class VectorStore:
                 document_id
             )
             
-            # Insert new chunks
+            # Insert new chunks with security validation
             import json
             for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+                # SECURITY: Validate embedding before string conversion
+                validate_embedding_values(embedding)
+                
                 metadata_json = json.dumps(chunk.get("metadata", {}))
-                # Convert embedding list to pgvector string format: [1,2,3]
-                embedding_str = '[' + ','.join(str(x) for x in embedding) + ']'
+                # Safe conversion after validation
+                embedding_str = '[' + ','.join(str(float(x)) for x in embedding) + ']'
                 await conn.execute(f"""
                     INSERT INTO "{self.settings.db_schema}".chunks (document_id, chunk_index, content, embedding, metadata)
                     VALUES ($1, $2, $3, $4::vector, $5::jsonb)
@@ -256,11 +296,14 @@ class VectorStore:
         document_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Search for similar chunks using cosine similarity, optionally filtered by document."""
+        # SECURITY: Validate query embedding before use
+        validate_embedding_values(query_embedding)
+        
         # Use configured threshold if not provided
         if threshold is None:
             threshold = self.settings.similarity_threshold
         # Convert embedding list to pgvector string format
-        embedding_str = '[' + ','.join(str(x) for x in query_embedding) + ']'
+        embedding_str = '[' + ','.join(str(float(x)) for x in query_embedding) + ']'
         
         async with self.pool.acquire() as conn:
             if document_id:
@@ -445,7 +488,11 @@ class VectorStore:
             row = await conn.fetchrow(f"""
                 SELECT * FROM "{self.settings.db_schema}".documents WHERE document_id = $1
             """, document_id)
-            return dict(row) if row else None
+            if row:
+                result = dict(row)
+                result["metadata"] = self._parse_metadata(result.get("metadata"))
+                return result
+            return None
     
     async def delete_document(self, document_id: str) -> bool:
         """Delete a document and its associated chunks, page images, and document images."""
@@ -816,6 +863,69 @@ class VectorStore:
                 }
                 for row in rows
             ]
+    
+    async def add_toc(self, document_id: str, toc_data: Any) -> bool:
+        """
+        Store the Table of Contents for a document.
+        
+        Args:
+            document_id: The document ID
+            toc_data: Structured TOC data (list or dict)
+            
+        Returns:
+            True if stored successfully
+        """
+        async with self.pool.acquire() as conn:
+            await conn.execute(f"""
+                INSERT INTO "{self.settings.db_schema}".document_toc (document_id, toc_json)
+                VALUES ($1, $2::jsonb)
+                ON CONFLICT (document_id) DO UPDATE SET
+                    toc_json = EXCLUDED.toc_json
+            """, document_id, json.dumps(toc_data))
+            return True
+
+    async def get_toc(self, document_id: str) -> Optional[Any]:
+        """
+        Get the Table of Contents for a document.
+        
+        Args:
+            document_id: The document ID
+            
+        Returns:
+            The structured TOC data or None
+        """
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(f"""
+                SELECT toc_json FROM "{self.settings.db_schema}".document_toc
+                WHERE document_id = $1
+            """, document_id)
+            if row:
+                return self._parse_metadata(row['toc_json'])
+            return None
+
+    async def get_chunks_by_section(self, document_id: str, section_name: str) -> List[Dict[str, Any]]:
+        """
+        Retrieve all chunks belonging to a specific section.
+        
+        Args:
+            document_id: The document ID
+            section_name: The name of the section (from headings metadata)
+            
+        Returns:
+            List of chunks
+        """
+        async with self.pool.acquire() as conn:
+            # Match if the section_name is in the headings list in metadata
+            # pgvector/jsonb query: metadata->'headings' @> '["section_name"]'
+            rows = await conn.fetch(f"""
+                SELECT id, content, metadata, chunk_index
+                FROM "{self.settings.db_schema}".chunks
+                WHERE document_id = $1 
+                  AND metadata->'headings' @> $2::jsonb
+                ORDER BY chunk_index
+            """, document_id, json.dumps([section_name]))
+            
+            return [dict(row) for row in rows]
     
     async def close(self):
         """Close the connection pool."""
