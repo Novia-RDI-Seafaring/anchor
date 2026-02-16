@@ -12,6 +12,7 @@ from evals.trace_logger import log_event
 from evals.token_utils import estimate_tokens, estimate_tokens_bulk
 
 from ..state import RAGState
+from src.shared.ui_components import determine_component_type
 
 
 async def search_knowledge_base(
@@ -28,8 +29,12 @@ async def search_knowledge_base(
     top_k: Number of results to retrieve (default: 5)
   
   Returns:
-    Dictionary with 'chunks' (list of dicts) and 'sources' from the knowledge base.
-    Each chunk contains: id, content, filename, document_id, similarity, metadata.
+    Dictionary with 'chunks', 'sources', and rendering hints:
+    - should_render: bool
+    - suggested_component: str
+    - _note: Internal instruction
+    - chunks: List of content chunks
+    - sources: List of source filenames
   """
   start_time = time.time()
   
@@ -62,13 +67,20 @@ async def search_knowledge_base(
     
     sources = list(set(r["filename"] for r in results))
     
+    # Determine the best component type for these results
+    should_render = len(chunks) > 0
+    suggested_component = determine_component_type(query, chunks).value if should_render else "list"
+    
+    # Internal note to guide the model (not for user display)
+    note = f"Internal: You must now call render_component('{suggested_component}', data=...) to display these results."
+    
     # Update state with sources and chunks
     ctx.deps.state.current_sources = sources
     ctx.deps.state.last_chunks = chunks
     
     # Log query performance
     duration_ms = (time.time() - start_time) * 1000
-    log_rag_query(query, top_k, len(chunks), duration_ms)
+    log_rag_query(query, top_k, len(chunks), duration_ms, context=chunks)
     log_event({
         "type": "retrieval",
         "query_len": len(query),
@@ -89,7 +101,13 @@ async def search_knowledge_base(
     
     # Return with state update
     return ToolReturn(
-        return_value={"chunks": chunks, "sources": sources},
+        return_value={
+            "chunks": chunks, 
+            "sources": sources,
+            "should_render": should_render,
+            "suggested_component": suggested_component,
+            "_note": note
+        },
         metadata=[
             StateSnapshotEvent(
                 type=EventType.STATE_SNAPSHOT,
@@ -99,10 +117,16 @@ async def search_knowledge_base(
     )
     
   except Exception as e:
-    log_error("Error in search_knowledge_base", e, {"query": query, "top_k": top_k})
+    import traceback
+    error_trace = traceback.format_exc()
+    log_error("Error in search_knowledge_base", e, {
+        "query": query, 
+        "top_k": top_k,
+        "traceback": error_trace
+    })
     # Return empty results on error with consistent type
     return ToolReturn(
-        return_value={"chunks": [], "sources": []},
+        return_value={"chunks": [], "sources": [], "error": str(e)},
         metadata=[
             StateSnapshotEvent(
                 type=EventType.STATE_SNAPSHOT,
@@ -152,7 +176,10 @@ async def list_documents(
     documents = await service.list_documents()
     
     return {
-        "documents": documents
+        "documents": documents,
+        "should_render": True,
+        "suggested_component": "list",
+        "_note": "Internal: You must now call render_component('list', data=...) to display these documents."
     }
   except Exception as e:
     log_error("Error in list_documents", e)
@@ -188,10 +215,16 @@ async def list_document_toc(
     toc = await vector_store.get_toc(doc_id)
     doc_info = await vector_store.get_document(doc_id)
     
+    should_render = len(toc) > 0
+    note = "Internal: You must now call render_component('list', data=...) to display the TOC." if should_render else "Internal: No TOC found."
+    
     return {
         "toc": toc or [],
         "filename": doc_info.get("filename") if doc_info else "Unknown",
-        "document_id": doc_id
+        "document_id": doc_id,
+        "should_render": should_render,
+        "suggested_component": "list",
+        "_note": note
     }
   except Exception as e:
     log_error("Error in list_document_toc", e, {"document_id": document_id})

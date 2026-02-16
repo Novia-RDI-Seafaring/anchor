@@ -2,14 +2,21 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.core import logging # Initialize Logfire early
 from src.agent.agent import agent, StateDeps, AppState
 from src.core.config import get_settings
 from src.core.context import set_current_model_id
 from src.api import documents_router, search_router, config_router
+from src.observability.langfuse.config import init_langfuse
+
 
 
 # Create main FastAPI app
 app = FastAPI(title="Knowledge Base API")
+
+# Initialize Langfuse observability (works alongside Logfire)
+init_langfuse()
+
 
 # Add CORS middleware
 app.add_middleware(

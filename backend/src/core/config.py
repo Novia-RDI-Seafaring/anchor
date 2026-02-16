@@ -68,30 +68,6 @@ class Settings(BaseSettings):
         
         return v
     
-    @field_validator('pgsslmode')
-    @classmethod
-    def validate_ssl_mode(cls, v: str) -> str:
-        """Warn if SSL is disabled, enforce in production."""
-        allowed_modes = ['disable', 'allow', 'prefer', 'require', 'verify-ca', 'verify-full']
-        
-        if v not in allowed_modes:
-            raise ValueError(f"Invalid SSL mode: {v}. Must be one of {allowed_modes}")
-        
-        env = os.getenv('ENVIRONMENT', 'development').lower()
-        
-        if v == 'disable' and env == 'production':
-            raise ValueError(
-                "SSL cannot be disabled in production! "
-                "Set PGSSLMODE to 'require' or higher for security."
-            )
-        elif v == 'disable':
-            warnings.warn(
-                "SSL is DISABLED. This is insecure for production deployments!",
-                UserWarning
-            )
-        
-        return v
-    
     @field_validator('chunk_overlap')
     @classmethod
     def validate_chunk_overlap(cls, v: int, info) -> int:

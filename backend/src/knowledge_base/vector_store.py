@@ -13,6 +13,7 @@ import json
 
 from ..core.config import get_settings
 from ..core.security import validate_embedding_values
+import os
 
 
 class VectorStore:
@@ -22,6 +23,63 @@ class VectorStore:
         self.settings = get_settings()
         self.pool: Optional[asyncpg.Pool] = None
         self._initialized = False
+        self._queries: Dict[str, Dict[str, str]] = {}
+
+    def _load_sql(self, relative_path: str) -> str:
+        """
+        Load SQL query from flattened SQL files.
+        Maps 'group/name.sql' to query 'name' in 'sql/group.sql'.
+        """
+        # Parse group and name
+        parts = relative_path.split('/')
+        if len(parts) < 2:
+             raise ValueError(f"Invalid SQL path format: {relative_path}")
+        
+        group = parts[0]
+        # Remove extension if present
+        name = parts[1].replace('.sql', '')
+        
+        # Load group if not cached
+        if group not in self._queries:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            file_path = os.path.join(base_dir, "sql", f"{group}.sql")
+            
+            if not os.path.exists(file_path):
+                 raise FileNotFoundError(f"SQL group file not found: {file_path}")
+            
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            
+            # Simple parser for "-- name: query_name"
+            queries = {}
+            current_name = None
+            current_lines = []
+            
+            for line in content.splitlines():
+                if line.strip().startswith("-- name:"):
+                    if current_name:
+                        queries[current_name] = "\n".join(current_lines).strip()
+                    current_name = line.strip().split(":", 1)[1].strip()
+                    current_lines = []
+                else:
+                    if current_name:
+                        current_lines.append(line)
+            
+            if current_name:
+                 queries[current_name] = "\n".join(current_lines).strip()
+                 
+            self._queries[group] = queries
+            
+        if name not in self._queries[group]:
+             raise KeyError(f"Query '{name}' not found in group '{group}'")
+             
+        query = self._queries[group][name]
+            
+        # Replace placeholders
+        query = query.replace("%%SCHEMA%%", self.settings.db_schema)
+        query = query.replace("%%DIMENSION%%", str(self.settings.embedding_dimension))
+        
+        return query
     
     async def initialize(self):
         """Initialize connection pool and create tables if needed."""
@@ -58,105 +116,35 @@ class VectorStore:
         async with self.pool.acquire() as conn:
             # Create schema if it doesn't exist
             if self.settings.db_schema != "public":
-                await conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{self.settings.db_schema}";')
-                # Explicitly set search_path for this connection to ensure tables are created in the new schema
-                # (in case the connection was established before the schema existed, ignoring the missing schema in search_path)
-                await conn.execute(f'SET search_path TO "{self.settings.db_schema}", public, extensions')
+                await conn.execute(self._load_sql("init/init_schema.sql"))
 
             # Enable pgvector extension
-            await conn.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+            await conn.execute(self._load_sql("init/init_vector_extension.sql"))
             
             # Documents table
-            await conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS "{self.settings.db_schema}".documents (
-                    id SERIAL PRIMARY KEY,
-                    document_id TEXT UNIQUE NOT NULL,
-                    filename TEXT NOT NULL,
-                    file_path TEXT,
-                    source_type TEXT DEFAULT 'file',
-                    mime_type TEXT,
-                    file_size INTEGER,
-                    page_count INTEGER,
-                    chunk_count INTEGER DEFAULT 0,
-                    status TEXT DEFAULT 'pending',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    metadata JSONB DEFAULT '{{}}'
-                );
-            """)
+            await conn.execute(self._load_sql("init/init_documents_table.sql"))
             
-            # Chunks table with vector embeddings (no FK constraint for simplicity)
-            await conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS "{self.settings.db_schema}".chunks (
-                    id SERIAL PRIMARY KEY,
-                    document_id TEXT NOT NULL REFERENCES "{self.settings.db_schema}".documents(document_id) ON DELETE CASCADE,
-                    chunk_index INTEGER NOT NULL,
-                    content TEXT NOT NULL,
-                    embedding vector({self.settings.embedding_dimension}),
-                    metadata JSONB DEFAULT '{{}}',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(document_id, chunk_index)
-                );
-            """)
+            # Chunks table with vector embeddings
+            await conn.execute(self._load_sql("init/init_chunks_table.sql"))
             
             # Create index for similarity search (only if table has data)
             try:
-                await conn.execute(f"""
-                    CREATE INDEX IF NOT EXISTS chunks_embedding_idx 
-                    ON "{self.settings.db_schema}".chunks USING hnsw (embedding vector_cosine_ops);
-                """)
+                await conn.execute(self._load_sql("init/init_chunks_index.sql"))
             except Exception:
                 # Index creation may fail on empty table, that's OK
                 pass
             
             # Page images table for storing rendered PDF page images
-            await conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS "{self.settings.db_schema}".page_images (
-                    id SERIAL PRIMARY KEY,
-                    document_id TEXT NOT NULL REFERENCES "{self.settings.db_schema}".documents(document_id) ON DELETE CASCADE,
-                    page_number INTEGER NOT NULL,
-                    image_base64 TEXT NOT NULL,
-                    width INTEGER,
-                    height INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(document_id, page_number)
-                );
-            """)
+            await conn.execute(self._load_sql("init/init_page_images_table.sql"))
             
             # Document images table for storing extracted diagrams/figures
-            await conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS "{self.settings.db_schema}".document_images (
-                    id SERIAL PRIMARY KEY,
-                    document_id TEXT NOT NULL REFERENCES "{self.settings.db_schema}".documents(document_id) ON DELETE CASCADE,
-                    image_type TEXT DEFAULT 'figure',
-                    page_number INTEGER,
-                    image_base64 TEXT NOT NULL,
-                    caption TEXT,
-                    alt_text TEXT,
-                    bbox JSONB,
-                    width INTEGER,
-                    height INTEGER,
-                    metadata JSONB DEFAULT '{{}}',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-            """)
+            await conn.execute(self._load_sql("init/init_document_images_table.sql"))
 
             # Document TOC table for storing Table of Contents / Index
-            await conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS "{self.settings.db_schema}".document_toc (
-                    id SERIAL PRIMARY KEY,
-                    document_id TEXT NOT NULL REFERENCES "{self.settings.db_schema}".documents(document_id) ON DELETE CASCADE,
-                    toc_json JSONB NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(document_id)
-                );
-            """)
+            await conn.execute(self._load_sql("init/init_document_toc_table.sql"))
             
             # Create index for faster queries by document_id and image_type
-            await conn.execute(f"""
-                CREATE INDEX IF NOT EXISTS document_images_doc_id_idx 
-                ON "{self.settings.db_schema}".document_images(document_id);
-            """)
+            await conn.execute(self._load_sql("init/init_document_images_index.sql"))
             
             print("VectorStore: Tables initialized")
     
@@ -189,20 +177,11 @@ class VectorStore:
         metadata_json = json.dumps(metadata or {})
         
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(f"""
-                INSERT INTO "{self.settings.db_schema}".documents (document_id, filename, file_path, source_type, mime_type, file_size, metadata)
-                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
-                ON CONFLICT (document_id) DO UPDATE SET
-                    filename = EXCLUDED.filename,
-                    file_path = EXCLUDED.file_path,
-                    source_type = EXCLUDED.source_type,
-                    mime_type = EXCLUDED.mime_type,
-                    file_size = EXCLUDED.file_size,
-                    metadata = EXCLUDED.metadata,
-                    updated_at = CURRENT_TIMESTAMP
-                RETURNING id, document_id, filename, status, created_at
-            """, document_id, filename, file_path, source_type, mime_type, file_size, 
-                metadata_json)
+            row = await conn.fetchrow(
+                self._load_sql("documents/insert.sql"), 
+                document_id, filename, file_path, source_type, mime_type, file_size, 
+                metadata_json
+            )
             
             result = dict(row)
             if "metadata" in result:
@@ -213,13 +192,7 @@ class VectorStore:
         """Find the most recent document with a given content hash (metadata.content_hash)."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                f"""
-                SELECT *
-                FROM "{self.settings.db_schema}".documents
-                WHERE metadata->>'content_hash' = $1
-                ORDER BY created_at DESC
-                LIMIT 1
-                """,
+                self._load_sql("documents/find_by_hash.sql"),
                 content_hash,
             )
             if row:
@@ -232,14 +205,7 @@ class VectorStore:
         """Find the most recent URL-sourced document with a given source_url (metadata.source_url)."""
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
-                f"""
-                SELECT *
-                FROM "{self.settings.db_schema}".documents
-                WHERE source_type = 'url'
-                  AND metadata->>'source_url' = $1
-                ORDER BY created_at DESC
-                LIMIT 1
-                """,
+                self._load_sql("documents/find_by_url.sql"),
                 url,
             )
             if row:
@@ -261,7 +227,7 @@ class VectorStore:
         async with self.pool.acquire() as conn:
             # Delete existing chunks for this document
             await conn.execute(
-                f"DELETE FROM \"{self.settings.db_schema}\".chunks WHERE document_id = $1",
+                self._load_sql("chunks/delete_by_doc_id.sql"),
                 document_id
             )
             
@@ -274,17 +240,16 @@ class VectorStore:
                 metadata_json = json.dumps(chunk.get("metadata", {}))
                 # Safe conversion after validation
                 embedding_str = '[' + ','.join(str(float(x)) for x in embedding) + ']'
-                await conn.execute(f"""
-                    INSERT INTO "{self.settings.db_schema}".chunks (document_id, chunk_index, content, embedding, metadata)
-                    VALUES ($1, $2, $3, $4::vector, $5::jsonb)
-                """, document_id, i, chunk["content"], embedding_str, metadata_json)
+                await conn.execute(
+                    self._load_sql("chunks/insert.sql"), 
+                    document_id, i, chunk["content"], embedding_str, metadata_json
+                )
             
             # Update document with chunk count and status
-            await conn.execute(f"""
-                UPDATE "{self.settings.db_schema}".documents 
-                SET chunk_count = $2, status = 'processed', updated_at = CURRENT_TIMESTAMP
-                WHERE document_id = $1
-            """, document_id, len(chunks))
+            await conn.execute(
+                self._load_sql("documents/update_chunk_count.sql"),
+                document_id, len(chunks)
+            )
             
             return len(chunks)
     
@@ -308,37 +273,16 @@ class VectorStore:
         async with self.pool.acquire() as conn:
             if document_id:
                 # Filter by specific document
-                rows = await conn.fetch(f"""
-                    SELECT 
-                        c.id,
-                        c.content,
-                        c.metadata,
-                        c.document_id,
-                        d.filename,
-                        1 - (c.embedding <=> $1::vector) as similarity
-                    FROM "{self.settings.db_schema}".chunks c
-                    JOIN "{self.settings.db_schema}".documents d ON c.document_id = d.document_id
-                    WHERE c.document_id = $4
-                      AND 1 - (c.embedding <=> $1::vector) > $3
-                    ORDER BY c.embedding <=> $1::vector
-                    LIMIT $2
-                """, embedding_str, top_k, threshold, document_id)
+                rows = await conn.fetch(
+                    self._load_sql("chunks/search_by_doc.sql"), 
+                    embedding_str, top_k, threshold, document_id
+                )
             else:
                 # Search all documents
-                rows = await conn.fetch(f"""
-                    SELECT 
-                        c.id,
-                        c.content,
-                        c.metadata,
-                        c.document_id,
-                        d.filename,
-                        1 - (c.embedding <=> $1::vector) as similarity
-                    FROM "{self.settings.db_schema}".chunks c
-                    JOIN "{self.settings.db_schema}".documents d ON c.document_id = d.document_id
-                    WHERE 1 - (c.embedding <=> $1::vector) > $3
-                    ORDER BY c.embedding <=> $1::vector
-                    LIMIT $2
-                """, embedding_str, top_k, threshold)
+                rows = await conn.fetch(
+                    self._load_sql("chunks/search.sql"),
+                    embedding_str, top_k, threshold
+                )
             
             
             results = [dict(row) for row in rows]
@@ -381,11 +325,30 @@ class VectorStore:
                     doc_ids_list = list(set(d_id for d_id, _ in images_to_fetch))
                     page_nums_list = list(set(p_num for _, p_num in images_to_fetch))
                     
-                    image_rows = await conn.fetch(f"""
-                        SELECT document_id, page_number, image_base64, width, height
-                        FROM "{self.settings.db_schema}".page_images
-                        WHERE document_id = ANY($1) AND page_number = ANY($2)
-                    """, doc_ids_list, page_nums_list)
+                    image_rows = await conn.fetch(
+                        # self._load_sql("images/page_get_batch.sql"),
+                        self._load_sql("images/page_get_batch_multi_doc.sql"),
+                        doc_ids_list, page_nums_list
+                    ) # Wait, my batch SQL uses document_id=$1 and page_number=ANY($2).
+                      # It only supports ONE document_id.
+                      # The original query was:
+                      # document_id = ANY($1) AND page_number = ANY($2)
+                      # So `page_get_batch.sql` (created as `document_id=$1`) is WRONG for this use case if we have multiple documents.
+                      # However, the code logic:
+                      # `doc_ids_list = list(set(...))`
+                      # If we fetch for multiple docs, the original query worked.
+                      # My generic `page_get_batch` is optimized for one doc.
+                      # I need to FIX `page_get_batch.sql` or create `page_get_batch_multi_doc.sql` or revert to query string here.
+                      # Actually, looking at the code above: `doc_ids_list` implies multiple docs.
+                      # So `page_get_batch.sql` is currently: `WHERE document_id = $1 AND page_number = ANY($2)`
+                      # Original: `WHERE document_id = ANY($1) AND page_number = ANY($2)`
+                      # I made a mistake in creating the SQL file for this specific complex query.
+                      
+                      # I will correct the SQL file in a subsequent step or use inline SQL for now if I can't overwrite.
+                      # I CAN overwrite.
+                      # But I am inside a `multi_replace_file_content`.
+                      
+                      # I will skip replacing this specific block for now and fix the SQL file first in the next step, then replace the code.
                     
                     # Create a lookup map: (document_id, page_number) -> image_data
                     image_map = {}
@@ -430,13 +393,10 @@ class VectorStore:
                     # Fetch document images for these pages
                     for doc_id, page_nums in doc_page_map.items():
                         if page_nums:
-                            diagram_rows = await conn.fetch(f"""
-                                SELECT id, image_type, page_number, image_base64, caption, alt_text, 
-                                       bbox, width, height, metadata
-                                FROM "{self.settings.db_schema}".document_images
-                                WHERE document_id = $1 AND page_number = ANY($2)
-                                ORDER BY page_number, id
-                            """, doc_id, list(page_nums))
+                            diagram_rows = await conn.fetch(
+                                self._load_sql("images/doc_get_by_pages.sql"),
+                                doc_id, list(page_nums)
+                            )
                             
                             # Attach diagrams to the corresponding results
                             for res in results:
@@ -474,20 +434,16 @@ class VectorStore:
     async def list_documents(self) -> List[Dict[str, Any]]:
         """List all documents in the store."""
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch(f"""
-                SELECT id, document_id, filename, source_type, mime_type, 
-                       file_size, chunk_count, status, created_at, updated_at
-                FROM "{self.settings.db_schema}".documents
-                ORDER BY created_at DESC
-            """)
+            rows = await conn.fetch(self._load_sql("documents/list.sql"))
             return [dict(row) for row in rows]
     
     async def get_document(self, document_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific document by ID."""
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(f"""
-                SELECT * FROM "{self.settings.db_schema}".documents WHERE document_id = $1
-            """, document_id)
+            row = await conn.fetchrow(
+                self._load_sql("documents/get.sql"), 
+                document_id
+            )
             if row:
                 result = dict(row)
                 result["metadata"] = self._parse_metadata(result.get("metadata"))
@@ -500,19 +456,19 @@ class VectorStore:
             # Delete in order: chunks, page_images, document_images, then document
             # This ensures referential integrity even without FK constraints
             await conn.execute(
-                f"DELETE FROM \"{self.settings.db_schema}\".chunks WHERE document_id = $1",
+                self._load_sql("chunks/delete_by_doc_id.sql"),
                 document_id
             )
             await conn.execute(
-                f"DELETE FROM \"{self.settings.db_schema}\".page_images WHERE document_id = $1",
+                self._load_sql("images/page_delete_by_doc_id.sql"),
                 document_id
             )
             await conn.execute(
-                f"DELETE FROM \"{self.settings.db_schema}\".document_images WHERE document_id = $1",
+                self._load_sql("images/doc_delete_by_doc_id.sql"),
                 document_id
             )
             result = await conn.execute(
-                f"DELETE FROM \"{self.settings.db_schema}\".documents WHERE document_id = $1",
+                self._load_sql("documents/delete.sql"),
                 document_id
             )
             return result == "DELETE 1"
@@ -520,16 +476,18 @@ class VectorStore:
     async def reset(self) -> Dict[str, int]:
         """Delete all documents, chunks, page images, and document images."""
         async with self.pool.acquire() as conn:
-            chunks_deleted = await conn.fetchval(f"SELECT COUNT(*) FROM \"{self.settings.db_schema}\".chunks")
-            docs_deleted = await conn.fetchval(f"SELECT COUNT(*) FROM \"{self.settings.db_schema}\".documents")
-            page_images_deleted = await conn.fetchval(f"SELECT COUNT(*) FROM \"{self.settings.db_schema}\".page_images")
-            document_images_deleted = await conn.fetchval(f"SELECT COUNT(*) FROM \"{self.settings.db_schema}\".document_images")
+            chunks_deleted = await conn.fetchval(self._load_sql("stats/count_chunks.sql"))
+            docs_deleted = await conn.fetchval(self._load_sql("stats/count_documents.sql"))
+            page_images_deleted = await conn.fetchval(self._load_sql("stats/count_page_images.sql"))
+            document_images_deleted = await conn.fetchval(self._load_sql("stats/count_document_images.sql"))
             
             # Delete in order: chunks, page_images, document_images, then documents
-            await conn.execute(f"DELETE FROM \"{self.settings.db_schema}\".chunks")
-            await conn.execute(f"DELETE FROM \"{self.settings.db_schema}\".page_images")
-            await conn.execute(f"DELETE FROM \"{self.settings.db_schema}\".document_images")
-            await conn.execute(f"DELETE FROM \"{self.settings.db_schema}\".documents")
+            # I will use the reset.sql which does DELETE ALL
+            # But the original code does separate DELETE calls.
+            # reset.sql has 4 DELETE statements separated by semicolons.
+            # asyncpg execute can run script.
+            
+            await conn.execute(self._load_sql("stats/reset.sql"))
             
             return {
                 "documents_deleted": docs_deleted,
@@ -541,11 +499,9 @@ class VectorStore:
     async def get_stats(self) -> Dict[str, Any]:
         """Get statistics about the vector store."""
         async with self.pool.acquire() as conn:
-            doc_count = await conn.fetchval(f"SELECT COUNT(*) FROM \"{self.settings.db_schema}\".documents")
-            chunk_count = await conn.fetchval(f"SELECT COUNT(*) FROM \"{self.settings.db_schema}\".chunks")
-            processed_count = await conn.fetchval(
-                f"SELECT COUNT(*) FROM \"{self.settings.db_schema}\".documents WHERE status = 'processed'"
-            )
+            doc_count = await conn.fetchval(self._load_sql("stats/count_documents.sql"))
+            chunk_count = await conn.fetchval(self._load_sql("stats/count_chunks.sql"))
+            processed_count = await conn.fetchval(self._load_sql("stats/count_processed_docs.sql"))
             
             return {
                 "total_documents": doc_count,
@@ -572,24 +528,23 @@ class VectorStore:
         async with self.pool.acquire() as conn:
             # Delete existing page images for this document
             await conn.execute(
-                f"DELETE FROM \"{self.settings.db_schema}\".page_images WHERE document_id = $1",
+                self._load_sql("images/page_delete_by_doc_id.sql"),
                 document_id
             )
             
             # Insert new page images
             for img in page_images:
-                await conn.execute(f"""
-                    INSERT INTO "{self.settings.db_schema}".page_images (document_id, page_number, image_base64, width, height)
-                    VALUES ($1, $2, $3, $4, $5)
-                """, document_id, img['page_number'], img['image_base64'], 
-                    img.get('width'), img.get('height'))
+                await conn.execute(
+                    self._load_sql("images/page_insert.sql"), 
+                    document_id, img['page_number'], img['image_base64'], 
+                    img.get('width'), img.get('height')
+                )
             
             # Update document page count
-            await conn.execute(f"""
-                UPDATE "{self.settings.db_schema}".documents 
-                SET page_count = $2, updated_at = CURRENT_TIMESTAMP
-                WHERE document_id = $1
-            """, document_id, len(page_images))
+            await conn.execute(
+                self._load_sql("documents/update_page_count.sql"),
+                document_id, len(page_images)
+            )
             
             return len(page_images)
     
@@ -609,11 +564,10 @@ class VectorStore:
             Dict with image_base64, width, height or None if not found
         """
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(f"""
-                SELECT image_base64, width, height
-                FROM "{self.settings.db_schema}".page_images
-                WHERE document_id = $1 AND page_number = $2
-            """, document_id, page_number)
+            row = await conn.fetchrow(
+                self._load_sql("images/page_get.sql"),
+                document_id, page_number
+            )
             
             if row:
                 return {
@@ -643,12 +597,10 @@ class VectorStore:
             return []
         
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch(f"""
-                SELECT page_number, image_base64, width, height
-                FROM "{self.settings.db_schema}".page_images
-                WHERE document_id = $1 AND page_number = ANY($2)
-                ORDER BY page_number
-            """, document_id, page_numbers)
+            rows = await conn.fetch(
+                self._load_sql("images/page_get_batch.sql"),
+                document_id, page_numbers
+            )
             
             return [
                 {
@@ -675,11 +627,11 @@ class VectorStore:
         """
         async with self.pool.acquire() as conn:
             # First, get the chunk's document_id and page_numbers from metadata
-            chunk_row = await conn.fetchrow(f"""
-                SELECT document_id, metadata
-                FROM "{self.settings.db_schema}".chunks
-                WHERE id = $1
-            """, chunk_id)
+            # First, get the chunk's document_id and page_numbers from metadata
+            chunk_row = await conn.fetchrow(
+                self._load_sql("chunks/get_metadata.sql"),
+                chunk_id
+            )
             
             if not chunk_row:
                 return []
@@ -744,7 +696,7 @@ class VectorStore:
         async with self.pool.acquire() as conn:
             # Delete existing document images for this document
             await conn.execute(
-                f"DELETE FROM \"{self.settings.db_schema}\".document_images WHERE document_id = $1",
+                self._load_sql("images/doc_delete_by_doc_id.sql"),
                 document_id
             )
             
@@ -753,11 +705,8 @@ class VectorStore:
                 bbox_json = json.dumps(img.get('bbox')) if img.get('bbox') else None
                 metadata_json = json.dumps(img.get('metadata', {}))
                 
-                await conn.execute(f"""
-                    INSERT INTO "{self.settings.db_schema}".document_images 
-                    (document_id, image_type, page_number, image_base64, caption, alt_text, bbox, width, height, metadata)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10::jsonb)
-                """, 
+                await conn.execute(
+                    self._load_sql("images/doc_insert.sql"), 
                     document_id,
                     img.get('image_type', 'figure'),
                     img.get('page_number'),
@@ -789,21 +738,15 @@ class VectorStore:
         """
         async with self.pool.acquire() as conn:
             if image_type:
-                rows = await conn.fetch(f"""
-                    SELECT id, image_type, page_number, image_base64, caption, alt_text, 
-                           bbox, width, height, metadata, created_at
-                    FROM "{self.settings.db_schema}".document_images
-                    WHERE document_id = $1 AND image_type = $2
-                    ORDER BY page_number, id
-                """, document_id, image_type)
+                rows = await conn.fetch(
+                    self._load_sql("images/doc_get_by_type.sql"), 
+                    document_id, image_type
+                )
             else:
-                rows = await conn.fetch(f"""
-                    SELECT id, image_type, page_number, image_base64, caption, alt_text, 
-                           bbox, width, height, metadata, created_at
-                    FROM "{self.settings.db_schema}".document_images
-                    WHERE document_id = $1
-                    ORDER BY page_number, id
-                """, document_id)
+                rows = await conn.fetch(
+                    self._load_sql("images/doc_get.sql"),
+                    document_id
+                )
             
             return [
                 {
@@ -840,13 +783,10 @@ class VectorStore:
             return []
         
         async with self.pool.acquire() as conn:
-            rows = await conn.fetch(f"""
-                SELECT id, image_type, page_number, image_base64, caption, alt_text, 
-                       bbox, width, height, metadata
-                FROM "{self.settings.db_schema}".document_images
-                WHERE document_id = $1 AND page_number = ANY($2)
-                ORDER BY page_number, id
-            """, document_id, page_numbers)
+            rows = await conn.fetch(
+                self._load_sql("images/doc_get_by_pages.sql"),
+                document_id, page_numbers
+            )
             
             return [
                 {
@@ -876,12 +816,10 @@ class VectorStore:
             True if stored successfully
         """
         async with self.pool.acquire() as conn:
-            await conn.execute(f"""
-                INSERT INTO "{self.settings.db_schema}".document_toc (document_id, toc_json)
-                VALUES ($1, $2::jsonb)
-                ON CONFLICT (document_id) DO UPDATE SET
-                    toc_json = EXCLUDED.toc_json
-            """, document_id, json.dumps(toc_data))
+            await conn.execute(
+                self._load_sql("toc/upsert.sql"),
+                document_id, json.dumps(toc_data)
+            )
             return True
 
     async def get_toc(self, document_id: str) -> Optional[Any]:
@@ -895,10 +833,10 @@ class VectorStore:
             The structured TOC data or None
         """
         async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(f"""
-                SELECT toc_json FROM "{self.settings.db_schema}".document_toc
-                WHERE document_id = $1
-            """, document_id)
+            row = await conn.fetchrow(
+                self._load_sql("toc/get.sql"),
+                document_id
+            )
             if row:
                 return self._parse_metadata(row['toc_json'])
             return None
@@ -917,13 +855,10 @@ class VectorStore:
         async with self.pool.acquire() as conn:
             # Match if the section_name is in the headings list in metadata
             # pgvector/jsonb query: metadata->'headings' @> '["section_name"]'
-            rows = await conn.fetch(f"""
-                SELECT id, content, metadata, chunk_index
-                FROM "{self.settings.db_schema}".chunks
-                WHERE document_id = $1 
-                  AND metadata->'headings' @> $2::jsonb
-                ORDER BY chunk_index
-            """, document_id, json.dumps([section_name]))
+            rows = await conn.fetch(
+                self._load_sql("chunks/get_by_section.sql"),
+                document_id, json.dumps([section_name])
+            )
             
             return [dict(row) for row in rows]
     

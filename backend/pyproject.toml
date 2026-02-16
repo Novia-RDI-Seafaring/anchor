@@ -11,7 +11,7 @@ dependencies = [
     "pydantic-ai-slim[ag-ui,openai]",
     "pydantic-settings>=2.0.0",
     "python-dotenv",
-    "logfire>=4.10.0",
+    "logfire[asyncpg,httpx]>=4.10.0",
     "devtools>=0.12.2",
     "rich>=14.2.0",
     "docling>=2.63.0",
@@ -24,4 +24,6 @@ dependencies = [
     "pandas>=2.3.3",
     "plotly>=6.5.0",
     "nbformat>=5.10.4",
+    "langfuse>=2.54.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.27.0",
 ]

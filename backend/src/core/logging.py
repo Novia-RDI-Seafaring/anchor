@@ -6,29 +6,42 @@ from typing import Any
 import os
 
 # Configure Logfire
-# logfire_token = os.getenv("LOGFIRE_TOKEN")
-# if logfire_token:
-#    logfire.configure(token=logfire_token)
-# else:
+logfire_token = os.getenv("LOGFIRE_TOKEN")
+if logfire_token and logfire_token != "None":
+    logfire.configure(token=logfire_token, scrubbing=False)
+    print("Logfire configured")
+else:
     # Development mode - log to console
-#    logfire.configure(send_to_logfire=False)
+    # Configure Logfire - always use console mode for now [TO BE REMOVE LATER]
+    logfire.configure()
+    print("Logfire not configured")
 
-# Configure Logfire - always use console mode for now [TO BE REMOVE LATER]
-logfire.configure(send_to_logfire=False)
+# Instrument Pydantic AI for automatic LLM tracking
+logfire.instrument_pydantic_ai()
+
+# Instrument HTTP client for raw LLM request/response tracking
+logfire.instrument_httpx(capture_all=True)
+
+# if you use the official OpenAI Python SDK anywhere (recommended for a nice “conversation” view)
+logfire.instrument_openai()
+
+# Instrument Database client for raw query tracking
+# logfire.instrument_asyncpg()
 
 # Create logger instance
 logger = logfire
 
 
 # Convenience functions for common logging patterns
-def log_rag_query(query: str, top_k: int, result_count: int, duration_ms: float):
-    """Log RAG query with relevant metadata."""
+def log_rag_query(query: str, top_k: int, result_count: int, duration_ms: float, context: list[dict[str, Any]] | None = None):
+    """Log RAG query with relevant metadata and optionally context snippets."""
     logfire.info(
         "RAG Query",
         query=query,
         top_k=top_k,
         result_count=result_count,
         duration_ms=duration_ms,
+        context_preview=[c.get("content", "")[:200] for c in (context or [])],
         event_type="rag_query"
     )
 
