@@ -36,13 +36,10 @@ def init_langfuse():
         # Logfire usually sets this up. If not yet set, we might need to initialize it.
         provider = trace.get_tracer_provider()
         
-        # If it's a ProxyTracerProvider (default before any real provider is set), 
-        # we might need to be careful. But Logfire usually initializes it early in main.py.
-        if not isinstance(provider, TracerProvider):
-            # If Logfire hasn't initialized yet, we create a provider.
-            # However, Logfire should lead the OTel setup.
-            # We'll assume Logfire has started or will start.
-            logger.warning("Global TracerProvider is not an SDK TracerProvider. Langfuse might not hook correctly if Logfire isn't configured first.")
+        if not hasattr(provider, "add_span_processor"):
+            # If the provider doesn't have add_span_processor, it's likely a ProxyTracerProvider
+            # (default before any real provider is set).
+            logger.warning("Global TracerProvider does not support span processors. Langfuse might not hook correctly if Logfire isn't configured first.")
 
         # Create the Langfuse OTLP/HTTP exporter
         exporter = OTLPSpanExporter(

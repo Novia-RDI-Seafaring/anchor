@@ -17,6 +17,21 @@ def get_azure_model() -> Optional[Dict[str, str]]:
         }
     return None
 
+def get_openai_model() -> Optional[Dict[str, str]]:
+    """
+    Checks for OpenAI configuration in environment variables.
+    Returns a model dict if configured, else None.
+    """
+    if os.getenv("OPENAI_API_KEY"):
+        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        return {
+            "id": f"openai:{model}",
+            "label": f"OpenAI - {model}",
+            "provider": "OpenAI",
+            "type": "chat"
+        }
+    return None
+
 async def get_ollama_models() -> List[Dict[str, str]]:
     """
     Queries the local Ollama instance for available models.
@@ -66,6 +81,11 @@ async def get_all_models() -> List[Dict[str, str]]:
     azure_model = get_azure_model()
     if azure_model:
         models.append(azure_model)
+
+    # OpenAI
+    openai_model = get_openai_model()
+    if openai_model:
+        models.append(openai_model)
         
     # Ollama
     ollama_models = await get_ollama_models()

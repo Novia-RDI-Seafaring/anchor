@@ -4,32 +4,31 @@
 import logfire
 from typing import Any
 import os
+from dotenv import load_dotenv
 
-# Configure Logfire
-logfire_token = os.getenv("LOGFIRE_TOKEN")
-if logfire_token and logfire_token != "None":
-    logfire.configure(token=logfire_token, scrubbing=False)
-    print("Logfire configured")
-else:
-    # Development mode - log to console
-    # Configure Logfire - always use console mode for now [TO BE REMOVE LATER]
-    logfire.configure()
-    print("Logfire not configured")
+load_dotenv(override=True)
 
-# Instrument Pydantic AI for automatic LLM tracking
-logfire.instrument_pydantic_ai()
-
-# Instrument HTTP client for raw LLM request/response tracking
-logfire.instrument_httpx(capture_all=True)
-
-# if you use the official OpenAI Python SDK anywhere (recommended for a nice “conversation” view)
-logfire.instrument_openai()
-
-# Instrument Database client for raw query tracking
-# logfire.instrument_asyncpg()
-
-# Create logger instance
+# Logger reference — usable immediately (logfire works before configure, just won't export)
 logger = logfire
+
+
+def init_logfire():
+    """Initialize Logfire. Call during app startup, not at import time."""
+    logfire_token = os.getenv("LOGFIRE_TOKEN")
+    disable_logfire = os.getenv("DISABLE_LOGFIRE")
+
+    if not disable_logfire and logfire_token and logfire_token != "None":
+        logfire.configure(token=logfire_token, scrubbing=False)
+        print("Logfire configured")
+    else:
+        logfire.configure(send_to_logfire=False)
+        print("Logfire not configured (Console mode)")
+
+    # Instrument Pydantic AI for automatic LLM tracking
+    logfire.instrument_pydantic_ai()
+
+    # Instrument HTTP client for raw LLM request/response tracking
+    logfire.instrument_httpx(capture_all=True)
 
 
 # Convenience functions for common logging patterns

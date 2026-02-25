@@ -91,11 +91,14 @@ class DynamicChatModel(Model):
         if model_id in self._model_cache:
             return self._model_cache[model_id]
             
-        # Create new model instance
+        # Create new model instance — parse "provider:model_name" format
         provider = "openai"  # default
         model_name = model_id
         
-        if model_id.startswith("ollama:"):
+        if model_id.startswith("openai:"):
+            provider = "openai"
+            model_name = model_id.split(":", 1)[1]
+        elif model_id.startswith("ollama:"):
             provider = "ollama"
             model_name = model_id.split(":", 1)[1]
         elif model_id.startswith("azure:"):
@@ -104,12 +107,17 @@ class DynamicChatModel(Model):
             
         from pydantic_ai.models.openai import OpenAIModel
         
-        print(f"DynamicChatModel: Switching to {model_name} (provider: {provider})")
+        logger.info(f"DynamicChatModel: Switching to {model_name} (provider: {provider})")
         
-        if provider == "ollama":
-            new_model = OpenAIModel(model_name, provider='ollama')
-        else:
-            new_model = OpenAIModel(model_name, provider=provider)
+        try:
+            if provider == "ollama":
+                new_model = OpenAIModel(model_name, provider='ollama')
+            else:
+                new_model = OpenAIModel(model_name, provider=provider)
+        except Exception as e:
+            logger.error(f"DynamicChatModel: Failed to create model {model_name} ({provider}): {e}")
+            logger.warning("DynamicChatModel: Falling back to default model")
+            return self.default_model
 
         self._model_cache[model_id] = new_model
         return new_model
@@ -134,11 +142,12 @@ class DynamicChatModel(Model):
     async def request(
         self,
         messages: list[ModelMessage],
-        model_settings: ModelSettings | None = None
-    ) -> tuple[ModelResponse, Usage]:
+        model_settings: ModelSettings | None = None,
+        model_request_parameters: ModelRequestParameters | None = None,
+    ) -> tuple[ModelResponse, Any]:
         """Make async request with thread-safe model retrieval."""
         current_model = self._get_current_model()  # Now synchronous
-        return await current_model.request(messages, model_settings)
+        return await current_model.request(messages, model_settings, model_request_parameters)
 
     def request_stream(
         self,

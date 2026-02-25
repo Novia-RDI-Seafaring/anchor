@@ -6,6 +6,7 @@ Orchestrates document processing: upload -> Docling conversion -> chunking -> em
 
 import os
 import hashlib
+import time
 import aiofiles
 from typing import Optional, Dict, Any, List
 from pathlib import Path
@@ -581,11 +582,25 @@ class DocumentService:
         Returns:
             List of matching chunks with metadata
         """
+        t0 = time.perf_counter()
         embeddings_service = get_embeddings_service()
+        t1 = time.perf_counter()
+        print(f"[TIMING] EmbeddingsService init: {(t1-t0)*1000:.1f} ms")
+        
         query_embedding = embeddings_service.embed_text(query)
+        t2 = time.perf_counter()
+        print(f"[TIMING] embed_text(): {(t2-t1)*1000:.1f} ms")
         
         vector_store = await get_vector_store()
-        return await vector_store.search(query_embedding, top_k=top_k, document_id=document_id)
+        t3 = time.perf_counter()
+        print(f"[TIMING] VectorStore init: {(t3-t2)*1000:.1f} ms")
+        
+        results = await vector_store.search(query_embedding, top_k=top_k, document_id=document_id)
+        t4 = time.perf_counter()
+        print(f"[TIMING] vector_store.search(): {(t4-t3)*1000:.1f} ms")
+        print(f"[TIMING] Total search(): {(t4-t0)*1000:.1f} ms")
+        
+        return results
     
     async def get_stats(self) -> Dict[str, Any]:
         """Get knowledge base statistics."""

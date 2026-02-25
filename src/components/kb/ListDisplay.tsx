@@ -8,13 +8,41 @@ interface ListDisplayProps {
     };
 }
 
-// Normalize list items from various formats
+// Normalize list items from various formats the LLM may produce
 function normalizeListItems(data: any): string[] {
-    if (!data || !data.items || !Array.isArray(data.items) || data.items.length === 0) {
+    if (!data) return [];
+
+    // If data itself is an array, use it directly
+    let items = Array.isArray(data) ? data : null;
+
+    // Try the expected key first, then common alternatives
+    if (!items) {
+        const tryKeys = ['items', 'documents', 'results', 'rows', 'entries', 'list', 'data', 'values'];
+        for (const key of tryKeys) {
+            if (data[key] && Array.isArray(data[key]) && data[key].length > 0) {
+                items = data[key];
+                break;
+            }
+        }
+    }
+
+    // Last resort: if data is an object with no recognized array key,
+    // collect all its values into items
+    if (!items || items.length === 0) {
+        // Check if any value in data is an array
+        for (const val of Object.values(data)) {
+            if (Array.isArray(val) && val.length > 0) {
+                items = val as any[];
+                break;
+            }
+        }
+    }
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
         return [];
     }
 
-    return data.items.map((item: any) => {
+    return items.map((item: any) => {
         // Already a string
         if (typeof item === 'string') {
             return item;
@@ -36,6 +64,20 @@ function normalizeListItems(data: any): string[] {
 
         // Object with various possible text fields
         if (typeof item === 'object' && item !== null) {
+            // Document-like objects: show filename with optional metadata
+            if (item.filename) {
+                const parts = [item.filename];
+                if (item.file_size) {
+                    const sizeKB = Number(item.file_size) / 1024;
+                    const display = sizeKB > 1024
+                        ? `${(sizeKB / 1024).toFixed(1)} MB`
+                        : `${Math.round(sizeKB)} KB`;
+                    parts.push(`(${display})`);
+                }
+                if (item.source_type) parts.push(`[${item.source_type}]`);
+                return parts.join(' ');
+            }
+
             // Try common text field names
             if (item.text) return String(item.text);
             if (item.content) return String(item.content);
@@ -55,12 +97,13 @@ function normalizeListItems(data: any): string[] {
                 return `${item.property}: ${item.value}`;
             }
 
-            // Last resort: stringify the object
+            // Last resort: format key-value pairs readably instead of raw JSON
             try {
-                const str = JSON.stringify(item);
-                // Don't show empty objects
-                if (str === '{}') return '';
-                return str;
+                const keys = Object.keys(item).filter(k => !['id', 'document_id', 'metadata'].includes(k));
+                if (keys.length > 0) {
+                    return keys.map(k => `${k}: ${item[k]}`).join(' · ');
+                }
+                return '';
             } catch {
                 return '';
             }

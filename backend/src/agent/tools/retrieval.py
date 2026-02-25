@@ -173,13 +173,23 @@ async def list_documents(
   try:
     from src.knowledge_base.service import get_document_service
     service = await get_document_service()
-    documents = await service.list_documents()
+    raw_docs = await service.list_documents()
+    
+    # Pre-format items as human-readable strings — don't rely on the LLM to format
+    items = []
+    for doc in raw_docs:
+        filename = doc.get("filename", "Unknown")
+        size = doc.get("file_size", 0)
+        chunks = doc.get("chunk_count", 0)
+        size_mb = size / (1024 * 1024) if size else 0
+        items.append(f"{filename} ({size_mb:.1f} MB, {chunks} chunks)")
     
     return {
-        "documents": documents,
+        "documents": items,
         "should_render": True,
         "suggested_component": "list",
-        "_note": "Internal: You must now call render_component('list', data=...) to display these documents."
+        "render_data": {"title": "Documents in Knowledge Base", "items": items},
+        "_note": "Internal: Call render_component('list', data=render_data) using the exact render_data provided above. Do not reformat it."
     }
   except Exception as e:
     log_error("Error in list_documents", e)
@@ -262,6 +272,16 @@ async def get_section_content(
     
     if not chunks:
         return {"error": f"No content found for section '{section_name}' in this document."}
+    
+    # Enrich chunks with document_id so render_component can auto-inject bboxes
+    enriched_chunks = []
+    for c in chunks:
+        enriched = dict(c)
+        enriched.setdefault("document_id", doc_id)
+        enriched_chunks.append(enriched)
+    
+    # Store in state so render_component's bbox auto-injection can find them
+    ctx.deps.state.last_chunks = enriched_chunks
     
     full_content = "\n\n".join([c["content"] for c in chunks])
     

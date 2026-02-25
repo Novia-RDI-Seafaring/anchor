@@ -19,14 +19,23 @@ async def render_component(
 ) -> StateSnapshotEvent:
   """
   Render a UI component to display information from the knowledge base.
-  The agent should call this tool after processing query results to display
-  the information in an appropriate format (list, table, image, or page preview).
-  
+  Call this AFTER a retrieval tool. Use the `suggested_component` returned by the retrieval tool to pick the component type.
+
+  IMPORTANT: Do NOT pass raw chunks to this tool. EXTRACT the relevant information from the chunks and organize it into structured data.
+
   Args:
-    component_type: Type of component to render - one of: 'list', 'table', 'image', 'page_preview', 'markdown_table'
-    data: Component-specific data payload. For 'page_preview', it may include 'bboxes' list.
+    component_type: One of 'list', 'table', 'page_preview'.
+      - Use 'list' for document listings, TOC, enumerations, mixed items.
+      - Use 'table' for structured data with consistent fields (specs, parameters, comparisons, key-value pairs).
+      - Use 'page_preview' ONLY when user asks to preview/show pages. Requires document_id + page_numbers.
+    data: Structured data payload. Format depends on component_type:
+      - list:  {"title": "...", "items": ["Item 1", "Item 2", ...]}
+               Items can be strings or objects with {name, description} or {label, value}.
+      - table: {"title": "...", "columns": ["Col1", "Col2", ...], "rows": [["val1", "val2"], ...]}
+               Use this for specs/parameters/comparisons — extract key-value pairs from chunks, don't dump raw text.
+      - page_preview: {"document_id": "...", "page_numbers": [1, 2], "title": "..."}
     metadata: Optional metadata about the component
-    
+
   Returns:
     StateSnapshotEvent with updated state
   """
@@ -184,7 +193,11 @@ async def render_component(
     
     # Return ToolReturn to signal success to the agent framework
     return ToolReturn(
-        return_value={"success": True, "component_type": component_type},
+        return_value={
+            "success": True,
+            "component_type": component_type,
+            "instruction": "The UI component has been rendered and is visible to the user. Provide only a brief one-line acknowledgment. Do NOT repeat or summarize the rendered data."
+        },
         metadata=[
             StateSnapshotEvent(
                 type=EventType.STATE_SNAPSHOT,

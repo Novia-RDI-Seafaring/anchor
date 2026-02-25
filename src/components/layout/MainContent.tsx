@@ -199,7 +199,7 @@ export const MainContent: React.FC = () => {
                 <AgCard key={idx} className="p-4 bg-slate-50 dark:bg-neutral-800 border-indigo-100/50 dark:border-indigo-900/30 hover:border-indigo-200 dark:hover:border-indigo-800 transition-colors">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <AgBadge variant="default">Score: {chunk.similarity.toFixed(2)}</AgBadge>
+                      <AgBadge variant="default">Score: {chunk.similarity != null ? chunk.similarity.toFixed(2) : 'N/A'}</AgBadge>
                       <span className="text-xs font-mono text-neutral-500 dark:text-neutral-400">{chunk.filename}</span>
                     </div>
                     <ExternalLink size={14} className="text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer" />

@@ -7,11 +7,9 @@ from .models import get_default_responses_model
 from .prompts import SYS_PROMPT as SYSTEM_PROMPT
 from .tools import (
     search_knowledge_base,
-    get_database_status,
     list_documents,
     list_document_toc,
     get_section_content,
-    add_message,
     render_component,
 )
 from .state import RAGState
@@ -26,7 +24,6 @@ agent = Agent(
     instructions=SYSTEM_PROMPT,
     instrument=InstrumentationSettings(include_content=True),
     tools=[
-        get_database_status, 
         search_knowledge_base, 
         list_documents,
         list_document_toc, 

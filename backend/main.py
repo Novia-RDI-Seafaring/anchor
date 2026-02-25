@@ -1,8 +1,10 @@
 """Main FastAPI application entry point."""
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.core import logging # Initialize Logfire early
+from src.core.logging import init_logfire
 from src.agent.agent import agent, StateDeps, AppState
 from src.core.config import get_settings
 from src.core.context import set_current_model_id
@@ -10,12 +12,16 @@ from src.api import documents_router, search_router, config_router
 from src.observability.langfuse.config import init_langfuse
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup/shutdown lifecycle. Observability inits happen here, not at import time."""
+    init_logfire()
+    init_langfuse()
+    yield
+
 
 # Create main FastAPI app
-app = FastAPI(title="Knowledge Base API")
-
-# Initialize Langfuse observability (works alongside Logfire)
-init_langfuse()
+app = FastAPI(title="Knowledge Base API", lifespan=lifespan)
 
 
 # Add CORS middleware
