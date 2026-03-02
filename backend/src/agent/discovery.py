@@ -79,5 +79,11 @@ async def get_all_models() -> List[Dict[str, str]]:
             "provider": "OpenAI",
             "type": "chat"
         })
+        models.append({
+            "id": "gpt-5-nano",
+            "label": "OpenAI - GPT-5-nano",
+            "provider": "OpenAI",
+            "type": "chat"
+        })
         
     return models

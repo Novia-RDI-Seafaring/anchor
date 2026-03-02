@@ -26,4 +26,5 @@ dependencies = [
     "nbformat>=5.10.4",
     "langfuse>=2.54.0",
     "opentelemetry-exporter-otlp-proto-http>=1.27.0",
+    "ketju[agent,agui,docling,llama-index,pgvector,rag]>=0.1.1",
 ]
