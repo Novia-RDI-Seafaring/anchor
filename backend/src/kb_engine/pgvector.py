@@ -26,6 +26,7 @@ class PgVectorStorageBackend(LlamaIndexStorageBackend):
         text_search_config: str | None = None,
         hnsw_kwargs: dict[str, Any] | None = None,
     ) -> None:
+        from sqlalchemy import create_engine, make_url
         self._storage_contexts: Dict[str, Any] = {}
         self.database_url = database_url or os.getenv("DATABASE_URL")
         if not self.database_url:
@@ -42,6 +43,10 @@ class PgVectorStorageBackend(LlamaIndexStorageBackend):
             "hnsw_ef_search": 40,
             "hnsw_dist_method": "vector_cosine_ops",
         }
+        
+        # Persistent engine for sync operations (TOC, Images, etc.)
+        self._engine = create_engine(self.database_url, pool_size=5, max_overflow=10)
+        self._url = make_url(self.database_url)
 
     def _db_url(self):
         from sqlalchemy import make_url  # type: ignore
@@ -52,7 +57,7 @@ class PgVectorStorageBackend(LlamaIndexStorageBackend):
         from llama_index.vector_stores.postgres import PGVectorStore  # type: ignore
         from llama_index.core import Settings  # type: ignore
 
-        url = self._db_url()
+        url = self._url
 
         dim = self.embed_dim
         if dim is None:
@@ -128,10 +133,8 @@ class PgVectorStorageBackend(LlamaIndexStorageBackend):
     def _ensure_rich_tables(self) -> None:
         """Create TOC and Images tables if they don't exist, matching ANCHOR schema."""
         from sqlalchemy import text  # type: ignore
-        from sqlalchemy import create_engine  # type: ignore
 
-        engine = create_engine(self.database_url)
-        with engine.connect() as conn:
+        with self._engine.connect() as conn:
             conn.execute(text(f"""
                 CREATE TABLE IF NOT EXISTS {self.schema_name}.document_toc (
                     document_id TEXT PRIMARY KEY,
@@ -172,9 +175,7 @@ class PgVectorStorageBackend(LlamaIndexStorageBackend):
     def add_toc(self, document_id: str, toc_items: list[dict[str, Any]]) -> None:
         self._ensure_rich_tables()
         from sqlalchemy import text  # type: ignore
-        from sqlalchemy import create_engine  # type: ignore
-        engine = create_engine(self.database_url)
-        with engine.connect() as conn:
+        with self._engine.connect() as conn:
             conn.execute(text(f"""
                 INSERT INTO {self.schema_name}.document_toc (document_id, toc_json)
                 VALUES (:doc_id, :toc_json)
@@ -188,9 +189,7 @@ class PgVectorStorageBackend(LlamaIndexStorageBackend):
     def get_toc(self, document_id: str) -> list[dict[str, Any]]:
         self._ensure_rich_tables()
         from sqlalchemy import text  # type: ignore
-        from sqlalchemy import create_engine  # type: ignore
-        engine = create_engine(self.database_url)
-        with engine.connect() as conn:
+        with self._engine.connect() as conn:
             result = conn.execute(text(f"SELECT toc_json FROM {self.schema_name}.document_toc WHERE document_id = :doc_id"), {"doc_id": document_id})
             row = result.fetchone()
             if row and row[0]:
@@ -200,9 +199,7 @@ class PgVectorStorageBackend(LlamaIndexStorageBackend):
     def add_images(self, document_id: str, images: list[dict[str, Any]]) -> None:
         self._ensure_rich_tables()
         from sqlalchemy import text  # type: ignore
-        from sqlalchemy import create_engine  # type: ignore
-        engine = create_engine(self.database_url)
-        with engine.connect() as conn:
+        with self._engine.connect() as conn:
             conn.execute(text(f"DELETE FROM {self.schema_name}.document_images WHERE document_id = :doc_id"), {"doc_id": document_id})
             for img in images:
                 conn.execute(text(f"""
@@ -226,9 +223,7 @@ class PgVectorStorageBackend(LlamaIndexStorageBackend):
     def get_images(self, document_id: str) -> list[dict[str, Any]]:
         self._ensure_rich_tables()
         from sqlalchemy import text  # type: ignore
-        from sqlalchemy import create_engine  # type: ignore
-        engine = create_engine(self.database_url)
-        with engine.connect() as conn:
+        with self._engine.connect() as conn:
             result = conn.execute(text(f"SELECT image_type, page_number, image_base64, caption, alt_text, bbox, width, height, metadata FROM {self.schema_name}.document_images WHERE document_id = :doc_id"), {"doc_id": document_id})
             rows = []
             for row in result:
@@ -241,9 +236,7 @@ class PgVectorStorageBackend(LlamaIndexStorageBackend):
     def add_page_images(self, document_id: str, page_images: list[dict[str, Any]]) -> None:
         self._ensure_rich_tables()
         from sqlalchemy import text  # type: ignore
-        from sqlalchemy import create_engine  # type: ignore
-        engine = create_engine(self.database_url)
-        with engine.connect() as conn:
+        with self._engine.connect() as conn:
             conn.execute(text(f"DELETE FROM {self.schema_name}.page_images WHERE document_id = :doc_id"), {"doc_id": document_id})
             for pg in page_images:
                 conn.execute(text(f"""
@@ -261,27 +254,42 @@ class PgVectorStorageBackend(LlamaIndexStorageBackend):
     def get_page_images(self, document_id: str, page_number: int) -> dict[str, Any]:
         self._ensure_rich_tables()
         from sqlalchemy import text  # type: ignore
-        from sqlalchemy import create_engine  # type: ignore
-        engine = create_engine(self.database_url)
-        with engine.connect() as conn:
+        with self._engine.connect() as conn:
             result = conn.execute(text(f"SELECT image_base64, width, height FROM {self.schema_name}.page_images WHERE document_id = :doc_id AND page_number = :page_no"), {"doc_id": document_id, "page_no": page_number})
             row = result.fetchone()
-            return dict(row._mapping) if row else {}
+            if row:
+                d = dict(row._mapping)
+                d["page_number"] = page_number
+                return d
+            return {}
+
+    def get_page_images_for_pages(self, document_id: str, page_numbers: list[int]) -> list[dict[str, Any]]:
+        self._ensure_rich_tables()
+        from sqlalchemy import text  # type: ignore
+        with self._engine.connect() as conn:
+            result = conn.execute(text(f"""
+                SELECT page_number, image_base64, width, height 
+                FROM {self.schema_name}.page_images 
+                WHERE document_id = :doc_id AND page_number = ANY(:page_nos)
+            """), {"doc_id": document_id, "page_nos": page_numbers})
+            return [dict(row._mapping) for row in result]
 
     def get_chunks_by_section(self, document_id: str, section_name: str) -> list[dict[str, Any]]:
         """Query chunks for a specific section using the headings metadata."""
         from sqlalchemy import text  # type: ignore
-        from sqlalchemy import create_engine  # type: ignore
-        engine = create_engine(self.database_url)
         chunks_table = f"data_{self.table_name}"
-        with engine.connect() as conn:
+        with self._engine.connect() as conn:
             result = conn.execute(text(f"""
-                SELECT id, content, metadata
+                SELECT id, text AS content, metadata_ AS metadata
                 FROM {self.schema_name}.{chunks_table}
-                WHERE metadata->'headings' @> :section_json
-                  AND metadata->>'document_id' = :doc_id
+                WHERE metadata_->>'document_id' = :doc_id
+                  AND EXISTS (
+                      SELECT 1
+                      FROM json_array_elements_text(COALESCE(metadata_->'headings', '[]'::json)) AS heading(value)
+                      WHERE lower(btrim(heading.value)) = lower(btrim(:section_name))
+                  )
             """), {
-                "section_json": json.dumps([section_name]),
+                "section_name": section_name,
                 "doc_id": document_id
             })
             return [dict(row._mapping) for row in result]

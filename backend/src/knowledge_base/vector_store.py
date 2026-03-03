@@ -246,12 +246,39 @@ class VectorStore:
                 )
             
             # Update document with chunk count and status
-            await conn.execute(
-                self._load_sql("documents/update_chunk_count.sql"),
-                document_id, len(chunks)
-            )
+            await self.update_chunk_count(document_id, len(chunks))
             
             return len(chunks)
+    
+    async def update_chunk_count(self, document_id: str, count: int) -> None:
+        """Update the chunk count for a document."""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                self._load_sql("documents/update_chunk_count.sql"),
+                document_id, count
+            )
+
+    async def update_document_status(self, document_id: str, status: str, chunk_count: Optional[int] = None) -> None:
+        """Update the status and optionally chunk count for a document."""
+        async with self.pool.acquire() as conn:
+            if chunk_count is not None:
+                await conn.execute(
+                    self._load_sql("documents/update_chunk_count.sql"),
+                    document_id, chunk_count
+                )
+            else:
+                await conn.execute(
+                    self._load_sql("documents/update_status.sql"),
+                    document_id, status
+                )
+
+    async def update_document_page_count(self, document_id: str, count: int) -> None:
+        """Update the page count for a document."""
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                self._load_sql("documents/update_page_count.sql"),
+                document_id, count
+            )
     
     async def search(
         self,

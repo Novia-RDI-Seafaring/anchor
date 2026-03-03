@@ -50,7 +50,7 @@ async def get_models():
 async def update_embedding_model(request: UpdateEmbeddingRequest):
     """Update the active embedding model."""
     try:
-        from src.knowledge_base.embeddings import get_embeddings_service
+        from src.knowledge_base.ketju_integration import configure_llama_index
         
         # Parse model_id which might be "ollama:nomic-embed-text"
         model_name = request.model_id
@@ -59,8 +59,8 @@ async def update_embedding_model(request: UpdateEmbeddingRequest):
             if request.provider == "Ollama" and model_name.startswith("ollama:"):
                 model_name = model_name.replace("ollama:", "")
         
-        service = get_embeddings_service()
-        service.set_model(model_name, request.provider.lower())
+        # Re-configure global settings
+        configure_llama_index(model_name=model_name, provider=request.provider.lower())
         
         return {"success": True, "message": f"Embedding model updated to {model_name}"}
     except Exception as e:

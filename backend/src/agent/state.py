@@ -41,6 +41,10 @@ class RAGState(BaseModel):
         default_factory=list,
         description='Chunks from the most recent knowledge base query, used for context injection'
     )
+    last_retrieval_meta: dict[str, Any] = Field(
+        default_factory=dict,
+        description='Metadata for the latest retrieval operation including retrieval and trace ids'
+    )
 
 
 __all__ = ["RAGState", "UIComponentData", "UIComponentType"]

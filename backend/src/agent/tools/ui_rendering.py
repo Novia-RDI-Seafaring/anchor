@@ -82,49 +82,64 @@ async def render_component(
                     ]
                 )
     
-    # For page_preview, auto-inject document_id if not provided
+    # For page_preview, auto-inject provenance fields when possible.
     if ui_component_type == UIComponentType.PAGE_PREVIEW:
+      data = dict(data)
       active_doc_id = get_active_document_id()
+
+      def _extract_pages(chunk: dict[str, Any]) -> list[int]:
+        pages: list[int] = []
+        if chunk.get("page_numbers"):
+          pages.extend(chunk.get("page_numbers") or [])
+        citation = chunk.get("citation", {}) or {}
+        if citation.get("page_numbers"):
+          pages.extend(citation.get("page_numbers") or [])
+        provenance = chunk.get("provenance", {}) or {}
+        artifact = provenance.get("artifact", {}) if isinstance(provenance, dict) else {}
+        if artifact.get("page_numbers"):
+          pages.extend(artifact.get("page_numbers") or [])
+        metadata_chunk = chunk.get("metadata", {}) or {}
+        if metadata_chunk.get("page_numbers"):
+          pages.extend(metadata_chunk.get("page_numbers") or [])
+        elif metadata_chunk.get("page_no") is not None:
+          pages.append(metadata_chunk.get("page_no"))
+        return [int(p) for p in pages if isinstance(p, int)]
+
+      def _extract_bboxes(chunk: dict[str, Any]) -> list[dict[str, Any]]:
+        if chunk.get("bboxes"):
+          return chunk.get("bboxes") or []
+        metadata_chunk = chunk.get("metadata", {}) or {}
+        if metadata_chunk.get("bboxes"):
+          return metadata_chunk.get("bboxes") or []
+        provenance = chunk.get("provenance", {}) or {}
+        artifact = provenance.get("artifact", {}) if isinstance(provenance, dict) else {}
+        return artifact.get("bboxes") or []
+
       if not data.get("document_id") and active_doc_id:
-        data = dict(data)  # Make a copy to avoid mutating original
         data["document_id"] = active_doc_id
         print(f"render_component: Auto-injected document_id: {active_doc_id}")
-      
-      # Also try to get page_numbers from metadata if not provided
+
       if not data.get("page_numbers"):
         if data.get("page"):
-            data["page_numbers"] = [data["page"]]
+          data["page_numbers"] = [data["page"]]
         elif data.get("page_number"):
-            data["page_numbers"] = [data["page_number"]]
-        # Fallback: Try to infer page_numbers from last_chunks if document_id matches
+          data["page_numbers"] = [data["page_number"]]
         elif ctx.deps.state.last_chunks and data.get("document_id"):
-             target_doc_id = data.get("document_id")
-             inferred_pages = []
-             seen_pages = set()
-             
-             for chunk in ctx.deps.state.last_chunks:
-                 if chunk.get("document_id") == target_doc_id:
-                     pages_to_add = []
-                     # Check page_numbers list in chunk
-                     if chunk.get("page_numbers"):
-                         pages_to_add = chunk["page_numbers"]
-                     # Check metadata for page_numbers (list) or page_no (int)
-                     elif chunk.get("metadata", {}).get("page_numbers"):
-                         pages_to_add = chunk["metadata"]["page_numbers"]
-                     elif chunk.get("metadata", {}).get("page_no"):
-                          pages_to_add = [chunk["metadata"]["page_no"]]
-                     
-                     for p in pages_to_add:
-                         if p not in seen_pages:
-                             inferred_pages.append(p)
-                             seen_pages.add(p)
-             
-             if inferred_pages:
-                 data["page_numbers"] = inferred_pages
-                 print(f"render_component: Inferred page_numbers from chunks (ordered): {data['page_numbers']}")
-        
-      # Validation: document_id is mandatory for page_preview. Instead of raising (which triggers tool retries),
-      # emit a friendly error component so the UI can surface the issue without exploding the stream.
+          target_doc_id = data.get("document_id")
+          inferred_pages = []
+          seen_pages = set()
+
+          for chunk in ctx.deps.state.last_chunks:
+            if chunk.get("document_id") == target_doc_id:
+              for page_number in _extract_pages(chunk):
+                if page_number not in seen_pages:
+                  inferred_pages.append(page_number)
+                  seen_pages.add(page_number)
+
+          if inferred_pages:
+            data["page_numbers"] = inferred_pages
+            print(f"render_component: Inferred page_numbers from chunks (ordered): {data['page_numbers']}")
+
       if not data.get("document_id"):
         error_component = UIComponentData(
           component_type=UIComponentType.LIST,
@@ -150,26 +165,40 @@ async def render_component(
             )
           ]
         )
-        
-      # Auto-inject bboxes if missing, using last_chunks
-      injected_bboxes = []
-      if not data.get("bboxes") and ctx.deps.state.last_chunks:
-        print(f"render_component: Attempting to inject bboxes for doc {data.get('document_id')}")
-        target_doc_id = data.get("document_id")
-        
-        # Find the first chunk that matches the document_id (highest relevance)
-        # and use ONLY its bboxes to avoid clutter.
+
+      target_doc_id = data.get("document_id")
+      top_chunk = None
+      if ctx.deps.state.last_chunks and target_doc_id:
         top_chunk = next((c for c in ctx.deps.state.last_chunks if c.get("document_id") == target_doc_id), None)
-        
-        if top_chunk:
-          meta = top_chunk.get("metadata", {})
-          injected_bboxes = meta.get("bboxes", [])
-          if injected_bboxes:
-            print(f"render_component: Injected {len(injected_bboxes)} bboxes from top-ranked chunk {top_chunk.get('id')}")
-      
-      if injected_bboxes:
-          data = dict(data)
+
+      if top_chunk:
+        if not data.get("citation") and top_chunk.get("citation"):
+          data["citation"] = top_chunk.get("citation")
+        if not data.get("provenance") and top_chunk.get("provenance"):
+          data["provenance"] = top_chunk.get("provenance")
+
+      retrieval_meta = ctx.deps.state.last_retrieval_meta or {}
+      if not data.get("retrieval_id"):
+        retrieval_id = (
+          (top_chunk or {}).get("provenance", {}).get("pipeline", {}).get("retrieval", {}).get("retrieval_id")
+          or retrieval_meta.get("retrieval_id")
+        )
+        if retrieval_id:
+          data["retrieval_id"] = retrieval_id
+
+      if not data.get("trace_id"):
+        trace_id = (
+          (top_chunk or {}).get("provenance", {}).get("trace", {}).get("trace_id")
+          or retrieval_meta.get("trace_id")
+        )
+        if trace_id:
+          data["trace_id"] = trace_id
+
+      if not data.get("bboxes") and top_chunk:
+        injected_bboxes = _extract_bboxes(top_chunk)
+        if injected_bboxes:
           data["bboxes"] = injected_bboxes
+          print(f"render_component: Injected {len(injected_bboxes)} bboxes from top-ranked chunk {top_chunk.get('id')}")
     
     # Create UI component data
     ui_component = UIComponentData(

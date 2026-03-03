@@ -38,6 +38,11 @@ SELECT id, document_id, filename, source_type, mime_type,
 FROM "%%SCHEMA%%".documents
 ORDER BY created_at DESC
 
+-- name: update_status
+UPDATE "%%SCHEMA%%".documents 
+SET status = $2, updated_at = CURRENT_TIMESTAMP
+WHERE document_id = $1
+
 -- name: update_chunk_count
 UPDATE "%%SCHEMA%%".documents 
 SET chunk_count = $2, status = 'processed', updated_at = CURRENT_TIMESTAMP

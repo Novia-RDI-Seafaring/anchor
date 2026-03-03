@@ -92,11 +92,33 @@ def format_as_page_preview(results: list) -> dict:
         return {"source": "No results", "content": "No matching documents found.", "metadata": {}, "similarity": 0}
     
     top_result = results[0]
+    metadata = top_result.get("metadata", {}) or {}
+    provenance = top_result.get("provenance", {}) or {}
+    artifact = provenance.get("artifact", {}) if isinstance(provenance, dict) else {}
+    pipeline = provenance.get("pipeline", {}) if isinstance(provenance, dict) else {}
+    retrieval = pipeline.get("retrieval", {}) if isinstance(pipeline, dict) else {}
+    trace = provenance.get("trace", {}) if isinstance(provenance, dict) else {}
+
+    page_numbers = top_result.get("page_numbers") or artifact.get("page_numbers") or metadata.get("page_numbers") or []
+    if not page_numbers and metadata.get("page_no") is not None:
+        page_numbers = [metadata.get("page_no")]
+
+    section_path = top_result.get("section_path") or artifact.get("section_path") or metadata.get("headings") or []
+    bboxes = top_result.get("bboxes") or artifact.get("bboxes") or metadata.get("bboxes") or []
+
     return {
         "source": top_result.get("filename", "Unknown Source"),
+        "document_id": top_result.get("document_id") or artifact.get("document_id") or metadata.get("document_id"),
         "content": top_result.get("content", ""),
-        "metadata": top_result.get("metadata", {}),
-        "similarity": top_result.get("similarity", 0.0)
+        "metadata": metadata,
+        "similarity": top_result.get("similarity", 0.0),
+        "page_numbers": page_numbers,
+        "sections": section_path,
+        "bboxes": bboxes,
+        "retrieval_id": retrieval.get("retrieval_id"),
+        "trace_id": trace.get("trace_id"),
+        "citation": top_result.get("citation"),
+        "provenance": provenance,
     }
 
 

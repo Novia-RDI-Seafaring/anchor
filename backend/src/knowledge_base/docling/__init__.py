@@ -1,2 +1,0 @@
-"""Docling-based document processing."""
-

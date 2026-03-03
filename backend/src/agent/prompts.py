@@ -28,7 +28,7 @@ ROUTING FOR TECHNICAL QUERIES
 - list_documents: corpus/source discovery.
 - list_document_toc(document_id): document navigation/structure.
 - search_knowledge_base(query): default for information questions (minimal rewrite of user question).
-- get_section_content(section_id): only for full details after retrieve.
+- get_section_content(section_name): only for full details after retrieve.
 
 RENDER (AUTO-SELECT)
 Use the `suggested_component` from the retrieval tool result if provided. Otherwise:
@@ -66,7 +66,7 @@ TOOL NOTES
 - search_knowledge_base(query): default for information questions.
 - list_documents(): discover available documents.
 - list_document_toc(document_id): get structure of a specific document.
-- get_section_content(section_id): full section text (only after step 1 identifies a section).
+- get_section_content(section_name): full section text (only after step 1 identifies a section).
 - render_component(type, data): display results. Choose: list (default), table (≥2 items with same fields), page_preview (user asks to show pages).
 - No repeated calls with same params. Max one retrieve + one optional deepen per turn.
 

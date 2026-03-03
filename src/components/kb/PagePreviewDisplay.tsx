@@ -15,6 +15,16 @@ interface PagePreviewDisplayProps {
         source?: string;
         sections?: any[];  // Can be strings, arrays, or objects
         bboxes?: { bbox: number[]; page_no: number }[]; // Bounding boxes
+        retrieval_id?: string;
+        trace_id?: string;
+        citation?: {
+            document_id?: string;
+            filename?: string;
+            chunk_id?: string;
+            page_numbers?: number[];
+            section_path?: string[];
+        };
+        provenance?: any;
     };
 }
 
@@ -35,6 +45,9 @@ export const PagePreviewDisplay: React.FC<PagePreviewDisplayProps> = ({ data }) 
 
     // Normalize page_numbers - accept both page_numbers array and single page number
     const pageNumbers = data?.page_numbers || (data?.page ? [data.page] : []) || (data?.page_number ? [data.page_number] : []);
+    const citationChunkId = data?.citation?.chunk_id || data?.provenance?.artifact?.chunk_id;
+    const retrievalId = data?.retrieval_id || data?.provenance?.pipeline?.retrieval?.retrieval_id;
+    const traceId = data?.trace_id || data?.provenance?.trace?.trace_id;
 
     //console.log('[PagePreview] Received data:', data);
     //console.log('[PagePreview] Normalized pageNumbers:', pageNumbers);
@@ -182,6 +195,31 @@ export const PagePreviewDisplay: React.FC<PagePreviewDisplayProps> = ({ data }) 
                         </button>
                     </div>
                 )}
+
+                <div className="border-t border-neutral-200 dark:border-neutral-700 px-4 py-3 space-y-1">
+                    {pageNumbers.length > 0 && (
+                        <div className="text-xs text-neutral-500 dark:text-neutral-500">
+                            Found on page{pageNumbers.length > 1 ? 's' : ''}: {pageNumbers.join(', ')}
+                        </div>
+                    )}
+                    {data.source && (
+                        <div className="text-xs text-neutral-400 dark:text-neutral-500">
+                            Source: {data.source}
+                        </div>
+                    )}
+                    {citationChunkId && (
+                        <div className="text-xs font-mono text-neutral-400 dark:text-neutral-500">
+                            Chunk: {citationChunkId}
+                        </div>
+                    )}
+                    {(retrievalId || traceId) && (
+                        <div className="text-xs font-mono text-neutral-400 dark:text-neutral-500">
+                            {retrievalId && `Retrieval: ${retrievalId}`}
+                            {retrievalId && traceId && ' | '}
+                            {traceId && `Trace: ${traceId}`}
+                        </div>
+                    )}
+                </div>
             </AgCard>
         );
     }
@@ -294,6 +332,24 @@ export const PagePreviewDisplay: React.FC<PagePreviewDisplayProps> = ({ data }) 
                     <div className="mt-2">
                         <span className="text-xs text-neutral-400 dark:text-neutral-500">
                             Source: {data.source}
+                        </span>
+                    </div>
+                )}
+
+                {citationChunkId && (
+                    <div className="mt-2">
+                        <span className="text-xs font-mono text-neutral-400 dark:text-neutral-500">
+                            Chunk: {citationChunkId}
+                        </span>
+                    </div>
+                )}
+
+                {(retrievalId || traceId) && (
+                    <div className="mt-2">
+                        <span className="text-xs font-mono text-neutral-400 dark:text-neutral-500">
+                            {retrievalId && `Retrieval: ${retrievalId}`}
+                            {retrievalId && traceId && ' | '}
+                            {traceId && `Trace: ${traceId}`}
                         </span>
                     </div>
                 )}

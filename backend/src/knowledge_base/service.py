@@ -11,11 +11,8 @@ from typing import Optional, Dict, Any, List
 from pathlib import Path
 
 from ..core.config import get_settings
+from ..core.provenance import build_retrieved_chunk, create_retrieval_id, get_current_trace_id
 from .vector_store import get_vector_store
-from .embeddings import get_embeddings_service
-from .docling.converter import DoclingConverter
-from .docling.formatters import MarkdownFormatter
-from .images import get_page_image_service
 
 
 class DocumentService:
@@ -25,7 +22,6 @@ class DocumentService:
         self.settings = get_settings()
         self.uploads_dir = Path(self.settings.uploads_dir).resolve()
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
-        self.formatter = MarkdownFormatter()
     
     def _generate_document_id(self, filename: str, content_hash: Optional[str] = None) -> str:
         """
@@ -445,28 +441,22 @@ class DocumentService:
             enable_ocr=enable_ocr,
             table_mode=table_mode
         )
+
+        # Prevent duplicate nodes for reprocessing the same document.
+        try:
+            rag.vector_store.delete(document_id)
+        except Exception:
+            pass
         
         # Ingest using KETJU (this handles docling conversion, rich extraction, and storage)
         chunk_count = rag.ingest(files=[file_path])
         
-        # Generate and store page images for PDF files (Visual Provenance)
-        # This remains here as it's a specific ANCHOR UI feature
-        page_count = 0
-        if file_path.lower().endswith('.pdf'):
-            try:
-                print(f"DocumentService: Generating page images for {doc['filename']}...")
-                page_image_service = get_page_image_service()
-                page_images = page_image_service.generate_page_images(file_path)
-                # Store via KETJU's storage backend for unified access
-                rag.storage_backend.add_page_images(document_id, page_images)
-                page_count = len(page_images)
-                print(f"DocumentService: Stored {page_count} page images")
-            except Exception as e:
-                print(f"DocumentService: Failed to generate page images: {e}")
-        
-        # Get counts for TOC and images from KETJU's storage
+        # Get counts for TOC, images, and page images from KETJU's storage
+        # (RichDoclingIngestionHandler now handles all of this in one pass)
         toc_items = rag.storage_backend.get_toc(document_id)
         extracted_images = rag.storage_backend.get_images(document_id)
+        page_images_data = rag.storage_backend.get_page_images_for_pages(document_id, list(range(1, 1000))) # Get all
+        page_count = len(page_images_data)
         
         # Update document status in ANCHOR's documents table
         # Correctly call the vector store methods
@@ -536,11 +526,59 @@ class DocumentService:
         Returns:
             List of matching chunks with metadata
         """
-        embeddings_service = get_embeddings_service()
-        query_embedding = embeddings_service.embed_text(query)
-        
-        vector_store = await get_vector_store()
-        return await vector_store.search(query_embedding, top_k=top_k, document_id=document_id)
+        from llama_index.core.vector_stores import MetadataFilter, MetadataFilters, FilterOperator
+        from .ketju_integration import get_ketju_rag
+
+        rag = get_ketju_rag(collection_name=self.settings.vector_db_collection)
+
+        filters = None
+        if document_id:
+            filters = MetadataFilters(
+                filters=[
+                    MetadataFilter(
+                        key='document_id',
+                        operator=FilterOperator.EQ,
+                        value=document_id,
+                    )
+                ]
+            )
+
+        retriever_kwargs: Dict[str, Any] = {'similarity_top_k': top_k}
+        if filters is not None:
+            retriever_kwargs['filters'] = filters
+
+        retriever = rag.vector_index.as_retriever(**retriever_kwargs)
+        retrieved = retriever.retrieve(query)
+
+        retrieval_id = create_retrieval_id()
+        trace_id = get_current_trace_id()
+
+        chunks: List[Dict[str, Any]] = []
+        for rank, result in enumerate(retrieved, start=1):
+            node = result.node
+            metadata = dict(node.metadata or {})
+            doc_id = metadata.get('document_id')
+            filename = metadata.get('filename') or metadata.get('file_name')
+            score = float(result.score or 0.0)
+
+            chunks.append(
+                build_retrieved_chunk(
+                    chunk_id=node.node_id,
+                    content=node.get_content(),
+                    metadata=metadata,
+                    score=score,
+                    rank=rank,
+                    query=query,
+                    top_k=top_k,
+                    retrieval_id=retrieval_id,
+                    collection_name=self.settings.vector_db_collection,
+                    document_id=doc_id,
+                    filename=filename,
+                    trace_id=trace_id,
+                )
+            )
+
+        return chunks
     
     async def get_stats(self) -> Dict[str, Any]:
         """Get knowledge base statistics."""

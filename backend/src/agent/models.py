@@ -14,6 +14,7 @@ from pydantic_ai.models import Model, ModelRequestParameters
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers import Provider
 from pydantic_ai.settings import ModelSettings
+from pydantic_ai.usage import Usage
 
 from evals.token_utils import estimate_tokens
 from evals.trace_logger import log_event
@@ -134,11 +135,12 @@ class DynamicChatModel(Model):
     async def request(
         self,
         messages: list[ModelMessage],
-        model_settings: ModelSettings | None = None
+        model_settings: ModelSettings | None = None,
+        model_request_parameters: ModelRequestParameters | None = None,
     ) -> tuple[ModelResponse, Usage]:
         """Make async request with thread-safe model retrieval."""
         current_model = self._get_current_model()  # Now synchronous
-        return await current_model.request(messages, model_settings)
+        return await current_model.request(messages, model_settings, model_request_parameters)
 
     def request_stream(
         self,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import base64
+import json
 from pathlib import Path
 from collections.abc import Sequence
 from typing import Any, Dict, List, Optional
@@ -9,7 +10,6 @@ from typing import Any, Dict, List, Optional
 try:
     from llama_index.core.ingestion import IngestionPipeline
     from llama_index.node_parser.docling import DoclingNodeParser
-    from llama_index.readers.docling import DoclingReader
     from docling.document_converter import DocumentConverter, PdfFormatOption
     from docling.datamodel.pipeline_options import PdfPipelineOptions, TableStructureOptions, TableFormerMode
     from docling.datamodel.base_models import InputFormat
@@ -71,6 +71,7 @@ class RichDoclingIngestionHandler(LlamaIndexIngestionHandler):
         pipeline_options = PdfPipelineOptions(
             generate_picture_images=self.preserve_images,
             generate_table_images=self.preserve_tables,
+            generate_page_images=True, # Always generate page images for ANCHOR UI
             do_ocr=self.enable_ocr,
             table_structure_options=TableStructureOptions(
                 mode=table_mode_map.get(self.table_mode, TableFormerMode.FAST)
@@ -85,8 +86,16 @@ class RichDoclingIngestionHandler(LlamaIndexIngestionHandler):
 
         conversion_result = converter.convert(str(file))
         
+        print(f"RichDocling: Conversion successful for {file.name}. Extracting rich metadata...")
+        
         toc_items = self._extract_toc(conversion_result)
+        print(f"RichDocling: Extracted {len(toc_items)} TOC items")
+        
         images = self._extract_images(conversion_result)
+        print(f"RichDocling: Extracted {len(images)} figures/images")
+        
+        page_images = self._extract_page_images(conversion_result)
+        print(f"RichDocling: Extracted {len(page_images)} page images")
 
         doc_id = document_id or str(file.name)
 
@@ -94,21 +103,46 @@ class RichDoclingIngestionHandler(LlamaIndexIngestionHandler):
             rag.storage_backend.add_toc(doc_id, toc_items)
         if hasattr(rag.storage_backend, "add_images"):
             rag.storage_backend.add_images(doc_id, images)
+        if hasattr(rag.storage_backend, "add_page_images"):
+            rag.storage_backend.add_page_images(doc_id, page_images)
 
-        reader = DoclingReader()
+        from llama_index.core import Document
+        
+        # Create a document from the already converted Docling result as JSON.
+        # DoclingNodeParser requires serialized DoclingDocument JSON to preserve
+        # rich metadata (page numbers, section path, and bounding boxes).
+        print(f"RichDocling: Exporting document to Docling JSON for NodeParser...")
+        docling_json = json.dumps(conversion_result.document.export_to_dict())
+        print(f"RichDocling: JSON size: {len(docling_json)} chars")
+
+        li_doc = Document(
+            text=docling_json,
+            metadata={
+                "document_id": doc_id,
+                "filename": str(file.name),
+            },
+        )
+
         pipeline = IngestionPipeline(
             name="rich_docling_rag_ingestion",
-            transformations=[DoclingNodeParser(include_metadata=True, include_prev_next_rel=True)],
-            documents=reader.load_data(file),
+            transformations=[
+                DoclingNodeParser(
+                    include_metadata=True,
+                    include_prev_next_rel=True,
+                )
+            ],
             docstore=rag.docstore,
             vector_store=rag.vector_store,
         )
-        nodes = list(pipeline.run())
-        
-        for node in nodes:
-            node.metadata["document_id"] = doc_id
-            node.metadata["filename"] = str(file.name)
+        print(f"RichDocling: Running IngestionPipeline on {file.name}...")
+        nodes = list(pipeline.run(documents=[li_doc]))
 
+        for node in nodes:
+            node.metadata.setdefault("document_id", doc_id)
+            node.metadata.setdefault("filename", str(file.name))
+
+        print(f"RichDocling: Produced {len(nodes)} nodes")
+        
         if nodes:
             rag.vector_index.insert_nodes(nodes)
         
@@ -161,6 +195,27 @@ class RichDoclingIngestionHandler(LlamaIndexIngestionHandler):
                     except Exception: continue
         except Exception: pass
         return extracted_images
+
+    def _extract_page_images(self, conversion_result) -> List[Dict[str, Any]]:
+        page_images = []
+        try:
+            for page_no, page in conversion_result.document.pages.items():
+                if hasattr(page, 'image') and page.image:
+                    pil_image = page.image.pil_image if hasattr(page.image, 'pil_image') else page.image
+                    if pil_image:
+                        buffer = io.BytesIO()
+                        pil_image.save(buffer, format='PNG', optimize=True)
+                        image_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                        buffer.close()
+                        
+                        page_images.append({
+                            'page_number': page_no,
+                            'image_base64': image_data,
+                            'width': pil_image.width,
+                            'height': pil_image.height
+                        })
+        except Exception: pass
+        return page_images
 
     def _extract_toc(self, conversion_result) -> List[Dict[str, Any]]:
         from docling_core.types.doc.labels import DocItemLabel

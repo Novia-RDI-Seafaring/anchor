@@ -7,9 +7,21 @@ import { Message, TextMessage } from "@copilotkit/runtime-client-gql";
 import { ComponentRenderer } from '../kb/ComponentRenderer';
 
 interface Chunk {
+  id?: string;
   content: string;
   filename: string;
   similarity: number;
+  document_id?: string;
+  page_numbers?: number[];
+  section_path?: string[];
+  citation?: {
+    document_id?: string;
+    filename?: string;
+    chunk_id?: string;
+    page_numbers?: number[];
+    section_path?: string[];
+  };
+  provenance?: any;
   metadata: any;
 }
 
@@ -102,13 +114,15 @@ export const MainContent: React.FC = () => {
     const agentState = state as any; // State type varies, use any for flexibility
     const sources = agentState?.current_sources || [];
     const chunks = agentState?.last_chunks || [];
+    const retrievalMeta = agentState?.last_retrieval_meta || null;
 
     console.log("Agent state - sources:", sources, "chunks:", chunks?.length);
 
     if (sources.length > 0 || chunks.length > 0) {
       return {
         sources: sources,
-        chunks: chunks
+        chunks: chunks,
+        retrievalMeta: retrievalMeta,
       };
     }
 
@@ -194,21 +208,55 @@ export const MainContent: React.FC = () => {
               <span className="text-xs text-neutral-400 dark:text-neutral-500 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">RAG Pipeline</span>
             </div>
 
+            {(ragData.retrievalMeta?.retrieval_id || ragData.retrievalMeta?.trace_id) && (
+              <div className="flex flex-wrap items-center gap-2 mb-2 px-1">
+                {ragData.retrievalMeta?.retrieval_id && (
+                  <span className="text-[11px] text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full font-mono">
+                    Retrieval: {ragData.retrievalMeta.retrieval_id}
+                  </span>
+                )}
+                {ragData.retrievalMeta?.trace_id && (
+                  <span className="text-[11px] text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full font-mono">
+                    Trace: {ragData.retrievalMeta.trace_id}
+                  </span>
+                )}
+              </div>
+            )}
+
             <div className="grid grid-cols-1 gap-3">
-              {ragData.chunks.map((chunk: Chunk, idx: number) => (
-                <AgCard key={idx} className="p-4 bg-slate-50 dark:bg-neutral-800 border-indigo-100/50 dark:border-indigo-900/30 hover:border-indigo-200 dark:hover:border-indigo-800 transition-colors">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <AgBadge variant="default">Score: {chunk.similarity.toFixed(2)}</AgBadge>
-                      <span className="text-xs font-mono text-neutral-500 dark:text-neutral-400">{chunk.filename}</span>
+              {ragData.chunks.map((chunk: Chunk, idx: number) => {
+                const pageNumbers =
+                  chunk.page_numbers ||
+                  chunk.citation?.page_numbers ||
+                  chunk.metadata?.page_numbers ||
+                  (chunk.metadata?.page_no ? [chunk.metadata.page_no] : []);
+                const chunkId = chunk.citation?.chunk_id || chunk.id;
+
+                return (
+                  <AgCard key={idx} className="p-4 bg-slate-50 dark:bg-neutral-800 border-indigo-100/50 dark:border-indigo-900/30 hover:border-indigo-200 dark:hover:border-indigo-800 transition-colors">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <AgBadge variant="default">Score: {chunk.similarity.toFixed(2)}</AgBadge>
+                        <span className="text-xs font-mono text-neutral-500 dark:text-neutral-400">{chunk.filename}</span>
+                        {pageNumbers.length > 0 && (
+                          <span className="text-[11px] text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-900 px-2 py-0.5 rounded-full">
+                            Page{pageNumbers.length > 1 ? 's' : ''}: {pageNumbers.join(', ')}
+                          </span>
+                        )}
+                      </div>
+                      <ExternalLink size={14} className="text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer" />
                     </div>
-                    <ExternalLink size={14} className="text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer" />
-                  </div>
-                  <p className="text-xs text-neutral-600 dark:text-neutral-300 font-mono leading-relaxed bg-white dark:bg-neutral-900 p-2 rounded border border-neutral-100 dark:border-neutral-700">
-                    {chunk.content}
-                  </p>
-                </AgCard>
-              ))}
+                    {chunkId && (
+                      <div className="text-[11px] font-mono text-neutral-500 dark:text-neutral-400 mb-2">
+                        Chunk: {chunkId}
+                      </div>
+                    )}
+                    <p className="text-xs text-neutral-600 dark:text-neutral-300 font-mono leading-relaxed bg-white dark:bg-neutral-900 p-2 rounded border border-neutral-100 dark:border-neutral-700">
+                      {chunk.content}
+                    </p>
+                  </AgCard>
+                );
+              })}
             </div>
           </div>
         )}

@@ -26,6 +26,8 @@ dependencies = [
     "nbformat>=5.10.4",
     "langfuse>=2.54.0",
     "opentelemetry-exporter-otlp-proto-http>=1.27.0",
+    "llama-index-llms-azure-openai>=0.3.0",
+    "llama-index-embeddings-azure-openai>=0.3.0",
     "ketju[rag,docling,pgvector,observability,agent,agui]>=0.1.1",
 ]
 
