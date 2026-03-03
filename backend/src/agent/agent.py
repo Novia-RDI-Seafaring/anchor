@@ -27,7 +27,7 @@ agent = Agent(
     instructions=SYSTEM_PROMPT,
     tools=[
         render_component,
-        search_knowledge_base,
+        #search_knowledge_base,
     ],
     instrument=InstrumentationSettings(include_content=True),
 )
@@ -36,10 +36,9 @@ agent = Agent(
 def list_documents(ctx: RunContext[AgentDeps]):
     return ctx.deps.doc_service.list_files()
 
-"""@agent.tool
+@agent.tool
 def list_document_toc(ctx: RunContext[AgentDeps]):
     return "nothing"
-    """
 
 @agent.tool
 def get_section_content(ctx: RunContext[AgentDeps], section_id: str):
@@ -54,8 +53,15 @@ def get_section_content(ctx: RunContext[AgentDeps], section_id: str):
     render_component
 ],"""
 
+from llama_index.core.base.response.schema import RESPONSE_TYPE
 @agent.tool
-def consult_documents(ctx: RunContext[AgentDeps], query: str):
-    return ctx.deps.doc_service.query(question=query)
+def consult_documents(ctx: RunContext[AgentDeps], query: str) -> RESPONSE_TYPE:
+    result: RESPONSE_TYPE = ctx.deps.doc_service.query(question=query)
+    sources = result.get_formatted_sources()
+    print("--------------------------------")
+    print("SOURCES")
+    print(sources)
+    print("--------------------------------")
+    return result
 
 AppState = RAGState
