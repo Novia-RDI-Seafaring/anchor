@@ -11,13 +11,15 @@ from src.core.logging import log_rag_query, log_agent_tool_call, log_error
 from evals.trace_logger import log_event
 from evals.token_utils import estimate_tokens, estimate_tokens_bulk
 
-from ..state import RAGState
+from ..deps import AgentDeps
 from src.shared.ui_components import determine_component_type
 
 
 async def search_knowledge_base(
-  ctx: RunContext[StateDeps[RAGState]], 
+  ctx: RunContext[AgentDeps], 
   query: str,
+  filename: Optional[str] = None,
+  doc_ids: Optional[list[str]] = None,
   top_k: int = 5
 ) -> dict[str, list]:
   """
@@ -27,32 +29,30 @@ async def search_knowledge_base(
   log_agent_tool_call("search_knowledge_base", {"query": query, "top_k": top_k})
   
   try:
-    from src.knowledge_base.ketju_integration import get_ketju_rag
     from src.core.context import get_active_document_id
-    
-    active_doc_id = get_active_document_id()
-    rag = get_ketju_rag()
+    rag = ctx.deps.doc_service.rag_service
+    #active_doc_id = get_active_document_id()
     
     # Query using KETJU's RAG (SimpleLlamaIndexQueryHandler)
     # We use search() if we want raw chunks, or query() if we want a response.
     # The tool returns chunks for the agent to reason over.
-    results = rag.query_handler.search(rag.index, query, top_k=top_k)
+    kwargs = {}
+    if filename is not None:
+      kwargs["filename"] = filename
+    if doc_ids is not None:
+      kwargs["doc_ids"] = doc_ids
+    if top_k is not None:
+      kwargs["top_k"] = top_k
+    results = rag.query(query, **kwargs)
     
     # KETJU search results are LlamaIndex NodeWithScore objects if using SimpleLlamaIndexQueryHandler.search
     # Wait, let's check what SimpleLlamaIndexQueryHandler.search returns.
     # Actually, we can just use the index directly or the query handler.
-    
-    chunks = []
-    for r in results:
-        node = r.node
-        chunks.append({
-            "id": node.node_id,
-            "content": node.get_content(),
-            "filename": node.metadata.get("filename", "Unknown"),
-            "document_id": node.metadata.get("document_id"),
-            "similarity": r.score or 0.0,
-            "metadata": node.metadata
-        })
+    from devtools import debug
+    debug(results)
+    return results
+
+    chunks = results.source_nodes
     
     sources = list(set(c["filename"] for c in chunks))
     should_render = len(chunks) > 0
@@ -61,7 +61,8 @@ async def search_knowledge_base(
     
     ctx.deps.state.current_sources = sources
     ctx.deps.state.last_chunks = chunks
-    
+
+
     duration_ms = (time.time() - start_time) * 1000
     log_rag_query(query, top_k, len(chunks), duration_ms, context=chunks)
     log_event({
@@ -87,7 +88,7 @@ async def search_knowledge_base(
     return ToolReturn(return_value={"chunks": [], "sources": [], "error": str(e)}, metadata=[StateSnapshotEvent(type=EventType.STATE_SNAPSHOT, snapshot=ctx.deps.state)])
 
 
-async def get_database_status(ctx: RunContext[StateDeps[RAGState]]) -> StateSnapshotEvent:
+async def get_database_status(ctx: RunContext[AgentDeps]) -> StateSnapshotEvent:
   """Check status via KETJU."""
   log_agent_tool_call("get_database_status", {})
   try:
@@ -101,7 +102,7 @@ async def get_database_status(ctx: RunContext[StateDeps[RAGState]]) -> StateSnap
     return ToolReturn(return_value={"status": "error", "message": str(e)}, metadata=[StateSnapshotEvent(type=EventType.STATE_SNAPSHOT, snapshot=ctx.deps.state)])
 
 
-async def list_documents(ctx: RunContext[StateDeps[RAGState]]) -> dict[str, Any]:
+async def list_documents(ctx: RunContext[AgentDeps]) -> dict[str, Any]:
   """List documents via KETJU or ANCHOR service (shared DB)."""
   log_agent_tool_call("list_documents", {})
   try:
@@ -115,7 +116,7 @@ async def list_documents(ctx: RunContext[StateDeps[RAGState]]) -> dict[str, Any]
 
 
 async def list_document_toc(
-  ctx: RunContext[StateDeps[RAGState]],
+  ctx: RunContext[AgentDeps],
   document_id: Optional[str] = None
 ) -> dict[str, Any]:
   """Retrieve TOC via KETJU storage."""
@@ -148,7 +149,7 @@ async def list_document_toc(
 
 
 async def get_section_content(
-  ctx: RunContext[StateDeps[RAGState]],
+  ctx: RunContext[AgentDeps],
   section_name: str,
   document_id: Optional[str] = None
 ) -> dict[str, Any]:

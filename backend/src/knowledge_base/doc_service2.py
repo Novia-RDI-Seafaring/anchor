@@ -1,17 +1,19 @@
 from pathlib import Path
 from ketju.rag.base import BaseRAG
-
+from typing import Optional
 
 
 
 class DocService2:
     ingested_files: set[Path]
     rag_service: BaseRAG
+    active_document_id: Optional[str] = None
 
     def __init__(self, rag_service: BaseRAG):
         self.ingested_files = set()
         self.rag_service = rag_service
-        pass
+        self.active_document_id = None
+        
 
     def ingest(self, files: list[Path]):
         for file in files:
@@ -19,18 +21,35 @@ class DocService2:
                 try:
                     self.rag_service.ingest(files=[file])
                     self.ingested_files.add(file)
+                     
                 except Exception as e:
                     print(f"Error ingesting file {file}: {e}")
                     continue
+        return self.ingested_files
 
     def list_files(self) -> list[Path]:
         return list(self.ingested_files)
     
+    def list_documents(self) -> list[Path]:
+        return list(self.ingested_files)
+    
+    def delete_document(self, document_id: str):
+        print(f"Deleting document {document_id}")
+        pass
+    
     def delete_file(self, file: Path):
         pass
 
+    def reingest_all(self):
+        print(f"Re-ingesting all documents")
+        pass
+
     def query(self, question: str, **kwargs):
-        return self.rag_service.query(question)
+        return self.rag_service.query(question, **kwargs)
+    
+    def reset_knowledge_base(self):
+        pass
+    
 
 _doc_service: DocService2|None = None
 

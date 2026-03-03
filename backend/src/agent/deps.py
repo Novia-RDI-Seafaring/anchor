@@ -1,9 +1,11 @@
 from src.knowledge_base.doc_service2 import DocService2
-from pydantic_ai.ag_ui import StateDeps
+from pydantic_ai.ag_ui import StateDeps, StateHandler
 from .state import RAGState
 
-from pydantic import BaseModel
-class AgentDeps(BaseModel):
+
+from dataclasses import dataclass
+@dataclass
+class AgentDeps:
     state: RAGState
     doc_service: DocService2
 

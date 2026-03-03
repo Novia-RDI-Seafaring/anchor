@@ -27,7 +27,7 @@ agent = Agent(
     instructions=SYSTEM_PROMPT,
     tools=[
         render_component,
-
+        search_knowledge_base,
     ],
     instrument=InstrumentationSettings(include_content=True),
 )
@@ -36,17 +36,14 @@ agent = Agent(
 def list_documents(ctx: RunContext[AgentDeps]):
     return ctx.deps.doc_service.list_files()
 
-@agent.tool
+"""@agent.tool
 def list_document_toc(ctx: RunContext[AgentDeps]):
     return "nothing"
+    """
 
 @agent.tool
 def get_section_content(ctx: RunContext[AgentDeps], section_id: str):
     return "nothing here"
-
-@agent.tool
-def search_knowledge_base(ctx: RunContext[AgentDeps], question: str):
-    return ctx.deps.doc_service.query(question=question)
 
 """tools=[
     get_database_status, 

@@ -50,6 +50,7 @@ async def upload_document(
 async def add_url(request: URLRequest):
     """Add a URL to the knowledge base."""
     try:
+        raise NotImplementedError("add_url is not implemented")
         service = await get_document_service()
         result = await service.upload_url(request.url)
         return {"success": True, "document": result}
@@ -60,20 +61,17 @@ async def add_url(request: URLRequest):
 @router.get("/documents")
 async def list_documents():
     """List all documents in the knowledge base."""
-    try:
-        service = await get_document_service()
-        documents = await service.list_documents()
-        return {"success": True, "documents": documents}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    service = get_document_service2()
+    return {"success": True, "documents": service.list_documents()}
+    
 
 
 @router.delete("/documents/{document_id}")
 async def delete_document(document_id: str):
     """Delete a specific document."""
     try:
-        service = await get_document_service()
-        success = await service.delete_document(document_id)
+        service = get_document_service2()
+        success = service.delete_document(document_id)
         if not success:
             raise HTTPException(status_code=404, detail="Document not found")
         return {"success": True}
@@ -87,8 +85,8 @@ async def delete_document(document_id: str):
 async def reingest_documents():
     """Re-process all documents in the knowledge base."""
     try:
-        service = await get_document_service()
-        result = await service.reingest_all()
+        service = get_document_service2()
+        result = service.reingest_all()
         return {"success": True, **result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -98,8 +96,8 @@ async def reingest_documents():
 async def reset_knowledge_base():
     """Reset (clear) the entire knowledge base."""
     try:
-        service = await get_document_service()
-        result = await service.reset_knowledge_base()
+        service = get_document_service2()
+        result = service.reset_knowledge_base()
         return {"success": True, **result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
