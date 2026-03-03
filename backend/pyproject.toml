@@ -29,5 +29,3 @@ dependencies = [
     "ketju[rag,docling,pgvector,observability,agent,agui]>=0.1.1",
 ]
 
-[tool.uv.sources]
-ketju = { path = "../../ketju", editable = true }

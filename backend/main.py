@@ -3,7 +3,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.core import logging # Initialize Logfire early
-from src.agent.agent import agent, StateDeps, AppState
+from src.agent.agent import agent, AgentDeps, RunContext
+from src.agent.state import RAGState
 from src.core.config import get_settings
 from src.core.context import set_current_model_id
 from src.api import documents_router, search_router, config_router
@@ -38,8 +39,10 @@ async def model_context_middleware(request: Request, call_next):
     return response
 
 
+from pydantic_ai.ag_ui import StateDeps
+from src.knowledge_base.doc_service2 import get_document_service2
 # Mount the AG-UI agent
-ag_ui_app = agent.to_ag_ui(deps=StateDeps(AppState()))
+ag_ui_app = agent.to_ag_ui(deps=AgentDeps(state=RAGState(), doc_service=get_document_service2()))
 app.mount("/agent", ag_ui_app)
 
 # Include API routers

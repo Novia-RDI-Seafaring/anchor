@@ -447,7 +447,7 @@ class DocumentService:
         )
         
         # Ingest using KETJU (this handles docling conversion, rich extraction, and storage)
-        chunk_count = rag.ingest(files=[file_path], document_ids=[document_id])
+        chunk_count = rag.ingest(files=[file_path])
         
         # Generate and store page images for PDF files (Visual Provenance)
         # This remains here as it's a specific ANCHOR UI feature

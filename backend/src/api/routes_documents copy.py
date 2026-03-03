@@ -3,12 +3,11 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from typing import Optional
 
 from src.knowledge_base.service import get_document_service
-from src.knowledge_base.doc_service2 import get_document_service2
 from src.knowledge_base.vector_store import get_vector_store
 from .schemas import URLRequest, PageImagesRequest
-from src.kb_engine.rich_docling2 import get_rag_handler
+
 router = APIRouter(prefix="/api", tags=["documents"])
-from pathlib import Path
+
 
 @router.post("/documents/upload")
 async def upload_document(
@@ -30,13 +29,15 @@ async def upload_document(
             raise HTTPException(status_code=400, detail="table_mode must be 'fast' or 'accurate'")
         
         content = await file.read()
-        filename = Path(file.filename)
-        file_path = Path("data/uploads", filename)
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(file_path, "wb") as f:
-            f.write(content)
-        service = get_document_service2()
-        result = service.ingest(files=[file_path])
+        service = await get_document_service()
+        result = await service.upload_file(
+            file.filename,
+            content,
+            preserve_images=preserve_images_bool,
+            preserve_tables=preserve_tables_bool,
+            enable_ocr=enable_ocr_bool,
+            table_mode=table_mode
+        )
         return {"success": True, "document": result}
     except HTTPException:
         raise

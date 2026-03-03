@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -316,7 +316,7 @@ requires-dist = [
     { name = "fastapi" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "ipykernel", specifier = ">=7.1.0" },
-    { name = "ketju", extras = ["rag", "docling", "pgvector", "observability", "agent", "agui"], editable = "../../ketju" },
+    { name = "ketju", extras = ["rag", "docling", "pgvector", "observability", "agent", "agui"], specifier = ">=0.1.1" },
     { name = "langfuse", specifier = ">=2.54.0" },
     { name = "logfire", extras = ["asyncpg", "httpx"], specifier = ">=4.10.0" },
     { name = "nbformat", specifier = ">=5.10.4" },
@@ -1709,10 +1709,14 @@ wheels = [
 [[package]]
 name = "ketju"
 version = "0.1.1"
-source = { editable = "../../ketju" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "devtools" },
     { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/5d/a7/8dcf7a747bd04369fd93cf00f9860b48327b0303b4a2a53747afb76c833c/ketju-0.1.1.tar.gz", hash = "sha256:620024949a395a54507bc081f36908b7194d4eae831cd5180c475869abc165de", size = 360248, upload-time = "2026-02-20T08:35:47.553Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9f/1b/3613596f5e2536421e367d03e3a42ddfe527130e288837ce94af337b7060/ketju-0.1.1-py3-none-any.whl", hash = "sha256:00751b719d7e70f40613333e689caeb36502ad006d739523e40299071b24cb0e", size = 47816, upload-time = "2026-02-20T08:35:46.166Z" },
 ]
 
 [package.optional-dependencies]
@@ -1754,62 +1758,6 @@ rag = [
     { name = "pysrt" },
     { name = "pysword" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "chromadb", marker = "extra == 'examples'" },
-    { name = "chromadb", marker = "extra == 'rag'" },
-    { name = "devtools", specifier = ">=0.12.2" },
-    { name = "docling", marker = "extra == 'docling'", specifier = ">=2.68.0" },
-    { name = "docling", marker = "extra == 'examples'", specifier = ">=2.68.0" },
-    { name = "langchain-docling", marker = "extra == 'docling'", specifier = ">=2.0.0" },
-    { name = "langchain-docling", marker = "extra == 'examples'", specifier = ">=2.0.0" },
-    { name = "llama-index", marker = "extra == 'examples'", specifier = ">=0.14.12" },
-    { name = "llama-index", marker = "extra == 'rag'", specifier = ">=0.14.12" },
-    { name = "llama-index-embeddings-ollama", marker = "extra == 'examples'", specifier = ">=0.8.6" },
-    { name = "llama-index-embeddings-ollama", marker = "extra == 'rag'", specifier = ">=0.8.6" },
-    { name = "llama-index-llms-litellm", marker = "extra == 'examples'", specifier = ">=0.6.3" },
-    { name = "llama-index-llms-litellm", marker = "extra == 'rag'", specifier = ">=0.6.3" },
-    { name = "llama-index-node-parser-docling", marker = "extra == 'docling'", specifier = ">=0.4.2" },
-    { name = "llama-index-node-parser-docling", marker = "extra == 'examples'", specifier = ">=0.4.2" },
-    { name = "llama-index-observability-otel", marker = "extra == 'examples'", specifier = ">=0.2.1" },
-    { name = "llama-index-observability-otel", marker = "extra == 'observability'", specifier = ">=0.2.1" },
-    { name = "llama-index-protocols-ag-ui", marker = "extra == 'agui'", specifier = ">=0.2.3" },
-    { name = "llama-index-protocols-ag-ui", marker = "extra == 'examples'", specifier = ">=0.2.3" },
-    { name = "llama-index-readers-docling", marker = "extra == 'docling'", specifier = ">=0.4.2" },
-    { name = "llama-index-readers-docling", marker = "extra == 'examples'", specifier = ">=0.4.2" },
-    { name = "llama-index-storage-docstore-postgres", marker = "extra == 'pgvector'", specifier = ">=0.4.1" },
-    { name = "llama-index-storage-index-store-postgres", marker = "extra == 'pgvector'", specifier = ">=0.5.1" },
-    { name = "llama-index-storage-kvstore-postgres", marker = "extra == 'pgvector'", specifier = ">=0.4.3" },
-    { name = "llama-index-vector-stores-chroma", marker = "extra == 'examples'", specifier = ">=0.5.5" },
-    { name = "llama-index-vector-stores-chroma", marker = "extra == 'rag'", specifier = ">=0.5.5" },
-    { name = "llama-index-vector-stores-postgres", marker = "extra == 'pgvector'", specifier = ">=0.7.3" },
-    { name = "logfire", marker = "extra == 'examples'", specifier = ">=4.10.0" },
-    { name = "logfire", marker = "extra == 'observability'", specifier = ">=4.10.0" },
-    { name = "opentelemetry-exporter-otlp", marker = "extra == 'observability'" },
-    { name = "opentelemetry-instrumentation-llamaindex", marker = "extra == 'examples'", specifier = ">=0.51.1" },
-    { name = "opentelemetry-instrumentation-llamaindex", marker = "extra == 'observability'", specifier = ">=0.51.1" },
-    { name = "opentelemetry-sdk", marker = "extra == 'observability'" },
-    { name = "pydantic", specifier = ">=2.0.0" },
-    { name = "pydantic-ai-slim", extras = ["ag-ui"], marker = "extra == 'agui'" },
-    { name = "pydantic-ai-slim", extras = ["ag-ui", "openai", "cli"], marker = "extra == 'examples'" },
-    { name = "pydantic-ai-slim", extras = ["openai", "cli"], marker = "extra == 'agent'" },
-    { name = "pypdf", marker = "extra == 'examples'", specifier = ">=6.6.0" },
-    { name = "pypdf", marker = "extra == 'rag'", specifier = ">=6.6.0" },
-    { name = "pysrt", marker = "extra == 'examples'", specifier = ">=1.1.2" },
-    { name = "pysrt", marker = "extra == 'rag'", specifier = ">=1.1.2" },
-    { name = "pysword", marker = "extra == 'examples'", specifier = ">=0.2.8" },
-    { name = "pysword", marker = "extra == 'rag'", specifier = ">=0.2.8" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
-    { name = "python-dotenv", marker = "extra == 'examples'" },
-    { name = "ruff", marker = "extra == 'dev'" },
-    { name = "starlette", marker = "extra == 'agui'" },
-    { name = "starlette", marker = "extra == 'examples'" },
-    { name = "uvicorn", marker = "extra == 'agui'" },
-    { name = "uvicorn", marker = "extra == 'examples'" },
-]
-provides-extras = ["dev", "rag", "pgvector", "docling", "agent", "agui", "observability", "examples"]
 
 [[package]]
 name = "kubernetes"

@@ -3,9 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from .kb_engine.engine import LlamaIndexRag
-from .kb_engine.pgvector import PgVectorStorageBackend
-from .kb_engine.rich_docling import RichDoclingIngestionHandler
+from ..kb_engine.engine import LlamaIndexRag
+from ..kb_engine.pgvector import PgVectorStorageBackend
+from ..kb_engine.rich_docling import RichDoclingIngestionHandler
 # Use KETJU's query handler since we haven't modified it
 from ketju.rag.llama_index.query.simple import SimpleLlamaIndexQueryHandler
 
