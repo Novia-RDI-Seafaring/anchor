@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.12"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -290,7 +290,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "ipykernel" },
-    { name = "ketju", extra = ["agent", "agui", "docling", "pgvector", "rag"] },
+    { name = "ketju", extra = ["agent", "agui", "docling", "observability", "pgvector", "rag"] },
     { name = "langfuse" },
     { name = "logfire", extra = ["asyncpg", "httpx"] },
     { name = "nbformat" },
@@ -316,7 +316,7 @@ requires-dist = [
     { name = "fastapi" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "ipykernel", specifier = ">=7.1.0" },
-    { name = "ketju", extras = ["agent", "agui", "docling", "llama-index", "pgvector", "rag"], specifier = ">=0.1.1" },
+    { name = "ketju", extras = ["rag", "docling", "pgvector", "observability", "agent", "agui"], editable = "../../ketju" },
     { name = "langfuse", specifier = ">=2.54.0" },
     { name = "logfire", extras = ["asyncpg", "httpx"], specifier = ">=4.10.0" },
     { name = "nbformat", specifier = ">=5.10.4" },
@@ -1433,6 +1433,15 @@ wheels = [
 ]
 
 [[package]]
+name = "inflection"
+version = "0.5.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e1/7e/691d061b7329bc8d54edbf0ec22fbfb2afe61facb681f9aaa9bff7a27d04/inflection-0.5.1.tar.gz", hash = "sha256:1a29730d366e996aaacffb2f1f1cb9593dc38e2ddd30c91250c6dde09ea9b417", size = 15091, upload-time = "2020-08-22T08:16:29.139Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/59/91/aa6bde563e0085a02a435aa99b49ef75b0a4b062635e606dab23ce18d720/inflection-0.5.1-py2.py3-none-any.whl", hash = "sha256:f38b2b640938a4f35ade69ac3d053042959b62a0f1076a5bbaa1b9526605a8a2", size = 9454, upload-time = "2020-08-22T08:16:27.816Z" },
+]
+
+[[package]]
 name = "iniconfig"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1700,14 +1709,10 @@ wheels = [
 [[package]]
 name = "ketju"
 version = "0.1.1"
-source = { registry = "https://pypi.org/simple" }
+source = { editable = "../../ketju" }
 dependencies = [
     { name = "devtools" },
     { name = "pydantic" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/5d/a7/8dcf7a747bd04369fd93cf00f9860b48327b0303b4a2a53747afb76c833c/ketju-0.1.1.tar.gz", hash = "sha256:620024949a395a54507bc081f36908b7194d4eae831cd5180c475869abc165de", size = 360248, upload-time = "2026-02-20T08:35:47.553Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9f/1b/3613596f5e2536421e367d03e3a42ddfe527130e288837ce94af337b7060/ketju-0.1.1-py3-none-any.whl", hash = "sha256:00751b719d7e70f40613333e689caeb36502ad006d739523e40299071b24cb0e", size = 47816, upload-time = "2026-02-20T08:35:46.166Z" },
 ]
 
 [package.optional-dependencies]
@@ -1726,6 +1731,13 @@ docling = [
     { name = "llama-index-node-parser-docling" },
     { name = "llama-index-readers-docling" },
 ]
+observability = [
+    { name = "llama-index-observability-otel" },
+    { name = "logfire" },
+    { name = "opentelemetry-exporter-otlp" },
+    { name = "opentelemetry-instrumentation-llamaindex" },
+    { name = "opentelemetry-sdk" },
+]
 pgvector = [
     { name = "llama-index-storage-docstore-postgres" },
     { name = "llama-index-storage-index-store-postgres" },
@@ -1742,6 +1754,62 @@ rag = [
     { name = "pysrt" },
     { name = "pysword" },
 ]
+
+[package.metadata]
+requires-dist = [
+    { name = "chromadb", marker = "extra == 'examples'" },
+    { name = "chromadb", marker = "extra == 'rag'" },
+    { name = "devtools", specifier = ">=0.12.2" },
+    { name = "docling", marker = "extra == 'docling'", specifier = ">=2.68.0" },
+    { name = "docling", marker = "extra == 'examples'", specifier = ">=2.68.0" },
+    { name = "langchain-docling", marker = "extra == 'docling'", specifier = ">=2.0.0" },
+    { name = "langchain-docling", marker = "extra == 'examples'", specifier = ">=2.0.0" },
+    { name = "llama-index", marker = "extra == 'examples'", specifier = ">=0.14.12" },
+    { name = "llama-index", marker = "extra == 'rag'", specifier = ">=0.14.12" },
+    { name = "llama-index-embeddings-ollama", marker = "extra == 'examples'", specifier = ">=0.8.6" },
+    { name = "llama-index-embeddings-ollama", marker = "extra == 'rag'", specifier = ">=0.8.6" },
+    { name = "llama-index-llms-litellm", marker = "extra == 'examples'", specifier = ">=0.6.3" },
+    { name = "llama-index-llms-litellm", marker = "extra == 'rag'", specifier = ">=0.6.3" },
+    { name = "llama-index-node-parser-docling", marker = "extra == 'docling'", specifier = ">=0.4.2" },
+    { name = "llama-index-node-parser-docling", marker = "extra == 'examples'", specifier = ">=0.4.2" },
+    { name = "llama-index-observability-otel", marker = "extra == 'examples'", specifier = ">=0.2.1" },
+    { name = "llama-index-observability-otel", marker = "extra == 'observability'", specifier = ">=0.2.1" },
+    { name = "llama-index-protocols-ag-ui", marker = "extra == 'agui'", specifier = ">=0.2.3" },
+    { name = "llama-index-protocols-ag-ui", marker = "extra == 'examples'", specifier = ">=0.2.3" },
+    { name = "llama-index-readers-docling", marker = "extra == 'docling'", specifier = ">=0.4.2" },
+    { name = "llama-index-readers-docling", marker = "extra == 'examples'", specifier = ">=0.4.2" },
+    { name = "llama-index-storage-docstore-postgres", marker = "extra == 'pgvector'", specifier = ">=0.4.1" },
+    { name = "llama-index-storage-index-store-postgres", marker = "extra == 'pgvector'", specifier = ">=0.5.1" },
+    { name = "llama-index-storage-kvstore-postgres", marker = "extra == 'pgvector'", specifier = ">=0.4.3" },
+    { name = "llama-index-vector-stores-chroma", marker = "extra == 'examples'", specifier = ">=0.5.5" },
+    { name = "llama-index-vector-stores-chroma", marker = "extra == 'rag'", specifier = ">=0.5.5" },
+    { name = "llama-index-vector-stores-postgres", marker = "extra == 'pgvector'", specifier = ">=0.7.3" },
+    { name = "logfire", marker = "extra == 'examples'", specifier = ">=4.10.0" },
+    { name = "logfire", marker = "extra == 'observability'", specifier = ">=4.10.0" },
+    { name = "opentelemetry-exporter-otlp", marker = "extra == 'observability'" },
+    { name = "opentelemetry-instrumentation-llamaindex", marker = "extra == 'examples'", specifier = ">=0.51.1" },
+    { name = "opentelemetry-instrumentation-llamaindex", marker = "extra == 'observability'", specifier = ">=0.51.1" },
+    { name = "opentelemetry-sdk", marker = "extra == 'observability'" },
+    { name = "pydantic", specifier = ">=2.0.0" },
+    { name = "pydantic-ai-slim", extras = ["ag-ui"], marker = "extra == 'agui'" },
+    { name = "pydantic-ai-slim", extras = ["ag-ui", "openai", "cli"], marker = "extra == 'examples'" },
+    { name = "pydantic-ai-slim", extras = ["openai", "cli"], marker = "extra == 'agent'" },
+    { name = "pypdf", marker = "extra == 'examples'", specifier = ">=6.6.0" },
+    { name = "pypdf", marker = "extra == 'rag'", specifier = ">=6.6.0" },
+    { name = "pysrt", marker = "extra == 'examples'", specifier = ">=1.1.2" },
+    { name = "pysrt", marker = "extra == 'rag'", specifier = ">=1.1.2" },
+    { name = "pysword", marker = "extra == 'examples'", specifier = ">=0.2.8" },
+    { name = "pysword", marker = "extra == 'rag'", specifier = ">=0.2.8" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
+    { name = "python-dotenv", marker = "extra == 'examples'" },
+    { name = "ruff", marker = "extra == 'dev'" },
+    { name = "starlette", marker = "extra == 'agui'" },
+    { name = "starlette", marker = "extra == 'examples'" },
+    { name = "uvicorn", marker = "extra == 'agui'" },
+    { name = "uvicorn", marker = "extra == 'examples'" },
+]
+provides-extras = ["dev", "rag", "pgvector", "docling", "agent", "agui", "observability", "examples"]
 
 [[package]]
 name = "kubernetes"
@@ -2063,6 +2131,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/3d/a9/dea8b678ee997ffda40f02c1806ce257242a5c07201eadd44a7a748efbec/llama_index_node_parser_docling-0.4.2.tar.gz", hash = "sha256:0b1ac73dd36afbb6d57f011bb4acd2b62a974465e538286878dd000c88d9ee41", size = 4509, upload-time = "2025-11-28T15:23:45.995Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e7/0e/e05e2af3105002107bbc08086148fe923f0c87f0b5f8aeebeac29565b7e5/llama_index_node_parser_docling-0.4.2-py3-none-any.whl", hash = "sha256:e978e7de5b05e7c63e46b3282edb25ca269c2a57a5ca03113c45627f0d53360d", size = 4058, upload-time = "2025-11-28T15:23:45.199Z" },
+]
+
+[[package]]
+name = "llama-index-observability-otel"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "llama-index-instrumentation" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-sdk" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "termcolor" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3f/6b/891d600ae870fa30bb0b4921e0afd53722b78eaf0a6817dce1b802db0b42/llama_index_observability_otel-0.5.0.tar.gz", hash = "sha256:9ad33c2bbc980bcc083c0e493bfd381da0914d12b06a793cc63fb41e745804ee", size = 7092, upload-time = "2026-02-24T21:22:11.774Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/75/ef/3e9f5322612d3d97cb8eb780e0cb07fccbe41c37ac25228e3843a76914b0/llama_index_observability_otel-0.5.0-py3-none-any.whl", hash = "sha256:c75bbd154cbd4432d15cfb8403ff19876c545c444d312796d0ee5ed692653cfc", size = 6992, upload-time = "2026-02-24T21:22:12.82Z" },
 ]
 
 [[package]]
@@ -3080,6 +3164,19 @@ wheels = [
 ]
 
 [[package]]
+name = "opentelemetry-exporter-otlp"
+version = "1.39.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-exporter-otlp-proto-grpc" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/30/9c/3ab1db90f32da200dba332658f2bbe602369e3d19f6aba394031a42635be/opentelemetry_exporter_otlp-1.39.1.tar.gz", hash = "sha256:7cf7470e9fd0060c8a38a23e4f695ac686c06a48ad97f8d4867bc9b420180b9c", size = 6147, upload-time = "2025-12-11T13:32:40.309Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/00/6c/bdc82a066e6fb1dcf9e8cc8d4e026358fe0f8690700cc6369a6bf9bd17a7/opentelemetry_exporter_otlp-1.39.1-py3-none-any.whl", hash = "sha256:68ae69775291f04f000eb4b698ff16ff685fdebe5cb52871bc4e87938a7b00fe", size = 7019, upload-time = "2025-12-11T13:32:19.387Z" },
+]
+
+[[package]]
 name = "opentelemetry-exporter-otlp-proto-common"
 version = "1.39.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3173,6 +3270,22 @@ wheels = [
 ]
 
 [[package]]
+name = "opentelemetry-instrumentation-llamaindex"
+version = "0.52.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "inflection" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-instrumentation" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "opentelemetry-semantic-conventions-ai" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/07/27/95950c6f07175e3dd52a266d326be078cdf3fb3dc7284ad1ca5c2ee351a2/opentelemetry_instrumentation_llamaindex-0.52.6.tar.gz", hash = "sha256:61b25677410fb41e2f8dee9113c9990fd3063b685c9a99474da0588665467c73", size = 1274115, upload-time = "2026-02-26T15:40:08.588Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/27/51/33a2ab87140c758d856e3ebf515c0b3c49b5fee8254991997d4df5bdf98a/opentelemetry_instrumentation_llamaindex-0.52.6-py3-none-any.whl", hash = "sha256:936f5dafc10dc9bb2d5d6d865edc4cc7b7555960ee51101b3b7d1d4e043c811f", size = 21850, upload-time = "2026-02-26T15:39:28.698Z" },
+]
+
+[[package]]
 name = "opentelemetry-proto"
 version = "1.39.1"
 source = { registry = "https://pypi.org/simple" }
@@ -3209,6 +3322,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/91/df/553f93ed38bf22f4b999d9be9c185adb558982214f33eae539d3b5cd0858/opentelemetry_semantic_conventions-0.60b1.tar.gz", hash = "sha256:87c228b5a0669b748c76d76df6c364c369c28f1c465e50f661e39737e84bc953", size = 137935, upload-time = "2025-12-11T13:32:50.487Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7a/5e/5958555e09635d09b75de3c4f8b9cae7335ca545d77392ffe7331534c402/opentelemetry_semantic_conventions-0.60b1-py3-none-any.whl", hash = "sha256:9fa8c8b0c110da289809292b0591220d3a7b53c1526a23021e977d68597893fb", size = 219982, upload-time = "2025-12-11T13:32:36.955Z" },
+]
+
+[[package]]
+name = "opentelemetry-semantic-conventions-ai"
+version = "0.4.15"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-sdk" },
+    { name = "opentelemetry-semantic-conventions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e9/75/455c15f8360b475dd31101a87eab316420388486f7941bf019cbf4e63d5b/opentelemetry_semantic_conventions_ai-0.4.15.tar.gz", hash = "sha256:12de172d1e11d21c6e82bbf578c7e8a713589a7fda76af9ed785632564a28b81", size = 18595, upload-time = "2026-03-02T15:36:50.254Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/12/49/819fb212386f77cfd93f81bd916d674f0e735f87c8ac2262ed14e3b852c2/opentelemetry_semantic_conventions_ai-0.4.15-py3-none-any.whl", hash = "sha256:011461f1fba30f27035c49ab3b8344367adc72da0a6c8d3c7428303c6779edc9", size = 5999, upload-time = "2026-03-02T15:36:51.44Z" },
 ]
 
 [[package]]
@@ -4965,6 +5091,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/47/c6/ee486fd809e357697ee8a44d3d69222b344920433d3b6666ccd9b374630c/tenacity-9.1.4.tar.gz", hash = "sha256:adb31d4c263f2bd041081ab33b498309a57c77f9acf2db65aadf0898179cf93a", size = 49413, upload-time = "2026-02-07T10:45:33.841Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d7/c1/eb8f9debc45d3b7918a32ab756658a0904732f75e555402972246b0b8e71/tenacity-9.1.4-py3-none-any.whl", hash = "sha256:6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55", size = 28926, upload-time = "2026-02-07T10:45:32.24Z" },
+]
+
+[[package]]
+name = "termcolor"
+version = "3.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/46/79/cf31d7a93a8fdc6aa0fbb665be84426a8c5a557d9240b6239e9e11e35fc5/termcolor-3.3.0.tar.gz", hash = "sha256:348871ca648ec6a9a983a13ab626c0acce02f515b9e1983332b17af7979521c5", size = 14434, upload-time = "2025-12-29T12:55:21.882Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/d1/8bb87d21e9aeb323cc03034f5eaf2c8f69841e40e4853c2627edf8111ed3/termcolor-3.3.0-py3-none-any.whl", hash = "sha256:cf642efadaf0a8ebbbf4bc7a31cec2f9b5f21a9f726f4ccbb08192c9c26f43a5", size = 7734, upload-time = "2025-12-29T12:55:20.718Z" },
 ]
 
 [[package]]

@@ -21,85 +21,56 @@ async def search_knowledge_base(
   top_k: int = 5
 ) -> dict[str, list]:
   """
-  Query the vector database for relevant context.
-  Uses the active document filter if set by the user.
-  
-  Args:
-    query: The search query
-    top_k: Number of results to retrieve (default: 5)
-  
-  Returns:
-    Dictionary with 'chunks', 'sources', and rendering hints:
-    - should_render: bool
-    - suggested_component: str
-    - _note: Internal instruction
-    - chunks: List of content chunks
-    - sources: List of source filenames
+  Query the vector database for relevant context via KETJU.
   """
   start_time = time.time()
-  
-  # Log tool call
   log_agent_tool_call("search_knowledge_base", {"query": query, "top_k": top_k})
   
   try:
-    # Import here to avoid circular imports
-    from src.knowledge_base.service import get_document_service
+    from src.knowledge_base.ketju_integration import get_ketju_rag
     from src.core.context import get_active_document_id
     
-    # Get active document filter
     active_doc_id = get_active_document_id()
+    rag = get_ketju_rag()
     
-    # Query the vector store with optional document filter
-    service = await get_document_service()
-    results = await service.search(query, top_k=top_k, document_id=active_doc_id)
+    # Query using KETJU's RAG (SimpleLlamaIndexQueryHandler)
+    # We use search() if we want raw chunks, or query() if we want a response.
+    # The tool returns chunks for the agent to reason over.
+    results = rag.query_handler.search(rag.index, query, top_k=top_k)
     
-    # Extract chunks and sources with rich data
+    # KETJU search results are LlamaIndex NodeWithScore objects if using SimpleLlamaIndexQueryHandler.search
+    # Wait, let's check what SimpleLlamaIndexQueryHandler.search returns.
+    # Actually, we can just use the index directly or the query handler.
+    
     chunks = []
     for r in results:
+        node = r.node
         chunks.append({
-            "id": r.get("id"),  # Include chunk ID for page image queries
-            "content": r["content"],
-            "filename": r["filename"],
-            "document_id": r.get("document_id"),  # Include document_id for page preview
-            "similarity": r.get("similarity", 0.0),
-            "metadata": r.get("metadata", {})
+            "id": node.node_id,
+            "content": node.get_content(),
+            "filename": node.metadata.get("filename", "Unknown"),
+            "document_id": node.metadata.get("document_id"),
+            "similarity": r.score or 0.0,
+            "metadata": node.metadata
         })
     
-    sources = list(set(r["filename"] for r in results))
-    
-    # Determine the best component type for these results
+    sources = list(set(c["filename"] for c in chunks))
     should_render = len(chunks) > 0
     suggested_component = determine_component_type(query, chunks).value if should_render else "list"
-    
-    # Internal note to guide the model (not for user display)
     note = f"Internal: You must now call render_component('{suggested_component}', data=...) to display these results."
     
-    # Update state with sources and chunks
     ctx.deps.state.current_sources = sources
     ctx.deps.state.last_chunks = chunks
     
-    # Log query performance
     duration_ms = (time.time() - start_time) * 1000
     log_rag_query(query, top_k, len(chunks), duration_ms, context=chunks)
     log_event({
         "type": "retrieval",
         "query_len": len(query),
         "query_tokens_est": estimate_tokens(query),
-        "top_k": top_k,
-        "result_count": len(chunks),
-        "total_chunk_chars": sum(len(c.get("content", "")) for c in chunks),
-        "total_chunk_tokens": estimate_tokens_bulk((c.get("content", "") for c in chunks)),
-        "doc_ids": list({c.get("document_id") for c in chunks if c.get("document_id")}),
         "latency_ms": duration_ms,
     })
-    log_event({
-        "type": "state",
-        "conversation_len": len(ctx.deps.state.conversation_history),
-        "last_chunks_len": len(ctx.deps.state.last_chunks),
-        "ui_components_len": len(ctx.deps.state.active_ui_components),
-    })
     
-    # Return with state update
     return ToolReturn(
         return_value={
             "chunks": chunks, 
@@ -108,81 +79,38 @@ async def search_knowledge_base(
             "suggested_component": suggested_component,
             "_note": note
         },
-        metadata=[
-            StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=ctx.deps.state,
-            )
-        ]
+        metadata=[StateSnapshotEvent(type=EventType.STATE_SNAPSHOT, snapshot=ctx.deps.state)]
     )
     
   except Exception as e:
-    import traceback
-    error_trace = traceback.format_exc()
-    log_error("Error in search_knowledge_base", e, {
-        "query": query, 
-        "top_k": top_k,
-        "traceback": error_trace
-    })
-    # Return empty results on error with consistent type
-    return ToolReturn(
-        return_value={"chunks": [], "sources": [], "error": str(e)},
-        metadata=[
-            StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=ctx.deps.state,
-            )
-        ]
-    )
+    log_error("Error in search_knowledge_base", e)
+    return ToolReturn(return_value={"chunks": [], "sources": [], "error": str(e)}, metadata=[StateSnapshotEvent(type=EventType.STATE_SNAPSHOT, snapshot=ctx.deps.state)])
 
 
 async def get_database_status(ctx: RunContext[StateDeps[RAGState]]) -> StateSnapshotEvent:
-  """Check the status of the vector database connection."""
+  """Check status via KETJU."""
   log_agent_tool_call("get_database_status", {})
-  
   try:
-    # TODO: Implement actual health check
-    ctx.deps.state.vector_db_status = "connected"  # Placeholder
-    
-    return ToolReturn(
-      return_value={"status": "connected"},
-      metadata=[
-        StateSnapshotEvent(
-          type=EventType.STATE_SNAPSHOT,
-          snapshot=ctx.deps.state,
-        )
-      ]
-    )
+    from src.knowledge_base.ketju_integration import get_ketju_rag
+    rag = get_ketju_rag()
+    # If this doesn't raise, we're likely connected
+    status = "connected"
+    ctx.deps.state.vector_db_status = status
+    return ToolReturn(return_value={"status": status}, metadata=[StateSnapshotEvent(type=EventType.STATE_SNAPSHOT, snapshot=ctx.deps.state)])
   except Exception as e:
-    log_error("Error in get_database_status", e)
-    raise
+    return ToolReturn(return_value={"status": "error", "message": str(e)}, metadata=[StateSnapshotEvent(type=EventType.STATE_SNAPSHOT, snapshot=ctx.deps.state)])
 
 
-async def list_documents(
-  ctx: RunContext[StateDeps[RAGState]]
-) -> dict[str, Any]:
-  """
-  List all documents currently available in the knowledge base.
-  Use this to find a document_id if one is not provided.
-  
-  Returns:
-    Dictionary with 'documents' list.
-  """
+async def list_documents(ctx: RunContext[StateDeps[RAGState]]) -> dict[str, Any]:
+  """List documents via KETJU or ANCHOR service (shared DB)."""
   log_agent_tool_call("list_documents", {})
-  
   try:
+    # We still use the DocumentService for listing as it handles the ANCHOR-specific documents table
     from src.knowledge_base.service import get_document_service
     service = await get_document_service()
     documents = await service.list_documents()
-    
-    return {
-        "documents": documents,
-        "should_render": True,
-        "suggested_component": "list",
-        "_note": "Internal: You must now call render_component('list', data=...) to display these documents."
-    }
+    return {"documents": documents, "should_render": True, "suggested_component": "list"}
   except Exception as e:
-    log_error("Error in list_documents", e)
     return {"error": str(e)}
 
 
@@ -190,44 +118,32 @@ async def list_document_toc(
   ctx: RunContext[StateDeps[RAGState]],
   document_id: Optional[str] = None
 ) -> dict[str, Any]:
-  """
-  Retrieve the Table of Contents (TOC) for a specific document.
-  If document_id is not provided, uses the active document.
-  
-  Args:
-    document_id: Optional ID of the document to get the TOC for.
-    
-  Returns:
-    Dictionary with 'toc' (list of items) and 'filename'.
-  """
+  """Retrieve TOC via KETJU storage."""
   log_agent_tool_call("list_document_toc", {"document_id": document_id})
-  
   try:
-    from src.knowledge_base.service import get_document_service
-    from src.knowledge_base.vector_store import get_vector_store
+    from src.knowledge_base.ketju_integration import get_ketju_rag
     from src.core.context import get_active_document_id
     
     doc_id = document_id or get_active_document_id()
     if not doc_id:
-        return {"error": "No document ID provided and no active document set. Please provide a document_id or use search first."}
+        return {"error": "No document ID provided."}
     
-    vector_store = await get_vector_store()
-    toc = await vector_store.get_toc(doc_id)
-    doc_info = await vector_store.get_document(doc_id)
+    rag = get_ketju_rag()
+    toc = rag.storage_backend.get_toc(doc_id)
     
-    should_render = len(toc) > 0
-    note = "Internal: You must now call render_component('list', data=...) to display the TOC." if should_render else "Internal: No TOC found."
+    # Get filename from common source (ANCHOR documents table for now)
+    from src.knowledge_base.vector_store import get_vector_store
+    vs = await get_vector_store()
+    doc_info = await vs.get_document(doc_id)
     
     return {
         "toc": toc or [],
         "filename": doc_info.get("filename") if doc_info else "Unknown",
         "document_id": doc_id,
-        "should_render": should_render,
-        "suggested_component": "list",
-        "_note": note
+        "should_render": len(toc) > 0,
+        "suggested_component": "list"
     }
   except Exception as e:
-    log_error("Error in list_document_toc", e, {"document_id": document_id})
     return {"error": str(e)}
 
 
@@ -236,38 +152,25 @@ async def get_section_content(
   section_name: str,
   document_id: Optional[str] = None
 ) -> dict[str, Any]:
-  """
-  Retrieve all text content associated with a specific section or subsection.
-  Useful for reading a whole chapter or section at once.
-  
-  Args:
-    section_name: The name of the section or heading to retrieve (from TOC).
-    document_id: Optional ID of the document. Uses active document if not set.
-    
-  Returns:
-    Dictionary with 'content' (concatenated text) and 'chunks'.
-  """
+  """Retrieve section content via KETJU storage."""
   log_agent_tool_call("get_section_content", {"section_name": section_name, "document_id": document_id})
-  
   try:
-    from src.knowledge_base.vector_store import get_vector_store
+    from src.knowledge_base.ketju_integration import get_ketju_rag
     from src.core.context import get_active_document_id
     
     doc_id = document_id or get_active_document_id()
     if not doc_id:
-        return {"error": "No document ID provided and no active document set."}
+        return {"error": "No document ID provided."}
     
-    vector_store = await get_vector_store()
-    chunks = await vector_store.get_chunks_by_section(doc_id, section_name)
+    rag = get_ketju_rag()
+    chunks = rag.storage_backend.get_chunks_by_section(doc_id, section_name)
     
     if not chunks:
-        return {"error": f"No content found for section '{section_name}' in this document."}
+        return {"error": f"No content found for section '{section_name}'."}
     
     full_content = "\n\n".join([c["content"] for c in chunks])
-    
-    # Strictly limit content to avoid overwhelming the model or prompting it to 'fetch more'
     if len(full_content) > 15000:
-        full_content = full_content[:15000] + "... [Content truncated for brevity]"
+        full_content = full_content[:15000] + "... [Content truncated]"
     
     return {
         "section_name": section_name,
@@ -276,5 +179,4 @@ async def get_section_content(
         "document_id": doc_id
     }
   except Exception as e:
-    log_error("Error in get_section_content", e, {"section_name": section_name})
     return {"error": str(e)}

@@ -41,20 +41,19 @@ export const POST = async (req: NextRequest) => {
     const mergedPayload = {
         ...payload,
         body: {
-          ...(payload?.body ?? {}),
-          forwardedProps: {
-            ...(payload?.body?.forwardedProps ?? {}),
-            model: model ?? payload?.body?.forwardedProps?.model ?? "gpt-4o-mini",
-          },
+            ...(payload?.body ?? {}),
+            forwardedProps: {
+                ...(payload?.body?.forwardedProps ?? {}),
+                model: model ?? payload?.body?.forwardedProps?.model ?? "gpt-4o-mini",
+            },
         },
-      };
+    };
     console.log(mergedPayload);
 
     const runtime = new CopilotRuntime({
         agents: {
-            
             my_agent: new HttpAgent({
-                url: ketju_url,
+                url: url,
             }),
         } as any,  // Type cast for compatibility with CopilotKit 1.50
     });

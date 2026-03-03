@@ -408,7 +408,7 @@ class DocumentService:
     
     async def process_document(self, document_id: str) -> Dict[str, Any]:
         """
-        Process a document: convert with Docling, chunk, embed, store.
+        Process a document: Use KETJU's RichDoclingIngestionHandler for unified RAG.
         
         Args:
             document_id: The document ID to process
@@ -416,6 +416,8 @@ class DocumentService:
         Returns:
             Processing result info
         """
+        from .ketju_integration import get_ketju_rag
+
         vector_store = await get_vector_store()
         doc = await vector_store.get_document(document_id)
         
@@ -426,7 +428,7 @@ class DocumentService:
         if not file_path or not os.path.exists(file_path):
             raise ValueError(f"File not found: {file_path}")
         
-        print(f"DocumentService: Processing {doc['filename']}...")
+        print(f"DocumentService: Processing {doc['filename']} via KETJU...")
         
         # Get processing options from metadata or use defaults
         metadata = doc.get("metadata", {})
@@ -435,98 +437,51 @@ class DocumentService:
         enable_ocr = metadata.get("enable_ocr", False)
         table_mode = metadata.get("table_mode", "fast")
         
-        # Create converter with user-specified options
-        converter = DoclingConverter(
+        # Initialize KETJU RAG with rich extraction
+        rag = get_ketju_rag(
+            collection_name=self.settings.vector_db_collection,
             preserve_images=preserve_images,
             preserve_tables=preserve_tables,
             enable_ocr=enable_ocr,
             table_mode=table_mode
         )
         
-        # Convert with Docling
-        try:
-            conversion_result = converter.convert_document(file_path)
-            
-            # Get chunks using HybridChunker
-            chunks = self.formatter.create_chunks(
-                conversion_result, 
-                chunk_size=self.settings.chunk_size
-            )
-            
-            print(f"DocumentService: Created {len(chunks)} chunks")
-            
-        except Exception as e:
-            print(f"DocumentService: Docling failed, using fallback: {e}")
-            # Fallback: read as text and create simple chunks
-            async with aiofiles.open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                content = await f.read()
-            
-            # Simple chunking fallback
-            chunk_size = self.settings.chunk_size * 4  # Approximate chars per token
-            chunks = []
-            for i in range(0, len(content), chunk_size):
-                chunks.append({
-                    "content": content[i:i + chunk_size],
-                    "metadata": {"chunk_type": "fallback", "chunk_index": len(chunks)}
-                })
+        # Ingest using KETJU (this handles docling conversion, rich extraction, and storage)
+        chunk_count = rag.ingest(files=[file_path], document_ids=[document_id])
         
-        if not chunks:
-            return {"document_id": document_id, "status": "no_content", "chunks": 0}
-        
-        # Generate embeddings
-        embeddings_service = get_embeddings_service()
-        texts = [chunk["content"] for chunk in chunks]
-        
-        print(f"DocumentService: Generating embeddings for {len(texts)} chunks...")
-        embeddings = embeddings_service.embed_texts(texts)
-        
-        # Store in vector database
-        chunk_count = await vector_store.add_chunks(document_id, chunks, embeddings)
-        
-        print(f"DocumentService: Stored {chunk_count} chunks for {doc['filename']}")
-        
-        # Extract and store document images (diagrams, figures) from Docling result
-        image_count = 0
-        toc_count = 0
-        if 'conversion_result' in locals() and conversion_result:
-            try:
-                # Extract and store TOC
-                print(f"DocumentService: Extracting TOC from {doc['filename']}...")
-                toc_items = self._extract_toc_from_docling(conversion_result)
-                if toc_items:
-                    await vector_store.add_toc(document_id, toc_items)
-                    toc_count = len(toc_items)
-                    print(f"DocumentService: Stored {toc_count} TOC items")
-
-                # Extract and store images
-                print(f"DocumentService: Extracting images from {doc['filename']}...")
-                extracted_images = self._extract_images_from_docling(conversion_result)
-                if extracted_images:
-                    image_count = await vector_store.add_document_images(document_id, extracted_images)
-                    print(f"DocumentService: Stored {image_count} extracted images")
-            except Exception as e:
-                print(f"DocumentService: Failed to extract structural metadata: {e}")
-        
-        # Generate and store page images for PDF files
+        # Generate and store page images for PDF files (Visual Provenance)
+        # This remains here as it's a specific ANCHOR UI feature
         page_count = 0
         if file_path.lower().endswith('.pdf'):
             try:
                 print(f"DocumentService: Generating page images for {doc['filename']}...")
                 page_image_service = get_page_image_service()
                 page_images = page_image_service.generate_page_images(file_path)
-                page_count = await vector_store.add_page_images(document_id, page_images)
+                # Store via KETJU's storage backend for unified access
+                rag.storage_backend.add_page_images(document_id, page_images)
+                page_count = len(page_images)
                 print(f"DocumentService: Stored {page_count} page images")
             except Exception as e:
                 print(f"DocumentService: Failed to generate page images: {e}")
         
+        # Get counts for TOC and images from KETJU's storage
+        toc_items = rag.storage_backend.get_toc(document_id)
+        extracted_images = rag.storage_backend.get_images(document_id)
+        
+        # Update document status in ANCHOR's documents table
+        # Correctly call the vector store methods
+        await vector_store.update_document_status(document_id, "processed", chunk_count=chunk_count)
+        if page_count > 0:
+            await vector_store.update_document_page_count(document_id, page_count)
+
         return {
             "document_id": document_id,
             "filename": doc["filename"],
             "status": "processed",
             "chunks": chunk_count,
             "pages": page_count,
-            "images": image_count,
-            "toc": toc_count
+            "images": len(extracted_images),
+            "toc": len(toc_items)
         }
     
     async def list_documents(self) -> List[Dict[str, Any]]:

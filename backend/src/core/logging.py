@@ -22,11 +22,23 @@ logfire.instrument_pydantic_ai()
 # Instrument HTTP client for raw LLM request/response tracking
 logfire.instrument_httpx(capture_all=True)
 
-# if you use the official OpenAI Python SDK anywhere (recommended for a nice “conversation” view)
+# Instrument OpenAI SDK
 logfire.instrument_openai()
 
-# Instrument Database client for raw query tracking
-# logfire.instrument_asyncpg()
+# Instrument LlamaIndex for RAG tracking
+try:
+    from opentelemetry.instrumentation.llamaindex import LlamaIndexInstrumentor
+    LlamaIndexInstrumentor().instrument()
+    print("LlamaIndex instrumented")
+except ImportError:
+    print("LlamaIndex instrumentor not found, skipping")
+
+# Instrument SQLAlchemy for database tracking
+try:
+    logfire.instrument_sqlalchemy()
+    print("SQLAlchemy instrumented")
+except Exception:
+    pass
 
 # Create logger instance
 logger = logfire
