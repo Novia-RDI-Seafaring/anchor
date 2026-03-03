@@ -3,12 +3,9 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from typing import Optional
 
 from src.knowledge_base.service import get_document_service
-from src.knowledge_base.doc_service2 import get_document_service2
 from src.knowledge_base.vector_store import get_vector_store
 from .schemas import URLRequest, PageImagesRequest
-from src.kb_engine.rich_docling2 import get_rag_handler
 router = APIRouter(prefix="/api", tags=["documents"])
-from pathlib import Path
 
 @router.post("/documents/upload")
 async def upload_document(
@@ -30,13 +27,16 @@ async def upload_document(
             raise HTTPException(status_code=400, detail="table_mode must be 'fast' or 'accurate'")
         
         content = await file.read()
-        filename = Path(file.filename)
-        file_path = Path("data/uploads", filename)
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(file_path, "wb") as f:
-            f.write(content)
-        service = get_document_service2()
-        result = service.ingest(files=[file_path])
+        service = await get_document_service()
+        result = await service.upload_file(
+            filename=file.filename,
+            content=content,
+            process_immediately=True,
+            preserve_images=preserve_images_bool,
+            preserve_tables=preserve_tables_bool,
+            enable_ocr=enable_ocr_bool,
+            table_mode=table_mode,
+        )
         return {"success": True, "document": result}
     except HTTPException:
         raise
@@ -61,8 +61,8 @@ async def add_url(request: URLRequest):
 @router.get("/documents")
 async def list_documents():
     """List all documents in the knowledge base."""
-    service = get_document_service2()
-    return {"success": True, "documents": service.list_documents()}
+    service = await get_document_service()
+    return {"success": True, "documents": await service.list_documents()}
     
 
 
@@ -70,8 +70,8 @@ async def list_documents():
 async def delete_document(document_id: str):
     """Delete a specific document."""
     try:
-        service = get_document_service2()
-        success = service.delete_document(document_id)
+        service = await get_document_service()
+        success = await service.delete_document(document_id)
         if not success:
             raise HTTPException(status_code=404, detail="Document not found")
         return {"success": True}
@@ -85,8 +85,8 @@ async def delete_document(document_id: str):
 async def reingest_documents():
     """Re-process all documents in the knowledge base."""
     try:
-        service = get_document_service2()
-        result = service.reingest_all()
+        service = await get_document_service()
+        result = await service.reingest_all()
         return {"success": True, **result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -96,8 +96,8 @@ async def reingest_documents():
 async def reset_knowledge_base():
     """Reset (clear) the entire knowledge base."""
     try:
-        service = get_document_service2()
-        result = service.reset_knowledge_base()
+        service = await get_document_service()
+        result = await service.reset_knowledge_base()
         return {"success": True, **result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -10,6 +10,7 @@ from datetime import datetime
 import hashlib
 import asyncpg
 import json
+import re
 
 from ..core.config import get_settings
 from ..core.security import validate_embedding_values
@@ -78,8 +79,14 @@ class VectorStore:
         # Replace placeholders
         query = query.replace("%%SCHEMA%%", self.settings.db_schema)
         query = query.replace("%%DIMENSION%%", str(self.settings.embedding_dimension))
-        
+
         return query
+
+    def _get_rag_chunks_table(self) -> str:
+        table_name = f"data_{self.settings.vector_db_collection}"
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table_name):
+            raise ValueError(f"Invalid vector_db_collection for table identifier: {self.settings.vector_db_collection}")
+        return table_name
     
     async def initialize(self):
         """Initialize connection pool and create tables if needed."""
@@ -480,6 +487,17 @@ class VectorStore:
     async def delete_document(self, document_id: str) -> bool:
         """Delete a document and its associated chunks, page images, and document images."""
         async with self.pool.acquire() as conn:
+            # Remove chunk rows from the active KETJU/pgvector table as well.
+            rag_chunks_table = self._get_rag_chunks_table()
+            try:
+                await conn.execute(
+                    f'DELETE FROM "{self.settings.db_schema}"."{rag_chunks_table}" '
+                    "WHERE metadata_->>'document_id' = $1",
+                    document_id,
+                )
+            except (asyncpg.UndefinedTableError, asyncpg.UndefinedColumnError):
+                pass
+
             # Delete in order: chunks, page_images, document_images, then document
             # This ensures referential integrity even without FK constraints
             await conn.execute(
@@ -507,7 +525,19 @@ class VectorStore:
             docs_deleted = await conn.fetchval(self._load_sql("stats/count_documents.sql"))
             page_images_deleted = await conn.fetchval(self._load_sql("stats/count_page_images.sql"))
             document_images_deleted = await conn.fetchval(self._load_sql("stats/count_document_images.sql"))
-            
+            rag_chunks_deleted = 0
+
+            rag_chunks_table = self._get_rag_chunks_table()
+            try:
+                rag_chunks_deleted = await conn.fetchval(
+                    f'SELECT COUNT(*) FROM "{self.settings.db_schema}"."{rag_chunks_table}"'
+                )
+                await conn.execute(
+                    f'DELETE FROM "{self.settings.db_schema}"."{rag_chunks_table}"'
+                )
+            except (asyncpg.UndefinedTableError, asyncpg.UndefinedColumnError):
+                rag_chunks_deleted = 0
+
             # Delete in order: chunks, page_images, document_images, then documents
             # I will use the reset.sql which does DELETE ALL
             # But the original code does separate DELETE calls.
@@ -520,7 +550,8 @@ class VectorStore:
                 "documents_deleted": docs_deleted,
                 "chunks_deleted": chunks_deleted,
                 "page_images_deleted": page_images_deleted,
-                "document_images_deleted": document_images_deleted
+                "document_images_deleted": document_images_deleted,
+                "rag_chunks_deleted": rag_chunks_deleted,
             }
     
     async def get_stats(self) -> Dict[str, Any]:
@@ -529,11 +560,28 @@ class VectorStore:
             doc_count = await conn.fetchval(self._load_sql("stats/count_documents.sql"))
             chunk_count = await conn.fetchval(self._load_sql("stats/count_chunks.sql"))
             processed_count = await conn.fetchval(self._load_sql("stats/count_processed_docs.sql"))
-            
+            rag_chunk_count = 0
+            active_chunk_table = "chunks"
+
+            rag_chunks_table = self._get_rag_chunks_table()
+            try:
+                rag_chunk_count = await conn.fetchval(
+                    f'SELECT COUNT(*) FROM "{self.settings.db_schema}"."{rag_chunks_table}"'
+                )
+                if rag_chunk_count:
+                    active_chunk_table = rag_chunks_table
+            except (asyncpg.UndefinedTableError, asyncpg.UndefinedColumnError):
+                rag_chunk_count = 0
+
+            active_chunk_count = rag_chunk_count if rag_chunk_count else chunk_count
+
             return {
                 "total_documents": doc_count,
                 "processed_documents": processed_count,
-                "total_chunks": chunk_count,
+                "total_chunks": active_chunk_count,
+                "legacy_chunks": chunk_count,
+                "rag_chunks": rag_chunk_count,
+                "chunk_table": active_chunk_table,
                 "status": "connected"
             }
     
