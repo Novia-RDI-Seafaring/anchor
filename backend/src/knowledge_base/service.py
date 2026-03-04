@@ -412,7 +412,6 @@ class DocumentService:
         Returns:
             Processing result info
         """
-        from .ketju_integration import get_ketju_rag
 
         vector_store = await get_vector_store()
         doc = await vector_store.get_document(document_id)
@@ -527,7 +526,6 @@ class DocumentService:
             List of matching chunks with metadata
         """
         from llama_index.core.vector_stores import MetadataFilter, MetadataFilters, FilterOperator
-        from .ketju_integration import get_ketju_rag
 
         rag = get_ketju_rag(collection_name=self.settings.vector_db_collection)
 

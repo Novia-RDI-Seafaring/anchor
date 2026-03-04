@@ -1,7 +1,12 @@
 """Document management API routes."""
+import os
+from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from typing import Optional
 
+from src.knowledge_base.doc_service2 import get_document_service2
+from src.kb_engine.rag_engine import get_rag_engine
+from src.api.file_service import UploadedFileInfo, get_file_service, FileWriteResult
 from src.knowledge_base.service import get_document_service
 from src.knowledge_base.vector_store import get_vector_store
 from .schemas import URLRequest, PageImagesRequest
@@ -25,18 +30,10 @@ async def upload_document(
         # Validate table_mode
         if table_mode not in ["fast", "accurate"]:
             raise HTTPException(status_code=400, detail="table_mode must be 'fast' or 'accurate'")
-        
-        content = await file.read()
-        service = await get_document_service()
-        result = await service.upload_file(
-            filename=file.filename,
-            content=content,
-            process_immediately=True,
-            preserve_images=preserve_images_bool,
-            preserve_tables=preserve_tables_bool,
-            enable_ocr=enable_ocr_bool,
-            table_mode=table_mode,
-        )
+        f: FileWriteResult = await get_file_service().upload_file(file)
+        rag = get_rag_engine()
+        result = rag.ingest(files=[Path(f.file_path)])
+
         return {"success": True, "document": result}
     except HTTPException:
         raise
@@ -50,9 +47,9 @@ async def upload_document(
 async def add_url(request: URLRequest):
     """Add a URL to the knowledge base."""
     try:
-        raise NotImplementedError("add_url is not implemented")
-        service = await get_document_service()
-        result = await service.upload_url(request.url)
+        if "url" not in request: raise HTTPException(status_code=400, detail="No url provided")
+        f: FileWriteResult = await get_file_service().download_file(request.url)
+        result = get_document_service2().ingest(files=[Path(f.file_path)])
         return {"success": True, "document": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -61,8 +58,8 @@ async def add_url(request: URLRequest):
 @router.get("/documents")
 async def list_documents():
     """List all documents in the knowledge base."""
-    service = await get_document_service()
-    return {"success": True, "documents": await service.list_documents()}
+    service = get_document_service2()
+    return {"success": True, "documents": service.list_documents()}
     
 
 
@@ -70,6 +67,7 @@ async def list_documents():
 async def delete_document(document_id: str):
     """Delete a specific document."""
     try:
+        raise NotImplementedError("delete_document is not implemented")
         service = await get_document_service()
         success = await service.delete_document(document_id)
         if not success:
@@ -85,6 +83,7 @@ async def delete_document(document_id: str):
 async def reingest_documents():
     """Re-process all documents in the knowledge base."""
     try:
+        raise NotImplementedError("reingest_documents is not implemented")
         service = await get_document_service()
         result = await service.reingest_all()
         return {"success": True, **result}
@@ -96,6 +95,7 @@ async def reingest_documents():
 async def reset_knowledge_base():
     """Reset (clear) the entire knowledge base."""
     try:
+        raise NotImplementedError("reset_knowledge_base is not implemented")
         service = await get_document_service()
         result = await service.reset_knowledge_base()
         return {"success": True, **result}
@@ -107,6 +107,7 @@ async def reset_knowledge_base():
 async def get_stats():
     """Get knowledge base statistics."""
     try:
+        raise NotImplementedError("get_stats is not implemented")
         service = await get_document_service()
         stats = await service.get_stats()
         return {"success": True, **stats}
@@ -120,6 +121,7 @@ async def get_stats():
 async def get_page_image(document_id: str, page_number: int):
     """Get a page image as Base64."""
     try:
+        raise NotImplementedError("get_page_image is not implemented")
         vector_store = await get_vector_store()
         image_data = await vector_store.get_page_image(document_id, page_number)
         if not image_data:
@@ -135,6 +137,7 @@ async def get_page_image(document_id: str, page_number: int):
 async def get_page_images(document_id: str, request: PageImagesRequest):
     """Get multiple page images as Base64."""
     try:
+        raise NotImplementedError("get_page_images is not implemented")
         vector_store = await get_vector_store()
         images = await vector_store.get_page_images_for_pages(document_id, request.page_numbers)
         return {"success": True, "images": images}
@@ -146,6 +149,7 @@ async def get_page_images(document_id: str, request: PageImagesRequest):
 async def get_page_images_by_chunk(chunk_id: int):
     """Get page images for a specific chunk by chunk ID."""
     try:
+        raise NotImplementedError("get_page_images_by_chunk is not implemented")
         vector_store = await get_vector_store()
         images = await vector_store.get_page_images_by_chunk_id(chunk_id)
         return {"success": True, "images": images, "count": len(images)}

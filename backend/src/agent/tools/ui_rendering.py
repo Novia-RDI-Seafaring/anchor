@@ -3,16 +3,15 @@ from typing import Any
 
 from ag_ui.core import EventType, StateSnapshotEvent  # type: ignore
 from pydantic_ai._run_context import RunContext
-from pydantic_ai.ag_ui import StateDeps
 from pydantic_ai import ToolReturn
-
+from src.agent.deps import AgentDeps
 from src.core.logging import log_agent_tool_call, log_error
 
 from ..state import RAGState, UIComponentData, UIComponentType
 
 
 async def render_component(
-  ctx: RunContext[StateDeps[RAGState]],
+  ctx: RunContext[AgentDeps],
   component_type: str,
   data: Any,
   metadata: Any = None,

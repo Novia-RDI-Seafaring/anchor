@@ -4,9 +4,9 @@ from pathlib import Path
 from collections.abc import Sequence
 from typing import Optional, Any, TYPE_CHECKING
 
-from .contracts import LlamaIndexStorageBackend, LlamaIndexIngestionHandler, LlamaIndexQueryHandler
 
 if TYPE_CHECKING:
+    from ketju.rag.llama_index.contracts import LlamaIndexIngestionHandler, LlamaIndexQueryHandler, LlamaIndexStorageBackend
     from llama_index.core import StorageContext, VectorStoreIndex
     from llama_index.core.schema import Node
     from llama_index.core.storage.docstore.types import BaseDocumentStore

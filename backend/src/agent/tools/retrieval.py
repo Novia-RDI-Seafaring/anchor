@@ -15,12 +15,6 @@ from ..deps import AgentDeps
 from src.shared.ui_components import determine_component_type
 
 
-def _get_ketju_rag():
-  from src.knowledge_base.ketju_integration import get_ketju_rag
-
-  settings = get_settings()
-  return get_ketju_rag(collection_name=settings.vector_db_collection)
-
 
 async def search_knowledge_base(
   ctx: RunContext[AgentDeps],
@@ -129,7 +123,6 @@ async def get_database_status(ctx: RunContext[AgentDeps]) -> StateSnapshotEvent:
   """Check status via KETJU."""
   log_agent_tool_call("get_database_status", {})
   try:
-    _get_ketju_rag()
     status = "connected"
     ctx.deps.state.vector_db_status = status
     return ToolReturn(
@@ -147,7 +140,7 @@ async def list_documents(ctx: RunContext[AgentDeps]) -> dict[str, Any]:
   """List documents via KETJU or ANCHOR service (shared DB)."""
   log_agent_tool_call("list_documents", {})
   try:
-    from src.knowledge_base.service import get_document_service
+    from src.knowledge_base.service import get_document_service2
 
     service = await get_document_service()
     documents = await service.list_documents()
@@ -163,6 +156,7 @@ async def list_document_toc(
   """Retrieve TOC via KETJU storage."""
   log_agent_tool_call("list_document_toc", {"document_id": document_id})
   try:
+    raise NotImplementedError("list_document_toc is not implemented")
     from src.core.context import get_active_document_id
 
     doc_id = document_id or get_active_document_id()
@@ -203,6 +197,7 @@ async def get_section_content(
       "document_id": document_id,
   })
   try:
+    raise NotImplementedError("get_section_content is not implemented")
     from src.core.context import get_active_document_id
     from src.knowledge_base.service import get_document_service
 

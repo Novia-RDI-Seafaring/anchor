@@ -37,10 +37,9 @@ async def set_active_document(document_id: Optional[str] = None):
 async def get_models():
     """Get available models from configured providers (Azure, Ollama)."""
     try:
-        from src.agent.discovery import get_all_models
         print("API: Fetching models...")
-        models = await get_all_models()
-        print(f"API: Found {len(models)} models: {[m['id'] for m in models]}")
+        import os
+        models = [os.getenv("DEFAULT_MODEL")]
         return {"success": True, "models": models}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -50,7 +49,6 @@ async def get_models():
 async def update_embedding_model(request: UpdateEmbeddingRequest):
     """Update the active embedding model."""
     try:
-        from src.knowledge_base.ketju_integration import configure_llama_index
         
         # Parse model_id which might be "ollama:nomic-embed-text"
         model_name = request.model_id
@@ -60,7 +58,8 @@ async def update_embedding_model(request: UpdateEmbeddingRequest):
                 model_name = model_name.replace("ollama:", "")
         
         # Re-configure global settings
-        configure_llama_index(model_name=model_name, provider=request.provider.lower())
+        raise NotImplementedError("update_embedding_model is not implemented")
+        #configure_llama_index(model_name=model_name, provider=request.provider.lower())
         
         return {"success": True, "message": f"Embedding model updated to {model_name}"}
     except Exception as e:
