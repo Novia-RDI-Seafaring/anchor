@@ -7,8 +7,9 @@ from pathlib import Path
 # pyright: reportMissingTypeStubs=false, reportMissingImports=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownParameterType=false
 
 import uuid
+import re
 from pathlib import Path
-from collections.abc import Sequence
+from typing import List
 
 from docling_core.types import DoclingDocument as DLDocument
 from llama_index.core.ingestion import IngestionPipeline
@@ -27,6 +28,24 @@ def gen_id(doc: DLDocument, file_path: str | Path) -> str:
 
 class IngestionHandler(DoclingFullCtxIngestionHandler):
 
+    def _extract_highlight_phrases(self, text: str, max_count: int = 12) -> List[str]:
+        if not text:
+            return []
+        # Split on sentence boundaries and keep useful short phrases.
+        chunks = [c.strip() for c in re.split(r"[.;\n]+", text) if c.strip()]
+        phrases: List[str] = []
+        seen = set()
+        for chunk in chunks:
+            if len(chunk) < 4 or len(chunk) > 120:
+                continue
+            if chunk.lower() in seen:
+                continue
+            seen.add(chunk.lower())
+            phrases.append(chunk)
+            if len(phrases) >= max_count:
+                break
+        return phrases
+
     def _ingest_file(self, rag: LlamaIndexRag, file: Path) -> int:
         reader = DoclingReader(export_type=DoclingReader.ExportType.JSON, id_func=gen_id)
         documents = reader.load_data(file)
@@ -44,6 +63,17 @@ class IngestionHandler(DoclingFullCtxIngestionHandler):
             vector_store=rag.vector_store,
         )
         nodes = list(pipeline.run())
+
+        for node in nodes:
+            node.metadata.setdefault("filepath", str(file))
+            node_text = str(getattr(node, "text", "") or "")
+            phrases = self._extract_highlight_phrases(node_text)
+            if phrases:
+                node.metadata["highlight_phrases"] = phrases
+                if hasattr(node, "excluded_embed_metadata_keys"):
+                    node.excluded_embed_metadata_keys.append("highlight_phrases")
+                if hasattr(node, "excluded_llm_metadata_keys"):
+                    node.excluded_llm_metadata_keys.append("highlight_phrases")
         
         if nodes:
             rag.vector_index.insert_nodes(nodes)

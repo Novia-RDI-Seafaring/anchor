@@ -66,6 +66,51 @@ def _docling_bbox_to_image_coords(
     return x0, y0, x1, y1
 
 
+def _phrase_box_specs(page: Any, phrases: Sequence[str], max_matches_per_phrase: int = 10) -> List[Dict[str, Any]]:
+    specs: List[Dict[str, Any]] = []
+    if not phrases:
+        return specs
+
+    text_page = page.get_textpage()
+    try:
+        for phrase in phrases:
+            phrase_clean = phrase.strip()
+            if not phrase_clean:
+                continue
+
+            searcher = text_page.search(phrase_clean, match_case=False)
+            matches = 0
+            while True:
+                found = searcher.get_next()
+                if found is None:
+                    break
+                start_idx, count = found
+                rect_count = text_page.count_rects(start_idx, count)
+                for i in range(rect_count):
+                    left, bottom, right, top = text_page.get_rect(i)
+                    specs.append(
+                        {
+                            "bbox": {
+                                "l": float(left),
+                                "r": float(right),
+                                "t": float(top),
+                                "b": float(bottom),
+                                "coord_origin": "BOTTOMLEFT",
+                            },
+                            "_score": 1.0,
+                            "_phrase": phrase_clean,
+                            "_style": "underline",
+                        }
+                    )
+                matches += 1
+                if matches >= max_matches_per_phrase:
+                    break
+    finally:
+        text_page.close()
+
+    return specs
+
+
 def _draw_boxes(
     image: Image.Image,
     page: Any,
@@ -94,18 +139,35 @@ def _draw_boxes(
             image_w=image.width,
             image_h=image.height,
         )
-        draw.rectangle(
-            [x0, y0, x1, y1],
-            outline=(255, 0, 0, outline_alpha),
-            fill=(255, 0, 0, fill_alpha),
-            width=width,
-        )
+        style = str(spec.get("_style", "box"))
+        if style == "underline":
+            # Draw highlight + underline to emphasize matched phrase.
+            draw.rectangle(
+                [x0, y0, x1, y1],
+                outline=None,
+                fill=(255, 235, 59, min(160, fill_alpha)),
+                width=1,
+            )
+            underline_y = y1
+            draw.line(
+                [(x0, underline_y), (x1, underline_y)],
+                fill=(255, 0, 0, outline_alpha),
+                width=max(2, width),
+            )
+        else:
+            draw.rectangle(
+                [x0, y0, x1, y1],
+                outline=(255, 0, 0, outline_alpha),
+                fill=(255, 0, 0, fill_alpha),
+                width=width,
+            )
 
 
 def _render_page_with_provs(
     pdf_path: Path,
     page_nr: int,
     box_specs: Sequence[Dict[str, Any]],
+    phrases: Sequence[str] | None = None,
     scale: int = 2,
 ) -> Image.Image:
     try:
@@ -114,7 +176,10 @@ def _render_page_with_provs(
             page = pdf[page_nr - 1]  # Docling page numbering is 1-indexed.
             bitmap: Any = page.render(scale=scale)
             image: Image.Image = bitmap.to_pil()
-            _draw_boxes(image=image, page=page, box_specs=box_specs)
+            merged_specs = list(box_specs)
+            if phrases:
+                merged_specs.extend(_phrase_box_specs(page=page, phrases=phrases))
+            _draw_boxes(image=image, page=page, box_specs=merged_specs)
             return image
         finally:
             pdf.close()
@@ -142,6 +207,8 @@ def _render_node_image(
     scale: int = 2,
     page_no: int | None = None,
     relevance_weighted: bool = True,
+    phrases: Sequence[str] | None = None,
+    use_metadata_phrases: bool = True,
 ) -> Image.Image:
     file = Path(str(self.metadata.get("filepath")))
     provs = _iter_provs(self)
@@ -160,7 +227,23 @@ def _render_node_image(
         spec["_score"] = score
         page_specs.append(spec)
 
-    return _render_page_with_provs(pdf_path=file, page_nr=target_page, box_specs=page_specs, scale=scale)
+    phrase_list: List[str] = []
+    if phrases:
+        phrase_list.extend([p for p in phrases if p])
+    if use_metadata_phrases:
+        meta_phrases = self.metadata.get("highlight_phrases", [])
+        if isinstance(meta_phrases, list):
+            for item in meta_phrases:
+                if isinstance(item, str) and item.strip():
+                    phrase_list.append(item.strip())
+
+    return _render_page_with_provs(
+        pdf_path=file,
+        page_nr=target_page,
+        box_specs=page_specs,
+        phrases=phrase_list,
+        scale=scale,
+    )
 
 
 def render_nodes_to_image(
@@ -168,6 +251,8 @@ def render_nodes_to_image(
     scale: int = 2,
     page_no: int | None = None,
     relevance_weighted: bool = True,
+    phrases: Sequence[str] | None = None,
+    use_metadata_phrases: bool = True,
 ) -> Image.Image:
     if not nodes:
         raise ValueError("nodes must contain at least one NodeWithScore")
@@ -188,7 +273,24 @@ def render_nodes_to_image(
         target_page = int(all_specs[0].get("page_no", 1)) if all_specs else 1
 
     page_specs = [s for s in all_specs if int(s.get("page_no", target_page)) == target_page]
-    return _render_page_with_provs(pdf_path=file, page_nr=target_page, box_specs=page_specs, scale=scale)
+    phrase_list: List[str] = []
+    if phrases:
+        phrase_list.extend([p for p in phrases if p])
+    if use_metadata_phrases:
+        for node in nodes:
+            meta_phrases = node.metadata.get("highlight_phrases", [])
+            if isinstance(meta_phrases, list):
+                for item in meta_phrases:
+                    if isinstance(item, str) and item.strip():
+                        phrase_list.append(item.strip())
+
+    return _render_page_with_provs(
+        pdf_path=file,
+        page_nr=target_page,
+        box_specs=page_specs,
+        phrases=phrase_list,
+        scale=scale,
+    )
 
 
 def render_nodes_to_image_bytes(
@@ -196,12 +298,16 @@ def render_nodes_to_image_bytes(
     scale: int = 2,
     page_no: int | None = None,
     relevance_weighted: bool = True,
+    phrases: Sequence[str] | None = None,
+    use_metadata_phrases: bool = True,
 ) -> bytes:
     image = render_nodes_to_image(
         nodes=nodes,
         scale=scale,
         page_no=page_no,
         relevance_weighted=relevance_weighted,
+        phrases=phrases,
+        use_metadata_phrases=use_metadata_phrases,
     )
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=True)
@@ -213,8 +319,17 @@ def _to_image(
     scale: int = 2,
     page_no: int | None = None,
     relevance_weighted: bool = True,
+    phrases: Sequence[str] | None = None,
+    use_metadata_phrases: bool = True,
 ) -> Image.Image:
-    return _render_node_image(self, scale=scale, page_no=page_no, relevance_weighted=relevance_weighted)
+    return _render_node_image(
+        self,
+        scale=scale,
+        page_no=page_no,
+        relevance_weighted=relevance_weighted,
+        phrases=phrases,
+        use_metadata_phrases=use_metadata_phrases,
+    )
 
 
 def _to_image_bytes(
@@ -222,12 +337,16 @@ def _to_image_bytes(
     scale: int = 2,
     page_no: int | None = None,
     relevance_weighted: bool = True,
+    phrases: Sequence[str] | None = None,
+    use_metadata_phrases: bool = True,
 ) -> bytes:
     image = _render_node_image(
         self,
         scale=scale,
         page_no=page_no,
         relevance_weighted=relevance_weighted,
+        phrases=phrases,
+        use_metadata_phrases=use_metadata_phrases,
     )
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=True)
