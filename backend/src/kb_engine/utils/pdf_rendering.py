@@ -127,10 +127,9 @@ def _draw_boxes(
         score = float(spec.get("_score", 1.0))
         score = max(0.0, min(1.0, score))
 
-        # Higher score => stronger visual emphasis.
-        fill_alpha = int(30 + score * 140)      # 30..170
-        outline_alpha = int(120 + score * 135)  # 120..255
-        width = max(2, int(2 + score * 4))      # 2..6
+        fill_alpha = int(30 + score * 140)
+        outline_alpha = int(120 + score * 135)
+        width = max(2, int(2 + score * 4))
 
         x0, y0, x1, y1 = _docling_bbox_to_image_coords(
             bbox=bbox,
@@ -141,7 +140,6 @@ def _draw_boxes(
         )
         style = str(spec.get("_style", "box"))
         if style == "underline":
-            # Draw highlight + underline to emphasize matched phrase.
             draw.rectangle(
                 [x0, y0, x1, y1],
                 outline=None,
@@ -163,24 +161,49 @@ def _draw_boxes(
             )
 
 
+def _crop_image_by_bbox(
+    image: Image.Image,
+    page_w: float,
+    page_h: float,
+    crop_bbox: Dict[str, Any] | None,
+) -> Image.Image:
+    if not crop_bbox:
+        return image
+
+    x0, y0, x1, y1 = _docling_bbox_to_image_coords(
+        bbox=crop_bbox,
+        page_w=page_w,
+        page_h=page_h,
+        image_w=image.width,
+        image_h=image.height,
+    )
+    left = int(max(0, min(image.width - 1, round(x0))))
+    top = int(max(0, min(image.height - 1, round(y0))))
+    right = int(max(left + 1, min(image.width, round(x1))))
+    bottom = int(max(top + 1, min(image.height, round(y1))))
+    return image.crop((left, top, right, bottom))
+
+
 def _render_page_with_provs(
     pdf_path: Path,
     page_nr: int,
     box_specs: Sequence[Dict[str, Any]],
     phrases: Sequence[str] | None = None,
+    crop_bbox: Dict[str, Any] | None = None,
     scale: int = 2,
 ) -> Image.Image:
     try:
         pdf = pdfium.PdfDocument(str(pdf_path))
         try:
-            page = pdf[page_nr - 1]  # Docling page numbering is 1-indexed.
+            page = pdf[page_nr - 1]
             bitmap: Any = page.render(scale=scale)
             image: Image.Image = bitmap.to_pil()
             merged_specs = list(box_specs)
             if phrases:
                 merged_specs.extend(_phrase_box_specs(page=page, phrases=phrases))
             _draw_boxes(image=image, page=page, box_specs=merged_specs)
-            return image
+            page_w, page_h = page.get_size()
+            return _crop_image_by_bbox(image=image, page_w=page_w, page_h=page_h, crop_bbox=crop_bbox)
         finally:
             pdf.close()
     except Exception:
@@ -202,23 +225,23 @@ def _node_score(node: NodeWithScore) -> float:
     return max(0.0, min(1.0, score))
 
 
-def _render_node_image(
-    self: NodeWithScore,
+def render_node_to_image(
+    node: NodeWithScore,
     scale: int = 2,
     page_no: int | None = None,
     relevance_weighted: bool = True,
     phrases: Sequence[str] | None = None,
     use_metadata_phrases: bool = True,
 ) -> Image.Image:
-    file = Path(str(self.metadata.get("filepath")))
-    provs = _iter_provs(self)
+    file = Path(str(node.metadata.get("filepath")))
+    provs = _iter_provs(node)
 
     if page_no is not None:
         target_page = page_no
     else:
         target_page = int(provs[0].get("page_no", 1)) if provs else 1
 
-    score = _node_score(self) if relevance_weighted else 1.0
+    score = _node_score(node) if relevance_weighted else 1.0
     page_specs = []
     for prov in provs:
         if int(prov.get("page_no", target_page)) != target_page:
@@ -231,7 +254,7 @@ def _render_node_image(
     if phrases:
         phrase_list.extend([p for p in phrases if p])
     if use_metadata_phrases:
-        meta_phrases = self.metadata.get("highlight_phrases", [])
+        meta_phrases = node.metadata.get("highlight_phrases", [])
         if isinstance(meta_phrases, list):
             for item in meta_phrases:
                 if isinstance(item, str) and item.strip():
@@ -242,8 +265,30 @@ def _render_node_image(
         page_nr=target_page,
         box_specs=page_specs,
         phrases=phrase_list,
+        crop_bbox=None,
         scale=scale,
     )
+
+
+def render_node_to_image_bytes(
+    node: NodeWithScore,
+    scale: int = 2,
+    page_no: int | None = None,
+    relevance_weighted: bool = True,
+    phrases: Sequence[str] | None = None,
+    use_metadata_phrases: bool = True,
+) -> bytes:
+    image = render_node_to_image(
+        node=node,
+        scale=scale,
+        page_no=page_no,
+        relevance_weighted=relevance_weighted,
+        phrases=phrases,
+        use_metadata_phrases=use_metadata_phrases,
+    )
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG", optimize=True)
+    return buffer.getvalue()
 
 
 def render_nodes_to_image(
@@ -289,6 +334,7 @@ def render_nodes_to_image(
         page_nr=target_page,
         box_specs=page_specs,
         phrases=phrase_list,
+        crop_bbox=None,
         scale=scale,
     )
 
@@ -314,44 +360,37 @@ def render_nodes_to_image_bytes(
     return buffer.getvalue()
 
 
-def _to_image(
-    self: NodeWithScore,
-    scale: int = 2,
-    page_no: int | None = None,
-    relevance_weighted: bool = True,
+def render_pdf_page_to_image(
+    pdf_path: Path | str,
+    page_no: int = 1,
     phrases: Sequence[str] | None = None,
-    use_metadata_phrases: bool = True,
+    crop_bbox: Dict[str, Any] | None = None,
+    scale: int = 2,
 ) -> Image.Image:
-    return _render_node_image(
-        self,
-        scale=scale,
-        page_no=page_no,
-        relevance_weighted=relevance_weighted,
+    return _render_page_with_provs(
+        pdf_path=Path(pdf_path),
+        page_nr=page_no,
+        box_specs=[],
         phrases=phrases,
-        use_metadata_phrases=use_metadata_phrases,
+        crop_bbox=crop_bbox,
+        scale=scale,
     )
 
 
-def _to_image_bytes(
-    self: NodeWithScore,
-    scale: int = 2,
-    page_no: int | None = None,
-    relevance_weighted: bool = True,
+def render_pdf_page_to_image_bytes(
+    pdf_path: Path | str,
+    page_no: int = 1,
     phrases: Sequence[str] | None = None,
-    use_metadata_phrases: bool = True,
+    crop_bbox: Dict[str, Any] | None = None,
+    scale: int = 2,
 ) -> bytes:
-    image = _render_node_image(
-        self,
-        scale=scale,
+    image = render_pdf_page_to_image(
+        pdf_path=pdf_path,
         page_no=page_no,
-        relevance_weighted=relevance_weighted,
         phrases=phrases,
-        use_metadata_phrases=use_metadata_phrases,
+        crop_bbox=crop_bbox,
+        scale=scale,
     )
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=True)
     return buffer.getvalue()
-
-
-NodeWithScore.to_image = _to_image  # type: ignore[attr-defined]
-NodeWithScore.to_image_bytes = _to_image_bytes  # type: ignore[attr-defined]

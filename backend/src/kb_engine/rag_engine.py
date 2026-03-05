@@ -37,6 +37,9 @@ class RagEngine(LlamaIndexRag):
         for f in files[:max_files] if files else [] : self.ingested_files.add(str(f))
         return l
     
+    @property
+    def docstore(self) -> 'BaseDocumentStore':
+        return self.vector_index.storage_context.docstore
 
     def get_document(self, document_id: str):
         retirever = self.vector_index.as_retriever()

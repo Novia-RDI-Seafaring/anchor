@@ -104,6 +104,15 @@ class FileService:
         if not is_pdf_mime and not has_pdf_signature:
             raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
+    def get_file_path(self, filename: str) -> Path:
+        if filename.startswith("/"): raise HTTPException(status_code=400, detail="not found")
+        if ".." in filename: raise HTTPException(status_code=400, detail="not found")
+        if not filename.endswith(".pdf"): raise HTTPException(status_code=400, detail="not found")
+        path = self.uploads_folder / filename
+        if not path.exists(): raise HTTPException(status_code=400, detail="not found")
+        return path
+
+
     def _write_and_track(
         self,
         *,

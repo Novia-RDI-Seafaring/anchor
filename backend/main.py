@@ -2,12 +2,14 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.kb_engine.patches import *
+
 from src.core import logging # Initialize Logfire early
 from src.agent.agent import agent, AgentDeps
 from src.agent.state import RAGState
 from src.core.config import get_settings
 from src.core.context import set_current_model_id
-from src.api import documents_router, search_router, config_router
+from src.api import documents_router, search_router, config_router, file_provider_router
 from src.observability.langfuse.config import init_langfuse
 from src.kb_engine.rag_engine import get_rag_engine
 
@@ -46,6 +48,7 @@ app.mount("/agent", ag_ui_app)
 app.include_router(documents_router)
 app.include_router(search_router)
 app.include_router(config_router)
+app.include_router(file_provider_router)
 
 
 # ===== Health Check =====
