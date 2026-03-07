@@ -12,6 +12,7 @@ from .ingest import IngestionHandler
 from .pgvector import StorageBackend
 from .query import QueryHandler
 from logging import getLogger
+from src.core.config import get_settings
 logger = getLogger(__name__)
 import os
 from typing import Dict, Any, List, Sequence
@@ -86,16 +87,34 @@ def get_rag_engine() -> RagEngine:
             from llama_index.core import Settings
             from llama_index.embeddings.openai import OpenAIEmbedding
             from llama_index.llms.openai import OpenAI
-            Settings.embed_model = OpenAIEmbedding(model="text-embedding-3-large")
+            settings = get_settings()
+
+            embedding_model_id = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
+            # ### Modify to restore 3072 compatibility ##
+            # Why: your existing pgvector table is vector(3072), so runtime embeddings must also be 3072.
+            embedding_dim = 3072
+            Settings.embed_model = OpenAIEmbedding(
+                model=embedding_model_id,
+            )
             Settings.llm = OpenAI(model="gpt-4o-mini")
-            db_url = f"postgresql://{os.getenv('PGVECTOR_USER')}:{os.getenv('PGVECTOR_PASSWORD')}@{os.getenv('PGVECTOR_HOST')}:{os.getenv('PGVECTOR_PORT')}/{os.getenv('PGVECTOR_DB')}"
+            db_url = settings.database_url
+
+            storage_backend = PgVectorStorageBackend(
+                database_url=db_url,
+                embed_dim=embedding_dim,
+            )
+            # ### Modify to disable HNSW when using 3072 ##
+            # Why: pgvector HNSW cannot index vectors above 2000 dimensions.
+            if embedding_dim > 2000:
+                storage_backend.hnsw_kwargs = None
+
             _rag_engine = RagEngine(
                 name="anchor_rag5",
                 persist_dir=Path(tmpdir),
                 query_handler=QueryHandler(),
                 ingestion_handler=IngestionHandler(),
-                embedding_model="text-embedding-3-large",
-                storage_backend=PgVectorStorageBackend(database_url=db_url, embed_dim=3072),
+                embedding_model=embedding_model_id,
+                storage_backend=storage_backend,
             )
     return _rag_engine
 

@@ -6,15 +6,17 @@ from typing import Any
 import os
 
 # Configure Logfire
-logfire_token = os.getenv("LOGFIRE_TOKEN")
-if logfire_token and logfire_token != "None":
-    logfire.configure(token=logfire_token, scrubbing=False)
-    print("Logfire configured")
+logfire_token = (os.getenv("LOGFIRE_TOKEN") or "").strip()
+if logfire_token and logfire_token.lower() != "none":
+    # ### Modify to use explicit token only ##
+    # Why: avoids accidentally picking stale local credentials and producing 401 export noise.
+    logfire.configure(token=logfire_token, scrubbing=False, send_to_logfire=True)
+    print("Logfire configured (remote export enabled)")
 else:
-    # Development mode - log to console
-    # Configure Logfire - always use console mode for now [TO BE REMOVE LATER]
-    logfire.configure()
-    print("Logfire not configured")
+    # ### Modify to local-only mode ##
+    # Why: with no valid token, Logfire defaults can still attempt remote export and spam 401 warnings.
+    logfire.configure(send_to_logfire=False)
+    print("Logfire local-only mode (remote export disabled)")
 
 # Instrument Pydantic AI for automatic LLM tracking
 logfire.instrument_pydantic_ai()
