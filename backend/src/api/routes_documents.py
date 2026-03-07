@@ -1,7 +1,7 @@
 """Document management API routes."""
 import os
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Query
 from typing import Optional
 
 from src.knowledge_base.doc_service2 import get_document_service2
@@ -121,7 +121,7 @@ async def get_stats():
 async def get_page_image(document_id: str, page_number: int):
     """Get a page image as Base64."""
     try:
-        raise NotImplementedError("get_page_image is not implemented")
+        # ### I ADDED THIS IMPLEMENTATION###
         vector_store = await get_vector_store()
         image_data = await vector_store.get_page_image(document_id, page_number)
         if not image_data:
@@ -137,7 +137,7 @@ async def get_page_image(document_id: str, page_number: int):
 async def get_page_images(document_id: str, request: PageImagesRequest):
     """Get multiple page images as Base64."""
     try:
-        raise NotImplementedError("get_page_images is not implemented")
+        # ### I ADDED THIS IMPLEMENTATION###
         vector_store = await get_vector_store()
         images = await vector_store.get_page_images_for_pages(document_id, request.page_numbers)
         return {"success": True, "images": images}
@@ -147,12 +147,35 @@ async def get_page_images(document_id: str, request: PageImagesRequest):
 
 @router.get("/chunks/{chunk_id}/pages/images")
 async def get_page_images_by_chunk(chunk_id: int):
-    """Get page images for a specific chunk by chunk ID."""
+    """Get page images for a specific chunk by chunk ID with page/bbox provenance fields."""
     try:
-        raise NotImplementedError("get_page_images_by_chunk is not implemented")
+        # ### I ADDED THIS IMPLEMENTATION###
         vector_store = await get_vector_store()
         images = await vector_store.get_page_images_by_chunk_id(chunk_id)
         return {"success": True, "images": images, "count": len(images)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/chunks/{chunk_id}/citation/image")
+async def get_chunk_citation_image(
+    chunk_id: int,
+    page: Optional[int] = Query(None, ge=1, description="Optional 1-indexed page number override"),
+):
+    """
+    Agent-aligned chunk citation route.
+
+    Returns: {document_id, filename, page, bbox, image}
+    """
+    try:
+        # ### I ADDED THIS IMPLEMENTATION###
+        vector_store = await get_vector_store()
+        payload = await vector_store.get_chunk_citation_image(chunk_id=chunk_id, page_number=page)
+        if not payload:
+            raise HTTPException(status_code=404, detail="Chunk citation image not found")
+        return {"success": True, **payload}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
  
