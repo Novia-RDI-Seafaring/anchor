@@ -8,6 +8,8 @@ from __future__ import annotations
 from typing import Any, Literal
 from uuid import uuid4
 
+NodeStatus = Literal["pending", "searching", "found", "partial", "not_found"]
+
 from pydantic import BaseModel, Field
 # Re-export UI component types from shared module (single source of truth)
 from src.shared.ui_components import UIComponentType, UIComponentData
@@ -18,9 +20,16 @@ class SourceHighlight(BaseModel):
     bbox: list[int] = Field(default_factory=list)  # [l, t, r, b]
 
 
+class SpecProperty(BaseModel):
+    key: str
+    value: str
+    unit: str = ""
+
+
 class CanvasNode(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
-    node_type: Literal["topic", "fact", "source"]
+    node_type: Literal["topic", "fact", "source", "spec"]
+    status: NodeStatus = "pending"
     # topic fields
     title: str = ""
     # fact fields
@@ -30,6 +39,9 @@ class CanvasNode(BaseModel):
     page: int = 0                                        # primary / first page (legacy)
     bbox: list[int] = Field(default_factory=list)        # primary bbox (legacy)
     highlights: list[SourceHighlight] = Field(default_factory=list)  # ordered list of page+bbox refs
+    # spec fields
+    spec_title: str = ""
+    properties: list[SpecProperty] = Field(default_factory=list)
 
 
 class Relation(BaseModel):
@@ -79,4 +91,4 @@ class RAGState(BaseModel):
     )
 
 
-__all__ = ["RAGState", "UIComponentData", "UIComponentType", "Canvas", "CanvasNode", "Relation", "SourceHighlight"]
+__all__ = ["RAGState", "UIComponentData", "UIComponentType", "Canvas", "CanvasNode", "Relation", "SourceHighlight", "SpecProperty", "NodeStatus"]

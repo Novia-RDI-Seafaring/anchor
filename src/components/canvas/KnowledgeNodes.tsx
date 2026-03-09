@@ -10,21 +10,61 @@ import {
   ChevronUp,
   ChevronsDownUp,
   ChevronsUpDown,
+  Table2,
+  CheckCircle2,
+  XCircle,
+  CircleDashed,
+  CircleAlert,
 } from "lucide-react";
 import type { PDFHighlight } from "./PDFModal";
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
 
+// --- Status badge ---
+type NodeStatus = "pending" | "searching" | "found" | "partial" | "not_found";
+
+function StatusBadge({ status }: { status?: NodeStatus }) {
+  if (!status || status === "found") {
+    return <CheckCircle2 size={12} className="text-emerald-500 shrink-0" />;
+  }
+  if (status === "pending") {
+    return (
+      <span className="shrink-0 inline-block w-3 h-3 rounded-full bg-amber-400 animate-pulse" />
+    );
+  }
+  if (status === "searching") {
+    return (
+      <span className="shrink-0 inline-block w-3 h-3 rounded-full bg-blue-400 animate-ping" />
+    );
+  }
+  if (status === "partial") {
+    return <CircleAlert size={12} className="text-orange-400 shrink-0" />;
+  }
+  if (status === "not_found") {
+    return <XCircle size={12} className="text-red-500 shrink-0" />;
+  }
+  return <CircleDashed size={12} className="text-neutral-400 shrink-0" />;
+}
+
 // --- Shared types (mirror backend CanvasNode) ---
+export interface SpecProperty {
+  key: string;
+  value: string;
+  unit?: string;
+}
+
 export interface CanvasNodeData {
   id: string;
-  node_type: "topic" | "fact" | "source";
+  node_type: "topic" | "fact" | "source" | "spec";
+  status?: NodeStatus;
   title?: string;
   text?: string;
   filename?: string;
   page?: number;
   bbox?: number[];
   highlights?: PDFHighlight[]; // ordered list of page+bbox refs for this source
+  spec_title?: string;
+  properties?: SpecProperty[];
 }
 
 export interface TopicNodeData {
@@ -44,6 +84,10 @@ export interface FactNodeData {
 export interface SourceNodeData {
   node: CanvasNodeData;
   onOpenPDF: (filename: string, page: number, highlights: PDFHighlight[]) => void;
+}
+
+export interface SpecNodeData {
+  node: CanvasNodeData;
 }
 
 // --- URL helpers ---
@@ -72,6 +116,7 @@ export function TopicNode({ data }: NodeProps) {
           <p className="flex-1 text-sm font-bold text-amber-900 dark:text-amber-100 leading-snug break-words whitespace-normal">
             {node.title}
           </p>
+          <StatusBadge status={node.status} />
           <button
             onClick={() => onToggleCollapse(node.id)}
             className="shrink-0 p-0.5 rounded hover:bg-amber-200 dark:hover:bg-amber-800/60 text-amber-600 dark:text-amber-400 transition-colors"
@@ -119,9 +164,14 @@ export function FactNode({ data }: NodeProps) {
         {/* Text row */}
         <div className="flex items-start gap-2 px-3 py-2.5">
           <MessageSquare size={13} className="text-indigo-400 dark:text-indigo-500 shrink-0 mt-0.5" />
-          <p className="flex-1 text-xs text-neutral-800 dark:text-neutral-200 leading-relaxed break-words whitespace-normal">
+          <p className={`flex-1 text-xs leading-relaxed break-words whitespace-normal ${
+            node.status === "pending" || node.status === "searching"
+              ? "text-neutral-400 dark:text-neutral-500 italic"
+              : "text-neutral-800 dark:text-neutral-200"
+          }`}>
             {node.text}
           </p>
+          <StatusBadge status={node.status} />
           {sources.length > 0 && (
             <button
               onClick={() => setExpanded((e) => !e)}
@@ -164,6 +214,60 @@ export function FactNode({ data }: NodeProps) {
         )}
       </div>
       <Handle type="source" position={Position.Bottom} className="!bg-indigo-400 !border-indigo-600" />
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────
+// SPEC NODE — violet, two-column property table
+// ─────────────────────────────────────────────
+export function SpecNode({ data }: NodeProps) {
+  const { node } = data as unknown as SpecNodeData;
+  const props = node.properties ?? [];
+
+  return (
+    <>
+      <Handle type="target" position={Position.Top} className="!bg-violet-400 !border-violet-600" />
+      <div
+        className="rounded-lg border border-violet-200 dark:border-violet-700 bg-white dark:bg-neutral-900 shadow-sm overflow-hidden"
+        style={{ borderLeft: "4px solid rgb(139 92 246)", minWidth: 180, maxWidth: 300 }}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-1.5 px-3 py-2 bg-violet-50 dark:bg-violet-950/40 border-b border-violet-100 dark:border-violet-800">
+          <Table2 size={12} className="text-violet-500 shrink-0" />
+          <span className="flex-1 text-xs font-semibold text-violet-800 dark:text-violet-200 truncate">
+            {node.spec_title || "Specifications"}
+          </span>
+          <StatusBadge status={node.status} />
+        </div>
+        {/* Property rows */}
+        {props.length > 0 ? (
+          <table className="w-full text-[11px] border-collapse">
+            <tbody>
+              {props.map((p, i) => (
+                <tr
+                  key={i}
+                  className={i % 2 === 0 ? "bg-white dark:bg-neutral-900" : "bg-violet-50/50 dark:bg-violet-950/20"}
+                >
+                  <td className="px-2.5 py-1 text-neutral-500 dark:text-neutral-400 font-medium whitespace-nowrap border-r border-violet-100 dark:border-violet-800/50 max-w-[120px] truncate">
+                    {p.key}
+                  </td>
+                  <td className="px-2.5 py-1 text-neutral-800 dark:text-neutral-200 font-mono">
+                    {p.value}{p.unit ? <span className="text-neutral-400 ml-1">{p.unit}</span> : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : node.status === "pending" || node.status === "searching" ? (
+          <p className="px-3 py-2.5 text-[11px] text-violet-400 dark:text-violet-500 italic">
+            {node.status === "searching" ? "Extracting data…" : "Waiting to search…"}
+          </p>
+        ) : (
+          <p className="px-3 py-2 text-xs text-neutral-400 italic">No properties</p>
+        )}
+      </div>
+      <Handle type="source" position={Position.Bottom} className="!bg-violet-400 !border-violet-600" />
     </>
   );
 }

@@ -17,6 +17,7 @@ import {
   TopicNode,
   FactNode,
   SourceNode,
+  SpecNode,
   type CanvasNodeData,
 } from "./KnowledgeNodes";
 import { PDFModal, type PDFHighlight } from "./PDFModal";
@@ -43,6 +44,7 @@ interface PDFModalState {
 const TOPIC_W = 220;
 const FACT_W  = 220;
 const SRC_W   = 160;
+const SPEC_W  = 220;
 const H_GAP   = 24;
 const TOPIC_Y = 0;
 const FACT_Y  = 180;
@@ -70,7 +72,7 @@ function computeLayout(
 
   for (const topic of topics) {
     const factIds = (childrenOf.get(topic.id) ?? []).filter(
-      (id) => nodeMap.get(id)?.node_type === "fact"
+      (id) => nodeMap.get(id)?.node_type === "fact" || nodeMap.get(id)?.node_type === "spec"
     );
 
     if (factIds.length === 0) {
@@ -85,7 +87,7 @@ function computeLayout(
 
     for (const factId of factIds) {
       const srcIds = (childrenOf.get(factId) ?? []).filter(
-        (id) => nodeMap.get(id)?.node_type === "source"
+        (id) => ["source", "spec"].includes(nodeMap.get(id)?.node_type ?? "")
       );
       const neededW = Math.max(FACT_W, srcIds.length * (SRC_W + H_GAP) - H_GAP);
 
@@ -111,12 +113,14 @@ function computeLayout(
     cursorX = factCursorX + 20;
   }
 
-  // Orphan facts / sources
+  // Orphan facts / sources / specs
   for (const n of nodes) {
     if (!positioned.has(n.id)) {
-      const y = n.node_type === "fact" ? FACT_Y : n.node_type === "source" ? SRC_Y : TOPIC_Y;
+      const y = n.node_type === "fact" ? FACT_Y
+              : n.node_type === "source" || n.node_type === "spec" ? SRC_Y
+              : TOPIC_Y;
       pos[n.id] = { x: cursorX, y };
-      cursorX += (n.node_type === "source" ? SRC_W : FACT_W) + H_GAP;
+      cursorX += (n.node_type === "source" ? SRC_W : n.node_type === "spec" ? SPEC_W : FACT_W) + H_GAP;
     }
   }
 
@@ -147,6 +151,7 @@ const nodeTypes: NodeTypes = {
   topicNode: TopicNode,
   factNode: FactNode,
   sourceNode: SourceNode,
+  specNode: SpecNode,
 };
 
 // --- Main component ---
@@ -191,12 +196,12 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
     // Compute hidden nodes from collapsed topics
     const hiddenIds = descendants([...collapsedIds], childrenOf);
 
-    // For each fact, pre-compute its connected source nodes
+    // For each fact, pre-compute its connected source nodes (source + spec treated as leaf evidence)
     const factSources = new Map<string, CanvasNodeData[]>();
     for (const r of relations) {
       const from = nodeMap.get(r.from_id);
       const to = nodeMap.get(r.to_id);
-      if (from?.node_type === "fact" && to?.node_type === "source") {
+      if (from?.node_type === "fact" && (to?.node_type === "source" || to?.node_type === "spec")) {
         const arr = factSources.get(r.from_id) ?? [];
         arr.push(to);
         factSources.set(r.from_id, arr);
@@ -243,6 +248,13 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
           },
         };
       }
+      if (n.node_type === "spec") {
+        return {
+          ...base,
+          type: "specNode",
+          data: { node: n },
+        };
+      }
       // source — highlights come directly from node.highlights
       return {
         ...base,
@@ -261,6 +273,7 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
       // Edge style by relationship type
       const isTopicFact = fromNode?.node_type === "topic" && toNode?.node_type === "fact";
       const isFactSrc   = fromNode?.node_type === "fact"  && toNode?.node_type === "source";
+      const isSpec      = toNode?.node_type === "spec";
 
       return {
         id: `e-${idx}`,
@@ -271,9 +284,9 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
         hidden: hiddenIds.has(r.from_id) || hiddenIds.has(r.to_id),
         animated: isTopicFact,
         style: {
-          stroke: isTopicFact ? "#f59e0b" : isFactSrc ? "#6366f1" : "#14b8a6",
+          stroke: isTopicFact ? "#f59e0b" : isSpec ? "#8b5cf6" : isFactSrc ? "#6366f1" : "#14b8a6",
           strokeWidth: isTopicFact ? 2 : 1.5,
-          strokeDasharray: isFactSrc ? "4 3" : undefined,
+          strokeDasharray: isFactSrc || isSpec ? "4 3" : undefined,
         },
         labelStyle: { fill: "#6366f1", fontWeight: 500, fontSize: 10 },
         labelBgStyle: { fill: "#f5f3ff", fillOpacity: 0.9 },
