@@ -85,11 +85,21 @@ def serve_pdf(
 @router.get("/documents/pdf/info")
 def get_pdf_info(
     filename: str = Query(..., description="Filename of the PDF"),
+    page_no: int = Query(1, description="1-indexed page number for dimensions"),
 ):
-    """Return basic PDF metadata (page count)."""
+    """Return basic PDF metadata (page count and page dimensions in PDF points)."""
     import pypdfium2 as pdfium  # type: ignore
     path = get_file_service().get_file_path(filename)
     doc = pdfium.PdfDocument(str(path))
     page_count = len(doc)
+    # Get dimensions of the requested page (1-indexed)
+    idx = max(0, min(page_no - 1, page_count - 1))
+    page = doc[idx]
+    page_w, page_h = page.get_size()
     doc.close()
-    return {"filename": filename, "page_count": page_count}
+    return {
+        "filename": filename,
+        "page_count": page_count,
+        "page_width_pt": page_w,
+        "page_height_pt": page_h,
+    }

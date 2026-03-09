@@ -39,12 +39,14 @@ function BboxOverlays({
     <>
       {highlights.map((h, i) => {
         const [l = 0, t = 0, r = 0, b = 0] = h.bbox;
-        if (!r && !b) return null;
+        if (!r && !t) return null;
         const isActive = i === activeIdx;
+        // bbox is BOTTOMLEFT origin: t = top edge (larger y), b = bottom edge (smaller y)
+        // CSS top = distance from page top = pageHeight - t
         const leftPct   = (l / pageWidth)  * 100;
-        const topPct    = ((pageHeight - b) / pageHeight) * 100;
+        const topPct    = ((pageHeight - t) / pageHeight) * 100;
         const widthPct  = ((r - l) / pageWidth)  * 100;
-        const heightPct = ((b - t) / pageHeight) * 100;
+        const heightPct = ((t - b) / pageHeight) * 100;
         return (
           <div
             key={i}
@@ -79,6 +81,7 @@ export function PDFModal({
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [scale, setScale]             = useState(1.0);
   const [imgSize, setImgSize]         = useState<{ w: number; h: number } | null>(null);
+  const [pageDims, setPageDims]       = useState<{ w: number; h: number } | null>(null);
 
   // Index of the "active" (focused) highlight. Null = just browsing pages freely.
   const [activeHlIdx, setActiveHlIdx] = useState<number | null>(() => {
@@ -89,13 +92,18 @@ export function PDFModal({
 
   const sidebarRef = useRef<HTMLDivElement>(null);
 
-  // Fetch page count
+  // Fetch page count + current page dimensions
   useEffect(() => {
-    fetch(`${API_URL}/api/documents/pdf/info?filename=${encodeURIComponent(filename)}`)
+    fetch(`${API_URL}/api/documents/pdf/info?filename=${encodeURIComponent(filename)}&page_no=${currentPage}`)
       .then((r) => r.json())
-      .then((d) => setNumPages(d.page_count ?? 0))
+      .then((d) => {
+        setNumPages(d.page_count ?? 0);
+        if (d.page_width_pt && d.page_height_pt) {
+          setPageDims({ w: d.page_width_pt, h: d.page_height_pt });
+        }
+      })
       .catch(() => setNumPages(1));
-  }, [filename]);
+  }, [filename, currentPage]);
 
   // Close on Escape
   useEffect(() => {
@@ -124,9 +132,9 @@ export function PDFModal({
     ? highlightsOnPage.indexOf(highlights[activeHlIdx])
     : null;
 
-  // Page dimensions in PDF points — approximated from image aspect ratio × 595pt (A4 width)
-  const pageWidthPt  = 595;
-  const pageHeightPt = imgSize ? 595 * (imgSize.h / imgSize.w) : 842;
+  // Page dimensions in PDF points — from backend (real values), fallback to A4
+  const pageWidthPt  = pageDims?.w ?? (imgSize ? 595 : 595);
+  const pageHeightPt = pageDims?.h ?? (imgSize ? 595 * (imgSize.h / imgSize.w) : 842);
 
   const hasHighlights = highlights.length > 0;
 

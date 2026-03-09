@@ -1,17 +1,20 @@
 "use client";
 
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import {
   ReactFlow,
   Background,
   Controls,
   MiniMap,
+  useNodesState,
+  useEdgesState,
   type Node,
   type Edge,
   type NodeTypes,
   BackgroundVariant,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import dagre from "@dagrejs/dagre";
 import { Network } from "lucide-react";
 import {
   TopicNode,
@@ -40,91 +43,45 @@ interface PDFModalState {
   highlights: PDFHighlight[];
 }
 
-// --- Layout ---
-const TOPIC_W = 220;
-const FACT_W  = 220;
-const SRC_W   = 160;
-const SPEC_W  = 220;
-const H_GAP   = 24;
-const TOPIC_Y = 0;
-const FACT_Y  = 180;
-const SRC_Y   = 360;
+// --- Node sizes (width × height in px) used by dagre for spacing ---
+const NODE_SIZE: Record<string, { w: number; h: number }> = {
+  topicNode:  { w: 240, h: 60  },
+  factNode:   { w: 280, h: 100 },
+  sourceNode: { w: 180, h: 40  },
+  specNode:   { w: 260, h: 130 },
+};
+const DEFAULT_SIZE = { w: 220, h: 80 };
 
-function computeLayout(
-  nodes: CanvasNodeData[],
-  relations: Relation[]
-): Record<string, { x: number; y: number }> {
-  const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+function applyDagreLayout(nodes: Node[], edges: Edge[]): Node[] {
+  if (nodes.length === 0) return nodes;
 
-  // Build children map (from_id → [to_id])
-  const childrenOf = new Map<string, string[]>();
-  for (const r of relations) {
-    const arr = childrenOf.get(r.from_id) ?? [];
-    arr.push(r.to_id);
-    childrenOf.set(r.from_id, arr);
+  const g = new dagre.graphlib.Graph();
+  g.setDefaultEdgeLabel(() => ({}));
+  g.setGraph({ rankdir: "TB", nodesep: 50, ranksep: 80, edgesep: 10 });
+
+  for (const node of nodes) {
+    if (node.hidden) continue;
+    const sz = NODE_SIZE[node.type ?? ""] ?? DEFAULT_SIZE;
+    g.setNode(node.id, { width: sz.w, height: sz.h });
+  }
+  for (const edge of edges) {
+    if (edge.hidden) continue;
+    // Only add edge if both nodes exist in graph
+    if (g.hasNode(edge.source) && g.hasNode(edge.target)) {
+      g.setEdge(edge.source, edge.target);
+    }
   }
 
-  const positioned = new Set<string>();
-  const pos: Record<string, { x: number; y: number }> = {};
-  let cursorX = 0;
+  dagre.layout(g);
 
-  const topics = nodes.filter((n) => n.node_type === "topic");
-
-  for (const topic of topics) {
-    const factIds = (childrenOf.get(topic.id) ?? []).filter(
-      (id) => nodeMap.get(id)?.node_type === "fact" || nodeMap.get(id)?.node_type === "spec"
-    );
-
-    if (factIds.length === 0) {
-      pos[topic.id] = { x: cursorX, y: TOPIC_Y };
-      positioned.add(topic.id);
-      cursorX += TOPIC_W + H_GAP;
-      continue;
-    }
-
-    const topicStartX = cursorX;
-    let factCursorX = cursorX;
-
-    for (const factId of factIds) {
-      const srcIds = (childrenOf.get(factId) ?? []).filter(
-        (id) => ["source", "spec"].includes(nodeMap.get(id)?.node_type ?? "")
-      );
-      const neededW = Math.max(FACT_W, srcIds.length * (SRC_W + H_GAP) - H_GAP);
-
-      pos[factId] = { x: factCursorX, y: FACT_Y };
-      positioned.add(factId);
-
-      let srcX = factCursorX;
-      for (const srcId of srcIds) {
-        pos[srcId] = { x: srcX, y: SRC_Y };
-        positioned.add(srcId);
-        srcX += SRC_W + H_GAP;
-      }
-
-      factCursorX += neededW + H_GAP;
-    }
-
-    const groupWidth = factCursorX - topicStartX - H_GAP;
-    pos[topic.id] = {
-      x: topicStartX + groupWidth / 2 - TOPIC_W / 2,
-      y: TOPIC_Y,
+  return nodes.map((node) => {
+    if (node.hidden || !g.hasNode(node.id)) return node;
+    const { x, y, width, height } = g.node(node.id);
+    return {
+      ...node,
+      position: { x: x - width / 2, y: y - height / 2 },
     };
-    positioned.add(topic.id);
-    cursorX = factCursorX + 20;
-  }
-
-  // Orphan facts / sources / specs
-  for (const n of nodes) {
-    if (!positioned.has(n.id)) {
-      const y = n.node_type === "fact" ? FACT_Y
-              : n.node_type === "source" || n.node_type === "spec" ? SRC_Y
-              : TOPIC_Y;
-      pos[n.id] = { x: cursorX, y };
-      cursorX += (n.node_type === "source" ? SRC_W : n.node_type === "spec" ? SPEC_W : FACT_W) + H_GAP;
-    }
-  }
-
-  return pos;
+  });
 }
 
 // Collect all descendants of a set of node IDs
@@ -148,10 +105,10 @@ function descendants(
 
 // --- Node type registry ---
 const nodeTypes: NodeTypes = {
-  topicNode: TopicNode,
-  factNode: FactNode,
+  topicNode:  TopicNode,
+  factNode:   FactNode,
   sourceNode: SourceNode,
-  specNode: SpecNode,
+  specNode:   SpecNode,
 };
 
 // --- Main component ---
@@ -162,6 +119,9 @@ interface CanvasGraphProps {
 export function CanvasGraph({ canvas }: CanvasGraphProps) {
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [pdfModal, setPdfModal] = useState<PDFModalState | null>(null);
+
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
   const handleOpenPDF = useCallback(
     (filename: string, page: number, highlights: PDFHighlight[]) =>
@@ -180,8 +140,24 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
   const rawNodes = canvas?.nodes ?? [];
   const relations = canvas?.relations ?? [];
 
-  const { nodes, edges } = useMemo(() => {
-    if (rawNodes.length === 0) return { nodes: [], edges: [] };
+  // Structural key — re-layout only when nodes/edges are added or removed,
+  // not when content/status changes (so in-progress updates don't jump)
+  const structureKey = useMemo(
+    () =>
+      rawNodes.map((n) => n.id).join(",") +
+      "|" +
+      relations.map((r) => `${r.from_id}>${r.to_id}`).join(",") +
+      "|" +
+      [...collapsedIds].sort().join(","),
+    [rawNodes, relations, collapsedIds]
+  );
+
+  useEffect(() => {
+    if (rawNodes.length === 0) {
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
 
     const nodeMap = new Map(rawNodes.map((n) => [n.id, n]));
 
@@ -193,10 +169,9 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
       childrenOf.set(r.from_id, arr);
     }
 
-    // Compute hidden nodes from collapsed topics
     const hiddenIds = descendants([...collapsedIds], childrenOf);
 
-    // For each fact, pre-compute its connected source nodes (source + spec treated as leaf evidence)
+    // Pre-compute source/spec children per fact node
     const factSources = new Map<string, CanvasNodeData[]>();
     for (const r of relations) {
       const from = nodeMap.get(r.from_id);
@@ -208,27 +183,16 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
       }
     }
 
-    const layout = computeLayout(rawNodes, relations);
-
-    // Count direct fact children per topic (for collapse badge)
-    const topicFactCount = new Map<string, number>();
-    for (const r of relations) {
-      if (nodeMap.get(r.from_id)?.node_type === "topic" && nodeMap.get(r.to_id)?.node_type === "fact") {
-        topicFactCount.set(r.from_id, (topicFactCount.get(r.from_id) ?? 0) + 1);
-      }
-    }
-
+    // Build RF nodes (no position yet — dagre will assign them)
     const rfNodes: Node[] = rawNodes.map((n) => {
-      const base = {
-        id: n.id,
-        position: layout[n.id] ?? { x: 0, y: 0 },
-        hidden: hiddenIds.has(n.id),
-      };
+      const hidden = hiddenIds.has(n.id);
 
       if (n.node_type === "topic") {
         return {
-          ...base,
+          id: n.id,
           type: "topicNode",
+          position: { x: 0, y: 0 },
+          hidden,
           data: {
             node: n,
             childCount: descendants([n.id], childrenOf).size,
@@ -239,8 +203,10 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
       }
       if (n.node_type === "fact") {
         return {
-          ...base,
+          id: n.id,
           type: "factNode",
+          position: { x: 0, y: 0 },
+          hidden,
           data: {
             node: n,
             sources: factSources.get(n.id) ?? [],
@@ -250,31 +216,28 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
       }
       if (n.node_type === "spec") {
         return {
-          ...base,
+          id: n.id,
           type: "specNode",
+          position: { x: 0, y: 0 },
+          hidden,
           data: { node: n },
         };
       }
-      // source — highlights come directly from node.highlights
       return {
-        ...base,
+        id: n.id,
         type: "sourceNode",
-        data: {
-          node: n,
-          onOpenPDF: handleOpenPDF,
-        },
+        position: { x: 0, y: 0 },
+        hidden,
+        data: { node: n, onOpenPDF: handleOpenPDF },
       };
     });
 
     const rfEdges: Edge[] = relations.map((r, idx) => {
       const fromNode = nodeMap.get(r.from_id);
       const toNode = nodeMap.get(r.to_id);
-
-      // Edge style by relationship type
       const isTopicFact = fromNode?.node_type === "topic" && toNode?.node_type === "fact";
       const isFactSrc   = fromNode?.node_type === "fact"  && toNode?.node_type === "source";
       const isSpec      = toNode?.node_type === "spec";
-
       return {
         id: `e-${idx}`,
         source: r.from_id,
@@ -294,8 +257,51 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
       };
     });
 
-    return { nodes: rfNodes, edges: rfEdges };
-  }, [rawNodes, relations, collapsedIds, handleToggleCollapse, handleOpenPDF]);
+    const laidOut = applyDagreLayout(rfNodes, rfEdges);
+    setNodes(laidOut);
+    setEdges(rfEdges);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [structureKey]);
+
+  // Update node data (status, content) without re-layouting
+  useEffect(() => {
+    if (rawNodes.length === 0) return;
+    const nodeMap = new Map(rawNodes.map((n) => [n.id, n]));
+    const childrenOf = new Map<string, string[]>();
+    for (const r of relations) {
+      const arr = childrenOf.get(r.from_id) ?? [];
+      arr.push(r.to_id);
+      childrenOf.set(r.from_id, arr);
+    }
+    const factSources = new Map<string, CanvasNodeData[]>();
+    for (const r of relations) {
+      const from = nodeMap.get(r.from_id);
+      const to = nodeMap.get(r.to_id);
+      if (from?.node_type === "fact" && (to?.node_type === "source" || to?.node_type === "spec")) {
+        const arr = factSources.get(r.from_id) ?? [];
+        arr.push(to);
+        factSources.set(r.from_id, arr);
+      }
+    }
+
+    setNodes((prev) =>
+      prev.map((rfNode) => {
+        const n = nodeMap.get(rfNode.id);
+        if (!n) return rfNode;
+        if (n.node_type === "topic") {
+          return { ...rfNode, data: { ...rfNode.data, node: n, childCount: descendants([n.id], childrenOf).size, collapsed: collapsedIds.has(n.id), onToggleCollapse: handleToggleCollapse } };
+        }
+        if (n.node_type === "fact") {
+          return { ...rfNode, data: { ...rfNode.data, node: n, sources: factSources.get(n.id) ?? [], onOpenPDF: handleOpenPDF } };
+        }
+        if (n.node_type === "spec") {
+          return { ...rfNode, data: { ...rfNode.data, node: n } };
+        }
+        return { ...rfNode, data: { ...rfNode.data, node: n } };
+      })
+    );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawNodes, relations]);
 
   if (rawNodes.length === 0) {
     return (
@@ -323,10 +329,12 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
         <ReactFlow
           nodes={nodes}
           edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           fitView
-          fitViewOptions={{ padding: 0.25 }}
-          minZoom={0.15}
+          fitViewOptions={{ padding: 0.2 }}
+          minZoom={0.1}
           maxZoom={2.5}
           proOptions={{ hideAttribution: true }}
           nodesDraggable

@@ -228,18 +228,21 @@ async def analyze_image_content(
     Returns the extracted text/data as a string.
     """
     import httpx
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(image_url)
-        resp.raise_for_status()
-        image_bytes = resp.content
-        content_type = resp.headers.get("content-type", "image/png")
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(image_url)
+            resp.raise_for_status()
+            image_bytes = resp.content
+            content_type = resp.headers.get("content-type", "image/png")
 
-    result = await image_analysis_agent.run(
-        [
-            BinaryContent(data=image_bytes, media_type=content_type),
-            question,
-        ]
-    )
-    return result.output
+        result = await image_analysis_agent.run(
+            [
+                BinaryContent(data=image_bytes, media_type=content_type),
+                question,
+            ]
+        )
+        return result.response.text
+    except Exception as exc:
+        return f"Image analysis failed: {exc}"
 
 AppState = Canvas
