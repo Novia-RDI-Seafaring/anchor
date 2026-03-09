@@ -203,18 +203,6 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
       }
     }
 
-    // For each source, collect sibling highlights (all sources sharing same fact parent)
-    const sourceHighlights = new Map<string, PDFHighlight[]>();
-    for (const [factId, srcs] of factSources) {
-      const hl: PDFHighlight[] = srcs.map((s) => ({
-        page: s.page ?? 1,
-        bbox: s.bbox ?? [],
-      }));
-      for (const s of srcs) {
-        sourceHighlights.set(s.id, hl);
-      }
-    }
-
     const layout = computeLayout(rawNodes, relations);
 
     // Count direct fact children per topic (for collapse badge)
@@ -255,13 +243,12 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
           },
         };
       }
-      // source
+      // source — highlights come directly from node.highlights
       return {
         ...base,
         type: "sourceNode",
         data: {
           node: n,
-          allHighlights: sourceHighlights.get(n.id) ?? [],
           onOpenPDF: handleOpenPDF,
         },
       };

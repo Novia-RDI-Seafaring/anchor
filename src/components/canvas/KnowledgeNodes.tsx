@@ -24,6 +24,7 @@ export interface CanvasNodeData {
   filename?: string;
   page?: number;
   bbox?: number[];
+  highlights?: PDFHighlight[]; // ordered list of page+bbox refs for this source
 }
 
 export interface TopicNodeData {
@@ -42,8 +43,6 @@ export interface FactNodeData {
 
 export interface SourceNodeData {
   node: CanvasNodeData;
-  // All highlights from sibling sources (same parent fact) for the PDF modal
-  allHighlights: PDFHighlight[];
   onOpenPDF: (filename: string, page: number, highlights: PDFHighlight[]) => void;
 }
 
@@ -173,25 +172,39 @@ export function FactNode({ data }: NodeProps) {
 // SOURCE NODE — teal, opens PDF on click
 // ─────────────────────────────────────────────
 export function SourceNode({ data }: NodeProps) {
-  const { node, allHighlights, onOpenPDF } = data as unknown as SourceNodeData;
+  const { node, onOpenPDF } = data as unknown as SourceNodeData;
   const short = (node.filename ?? "").replace(/\.pdf$/i, "").slice(0, 20);
+
+  // Resolve highlights: use node.highlights if present, otherwise build from page+bbox
+  const highlights: PDFHighlight[] =
+    node.highlights && node.highlights.length > 0
+      ? node.highlights
+      : node.page ? [{ page: node.page, bbox: node.bbox ?? [] }] : [];
+
+  const hlCount = highlights.length;
 
   return (
     <>
       <Handle type="target" position={Position.Top} className="!bg-teal-400 !border-teal-600" />
       <button
-        onClick={() => onOpenPDF(node.filename!, node.page ?? 1, allHighlights)}
+        onClick={() => onOpenPDF(node.filename!, highlights[0]?.page ?? node.page ?? 1, highlights)}
         className="group flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border-2 border-teal-200 dark:border-teal-700 bg-teal-50 dark:bg-teal-950/40 hover:border-teal-400 dark:hover:border-teal-500 hover:bg-teal-100 dark:hover:bg-teal-900/40 transition-all shadow-sm"
         style={{ minWidth: 100, maxWidth: 180 }}
-        title={`${node.filename} p.${node.page} — open PDF`}
+        title={`${node.filename} — ${hlCount} highlight${hlCount !== 1 ? "s" : ""} — click to open PDF`}
       >
         <FileText size={12} className="text-teal-600 dark:text-teal-400 shrink-0" />
         <span className="text-[11px] font-mono text-teal-800 dark:text-teal-200 truncate">
           {short}
         </span>
-        <span className="shrink-0 text-[10px] bg-teal-200 dark:bg-teal-800 text-teal-700 dark:text-teal-300 px-1.5 py-0.5 rounded-full font-mono">
-          p.{node.page}
-        </span>
+        {hlCount > 1 ? (
+          <span className="shrink-0 text-[10px] bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full font-mono">
+            {hlCount}×
+          </span>
+        ) : (
+          <span className="shrink-0 text-[10px] bg-teal-200 dark:bg-teal-800 text-teal-700 dark:text-teal-300 px-1.5 py-0.5 rounded-full font-mono">
+            p.{highlights[0]?.page ?? node.page}
+          </span>
+        )}
       </button>
     </>
   );

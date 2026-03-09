@@ -11,7 +11,7 @@ from .prompts import SYS_PROMPT as SYSTEM_PROMPT
 from .tools import (
     render_component as render_component_impl,
 )
-from .state import Canvas, CanvasNode, Relation
+from .state import Canvas, CanvasNode, Relation, SourceHighlight
 
 load_dotenv(override=True)
 agent = Agent(
@@ -70,9 +70,26 @@ async def add_source(
     filename: str,
     page: int,
     bbox: list[int],
+    highlights: list[SourceHighlight] | None = None,
 ) -> ToolReturn:
-    """Add a source node (PDF reference with bounding box) linked to a fact. bbox = [l, t, r, b]."""
-    node = CanvasNode(node_type="source", filename=filename, page=page, bbox=bbox)
+    """Add a source node linked to a fact.
+
+    - page / bbox: primary reference (first/most relevant location).
+    - highlights: ordered list of {page, bbox} refs so the PDF viewer can
+      step through all relevant locations in the document. If omitted, a
+      single highlight is created from page + bbox automatically.
+
+    bbox format: [left, top, right, bottom] in PDF points (BOTTOMLEFT origin).
+    Use [0,0,0,0] if the bounding box is unknown.
+    """
+    resolved = highlights or [SourceHighlight(page=page, bbox=bbox)]
+    node = CanvasNode(
+        node_type="source",
+        filename=filename,
+        page=page,
+        bbox=bbox,
+        highlights=resolved,
+    )
     ctx.deps.state.nodes.append(node)
     ctx.deps.state.relations.append(Relation(from_id=fact_id, to_id=node.id))
     result = _snapshot(ctx.deps.state)

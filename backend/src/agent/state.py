@@ -13,6 +13,11 @@ from pydantic import BaseModel, Field
 from src.shared.ui_components import UIComponentType, UIComponentData
 
 
+class SourceHighlight(BaseModel):
+    page: int
+    bbox: list[int] = Field(default_factory=list)  # [l, t, r, b]
+
+
 class CanvasNode(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     node_type: Literal["topic", "fact", "source"]
@@ -22,8 +27,9 @@ class CanvasNode(BaseModel):
     text: str = ""
     # source fields
     filename: str = ""
-    page: int = 0
-    bbox: list[int] = Field(default_factory=list)  # [l, t, r, b]
+    page: int = 0                                        # primary / first page (legacy)
+    bbox: list[int] = Field(default_factory=list)        # primary bbox (legacy)
+    highlights: list[SourceHighlight] = Field(default_factory=list)  # ordered list of page+bbox refs
 
 
 class Relation(BaseModel):
@@ -73,4 +79,4 @@ class RAGState(BaseModel):
     )
 
 
-__all__ = ["RAGState", "UIComponentData", "UIComponentType", "Canvas", "CanvasNode", "Relation"]
+__all__ = ["RAGState", "UIComponentData", "UIComponentType", "Canvas", "CanvasNode", "Relation", "SourceHighlight"]
