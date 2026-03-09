@@ -11,7 +11,7 @@ from .prompts import SYS_PROMPT as SYSTEM_PROMPT
 from .tools import (
     render_component as render_component_impl,
 )
-from .state import Canvas, Note, Relation
+from .state import Canvas, CanvasNode, Relation
 
 load_dotenv(override=True)
 agent = Agent(
@@ -33,36 +33,57 @@ image_analysis_agent = Agent(
     ),
 )
 
+def _snapshot(state: Canvas) -> ToolReturn:
+    return ToolReturn(
+        return_value={"success": True},
+        metadata=[StateSnapshotEvent(type=EventType.STATE_SNAPSHOT, snapshot=state)],
+    )
+
 @agent.tool
 async def check_canvas(ctx: RunContext[AgentDeps]):
+    """Return the current canvas state (nodes + relations)."""
     return ctx.deps.state
 
 @agent.tool
-async def add_note(ctx: RunContext[AgentDeps], note: Note) -> StateSnapshotEvent:
-    ctx.deps.state.notes.append(note)
-    return ToolReturn(
-        return_value={"success": True},
-        metadata=[
-            StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=ctx.deps.state,
-            )
-        ]
-    )
+async def add_topic(ctx: RunContext[AgentDeps], title: str) -> ToolReturn:
+    """Add a topic node to the canvas. Returns the new node's id."""
+    node = CanvasNode(node_type="topic", title=title)
+    ctx.deps.state.nodes.append(node)
+    result = _snapshot(ctx.deps.state)
+    result.return_value = {"success": True, "id": node.id}
+    return result
 
 @agent.tool
-async def add_relation(ctx: RunContext[AgentDeps], from_id: str, to_id: str, label: str = "") -> StateSnapshotEvent:
-    """Connect two notes by id with an optional label describing how they relate."""
+async def add_fact(ctx: RunContext[AgentDeps], text: str, topic_id: str) -> ToolReturn:
+    """Add a fact node linked to a topic. Returns the new node's id."""
+    node = CanvasNode(node_type="fact", text=text)
+    ctx.deps.state.nodes.append(node)
+    ctx.deps.state.relations.append(Relation(from_id=topic_id, to_id=node.id))
+    result = _snapshot(ctx.deps.state)
+    result.return_value = {"success": True, "id": node.id}
+    return result
+
+@agent.tool
+async def add_source(
+    ctx: RunContext[AgentDeps],
+    fact_id: str,
+    filename: str,
+    page: int,
+    bbox: list[int],
+) -> ToolReturn:
+    """Add a source node (PDF reference with bounding box) linked to a fact. bbox = [l, t, r, b]."""
+    node = CanvasNode(node_type="source", filename=filename, page=page, bbox=bbox)
+    ctx.deps.state.nodes.append(node)
+    ctx.deps.state.relations.append(Relation(from_id=fact_id, to_id=node.id))
+    result = _snapshot(ctx.deps.state)
+    result.return_value = {"success": True, "id": node.id}
+    return result
+
+@agent.tool
+async def add_relation(ctx: RunContext[AgentDeps], from_id: str, to_id: str, label: str = "") -> ToolReturn:
+    """Connect any two canvas nodes with an optional relationship label."""
     ctx.deps.state.relations.append(Relation(from_id=from_id, to_id=to_id, label=label))
-    return ToolReturn(
-        return_value={"success": True},
-        metadata=[
-            StateSnapshotEvent(
-                type=EventType.STATE_SNAPSHOT,
-                snapshot=ctx.deps.state,
-            )
-        ]
-    )
+    return _snapshot(ctx.deps.state)
 
 @agent.tool
 async def search_knowledge_base(

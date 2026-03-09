@@ -1,215 +1,138 @@
 "use client";
 
 import React, { useState } from "react";
-import { FileText, X, ChevronDown, ChevronRight, BookOpen, MapPin } from "lucide-react";
+import { FileText, X, ChevronDown, ChevronRight, Tag, MessageSquare, MapPin } from "lucide-react";
+import type { CanvasNodeData } from "./KnowledgeNodes";
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
 
-// --- Types mirroring backend state.py ---
-interface Source {
-  filename: string;
-  page: number;
-}
-
-interface SourceBox {
-  source: Source;
-  bbox: number[]; // [left, top, right, bottom]
-}
-
-interface Fact {
-  text: string;
-  sources: SourceBox[];
-}
-
-interface Note {
-  title: string;
-  facts: Fact[];
+interface Relation {
+  from_id: string;
+  to_id: string;
+  label: string;
 }
 
 interface CanvasState {
-  notes: Note[];
+  nodes: CanvasNodeData[];
+  relations: Relation[];
 }
 
-// Build the bbox screenshot URL (mirrors the Python @property)
-function buildImageUrl(sb: SourceBox): string {
-  const { filename, page } = sb.source;
-  const [l, t, r, b] = sb.bbox;
+function buildImageUrl(filename: string, page: number, bbox: number[]): string {
+  const [l = 0, t = 0, r = 0, b = 0] = bbox;
+  if (!l && !t && !r && !b) {
+    return `${API_URL}/api/documents/pdf/screenshot?filename=${encodeURIComponent(filename)}&page_no=${page}`;
+  }
   return `${API_URL}/api/documents/pdf/screenshot?filename=${encodeURIComponent(filename)}&page_no=${page}&bbox_l=${l}&bbox_t=${t}&bbox_r=${r}&bbox_b=${b}`;
 }
 
-function buildPageUrl(filename: string, page: number): string {
-  return `${API_URL}/api/documents/pdf/screenshot?filename=${encodeURIComponent(filename)}&page_no=${page}`;
-}
-
 // --- Lightbox ---
-interface LightboxProps {
-  url: string;
-  caption: string;
-  onClose: () => void;
-}
-
-function Lightbox({ url, caption, onClose }: LightboxProps) {
+function Lightbox({ url, caption, onClose }: { url: string; caption: string; onClose: () => void }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
-      onClick={onClose}
-    >
-      <div
-        className="relative max-w-3xl w-full bg-white dark:bg-neutral-900 rounded-xl shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="relative max-w-3xl w-full bg-white dark:bg-neutral-900 rounded-xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-700">
-          <span className="text-xs font-mono text-neutral-500 dark:text-neutral-400 truncate">{caption}</span>
-          <button
-            onClick={onClose}
-            className="ml-2 p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500 dark:text-neutral-400"
-          >
+          <span className="text-xs font-mono text-neutral-500 truncate">{caption}</span>
+          <button onClick={onClose} className="ml-2 p-1 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500">
             <X size={16} />
           </button>
         </div>
         <div className="flex items-center justify-center bg-neutral-100 dark:bg-neutral-950 p-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={url}
-            alt={caption}
-            className="max-h-[70vh] w-auto object-contain rounded"
-          />
+          <img src={url} alt={caption} className="max-h-[70vh] w-auto object-contain rounded" />
         </div>
       </div>
     </div>
   );
 }
 
-// --- SourceChip — small thumbnail badge for a SourceBox ---
-interface SourceChipProps {
-  sb: SourceBox;
-  index: number;
-}
-
-function SourceChip({ sb, index }: SourceChipProps) {
+// --- Source chip ---
+function SourceChip({ node }: { node: CanvasNodeData }) {
   const [lightbox, setLightbox] = useState<{ url: string; caption: string } | null>(null);
-  const imgUrl = buildImageUrl(sb);
-  const caption = `${sb.source.filename} — p.${sb.source.page} [${sb.bbox.join(", ")}]`;
-
+  if (!node.filename) return null;
+  const imgUrl = buildImageUrl(node.filename, node.page ?? 1, node.bbox ?? []);
+  const caption = `${node.filename} p.${node.page}`;
   return (
     <>
       <button
         onClick={() => setLightbox({ url: imgUrl, caption })}
-        className="group flex items-center gap-1.5 px-2 py-1 rounded-md bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-800 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors"
+        className="group flex items-center gap-1.5 px-2 py-1 rounded-md bg-teal-50 dark:bg-teal-900/30 border border-teal-100 dark:border-teal-800 hover:bg-teal-100 dark:hover:bg-teal-900/60 transition-colors"
         title={caption}
       >
-        <MapPin size={11} className="text-indigo-500 dark:text-indigo-400 shrink-0" />
-        <span className="text-[11px] font-mono text-indigo-700 dark:text-indigo-300 truncate max-w-[140px]">
-          {sb.source.filename.replace(/\.pdf$/i, "")} p.{sb.source.page}
+        <MapPin size={10} className="text-teal-500 shrink-0" />
+        <span className="text-[11px] font-mono text-teal-700 dark:text-teal-300 truncate max-w-[140px]">
+          {node.filename!.replace(/\.pdf$/i, "")} p.{node.page}
         </span>
-        {/* Tiny preview thumbnail */}
-        <span className="relative shrink-0 w-8 h-8 rounded overflow-hidden border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-neutral-900">
+        <span className="relative shrink-0 w-8 h-8 rounded overflow-hidden border border-teal-200 dark:border-teal-700 bg-white dark:bg-neutral-900">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={imgUrl}
-            alt=""
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-150"
-            loading="lazy"
-          />
+          <img src={imgUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
         </span>
       </button>
-
-      {lightbox && (
-        <Lightbox
-          url={lightbox.url}
-          caption={lightbox.caption}
-          onClose={() => setLightbox(null)}
-        />
-      )}
+      {lightbox && <Lightbox url={lightbox.url} caption={lightbox.caption} onClose={() => setLightbox(null)} />}
     </>
   );
 }
 
-// --- FactRow ---
-interface FactRowProps {
-  fact: Fact;
-  index: number;
-}
-
-function FactRow({ fact, index }: FactRowProps) {
-  const [expanded, setExpanded] = useState(true);
-
-  return (
-    <div className="border-l-2 border-neutral-200 dark:border-neutral-700 pl-3 py-1 space-y-2">
-      {/* Fact text */}
-      <div className="flex items-start gap-2">
-        <span className="shrink-0 mt-0.5 text-[10px] font-mono text-neutral-400 dark:text-neutral-500 w-4 text-right select-none">
-          {index + 1}.
-        </span>
-        <p className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed flex-1">
-          {fact.text}
-        </p>
-      </div>
-
-      {/* Sources */}
-      {fact.sources.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 pl-6">
-          {fact.sources.map((sb, si) => (
-            <SourceChip key={si} sb={sb} index={si} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// --- NoteCard ---
-interface NoteCardProps {
-  note: Note;
-  index: number;
-}
-
-function NoteCard({ note, index }: NoteCardProps) {
+// --- Topic group card ---
+function TopicGroup({
+  topic,
+  facts,
+  sourcesByFact,
+}: {
+  topic: CanvasNodeData;
+  facts: CanvasNodeData[];
+  sourcesByFact: Map<string, CanvasNodeData[]>;
+}) {
   const [collapsed, setCollapsed] = useState(false);
-  const factCount = note.facts.length;
-  const sourceCount = note.facts.reduce((n, f) => n + f.sources.length, 0);
+  const totalSources = facts.reduce((n, f) => n + (sourcesByFact.get(f.id) ?? []).length, 0);
 
   return (
     <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
-      {/* Note header */}
+      {/* Topic header */}
       <button
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors"
+        className="w-full flex items-center gap-2.5 px-4 py-3 bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
         onClick={() => setCollapsed((c) => !c)}
       >
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="h-7 w-7 rounded-lg bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
-            <BookOpen size={14} className="text-amber-600 dark:text-amber-400" />
-          </div>
-          <span className="font-semibold text-sm text-neutral-900 dark:text-white truncate">
-            {note.title}
+        <Tag size={14} className="text-amber-600 dark:text-amber-400 shrink-0" />
+        <span className="flex-1 text-left text-sm font-bold text-amber-900 dark:text-amber-100">
+          {topic.title}
+        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/50 px-2 py-0.5 rounded-full">
+            {facts.length} fact{facts.length !== 1 ? "s" : ""}
           </span>
-        </div>
-        <div className="flex items-center gap-2 shrink-0 ml-2">
-          <span className="text-[11px] text-neutral-400 dark:text-neutral-500 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">
-            {factCount} fact{factCount !== 1 ? "s" : ""}
-          </span>
-          {sourceCount > 0 && (
-            <span className="text-[11px] text-indigo-500 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full">
-              {sourceCount} src
+          {totalSources > 0 && (
+            <span className="text-[11px] text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/30 px-2 py-0.5 rounded-full">
+              {totalSources} src
             </span>
           )}
-          {collapsed ? (
-            <ChevronRight size={14} className="text-neutral-400" />
-          ) : (
-            <ChevronDown size={14} className="text-neutral-400" />
-          )}
+          {collapsed ? <ChevronRight size={14} className="text-amber-500" /> : <ChevronDown size={14} className="text-amber-500" />}
         </div>
       </button>
 
       {/* Facts list */}
       {!collapsed && (
-        <div className="px-4 pb-4 space-y-3 border-t border-neutral-100 dark:border-neutral-800 pt-3">
-          {note.facts.length === 0 ? (
-            <p className="text-xs text-neutral-400 dark:text-neutral-500 italic">No facts yet.</p>
+        <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
+          {facts.length === 0 ? (
+            <p className="px-4 py-3 text-xs text-neutral-400 italic">No facts yet.</p>
           ) : (
-            note.facts.map((fact, fi) => (
-              <FactRow key={fi} fact={fact} index={fi} />
-            ))
+            facts.map((fact, fi) => {
+              const sources = sourcesByFact.get(fact.id) ?? [];
+              return (
+                <div key={fact.id} className="px-4 py-3 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <MessageSquare size={12} className="text-indigo-400 shrink-0 mt-0.5" />
+                    <p className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed flex-1">
+                      {fact.text}
+                    </p>
+                  </div>
+                  {sources.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pl-5">
+                      {sources.map((src) => <SourceChip key={src.id} node={src} />)}
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       )}
@@ -218,48 +141,77 @@ function NoteCard({ note, index }: NoteCardProps) {
 }
 
 // --- Empty state ---
-function EmptyCanvas() {
+function EmptyFacts() {
   return (
     <div className="flex flex-col items-center justify-center py-24 text-center">
       <div className="h-16 w-16 rounded-2xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center mb-4">
         <FileText size={28} className="text-neutral-400 dark:text-neutral-500" />
       </div>
-      <h3 className="text-base font-semibold text-neutral-700 dark:text-neutral-300 mb-1">Canvas is empty</h3>
+      <h3 className="text-base font-semibold text-neutral-700 dark:text-neutral-300 mb-1">No facts yet</h3>
       <p className="text-sm text-neutral-400 dark:text-neutral-500 max-w-xs">
-        Ask the agent to research a topic — it will populate notes with sourced facts here.
+        Ask a technical question — the agent will populate topics, facts, and sources here.
       </p>
     </div>
   );
 }
 
-// --- Main CanvasView export ---
-interface CanvasViewProps {
-  canvas: CanvasState | null | undefined;
-}
+// --- Main export ---
+export function CanvasView({ canvas }: { canvas: CanvasState | null | undefined }) {
+  const nodes = canvas?.nodes ?? [];
+  const relations = canvas?.relations ?? [];
 
-export function CanvasView({ canvas }: CanvasViewProps) {
-  const notes = canvas?.notes ?? [];
+  const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
-  if (notes.length === 0) {
-    return <EmptyCanvas />;
+  // Build children relationships
+  const childrenOf = new Map<string, string[]>();
+  for (const r of relations) {
+    const arr = childrenOf.get(r.from_id) ?? [];
+    arr.push(r.to_id);
+    childrenOf.set(r.from_id, arr);
   }
+
+  const topics = nodes.filter((n) => n.node_type === "topic");
+
+  // For each topic, find its fact children
+  const topicFacts = new Map<string, CanvasNodeData[]>();
+  for (const topic of topics) {
+    const factIds = (childrenOf.get(topic.id) ?? []).filter(
+      (id) => nodeMap.get(id)?.node_type === "fact"
+    );
+    topicFacts.set(topic.id, factIds.map((id) => nodeMap.get(id)!).filter(Boolean));
+  }
+
+  // For each fact, find its source children
+  const sourcesByFact = new Map<string, CanvasNodeData[]>();
+  for (const n of nodes.filter((n) => n.node_type === "fact")) {
+    const srcIds = (childrenOf.get(n.id) ?? []).filter(
+      (id) => nodeMap.get(id)?.node_type === "source"
+    );
+    sourcesByFact.set(n.id, srcIds.map((id) => nodeMap.get(id)!).filter(Boolean));
+  }
+
+  if (topics.length === 0 && nodes.length === 0) return <EmptyFacts />;
+
+  const topicCount = topics.length;
+  const factCount = nodes.filter((n) => n.node_type === "fact").length;
+  const srcCount = nodes.filter((n) => n.node_type === "source").length;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between px-1">
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold text-neutral-900 dark:text-white uppercase tracking-wider">
-            Canvas
-          </h2>
-          <span className="text-[11px] text-neutral-400 dark:text-neutral-500 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">
-            {notes.length} note{notes.length !== 1 ? "s" : ""}
-          </span>
-        </div>
+      <div className="flex items-center gap-3 px-1">
+        <h2 className="text-sm font-semibold text-neutral-900 dark:text-white uppercase tracking-wider">Facts</h2>
+        <span className="text-[11px] text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">
+          {topicCount} topics · {factCount} facts · {srcCount} sources
+        </span>
       </div>
-
       <div className="grid grid-cols-1 gap-4">
-        {notes.map((note, i) => (
-          <NoteCard key={i} note={note} index={i} />
+        {topics.map((topic) => (
+          <TopicGroup
+            key={topic.id}
+            topic={topic}
+            facts={topicFacts.get(topic.id) ?? []}
+            sourcesByFact={sourcesByFact}
+          />
         ))}
       </div>
     </div>
