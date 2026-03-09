@@ -12,21 +12,14 @@ import {
   BackgroundVariant,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import dynamic from "next/dynamic";
 import { Network } from "lucide-react";
-
 import {
   TopicNode,
   FactNode,
   SourceNode,
   type CanvasNodeData,
 } from "./KnowledgeNodes";
-import type { PDFHighlight } from "./PDFModal";
-
-const PDFModal = dynamic(
-  () => import("./PDFModal").then((m) => m.PDFModal),
-  { ssr: false }
-);
+import { PDFModal, type PDFHighlight } from "./PDFModal";
 
 // --- Types ---
 interface Relation {

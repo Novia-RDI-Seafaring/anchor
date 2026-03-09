@@ -80,3 +80,16 @@ def serve_pdf(
 ):
     path = get_file_service().get_file_path(filename)
     return FileResponse(path=path, media_type="application/pdf")
+
+
+@router.get("/documents/pdf/info")
+def get_pdf_info(
+    filename: str = Query(..., description="Filename of the PDF"),
+):
+    """Return basic PDF metadata (page count)."""
+    import pypdfium2 as pdfium  # type: ignore
+    path = get_file_service().get_file_path(filename)
+    doc = pdfium.PdfDocument(str(path))
+    page_count = len(doc)
+    doc.close()
+    return {"filename": filename, "page_count": page_count}
