@@ -6,7 +6,7 @@ from src.kb_engine.patches import *
 
 from src.core import logging # Initialize Logfire early
 from src.agent.agent import agent, AgentDeps
-from src.agent.state import RAGState
+from src.agent.state import Canvas
 from src.core.config import get_settings
 from src.core.context import set_current_model_id
 from src.api import documents_router, search_router, config_router, file_provider_router
@@ -41,7 +41,7 @@ async def model_context_middleware(request: Request, call_next):
     return response
 
 # Mount the AG-UI agent
-ag_ui_app = agent.to_ag_ui(deps=AgentDeps(state=RAGState(), rag=get_rag_engine()))
+ag_ui_app = agent.to_ag_ui(deps=AgentDeps(state=Canvas(notes=[]), rag=get_rag_engine()))
 app.mount("/agent", ag_ui_app)
 
 # Include API routers
