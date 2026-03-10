@@ -122,10 +122,10 @@ def normalize_bboxes(metadata: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]
                     {
                         'page_no': page_no,
                         'bbox': [
-                            float(bbox.get('l', 0.0)),
-                            float(bbox.get('t', 0.0)),
-                            float(bbox.get('r', 0.0)),
-                            float(bbox.get('b', 0.0)),
+                            min(float(bbox.get('l', 0.0)), float(bbox.get('r', 0.0))),
+                            max(float(bbox.get('t', 0.0)), float(bbox.get('b', 0.0))),
+                            max(float(bbox.get('l', 0.0)), float(bbox.get('r', 0.0))),
+                            min(float(bbox.get('t', 0.0)), float(bbox.get('b', 0.0))),
                         ],
                     }
                 )

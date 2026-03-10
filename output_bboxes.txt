@@ -1,0 +1,35 @@
+
+--- Citation 1 ---
+File: Alfa Laval LKH.pdf
+BBoxes: [{'page_no': 2, 'bbox': [55.3424072265625, 762.2931671142578, 552.9893798828125, 687.7207336425781]}]
+BBox: [55.3424072265625, 762.2931671142578, 552.9893798828125, 687.7207336425781]
+Location: page 2
+Text snippet: Materials, 1 = . Product wetted steel parts:, 1 = W. 1.4404 (316L). Other steel parts:, 1 = Stainless steel. Inside surface finish:, 1 = Standard blasted. Product wetted elastomers:, 1 = EPDM. Rotary ...
+
+--- Citation 2 ---
+File: wartsila-31df.pdf
+BBoxes: [{'page_no': 2, 'bbox': [43.824, 139.61601660156248, 501.91, 101.61801660156243]}]
+BBox: [43.824, 139.61601660156248, 501.91, 101.61801660156243]
+Location: page 2
+Text snippet: Disclaimer The information contained herein is provided for informational purposes only and may not be incorporated, in whole or in part, into any agreement or proposal. No representation of any kind ...
+
+--- Citation 3 ---
+File: wartsila-31df.pdf
+BBoxes: [{'page_no': 2, 'bbox': [45.354, 216.24401660156252, 186.177, 210.2450166015625]}]
+BBox: [45.354, 216.24401660156252, 186.177, 210.2450166015625]
+Location: page 2
+Text snippet: Please contact Wärtsilä for further information....
+
+--- Citation 4 ---
+File: wartsila-31df.pdf
+BBoxes: [{'page_no': 2, 'bbox': [43.824, 90.19901660156245, 483.561, 76.20001660156254]}]
+BBox: [43.824, 90.19901660156245, 483.561, 76.20001660156254]
+Location: page 2
+Text snippet: The information in this document is subject to change without notice and the given data does not carry any contractual value. Wärtsilä assumes no responsibility for any errors that may appear in this ...
+
+--- Citation 5 ---
+File: wartsila-31df.pdf
+BBoxes: [{'page_no': 2, 'bbox': [43.824, 72.78201660156253, 277.57, 66.78301660156251]}]
+BBox: [43.824, 72.78201660156253, 277.57, 66.78301660156251]
+Location: page 2
+Text snippet: WÄRTSILÄ® is a registered trademark. Copyright © 2023 Wärtsilä Corporation....

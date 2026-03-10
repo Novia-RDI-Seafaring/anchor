@@ -40,21 +40,28 @@ function BboxOverlays({
       {highlights.map((h, i) => {
         const [l = 0, t = 0, r = 0, b = 0] = h.bbox;
         if (!r && !t) return null;
+
+        // Normalize: ensure xLeft < xRight, yTop > yBottom (BOTTOMLEFT convention)
+        const xLeft = Math.min(l, r);
+        const xRight = Math.max(l, r);
+        const yTop = Math.max(t, b);     // larger y = closer to top of page
+        const yBottom = Math.min(t, b);   // smaller y = closer to bottom of page
+
         const isActive = i === activeIdx;
         // bbox is BOTTOMLEFT origin: t = top edge (larger y), b = bottom edge (smaller y)
-        // CSS top = distance from page top = pageHeight - t
-        const leftPct   = (l / pageWidth)  * 100;
-        const topPct    = ((pageHeight - t) / pageHeight) * 100;
-        const widthPct  = ((r - l) / pageWidth)  * 100;
-        const heightPct = ((t - b) / pageHeight) * 100;
+        // CSS top = distance from page top = pageHeight - yTop
+        const leftPct = (xLeft / pageWidth) * 100;
+        const topPct = ((pageHeight - yTop) / pageHeight) * 100;
+        const widthPct = ((xRight - xLeft) / pageWidth) * 100;
+        const heightPct = ((yTop - yBottom) / pageHeight) * 100;
         return (
           <div
             key={i}
             className="pointer-events-none absolute rounded-sm transition-colors"
             style={{
-              left:   `${leftPct}%`,
-              top:    `${topPct}%`,
-              width:  `${widthPct}%`,
+              left: `${leftPct}%`,
+              top: `${topPct}%`,
+              width: `${widthPct}%`,
               height: `${heightPct}%`,
               border: isActive
                 ? "2.5px solid rgba(245,158,11,0.95)"
@@ -77,11 +84,11 @@ export function PDFModal({
   highlights = [],
   onClose,
 }: PDFModalProps) {
-  const [numPages, setNumPages]       = useState(0);
+  const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(initialPage);
-  const [scale, setScale]             = useState(1.0);
-  const [imgSize, setImgSize]         = useState<{ w: number; h: number } | null>(null);
-  const [pageDims, setPageDims]       = useState<{ w: number; h: number } | null>(null);
+  const [scale, setScale] = useState(1.0);
+  const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
+  const [pageDims, setPageDims] = useState<{ w: number; h: number } | null>(null);
 
   // Index of the "active" (focused) highlight. Null = just browsing pages freely.
   const [activeHlIdx, setActiveHlIdx] = useState<number | null>(() => {
@@ -133,8 +140,8 @@ export function PDFModal({
     : null;
 
   // Page dimensions in PDF points — from backend (real values), fallback to A4
-  const pageWidthPt  = pageDims?.w ?? (imgSize ? 595 : 595);
-  const pageHeightPt = pageDims?.h ?? (imgSize ? 595 * (imgSize.h / imgSize.w) : 842);
+  const pageWidthPt = pageDims?.w ?? (imgSize ? 595 : 595);
+  const pageHeightPt = pageDims?.h ?? (imgSize ? pageWidthPt * (imgSize.h / imgSize.w) : 842);
 
   const hasHighlights = highlights.length > 0;
 
@@ -161,11 +168,10 @@ export function PDFModal({
                 key={pg}
                 data-page={pg}
                 onClick={() => { setCurrentPage(pg); setActiveHlIdx(null); }}
-                className={`w-full rounded-lg overflow-hidden border-2 transition-all flex flex-col items-center pb-0.5 ${
-                  currentPage === pg
-                    ? "border-indigo-500 shadow-md"
-                    : "border-transparent hover:border-neutral-300 dark:hover:border-neutral-600"
-                }`}
+                className={`w-full rounded-lg overflow-hidden border-2 transition-all flex flex-col items-center pb-0.5 ${currentPage === pg
+                  ? "border-indigo-500 shadow-md"
+                  : "border-transparent hover:border-neutral-300 dark:hover:border-neutral-600"
+                  }`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -267,11 +273,10 @@ export function PDFModal({
                   <button
                     key={i}
                     onClick={() => goToHighlight(i)}
-                    className={`shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded-full transition-colors ${
-                      i === activeHlIdx
-                        ? "bg-amber-400 dark:bg-amber-500 text-white"
-                        : "bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-800"
-                    }`}
+                    className={`shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded-full transition-colors ${i === activeHlIdx
+                      ? "bg-amber-400 dark:bg-amber-500 text-white"
+                      : "bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-800"
+                      }`}
                     title={`Page ${h.page}`}
                   >
                     p.{h.page}
