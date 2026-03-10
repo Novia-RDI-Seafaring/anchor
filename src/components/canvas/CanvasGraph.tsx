@@ -171,12 +171,13 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
 
     const hiddenIds = descendants([...collapsedIds], childrenOf);
 
-    // Pre-compute source/spec children per fact node
+    // Pre-compute source children per fact node. Spec nodes are rendered
+    // directly in the graph, not treated as source thumbnails.
     const factSources = new Map<string, CanvasNodeData[]>();
     for (const r of relations) {
       const from = nodeMap.get(r.from_id);
       const to = nodeMap.get(r.to_id);
-      if (from?.node_type === "fact" && (to?.node_type === "source" || to?.node_type === "spec")) {
+      if (from?.node_type === "fact" && to?.node_type === "source") {
         const arr = factSources.get(r.from_id) ?? [];
         arr.push(to);
         factSources.set(r.from_id, arr);
@@ -277,7 +278,7 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
     for (const r of relations) {
       const from = nodeMap.get(r.from_id);
       const to = nodeMap.get(r.to_id);
-      if (from?.node_type === "fact" && (to?.node_type === "source" || to?.node_type === "spec")) {
+      if (from?.node_type === "fact" && to?.node_type === "source") {
         const arr = factSources.get(r.from_id) ?? [];
         arr.push(to);
         factSources.set(r.from_id, arr);

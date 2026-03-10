@@ -18,7 +18,8 @@ from ..helpers import (
     _TABLE_OR_SPEC_RE,
     _select_page,
     _select_bbox,
-    _select_highlights
+    _select_highlights,
+    _clean_text_value
 )
 
 async def list_documents(ctx: RunContext[AgentDeps]):
@@ -260,7 +261,21 @@ async def resolve_technical_query(
         }
         return result
 
-    fact_text = _summarize_chunks(normalized_chunks)
+    # For Fact nodes, combine top chunks if the first one is too brief
+    fact_parts = []
+    total_len = 0
+    for chunk in normalized_chunks[:3]:
+        text = _clean_text_value(str(chunk.get("content") or ""))
+        if text and text not in fact_parts:
+            fact_parts.append(text)
+            total_len += len(text)
+            if total_len > 800:
+                break
+    
+    fact_text = "\n\n".join(fact_parts)
+    if len(fact_text) > 1200:
+        fact_text = fact_text[:1197] + "..."
+        
     fact = CanvasNode(node_type="fact", text=fact_text, status="found")
     _mark_node_for_run(fact, ctx)
     ctx.deps.state.nodes.append(fact)

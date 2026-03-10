@@ -251,15 +251,19 @@ def _requires_canvas_update(prompt: str) -> bool:
     return True
 
 def _clean_text_value(value: str) -> str:
-    return re.sub(r"\s+", " ", value.strip().strip("-•*")).strip()
+    # Preserve newlines but trim leading/trailing space for each line
+    lines = [line.strip().strip("-•*") for line in value.splitlines()]
+    return "\n".join(line for line in lines if line).strip()
 
 def _split_candidate_lines(text: str) -> list[str]:
-    base_lines = [_clean_text_value(line) for line in text.replace("\r", "\n").split("\n")]
+    normalized = re.sub(r",\s*\d+\s*=", ":", text)
+    normalized = re.sub(r"\.\s+(?=[A-Z][A-Za-z0-9 /()_-]{2,60}:)", "\n", normalized)
+    base_lines = [_clean_text_value(line) for line in normalized.replace("\r", "\n").split("\n")]
     lines = [line for line in base_lines if line]
     if len(lines) >= 2:
         return lines
     expanded = []
-    for part in re.split(r"[;•]", text):
+    for part in re.split(r"[;•]", normalized):
         cleaned = _clean_text_value(part)
         if cleaned:
             expanded.append(cleaned)
@@ -271,23 +275,32 @@ def _extract_properties_from_text(text: str, query: str) -> list[SpecProperty]:
     model_match = _MODEL_CODE_RE.search(query)
     query_model = model_match.group(1) if model_match else ""
 
+    def append_property(key: str, value: str) -> None:
+        nonlocal properties, seen
+        unit = ""
+        unit_match = re.search(r"^(.*?)(?:\s+)([a-zA-Z°][a-zA-Z0-9/°]*)$", value)
+        if unit_match:
+            potential_value = _clean_text_value(unit_match.group(1))
+            potential_unit = unit_match.group(2)
+            if re.search(r"\d", potential_value) or potential_unit.lower() in {"bar", "kg", "mm", "cm", "m", "kw", "w", "a", "v", "hz", "rpm", "c", "f"}:
+                value = potential_value
+                unit = potential_unit
+
+        signature = (key.lower(), value.lower(), unit.lower())
+        if signature in seen:
+            return
+        seen.add(signature)
+        properties.append(SpecProperty(key=key, value=value, unit=unit))
+
     for line in _split_candidate_lines(text):
-        if ":" in line:
-            key, value = line.split(":", 1)
-            key = _clean_text_value(key)
-            value = _clean_text_value(value)
-            if not key or not value:
-                continue
-            unit = ""
-            unit_match = re.match(r"^(.*?)(?:\s+)(mm|cm|m|bar|kg|kW|W|A|V|Hz|rpm|°C|C)$", value, re.IGNORECASE)
-            if unit_match:
-                value = _clean_text_value(unit_match.group(1))
-                unit = unit_match.group(2)
-            signature = (key.lower(), value.lower(), unit.lower())
-            if signature in seen:
-                continue
-            seen.add(signature)
-            properties.append(SpecProperty(key=key, value=value, unit=unit))
+        pair_matches = list(re.finditer(r"([^:=.;\n]+)[:=]\s*([^.;\n]+)", line))
+        if pair_matches:
+            for match in pair_matches:
+                key = _clean_text_value(match.group(1))
+                value = _clean_text_value(match.group(2))
+                if not key or not value:
+                    continue
+                append_property(key, value)
             continue
 
         if query_model and re.search(r"\b\d+(?:[.,]\d+)?\s*(mm|cm|m)\b", line, re.IGNORECASE):
@@ -356,8 +369,8 @@ def _summarize_chunks(chunks: list[dict]) -> str:
     content = _clean_text_value(str(chunks[0].get("content") or ""))
     if not content:
         return "Relevant content was found, but the extracted text was empty."
-    if len(content) > 320:
-        content = content[:317].rstrip() + "..."
+    if len(content) > 1000:
+        content = content[:997].rstrip() + "..."
     return content
 
 def _summarize_properties(properties: list[SpecProperty], filename: str | None = None) -> str:

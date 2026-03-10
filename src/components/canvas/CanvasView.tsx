@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { FileText, X, ChevronDown, ChevronRight, Tag, MessageSquare, MapPin } from "lucide-react";
+import { FileText, X, ChevronDown, ChevronRight, Tag, MessageSquare, MapPin, Table2 } from "lucide-react";
 import type { CanvasNodeData } from "./KnowledgeNodes";
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
@@ -16,6 +16,8 @@ interface CanvasState {
   nodes: CanvasNodeData[];
   relations: Relation[];
 }
+
+type FindingNode = CanvasNodeData & { node_type: "fact" | "spec" };
 
 function buildImageUrl(filename: string, page: number, bbox: number[]): string {
   const [l = 0, t = 0, r = 0, b = 0] = bbox;
@@ -75,15 +77,15 @@ function SourceChip({ node }: { node: CanvasNodeData }) {
 // --- Topic group card ---
 function TopicGroup({
   topic,
-  facts,
-  sourcesByFact,
+  findings,
+  evidenceByNode,
 }: {
   topic: CanvasNodeData;
-  facts: CanvasNodeData[];
-  sourcesByFact: Map<string, CanvasNodeData[]>;
+  findings: FindingNode[];
+  evidenceByNode: Map<string, CanvasNodeData[]>;
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  const totalSources = facts.reduce((n, f) => n + (sourcesByFact.get(f.id) ?? []).length, 0);
+  const totalSources = findings.reduce((n, finding) => n + (evidenceByNode.get(finding.id) ?? []).length, 0);
 
   return (
     <div className="bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-800 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
@@ -98,7 +100,7 @@ function TopicGroup({
         </span>
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/50 px-2 py-0.5 rounded-full">
-            {facts.length} fact{facts.length !== 1 ? "s" : ""}
+            {findings.length} item{findings.length !== 1 ? "s" : ""}
           </span>
           {totalSources > 0 && (
             <span className="text-[11px] text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/30 px-2 py-0.5 rounded-full">
@@ -112,19 +114,56 @@ function TopicGroup({
       {/* Facts list */}
       {!collapsed && (
         <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
-          {facts.length === 0 ? (
-            <p className="px-4 py-3 text-xs text-neutral-400 italic">No facts yet.</p>
+          {findings.length === 0 ? (
+            <p className="px-4 py-3 text-xs text-neutral-400 italic">No facts or spec tables yet.</p>
           ) : (
-            facts.map((fact, fi) => {
-              const sources = sourcesByFact.get(fact.id) ?? [];
+            findings.map((finding) => {
+              const sources = evidenceByNode.get(finding.id) ?? [];
               return (
-                <div key={fact.id} className="px-4 py-3 space-y-2">
-                  <div className="flex items-start gap-2">
-                    <MessageSquare size={12} className="text-indigo-400 shrink-0 mt-0.5" />
-                    <p className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed flex-1">
-                      {fact.text}
-                    </p>
-                  </div>
+                <div key={finding.id} className="px-4 py-3 space-y-2">
+                  {finding.node_type === "fact" ? (
+                    <div className="flex items-start gap-2">
+                      <MessageSquare size={12} className="text-indigo-400 shrink-0 mt-0.5" />
+                      <p className="text-sm text-neutral-700 dark:text-neutral-300 leading-relaxed flex-1 whitespace-pre-line">
+                        {finding.text}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-start gap-2">
+                        <Table2 size={12} className="text-violet-500 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-violet-900 dark:text-violet-200">
+                            {finding.spec_title || "Specifications"}
+                          </p>
+                        </div>
+                      </div>
+                      {finding.properties && finding.properties.length > 0 ? (
+                        <div className="overflow-hidden rounded-lg border border-violet-100 dark:border-violet-800/70">
+                          <table className="w-full text-[11px] border-collapse">
+                            <tbody>
+                              {finding.properties.map((property, index) => (
+                                <tr
+                                  key={`${finding.id}-${property.key}-${index}`}
+                                  className={index % 2 === 0 ? "bg-white dark:bg-neutral-900" : "bg-violet-50/40 dark:bg-violet-950/20"}
+                                >
+                                  <td className="px-2.5 py-1.5 text-neutral-500 dark:text-neutral-400 font-medium whitespace-nowrap border-r border-violet-100 dark:border-violet-800/50 align-top">
+                                    {property.key}
+                                  </td>
+                                  <td className="px-2.5 py-1.5 text-neutral-800 dark:text-neutral-200 font-mono break-words">
+                                    {property.value}
+                                    {property.unit ? <span className="text-neutral-400 ml-1">{property.unit}</span> : null}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <p className="pl-5 text-xs text-neutral-400 italic">No structured properties.</p>
+                      )}
+                    </div>
+                  )}
                   {sources.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 pl-5">
                       {sources.map((src) => <SourceChip key={src.id} node={src} />)}
@@ -149,7 +188,7 @@ function EmptyFacts() {
       </div>
       <h3 className="text-base font-semibold text-neutral-700 dark:text-neutral-300 mb-1">No facts yet</h3>
       <p className="text-sm text-neutral-400 dark:text-neutral-500 max-w-xs">
-        Ask a technical question — the agent will populate topics, facts, and sources here.
+        Ask a technical question — the agent will populate topics, facts/specs, and sources here.
       </p>
     </div>
   );
@@ -172,28 +211,37 @@ export function CanvasView({ canvas }: { canvas: CanvasState | null | undefined 
 
   const topics = nodes.filter((n) => n.node_type === "topic");
 
-  // For each topic, find its fact children
-  const topicFacts = new Map<string, CanvasNodeData[]>();
+  // For each topic, find its fact/spec children
+  const topicFindings = new Map<string, FindingNode[]>();
   for (const topic of topics) {
-    const factIds = (childrenOf.get(topic.id) ?? []).filter(
-      (id) => nodeMap.get(id)?.node_type === "fact"
+    const childIds = (childrenOf.get(topic.id) ?? []).filter(
+      (id) => {
+        const childType = nodeMap.get(id)?.node_type;
+        return childType === "fact" || childType === "spec";
+      }
     );
-    topicFacts.set(topic.id, factIds.map((id) => nodeMap.get(id)!).filter(Boolean));
+    topicFindings.set(
+      topic.id,
+      childIds
+        .map((id) => nodeMap.get(id)!)
+        .filter((node): node is FindingNode => node.node_type === "fact" || node.node_type === "spec")
+    );
   }
 
-  // For each fact, find its source children
-  const sourcesByFact = new Map<string, CanvasNodeData[]>();
-  for (const n of nodes.filter((n) => n.node_type === "fact")) {
+  // For each fact/spec node, find its source children
+  const evidenceByNode = new Map<string, CanvasNodeData[]>();
+  for (const n of nodes.filter((node) => node.node_type === "fact" || node.node_type === "spec")) {
     const srcIds = (childrenOf.get(n.id) ?? []).filter(
       (id) => nodeMap.get(id)?.node_type === "source"
     );
-    sourcesByFact.set(n.id, srcIds.map((id) => nodeMap.get(id)!).filter(Boolean));
+    evidenceByNode.set(n.id, srcIds.map((id) => nodeMap.get(id)!).filter(Boolean));
   }
 
   if (topics.length === 0 && nodes.length === 0) return <EmptyFacts />;
 
   const topicCount = topics.length;
   const factCount = nodes.filter((n) => n.node_type === "fact").length;
+  const specCount = nodes.filter((n) => n.node_type === "spec").length;
   const srcCount = nodes.filter((n) => n.node_type === "source").length;
 
   return (
@@ -201,7 +249,7 @@ export function CanvasView({ canvas }: { canvas: CanvasState | null | undefined 
       <div className="flex items-center gap-3 px-1">
         <h2 className="text-sm font-semibold text-neutral-900 dark:text-white uppercase tracking-wider">Facts</h2>
         <span className="text-[11px] text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">
-          {topicCount} topics · {factCount} facts · {srcCount} sources
+          {topicCount} topics · {factCount} facts · {specCount} specs · {srcCount} sources
         </span>
       </div>
       <div className="grid grid-cols-1 gap-4">
@@ -209,8 +257,8 @@ export function CanvasView({ canvas }: { canvas: CanvasState | null | undefined 
           <TopicGroup
             key={topic.id}
             topic={topic}
-            facts={topicFacts.get(topic.id) ?? []}
-            sourcesByFact={sourcesByFact}
+            findings={topicFindings.get(topic.id) ?? []}
+            evidenceByNode={evidenceByNode}
           />
         ))}
       </div>
