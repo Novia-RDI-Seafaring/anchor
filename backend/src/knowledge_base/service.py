@@ -240,18 +240,32 @@ class DocumentService:
         from llama_index.core.vector_stores import MetadataFilter, MetadataFilters, FilterOperator
 
         rag = get_rag_engine()
+        vector_store = await get_vector_store()
 
         filters = None
+        document_record: Optional[Dict[str, Any]] = None
         if document_id:
-            filters = MetadataFilters(
-                filters=[
-                    MetadataFilter(
-                        key='document_id',
-                        operator=FilterOperator.EQ,
-                        value=document_id,
-                    )
-                ]
-            )
+            document_record = await vector_store.get_document(document_id)
+            if document_record and document_record.get("file_path"):
+                filters = MetadataFilters(
+                    filters=[
+                        MetadataFilter(
+                            key='filepath',
+                            operator=FilterOperator.EQ,
+                            value=document_record["file_path"],
+                        )
+                    ]
+                )
+            else:
+                filters = MetadataFilters(
+                    filters=[
+                        MetadataFilter(
+                            key='document_id',
+                            operator=FilterOperator.EQ,
+                            value=document_id,
+                        )
+                    ]
+                )
 
         retriever_kwargs: Dict[str, Any] = {'similarity_top_k': top_k}
         if filters is not None:
@@ -267,8 +281,12 @@ class DocumentService:
         for rank, result in enumerate(retrieved, start=1):
             node = result.node
             metadata = dict(node.metadata or {})
-            doc_id = metadata.get('document_id')
-            filename = metadata.get('filename') or metadata.get('file_name')
+            doc_id = document_id or metadata.get('document_id')
+            filename = (
+                (document_record.get("filename") if document_record else None)
+                or metadata.get('filename')
+                or metadata.get('file_name')
+            )
             score = float(result.score or 0.0)
 
             chunks.append(

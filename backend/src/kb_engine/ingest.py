@@ -72,7 +72,13 @@ class IngestionHandler(DoclingFullCtxIngestionHandler):
         return origin
 
     def _ingest_file(self, rag: LlamaIndexRag, file: Path, document_id: str | None = None) -> int:
-        reader = DoclingReader(export_type=DoclingReader.ExportType.JSON, id_func=gen_id)
+        def document_ref_id(doc: DLDocument, file_path: str | Path) -> str:
+            return document_id or gen_id(doc, file_path)
+
+        reader = DoclingReader(
+            export_type=DoclingReader.ExportType.JSON,
+            id_func=document_ref_id,
+        )
         documents = reader.load_data(file)
         if documents:
             documents[0].metadata["filepath"] = str(file)
