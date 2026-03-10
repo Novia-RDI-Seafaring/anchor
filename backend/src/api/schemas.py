@@ -1,6 +1,6 @@
 """API request/response schemas (Pydantic models)."""
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 
 
 class URLRequest(BaseModel):
@@ -13,12 +13,6 @@ class SearchRequest(BaseModel):
     query: str
     top_k: int = 5
     document_id: Optional[str] = None
-
-
-class PageImagesRequest(BaseModel):
-    """Request for multiple page images."""
-    page_numbers: List[int]
-
 
 class UpdateEmbeddingRequest(BaseModel):
     """Request to update the embedding model."""

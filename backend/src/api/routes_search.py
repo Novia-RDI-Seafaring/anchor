@@ -11,7 +11,6 @@ router = APIRouter(prefix="/api", tags=["search"])
 async def search_knowledge_base(request: SearchRequest):
     """Search the knowledge base, optionally filtered by document."""
     try:
-        raise NotImplementedError("search_knowledge_base is not implemented")
         service = await get_document_service()
         results = await service.search(request.query, request.top_k, request.document_id)
         first_provenance = (results[0].get("provenance") if results else {}) or {}

@@ -8,9 +8,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 from src.core import logging # Initialize Logfire first
 from src.observability.langfuse.config import init_langfuse
 from src.agent.agent import agent
-from pydantic_ai.messages import ModelMessage
-from pydantic_ai.ag_ui import StateDeps
-from src.agent.state import RAGState
+from src.agent.deps import AgentDeps
+from src.agent.state import Canvas
+from src.kb_engine.rag_engine import get_rag_engine
 import asyncio
 
 async def test_tracing():
@@ -18,8 +18,7 @@ async def test_tracing():
     init_langfuse()
     
     print("Running a test query through the agent...")
-    # Mock dependencies
-    deps = StateDeps(RAGState())
+    deps = AgentDeps(state=Canvas(), rag=get_rag_engine())
     
     # Run a simple query
     try:

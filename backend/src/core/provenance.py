@@ -5,7 +5,8 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from evals.trace_logger import get_run_id
+def get_run_id() -> str | None:
+    return None
 
 try:
     from opentelemetry import trace as ot_trace
@@ -50,6 +51,20 @@ def normalize_page_numbers(metadata: Optional[Dict[str, Any]]) -> List[int]:
         value = metadata.get(key)
         if isinstance(value, int):
             pages.add(value)
+    doc_items = metadata.get('doc_items')
+    if isinstance(doc_items, list):
+        for item in doc_items:
+            if not isinstance(item, dict):
+                continue
+            prov_list = item.get('prov')
+            if not isinstance(prov_list, list):
+                continue
+            for prov in prov_list:
+                if not isinstance(prov, dict):
+                    continue
+                page_no = prov.get('page_no')
+                if isinstance(page_no, int):
+                    pages.add(page_no)
     return sorted(pages)
 
 
@@ -71,12 +86,51 @@ def normalize_bboxes(metadata: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]
     output: List[Dict[str, Any]] = []
     if isinstance(metadata.get('bboxes'), list):
         for item in metadata['bboxes']:
-            if isinstance(item, dict) and isinstance(item.get('bbox'), list):
-                output.append(item)
+            if not isinstance(item, dict):
+                continue
+            page_no = item.get('page_no') or item.get('page_number') or item.get('page')
+            bbox = item.get('bbox')
+            if isinstance(page_no, int) and isinstance(bbox, list):
+                output.append({'page_no': page_no, 'bbox': bbox})
     elif isinstance(metadata.get('bbox'), list):
         page_no = metadata.get('page_no') or metadata.get('page_number') or metadata.get('page')
         if isinstance(page_no, int):
             output.append({'page_no': page_no, 'bbox': metadata['bbox']})
+
+    if output:
+        return output
+
+    doc_items = metadata.get('doc_items')
+    if not isinstance(doc_items, list):
+        return output
+
+    for item in doc_items:
+        if not isinstance(item, dict):
+            continue
+        prov_list = item.get('prov')
+        if not isinstance(prov_list, list):
+            continue
+        for prov in prov_list:
+            if not isinstance(prov, dict):
+                continue
+            page_no = prov.get('page_no')
+            bbox = prov.get('bbox')
+            if not isinstance(page_no, int) or not isinstance(bbox, dict):
+                continue
+            try:
+                output.append(
+                    {
+                        'page_no': page_no,
+                        'bbox': [
+                            float(bbox.get('l', 0.0)),
+                            float(bbox.get('t', 0.0)),
+                            float(bbox.get('r', 0.0)),
+                            float(bbox.get('b', 0.0)),
+                        ],
+                    }
+                )
+            except (TypeError, ValueError):
+                continue
     return output
 
 
@@ -99,6 +153,8 @@ def build_retrieved_chunk(
     page_numbers = normalize_page_numbers(normalized_metadata)
     section_path = normalize_section_path(normalized_metadata)
     bboxes = normalize_bboxes(normalized_metadata)
+    primary_page = page_numbers[0] if page_numbers else None
+    primary_bbox = bboxes[0]['bbox'] if bboxes else []
 
     if document_id and 'document_id' not in normalized_metadata:
         normalized_metadata['document_id'] = document_id
@@ -141,8 +197,10 @@ def build_retrieved_chunk(
         'document_id': document_id,
         'similarity': float(score),
         'page_numbers': page_numbers,
+        'page_no': primary_page,
         'section_path': section_path,
         'bboxes': bboxes,
+        'bbox': primary_bbox,
         'metadata': normalized_metadata,
         'citation': {
             'document_id': document_id,

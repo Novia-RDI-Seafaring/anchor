@@ -1,22 +1,13 @@
-from ketju.rag.llama_index.variants.simple_docling_full_ctx import SimpleDoclingFullCtxRag
-from ketju.rag.base import BaseRAG
 from pathlib import Path
-
-from llama_index.core import VectorStoreIndex, get_response_synthesizer
-from llama_index.core.retrievers import VectorIndexRetriever
-from llama_index.core.query_engine import RetrieverQueryEngine
-from llama_index.core.base.response.schema import RESPONSE_TYPE
 from ketju.rag.llama_index.variants.simple import LlamaIndexRag
 from ketju.rag.llama_index.storage.pgvector import PgVectorStorageBackend
 from .ingest import IngestionHandler
-from .pgvector import StorageBackend
 from .query import QueryHandler
 from logging import getLogger
 from src.core.config import get_settings
 logger = getLogger(__name__)
 import os
-from typing import Dict, Any, List, Sequence
-from .query import QueryHandler
+from typing import Any, Sequence
 
 
 class RagEngine(LlamaIndexRag):
@@ -26,17 +17,24 @@ class RagEngine(LlamaIndexRag):
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
-        print(f"RagEngine initialized with and kwargs: {kwargs}")
         self.ingested_files = set()
 
     def _ingest(
         self,
         files: Sequence[Path | str] | None = None,
         max_files: int | None = None,
+        document_ids: Sequence[str] | None = None,
     ) -> int:
-        l = super()._ingest(files=files, max_files=max_files)
-        for f in files[:max_files] if files else [] : self.ingested_files.add(str(f))
-        return l
+        ingested = self.ingestion_handler.ingest(
+            self,
+            files=files,
+            max_files=max_files,
+            document_ids=document_ids,
+        )
+        resolved_files = self.resolve_pdf_files(files=files, max_files=max_files)
+        for file in resolved_files:
+            self.ingested_files.add(str(file))
+        return ingested
     
     @property
     def docstore(self) -> 'BaseDocumentStore':
@@ -81,40 +79,38 @@ _rag_engine = None
 def get_rag_engine() -> RagEngine: 
     global _rag_engine
     if _rag_engine is None:
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # stting sform llam index
-            from llama_index.core import Settings
-            from llama_index.embeddings.openai import OpenAIEmbedding
-            from llama_index.llms.openai import OpenAI
-            settings = get_settings()
+        from llama_index.core import Settings
+        from llama_index.embeddings.openai import OpenAIEmbedding
+        from llama_index.llms.openai import OpenAI
 
-            embedding_model_id = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
-            # ### Modify to restore 3072 compatibility ##
-            # Why: your existing pgvector table is vector(3072), so runtime embeddings must also be 3072.
-            embedding_dim = 3072
-            Settings.embed_model = OpenAIEmbedding(
-                model=embedding_model_id,
-            )
-            Settings.llm = OpenAI(model="gpt-4o-mini")
-            db_url = settings.database_url
+        settings = get_settings()
 
-            storage_backend = PgVectorStorageBackend(
-                database_url=db_url,
-                embed_dim=embedding_dim,
-            )
-            # ### Modify to disable HNSW when using 3072 ##
-            # Why: pgvector HNSW cannot index vectors above 2000 dimensions.
-            if embedding_dim > 2000:
-                storage_backend.hnsw_kwargs = None
+        persist_dir = settings.rag_workspace_dir
+        persist_dir.mkdir(parents=True, exist_ok=True)
 
-            _rag_engine = RagEngine(
-                name="anchor_rag5",
-                persist_dir=Path(tmpdir),
-                query_handler=QueryHandler(),
-                ingestion_handler=IngestionHandler(),
-                embedding_model=embedding_model_id,
-                storage_backend=storage_backend,
-            )
+        embedding_model_id = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
+        # Existing pgvector table uses vector(3072), runtime embeddings must match.
+        embedding_dim = 3072
+        Settings.embed_model = OpenAIEmbedding(model=embedding_model_id)
+        Settings.llm = OpenAI(model="gpt-4o-mini")
+
+        storage_backend = PgVectorStorageBackend(
+            database_url=settings.database_url,
+            table_name=settings.ketju_table_name,
+            schema_name=settings.ketju_schema_name,
+            embed_dim=embedding_dim,
+        )
+        # pgvector HNSW cannot index vectors above 2000 dimensions.
+        if embedding_dim > 2000:
+            storage_backend.hnsw_kwargs = None
+
+        _rag_engine = RagEngine(
+            name="anchor_rag5",
+            persist_dir=persist_dir,
+            query_handler=QueryHandler(),
+            ingestion_handler=IngestionHandler(),
+            embedding_model=embedding_model_id,
+            storage_backend=storage_backend,
+        )
     return _rag_engine
 

@@ -2,6 +2,7 @@ import hashlib
 import ipaddress
 import json
 import os
+import shutil
 import socket
 from typing import Any, cast
 from pathlib import Path
@@ -10,6 +11,7 @@ from urllib.parse import urlparse
 import httpx
 from fastapi import HTTPException, UploadFile
 from pydantic import BaseModel
+from src.core.config import get_settings
 
 INDEX_FILE_NAME = "files_index.json"
 MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024  # 25MB
@@ -210,6 +212,28 @@ class FileService:
         self._save_index(index)
         return {"file_id": file_id, "deleted": deleted}
 
+    def reset_storage(self) -> dict[str, int]:
+        """Delete all tracked and stray uploaded files, then clear the file index."""
+        if not self.uploads_folder.exists():
+            self.uploads_folder.mkdir(parents=True, exist_ok=True)
+            self._save_index({})
+            return {"files_deleted": 0}
+
+        files_deleted = 0
+        for child in list(self.uploads_folder.iterdir()):
+            if child.name == INDEX_FILE_NAME:
+                continue
+            if child.is_file():
+                child.unlink(missing_ok=True)
+                files_deleted += 1
+                continue
+            if child.is_dir():
+                files_deleted += sum(1 for path in child.rglob("*") if path.is_file())
+                shutil.rmtree(child, ignore_errors=True)
+
+        self._save_index({})
+        return {"files_deleted": files_deleted}
+
 
 _file_service: FileService | None = None
 
@@ -217,6 +241,6 @@ _file_service: FileService | None = None
 def get_file_service() -> FileService:
     global _file_service
     if _file_service is None:
-        uploads_dir = Path(os.getenv("UPLOADS_DIR", "data/uploads"))
+        uploads_dir = get_settings().uploads_path
         _file_service = FileService(uploads_folder=uploads_dir)
     return _file_service

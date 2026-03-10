@@ -75,6 +75,7 @@ test_chunking/
 test_scripts/
 notes_docs/
 diagrams/*
+docs/*
 
 # Documentation (temporary/working files)
 backend/diagrams/

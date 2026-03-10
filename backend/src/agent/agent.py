@@ -8,9 +8,6 @@ from pydantic_ai.models.instrumented import InstrumentationSettings
 from ag_ui.core import EventType, StateSnapshotEvent  # type: ignore
 from .deps import AgentDeps
 from .prompts import SYS_PROMPT as SYSTEM_PROMPT
-from .tools import (
-    render_component as render_component_impl,
-)
 from .state import Canvas, CanvasNode, Relation, SourceHighlight, SpecProperty, NodeStatus
 
 load_dotenv(override=True)
@@ -39,10 +36,84 @@ def _snapshot(state: Canvas) -> ToolReturn:
         metadata=[StateSnapshotEvent(type=EventType.STATE_SNAPSHOT, snapshot=state)],
     )
 
+
+def _select_bbox(chunk: dict) -> list[int]:
+    bbox = chunk.get("bbox")
+    if isinstance(bbox, list):
+        return bbox
+
+    bboxes = chunk.get("bboxes")
+    if isinstance(bboxes, list):
+        for item in bboxes:
+            if isinstance(item, dict) and isinstance(item.get("bbox"), list):
+                return item["bbox"]
+
+    metadata = chunk.get("metadata")
+    if isinstance(metadata, dict) and isinstance(metadata.get("bbox"), list):
+        return metadata["bbox"]
+
+    return []
+
+
+def _select_page(chunk: dict) -> int:
+    page_no = chunk.get("page_no")
+    if isinstance(page_no, int):
+        return page_no
+
+    page_numbers = chunk.get("page_numbers")
+    if isinstance(page_numbers, list) and page_numbers and isinstance(page_numbers[0], int):
+        return page_numbers[0]
+
+    metadata = chunk.get("metadata")
+    if isinstance(metadata, dict):
+        raw_page = metadata.get("page_no") or metadata.get("page_number") or metadata.get("page")
+        if isinstance(raw_page, int):
+            return raw_page
+
+    return 1
+
+
+def _select_highlights(chunk: dict) -> list[dict]:
+    highlights = []
+    bboxes = chunk.get("bboxes")
+    if isinstance(bboxes, list):
+        for item in bboxes:
+            if not isinstance(item, dict):
+                continue
+            page_no = item.get("page_no")
+            bbox = item.get("bbox")
+            if isinstance(page_no, int) and isinstance(bbox, list):
+                highlights.append({"page": page_no, "bbox": bbox})
+
+    if highlights:
+        return highlights
+
+    return [{"page": _select_page(chunk), "bbox": _select_bbox(chunk)}]
+
 @agent.tool
 async def check_canvas(ctx: RunContext[AgentDeps]):
     """Return the current canvas state (nodes + relations)."""
     return ctx.deps.state
+
+@agent.tool
+async def list_documents(ctx: RunContext[AgentDeps]):
+    """List ingested documents available in the knowledge base."""
+    from src.knowledge_base.service import get_document_service
+
+    service = await get_document_service()
+    documents = await service.list_documents()
+    return {
+        "documents": [
+            {
+                "document_id": doc.get("document_id"),
+                "filename": doc.get("filename"),
+                "status": doc.get("status"),
+                "chunk_count": doc.get("chunk_count"),
+                "source_type": doc.get("source_type"),
+            }
+            for doc in documents
+        ]
+    }
 
 @agent.tool
 async def add_topic(
@@ -127,7 +198,51 @@ async def search_knowledge_base(
     doc_ids: list[str] | None = None,
     top_k: int = 5,
 ):
-    return ctx.deps.rag.query(question=query, filename=filename, doc_ids=doc_ids, top_k=top_k)
+    from src.core.context import get_active_document_id
+    from src.knowledge_base.service import get_document_service
+
+    active_doc_id = get_active_document_id()
+    document_id_filter = active_doc_id
+    if document_id_filter is None and doc_ids and len(doc_ids) == 1:
+        document_id_filter = doc_ids[0]
+
+    service = await get_document_service()
+    fetch_k = max(top_k, 40 if (filename or (doc_ids and len(doc_ids) > 1)) else top_k)
+    chunks = await service.search(query=query, top_k=fetch_k, document_id=document_id_filter)
+
+    if filename:
+        normalized_filename = filename.strip().lower()
+        filtered_by_filename = [
+            chunk for chunk in chunks
+            if str(chunk.get("filename") or "").strip().lower() == normalized_filename
+        ]
+        if filtered_by_filename:
+            chunks = filtered_by_filename
+
+    if doc_ids:
+        doc_id_set = set(doc_ids)
+        filtered_by_doc_ids = [chunk for chunk in chunks if chunk.get("document_id") in doc_id_set]
+        if filtered_by_doc_ids:
+            chunks = filtered_by_doc_ids
+
+    normalized_chunks = []
+    for chunk in chunks[:top_k]:
+        normalized = dict(chunk)
+        normalized["page_no"] = _select_page(normalized)
+        normalized["bbox"] = _select_bbox(normalized)
+        normalized["highlights"] = _select_highlights(normalized)
+        normalized_chunks.append(normalized)
+
+    first_provenance = (normalized_chunks[0].get("provenance") if normalized_chunks else {}) or {}
+    retrieval = first_provenance.get("pipeline", {}).get("retrieval", {})
+    trace = first_provenance.get("trace", {})
+
+    return {
+        "chunks": normalized_chunks,
+        "sources": list(dict.fromkeys(chunk.get("filename") for chunk in normalized_chunks if chunk.get("filename"))),
+        "retrieval_id": retrieval.get("retrieval_id"),
+        "trace_id": trace.get("trace_id"),
+    }
 
 @agent.tool
 async def add_spec_node(

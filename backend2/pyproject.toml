@@ -1,9 +1,0 @@
-[project]
-name = "backend2"
-version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = ">=3.12"
-dependencies = [
-    "ketju[agent,agui,docling,llama-index,pgvector,rag]>=0.1.1",
-]

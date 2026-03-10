@@ -41,7 +41,7 @@ async def model_context_middleware(request: Request, call_next):
     return response
 
 # Mount the AG-UI agent
-ag_ui_app = agent.to_ag_ui(deps=AgentDeps(state=Canvas(notes=[]), rag=get_rag_engine()))
+ag_ui_app = agent.to_ag_ui(deps=AgentDeps(state=Canvas(), rag=get_rag_engine()))
 app.mount("/agent", ag_ui_app)
 
 # Include API routers
