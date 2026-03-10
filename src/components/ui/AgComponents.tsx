@@ -22,12 +22,6 @@ interface AgSelectProps {
   className?: string;
 }
 
-interface AgToggleProps {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-  label?: string;
-}
-
 // --- Components ---
 
 export const AgButton: React.FC<AgButtonProps> = ({
@@ -144,38 +138,10 @@ export const AgSelect: React.FC<AgSelectProps> = ({
   );
 };
 
-export const AgToggle: React.FC<AgToggleProps> = ({ checked, onChange, label }) => (
-  <button
-    onClick={() => onChange(!checked)}
-    className="flex items-center justify-between w-full group focus:outline-none"
-    role="switch"
-    aria-checked={checked}
-  >
-    {label && <span className="text-sm text-neutral-700 dark:text-neutral-300">{label}</span>}
-    <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${checked ? 'bg-indigo-600' : 'bg-neutral-200 dark:bg-neutral-700'}`}>
-      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
-    </div>
-  </button>
-);
-
 export const AgCard: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => {
   return (
     <div className={`rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-950 dark:text-neutral-50 shadow-sm ${className}`}>
       {children}
     </div>
-  );
-};
-
-export const AgBadge: React.FC<{ children: React.ReactNode; variant?: 'default' | 'error' | 'success' }> = ({ children, variant = 'default' }) => {
-  const variants = {
-    default: "bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200",
-    error: "bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-100 dark:border-red-900/50",
-    success: "bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 border border-green-100 dark:border-green-900/50"
-  };
-
-  return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${variants[variant]}`}>
-      {children}
-    </span>
   );
 };

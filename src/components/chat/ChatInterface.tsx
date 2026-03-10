@@ -9,7 +9,6 @@ import { TextMessage } from '@copilotkit/runtime-client-gql';
 interface ChatInterfaceProps {
     isOpen: boolean;
     onClose: () => void;
-    initialMessages?: any[];
 }
 
 // Adapter to make InputArea compatible with CopilotKit's Input component interface
@@ -34,7 +33,7 @@ const InputAreaAdapter = (props: any) => {
     );
 };
 
-export function ChatInterface({ isOpen, onClose, initialMessages }: ChatInterfaceProps) {
+export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
     if (!isOpen) return null;
 
     return (
@@ -59,7 +58,7 @@ export function ChatInterface({ isOpen, onClose, initialMessages }: ChatInterfac
                     className="h-full"
                     labels={{
                         title: "",
-                        initial: "How can I help you today?"
+                        initial: "Ask a technical question and I will ground the answer in your loaded documents."
                     }}
                     Input={InputAreaAdapter}
                 />

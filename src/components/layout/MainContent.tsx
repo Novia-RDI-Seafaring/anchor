@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { AgCard, AgButton } from '../ui/AgComponents';
-import { FileText, MoreHorizontal, Share2, Database, LayoutDashboard, Network } from 'lucide-react';
+import { AgCard } from '../ui/AgComponents';
+import { FileText, Database, LayoutDashboard, Network } from 'lucide-react';
 import { useCopilotChat, useCoAgent } from "@copilotkit/react-core";
 import { Message, TextMessage } from "@copilotkit/runtime-client-gql";
 import { CanvasView } from '../canvas/CanvasView';
@@ -111,17 +111,8 @@ export const MainContent: React.FC = () => {
         {/* Header Section */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl md:text-3xl font-semibold text-neutral-900 dark:text-white mb-1">Project Workspace</h1>
-            <p className="text-neutral-500 dark:text-neutral-400 text-sm">Sourced facts and retrieved documents appear here.</p>
-          </div>
-          <div className="flex gap-2">
-            <AgButton variant="secondary" size="sm" className="hidden md:flex gap-2">
-              <Share2 size={16} />
-              Share
-            </AgButton>
-            <AgButton variant="icon" size="sm">
-              <MoreHorizontal size={20} />
-            </AgButton>
+            <h1 className="text-2xl md:text-3xl font-semibold text-neutral-900 dark:text-white mb-1">Evidence Workspace</h1>
+            <p className="text-neutral-500 dark:text-neutral-400 text-sm">Cross-check retrieved facts against source-backed evidence here.</p>
           </div>
         </div>
 
@@ -170,7 +161,7 @@ export const MainContent: React.FC = () => {
             {sourcesByFile.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {sourcesByFile.map((source: any) => (
-                  <AgCard key={source.filename} className="p-4 hover:shadow-md transition-all duration-200 cursor-pointer group border-neutral-200/60 dark:border-neutral-800">
+                  <AgCard key={source.filename} className="p-4 hover:shadow-md transition-all duration-200 group border-neutral-200/60 dark:border-neutral-800">
                     <div className="flex justify-between items-start mb-3">
                       <div className="h-10 w-10 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg flex items-center justify-center group-hover:bg-blue-100 dark:group-hover:bg-blue-900/50 transition-colors">
                         <FileText size={20} />

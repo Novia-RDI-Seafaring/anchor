@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Conversation } from '@/types';
-import { Message } from "@copilotkit/runtime-client-gql";
 
 const STORAGE_KEY = 'anchor_conversations';
 

@@ -54,23 +54,6 @@ const getApiUrl = (): string => {
 // Validate and export URL (throws if invalid)
 export const API_URL = getApiUrl();
 
-// Export type-safe fetch wrapper
-export const apiClient = {
-    async fetch(path: string, options?: RequestInit): Promise<Response> {
-        const url = `${API_URL}${path}`;
-
-        const response = await fetch(url, {
-            ...options,
-            headers: {
-                'Content-Type': 'application/json',
-                ...options?.headers,
-            },
-        });
-
-        return response;
-    },
-};
-
 // Log configuration in development
 if (process.env.NODE_ENV === 'development') {
     console.log(`API URL: ${API_URL}`);

@@ -1,7 +1,5 @@
 import React, { useState, useRef, useEffect, memo, useCallback } from 'react';
-import { ArrowUp, Paperclip, Database, Globe, X, Loader2, FileText } from 'lucide-react';
-import { useApp } from '@/contexts/AppContext';
-import { UploadOptionsModal, UploadOptions } from '../modals/UploadOptionsModal';
+import { ArrowUp, Paperclip, X, Loader2, FileText } from 'lucide-react';
 import { API_URL } from '@/lib/api-config';
 
 interface InputAreaProps {
@@ -18,11 +16,8 @@ interface UploadingFile {
 const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled }) => {
   const [text, setText] = useState('');
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
-  const [showOptionsModal, setShowOptionsModal] = useState(false);
-  const [pendingFiles, setPendingFiles] = useState<FileList | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { isRagEnabled, setIsRagEnabled } = useApp();
 
   // Auto-resize textarea
   useEffect(() => {
@@ -47,36 +42,14 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
     }
   }, [handleSend]);
 
-  const toggleRag = useCallback(() => {
-    setIsRagEnabled(!isRagEnabled);
-  }, [setIsRagEnabled, isRagEnabled]);
-
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    // Store files and show options modal
-    setPendingFiles(files);
-    setShowOptionsModal(true);
-  }, []);
-
-  const handleUploadWithOptions = useCallback(async (options: UploadOptions) => {
-    setShowOptionsModal(false);
-
-    if (!pendingFiles) return;
-
-    // Process each file with the selected options
-    for (const file of Array.from(pendingFiles)) {
+  const uploadFiles = useCallback(async (files: File[]) => {
+    for (const file of files) {
       // Add to uploading state
       setUploadingFiles(prev => [...prev, { file, status: 'uploading' }]);
 
       try {
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('preserve_images', String(options.preserveImages));
-        formData.append('preserve_tables', String(options.preserveTables));
-        formData.append('enable_ocr', String(options.enableOcr));
-        formData.append('table_mode', options.tableMode);
 
         const res = await fetch(`${API_URL}/api/documents/upload`, {
           method: 'POST',
@@ -112,10 +85,14 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
       }
     }
 
-    // Clear pending files and reset input
-    setPendingFiles(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
-  }, [pendingFiles]);
+  }, []);
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    void uploadFiles(Array.from(files));
+  }, [uploadFiles]);
 
   const removeUploadingFile = useCallback((file: File) => {
     setUploadingFiles(prev => prev.filter(f => f.file !== file));
@@ -156,22 +133,6 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
           ))}
         </div>
       )}
-
-      {/* RAG / Context Controls Toolbar */}
-      <div className="flex items-center gap-2 mb-2 px-1 overflow-x-auto no-scrollbar">
-        <button
-          onClick={toggleRag}
-          className={`flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium transition-all ${isRagEnabled ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-300 dark:border-indigo-800' : 'bg-neutral-100 text-neutral-500 border border-neutral-200 dark:bg-neutral-800 dark:text-neutral-400 dark:border-neutral-700'}`}
-        >
-          <Database size={10} />
-          {isRagEnabled ? 'Context On' : 'Context Off'}
-        </button>
-
-        <button className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-medium bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-700">
-          <Globe size={10} />
-          <span>Web</span>
-        </button>
-      </div>
 
       <div className="relative group rounded-2xl bg-white dark:bg-neutral-900 shadow-sm border border-neutral-200 dark:border-neutral-800 focus-within:ring-2 focus-within:ring-brand-500/20 focus-within:border-brand-500 transition-all duration-200">
 
@@ -224,21 +185,10 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
 
       <div className="mt-2 text-center">
         <p className="text-[10px] text-neutral-400 truncate">
-          AI checks are recommended.
+          Ask for source-backed answers. Use the paperclip to add documents to the KB.
         </p>
       </div>
 
-      {/* Upload Options Modal */}
-      <UploadOptionsModal
-        isOpen={showOptionsModal}
-        files={pendingFiles}
-        onClose={() => {
-          setShowOptionsModal(false);
-          setPendingFiles(null);
-          if (fileInputRef.current) fileInputRef.current.value = '';
-        }}
-        onConfirm={handleUploadWithOptions}
-      />
     </div>
   );
 };

@@ -1,11 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { AgSelect, AgBadge } from '../ui/AgComponents';
-import { Database, Cpu, FileText } from 'lucide-react';
-import { DatabaseStatus, ModelOption } from '../../types';
-
-// Use environment variable or default to localhost:8001
-// Ensure we don't end up with 'undefined' string
-const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001';
+import { AgSelect } from '../ui/AgComponents';
+import { Cpu, FileText } from 'lucide-react';
+import { ModelOption } from '../../types';
+import { API_URL } from '@/lib/api-config';
 
 interface Document {
   document_id: string;
@@ -14,18 +11,14 @@ interface Document {
 }
 
 interface HeaderProps {
-  sidebarOpen: boolean;
-  toggleSidebar: () => void;
   selectedModel: string;
   onModelChange: (id: string) => void;
-  dbStatus: DatabaseStatus;
   models: ModelOption[];
 }
 
 export const Header: React.FC<HeaderProps> = ({
   selectedModel,
   onModelChange,
-  dbStatus,
   models
 }) => {
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -101,11 +94,6 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right: Model Selector */}
       <div className="flex items-center gap-4">
-        <div className="hidden md:flex items-center text-xs text-neutral-400 dark:text-neutral-500 gap-1 mr-2">
-          <span>RAG Pipeline</span>
-          <span className="w-px h-3 bg-neutral-300 dark:bg-neutral-700 mx-1"></span>
-          <span className="text-green-600 dark:text-green-500 font-medium">Ready</span>
-        </div>
         <AgSelect
           options={models.filter(m => m.type === 'chat' || !m.type)}
           value={selectedModel}

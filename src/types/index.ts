@@ -1,10 +1,3 @@
-export interface Message {
-    id: string;
-    role: 'user' | 'assistant';
-    content: string;
-    timestamp: Date;
-}
-
 export interface Conversation {
     id: string;
     title: string;
@@ -18,10 +11,4 @@ export interface ModelOption {
     label: string;
     provider: string;
     type?: 'chat' | 'embedding';
-}
-
-export interface DatabaseStatus {
-    id: string;
-    status: 'connected' | 'error' | 'loading';
-    label: string;
 }

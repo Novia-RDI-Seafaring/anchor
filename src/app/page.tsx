@@ -6,14 +6,12 @@ import { Header } from '@/components/layout/Header';
 import { MainContent } from '@/components/layout/MainContent';
 import { SettingsPage } from '@/components/settings/SettingsPage';
 import { ChatInterface } from '@/components/chat/ChatInterface';
-import { DatabaseStatus } from '@/types';
 import { Menu, MessageCircle } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { CopilotKit } from "@copilotkit/react-core";
 import { ModelOption } from '@/types';
-
-// Use environment variable or default to localhost:8001
-const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8001';
+import { API_URL } from '@/lib/api-config';
+import { normalizeModelOptions } from '@/lib/models';
 
 export default function Home() {
     // Global state from Context
@@ -24,13 +22,11 @@ export default function Home() {
         setSidebarOpen,
         isChatOpen,
         setIsChatOpen,
-        isDarkMode,
-        toggleDarkMode,
         selectedModel,
         setSelectedModel,
         activeConversationId,
         setActiveConversationId,
-        conversations
+        createNewConversation
     } = useApp();
 
     // Models state
@@ -43,12 +39,15 @@ export default function Home() {
                 const res = await fetch(`${API_URL}/api/models`);
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.models && data.models.length > 0) {
-                        setModels(data.models);
-                        // If current selected model is not in list, select first one
-                        const currentExists = data.models.some((m: ModelOption) => m.id === selectedModel);
-                        if (!currentExists && data.models.length > 0) {
-                            setSelectedModel(data.models[0].id);
+                    const normalizedModels = normalizeModelOptions(data.models);
+                    if (normalizedModels.length > 0) {
+                        setModels(normalizedModels);
+                        const currentExists = normalizedModels.some((m) => m.id === selectedModel);
+                        if (!currentExists) {
+                            const fallbackModel = normalizedModels[0];
+                            if (fallbackModel) {
+                                setSelectedModel(fallbackModel.id);
+                            }
                         }
                     }
                 }
@@ -62,30 +61,25 @@ export default function Home() {
     }, [selectedModel, setSelectedModel]);
 
     const handleNewChat = useCallback(() => {
+        const conversationId = createNewConversation();
         setCurrentView('workspace');
-        setActiveConversationId('1');
+        setActiveConversationId(conversationId);
+        setIsChatOpen(true);
         if (window.innerWidth < 768) setSidebarOpen(false);
-    }, [setCurrentView, setActiveConversationId, setSidebarOpen]);
+    }, [createNewConversation, setCurrentView, setActiveConversationId, setIsChatOpen, setSidebarOpen]);
 
     const handleSelectConversation = useCallback((id: string) => {
         setCurrentView('workspace');
         setActiveConversationId(id);
+        setIsChatOpen(true);
         if (window.innerWidth < 768) setSidebarOpen(false);
-    }, [setCurrentView, setActiveConversationId, setSidebarOpen]);
+    }, [setCurrentView, setActiveConversationId, setIsChatOpen, setSidebarOpen]);
 
     const handleSettingsClick = useCallback(() => {
         setCurrentView('settings');
         setIsChatOpen(false);
         if (window.innerWidth < 768) setSidebarOpen(false);
     }, [setCurrentView, setIsChatOpen, setSidebarOpen]);
-
-    const dbStatus: DatabaseStatus = {
-        id: 'db-err',
-        status: 'error',
-        label: 'Error loading DBs'
-    };
-
-    const currentConversation = conversations.find(c => c.id === activeConversationId);
 
     return (
         <div className="flex h-screen w-full bg-white dark:bg-neutral-950 overflow-hidden text-neutral-900 dark:text-neutral-50 font-sans relative">
@@ -95,6 +89,8 @@ export default function Home() {
                 isOpen={sidebarOpen}
                 toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
                 onSettingsClick={handleSettingsClick}
+                onNewChat={handleNewChat}
+                onConversationSelect={handleSelectConversation}
             />
 
             {/* Main App Container */}
@@ -114,11 +110,8 @@ export default function Home() {
                     <>
                         {/* Global Header */}
                         <Header
-                            sidebarOpen={sidebarOpen}
-                            toggleSidebar={() => setSidebarOpen(!sidebarOpen)}
                             selectedModel={selectedModel}
                             onModelChange={setSelectedModel}
-                            dbStatus={dbStatus}
                             models={models}
                         />
 
@@ -141,7 +134,6 @@ export default function Home() {
                                     key={activeConversationId}
                                     isOpen={isChatOpen}
                                     onClose={() => setIsChatOpen(false)}
-                                    initialMessages={currentConversation?.messages || []}
                                 />
 
                                 {/* Floating Chat Toggle (Visible when chat is closed) */}

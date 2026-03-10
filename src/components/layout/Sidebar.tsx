@@ -3,7 +3,6 @@ import {
   Anchor,
   Plus,
   Settings,
-  MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
   Moon,
@@ -20,18 +19,20 @@ interface SidebarProps {
   isOpen: boolean;
   toggleSidebar: () => void;
   onSettingsClick: () => void;
+  onNewChat: () => void;
+  onConversationSelect: (id: string) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   isOpen,
   toggleSidebar,
   onSettingsClick,
+  onNewChat,
+  onConversationSelect,
 }) => {
   const {
     conversations,
     activeConversationId,
-    setActiveConversationId,
-    createNewConversation,
     deleteConversation,
     updateConversation,
     isDarkMode,
@@ -40,14 +41,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
-
-  const onNewChat = () => {
-    createNewConversation();
-  };
-
-  const onSelectConversation = (id: string) => {
-    setActiveConversationId(id);
-  };
 
   const handleStartEdit = (id: string, currentTitle: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -129,7 +122,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </AgButton>
         <AgButton variant="ghost" className="w-full justify-start gap-3" onClick={onSettingsClick}>
           <Settings size={18} />
-          <span>Settings</span>
+          <span>Knowledge Base</span>
         </AgButton>
       </div>
 
@@ -140,9 +133,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="flex-1 overflow-y-auto px-3 pb-4">
         <div className="flex items-center justify-between px-2 mb-2">
           <h3 className="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Conversations</h3>
-          <button className="text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300">
-            <MessageSquare size={14} />
-          </button>
         </div>
 
         <div className="space-y-1">
@@ -183,7 +173,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               ) : (
                 <div
-                  onClick={() => onSelectConversation(conv.id)}
+                  onClick={() => onConversationSelect(conv.id)}
                   className="w-full text-left cursor-pointer"
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -231,9 +221,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${isDarkMode ? 'translate-x-4' : 'translate-x-0'}`} />
           </div>
         </button>
-        <div className="text-xs text-neutral-400 dark:text-neutral-600 text-center mt-2">
-          v1.0.4 - AG-UI
-        </div>
       </div>
     </div>
   );
