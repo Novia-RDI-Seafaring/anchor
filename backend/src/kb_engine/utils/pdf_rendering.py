@@ -364,13 +364,14 @@ def render_pdf_page_to_image(
     pdf_path: Path | str,
     page_no: int = 1,
     phrases: Sequence[str] | None = None,
+    box_specs: Sequence[Dict[str, Any]] | None = None,
     crop_bbox: Dict[str, Any] | None = None,
     scale: int = 2,
 ) -> Image.Image:
     return _render_page_with_provs(
         pdf_path=Path(pdf_path),
         page_nr=page_no,
-        box_specs=[],
+        box_specs=list(box_specs or []),
         phrases=phrases,
         crop_bbox=crop_bbox,
         scale=scale,
@@ -381,6 +382,7 @@ def render_pdf_page_to_image_bytes(
     pdf_path: Path | str,
     page_no: int = 1,
     phrases: Sequence[str] | None = None,
+    box_specs: Sequence[Dict[str, Any]] | None = None,
     crop_bbox: Dict[str, Any] | None = None,
     scale: int = 2,
 ) -> bytes:
@@ -388,6 +390,7 @@ def render_pdf_page_to_image_bytes(
         pdf_path=pdf_path,
         page_no=page_no,
         phrases=phrases,
+        box_specs=box_specs,
         crop_bbox=crop_bbox,
         scale=scale,
     )

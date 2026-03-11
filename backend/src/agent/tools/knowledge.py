@@ -7,7 +7,6 @@ from ..helpers import (
     _mark_node_for_run,
     _ensure_relation,
     _remember_search_results,
-    _select_best_chunk_index,
     _resolve_source_details,
     _get_or_create_source_node,
     _summarize_chunks,
@@ -204,24 +203,20 @@ async def resolve_technical_query(
         }
         return result
 
+    source_chunk_index = 0
     properties: list[SpecProperty] = []
-    for chunk in normalized_chunks[:3]:
-        for prop in _extract_properties_from_text(str(chunk.get("content") or ""), query):
-            if not any(
-                existing.key == prop.key and existing.value == prop.value and existing.unit == prop.unit
-                for existing in properties
-            ):
-                properties.append(prop)
+    for index, chunk in enumerate(normalized_chunks):
+        chunk_properties = _extract_properties_from_text(str(chunk.get("content") or ""), query)
+        if not chunk_properties:
+            continue
+        source_chunk_index = index
+        properties = chunk_properties
+        break
 
     use_spec = prefer_table if prefer_table is not None else bool(properties) and _TABLE_OR_SPEC_RE.search(query) is not None
     if use_spec and not properties:
-        summary_text = _summarize_chunks(normalized_chunks)
+        summary_text = _summarize_chunks([normalized_chunks[source_chunk_index]])
         properties = [SpecProperty(key=_derive_spec_title(query), value=summary_text)]
-
-    source_chunk_index = _select_best_chunk_index(
-        normalized_chunks,
-        properties if use_spec else _summarize_chunks(normalized_chunks),
-    )
     resolved_filename, resolved_page, resolved_bbox, resolved_highlights = _resolve_source_details(
         ctx=ctx,
         chunk_index=source_chunk_index,
@@ -261,18 +256,10 @@ async def resolve_technical_query(
         }
         return result
 
-    # For Fact nodes, combine top chunks if the first one is too brief
-    fact_parts = []
-    total_len = 0
-    for chunk in normalized_chunks[:3]:
-        text = _clean_text_value(str(chunk.get("content") or ""))
-        if text and text not in fact_parts:
-            fact_parts.append(text)
-            total_len += len(text)
-            if total_len > 800:
-                break
-    
-    fact_text = "\n\n".join(fact_parts)
+    fact_chunk = normalized_chunks[source_chunk_index] if normalized_chunks else {}
+    fact_text = _clean_text_value(str(fact_chunk.get("content") or ""))
+    if not fact_text:
+        fact_text = _summarize_chunks([fact_chunk] if fact_chunk else normalized_chunks)
     if len(fact_text) > 1200:
         fact_text = fact_text[:1197] + "..."
         

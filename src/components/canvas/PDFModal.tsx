@@ -17,65 +17,20 @@ interface PDFModalProps {
   onClose: () => void;
 }
 
-function screenshotUrl(filename: string, page: number): string {
-  return `${API_URL}/api/documents/pdf/screenshot?filename=${encodeURIComponent(filename)}&page_no=${page}`;
-}
-
-// Bbox overlays on the current page.
-// activeIdx: index into `highlights` array of the currently-focused highlight
-// (shown in amber); all others shown in indigo at lower opacity.
-function BboxOverlays({
-  highlights,
-  activeIdx,
-  pageWidth,
-  pageHeight,
-}: {
-  highlights: PDFHighlight[];
-  activeIdx: number | null;
-  pageWidth: number;
-  pageHeight: number;
-}) {
-  return (
-    <>
-      {highlights.map((h, i) => {
-        const [l = 0, t = 0, r = 0, b = 0] = h.bbox;
-        if (!r && !t) return null;
-
-        // Normalize: ensure xLeft < xRight, yTop > yBottom (BOTTOMLEFT convention)
-        const xLeft = Math.min(l, r);
-        const xRight = Math.max(l, r);
-        const yTop = Math.max(t, b);     // larger y = closer to top of page
-        const yBottom = Math.min(t, b);   // smaller y = closer to bottom of page
-
-        const isActive = i === activeIdx;
-        // bbox is BOTTOMLEFT origin: t = top edge (larger y), b = bottom edge (smaller y)
-        // CSS top = distance from page top = pageHeight - yTop
-        const leftPct = (xLeft / pageWidth) * 100;
-        const topPct = ((pageHeight - yTop) / pageHeight) * 100;
-        const widthPct = ((xRight - xLeft) / pageWidth) * 100;
-        const heightPct = ((yTop - yBottom) / pageHeight) * 100;
-        return (
-          <div
-            key={i}
-            className="pointer-events-none absolute rounded-sm transition-colors"
-            style={{
-              left: `${leftPct}%`,
-              top: `${topPct}%`,
-              width: `${widthPct}%`,
-              height: `${heightPct}%`,
-              border: isActive
-                ? "2.5px solid rgba(245,158,11,0.95)"
-                : "2px solid rgba(99,102,241,0.6)",
-              backgroundColor: isActive
-                ? "rgba(245,158,11,0.15)"
-                : "rgba(99,102,241,0.08)",
-              zIndex: isActive ? 2 : 1,
-            }}
-          />
-        );
-      })}
-    </>
-  );
+function screenshotUrl(filename: string, page: number, highlight?: PDFHighlight | null): string {
+  const params = new URLSearchParams({
+    filename,
+    page_no: String(page),
+  });
+  if (highlight && Array.isArray(highlight.bbox) && highlight.bbox.length === 4) {
+    const [l = 0, t = 0, r = 0, b = 0] = highlight.bbox;
+    params.set("bbox_l", String(l));
+    params.set("bbox_t", String(t));
+    params.set("bbox_r", String(r));
+    params.set("bbox_b", String(b));
+    params.set("draw_bbox", "true");
+  }
+  return `${API_URL}/api/documents/pdf/screenshot?${params.toString()}`;
 }
 
 export function PDFModal({
@@ -87,8 +42,6 @@ export function PDFModal({
   const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [scale, setScale] = useState(1.0);
-  const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
-  const [pageDims, setPageDims] = useState<{ w: number; h: number } | null>(null);
 
   // Index of the "active" (focused) highlight. Null = just browsing pages freely.
   const [activeHlIdx, setActiveHlIdx] = useState<number | null>(() => {
@@ -105,9 +58,6 @@ export function PDFModal({
       .then((r) => r.json())
       .then((d) => {
         setNumPages(d.page_count ?? 0);
-        if (d.page_width_pt && d.page_height_pt) {
-          setPageDims({ w: d.page_width_pt, h: d.page_height_pt });
-        }
       })
       .catch(() => setNumPages(1));
   }, [filename, currentPage]);
@@ -134,14 +84,10 @@ export function PDFModal({
   }, [highlights]);
 
   const highlightsOnPage = highlights.filter((h) => h.page === currentPage);
-  // Map global highlight index → per-page overlay index
-  const activeHlIdxOnPage = activeHlIdx !== null && highlights[activeHlIdx]?.page === currentPage
-    ? highlightsOnPage.indexOf(highlights[activeHlIdx])
-    : null;
-
-  // Page dimensions in PDF points — from backend (real values), fallback to A4
-  const pageWidthPt = pageDims?.w ?? (imgSize ? 595 : 595);
-  const pageHeightPt = pageDims?.h ?? (imgSize ? pageWidthPt * (imgSize.h / imgSize.w) : 842);
+  const activeHighlight =
+    activeHlIdx !== null && highlights[activeHlIdx]?.page === currentPage
+      ? highlights[activeHlIdx]
+      : highlightsOnPage[0] ?? null;
 
   const hasHighlights = highlights.length > 0;
 
@@ -295,22 +241,10 @@ export function PDFModal({
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 key={`${filename}-${currentPage}`}
-                src={screenshotUrl(filename, currentPage)}
+                src={screenshotUrl(filename, currentPage, activeHighlight)}
                 alt={`Page ${currentPage}`}
                 className="block max-w-none"
-                onLoad={(e) => {
-                  const img = e.currentTarget;
-                  setImgSize({ w: img.naturalWidth, h: img.naturalHeight });
-                }}
               />
-              {highlightsOnPage.length > 0 && imgSize && (
-                <BboxOverlays
-                  highlights={highlightsOnPage}
-                  activeIdx={activeHlIdxOnPage}
-                  pageWidth={pageWidthPt}
-                  pageHeight={pageHeightPt}
-                />
-              )}
             </div>
           </div>
         </div>

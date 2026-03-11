@@ -42,6 +42,7 @@ def get_pdf_screenshot(
     bbox_r: Optional[float] = Query(None, description="Optional crop bbox right"),
     bbox_b: Optional[float] = Query(None, description="Optional crop bbox bottom"),
     bbox_coord_origin: str = Query("BOTTOMLEFT", description="BBox coord origin"),
+    draw_bbox: bool = Query(False, description="Draw bbox on full page instead of cropping to it"),
 ):
     """Render a PDF page to PNG, with optional phrase highlights."""
     path = get_file_service().get_file_path(filename)
@@ -52,25 +53,37 @@ def get_pdf_screenshot(
         raise HTTPException(status_code=400, detail="Provide all bbox values: bbox_l,bbox_t,bbox_r,bbox_b")
 
     crop_bbox: dict[str, Any] | None = None
+    box_specs: list[dict[str, Any]] = []
     if has_all_bbox:
         l = cast(float, bbox_l)
         t = cast(float, bbox_t)
         r = cast(float, bbox_r)
         b = cast(float, bbox_b)
-        crop_bbox = {
+        bbox_payload = {
             "l": float(l),
             "t": float(t),
             "r": float(r),
             "b": float(b),
             "coord_origin": bbox_coord_origin,
         }
+        if draw_bbox:
+            box_specs.append({"bbox": bbox_payload, "_style": "box", "_score": 1.0})
+        else:
+            crop_bbox = bbox_payload
 
-    image_bytes = render_pdf_page_to_image_bytes(
-        pdf_path=path,
-        page_no=page_no or 1,
-        phrases=phrase,
-        crop_bbox=crop_bbox,
-    )
+    try:
+        image_bytes = render_pdf_page_to_image_bytes(
+            pdf_path=path,
+            page_no=page_no or 1,
+            phrases=phrase,
+            box_specs=box_specs,
+            crop_bbox=crop_bbox,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unable to render PDF preview for '{filename}': {exc}",
+        ) from exc
     return Response(content=image_bytes, media_type="image/png")
 
 
@@ -90,13 +103,18 @@ def get_pdf_info(
     """Return basic PDF metadata (page count and page dimensions in PDF points)."""
     import pypdfium2 as pdfium  # type: ignore
     path = get_file_service().get_file_path(filename)
-    doc = pdfium.PdfDocument(str(path))
-    page_count = len(doc)
-    # Get dimensions of the requested page (1-indexed)
-    idx = max(0, min(page_no - 1, page_count - 1))
-    page = doc[idx]
-    page_w, page_h = page.get_size()
-    doc.close()
+    try:
+        doc = pdfium.PdfDocument(str(path))
+        page_count = len(doc)
+        idx = max(0, min(page_no - 1, page_count - 1))
+        page = doc[idx]
+        page_w, page_h = page.get_size()
+        doc.close()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unable to inspect PDF '{filename}': {exc}",
+        ) from exc
     return {
         "filename": filename,
         "page_count": page_count,

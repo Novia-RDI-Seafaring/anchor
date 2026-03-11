@@ -145,11 +145,6 @@ export function FactNode({ data }: NodeProps) {
   const { node, sources, onOpenPDF } = data as unknown as FactNodeData;
   const [expanded, setExpanded] = useState(false);
 
-  const allHighlights: PDFHighlight[] = sources.map((s) => ({
-    page: s.page ?? 1,
-    bbox: s.bbox ?? [],
-  }));
-
   return (
     <>
       <Handle type="target" position={Position.Top} className="!bg-indigo-400 !border-indigo-600" />
@@ -192,7 +187,15 @@ export function FactNode({ data }: NodeProps) {
               return (
                 <button
                   key={i}
-                  onClick={() => onOpenPDF(src.filename!, src.page ?? 1, allHighlights)}
+                  onClick={() =>
+                    onOpenPDF(
+                      src.filename!,
+                      src.page ?? 1,
+                      src.highlights && src.highlights.length > 0
+                        ? src.highlights
+                        : [{ page: src.page ?? 1, bbox: src.bbox ?? [] }]
+                    )
+                  }
                   className="group relative w-20 h-14 rounded overflow-hidden border-2 border-indigo-200 dark:border-indigo-700 hover:border-indigo-400 transition-colors shadow-sm"
                   title={`${src.filename} p.${src.page} — open PDF`}
                 >
