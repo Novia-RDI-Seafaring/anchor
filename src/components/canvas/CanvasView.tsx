@@ -27,6 +27,13 @@ function buildImageUrl(filename: string, page: number, bbox: number[]): string {
   return `${API_URL}/api/documents/pdf/screenshot?filename=${encodeURIComponent(filename)}&page_no=${page}&bbox_l=${l}&bbox_t=${t}&bbox_r=${r}&bbox_b=${b}`;
 }
 
+function primaryHighlight(node: CanvasNodeData) {
+  if (node.highlights && node.highlights.length > 0) {
+    return node.highlights[0]!;
+  }
+  return { page: node.page ?? 1, bbox: node.bbox ?? [] };
+}
+
 // --- Lightbox ---
 function Lightbox({ url, caption, onClose }: { url: string; caption: string; onClose: () => void }) {
   return (
@@ -51,8 +58,9 @@ function Lightbox({ url, caption, onClose }: { url: string; caption: string; onC
 function SourceChip({ node }: { node: CanvasNodeData }) {
   const [lightbox, setLightbox] = useState<{ url: string; caption: string } | null>(null);
   if (!node.filename) return null;
-  const imgUrl = buildImageUrl(node.filename, node.page ?? 1, node.bbox ?? []);
-  const caption = `${node.filename} p.${node.page}`;
+  const preview = primaryHighlight(node);
+  const imgUrl = buildImageUrl(node.filename, preview.page, preview.bbox ?? []);
+  const caption = `${node.filename} p.${preview.page}`;
   return (
     <>
       <button
@@ -62,7 +70,7 @@ function SourceChip({ node }: { node: CanvasNodeData }) {
       >
         <MapPin size={10} className="text-teal-500 shrink-0" />
         <span className="text-[11px] font-mono text-teal-700 dark:text-teal-300 truncate max-w-[140px]">
-          {node.filename!.replace(/\.pdf$/i, "")} p.{node.page}
+          {node.filename!.replace(/\.pdf$/i, "")} p.{preview.page}
         </span>
         <span className="relative shrink-0 w-8 h-8 rounded overflow-hidden border border-teal-200 dark:border-teal-700 bg-white dark:bg-neutral-900">
           {/* eslint-disable-next-line @next/next/no-img-element */}

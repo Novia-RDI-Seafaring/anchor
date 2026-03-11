@@ -96,6 +96,13 @@ function bboxUrl(filename: string, page: number, bbox: number[]): string {
   return `${API_URL}/api/documents/pdf/screenshot?filename=${encodeURIComponent(filename)}&page_no=${page}&bbox_l=${l}&bbox_t=${t}&bbox_r=${r}&bbox_b=${b}`;
 }
 
+function primaryHighlight(node: CanvasNodeData): PDFHighlight {
+  if (node.highlights && node.highlights.length > 0) {
+    return node.highlights[0]!;
+  }
+  return { page: node.page ?? 1, bbox: node.bbox ?? [] };
+}
+
 // ─────────────────────────────────────────────
 // TOPIC NODE — amber, collapsible
 // ─────────────────────────────────────────────
@@ -183,21 +190,22 @@ export function FactNode({ data }: NodeProps) {
           <div className="border-t border-neutral-100 dark:border-neutral-800 px-2.5 pb-2.5 pt-2 flex flex-wrap gap-2">
             {sources.map((src, i) => {
               if (!src.filename) return null;
-              const imgUrl = bboxUrl(src.filename, src.page ?? 1, src.bbox ?? []);
+              const preview = primaryHighlight(src);
+              const imgUrl = bboxUrl(src.filename, preview.page, preview.bbox ?? []);
               return (
                 <button
                   key={i}
                   onClick={() =>
                     onOpenPDF(
                       src.filename!,
-                      src.page ?? 1,
+                      preview.page,
                       src.highlights && src.highlights.length > 0
                         ? src.highlights
-                        : [{ page: src.page ?? 1, bbox: src.bbox ?? [] }]
+                        : [preview]
                     )
                   }
                   className="group relative w-20 h-14 rounded overflow-hidden border-2 border-indigo-200 dark:border-indigo-700 hover:border-indigo-400 transition-colors shadow-sm"
-                  title={`${src.filename} p.${src.page} — open PDF`}
+                  title={`${src.filename} p.${preview.page} — open PDF`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
@@ -208,7 +216,7 @@ export function FactNode({ data }: NodeProps) {
                   />
                   <div className="absolute bottom-0.5 right-0.5 bg-black/60 rounded px-1 py-0.5 flex items-center gap-0.5">
                     <FileText size={7} className="text-white" />
-                    <span className="text-[8px] text-white font-mono">{src.page}</span>
+                    <span className="text-[8px] text-white font-mono">{preview.page}</span>
                   </div>
                 </button>
               );

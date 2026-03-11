@@ -127,9 +127,9 @@ def _draw_boxes(
         score = float(spec.get("_score", 1.0))
         score = max(0.0, min(1.0, score))
 
-        fill_alpha = int(30 + score * 140)
-        outline_alpha = int(120 + score * 135)
-        width = max(2, int(2 + score * 4))
+        fill_alpha = int(12 + score * 28)
+        outline_alpha = int(180 + score * 55)
+        width = max(2, int(2 + score * 2))
 
         x0, y0, x1, y1 = _docling_bbox_to_image_coords(
             bbox=bbox,
@@ -143,20 +143,20 @@ def _draw_boxes(
             draw.rectangle(
                 [x0, y0, x1, y1],
                 outline=None,
-                fill=(255, 235, 59, min(160, fill_alpha)),
+                fill=(252, 211, 77, min(72, fill_alpha + 20)),
                 width=1,
             )
             underline_y = y1
             draw.line(
                 [(x0, underline_y), (x1, underline_y)],
-                fill=(255, 0, 0, outline_alpha),
+                fill=(245, 158, 11, outline_alpha),
                 width=max(2, width),
             )
         else:
             draw.rectangle(
                 [x0, y0, x1, y1],
-                outline=(255, 0, 0, outline_alpha),
-                fill=(255, 0, 0, fill_alpha),
+                outline=(245, 158, 11, outline_alpha),
+                fill=(251, 191, 36, min(48, fill_alpha)),
                 width=width,
             )
 

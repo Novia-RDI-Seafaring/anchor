@@ -19,6 +19,13 @@ function buildEvidenceImageUrl(filename: string, page: number, bbox: number[]): 
   return `${API_URL}/api/documents/pdf/screenshot?filename=${encodeURIComponent(filename)}&page_no=${page}&bbox_l=${l}&bbox_t=${t}&bbox_r=${r}&bbox_b=${b}`;
 }
 
+function primaryHighlight(node: any): PDFHighlight {
+  if (Array.isArray(node?.highlights) && node.highlights.length > 0) {
+    return node.highlights[0] as PDFHighlight;
+  }
+  return { page: node?.page ?? 1, bbox: node?.bbox ?? [] };
+}
+
 export const MainContent: React.FC = () => {
   const { visibleMessages = [] } = useCopilotChat() as any;
   const { activeConversationId, updateConversation, conversations } = useApp();
@@ -48,17 +55,18 @@ export const MainContent: React.FC = () => {
     const parentLabel = primaryParent?.node_type === 'spec'
       ? (primaryParent.spec_title || 'Specifications')
       : (primaryParent?.text || primaryParent?.title || 'Evidence');
+    const preview = primaryHighlight(node);
     const highlights: PDFHighlight[] = node.highlights && node.highlights.length > 0
       ? node.highlights
-      : [{ page: node.page ?? 1, bbox: node.bbox ?? [] }];
+      : [preview];
 
     return {
       id: node.id,
       filename: node.filename,
-      page: node.page ?? 1,
-      bbox: node.bbox ?? [],
+      page: preview.page,
+      bbox: preview.bbox ?? [],
       highlights,
-      previewUrl: buildEvidenceImageUrl(node.filename, node.page ?? 1, node.bbox ?? []),
+      previewUrl: buildEvidenceImageUrl(node.filename, preview.page, preview.bbox ?? []),
       title: primaryParent?.node_type === 'spec' ? (primaryParent.spec_title || 'Specifications') : 'Fact evidence',
       summary: String(parentLabel || '').replace(/\s+/g, ' ').trim(),
       parentType: primaryParent?.node_type === 'spec' ? 'spec' : 'fact',
