@@ -39,9 +39,17 @@ export function PDFModal({
   highlights = [],
   onClose,
 }: PDFModalProps) {
-  const [numPages, setNumPages] = useState(0);
+  const fallbackPageCount = Math.max(
+    initialPage,
+    ...highlights.map((highlight) => highlight.page),
+    1,
+  );
+  const [numPages, setNumPages] = useState(fallbackPageCount);
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [scale, setScale] = useState(1.0);
+  const [pageImageMode, setPageImageMode] = useState<"highlight" | "plain" | "error">(
+    highlights.length > 0 ? "highlight" : "plain"
+  );
 
   // Index of the "active" (focused) highlight. Null = just browsing pages freely.
   const [activeHlIdx, setActiveHlIdx] = useState<number | null>(() => {
@@ -55,12 +63,17 @@ export function PDFModal({
   // Fetch page count + current page dimensions
   useEffect(() => {
     fetch(`${API_URL}/api/documents/pdf/info?filename=${encodeURIComponent(filename)}&page_no=${currentPage}`)
-      .then((r) => r.json())
-      .then((d) => {
-        setNumPages(d.page_count ?? 0);
+      .then((r) => {
+        if (!r.ok) {
+          throw new Error(`PDF info request failed: ${r.status}`);
+        }
+        return r.json();
       })
-      .catch(() => setNumPages(1));
-  }, [filename, currentPage]);
+      .then((d) => {
+        setNumPages(Math.max(d.page_count ?? fallbackPageCount, fallbackPageCount));
+      })
+      .catch(() => setNumPages(fallbackPageCount));
+  }, [filename, currentPage, fallbackPageCount]);
 
   // Close on Escape
   useEffect(() => {
@@ -89,7 +102,16 @@ export function PDFModal({
       ? highlights[activeHlIdx]
       : highlightsOnPage[0] ?? null;
 
+  useEffect(() => {
+    setPageImageMode(activeHighlight ? "highlight" : "plain");
+  }, [filename, currentPage, activeHighlight]);
+
   const hasHighlights = highlights.length > 0;
+  const pageImageSrc =
+    pageImageMode === "highlight" && activeHighlight
+      ? screenshotUrl(filename, currentPage, activeHighlight)
+      : screenshotUrl(filename, currentPage);
+  const rawPdfUrl = `${API_URL}/api/documents/pdf/serve?filename=${encodeURIComponent(filename)}`;
 
   return (
     <div
@@ -239,12 +261,37 @@ export function PDFModal({
               style={{ transform: `scale(${scale})`, transformOrigin: "top center" }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                key={`${filename}-${currentPage}`}
-                src={screenshotUrl(filename, currentPage, activeHighlight)}
-                alt={`Page ${currentPage}`}
-                className="block max-w-none"
-              />
+              {pageImageMode === "error" ? (
+                <div className="flex min-h-[420px] w-[720px] max-w-full items-center justify-center rounded bg-white px-8 text-center">
+                  <div className="space-y-3">
+                    <p className="text-sm text-neutral-600">
+                      PDF preview failed for this page.
+                    </p>
+                    <a
+                      href={rawPdfUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex rounded-md bg-neutral-900 px-3 py-2 text-sm text-white hover:bg-neutral-700"
+                    >
+                      Open Raw PDF
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <img
+                  key={`${filename}-${currentPage}-${pageImageMode}-${activeHlIdx ?? "none"}`}
+                  src={pageImageSrc}
+                  alt={`Page ${currentPage}`}
+                  className="block max-w-none"
+                  onError={() => {
+                    if (pageImageMode === "highlight" && activeHighlight) {
+                      setPageImageMode("plain");
+                      return;
+                    }
+                    setPageImageMode("error");
+                  }}
+                />
+              )}
             </div>
           </div>
         </div>

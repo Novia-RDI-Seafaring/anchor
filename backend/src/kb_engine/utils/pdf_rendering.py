@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import time
 from logging import getLogger
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
@@ -11,6 +12,21 @@ from llama_index.core.base.response.schema import NodeWithScore
 import pypdfium2 as pdfium  # type: ignore[reportMissingTypeStubs]
 
 logger = getLogger(__name__)
+
+
+def _open_pdf_document(pdf_path: Path) -> pdfium.PdfDocument:
+    last_error: Exception | None = None
+    for attempt in range(2):
+        try:
+            return pdfium.PdfDocument(pdf_path.read_bytes())
+        except Exception as exc:
+            last_error = exc
+            if attempt == 0:
+                time.sleep(0.05)
+                continue
+            raise
+    assert last_error is not None
+    raise last_error
 
 
 def _iter_provs(node: NodeWithScore) -> List[Dict[str, Any]]:
@@ -193,9 +209,13 @@ def _render_page_with_provs(
     scale: int = 2,
 ) -> Image.Image:
     try:
-        pdf = pdfium.PdfDocument(str(pdf_path))
+        pdf = _open_pdf_document(pdf_path)
         try:
-            page = pdf[page_nr - 1]
+            page_count = len(pdf)
+            if page_count <= 0:
+                raise ValueError("PDF has no pages")
+            safe_page_index = max(0, min(page_nr - 1, page_count - 1))
+            page = pdf[safe_page_index]
             bitmap: Any = page.render(scale=scale)
             image: Image.Image = bitmap.to_pil()
             merged_specs = list(box_specs)
@@ -206,11 +226,21 @@ def _render_page_with_provs(
             return _crop_image_by_bbox(image=image, page_w=page_w, page_h=page_h, crop_bbox=crop_bbox)
         finally:
             pdf.close()
-    except Exception:
-        logger.exception("Failed to render highlighted PDF page, falling back to .png")
+    except Exception as exc:
         fallback = pdf_path.with_suffix(".png")
         if fallback.exists():
-            return Image.open(fallback)
+            logger.warning(
+                "Failed to render PDF preview for %s page %s (%s); using PNG fallback",
+                pdf_path.name,
+                page_nr,
+                exc,
+            )
+            return Image.open(fallback).copy()
+        logger.exception(
+            "Failed to render PDF preview for %s page %s",
+            pdf_path.name,
+            page_nr,
+        )
         raise
 
 

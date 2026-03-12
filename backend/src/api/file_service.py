@@ -107,11 +107,14 @@ class FileService:
             raise HTTPException(status_code=400, detail="Only PDF files are allowed")
 
     def get_file_path(self, filename: str) -> Path:
-        if filename.startswith("/"): raise HTTPException(status_code=400, detail="not found")
-        if ".." in filename: raise HTTPException(status_code=400, detail="not found")
-        if not filename.endswith(".pdf"): raise HTTPException(status_code=400, detail="not found")
-        path = self.uploads_folder / filename
-        if not path.exists(): raise HTTPException(status_code=400, detail="not found")
+        safe_name = Path(filename).name
+        if safe_name != filename:
+            raise HTTPException(status_code=400, detail="not found")
+        if not safe_name.lower().endswith(".pdf"):
+            raise HTTPException(status_code=400, detail="not found")
+        path = self.uploads_folder / safe_name
+        if not path.exists():
+            raise HTTPException(status_code=400, detail="not found")
         return path
 
 
