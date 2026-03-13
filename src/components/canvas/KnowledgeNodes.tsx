@@ -51,6 +51,11 @@ export interface SpecProperty {
   key: string;
   value: string;
   unit?: string;
+  left_label?: string;
+  left_value?: string;
+  right_label?: string;
+  right_value?: string;
+  comparison_status?: string;
 }
 
 export interface CanvasNodeData {
@@ -235,13 +240,21 @@ export function FactNode({ data }: NodeProps) {
 export function SpecNode({ data }: NodeProps) {
   const { node } = data as unknown as SpecNodeData;
   const props = node.properties ?? [];
+  const isComparison = props.some((property) => property.left_value || property.right_value || property.comparison_status);
+  const comparisonLeftLabel = props.find((property) => property.left_label)?.left_label || "Document A";
+  const comparisonRightLabel = props.find((property) => property.right_label)?.right_label || "Document B";
+  const comparisonTone = (status?: string) => {
+    if (status === "same") return "text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/40";
+    if (status === "missing") return "text-amber-700 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/40";
+    return "text-rose-700 bg-rose-50 dark:text-rose-300 dark:bg-rose-950/40";
+  };
 
   return (
     <>
       <Handle type="target" position={Position.Top} className="!bg-violet-400 !border-violet-600" />
       <div
         className="rounded-lg border border-violet-200 dark:border-violet-700 bg-white dark:bg-neutral-900 shadow-sm overflow-hidden"
-        style={{ borderLeft: "4px solid rgb(139 92 246)", minWidth: 180, maxWidth: 300 }}
+        style={{ borderLeft: "4px solid rgb(139 92 246)", minWidth: 180, maxWidth: isComparison ? 480 : 300 }}
       >
         {/* Header */}
         <div className="flex items-center gap-1.5 px-3 py-2 bg-violet-50 dark:bg-violet-950/40 border-b border-violet-100 dark:border-violet-800">
@@ -255,6 +268,22 @@ export function SpecNode({ data }: NodeProps) {
         {props.length > 0 ? (
           <table className="w-full text-[11px] border-collapse">
             <tbody>
+              {isComparison && (
+                <tr className="bg-violet-50/70 dark:bg-violet-950/30">
+                  <td className="px-2.5 py-1 text-neutral-500 dark:text-neutral-400 font-semibold border-r border-violet-100 dark:border-violet-800/50">
+                    Property
+                  </td>
+                  <td className="px-2.5 py-1 text-neutral-700 dark:text-neutral-200 font-semibold border-r border-violet-100 dark:border-violet-800/50">
+                    {comparisonLeftLabel}
+                  </td>
+                  <td className="px-2.5 py-1 text-neutral-700 dark:text-neutral-200 font-semibold border-r border-violet-100 dark:border-violet-800/50">
+                    {comparisonRightLabel}
+                  </td>
+                  <td className="px-2.5 py-1 text-neutral-500 dark:text-neutral-400 font-semibold">
+                    Status
+                  </td>
+                </tr>
+              )}
               {props.map((p, i) => (
                 <tr
                   key={i}
@@ -263,9 +292,25 @@ export function SpecNode({ data }: NodeProps) {
                   <td className="px-2.5 py-1 text-neutral-500 dark:text-neutral-400 font-medium whitespace-nowrap border-r border-violet-100 dark:border-violet-800/50 max-w-[120px] truncate">
                     {p.key}
                   </td>
-                  <td className="px-2.5 py-1 text-neutral-800 dark:text-neutral-200 font-mono">
-                    {p.value}{p.unit ? <span className="text-neutral-400 ml-1">{p.unit}</span> : null}
-                  </td>
+                  {isComparison ? (
+                    <>
+                      <td className="px-2.5 py-1 text-neutral-800 dark:text-neutral-200 font-mono border-r border-violet-100 dark:border-violet-800/50">
+                        {p.left_value || "—"}
+                      </td>
+                      <td className="px-2.5 py-1 text-neutral-800 dark:text-neutral-200 font-mono border-r border-violet-100 dark:border-violet-800/50">
+                        {p.right_value || "—"}
+                      </td>
+                      <td className="px-2.5 py-1">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${comparisonTone(p.comparison_status)}`}>
+                          {p.comparison_status || "different"}
+                        </span>
+                      </td>
+                    </>
+                  ) : (
+                    <td className="px-2.5 py-1 text-neutral-800 dark:text-neutral-200 font-mono">
+                      {p.value}{p.unit ? <span className="text-neutral-400 ml-1">{p.unit}</span> : null}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

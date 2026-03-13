@@ -150,6 +150,22 @@ function TopicGroup({
                         <div className="overflow-hidden rounded-lg border border-violet-100 dark:border-violet-800/70">
                           <table className="w-full text-[11px] border-collapse">
                             <tbody>
+                              {finding.properties.some((property) => property.left_value || property.right_value || property.comparison_status) && (
+                                <tr className="bg-violet-50/70 dark:bg-violet-950/30">
+                                  <td className="px-2.5 py-1.5 text-neutral-500 dark:text-neutral-400 font-semibold border-r border-violet-100 dark:border-violet-800/50">
+                                    Property
+                                  </td>
+                                  <td className="px-2.5 py-1.5 text-neutral-700 dark:text-neutral-200 font-semibold border-r border-violet-100 dark:border-violet-800/50">
+                                    {finding.properties.find((property) => property.left_label)?.left_label || "Document A"}
+                                  </td>
+                                  <td className="px-2.5 py-1.5 text-neutral-700 dark:text-neutral-200 font-semibold border-r border-violet-100 dark:border-violet-800/50">
+                                    {finding.properties.find((property) => property.right_label)?.right_label || "Document B"}
+                                  </td>
+                                  <td className="px-2.5 py-1.5 text-neutral-500 dark:text-neutral-400 font-semibold">
+                                    Status
+                                  </td>
+                                </tr>
+                              )}
                               {finding.properties.map((property, index) => (
                                 <tr
                                   key={`${finding.id}-${property.key}-${index}`}
@@ -158,10 +174,32 @@ function TopicGroup({
                                   <td className="px-2.5 py-1.5 text-neutral-500 dark:text-neutral-400 font-medium whitespace-nowrap border-r border-violet-100 dark:border-violet-800/50 align-top">
                                     {property.key}
                                   </td>
-                                  <td className="px-2.5 py-1.5 text-neutral-800 dark:text-neutral-200 font-mono break-words">
-                                    {property.value}
-                                    {property.unit ? <span className="text-neutral-400 ml-1">{property.unit}</span> : null}
-                                  </td>
+                                  {property.left_value || property.right_value || property.comparison_status ? (
+                                    <>
+                                      <td className="px-2.5 py-1.5 text-neutral-800 dark:text-neutral-200 font-mono break-words border-r border-violet-100 dark:border-violet-800/50">
+                                        {property.left_value || "—"}
+                                      </td>
+                                      <td className="px-2.5 py-1.5 text-neutral-800 dark:text-neutral-200 font-mono break-words border-r border-violet-100 dark:border-violet-800/50">
+                                        {property.right_value || "—"}
+                                      </td>
+                                      <td className="px-2.5 py-1.5">
+                                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
+                                          property.comparison_status === "same"
+                                            ? "text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/40"
+                                            : property.comparison_status === "missing"
+                                              ? "text-amber-700 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/40"
+                                              : "text-rose-700 bg-rose-50 dark:text-rose-300 dark:bg-rose-950/40"
+                                        }`}>
+                                          {property.comparison_status || "different"}
+                                        </span>
+                                      </td>
+                                    </>
+                                  ) : (
+                                    <td className="px-2.5 py-1.5 text-neutral-800 dark:text-neutral-200 font-mono break-words">
+                                      {property.value}
+                                      {property.unit ? <span className="text-neutral-400 ml-1">{property.unit}</span> : null}
+                                    </td>
+                                  )}
                                 </tr>
                               ))}
                             </tbody>

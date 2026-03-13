@@ -18,6 +18,11 @@ class SpecProperty(BaseModel):
     key: str
     value: str
     unit: str = ""
+    left_label: str = ""
+    left_value: str = ""
+    right_label: str = ""
+    right_value: str = ""
+    comparison_status: str = ""
 
 
 class CanvasNode(BaseModel):

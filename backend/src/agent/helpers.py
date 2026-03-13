@@ -47,36 +47,30 @@ def _early_prompt_to_text(prompt: str | list | tuple | None) -> str:
     if isinstance(prompt, str):
         return prompt
     if isinstance(prompt, (list, tuple)):
-        parts: list[str] = []
-        for item in prompt:
+        for item in reversed(prompt):
             if isinstance(item, str):
-                parts.append(item)
-            else:
-                text = getattr(item, "text", None) or getattr(item, "content", None)
-                if isinstance(text, str):
-                    parts.append(text)
-        return " ".join(part for part in parts if part).strip()
+                return item
+            text = getattr(item, "text", None) or getattr(item, "content", None)
+            if isinstance(text, str):
+                return text
     return ""
 
 def _prompt_to_text(prompt: str | list | tuple | None) -> str:
     if isinstance(prompt, str):
         return prompt
     if isinstance(prompt, (list, tuple)):
-        parts: list[str] = []
-        for item in prompt:
+        for item in reversed(prompt):
             if isinstance(item, str):
-                parts.append(item)
-                continue
+                return item
             text = getattr(item, "text", None)
             if isinstance(text, str):
-                parts.append(text)
-                continue
+                return text
             content = getattr(item, "content", None)
             if isinstance(content, str):
-                parts.append(content)
-                continue
-            parts.append(str(item))
-        return " ".join(part for part in parts if part).strip()
+                return content
+            rendered = str(item)
+            if rendered:
+                return rendered
     return ""
 
 def _snapshot(ctx: RunContext[AgentDeps]) -> ToolReturn:

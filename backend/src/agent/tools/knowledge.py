@@ -1,3 +1,6 @@
+import re
+from pathlib import Path
+
 from pydantic_ai import ToolReturn
 from pydantic_ai._run_context import RunContext
 from ..deps import AgentDeps
@@ -20,6 +23,112 @@ from ..helpers import (
     _select_highlights,
     _clean_text_value
 )
+
+_COMPARISON_QUERY_RE = re.compile(r"\b(compare|comparison|different|difference|diff|vs\.?|versus)\b", re.IGNORECASE)
+
+
+def _doc_label(filename: str | None) -> str:
+    if not filename:
+        return "Unknown document"
+    return Path(filename).stem
+
+
+def _doc_match_score(filename: str | None, query: str) -> int:
+    if not filename:
+        return 0
+    stem = _doc_label(filename).lower()
+    score = 0
+    if stem and stem in query:
+        score += 100
+    for token in re.findall(r"[a-z0-9]+", stem):
+        if len(token) < 3:
+            continue
+        if token in query:
+            score += 10
+    return score
+
+
+def _pick_comparison_documents(query: str, documents: list[dict]) -> list[dict]:
+    processed = [doc for doc in documents if doc.get("status") == "processed"]
+    if len(processed) <= 2:
+        return processed[:2]
+
+    ranked = sorted(
+        processed,
+        key=lambda doc: (_doc_match_score(doc.get("filename"), query), str(doc.get("filename") or "")),
+        reverse=True,
+    )
+    top_two = [doc for doc in ranked if _doc_match_score(doc.get("filename"), query) > 0][:2]
+    if len(top_two) == 2:
+        return top_two
+    return ranked[:2]
+
+
+def _format_property_value(property_row: SpecProperty) -> str:
+    return property_row.value if not property_row.unit else f"{property_row.value} {property_row.unit}".strip()
+
+
+def _normalize_property_key(key: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", key.lower())).strip()
+
+
+def _extract_doc_properties(chunks: list[dict], query: str) -> tuple[int, list[SpecProperty]]:
+    for index, chunk in enumerate(chunks):
+        properties = _extract_properties_from_text(str(chunk.get("content") or ""), query)
+        if properties:
+            return index, properties
+    return 0, []
+
+
+def _build_comparison_properties(
+    left_label: str,
+    right_label: str,
+    left_properties: list[SpecProperty],
+    right_properties: list[SpecProperty],
+) -> list[SpecProperty]:
+    display_keys: dict[str, str] = {}
+    left_map: dict[str, str] = {}
+    right_map: dict[str, str] = {}
+    ordered_keys: list[str] = []
+
+    for row in left_properties:
+        norm_key = _normalize_property_key(row.key)
+        if not norm_key:
+            continue
+        if norm_key not in ordered_keys:
+            ordered_keys.append(norm_key)
+        display_keys.setdefault(norm_key, row.key)
+        left_map[norm_key] = _format_property_value(row)
+
+    for row in right_properties:
+        norm_key = _normalize_property_key(row.key)
+        if not norm_key:
+            continue
+        if norm_key not in ordered_keys:
+            ordered_keys.append(norm_key)
+        display_keys.setdefault(norm_key, row.key)
+        right_map[norm_key] = _format_property_value(row)
+
+    rows: list[SpecProperty] = []
+    for norm_key in ordered_keys:
+        left_value = left_map.get(norm_key, "")
+        right_value = right_map.get(norm_key, "")
+        if left_value and right_value:
+            comparison_status = "same" if left_value.strip().lower() == right_value.strip().lower() else "different"
+        else:
+            comparison_status = "missing"
+        rows.append(
+            SpecProperty(
+                key=display_keys.get(norm_key, norm_key.title()),
+                value="",
+                left_label=left_label,
+                left_value=left_value,
+                right_label=right_label,
+                right_value=right_value,
+                comparison_status=comparison_status,
+            )
+        )
+    return rows
 
 async def list_documents(ctx: RunContext[AgentDeps]):
     """List ingested documents available in the knowledge base."""
@@ -290,5 +399,138 @@ async def resolve_technical_query(
         "node_id": fact.id,
         "found": True,
         "format": "fact",
+    }
+    return result
+
+
+async def compare_documents(
+    ctx: RunContext[AgentDeps],
+    query: str,
+    top_k: int = 5,
+) -> ToolReturn:
+    """Compare two documents side by side and materialize a comparison table on the canvas."""
+    from src.knowledge_base.service import get_document_service
+
+    service = await get_document_service()
+    documents = await service.list_documents()
+    selected_docs = _pick_comparison_documents(query.lower(), documents)
+
+    if len(selected_docs) < 2:
+        topic = CanvasNode(node_type="topic", title="Document Comparison", status="not_found")
+        _mark_node_for_run(topic, ctx)
+        ctx.deps.state.nodes.append(topic)
+        fact = CanvasNode(
+            node_type="fact",
+            text="I need two processed documents in the knowledge base to compare them.",
+            status="not_found",
+        )
+        _mark_node_for_run(fact, ctx)
+        ctx.deps.state.nodes.append(fact)
+        _ensure_relation(ctx, topic.id, fact.id)
+        result = _snapshot(ctx)
+        result.return_value = {
+            "summary": "I need two processed documents in the knowledge base before I can build a comparison.",
+            "found": False,
+        }
+        return result
+
+    left_doc, right_doc = selected_docs[:2]
+    left_chunks = await service.search(query=query, top_k=top_k, document_id=left_doc.get("document_id"))
+    right_chunks = await service.search(query=query, top_k=top_k, document_id=right_doc.get("document_id"))
+
+    left_normalized = []
+    for chunk in left_chunks[:top_k]:
+        normalized = dict(chunk)
+        normalized["page_no"] = _select_page(normalized)
+        normalized["bbox"] = _select_bbox(normalized)
+        normalized["highlights"] = _select_highlights(normalized)
+        left_normalized.append(normalized)
+
+    right_normalized = []
+    for chunk in right_chunks[:top_k]:
+        normalized = dict(chunk)
+        normalized["page_no"] = _select_page(normalized)
+        normalized["bbox"] = _select_bbox(normalized)
+        normalized["highlights"] = _select_highlights(normalized)
+        right_normalized.append(normalized)
+
+    left_index, left_properties = _extract_doc_properties(left_normalized, query)
+    right_index, right_properties = _extract_doc_properties(right_normalized, query)
+
+    if not left_properties and left_normalized:
+        left_properties = [SpecProperty(key=_doc_label(left_doc.get("filename")), value=_summarize_chunks([left_normalized[left_index]]))]
+    if not right_properties and right_normalized:
+        right_properties = [SpecProperty(key=_doc_label(right_doc.get("filename")), value=_summarize_chunks([right_normalized[right_index]]))]
+
+    comparison_rows = _build_comparison_properties(
+        _doc_label(left_doc.get("filename")),
+        _doc_label(right_doc.get("filename")),
+        left_properties,
+        right_properties,
+    )
+
+    topic = CanvasNode(
+        node_type="topic",
+        title=f"{_doc_label(left_doc.get('filename'))} vs {_doc_label(right_doc.get('filename'))}",
+        status="found" if comparison_rows else "not_found",
+    )
+    _mark_node_for_run(topic, ctx)
+    ctx.deps.state.nodes.append(topic)
+
+    spec = CanvasNode(
+        node_type="spec",
+        spec_title="Comparison",
+        properties=comparison_rows,
+        status="found" if comparison_rows else "not_found",
+    )
+    _mark_node_for_run(spec, ctx)
+    ctx.deps.state.nodes.append(spec)
+    _ensure_relation(ctx, topic.id, spec.id)
+
+    if left_normalized:
+        _remember_search_results(ctx, left_normalized)
+        resolved_filename, resolved_page, resolved_bbox, resolved_highlights = _resolve_source_details(ctx=ctx, chunk_index=left_index)
+        if resolved_filename and resolved_page is not None:
+            left_source = _get_or_create_source_node(
+                ctx=ctx,
+                filename=resolved_filename,
+                page=resolved_page,
+                bbox=resolved_bbox,
+                highlights=resolved_highlights,
+            )
+            if not any(node.id == left_source.id for node in ctx.deps.state.nodes):
+                ctx.deps.state.nodes.append(left_source)
+            _ensure_relation(ctx, spec.id, left_source.id)
+
+    if right_normalized:
+        _remember_search_results(ctx, right_normalized)
+        resolved_filename, resolved_page, resolved_bbox, resolved_highlights = _resolve_source_details(ctx=ctx, chunk_index=right_index)
+        if resolved_filename and resolved_page is not None:
+            right_source = _get_or_create_source_node(
+                ctx=ctx,
+                filename=resolved_filename,
+                page=resolved_page,
+                bbox=resolved_bbox,
+                highlights=resolved_highlights,
+            )
+            if not any(node.id == right_source.id for node in ctx.deps.state.nodes):
+                ctx.deps.state.nodes.append(right_source)
+            _ensure_relation(ctx, spec.id, right_source.id)
+
+    same_count = sum(1 for row in comparison_rows if row.comparison_status == "same")
+    different_count = sum(1 for row in comparison_rows if row.comparison_status == "different")
+    missing_count = sum(1 for row in comparison_rows if row.comparison_status == "missing")
+    summary = (
+        f"Compared {_doc_label(left_doc.get('filename'))} and {_doc_label(right_doc.get('filename'))}: "
+        f"{same_count} same, {different_count} different, {missing_count} missing."
+    )
+
+    result = _snapshot(ctx)
+    result.return_value = {
+        "summary": summary,
+        "topic_id": topic.id,
+        "node_id": spec.id,
+        "found": bool(comparison_rows),
+        "format": "comparison",
     }
     return result
