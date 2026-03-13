@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently \"npm:dev:ui\" \"npm:dev:agent\" --names ui,agent --prefix-colors blue,green",
     "dev:ui": "next dev",
-    "dev:agent": "cd backend && uv run uvicorn main:app --reload --port 8001 --log-level warning",
+    "dev:agent": "cd backend && uv run uvicorn main:app --reload --reload-dir src --port 8001 --log-level warning",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"

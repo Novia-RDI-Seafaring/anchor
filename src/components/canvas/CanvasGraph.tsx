@@ -52,36 +52,92 @@ const NODE_SIZE: Record<string, { w: number; h: number }> = {
 };
 const DEFAULT_SIZE = { w: 220, h: 80 };
 
+function connectedComponents(nodes: Node[], edges: Edge[]): string[][] {
+  const visibleIds = new Set(nodes.filter((node) => !node.hidden).map((node) => node.id));
+  const neighbors = new Map<string, Set<string>>();
+
+  for (const id of visibleIds) {
+    neighbors.set(id, new Set());
+  }
+
+  for (const edge of edges) {
+    if (edge.hidden || !visibleIds.has(edge.source) || !visibleIds.has(edge.target)) continue;
+    neighbors.get(edge.source)?.add(edge.target);
+    neighbors.get(edge.target)?.add(edge.source);
+  }
+
+  const visited = new Set<string>();
+  const components: string[][] = [];
+
+  for (const node of nodes) {
+    if (node.hidden || visited.has(node.id)) continue;
+    const component: string[] = [];
+    const queue = [node.id];
+    visited.add(node.id);
+
+    while (queue.length) {
+      const current = queue.shift()!;
+      component.push(current);
+      for (const next of neighbors.get(current) ?? []) {
+        if (visited.has(next)) continue;
+        visited.add(next);
+        queue.push(next);
+      }
+    }
+
+    components.push(component);
+  }
+
+  return components;
+}
+
 function applyDagreLayout(nodes: Node[], edges: Edge[]): Node[] {
   if (nodes.length === 0) return nodes;
 
-  const g = new dagre.graphlib.Graph();
-  g.setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: "TB", nodesep: 50, ranksep: 80, edgesep: 10 });
+  const positions = new Map<string, { x: number; y: number }>();
+  const components = connectedComponents(nodes, edges);
+  let yOffset = 0;
+  const componentGap = 120;
 
-  for (const node of nodes) {
-    if (node.hidden) continue;
-    const sz = NODE_SIZE[node.type ?? ""] ?? DEFAULT_SIZE;
-    g.setNode(node.id, { width: sz.w, height: sz.h });
-  }
-  for (const edge of edges) {
-    if (edge.hidden) continue;
-    // Only add edge if both nodes exist in graph
-    if (g.hasNode(edge.source) && g.hasNode(edge.target)) {
-      g.setEdge(edge.source, edge.target);
+  for (const component of components) {
+    const g = new dagre.graphlib.Graph();
+    g.setDefaultEdgeLabel(() => ({}));
+    g.setGraph({ rankdir: "TB", nodesep: 50, ranksep: 80, edgesep: 10 });
+
+    for (const nodeId of component) {
+      const node = nodes.find((item) => item.id === nodeId);
+      if (!node || node.hidden) continue;
+      const sz = NODE_SIZE[node.type ?? ""] ?? DEFAULT_SIZE;
+      g.setNode(node.id, { width: sz.w, height: sz.h });
     }
+
+    for (const edge of edges) {
+      if (edge.hidden) continue;
+      if (g.hasNode(edge.source) && g.hasNode(edge.target)) {
+        g.setEdge(edge.source, edge.target);
+      }
+    }
+
+    dagre.layout(g);
+
+    let maxBottom = yOffset;
+
+    for (const nodeId of component) {
+      if (!g.hasNode(nodeId)) continue;
+      const { x, y, width, height } = g.node(nodeId);
+      const position = { x: x - width / 2, y: y - height / 2 + yOffset };
+      positions.set(nodeId, position);
+      maxBottom = Math.max(maxBottom, position.y + height);
+    }
+
+    yOffset = maxBottom + componentGap;
   }
 
-  dagre.layout(g);
-
-  return nodes.map((node) => {
-    if (node.hidden || !g.hasNode(node.id)) return node;
-    const { x, y, width, height } = g.node(node.id);
-    return {
-      ...node,
-      position: { x: x - width / 2, y: y - height / 2 },
-    };
-  });
+  return nodes.map((node) => (
+    node.hidden || !positions.has(node.id)
+      ? node
+      : { ...node, position: positions.get(node.id)! }
+  ));
 }
 
 // Collect all descendants of a set of node IDs
