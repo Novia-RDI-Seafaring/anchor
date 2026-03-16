@@ -17,6 +17,8 @@ import "@xyflow/react/dist/style.css";
 import dagre from "@dagrejs/dagre";
 import { Network } from "lucide-react";
 import {
+  EntityNode,
+  CategoryNode,
   TopicNode,
   FactNode,
   SourceNode,
@@ -45,10 +47,12 @@ interface PDFModalState {
 
 // --- Node sizes (width × height in px) used by dagre for spacing ---
 const NODE_SIZE: Record<string, { w: number; h: number }> = {
-  topicNode:  { w: 240, h: 60  },
-  factNode:   { w: 280, h: 100 },
-  sourceNode: { w: 180, h: 40  },
-  specNode:   { w: 260, h: 130 },
+  entityNode:   { w: 280, h: 70  },
+  categoryNode: { w: 220, h: 55  },
+  topicNode:    { w: 240, h: 60  },
+  factNode:     { w: 280, h: 100 },
+  sourceNode:   { w: 180, h: 40  },
+  specNode:     { w: 260, h: 130 },
 };
 const DEFAULT_SIZE = { w: 220, h: 80 };
 
@@ -161,10 +165,12 @@ function descendants(
 
 // --- Node type registry ---
 const nodeTypes: NodeTypes = {
-  topicNode:  TopicNode,
-  factNode:   FactNode,
-  sourceNode: SourceNode,
-  specNode:   SpecNode,
+  entityNode:   EntityNode,
+  categoryNode: CategoryNode,
+  topicNode:    TopicNode,
+  factNode:     FactNode,
+  sourceNode:   SourceNode,
+  specNode:     SpecNode,
 };
 
 // --- Main component ---
@@ -244,6 +250,34 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
     const rfNodes: Node[] = rawNodes.map((n) => {
       const hidden = hiddenIds.has(n.id);
 
+      if (n.node_type === "entity") {
+        return {
+          id: n.id,
+          type: "entityNode",
+          position: { x: 0, y: 0 },
+          hidden,
+          data: {
+            node: n,
+            childCount: descendants([n.id], childrenOf).size,
+            collapsed: collapsedIds.has(n.id),
+            onToggleCollapse: handleToggleCollapse,
+          },
+        };
+      }
+      if (n.node_type === "category") {
+        return {
+          id: n.id,
+          type: "categoryNode",
+          position: { x: 0, y: 0 },
+          hidden,
+          data: {
+            node: n,
+            childCount: descendants([n.id], childrenOf).size,
+            collapsed: collapsedIds.has(n.id),
+            onToggleCollapse: handleToggleCollapse,
+          },
+        };
+      }
       if (n.node_type === "topic") {
         return {
           id: n.id,
@@ -292,9 +326,17 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
     const rfEdges: Edge[] = relations.map((r, idx) => {
       const fromNode = nodeMap.get(r.from_id);
       const toNode = nodeMap.get(r.to_id);
-      const isTopicFact = fromNode?.node_type === "topic" && toNode?.node_type === "fact";
+      const isEntityCat = fromNode?.node_type === "entity";
+      const isCatTopic  = fromNode?.node_type === "category";
+      const isTopicFact = (fromNode?.node_type === "topic" || fromNode?.node_type === "category") && toNode?.node_type === "fact";
       const isFactSrc   = fromNode?.node_type === "fact"  && toNode?.node_type === "source";
       const isSpec      = toNode?.node_type === "spec";
+      const strokeColor = isEntityCat ? "#64748b"
+        : isCatTopic  ? "#3b82f6"
+        : isTopicFact ? "#f59e0b"
+        : isSpec       ? "#8b5cf6"
+        : isFactSrc    ? "#6366f1"
+        : "#14b8a6";
       return {
         id: `e-${idx}`,
         source: r.from_id,
@@ -302,10 +344,10 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
         label: r.label || undefined,
         type: "smoothstep",
         hidden: hiddenIds.has(r.from_id) || hiddenIds.has(r.to_id),
-        animated: isTopicFact,
+        animated: isEntityCat || isCatTopic,
         style: {
-          stroke: isTopicFact ? "#f59e0b" : isSpec ? "#8b5cf6" : isFactSrc ? "#6366f1" : "#14b8a6",
-          strokeWidth: isTopicFact ? 2 : 1.5,
+          stroke: strokeColor,
+          strokeWidth: isEntityCat ? 2.5 : isCatTopic ? 2 : 1.5,
           strokeDasharray: isFactSrc || isSpec ? "4 3" : undefined,
         },
         labelStyle: { fill: "#6366f1", fontWeight: 500, fontSize: 10 },
@@ -345,7 +387,7 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
       prev.map((rfNode) => {
         const n = nodeMap.get(rfNode.id);
         if (!n) return rfNode;
-        if (n.node_type === "topic") {
+        if (n.node_type === "entity" || n.node_type === "category" || n.node_type === "topic") {
           return { ...rfNode, data: { ...rfNode.data, node: n, childCount: descendants([n.id], childrenOf).size, collapsed: collapsedIds.has(n.id), onToggleCollapse: handleToggleCollapse } };
         }
         if (n.node_type === "fact") {

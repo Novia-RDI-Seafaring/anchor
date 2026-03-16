@@ -15,6 +15,8 @@ import {
   XCircle,
   CircleDashed,
   CircleAlert,
+  Box,
+  FolderOpen,
 } from "lucide-react";
 import type { PDFHighlight } from "./PDFModal";
 
@@ -60,7 +62,7 @@ export interface SpecProperty {
 
 export interface CanvasNodeData {
   id: string;
-  node_type: "topic" | "fact" | "source" | "spec";
+  node_type: "entity" | "category" | "topic" | "fact" | "source" | "spec";
   status?: NodeStatus;
   title?: string;
   text?: string;
@@ -106,6 +108,108 @@ function primaryHighlight(node: CanvasNodeData): PDFHighlight {
     return node.highlights[0]!;
   }
   return { page: node.page ?? 1, bbox: node.bbox ?? [] };
+}
+
+export interface EntityNodeData {
+  node: CanvasNodeData;
+  childCount: number;
+  collapsed: boolean;
+  onToggleCollapse: (id: string) => void;
+}
+
+export interface CategoryNodeData {
+  node: CanvasNodeData;
+  childCount: number;
+  collapsed: boolean;
+  onToggleCollapse: (id: string) => void;
+}
+
+// ─────────────────────────────────────────────
+// ENTITY NODE — dark slate, the product/system root
+// ─────────────────────────────────────────────
+export function EntityNode({ data }: NodeProps) {
+  const { node, childCount, collapsed, onToggleCollapse } = data as unknown as EntityNodeData;
+  return (
+    <>
+      <Handle type="target" position={Position.Top} className="!bg-slate-500 !border-slate-700" />
+      <div
+        className={`rounded-2xl border-2 shadow-xl select-none transition-all ${
+          collapsed
+            ? "border-slate-500 dark:border-slate-400 bg-slate-700 dark:bg-slate-800"
+            : "border-slate-600 dark:border-slate-400 bg-slate-800 dark:bg-slate-900"
+        }`}
+        style={{ minWidth: 200, maxWidth: 320 }}
+      >
+        <div className="flex items-center gap-2.5 px-4 py-3">
+          <div className="shrink-0 w-7 h-7 rounded-lg bg-slate-600 dark:bg-slate-700 flex items-center justify-center">
+            <Box size={14} className="text-slate-200" />
+          </div>
+          <p className="flex-1 text-sm font-extrabold text-white leading-snug tracking-tight break-words whitespace-normal">
+            {node.title}
+          </p>
+          <StatusBadge status={node.status} />
+          <button
+            onClick={() => onToggleCollapse(node.id)}
+            className="shrink-0 p-0.5 rounded hover:bg-slate-600 dark:hover:bg-slate-700 text-slate-300 transition-colors"
+            title={collapsed ? "Expand" : "Collapse"}
+          >
+            {collapsed ? <ChevronsUpDown size={13} /> : <ChevronsDownUp size={13} />}
+          </button>
+        </div>
+        {collapsed && childCount > 0 && (
+          <div className="px-4 pb-2.5 -mt-1">
+            <span className="text-[10px] text-slate-300 bg-slate-600/60 px-2 py-0.5 rounded-full">
+              {childCount} hidden
+            </span>
+          </div>
+        )}
+      </div>
+      <Handle type="source" position={Position.Bottom} className="!bg-slate-500 !border-slate-700" />
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────
+// CATEGORY NODE — blue, chapter/section level
+// ─────────────────────────────────────────────
+export function CategoryNode({ data }: NodeProps) {
+  const { node, childCount, collapsed, onToggleCollapse } = data as unknown as CategoryNodeData;
+  return (
+    <>
+      <Handle type="target" position={Position.Top} className="!bg-blue-500 !border-blue-700" />
+      <div
+        className={`rounded-xl border-2 shadow-md select-none transition-all ${
+          collapsed
+            ? "border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-950/40"
+            : "border-blue-400 dark:border-blue-500 bg-blue-100 dark:bg-blue-900/30"
+        }`}
+        style={{ minWidth: 160, maxWidth: 280 }}
+      >
+        <div className="flex items-center gap-2 px-3 py-2.5">
+          <FolderOpen size={14} className="text-blue-600 dark:text-blue-400 shrink-0" />
+          <p className="flex-1 text-sm font-bold text-blue-900 dark:text-blue-100 leading-snug break-words whitespace-normal">
+            {node.title}
+          </p>
+          <StatusBadge status={node.status} />
+          <button
+            onClick={() => onToggleCollapse(node.id)}
+            className="shrink-0 p-0.5 rounded hover:bg-blue-200 dark:hover:bg-blue-800/60 text-blue-600 dark:text-blue-400 transition-colors"
+            title={collapsed ? "Expand children" : "Collapse children"}
+          >
+            {collapsed ? <ChevronsUpDown size={13} /> : <ChevronsDownUp size={13} />}
+          </button>
+        </div>
+        {collapsed && childCount > 0 && (
+          <div className="px-3 pb-2 -mt-1">
+            <span className="text-[10px] text-blue-600 dark:text-blue-400 bg-blue-200/60 dark:bg-blue-900/60 px-2 py-0.5 rounded-full">
+              {childCount} hidden
+            </span>
+          </div>
+        )}
+      </div>
+      <Handle type="source" position={Position.Bottom} className="!bg-blue-500 !border-blue-700" />
+    </>
+  );
 }
 
 // ─────────────────────────────────────────────

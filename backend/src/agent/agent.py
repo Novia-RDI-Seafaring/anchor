@@ -1,31 +1,35 @@
+# pyright: reportPrivateUsage=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false
 from dotenv import load_dotenv
+
 load_dotenv(override=True)
 
 import os
 import re
+from typing import Any, cast
+
 from pydantic_ai import Agent, ModelRetry
 from pydantic_ai._run_context import RunContext
 from pydantic_ai.models.instrumented import InstrumentationSettings
 
 from .deps import AgentDeps
-from .prompts import SYS_PROMPT as SYSTEM_PROMPT
-from .state import Canvas
 from .helpers import (
     STRICT_CANVAS_VALIDATION,
+    _CANVAS_EDIT_RE,
+    _EARLY_CANVAS_EDIT_RE,
+    _EARLY_DOCUMENT_LISTING_RE,
+    _EARLY_SOCIAL_OR_META_RE,
     _early_prompt_to_text,
     _prompt_to_text,
     _requires_canvas_update,
-    _SOCIAL_OR_META_RE,
-    _EARLY_SOCIAL_OR_META_RE,
-    _EARLY_DOCUMENT_LISTING_RE,
-    _EARLY_CANVAS_EDIT_RE,
-    _CANVAS_EDIT_RE
 )
+from .prompts import SYS_PROMPT as SYSTEM_PROMPT
+from .state import Canvas
 from .tools import canvas, knowledge, vision
 
 _COMPARISON_RE = re.compile(r"\b(compare|comparison|different|difference|diff|vs\.?|versus)\b", re.IGNORECASE)
 
-async def _prepare_tools_for_turn(ctx: RunContext[AgentDeps], tool_defs):
+
+async def _prepare_tools_for_turn(ctx: RunContext[AgentDeps], tool_defs: list[Any]) -> list[Any]:
     prompt_text = _early_prompt_to_text(getattr(ctx, "prompt", None)).strip().lower()
     if not prompt_text:
         return tool_defs
@@ -38,6 +42,7 @@ async def _prepare_tools_for_turn(ctx: RunContext[AgentDeps], tool_defs):
     allowed = {"resolve_technical_query", "compare_documents", "get_active_document_context", "check_canvas", "list_documents"}
     return [tool_def for tool_def in tool_defs if tool_def.name in allowed]
 
+
 agent = Agent(
     name="Knowledge Base Agent",
     model=os.getenv("DEFAULT_MODEL"),
@@ -49,9 +54,10 @@ agent = Agent(
     prepare_tools=_prepare_tools_for_turn,
 )
 
+
 @agent.instructions
 def technical_query_instruction(ctx: RunContext[AgentDeps]) -> str | None:
-    prompt_text = _prompt_to_text(ctx.prompt)
+    prompt_text = _prompt_to_text(cast(Any, ctx.prompt))
     if not _requires_canvas_update(prompt_text):
         return None
     if _CANVAS_EDIT_RE.search(prompt_text):
@@ -68,12 +74,13 @@ def technical_query_instruction(ctx: RunContext[AgentDeps]) -> str | None:
         "Do not rely on low-level canvas tools unless the user explicitly asks to edit the canvas structure."
     )
 
+
 @agent.output_validator
 def ensure_technical_queries_update_canvas(ctx: RunContext[AgentDeps], data: str) -> str:
     if not STRICT_CANVAS_VALIDATION:
         return data
 
-    prompt_text = _prompt_to_text(ctx.prompt)
+    prompt_text = _prompt_to_text(cast(Any, ctx.prompt))
     if not _requires_canvas_update(prompt_text):
         return data
 
@@ -90,6 +97,7 @@ def ensure_technical_queries_update_canvas(ctx: RunContext[AgentDeps], data: str
         )
 
     return data
+
 
 # Register Canvas Tools
 agent.tool(canvas.check_canvas)

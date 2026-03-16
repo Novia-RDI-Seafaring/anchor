@@ -27,7 +27,7 @@ class SpecProperty(BaseModel):
 
 class CanvasNode(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
-    node_type: Literal["topic", "fact", "source", "spec"]
+    node_type: Literal["entity", "category", "topic", "fact", "source", "spec"]
     status: NodeStatus = "pending"
     last_updated_run_id: str = ""
     # topic fields
