@@ -156,10 +156,9 @@ async def get_active_document_context(ctx: RunContext[AgentDeps]):
     the user means. If a document is selected, assume generic technical queries
     refer to that document unless the user explicitly says otherwise.
     """
-    from src.core.context import get_active_document_id
     from src.knowledge_base.service import get_document_service
 
-    active_document_id = get_active_document_id()
+    active_document_id = ctx.deps.state.active_document_id
     if not active_document_id:
         return {
             "document_id": None,
@@ -204,10 +203,9 @@ async def search_knowledge_base(
     filter when one exists. Use it before asking the user to restate which
     document/material they mean if their question is otherwise technical.
     """
-    from src.core.context import get_active_document_id
     from src.knowledge_base.service import get_document_service
 
-    active_doc_id = get_active_document_id()
+    active_doc_id = ctx.deps.state.active_document_id
     document_id_filter = active_doc_id
     if document_id_filter is None and doc_ids and len(doc_ids) == 1:
         document_id_filter = doc_ids[0]
@@ -265,16 +263,13 @@ async def resolve_technical_query(
     creates the topic/fact-or-spec/source nodes, emits a canvas snapshot, and
     returns a concise summary for the final chat response.
     """
-    from src.core.context import get_active_document_id
     from src.knowledge_base.service import get_document_service
-    from src.knowledge_base.vector_store import get_vector_store
 
     service = await get_document_service()
-    active_document_id = get_active_document_id()
+    active_document_id = ctx.deps.state.active_document_id
     active_document = None
     if active_document_id:
-        vector_store = await get_vector_store()
-        active_document = await vector_store.get_document(active_document_id)
+        active_document = await service.get_document(active_document_id)
 
     chunks = await service.search(query=query, top_k=top_k, document_id=active_document_id)
     normalized_chunks: list[dict] = []

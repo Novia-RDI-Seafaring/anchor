@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.kb_engine.patches import *
 
 from src.core import logging # Initialize Logfire early
+from src.core.db_init import bootstrap_database
 from src.agent.agent import agent, AgentDeps
 from src.agent.state import Canvas
 from src.core.config import get_settings
@@ -13,6 +14,9 @@ from src.api import documents_router, search_router, config_router, file_provide
 from src.observability.langfuse.config import init_langfuse
 from src.kb_engine.rag_engine import get_rag_engine
 
+
+# Bootstrap DB before anything that touches the database
+bootstrap_database()
 
 # Create main FastAPI app
 app = FastAPI(title="Knowledge Base API")

@@ -3,6 +3,13 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useConversationHistory } from '@/hooks/useConversationHistory';
 import { Conversation } from '@/types';
+import { API_URL } from '@/lib/api-config';
+
+export interface KBDocument {
+    document_id: string;
+    filename: string;
+    node_count: number;
+}
 
 interface AppContextType {
     currentView: 'workspace' | 'settings';
@@ -15,6 +22,10 @@ interface AppContextType {
     toggleDarkMode: () => void;
     selectedModel: string;
     setSelectedModel: (model: string) => void;
+    activeDocumentId: string | null;
+    setActiveDocumentId: (id: string | null) => void;
+    documents: KBDocument[];
+    refreshDocuments: () => void;
     activeConversationId: string;
     setActiveConversationId: (id: string) => void;
     conversations: Conversation[];
@@ -31,6 +42,21 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const [isChatOpen, setIsChatOpen] = useState(true);
     const [isDarkMode, setIsDarkMode] = useState(false);
     const [selectedModel, setSelectedModel] = useState('');
+    const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
+    const [documents, setDocuments] = useState<KBDocument[]>([]);
+
+    const refreshDocuments = () => {
+        fetch(`${API_URL}/api/documents`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => { if (data) setDocuments(data.documents || []); })
+            .catch(() => {});
+    };
+
+    useEffect(() => {
+        refreshDocuments();
+        const interval = setInterval(refreshDocuments, 30000);
+        return () => clearInterval(interval);
+    }, []);
 
     const {
         conversations,
@@ -60,6 +86,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             toggleDarkMode,
             selectedModel,
             setSelectedModel,
+            activeDocumentId,
+            setActiveDocumentId,
+            documents,
+            refreshDocuments,
             activeConversationId: activeConversationId || '',
             setActiveConversationId,
             conversations,

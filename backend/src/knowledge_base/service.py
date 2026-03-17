@@ -185,9 +185,23 @@ class DocumentService:
         }
     
     async def list_documents(self) -> List[Dict[str, Any]]:
-        """List all documents."""
+        """List all documents from the documents registry table."""
         vector_store = await get_vector_store()
-        return await vector_store.list_documents()
+        rows = await vector_store.list_documents()
+        return [
+            {
+                "document_id": r["document_id"],
+                "filename": r["filename"],
+                "node_count": r.get("chunk_count") or 0,
+                "status": r.get("status"),
+            }
+            for r in rows
+        ]
+
+    async def get_document(self, document_id: str) -> Optional[Dict[str, Any]]:
+        """Get a single document by ID from the documents registry table."""
+        vector_store = await get_vector_store()
+        return await vector_store.get_document(document_id)
     
     async def delete_document(self, document_id: str) -> bool:
         """Delete a document and its chunks."""
@@ -226,53 +240,9 @@ class DocumentService:
         return results
     
     async def search(self, query: str, top_k: int = 5, document_id: Optional[str] = None) -> List[Dict[str, Any]]:
-        """
-        Search the knowledge base, optionally filtered by document.
-        
-        Args:
-            query: Search query
-            top_k: Number of results
-            document_id: Optional document ID to filter search
-            
-        Returns:
-            List of matching chunks with metadata
-        """
-        from llama_index.core.vector_stores import MetadataFilter, MetadataFilters, FilterOperator
-
+        """Search the knowledge base, optionally filtered by document."""
         rag = get_rag_engine()
-        vector_store = await get_vector_store()
-
-        filters = None
-        document_record: Optional[Dict[str, Any]] = None
-        if document_id:
-            document_record = await vector_store.get_document(document_id)
-            if document_record and document_record.get("file_path"):
-                filters = MetadataFilters(
-                    filters=[
-                        MetadataFilter(
-                            key='filepath',
-                            operator=FilterOperator.EQ,
-                            value=document_record["file_path"],
-                        )
-                    ]
-                )
-            else:
-                filters = MetadataFilters(
-                    filters=[
-                        MetadataFilter(
-                            key='document_id',
-                            operator=FilterOperator.EQ,
-                            value=document_id,
-                        )
-                    ]
-                )
-
-        retriever_kwargs: Dict[str, Any] = {'similarity_top_k': top_k}
-        if filters is not None:
-            retriever_kwargs['filters'] = filters
-
-        retriever = rag.vector_index.as_retriever(**retriever_kwargs)
-        retrieved = retriever.retrieve(query)
+        retrieved = rag.retrieve(query, document_id=document_id, top_k=top_k)
 
         retrieval_id = create_retrieval_id()
         trace_id = get_current_trace_id()
@@ -282,11 +252,7 @@ class DocumentService:
             node = result.node
             metadata = dict(node.metadata or {})
             doc_id = document_id or metadata.get('document_id')
-            filename = (
-                (document_record.get("filename") if document_record else None)
-                or metadata.get('filename')
-                or metadata.get('file_name')
-            )
+            filename = metadata.get('filename') or metadata.get('file_name')
             score = float(result.score or 0.0)
 
             chunks.append(

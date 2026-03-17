@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { AgCard } from '../ui/AgComponents';
 import { FileText, Database, LayoutDashboard, Network } from 'lucide-react';
@@ -35,10 +35,16 @@ export const MainContent: React.FC = () => {
     page: number;
     highlights: PDFHighlight[];
   } | null>(null);
-  const { state } = useCoAgent({
+  const { activeDocumentId } = useApp();
+  const { state, setState } = useCoAgent({
     name: "my_agent",
-    initialState: { nodes: [], relations: [] }
+    initialState: { nodes: [], relations: [], active_document_id: null }
   });
+
+  // Sync document selection from UI into per-run agent state
+  useEffect(() => {
+    setState((prev: any) => ({ ...prev, active_document_id: activeDocumentId ?? null }));
+  }, [activeDocumentId]);
   const canvas = state as any;
   const sourceNodes = (canvas?.nodes || []).filter((node: any) => node?.node_type === 'source');
   const allNodes = canvas?.nodes || [];

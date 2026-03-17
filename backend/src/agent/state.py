@@ -54,5 +54,6 @@ class Canvas(BaseModel):
     nodes: list[CanvasNode] = Field(default_factory=list)
     relations: list[Relation] = Field(default_factory=list)
     last_updated_run_id: str = ""
+    active_document_id: str | None = None
 
 __all__ = ["Canvas", "CanvasNode", "Relation", "SourceHighlight", "SpecProperty", "NodeStatus"]

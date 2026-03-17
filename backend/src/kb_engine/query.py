@@ -3,6 +3,7 @@ from typing import Any, cast
 from urllib.parse import urlencode
 
 from ketju.rag.llama_index.variants.simple import LlamaIndexRag
+from ketju.rag.llama_index.query.simple import SimpleLlamaIndexQueryHandler
 from llama_index.core.base.response.schema import NodeWithScore
 from logging import getLogger
 
@@ -143,9 +144,24 @@ def _to_pdf_search_response(result: Any) -> PdfSearchResponse:
     return PdfSearchResponse(answer=answer, citations=citations)
 
 
-class QueryHandler:
-    def query(self, rag: LlamaIndexRag, question: str, **kwargs: Any) -> PdfSearchResponse:
-        query_engine: Any = rag.vector_index.as_query_engine()
+class QueryHandler(SimpleLlamaIndexQueryHandler):
+    """App-specific query handler. retrieve() is inherited from SimpleLlamaIndexQueryHandler."""
+
+    def query(
+        self,
+        rag: LlamaIndexRag,
+        question: str,
+        document_id: str | None = None,
+        top_k: int = 5,
+    ) -> PdfSearchResponse:
+        from llama_index.core.vector_stores import MetadataFilter, MetadataFilters, FilterOperator
+
+        engine_kwargs: dict[str, Any] = {"similarity_top_k": top_k}
+        if document_id:
+            engine_kwargs["filters"] = MetadataFilters(
+                filters=[MetadataFilter(key="document_id", operator=FilterOperator.EQ, value=document_id)]
+            )
+        query_engine: Any = rag.vector_index.as_query_engine(**engine_kwargs)
         result = query_engine.query(question)
         logger.info("Result generated with %d source nodes", len(getattr(result, "source_nodes", []) or []))
         return _to_pdf_search_response(result)

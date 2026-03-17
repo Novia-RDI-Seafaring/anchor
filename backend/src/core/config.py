@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     db_schema: str = "anchor"  # app-owned document registry schema
     
     # ===== KETJU / LlamaIndex Storage =====
-    ketju_schema_name: str = "public"
+    ketju_schema_name: str = "anchor"
     ketju_table_name: str = "ketju_vectors"
     embedding_dimension: int = 3072  # text-embedding-3-large dimension
     

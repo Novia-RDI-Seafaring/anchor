@@ -48,13 +48,6 @@ class RagEngine(LlamaIndexRag):
         docstore:BaseDocumentStore = storage_context.docstore
         doc = docstore.get_document(document_id)
 
-    def list_documents(self) -> list[str]:
-        return list(self.ingested_files)
-    
-    def list_document_toc(self, document_id: str):
-        return "the answer is 43"
-   
-
     def resolve_pdf_files(
         self,
         files: Sequence[Path | str] | None = None,
