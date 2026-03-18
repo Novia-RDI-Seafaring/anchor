@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, NodeToolbar, type NodeProps } from "@xyflow/react";
 import {
   Tag,
   MessageSquare,
@@ -29,6 +29,23 @@ import type { KBDocument } from "@/contexts/AppContext";
 import type { PDFHighlight } from "./PDFModal";
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
+
+// --- Shared delete toolbar (appears when node is selected) ---
+function DeleteToolbar({ nodeId, onDelete }: { nodeId: string; onDelete?: (id: string) => void }) {
+  if (!onDelete) return null;
+  return (
+    <NodeToolbar isVisible={undefined} position={Position.Top} align="end" offset={4}>
+      <button
+        onClick={() => onDelete(nodeId)}
+        className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md bg-white dark:bg-neutral-800 border border-red-200 dark:border-red-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 shadow-sm transition-colors"
+        title="Delete node"
+      >
+        <XCircle size={11} />
+        Delete
+      </button>
+    </NodeToolbar>
+  );
+}
 
 // --- Status badge ---
 type NodeStatus = "pending" | "searching" | "found" | "partial" | "not_found";
@@ -113,11 +130,13 @@ export interface TopicNodeData {
   childCount: number;
   collapsed: boolean;
   onToggleCollapse: (id: string) => void;
+  onDelete?: (id: string) => void;
 }
 
 export interface FactNodeData {
   node: CanvasNodeData;
   onOpenPDF?: (filename: string, page: number, highlights: PDFHighlight[]) => void;
+  onDelete?: (id: string) => void;
 }
 
 // SourceNodeData uses `any` for the node because source nodes are legacy/backward-compat
@@ -129,6 +148,7 @@ export interface SourceNodeData {
 
 export interface SpecNodeData {
   node: CanvasNodeData;
+  onDelete?: (id: string) => void;
 }
 
 export interface EntityNodeData {
@@ -150,6 +170,7 @@ export interface ConceptNodeData extends Record<string, unknown> {
   childCount: number;
   collapsed: boolean;
   onToggleCollapse: (id: string) => void;
+  onDelete?: (id: string) => void;
 }
 
 // ─────────────────────────────────────────────
@@ -244,9 +265,10 @@ export function CategoryNode({ data }: NodeProps) {
 // CONCEPT NODE — violet, subject-level root
 // ─────────────────────────────────────────────
 export function ConceptNode({ data }: NodeProps) {
-  const { node, childCount, collapsed, onToggleCollapse } = data as unknown as ConceptNodeData;
+  const { node, childCount, collapsed, onToggleCollapse, onDelete } = data as unknown as ConceptNodeData;
   return (
     <>
+      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
       <Handle type="target" position={Position.Top} className="!bg-violet-500 !border-violet-700" />
       <div
         className={`rounded-xl border-2 shadow-lg select-none transition-all ${
@@ -287,9 +309,10 @@ export function ConceptNode({ data }: NodeProps) {
 // TOPIC NODE — amber, collapsible
 // ─────────────────────────────────────────────
 export function TopicNode({ data }: NodeProps) {
-  const { node, childCount, collapsed, onToggleCollapse } = data as unknown as TopicNodeData;
+  const { node, childCount, collapsed, onToggleCollapse, onDelete } = data as unknown as TopicNodeData;
   return (
     <>
+      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
       <Handle type="target" position={Position.Top} className="!bg-amber-400 !border-amber-600" />
       <div
         className={`rounded-xl border-2 shadow-md min-w-[180px] max-w-[260px] select-none transition-all ${
@@ -329,10 +352,11 @@ export function TopicNode({ data }: NodeProps) {
 // FACT NODE — indigo left-border, full text
 // ─────────────────────────────────────────────
 export function FactNode({ data }: NodeProps) {
-  const { node } = data as unknown as FactNodeData;
+  const { node, onDelete } = data as unknown as FactNodeData;
 
   return (
     <>
+      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
       <Handle type="target" position={Position.Top} className="!bg-indigo-400 !border-indigo-600" />
       <div
         className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-sm"
@@ -372,7 +396,7 @@ export function FactNode({ data }: NodeProps) {
 // SPEC NODE — violet, two-column property table
 // ─────────────────────────────────────────────
 export function SpecNode({ data }: NodeProps) {
-  const { node } = data as unknown as SpecNodeData;
+  const { node, onDelete } = data as unknown as SpecNodeData;
   const props = node.properties ?? [];
   const isComparison = props.some((property) => property.left_value || property.right_value || property.comparison_status);
   const comparisonLeftLabel = props.find((property) => property.left_label)?.left_label || "Document A";
@@ -385,6 +409,7 @@ export function SpecNode({ data }: NodeProps) {
 
   return (
     <>
+      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
       <Handle type="target" position={Position.Top} className="!bg-violet-400 !border-violet-600" />
       <div
         className="rounded-lg border border-violet-200 dark:border-violet-700 bg-white dark:bg-neutral-900 shadow-sm overflow-hidden"
@@ -510,6 +535,7 @@ export function SourceNode({ data }: NodeProps) {
 export interface FmuNodeData extends Record<string, unknown> {
   node: CanvasNodeData;
   onSimulate: (nodeId: string, filename: string, paramValues: Record<string, string>, stopTime: number) => void;
+  onDelete?: (id: string) => void;
 }
 
 export interface PlotNodeData extends Record<string, unknown> {
@@ -518,7 +544,7 @@ export interface PlotNodeData extends Record<string, unknown> {
 }
 
 export function FmuNode({ data }: NodeProps) {
-  const { node, onSimulate } = data as unknown as FmuNodeData;
+  const { node, onSimulate, onDelete } = data as unknown as FmuNodeData;
   const [paramValues, setParamValues] = React.useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
     (node.fmu_variables ?? []).filter((v: FmuVariableData) => v.causality === 'parameter').forEach((v: FmuVariableData) => {
@@ -533,6 +559,7 @@ export function FmuNode({ data }: NodeProps) {
 
   return (
     <>
+      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
       <Handle type="target" position={Position.Top} className="!bg-teal-500 !border-teal-700" />
       <div className="rounded-xl border-2 border-teal-400 dark:border-teal-500 bg-teal-50 dark:bg-teal-950/40 shadow-md select-none" style={{ minWidth: 220, maxWidth: 320 }}>
         {/* Header */}

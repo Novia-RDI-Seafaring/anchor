@@ -421,6 +421,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
             childCount: descendants([n.id], childrenOf).size,
             collapsed: collapsedIds.has(n.id),
             onToggleCollapse: handleToggleCollapse,
+            onDelete: onDeleteNode,
           },
         };
       }
@@ -463,6 +464,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
             childCount: descendants([n.id], childrenOf).size,
             collapsed: collapsedIds.has(n.id),
             onToggleCollapse: handleToggleCollapse,
+            onDelete: onDeleteNode,
           },
         };
       }
@@ -475,6 +477,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
           data: {
             node: n,
             onOpenPDF: handleOpenPDF,
+            onDelete: onDeleteNode,
           },
         };
       }
@@ -484,7 +487,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
           type: "specNode",
           position: { x: 0, y: 0 },
           hidden,
-          data: { node: n },
+          data: { node: n, onDelete: onDeleteNode },
         };
       }
       if (n.node_type === "fmu") {
@@ -493,7 +496,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
           type: "fmuNode",
           position: { x: 0, y: 0 },
           hidden,
-          data: { node: n, onSimulate: handleSimulate } satisfies FmuNodeData,
+          data: { node: n, onSimulate: handleSimulate, onDelete: onDeleteNode } satisfies FmuNodeData,
         };
       }
       if (n.node_type === "plot") {
@@ -616,10 +619,10 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
         const n = nodeMap.get(rfNode.id);
         if (!n) return rfNode;
         if (n.node_type === "concept" || n.node_type === "entity" || n.node_type === "category" || n.node_type === "topic") {
-          return { ...rfNode, data: { ...rfNode.data, node: n, childCount: descendants([n.id], childrenOf).size, collapsed: collapsedIds.has(n.id), onToggleCollapse: handleToggleCollapse } };
+          return { ...rfNode, data: { ...rfNode.data, node: n, childCount: descendants([n.id], childrenOf).size, collapsed: collapsedIds.has(n.id), onToggleCollapse: handleToggleCollapse, onDelete: onDeleteNode } };
         }
         if (n.node_type === "fact") {
-          return { ...rfNode, data: { ...rfNode.data, node: n, onOpenPDF: handleOpenPDF } };
+          return { ...rfNode, data: { ...rfNode.data, node: n, onOpenPDF: handleOpenPDF, onDelete: onDeleteNode } };
         }
         if (n.node_type === "spec") {
           return { ...rfNode, data: { ...rfNode.data, node: n } };
@@ -726,6 +729,8 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
           onNodeDragStart={onNodeDragStart}
           onNodeDrag={onNodeDrag}
           onNodeDragStop={onNodeDragStop}
+          onNodesDelete={(deleted) => deleted.forEach((n) => { if (!n.id.startsWith('__doc_')) onDeleteNode?.(n.id); })}
+          deleteKeyCode={["Delete", "Backspace"]}
           fitView
           fitViewOptions={{ padding: 0.2 }}
           minZoom={0.1}
