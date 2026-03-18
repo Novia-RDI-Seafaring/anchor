@@ -27,9 +27,13 @@ import {
   SourceNode,
   SpecNode,
   DocumentNode,
+  FmuNode,
+  PlotNode,
   type CanvasNodeData,
   type ConceptNodeData,
   type DocumentNodeData,
+  type FmuNodeData,
+  type PlotNodeData,
 } from "./KnowledgeNodes";
 import { PDFModal, type PDFHighlight } from "./PDFModal";
 import { useApp } from "@/contexts/AppContext";
@@ -66,6 +70,8 @@ const NODE_SIZE: Record<string, { w: number; h: number }> = {
   factNode:     { w: 280, h: 100 },
   sourceNode:   { w: 180, h: 40  },
   specNode:     { w: 260, h: 130 },
+  fmuNode:      { w: 280, h: 200 },
+  plotNode:     { w: 320, h: 220 },
 };
 const DEFAULT_SIZE = { w: 220, h: 80 };
 
@@ -186,6 +192,8 @@ const nodeTypes: NodeTypes = {
   sourceNode:   SourceNode,
   specNode:     SpecNode,
   documentNode: DocumentNode,
+  fmuNode:      FmuNode,
+  plotNode:     PlotNode,
 };
 
 const edgeTypes: EdgeTypes = {
@@ -292,6 +300,23 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange }
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+  }, []);
+
+  const handleSimulate = useCallback(async (nodeId: string, filename: string, paramValues: Record<string, string>, stopTime: number) => {
+    const overrides: Record<string, number> = {};
+    Object.entries(paramValues).forEach(([k, v]) => {
+      const n = parseFloat(v);
+      if (!isNaN(n)) overrides[k] = n;
+    });
+    try {
+      const res = await fetch(`${API_URL}/api/fmu/simulate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, param_overrides: overrides, stop_time: stopTime }),
+      });
+      if (!res.ok) return;
+      // The agent manages plot nodes; for user-initiated simulate, just reload the existing plot node if present
+    } catch { /* suppress */ }
   }, []);
 
   const rawNodes = canvas?.nodes ?? [];
@@ -439,6 +464,24 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange }
           data: { node: n },
         };
       }
+      if (n.node_type === "fmu") {
+        return {
+          id: n.id,
+          type: "fmuNode",
+          position: { x: 0, y: 0 },
+          hidden,
+          data: { node: n, onSimulate: handleSimulate } satisfies FmuNodeData,
+        };
+      }
+      if (n.node_type === "plot") {
+        return {
+          id: n.id,
+          type: "plotNode",
+          position: { x: 0, y: 0 },
+          hidden,
+          data: { node: n } satisfies PlotNodeData,
+        };
+      }
       // backward-compat: source/entity/category fallback
       return {
         id: n.id,
@@ -558,6 +601,12 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange }
         if (n.node_type === "spec") {
           return { ...rfNode, data: { ...rfNode.data, node: n } };
         }
+        if (n.node_type === "fmu") {
+          return { ...rfNode, data: { ...rfNode.data, node: n, onSimulate: handleSimulate } };
+        }
+        if (n.node_type === "plot") {
+          return { ...rfNode, data: { ...rfNode.data, node: n } };
+        }
         return { ...rfNode, data: { ...rfNode.data, node: n } };
       })
     );
@@ -580,19 +629,22 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange }
   const handleDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDraggingOver(false);
-    const files = Array.from(e.dataTransfer.files).filter((f) =>
-      /\.(pdf|docx|txt|md|html)$/i.test(f.name)
-    );
+    const files = Array.from(e.dataTransfer.files);
     if (!files.length) return;
     try {
-      await Promise.all(
-        files.map(async (file) => {
+      await Promise.all(files.map(async (file) => {
+        if (file.name.endsWith('.fmu')) {
           const formData = new FormData();
-          formData.append("file", file);
-          const res = await fetch(`${API_URL}/api/documents/upload`, { method: "POST", body: formData });
+          formData.append('file', file);
+          await fetch(`${API_URL}/api/fmu/upload`, { method: 'POST', body: formData });
+          // FMU is uploaded; user can now ask the agent to inspect it
+        } else if (/\.(pdf|docx|txt|md|html)$/i.test(file.name)) {
+          const formData = new FormData();
+          formData.append('file', file);
+          const res = await fetch(`${API_URL}/api/documents/upload`, { method: 'POST', body: formData });
           if (!res.ok) throw new Error(`Upload failed: ${res.statusText}`);
-        })
-      );
+        }
+      }));
       refreshDocuments();
     } catch {
       // upload failed — user can retry; suppress to avoid dev overlay noise
@@ -625,7 +677,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange }
               Canvas is empty
             </h3>
             <p className="text-sm text-neutral-400 dark:text-neutral-500 max-w-xs">
-              Drag a PDF here to upload, or ask a technical question to build the graph.
+              Drag a PDF or FMU here to upload, or ask a technical question to build the graph.
             </p>
           </div>
         )}

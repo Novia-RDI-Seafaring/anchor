@@ -23,6 +23,7 @@ from .helpers import (
 from .prompts import SYS_PROMPT as SYSTEM_PROMPT
 from .state import Canvas
 from .tools import canvas, knowledge, vision
+from .tools import fmu as fmu_tools
 
 async def _prepare_tools_for_turn(ctx: RunContext[AgentDeps], tool_defs: list[Any]) -> list[Any]:
     prompt_text = _early_prompt_to_text(getattr(ctx, "prompt", None)).strip().lower()
@@ -38,6 +39,7 @@ async def _prepare_tools_for_turn(ctx: RunContext[AgentDeps], tool_defs: list[An
         "resolve_technical_query", "compare_documents",
         "search_knowledge_base", "get_active_document_context",
         "check_canvas", "list_documents", "add_concept",
+        "inspect_fmu_tool", "simulate_fmu_tool",
     }
     return [tool_def for tool_def in tool_defs if tool_def.name in allowed]
 
@@ -97,5 +99,9 @@ agent.tool(knowledge.compare_documents)
 
 # Register Vision Tools
 agent.tool(vision.analyze_image_content)
+
+# Register FMU Tools
+agent.tool(fmu_tools.inspect_fmu_tool)
+agent.tool(fmu_tools.simulate_fmu_tool)
 
 AppState = Canvas

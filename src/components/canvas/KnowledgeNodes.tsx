@@ -20,7 +20,11 @@ import {
   FolderOpen,
   Loader2,
   Layers,
+  Cpu,
+  Activity,
+  Play,
 } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import type { KBDocument } from "@/contexts/AppContext";
 import type { PDFHighlight } from "./PDFModal";
 
@@ -64,14 +68,33 @@ export interface SpecProperty {
   comparison_status?: string;
 }
 
+export interface FmuVariableData {
+  name: string;
+  causality: string;
+  variability?: string;
+  start?: string;
+  unit?: string;
+  description?: string;
+}
+
 export interface CanvasNodeData {
   id: string;
-  node_type: "concept" | "topic" | "fact" | "spec" | "source" | "entity" | "category"; // source/entity/category kept for compat
+  node_type: "concept" | "topic" | "fact" | "spec" | "source" | "entity" | "category" | "fmu" | "plot"; // source/entity/category kept for compat
   status?: NodeStatus;
   title?: string;
   text?: string;
   spec_title?: string;
   properties?: SpecProperty[];
+  // fmu node fields
+  fmu_filename?: string;
+  fmu_model_name?: string;
+  fmu_variables?: FmuVariableData[];
+  fmu_param_values?: Record<string, string>;
+  // plot node fields
+  plot_job_id?: string;
+  plot_fmu_filename?: string;
+  plot_signal_names?: string[];
+  plot_stop_time?: number;
 }
 
 export interface EvidenceRelation {
@@ -476,6 +499,169 @@ export function SourceNode({ data }: NodeProps) {
           </span>
         )}
       </button>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────
+// FMU NODE — teal, shows inputs/outputs/params
+// ─────────────────────────────────────────────
+export interface FmuNodeData extends Record<string, unknown> {
+  node: CanvasNodeData;
+  onSimulate: (nodeId: string, filename: string, paramValues: Record<string, string>, stopTime: number) => void;
+}
+
+export interface PlotNodeData extends Record<string, unknown> {
+  node: CanvasNodeData;
+}
+
+export function FmuNode({ data }: NodeProps) {
+  const { node, onSimulate } = data as unknown as FmuNodeData;
+  const [paramValues, setParamValues] = React.useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    (node.fmu_variables ?? []).filter((v: FmuVariableData) => v.causality === 'parameter').forEach((v: FmuVariableData) => {
+      init[v.name] = node.fmu_param_values?.[v.name] ?? v.start ?? '';
+    });
+    return init;
+  });
+  const [stopTime, setStopTime] = React.useState(node.plot_stop_time ?? 10);
+  const inputs = (node.fmu_variables ?? []).filter((v: FmuVariableData) => v.causality === 'input');
+  const outputs = (node.fmu_variables ?? []).filter((v: FmuVariableData) => v.causality === 'output');
+  const params = (node.fmu_variables ?? []).filter((v: FmuVariableData) => v.causality === 'parameter');
+
+  return (
+    <>
+      <Handle type="target" position={Position.Top} className="!bg-teal-500 !border-teal-700" />
+      <div className="rounded-xl border-2 border-teal-400 dark:border-teal-500 bg-teal-50 dark:bg-teal-950/40 shadow-md select-none" style={{ minWidth: 220, maxWidth: 320 }}>
+        {/* Header */}
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-teal-200 dark:border-teal-800">
+          <Cpu size={14} className="text-teal-600 dark:text-teal-400 shrink-0" />
+          <span className="flex-1 text-sm font-bold text-teal-900 dark:text-teal-100 truncate">{node.fmu_model_name || node.title}</span>
+          <span className="text-[9px] text-teal-500 font-mono bg-teal-100 dark:bg-teal-900 px-1.5 py-0.5 rounded">.fmu</span>
+        </div>
+        {/* Inputs */}
+        {inputs.length > 0 && (
+          <div className="px-3 py-1.5 border-b border-teal-100 dark:border-teal-900">
+            <p className="text-[9px] font-semibold text-teal-500 uppercase tracking-wide mb-1">Inputs</p>
+            {inputs.map((v: FmuVariableData) => (
+              <div key={v.name} className="relative flex items-center gap-1 text-xs text-teal-800 dark:text-teal-200 py-0.5">
+                <Handle type="target" id={`in-${v.name}`} position={Position.Left} className="!bg-teal-400 !w-2 !h-2 !border-teal-600" style={{ left: -8 }} />
+                <span className="font-mono text-[10px]">{v.name}</span>
+                {v.unit && <span className="text-[9px] text-teal-400 ml-1">[{v.unit}]</span>}
+              </div>
+            ))}
+          </div>
+        )}
+        {/* Outputs */}
+        {outputs.length > 0 && (
+          <div className="px-3 py-1.5 border-b border-teal-100 dark:border-teal-900">
+            <p className="text-[9px] font-semibold text-teal-500 uppercase tracking-wide mb-1">Outputs</p>
+            {outputs.map((v: FmuVariableData) => (
+              <div key={v.name} className="relative flex items-center justify-end gap-1 text-xs text-teal-800 dark:text-teal-200 py-0.5">
+                <span className="font-mono text-[10px]">{v.name}</span>
+                {v.unit && <span className="text-[9px] text-teal-400 mr-1">[{v.unit}]</span>}
+                <Handle type="source" id={`out-${v.name}`} position={Position.Right} className="!bg-teal-400 !w-2 !h-2 !border-teal-600" style={{ right: -8 }} />
+              </div>
+            ))}
+          </div>
+        )}
+        {/* Parameters */}
+        {params.length > 0 && (
+          <div className="px-3 py-1.5 border-b border-teal-100 dark:border-teal-900">
+            <p className="text-[9px] font-semibold text-teal-500 uppercase tracking-wide mb-1">Parameters</p>
+            {params.map((v: FmuVariableData) => (
+              <div key={v.name} className="flex items-center gap-2 py-0.5">
+                <span className="font-mono text-[10px] text-teal-700 dark:text-teal-300 w-20 truncate">{v.name}</span>
+                <input
+                  type="text"
+                  value={paramValues[v.name] ?? ''}
+                  onChange={e => setParamValues(prev => ({ ...prev, [v.name]: e.target.value }))}
+                  className="nodrag flex-1 text-[10px] font-mono bg-white dark:bg-teal-900/40 border border-teal-200 dark:border-teal-700 rounded px-1.5 py-0.5 text-teal-900 dark:text-teal-100 w-0 min-w-0"
+                />
+                {v.unit && <span className="text-[9px] text-teal-400 shrink-0">{v.unit}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+        {/* Simulate controls */}
+        <div className="px-3 py-2 flex items-center gap-2">
+          <span className="text-[9px] text-teal-500">stop</span>
+          <input
+            type="number"
+            value={stopTime}
+            onChange={e => setStopTime(Number(e.target.value))}
+            className="nodrag w-16 text-[10px] font-mono bg-white dark:bg-teal-900/40 border border-teal-200 dark:border-teal-700 rounded px-1.5 py-0.5 text-teal-900 dark:text-teal-100"
+          />
+          <span className="text-[9px] text-teal-500">s</span>
+          <button
+            onClick={() => onSimulate?.(node.id, node.fmu_filename ?? '', paramValues, stopTime)}
+            className="nodrag ml-auto flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-500 hover:bg-teal-600 text-white text-[11px] font-semibold transition-colors shadow-sm"
+          >
+            <Play size={10} />
+            Simulate
+          </button>
+        </div>
+      </div>
+      <Handle type="source" position={Position.Bottom} className="!bg-teal-500 !border-teal-700" />
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────
+// PLOT NODE — shows simulation time-series
+// ─────────────────────────────────────────────
+export function PlotNode({ data }: NodeProps) {
+  const { node } = data as unknown as PlotNodeData;
+  const [chartData, setChartData] = React.useState<Record<string, unknown>[] | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!node.plot_job_id) return;
+    fetch(`${API_URL}/api/fmu/result/${node.plot_job_id}`)
+      .then(r => r.ok ? r.json() : Promise.reject('not found'))
+      .then((raw: Record<string, unknown>) => {
+        const times: number[] = (raw.time as number[]) ?? [];
+        const signals = Object.keys(raw).filter(k => k !== 'time');
+        setChartData(times.map((t, i) => {
+          const pt: Record<string, unknown> = { t: Math.round(t * 1000) / 1000 };
+          signals.forEach(s => { pt[s] = (raw[s] as number[])[i]; });
+          return pt;
+        }));
+      })
+      .catch(() => setError('Could not load result'));
+  }, [node.plot_job_id]);
+
+  const signals = node.plot_signal_names ?? [];
+  const COLORS = ['#14b8a6', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6'];
+
+  return (
+    <>
+      <Handle type="target" position={Position.Top} className="!bg-indigo-400 !border-indigo-600" />
+      <div className="rounded-xl border-2 border-indigo-300 dark:border-indigo-600 bg-white dark:bg-neutral-900 shadow-md" style={{ minWidth: 280, maxWidth: 400 }}>
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-100 dark:border-neutral-800">
+          <Activity size={13} className="text-indigo-500 shrink-0" />
+          <span className="flex-1 text-xs font-semibold text-neutral-800 dark:text-neutral-200 truncate">{node.title}</span>
+          {node.plot_stop_time && <span className="text-[9px] text-neutral-400 font-mono">0–{node.plot_stop_time}s</span>}
+        </div>
+        <div className="p-2">
+          {!node.plot_job_id && <p className="text-xs text-neutral-400 text-center py-4">No simulation yet</p>}
+          {node.plot_job_id && !chartData && !error && <p className="text-xs text-neutral-400 text-center py-4">Loading…</p>}
+          {error && <p className="text-xs text-red-400 text-center py-4">{error}</p>}
+          {chartData && (
+            <ResponsiveContainer width="100%" height={160}>
+              <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
+                <XAxis dataKey="t" tick={{ fontSize: 9 }} tickLine={false} />
+                <YAxis tick={{ fontSize: 9 }} tickLine={false} width={40} />
+                <Tooltip contentStyle={{ fontSize: 10 }} />
+                {signals.map((s, i) => (
+                  <Line key={s} type="monotone" dataKey={s} stroke={COLORS[i % COLORS.length]} dot={false} strokeWidth={1.5} />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+      <Handle type="source" position={Position.Bottom} className="!bg-indigo-400 !border-indigo-600" />
     </>
   );
 }

@@ -12,6 +12,7 @@ from src.core.config import get_settings
 from src.core.context import set_current_model_id
 from src.api import documents_router, search_router, config_router, file_provider_router
 from src.api.routes_conversations import router as conversations_router
+from src.api.routes_fmu import router as fmu_router
 from src.observability.langfuse.config import init_langfuse
 from src.kb_engine.rag_engine import get_rag_engine
 
@@ -55,6 +56,7 @@ app.include_router(search_router)
 app.include_router(config_router)
 app.include_router(file_provider_router)
 app.include_router(conversations_router)
+app.include_router(fmu_router)
 
 
 # ===== Health Check =====
