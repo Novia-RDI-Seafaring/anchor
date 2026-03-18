@@ -22,7 +22,8 @@ from ..helpers import (
     _select_page,
     _select_bbox,
     _select_highlights,
-    _clean_text_value
+    _clean_text_value,
+    _find_node_by_title,
 )
 
 _COMPARISON_QUERY_RE = re.compile(r"\b(compare|comparison|different|difference|diff|vs\.?|versus)\b", re.IGNORECASE)
@@ -255,14 +256,20 @@ async def resolve_technical_query(
     ctx: RunContext[AgentDeps],
     query: str,
     root_title: str | None = None,
+    concept_title: str | None = None,
+    concept_id: str | None = None,
     prefer_table: bool | None = None,
     top_k: int = 5,
 ) -> ToolReturn:
     """Search the KB, populate the canvas, and return a grounded summary.
 
     This is the primary tool for technical questions. It performs retrieval,
-    creates the topic/fact-or-spec/source nodes, emits a canvas snapshot, and
+    creates the concept/topic/fact-or-spec nodes, emits a canvas snapshot, and
     returns a concise summary for the final chat response.
+
+    concept_title: the high-level concept name (e.g. "A2UI")
+    concept_id: if the agent already knows the concept node id
+    root_title: title for the sub-topic aspect, e.g. 'Benefits', 'How it works' — NOT the document section title
     """
     from src.knowledge_base.service import get_document_service
 
@@ -282,6 +289,18 @@ async def resolve_technical_query(
         normalized_chunks.append(normalized)
     _remember_search_results(ctx, normalized_chunks)
 
+    # Find or create concept node
+    resolved_concept_id: str | None = concept_id
+    if not resolved_concept_id and concept_title:
+        existing = _find_node_by_title(ctx, concept_title, "concept")
+        if existing:
+            resolved_concept_id = existing.id
+        else:
+            concept_node = CanvasNode(node_type="concept", title=concept_title, status="found")
+            _mark_node_for_run(concept_node, ctx)
+            ctx.deps.state.nodes.append(concept_node)
+            resolved_concept_id = concept_node.id
+
     topic = CanvasNode(
         node_type="topic",
         title=root_title or _derive_topic_title(query, active_document.get("filename") if active_document else None),
@@ -289,6 +308,9 @@ async def resolve_technical_query(
     )
     _mark_node_for_run(topic, ctx)
     ctx.deps.state.nodes.append(topic)
+
+    if resolved_concept_id:
+        _ensure_relation(ctx, resolved_concept_id, topic.id)
 
     if not normalized_chunks:
         fact = CanvasNode(

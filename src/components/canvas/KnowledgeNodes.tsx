@@ -19,6 +19,7 @@ import {
   Box,
   FolderOpen,
   Loader2,
+  Layers,
 } from "lucide-react";
 import type { KBDocument } from "@/contexts/AppContext";
 import type { PDFHighlight } from "./PDFModal";
@@ -65,7 +66,7 @@ export interface SpecProperty {
 
 export interface CanvasNodeData {
   id: string;
-  node_type: "topic" | "fact" | "spec" | "source" | "entity" | "category"; // source/entity/category kept for compat
+  node_type: "concept" | "topic" | "fact" | "spec" | "source" | "entity" | "category"; // source/entity/category kept for compat
   status?: NodeStatus;
   title?: string;
   text?: string;
@@ -114,6 +115,13 @@ export interface EntityNodeData {
 }
 
 export interface CategoryNodeData {
+  node: CanvasNodeData;
+  childCount: number;
+  collapsed: boolean;
+  onToggleCollapse: (id: string) => void;
+}
+
+export interface ConceptNodeData extends Record<string, unknown> {
   node: CanvasNodeData;
   childCount: number;
   collapsed: boolean;
@@ -204,6 +212,49 @@ export function CategoryNode({ data }: NodeProps) {
         )}
       </div>
       <Handle type="source" position={Position.Bottom} className="!bg-blue-500 !border-blue-700" />
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────
+// CONCEPT NODE — violet, subject-level root
+// ─────────────────────────────────────────────
+export function ConceptNode({ data }: NodeProps) {
+  const { node, childCount, collapsed, onToggleCollapse } = data as unknown as ConceptNodeData;
+  return (
+    <>
+      <Handle type="target" position={Position.Top} className="!bg-violet-500 !border-violet-700" />
+      <div
+        className={`rounded-xl border-2 shadow-lg select-none transition-all ${
+          collapsed
+            ? "border-violet-300 dark:border-violet-600 bg-violet-50 dark:bg-violet-950/40"
+            : "border-violet-500 dark:border-violet-400 bg-violet-100 dark:bg-violet-900/30"
+        }`}
+        style={{ minWidth: 180, maxWidth: 300 }}
+      >
+        <div className="flex items-center gap-2 px-3 py-2.5">
+          <Layers size={14} className="text-violet-600 dark:text-violet-400 shrink-0" />
+          <p className="flex-1 text-sm font-bold text-violet-900 dark:text-violet-100 leading-snug break-words whitespace-normal">
+            {node.title}
+          </p>
+          <StatusBadge status={node.status} />
+          <button
+            onClick={() => onToggleCollapse(node.id)}
+            className="shrink-0 p-0.5 rounded hover:bg-violet-200 dark:hover:bg-violet-800/60 text-violet-600 dark:text-violet-400 transition-colors"
+            title={collapsed ? "Expand" : "Collapse"}
+          >
+            {collapsed ? <ChevronsUpDown size={13} /> : <ChevronsDownUp size={13} />}
+          </button>
+        </div>
+        {collapsed && childCount > 0 && (
+          <div className="px-3 pb-2 -mt-1">
+            <span className="text-[10px] text-violet-600 dark:text-violet-400 bg-violet-200/60 dark:bg-violet-900/60 px-2 py-0.5 rounded-full">
+              {childCount} hidden
+            </span>
+          </div>
+        )}
+      </div>
+      <Handle type="source" position={Position.Bottom} className="!bg-violet-500 !border-violet-700" />
     </>
   );
 }

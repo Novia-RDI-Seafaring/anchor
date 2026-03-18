@@ -28,7 +28,7 @@ class SpecProperty(BaseModel):
 
 class CanvasNode(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
-    node_type: Literal["topic", "fact", "spec", "source", "entity", "category"]  # source/entity/category kept for backward compat
+    node_type: Literal["concept", "topic", "fact", "spec", "source", "entity", "category"]  # source/entity/category kept for backward compat
     status: NodeStatus = "found"
     last_updated_run_id: str = ""
     # topic fields

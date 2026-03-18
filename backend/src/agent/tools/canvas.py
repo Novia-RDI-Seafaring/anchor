@@ -9,6 +9,7 @@ from ..helpers import (
     _ensure_evidence_relation,
     _resolve_source_details,
     _get_cached_document_id,
+    _find_node_by_title,
 )
 
 
@@ -24,6 +25,23 @@ async def add_topic(
 ) -> ToolReturn:
     """Add a topic node to the canvas. Returns the new node's id."""
     node = CanvasNode(node_type="topic", title=title, status=status)
+    _mark_node_for_run(node, ctx)
+    ctx.deps.state.nodes.append(node)
+    result = _snapshot(ctx)
+    result.return_value = {"success": True, "id": node.id}
+    return result
+
+
+async def add_concept(
+    ctx: RunContext[AgentDeps],
+    title: str,
+    status: NodeStatus = "found",
+) -> ToolReturn:
+    """Add a concept node — the root organizer for a knowledge cluster.
+    A concept represents the high-level subject (e.g. 'A2UI', 'Material X').
+    Returns the node id; reuse it when calling resolve_technical_query.
+    """
+    node = CanvasNode(node_type="concept", title=title, status=status)
     _mark_node_for_run(node, ctx)
     ctx.deps.state.nodes.append(node)
     result = _snapshot(ctx)

@@ -232,6 +232,14 @@ def _ensure_evidence_relation(
         ))
 
 
+def _find_node_by_title(ctx: RunContext[AgentDeps], title: str, node_type: str) -> "CanvasNode | None":
+    title_lower = title.lower().strip()
+    for node in ctx.deps.state.nodes:
+        if node.node_type == node_type and node.title.lower().strip() == title_lower:
+            return node
+    return None
+
+
 def _get_cached_document_id(ctx: RunContext[AgentDeps], chunk_index: int = 0) -> str | None:
     chunk = _get_cached_chunk(ctx, chunk_index)
     if not chunk:

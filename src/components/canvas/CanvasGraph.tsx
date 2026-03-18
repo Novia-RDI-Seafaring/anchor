@@ -19,6 +19,7 @@ import "@xyflow/react/dist/style.css";
 import dagre from "@dagrejs/dagre";
 import { Network, UploadCloud } from "lucide-react";
 import {
+  ConceptNode,
   EntityNode,
   CategoryNode,
   TopicNode,
@@ -27,6 +28,7 @@ import {
   SpecNode,
   DocumentNode,
   type CanvasNodeData,
+  type ConceptNodeData,
   type DocumentNodeData,
 } from "./KnowledgeNodes";
 import { PDFModal, type PDFHighlight } from "./PDFModal";
@@ -57,6 +59,7 @@ interface PDFModalState {
 
 // --- Node sizes (width × height in px) used by dagre for spacing ---
 const NODE_SIZE: Record<string, { w: number; h: number }> = {
+  conceptNode:  { w: 240, h: 60  },
   entityNode:   { w: 280, h: 70  },
   categoryNode: { w: 220, h: 55  },
   topicNode:    { w: 240, h: 60  },
@@ -175,6 +178,7 @@ function descendants(
 
 // --- Node type registry ---
 const nodeTypes: NodeTypes = {
+  conceptNode:  ConceptNode,
   entityNode:   EntityNode,
   categoryNode: CategoryNode,
   topicNode:    TopicNode,
@@ -358,6 +362,20 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange }
     const rfNodes: Node[] = rawNodes.map((n) => {
       const hidden = hiddenIds.has(n.id);
 
+      if (n.node_type === "concept") {
+        return {
+          id: n.id,
+          type: "conceptNode",
+          position: { x: 0, y: 0 },
+          hidden,
+          data: {
+            node: n,
+            childCount: descendants([n.id], childrenOf).size,
+            collapsed: collapsedIds.has(n.id),
+            onToggleCollapse: handleToggleCollapse,
+          },
+        };
+      }
       if (n.node_type === "entity") {
         return {
           id: n.id,
@@ -434,12 +452,14 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange }
     const rfEdges: Edge[] = relations.map((r, idx) => {
       const fromNode = nodeMap.get(r.from_id);
       const toNode = nodeMap.get(r.to_id);
+      const isConceptTopic = fromNode?.node_type === "concept";
       const isEntityCat = fromNode?.node_type === "entity";
       const isCatTopic  = fromNode?.node_type === "category";
       const isTopicFact = (fromNode?.node_type === "topic" || fromNode?.node_type === "category") && toNode?.node_type === "fact";
       const isSpec      = toNode?.node_type === "spec";
       const isEvidence  = r.to_id.startsWith('__doc_');
-      const strokeColor = isEntityCat ? "#64748b"
+      const strokeColor = isConceptTopic ? "#8b5cf6"
+        : isEntityCat ? "#64748b"
         : isCatTopic  ? "#3b82f6"
         : isTopicFact ? "#f59e0b"
         : isSpec       ? "#8b5cf6"
@@ -455,10 +475,10 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange }
         label: r.label || undefined,
         type: "floating",
         hidden: hiddenIds.has(r.from_id) || hiddenIds.has(r.to_id),
-        animated: isEntityCat || isCatTopic,
+        animated: isConceptTopic || isEntityCat || isCatTopic,
         style: {
           stroke: strokeColor,
-          strokeWidth: isEntityCat ? 2.5 : isCatTopic ? 2 : 1.5,
+          strokeWidth: isEntityCat ? 2.5 : isConceptTopic || isCatTopic ? 2 : 1.5,
           strokeDasharray: isEvidence || isSpec ? "4 3" : undefined,
         },
         labelStyle: { fill: "#6366f1", fontWeight: 500, fontSize: 10 },
@@ -529,7 +549,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange }
       prev.map((rfNode) => {
         const n = nodeMap.get(rfNode.id);
         if (!n) return rfNode;
-        if (n.node_type === "entity" || n.node_type === "category" || n.node_type === "topic") {
+        if (n.node_type === "concept" || n.node_type === "entity" || n.node_type === "category" || n.node_type === "topic") {
           return { ...rfNode, data: { ...rfNode.data, node: n, childCount: descendants([n.id], childrenOf).size, collapsed: collapsedIds.has(n.id), onToggleCollapse: handleToggleCollapse } };
         }
         if (n.node_type === "fact") {

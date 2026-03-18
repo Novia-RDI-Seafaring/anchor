@@ -37,7 +37,7 @@ async def _prepare_tools_for_turn(ctx: RunContext[AgentDeps], tool_defs: list[An
     allowed = {
         "resolve_technical_query", "compare_documents",
         "search_knowledge_base", "get_active_document_context",
-        "check_canvas", "list_documents",
+        "check_canvas", "list_documents", "add_concept",
     }
     return [tool_def for tool_def in tool_defs if tool_def.name in allowed]
 
@@ -80,6 +80,7 @@ def ensure_technical_queries_update_canvas(ctx: RunContext[AgentDeps], data: str
 
 # Register Canvas Tools
 agent.tool(canvas.check_canvas)
+agent.tool(canvas.add_concept)
 agent.tool(canvas.add_topic)
 agent.tool(canvas.add_fact)
 agent.tool(canvas.add_relation)
