@@ -68,8 +68,8 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
         const statsData = await statsRes.json();
         setStats(statsData);
       }
-    } catch (err) {
-      console.error('Failed to fetch settings data:', err);
+    } catch {
+      // backend offline — suppress to avoid dev overlay noise
     }
   }, []);
 

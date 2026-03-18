@@ -67,6 +67,18 @@ def bootstrap_database() -> None:
             )
         """)
 
+        # 4. Conversations table
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS "{schema}".conversations (
+                id           TEXT PRIMARY KEY,
+                title        TEXT NOT NULL DEFAULT 'New Conversation',
+                messages     JSONB NOT NULL DEFAULT '[]',
+                canvas_state JSONB NOT NULL DEFAULT '{{}}',
+                created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         print(f"[db_init] Ready — schema={schema!r}, vector extension in public")
     finally:
         cur.close()

@@ -7,6 +7,8 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
+import asyncio
+
 import asyncpg
 
 from ..core.config import get_settings
@@ -357,11 +359,23 @@ class VectorStore:
 
 
 _vector_store: Optional[VectorStore] = None
+_vector_store_lock: Optional[asyncio.Lock] = None
+
+
+def _get_lock() -> asyncio.Lock:
+    global _vector_store_lock
+    if _vector_store_lock is None:
+        _vector_store_lock = asyncio.Lock()
+    return _vector_store_lock
 
 
 async def get_vector_store() -> VectorStore:
     global _vector_store
-    if _vector_store is None:
-        _vector_store = VectorStore()
-        await _vector_store.initialize()
+    if _vector_store is not None:
+        return _vector_store
+    async with _get_lock():
+        if _vector_store is None:
+            vs = VectorStore()
+            await vs.initialize()
+            _vector_store = vs
     return _vector_store

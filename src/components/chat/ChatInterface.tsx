@@ -3,31 +3,17 @@ import { CopilotChat } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
 import { X } from 'lucide-react';
 import { InputArea } from '../chat/InputArea';
-import { useCopilotChat } from '@copilotkit/react-core';
-import { TextMessage } from '@copilotkit/runtime-client-gql';
 
 interface ChatInterfaceProps {
     isOpen: boolean;
     onClose: () => void;
 }
 
-// Adapter to make InputArea compatible with CopilotKit's Input component interface
+// CopilotChat passes onSend(text) and inProgress as props to the custom Input component.
 const InputAreaAdapter = (props: any) => {
-    // ts-expect-error - appendMessage is deprecated but sendMessage is not yet available in this version
-    const { appendMessage } = useCopilotChat();
-
-    const handleSendMessage = (text: string) => {
-        // Create a proper TextMessage instance for CopilotKit
-        const message = new TextMessage({
-            role: 'user' as any, // Type assertion needed due to MessageRole enum
-            content: text
-        });
-        appendMessage(message);
-    };
-
     return (
         <InputArea
-            onSendMessage={handleSendMessage}
+            onSendMessage={(text: string) => props.onSend?.(text)}
             disabled={props.inProgress}
         />
     );
@@ -52,7 +38,6 @@ export function ChatInterface({ isOpen, onClose }: ChatInterfaceProps) {
                 </button>
             </div>
 
-            {/* CopilotKit's built-in Chat component handles message rendering internally */}
             <div className="flex-1 overflow-hidden">
                 <CopilotChat
                     className="h-full"
