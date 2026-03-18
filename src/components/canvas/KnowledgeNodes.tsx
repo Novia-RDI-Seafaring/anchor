@@ -95,6 +95,7 @@ export interface CanvasNodeData {
   plot_fmu_filename?: string;
   plot_signal_names?: string[];
   plot_stop_time?: number;
+  plot_param_values?: Record<string, number>;
 }
 
 export interface EvidenceRelation {
@@ -513,6 +514,7 @@ export interface FmuNodeData extends Record<string, unknown> {
 
 export interface PlotNodeData extends Record<string, unknown> {
   node: CanvasNodeData;
+  onDelete?: (nodeId: string) => void;
 }
 
 export function FmuNode({ data }: NodeProps) {
@@ -611,7 +613,7 @@ export function FmuNode({ data }: NodeProps) {
 // PLOT NODE — shows simulation time-series
 // ─────────────────────────────────────────────
 export function PlotNode({ data }: NodeProps) {
-  const { node } = data as unknown as PlotNodeData;
+  const { node, onDelete } = data as unknown as PlotNodeData;
   const [chartData, setChartData] = React.useState<Record<string, unknown>[] | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
@@ -632,6 +634,7 @@ export function PlotNode({ data }: NodeProps) {
   }, [node.plot_job_id]);
 
   const signals = node.plot_signal_names ?? [];
+  const params = node.plot_param_values ? Object.entries(node.plot_param_values) : [];
   const COLORS = ['#14b8a6', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6'];
 
   return (
@@ -642,7 +645,27 @@ export function PlotNode({ data }: NodeProps) {
           <Activity size={13} className="text-indigo-500 shrink-0" />
           <span className="flex-1 text-xs font-semibold text-neutral-800 dark:text-neutral-200 truncate">{node.title}</span>
           {node.plot_stop_time && <span className="text-[9px] text-neutral-400 font-mono">0–{node.plot_stop_time}s</span>}
+          {onDelete && (
+            <button
+              onClick={() => onDelete(node.id)}
+              className="ml-1 text-neutral-300 hover:text-red-400 dark:text-neutral-600 dark:hover:text-red-500 transition-colors"
+              title="Delete result"
+            >
+              <XCircle size={13} />
+            </button>
+          )}
         </div>
+        {params.length > 0 && (
+          <div className="flex flex-wrap gap-1 px-3 py-1.5 border-b border-neutral-100 dark:border-neutral-800">
+            {params.map(([k, v]) => (
+              <span key={k} className="inline-flex items-center gap-1 text-[9px] font-mono bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-300 rounded px-1.5 py-0.5">
+                <span className="font-semibold">{k}</span>
+                <span className="text-indigo-400">=</span>
+                <span>{v}</span>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="p-2">
           {!node.plot_job_id && <p className="text-xs text-neutral-400 text-center py-4">No simulation yet</p>}
           {node.plot_job_id && !chartData && !error && <p className="text-xs text-neutral-400 text-center py-4">Loading…</p>}

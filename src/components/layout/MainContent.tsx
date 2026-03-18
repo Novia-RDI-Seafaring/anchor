@@ -78,7 +78,15 @@ export const MainContent: React.FC = () => {
 
   // Separate debounced save for position-only changes (faster, doesn't wait for canvas change)
   const posSaveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const handleSimulateComplete = React.useCallback((fmuNodeId: string, jobId: string, filename: string, signalNames: string[]) => {
+  const handleSimulateComplete = React.useCallback((
+    fmuNodeId: string, jobId: string, filename: string,
+    signalNames: string[], paramValues: Record<string, string>, stopTime: number
+  ) => {
+    // Convert param strings to numbers (skip NaN)
+    const numericParams: Record<string, number> = {};
+    Object.entries(paramValues).forEach(([k, v]) => {
+      const n = parseFloat(v); if (!isNaN(n)) numericParams[k] = n;
+    });
     const plotNode = {
       id: `plot_${Date.now()}`,
       node_type: 'plot',
@@ -87,7 +95,8 @@ export const MainContent: React.FC = () => {
       plot_job_id: jobId,
       plot_fmu_filename: filename,
       plot_signal_names: signalNames,
-      plot_stop_time: 10,
+      plot_stop_time: stopTime,
+      plot_param_values: numericParams,
       last_updated_run_id: '',
       text: '', spec_title: '', properties: [], fmu_filename: '', fmu_model_name: '',
       fmu_variables: [], fmu_param_values: {}, filename: '', page: 0, bbox: [], highlights: [],
@@ -97,6 +106,14 @@ export const MainContent: React.FC = () => {
       ...prev,
       nodes: [...(prev?.nodes ?? []), plotNode],
       relations: [...(prev?.relations ?? []), relation],
+    }));
+  }, [setState]);
+
+  const handleDeleteNode = React.useCallback((nodeId: string) => {
+    setState((prev: any) => ({
+      ...prev,
+      nodes: (prev?.nodes ?? []).filter((n: any) => n.id !== nodeId),
+      relations: (prev?.relations ?? []).filter((r: any) => r.from_id !== nodeId && r.to_id !== nodeId),
     }));
   }, [setState]);
 
@@ -264,7 +281,7 @@ export const MainContent: React.FC = () => {
           ))}
         </div>
 
-        {activeTab === 'canvas' && <CanvasGraph canvas={canvas} initialPositions={positions} onPositionsChange={handlePositionsChange} onFmuUploaded={handleFmuUploaded} onSimulateComplete={handleSimulateComplete} />}
+        {activeTab === 'canvas' && <CanvasGraph canvas={canvas} initialPositions={positions} onPositionsChange={handlePositionsChange} onFmuUploaded={handleFmuUploaded} onSimulateComplete={handleSimulateComplete} onDeleteNode={handleDeleteNode} />}
         {activeTab === 'facts' && <CanvasView canvas={canvas} />}
 
         {activeTab === 'context' && (

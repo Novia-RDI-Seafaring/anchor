@@ -62,6 +62,7 @@ class CanvasNode(BaseModel):
     plot_fmu_filename: str = ""
     plot_signal_names: list[str] = Field(default_factory=list)
     plot_stop_time: float = 10.0
+    plot_param_values: dict[str, float] = Field(default_factory=dict)
 
 
 class Relation(BaseModel):

@@ -212,10 +212,11 @@ interface CanvasGraphProps {
   initialPositions?: Record<string, { x: number; y: number }>;
   onPositionsChange?: (positions: Record<string, { x: number; y: number }>) => void;
   onFmuUploaded?: (payload: FmuUploadedPayload) => void;
-  onSimulateComplete?: (fmuNodeId: string, jobId: string, filename: string, signalNames: string[]) => void;
+  onSimulateComplete?: (fmuNodeId: string, jobId: string, filename: string, signalNames: string[], paramValues: Record<string, string>, stopTime: number) => void;
+  onDeleteNode?: (nodeId: string) => void;
 }
 
-export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, onFmuUploaded, onSimulateComplete }: CanvasGraphProps) {
+export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, onFmuUploaded, onSimulateComplete, onDeleteNode }: CanvasGraphProps) {
   const { documents, refreshDocuments, activeDocumentId, setActiveDocumentId } = useApp();
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [pdfModal, setPdfModal] = useState<PDFModalState | null>(null);
@@ -331,12 +332,11 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
         return;
       }
       const { job_id } = await res.json();
-      // Determine output signal names from canvas node variables
       const fmuNode = canvas?.nodes.find((n: any) => n.id === nodeId);
       const signalNames: string[] = (fmuNode?.fmu_variables ?? [])
         .filter((v: any) => v.causality === 'output')
         .map((v: any) => v.name);
-      onSimulateComplete?.(nodeId, job_id, filename, signalNames);
+      onSimulateComplete?.(nodeId, job_id, filename, signalNames, paramValues, stopTime);
     } catch (e: any) {
       setSimulateError(e?.message ?? 'Simulation failed');
     }
@@ -502,7 +502,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
           type: "plotNode",
           position: { x: 0, y: 0 },
           hidden,
-          data: { node: n } satisfies PlotNodeData,
+          data: { node: n, onDelete: onDeleteNode } satisfies PlotNodeData,
         };
       }
       // backward-compat: source/entity/category fallback
