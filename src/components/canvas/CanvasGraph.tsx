@@ -206,9 +206,50 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
   const documentsRef = useRef(documents);
   const activeDocumentIdRef = useRef(activeDocumentId);
   const setActiveDocumentIdRef = useRef(setActiveDocumentId);
+  const nodesRef = useRef(nodes);
+  const relationsRef = useRef<Relation[]>([]);
   useEffect(() => { documentsRef.current = documents; }, [documents]);
   useEffect(() => { activeDocumentIdRef.current = activeDocumentId; }, [activeDocumentId]);
   useEffect(() => { setActiveDocumentIdRef.current = setActiveDocumentId; }, [setActiveDocumentId]);
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+
+  // Track drag state for parent-moves-children behaviour
+  const dragStartRef = useRef<{
+    nodeId: string;
+    startPos: { x: number; y: number };
+    descendantStartPos: Map<string, { x: number; y: number }>;
+  } | null>(null);
+
+  const onNodeDragStart = useCallback((_evt: React.MouseEvent, node: Node) => {
+    // Build children map — exclude evidence edges so doc nodes don't get dragged
+    const childrenOf = new Map<string, string[]>();
+    for (const r of relationsRef.current) {
+      if (r.to_id.startsWith('__doc_')) continue;
+      const arr = childrenOf.get(r.from_id) ?? [];
+      arr.push(r.to_id);
+      childrenOf.set(r.from_id, arr);
+    }
+    const descIds = descendants([node.id], childrenOf);
+    const descendantStartPos = new Map<string, { x: number; y: number }>();
+    for (const n of nodesRef.current) {
+      if (descIds.has(n.id)) descendantStartPos.set(n.id, { ...n.position });
+    }
+    dragStartRef.current = { nodeId: node.id, startPos: { ...node.position }, descendantStartPos };
+  }, []);
+
+  const onNodeDrag = useCallback((_evt: React.MouseEvent, node: Node) => {
+    const drag = dragStartRef.current;
+    if (!drag || drag.nodeId !== node.id || drag.descendantStartPos.size === 0) return;
+    const dx = node.position.x - drag.startPos.x;
+    const dy = node.position.y - drag.startPos.y;
+    setNodes((nds) =>
+      nds.map((n) => {
+        const sp = drag.descendantStartPos.get(n.id);
+        if (!sp) return n;
+        return { ...n, position: { x: sp.x + dx, y: sp.y + dy } };
+      })
+    );
+  }, [setNodes]);
 
   const handleOpenPDF = useCallback(
     (filename: string, page: number, highlights: PDFHighlight[]) =>
@@ -226,6 +267,7 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
 
   const rawNodes = canvas?.nodes ?? [];
   const relations = canvas?.relations ?? [];
+  relationsRef.current = relations;
 
   // Structural key — re-layout only when nodes/edges are added or removed,
   // not when content/status changes (so in-progress updates don't jump)
@@ -464,14 +506,19 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
       /\.(pdf|docx|txt|md|html)$/i.test(f.name)
     );
     if (!files.length) return;
-    await Promise.all(
-      files.map(async (file) => {
-        const formData = new FormData();
-        formData.append("file", file);
-        await fetch(`${API_URL}/api/documents/upload`, { method: "POST", body: formData });
-      })
-    );
-    refreshDocuments();
+    try {
+      await Promise.all(
+        files.map(async (file) => {
+          const formData = new FormData();
+          formData.append("file", file);
+          const res = await fetch(`${API_URL}/api/documents/upload`, { method: "POST", body: formData });
+          if (!res.ok) throw new Error(`Upload failed: ${res.statusText}`);
+        })
+      );
+      refreshDocuments();
+    } catch {
+      // upload failed — user can retry; suppress to avoid dev overlay noise
+    }
   }, [refreshDocuments]);
 
   return (
@@ -511,6 +558,8 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
+          onNodeDragStart={onNodeDragStart}
+          onNodeDrag={onNodeDrag}
           fitView
           fitViewOptions={{ padding: 0.2 }}
           minZoom={0.1}
