@@ -212,9 +212,10 @@ interface CanvasGraphProps {
   initialPositions?: Record<string, { x: number; y: number }>;
   onPositionsChange?: (positions: Record<string, { x: number; y: number }>) => void;
   onFmuUploaded?: (payload: FmuUploadedPayload) => void;
+  onSimulateComplete?: (fmuNodeId: string, jobId: string, filename: string, signalNames: string[]) => void;
 }
 
-export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, onFmuUploaded }: CanvasGraphProps) {
+export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, onFmuUploaded, onSimulateComplete }: CanvasGraphProps) {
   const { documents, refreshDocuments, activeDocumentId, setActiveDocumentId } = useApp();
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [pdfModal, setPdfModal] = useState<PDFModalState | null>(null);
@@ -309,7 +310,10 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
     });
   }, []);
 
+  const [simulateError, setSimulateError] = useState<string | null>(null);
+
   const handleSimulate = useCallback(async (nodeId: string, filename: string, paramValues: Record<string, string>, stopTime: number) => {
+    setSimulateError(null);
     const overrides: Record<string, number> = {};
     Object.entries(paramValues).forEach(([k, v]) => {
       const n = parseFloat(v);
@@ -321,10 +325,22 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filename, param_overrides: overrides, stop_time: stopTime }),
       });
-      if (!res.ok) return;
-      // The agent manages plot nodes; for user-initiated simulate, just reload the existing plot node if present
-    } catch { /* suppress */ }
-  }, []);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ detail: res.statusText }));
+        setSimulateError(body.detail ?? 'Simulation failed');
+        return;
+      }
+      const { job_id } = await res.json();
+      // Determine output signal names from canvas node variables
+      const fmuNode = canvas?.nodes.find((n: any) => n.id === nodeId);
+      const signalNames: string[] = (fmuNode?.fmu_variables ?? [])
+        .filter((v: any) => v.causality === 'output')
+        .map((v: any) => v.name);
+      onSimulateComplete?.(nodeId, job_id, filename, signalNames);
+    } catch (e: any) {
+      setSimulateError(e?.message ?? 'Simulation failed');
+    }
+  }, [canvas, onSimulateComplete]);
 
   const rawNodes = canvas?.nodes ?? [];
   const relations = canvas?.relations ?? [];
@@ -676,6 +692,15 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
             <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">
               Drop documents or .fmu files
             </p>
+          </div>
+        )}
+        {simulateError && (
+          <div
+            className="absolute top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-red-50 dark:bg-red-950 border border-red-300 dark:border-red-700 rounded-lg px-4 py-2 shadow-lg cursor-pointer"
+            onClick={() => setSimulateError(null)}
+          >
+            <span className="text-xs text-red-700 dark:text-red-300">{simulateError}</span>
+            <span className="text-xs text-red-400 ml-1">✕</span>
           </div>
         )}
         {rawNodes.length === 0 && documents.length === 0 && (

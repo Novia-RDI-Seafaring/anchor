@@ -78,6 +78,28 @@ export const MainContent: React.FC = () => {
 
   // Separate debounced save for position-only changes (faster, doesn't wait for canvas change)
   const posSaveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleSimulateComplete = React.useCallback((fmuNodeId: string, jobId: string, filename: string, signalNames: string[]) => {
+    const plotNode = {
+      id: `plot_${Date.now()}`,
+      node_type: 'plot',
+      status: 'found',
+      title: `${filename} — simulation`,
+      plot_job_id: jobId,
+      plot_fmu_filename: filename,
+      plot_signal_names: signalNames,
+      plot_stop_time: 10,
+      last_updated_run_id: '',
+      text: '', spec_title: '', properties: [], fmu_filename: '', fmu_model_name: '',
+      fmu_variables: [], fmu_param_values: {}, filename: '', page: 0, bbox: [], highlights: [],
+    };
+    const relation = { from_id: fmuNodeId, to_id: plotNode.id, label: 'simulates' };
+    setState((prev: any) => ({
+      ...prev,
+      nodes: [...(prev?.nodes ?? []), plotNode],
+      relations: [...(prev?.relations ?? []), relation],
+    }));
+  }, [setState]);
+
   const handleFmuUploaded = React.useCallback((payload: { filename: string; model_name: string; variables: any[] }) => {
     const newNode = {
       id: `fmu_${Date.now()}`,
@@ -242,7 +264,7 @@ export const MainContent: React.FC = () => {
           ))}
         </div>
 
-        {activeTab === 'canvas' && <CanvasGraph canvas={canvas} initialPositions={positions} onPositionsChange={handlePositionsChange} onFmuUploaded={handleFmuUploaded} />}
+        {activeTab === 'canvas' && <CanvasGraph canvas={canvas} initialPositions={positions} onPositionsChange={handlePositionsChange} onFmuUploaded={handleFmuUploaded} onSimulateComplete={handleSimulateComplete} />}
         {activeTab === 'facts' && <CanvasView canvas={canvas} />}
 
         {activeTab === 'context' && (

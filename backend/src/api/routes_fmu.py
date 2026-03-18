@@ -38,7 +38,7 @@ async def simulate(req: SimulateRequest):
         job_id = run_simulation(req.filename, req.param_overrides, req.stop_time)
         return {"job_id": job_id}
     except Exception as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(422, str(e))
 
 
 @router.get("/result/{job_id}")
