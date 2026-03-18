@@ -358,37 +358,65 @@ async def resolve_technical_query(
         }
         return result
 
-    fact_chunk = normalized_chunks[source_chunk_index] if normalized_chunks else {}
-    fact_text = _clean_text_value(str(fact_chunk.get("content") or ""))
-    if not fact_text:
+    # Create up to MAX_FACTS fact nodes from the retrieved chunks (deduplicated by leading content)
+    MAX_FACTS = 4
+    created_facts: list[CanvasNode] = []
+    seen_prefixes: set[str] = set()
+
+    for fact_chunk in normalized_chunks[:MAX_FACTS * 2]:
+        if len(created_facts) >= MAX_FACTS:
+            break
+        raw = str(fact_chunk.get("content") or "")
+        fact_text = _clean_text_value(raw)
+        if not fact_text:
+            continue
+        # Deduplicate by first 30 words
+        prefix = " ".join(fact_text.lower().split()[:30])
+        if prefix in seen_prefixes:
+            continue
+        seen_prefixes.add(prefix)
+
+        if len(fact_text) > 800:
+            fact_text = fact_text[:797] + "..."
+
+        fact = CanvasNode(node_type="fact", text=fact_text, status="found")
+        _mark_node_for_run(fact, ctx)
+        ctx.deps.state.nodes.append(fact)
+        _ensure_relation(ctx, topic.id, fact.id)
+
+        doc_id = fact_chunk.get("document_id")
+        page = _select_page(fact_chunk)
+        if doc_id and page:
+            _ensure_evidence_relation(
+                ctx, fact.id, doc_id,
+                page=page,
+                bbox=_select_bbox(fact_chunk),
+                highlights=_select_highlights(fact_chunk),
+            )
+        created_facts.append(fact)
+
+    if not created_facts:
+        # Fallback: use the source chunk directly
+        fact_chunk = normalized_chunks[source_chunk_index] if normalized_chunks else {}
         fact_text = _summarize_chunks([fact_chunk] if fact_chunk else normalized_chunks)
-    if len(fact_text) > 1200:
-        fact_text = fact_text[:1197] + "..."
-        
-    fact = CanvasNode(node_type="fact", text=fact_text, status="found")
-    _mark_node_for_run(fact, ctx)
-    ctx.deps.state.nodes.append(fact)
-    _ensure_relation(ctx, topic.id, fact.id)
+        fact = CanvasNode(node_type="fact", text=fact_text, status="found")
+        _mark_node_for_run(fact, ctx)
+        ctx.deps.state.nodes.append(fact)
+        _ensure_relation(ctx, topic.id, fact.id)
+        created_facts.append(fact)
 
-    resolved_document_id = normalized_chunks[source_chunk_index].get("document_id") if normalized_chunks else None
-    if resolved_document_id and (resolved_page or resolved_highlights):
-        _ensure_evidence_relation(
-            ctx, fact.id, resolved_document_id,
-            page=resolved_page or 0,
-            bbox=resolved_bbox,
-            highlights=resolved_highlights,
-        )
-
-    summary = fact_text
+    first_fact = created_facts[0]
+    summary = first_fact.text or ""
     if resolved_filename:
         summary = f"{summary} Source: {resolved_filename}."
     result = _snapshot(ctx)
     result.return_value = {
         "summary": summary,
         "topic_id": topic.id,
-        "node_id": fact.id,
+        "node_id": first_fact.id,
         "found": True,
         "format": "fact",
+        "fact_count": len(created_facts),
     }
     return result
 

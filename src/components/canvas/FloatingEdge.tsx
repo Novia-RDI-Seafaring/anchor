@@ -75,6 +75,12 @@ export function FloatingEdge({
   const targetNode = useInternalNode(target);
 
   if (!sourceNode || !targetNode) return null;
+  // Wait until both nodes have been measured — otherwise the intersection math
+  // produces Infinity/NaN and the edge degenerates to a dot.
+  if (
+    !sourceNode.measured?.width || !sourceNode.measured?.height ||
+    !targetNode.measured?.width || !targetNode.measured?.height
+  ) return null;
 
   const { sx, sy, tx, ty, sourcePos, targetPos } = getEdgeParams(sourceNode, targetNode);
   const [edgePath, labelX, labelY] = getBezierPath({
