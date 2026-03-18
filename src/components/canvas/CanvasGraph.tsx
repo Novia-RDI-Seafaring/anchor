@@ -191,9 +191,11 @@ const edgeTypes: EdgeTypes = {
 // --- Main component ---
 interface CanvasGraphProps {
   canvas: CanvasState | null | undefined;
+  initialPositions?: Record<string, { x: number; y: number }>;
+  onPositionsChange?: (positions: Record<string, { x: number; y: number }>) => void;
 }
 
-export function CanvasGraph({ canvas }: CanvasGraphProps) {
+export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange }: CanvasGraphProps) {
   const { documents, refreshDocuments, activeDocumentId, setActiveDocumentId } = useApp();
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [pdfModal, setPdfModal] = useState<PDFModalState | null>(null);
@@ -212,6 +214,12 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
   useEffect(() => { activeDocumentIdRef.current = activeDocumentId; }, [activeDocumentId]);
   useEffect(() => { setActiveDocumentIdRef.current = setActiveDocumentId; }, [setActiveDocumentId]);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+
+  // Position overrides — manually dragged positions that survive layout re-runs
+  const positionOverridesRef = useRef<Record<string, { x: number; y: number }>>(initialPositions);
+  useEffect(() => {
+    positionOverridesRef.current = { ...positionOverridesRef.current, ...initialPositions };
+  }, [initialPositions]);
 
   // Track drag state for parent-moves-children behaviour
   const dragStartRef = useRef<{
@@ -250,6 +258,23 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
       })
     );
   }, [setNodes]);
+
+  const onNodeDragStop = useCallback((_evt: React.MouseEvent, node: Node) => {
+    // Record final positions for the dragged node and all its descendants
+    const drag = dragStartRef.current;
+    const updates: Record<string, { x: number; y: number }> = { [node.id]: { ...node.position } };
+    if (drag && drag.nodeId === node.id) {
+      const dx = node.position.x - drag.startPos.x;
+      const dy = node.position.y - drag.startPos.y;
+      drag.descendantStartPos.forEach((sp, id) => {
+        updates[id] = { x: sp.x + dx, y: sp.y + dy };
+      });
+    }
+    dragStartRef.current = null;
+    const next = { ...positionOverridesRef.current, ...updates };
+    positionOverridesRef.current = next;
+    onPositionsChange?.(next);
+  }, [onPositionsChange]);
 
   const handleOpenPDF = useCallback(
     (filename: string, page: number, highlights: PDFHighlight[]) =>
@@ -450,8 +475,15 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
       };
     });
 
-    const laidOut = applyDagreLayout(rfNodes, rfEdges);
-    setNodes([...docNodes, ...laidOut]);
+    const laidOut = applyDagreLayout(rfNodes, rfEdges).map((n) => {
+      const saved = positionOverridesRef.current[n.id];
+      return saved ? { ...n, position: saved } : n;
+    });
+    const docNodesWithOverrides = docNodes.map((n) => {
+      const saved = positionOverridesRef.current[n.id];
+      return saved ? { ...n, position: saved } : n;
+    });
+    setNodes([...docNodesWithOverrides, ...laidOut]);
     setEdges(rfEdges);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structureKey]);
@@ -560,6 +592,7 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
           edgeTypes={edgeTypes}
           onNodeDragStart={onNodeDragStart}
           onNodeDrag={onNodeDrag}
+          onNodeDragStop={onNodeDragStop}
           fitView
           fitViewOptions={{ padding: 0.2 }}
           minZoom={0.1}

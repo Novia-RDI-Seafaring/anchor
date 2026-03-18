@@ -35,6 +35,11 @@ export const MainContent: React.FC = () => {
 
   const canvas = state as any;
 
+  // Node position overrides — persisted alongside canvas state
+  const [positions, setPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const positionsRef = React.useRef(positions);
+  useEffect(() => { positionsRef.current = positions; }, [positions]);
+
   // Sync document selection from UI into per-run agent state
   useEffect(() => {
     setState((prev: any) => ({ ...prev, active_document_id: activeDocumentId ?? null }));
@@ -49,23 +54,41 @@ export const MainContent: React.FC = () => {
     loadConversationMessages(activeConversationId).then(({ canvas_state }) => {
       if (canvas_state && Object.keys(canvas_state).length > 0) {
         setState((prev: any) => ({ ...prev, ...canvas_state }));
+        setPositions(canvas_state.positions ?? {});
       } else {
         setState(() => ({ nodes: [], relations: [], active_document_id: activeDocumentId ?? null }));
+        setPositions({});
       }
     });
   }, [activeConversationId]);
 
-  // Persist canvas state when it changes (debounced)
+  // Persist canvas state (nodes + relations + positions) when any of them change
   const canvasSaveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!activeConversationId) return;
     if (canvasSaveTimer.current) clearTimeout(canvasSaveTimer.current);
     canvasSaveTimer.current = setTimeout(() => {
       const { nodes, relations } = canvas;
-      updateConversation(activeConversationId, { canvas_state: { nodes, relations } } as any);
+      updateConversation(activeConversationId, {
+        canvas_state: { nodes, relations, positions: positionsRef.current },
+      } as any);
     }, 1000);
     return () => { if (canvasSaveTimer.current) clearTimeout(canvasSaveTimer.current); };
   }, [canvas, activeConversationId]);
+
+  // Separate debounced save for position-only changes (faster, doesn't wait for canvas change)
+  const posSaveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handlePositionsChange = React.useCallback((updated: Record<string, { x: number; y: number }>) => {
+    setPositions(updated);
+    if (!activeConversationId) return;
+    if (posSaveTimer.current) clearTimeout(posSaveTimer.current);
+    posSaveTimer.current = setTimeout(() => {
+      const { nodes, relations } = canvas;
+      updateConversation(activeConversationId, {
+        canvas_state: { nodes, relations, positions: updated },
+      } as any);
+    }, 500);
+  }, [activeConversationId, canvas, updateConversation]);
 
   const { documents } = useApp();
   const allNodes = canvas?.nodes || [];
@@ -202,7 +225,7 @@ export const MainContent: React.FC = () => {
           ))}
         </div>
 
-        {activeTab === 'canvas' && <CanvasGraph canvas={canvas} />}
+        {activeTab === 'canvas' && <CanvasGraph canvas={canvas} initialPositions={positions} onPositionsChange={handlePositionsChange} />}
         {activeTab === 'facts' && <CanvasView canvas={canvas} />}
 
         {activeTab === 'context' && (
