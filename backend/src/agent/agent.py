@@ -4,7 +4,6 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 import os
-import re
 from typing import Any, cast
 
 from pydantic_ai import Agent, ModelRetry
@@ -14,7 +13,6 @@ from pydantic_ai.models.instrumented import InstrumentationSettings
 from .deps import AgentDeps
 from .helpers import (
     STRICT_CANVAS_VALIDATION,
-    _CANVAS_EDIT_RE,
     _EARLY_CANVAS_EDIT_RE,
     _EARLY_DOCUMENT_LISTING_RE,
     _EARLY_SOCIAL_OR_META_RE,
@@ -26,9 +24,6 @@ from .prompts import SYS_PROMPT as SYSTEM_PROMPT
 from .state import Canvas
 from .tools import canvas, knowledge, vision
 
-_COMPARISON_RE = re.compile(r"\b(compare|comparison|different|difference|diff|vs\.?|versus)\b", re.IGNORECASE)
-
-
 async def _prepare_tools_for_turn(ctx: RunContext[AgentDeps], tool_defs: list[Any]) -> list[Any]:
     prompt_text = _early_prompt_to_text(getattr(ctx, "prompt", None)).strip().lower()
     if not prompt_text:
@@ -39,7 +34,11 @@ async def _prepare_tools_for_turn(ctx: RunContext[AgentDeps], tool_defs: list[An
         return [tool_def for tool_def in tool_defs if tool_def.name in {"list_documents"}]
     if _EARLY_CANVAS_EDIT_RE.search(prompt_text):
         return tool_defs
-    allowed = {"resolve_technical_query", "compare_documents", "get_active_document_context", "check_canvas", "list_documents"}
+    allowed = {
+        "resolve_technical_query", "compare_documents",
+        "search_knowledge_base", "get_active_document_context",
+        "check_canvas", "list_documents",
+    }
     return [tool_def for tool_def in tool_defs if tool_def.name in allowed]
 
 
@@ -53,26 +52,6 @@ agent = Agent(
     output_retries=2 if STRICT_CANVAS_VALIDATION else 0,
     prepare_tools=_prepare_tools_for_turn,
 )
-
-
-@agent.instructions
-def technical_query_instruction(ctx: RunContext[AgentDeps]) -> str | None:
-    prompt_text = _prompt_to_text(cast(Any, ctx.prompt))
-    if not _requires_canvas_update(prompt_text):
-        return None
-    if _CANVAS_EDIT_RE.search(prompt_text):
-        return None
-    if _COMPARISON_RE.search(prompt_text):
-        return (
-            "This is a document comparison query. Before any text answer, call "
-            f"compare_documents(query={prompt_text!r}). Use its returned summary as the basis for the reply. "
-            "Do not rely on low-level canvas tools unless the user explicitly asks to edit the canvas structure."
-        )
-    return (
-        "This is a technical knowledge-base query. Before any text answer, call "
-        f"resolve_technical_query(query={prompt_text!r}). Use its returned summary as the basis for the reply. "
-        "Do not rely on low-level canvas tools unless the user explicitly asks to edit the canvas structure."
-    )
 
 
 @agent.output_validator

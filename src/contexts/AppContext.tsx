@@ -9,6 +9,7 @@ export interface KBDocument {
     document_id: string;
     filename: string;
     node_count: number;
+    status?: string;
 }
 
 interface AppContextType {
@@ -29,9 +30,10 @@ interface AppContextType {
     activeConversationId: string;
     setActiveConversationId: (id: string) => void;
     conversations: Conversation[];
-    createNewConversation: () => string;
+    createNewConversation: () => Promise<string>;
     deleteConversation: (id: string) => void;
     updateConversation: (id: string, updates: Partial<Conversation>) => void;
+    loadConversationMessages: (id: string) => Promise<{ messages: any[]; canvas_state: any }>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -64,7 +66,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         setActiveId: setActiveConversationId,
         createNewConversation,
         deleteConversation,
-        updateConversation
+        updateConversation,
+        loadConversationMessages,
     } = useConversationHistory();
 
     const toggleDarkMode = () => setIsDarkMode((prev: boolean) => !prev);
@@ -95,7 +98,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             conversations,
             createNewConversation,
             deleteConversation,
-            updateConversation
+            updateConversation,
+            loadConversationMessages,
         }}>
             {children}
         </AppContext.Provider>

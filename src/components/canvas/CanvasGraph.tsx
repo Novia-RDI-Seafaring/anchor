@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -11,11 +11,13 @@ import {
   type Node,
   type Edge,
   type NodeTypes,
+  type EdgeTypes,
   BackgroundVariant,
 } from "@xyflow/react";
+import { FloatingEdge } from "./FloatingEdge";
 import "@xyflow/react/dist/style.css";
 import dagre from "@dagrejs/dagre";
-import { Network } from "lucide-react";
+import { Network, UploadCloud } from "lucide-react";
 import {
   EntityNode,
   CategoryNode,
@@ -23,9 +25,13 @@ import {
   FactNode,
   SourceNode,
   SpecNode,
+  DocumentNode,
   type CanvasNodeData,
+  type DocumentNodeData,
 } from "./KnowledgeNodes";
 import { PDFModal, type PDFHighlight } from "./PDFModal";
+import { useApp } from "@/contexts/AppContext";
+import { API_URL } from "@/lib/api-config";
 
 // --- Types ---
 interface Relation {
@@ -171,6 +177,11 @@ const nodeTypes: NodeTypes = {
   factNode:     FactNode,
   sourceNode:   SourceNode,
   specNode:     SpecNode,
+  documentNode: DocumentNode,
+};
+
+const edgeTypes: EdgeTypes = {
+  floating: FloatingEdge,
 };
 
 // --- Main component ---
@@ -179,11 +190,21 @@ interface CanvasGraphProps {
 }
 
 export function CanvasGraph({ canvas }: CanvasGraphProps) {
+  const { documents, refreshDocuments, activeDocumentId, setActiveDocumentId } = useApp();
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [pdfModal, setPdfModal] = useState<PDFModalState | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+
+  // Keep fresh refs for use inside effects without adding to deps
+  const documentsRef = useRef(documents);
+  const activeDocumentIdRef = useRef(activeDocumentId);
+  const setActiveDocumentIdRef = useRef(setActiveDocumentId);
+  useEffect(() => { documentsRef.current = documents; }, [documents]);
+  useEffect(() => { activeDocumentIdRef.current = activeDocumentId; }, [activeDocumentId]);
+  useEffect(() => { setActiveDocumentIdRef.current = setActiveDocumentId; }, [setActiveDocumentId]);
 
   const handleOpenPDF = useCallback(
     (filename: string, page: number, highlights: PDFHighlight[]) =>
@@ -210,13 +231,32 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
       "|" +
       relations.map((r) => `${r.from_id}>${r.to_id}`).join(",") +
       "|" +
-      [...collapsedIds].sort().join(","),
-    [rawNodes, relations, collapsedIds]
+      [...collapsedIds].sort().join(",") +
+      "|docs:" +
+      documents.map((d) => d.document_id).join(",") +
+      "|active:" + (activeDocumentId ?? ""),
+    [rawNodes, relations, collapsedIds, documents, activeDocumentId]
   );
 
+  // Build document nodes from current KB documents
+  const buildDocNodes = useCallback((): Node[] => {
+    const docs = documentsRef.current;
+    const activeId = activeDocumentIdRef.current;
+    const onActivate = (id: string) => setActiveDocumentIdRef.current(id || null);
+    return docs.map((doc, i) => ({
+      id: `__doc_${doc.document_id}`,
+      type: "documentNode",
+      position: { x: i * 176, y: -180 },
+      draggable: true,
+      data: { doc, isActive: doc.document_id === activeId, onActivate } satisfies DocumentNodeData,
+    }));
+  }, []);
+
   useEffect(() => {
+    const docNodes = buildDocNodes();
+
     if (rawNodes.length === 0) {
-      setNodes([]);
+      setNodes(docNodes);
       setEdges([]);
       return;
     }
@@ -342,7 +382,7 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
         source: r.from_id,
         target: r.to_id,
         label: r.label || undefined,
-        type: "smoothstep",
+        type: "floating",
         hidden: hiddenIds.has(r.from_id) || hiddenIds.has(r.to_id),
         animated: isEntityCat || isCatTopic,
         style: {
@@ -357,7 +397,7 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
     });
 
     const laidOut = applyDagreLayout(rfNodes, rfEdges);
-    setNodes(laidOut);
+    setNodes([...docNodes, ...laidOut]);
     setEdges(rfEdges);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structureKey]);
@@ -402,35 +442,73 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawNodes, relations]);
 
-  if (rawNodes.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-24 text-center">
-        <div className="h-16 w-16 rounded-2xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center mb-4">
-          <Network size={28} className="text-neutral-400 dark:text-neutral-500" />
-        </div>
-        <h3 className="text-base font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
-          Canvas is empty
-        </h3>
-        <p className="text-sm text-neutral-400 dark:text-neutral-500 max-w-xs">
-          Ask a technical question — the agent will build a knowledge graph with
-          topics, facts, and source references.
-        </p>
-      </div>
+  // File drop handlers
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    setIsDraggingOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Element | null)) {
+      setIsDraggingOver(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingOver(false);
+    const files = Array.from(e.dataTransfer.files).filter((f) =>
+      /\.(pdf|docx|txt|md|html)$/i.test(f.name)
     );
-  }
+    if (!files.length) return;
+    await Promise.all(
+      files.map(async (file) => {
+        const formData = new FormData();
+        formData.append("file", file);
+        await fetch(`${API_URL}/api/documents/upload`, { method: "POST", body: formData });
+      })
+    );
+    refreshDocuments();
+  }, [refreshDocuments]);
 
   return (
     <>
       <div
-        className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden"
+        className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden relative"
         style={{ height: "calc(100vh - 260px)", minHeight: 400 }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
+        {isDraggingOver && (
+          <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-indigo-50/90 dark:bg-indigo-950/80 border-2 border-dashed border-indigo-400 dark:border-indigo-500 rounded-xl pointer-events-none">
+            <UploadCloud size={40} className="text-indigo-500 dark:text-indigo-400" />
+            <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">
+              Drop to upload to knowledge base
+            </p>
+          </div>
+        )}
+        {rawNodes.length === 0 && documents.length === 0 && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none z-10">
+            <div className="h-16 w-16 rounded-2xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center mb-4">
+              <Network size={28} className="text-neutral-400 dark:text-neutral-500" />
+            </div>
+            <h3 className="text-base font-semibold text-neutral-700 dark:text-neutral-300 mb-1">
+              Canvas is empty
+            </h3>
+            <p className="text-sm text-neutral-400 dark:text-neutral-500 max-w-xs">
+              Drag a PDF here to upload, or ask a technical question to build the graph.
+            </p>
+          </div>
+        )}
         <ReactFlow
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           fitView
           fitViewOptions={{ padding: 0.2 }}
           minZoom={0.1}
