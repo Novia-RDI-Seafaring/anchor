@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import ReactMarkdown from "react-markdown";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import {
   Tag,
@@ -269,13 +270,21 @@ export function FactNode({ data }: NodeProps) {
         {/* Text row */}
         <div className="flex items-start gap-2 px-3 py-2.5">
           <MessageSquare size={13} className="text-indigo-400 dark:text-indigo-500 shrink-0 mt-0.5" />
-          <p className={`flex-1 text-xs leading-relaxed break-words whitespace-normal ${
+          <div className={`flex-1 text-xs leading-relaxed break-words min-w-0 ${
             node.status === "pending" || node.status === "searching"
               ? "text-neutral-400 dark:text-neutral-500 italic"
               : "text-neutral-800 dark:text-neutral-200"
-          }`}>
-            {node.text}
-          </p>
+          } prose prose-xs dark:prose-invert max-w-none
+            prose-p:my-0.5 prose-p:leading-relaxed
+            prose-ul:my-0.5 prose-ul:pl-4
+            prose-ol:my-0.5 prose-ol:pl-4
+            prose-li:my-0
+            prose-strong:font-semibold
+            prose-headings:text-xs prose-headings:font-semibold prose-headings:my-1
+            prose-code:text-[10px] prose-code:bg-neutral-100 dark:prose-code:bg-neutral-800 prose-code:px-1 prose-code:rounded
+          `}>
+            <ReactMarkdown>{node.text ?? ""}</ReactMarkdown>
+          </div>
           <StatusBadge status={node.status} />
         </div>
       </div>
