@@ -34,13 +34,13 @@ const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
 function DeleteToolbar({ nodeId, onDelete }: { nodeId: string; onDelete?: (id: string) => void }) {
   if (!onDelete) return null;
   return (
-    <NodeToolbar isVisible={undefined} position={Position.Top} align="end" offset={4}>
+    <NodeToolbar isVisible={undefined} position={Position.Top} align="end" offset={6}>
       <button
         onClick={() => onDelete(nodeId)}
-        className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded-md bg-white dark:bg-neutral-800 border border-red-200 dark:border-red-800 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 shadow-sm transition-colors"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-white dark:bg-neutral-800 border border-red-200 dark:border-red-700 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 shadow-md transition-colors"
         title="Delete node"
       >
-        <XCircle size={11} />
+        <XCircle size={14} />
         Delete
       </button>
     </NodeToolbar>
@@ -156,6 +156,7 @@ export interface EntityNodeData {
   childCount: number;
   collapsed: boolean;
   onToggleCollapse: (id: string) => void;
+  onDelete?: (id: string) => void;
 }
 
 export interface CategoryNodeData {
@@ -163,6 +164,7 @@ export interface CategoryNodeData {
   childCount: number;
   collapsed: boolean;
   onToggleCollapse: (id: string) => void;
+  onDelete?: (id: string) => void;
 }
 
 export interface ConceptNodeData extends Record<string, unknown> {
@@ -177,9 +179,10 @@ export interface ConceptNodeData extends Record<string, unknown> {
 // ENTITY NODE — dark slate, the product/system root
 // ─────────────────────────────────────────────
 export function EntityNode({ data }: NodeProps) {
-  const { node, childCount, collapsed, onToggleCollapse } = data as unknown as EntityNodeData;
+  const { node, childCount, collapsed, onToggleCollapse, onDelete } = data as unknown as EntityNodeData;
   return (
     <>
+      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
       <Handle type="target" position={Position.Top} className="!bg-slate-500 !border-slate-700" />
       <div
         className={`rounded-2xl border-2 shadow-xl select-none transition-all ${
@@ -222,9 +225,10 @@ export function EntityNode({ data }: NodeProps) {
 // CATEGORY NODE — blue, chapter/section level
 // ─────────────────────────────────────────────
 export function CategoryNode({ data }: NodeProps) {
-  const { node, childCount, collapsed, onToggleCollapse } = data as unknown as CategoryNodeData;
+  const { node, childCount, collapsed, onToggleCollapse, onDelete } = data as unknown as CategoryNodeData;
   return (
     <>
+      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
       <Handle type="target" position={Position.Top} className="!bg-blue-500 !border-blue-700" />
       <div
         className={`rounded-xl border-2 shadow-md select-none transition-all ${
@@ -675,10 +679,10 @@ export function PlotNode({ data }: NodeProps) {
           {onDelete && (
             <button
               onClick={() => onDelete(node.id)}
-              className="ml-1 text-neutral-300 hover:text-red-400 dark:text-neutral-600 dark:hover:text-red-500 transition-colors"
+              className="ml-1 text-neutral-400 hover:text-red-500 dark:text-neutral-500 dark:hover:text-red-400 transition-colors"
               title="Delete result"
             >
-              <XCircle size={13} />
+              <XCircle size={16} />
             </button>
           )}
         </div>

@@ -436,6 +436,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
             childCount: descendants([n.id], childrenOf).size,
             collapsed: collapsedIds.has(n.id),
             onToggleCollapse: handleToggleCollapse,
+            onDelete: onDeleteNode,
           },
         };
       }
@@ -450,6 +451,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
             childCount: descendants([n.id], childrenOf).size,
             collapsed: collapsedIds.has(n.id),
             onToggleCollapse: handleToggleCollapse,
+            onDelete: onDeleteNode,
           },
         };
       }
