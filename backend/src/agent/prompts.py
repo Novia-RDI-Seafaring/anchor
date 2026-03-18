@@ -48,9 +48,11 @@ SKIP THE CANVAS:
 
 Node types:
   topic   — heading / root / document label (always status="found")
-  fact    — narrative finding with source evidence
-  spec    — tabular / parametric data
-  source  — PDF evidence attached to a fact or spec
+  fact    — narrative finding with optional evidence edge to a document node
+  spec    — tabular / parametric data with optional evidence edge to a document node
+
+Evidence location is carried on the edge that connects a fact/spec to a document node (__doc_{id}).
+Source nodes no longer exist — use doc_id + page parameters on add_fact / add_spec_node instead.
 
 Status: pending | searching | found | partial | not_found
 
@@ -75,31 +77,37 @@ High-level (prefer these):
   check_canvas()            — inspect current canvas state
 
 Low-level canvas tools (only when the user explicitly asks to restructure the canvas):
-  add_topic, add_fact, add_spec_node, add_source, add_relation,
-  finalize_fact_with_source, finalize_spec_with_source,
-  update_node, delete_node, analyze_image_content
+  add_topic(title, status)
+  add_fact(text, topic_id, status, doc_id, page, bbox, highlights, chunk_index)
+      — doc_id + page attach an evidence edge to the document node automatically.
+        Use chunk_index=0 to pull doc_id/page/bbox from the last search_knowledge_base result.
+  add_spec_node(parent_id, spec_title, properties, status, doc_id, page, bbox, highlights, chunk_index)
+      — same evidence attachment as add_fact.
+  add_relation(from_id, to_id, label)
+  update_node(node_id, status, title, text, spec_title, properties)
+  delete_node(node_id)
+  analyze_image_content
 
 ══════════════════════════════════════
 CANVAS WORKFLOW (when resolve_technical_query isn't sufficient)
 ══════════════════════════════════════
 For tabular / parametric data discovered mid-search:
   1. add_topic(title, status="found")
-  2. add_spec_node(topic_id, spec_title, [], status="searching")
-  3. search_knowledge_base(query)
-  4. finalize_spec_with_source(spec_id, spec_title, properties, chunk_index=0, status="found")
+  2. search_knowledge_base(query)
+  3. add_spec_node(topic_id, spec_title, properties, chunk_index=0, status="found")
+     — chunk_index=0 auto-attaches evidence from the last search result.
 
 For narrative findings:
   1. add_topic(title, status="found")
-  2. finalize_fact_with_source(fact_id, text, chunk_index=0, status="found")
-
-After search_knowledge_base, prefer finalize_fact_with_source or finalize_spec_with_source
-over manually calling add_source.
+  2. search_knowledge_base(query)
+  3. add_fact(text, topic_id, chunk_index=0, status="found")
+     — chunk_index=0 auto-attaches evidence from the last search result.
 
 RULES
 - Never mention internal tool names, node IDs, or status values in the chat answer.
 - Keep text answers concise. The canvas holds the detail.
-- Source nodes are always status="found".
 - Use bbox from chunk metadata; fall back to [] if unknown.
+- Do not create source nodes — evidence is carried on edges to document nodes.
 """).strip()
 
 __all__ = ["SYS_PROMPT"]

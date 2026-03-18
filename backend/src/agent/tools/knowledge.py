@@ -9,9 +9,10 @@ from ..helpers import (
     _snapshot,
     _mark_node_for_run,
     _ensure_relation,
+    _ensure_evidence_relation,
+    _get_cached_document_id,
     _remember_search_results,
     _resolve_source_details,
-    _get_or_create_source_node,
     _summarize_chunks,
     _summarize_properties,
     _derive_topic_title,
@@ -337,17 +338,14 @@ async def resolve_technical_query(
         ctx.deps.state.nodes.append(spec)
         _ensure_relation(ctx, topic.id, spec.id)
 
-        if resolved_filename and resolved_page is not None:
-            source_node = _get_or_create_source_node(
-                ctx=ctx,
-                filename=resolved_filename,
-                page=resolved_page,
+        resolved_document_id = normalized_chunks[source_chunk_index].get("document_id") if normalized_chunks else None
+        if resolved_document_id and (resolved_page or resolved_highlights):
+            _ensure_evidence_relation(
+                ctx, spec.id, resolved_document_id,
+                page=resolved_page or 0,
                 bbox=resolved_bbox,
                 highlights=resolved_highlights,
             )
-            if not any(node.id == source_node.id for node in ctx.deps.state.nodes):
-                ctx.deps.state.nodes.append(source_node)
-            _ensure_relation(ctx, spec.id, source_node.id)
 
         summary = _summarize_properties(properties, resolved_filename)
         result = _snapshot(ctx)
@@ -372,17 +370,14 @@ async def resolve_technical_query(
     ctx.deps.state.nodes.append(fact)
     _ensure_relation(ctx, topic.id, fact.id)
 
-    if resolved_filename and resolved_page is not None:
-        source_node = _get_or_create_source_node(
-            ctx=ctx,
-            filename=resolved_filename,
-            page=resolved_page,
+    resolved_document_id = normalized_chunks[source_chunk_index].get("document_id") if normalized_chunks else None
+    if resolved_document_id and (resolved_page or resolved_highlights):
+        _ensure_evidence_relation(
+            ctx, fact.id, resolved_document_id,
+            page=resolved_page or 0,
             bbox=resolved_bbox,
             highlights=resolved_highlights,
         )
-        if not any(node.id == source_node.id for node in ctx.deps.state.nodes):
-            ctx.deps.state.nodes.append(source_node)
-        _ensure_relation(ctx, fact.id, source_node.id)
 
     summary = fact_text
     if resolved_filename:
@@ -485,32 +480,26 @@ async def compare_documents(
     if left_normalized:
         _remember_search_results(ctx, left_normalized)
         resolved_filename, resolved_page, resolved_bbox, resolved_highlights = _resolve_source_details(ctx=ctx, chunk_index=left_index)
-        if resolved_filename and resolved_page is not None:
-            left_source = _get_or_create_source_node(
-                ctx=ctx,
-                filename=resolved_filename,
-                page=resolved_page,
+        left_document_id = left_normalized[left_index].get("document_id") if left_normalized else None
+        if left_document_id and (resolved_page or resolved_highlights):
+            _ensure_evidence_relation(
+                ctx, spec.id, left_document_id,
+                page=resolved_page or 0,
                 bbox=resolved_bbox,
                 highlights=resolved_highlights,
             )
-            if not any(node.id == left_source.id for node in ctx.deps.state.nodes):
-                ctx.deps.state.nodes.append(left_source)
-            _ensure_relation(ctx, spec.id, left_source.id)
 
     if right_normalized:
         _remember_search_results(ctx, right_normalized)
         resolved_filename, resolved_page, resolved_bbox, resolved_highlights = _resolve_source_details(ctx=ctx, chunk_index=right_index)
-        if resolved_filename and resolved_page is not None:
-            right_source = _get_or_create_source_node(
-                ctx=ctx,
-                filename=resolved_filename,
-                page=resolved_page,
+        right_document_id = right_normalized[right_index].get("document_id") if right_normalized else None
+        if right_document_id and (resolved_page or resolved_highlights):
+            _ensure_evidence_relation(
+                ctx, spec.id, right_document_id,
+                page=resolved_page or 0,
                 bbox=resolved_bbox,
                 highlights=resolved_highlights,
             )
-            if not any(node.id == right_source.id for node in ctx.deps.state.nodes):
-                ctx.deps.state.nodes.append(right_source)
-            _ensure_relation(ctx, spec.id, right_source.id)
 
     same_count = sum(1 for row in comparison_rows if row.comparison_status == "same")
     different_count = sum(1 for row in comparison_rows if row.comparison_status == "different")

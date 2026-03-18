@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { AgCard } from '../ui/AgComponents';
 import { FileText, Database, LayoutDashboard, Network } from 'lucide-react';
-import { useCopilotChat, useCoAgent } from "@copilotkit/react-core";
-import { Message, TextMessage } from "@copilotkit/runtime-client-gql";
+import { useCopilotChatInternal, useCoAgent } from "@copilotkit/react-core";
 import { CanvasView } from '../canvas/CanvasView';
 import { CanvasGraph } from '../canvas/CanvasGraph';
 import { PDFModal, type PDFHighlight } from '../canvas/PDFModal';
@@ -19,16 +18,9 @@ function buildEvidenceImageUrl(filename: string, page: number, bbox: number[]): 
   return `${API_URL}/api/documents/pdf/screenshot?filename=${encodeURIComponent(filename)}&page_no=${page}&bbox_l=${l}&bbox_t=${t}&bbox_r=${r}&bbox_b=${b}`;
 }
 
-function primaryHighlight(node: any): PDFHighlight {
-  if (Array.isArray(node?.highlights) && node.highlights.length > 0) {
-    return node.highlights[0] as PDFHighlight;
-  }
-  return { page: node?.page ?? 1, bbox: node?.bbox ?? [] };
-}
-
 export const MainContent: React.FC = () => {
-  const { visibleMessages = [] } = useCopilotChat() as any;
-  const { activeConversationId, updateConversation, conversations } = useApp();
+  const { messages: visibleMessages = [] } = useCopilotChatInternal();
+  const { activeConversationId, updateConversation, conversations, loadConversationMessages } = useApp();
   const [activeTab, setActiveTab] = useState<TabId>('canvas');
   const [contextPdf, setContextPdf] = useState<{
     filename: string;
@@ -41,112 +33,134 @@ export const MainContent: React.FC = () => {
     initialState: { nodes: [], relations: [], active_document_id: null }
   });
 
+  const canvas = state as any;
+
   // Sync document selection from UI into per-run agent state
   useEffect(() => {
     setState((prev: any) => ({ ...prev, active_document_id: activeDocumentId ?? null }));
   }, [activeDocumentId]);
-  const canvas = state as any;
-  const sourceNodes = (canvas?.nodes || []).filter((node: any) => node?.node_type === 'source');
+
+  // Restore canvas state when switching conversations
+  const prevConversationId = React.useRef<string | null>(null);
+  useEffect(() => {
+    if (!activeConversationId || activeConversationId === prevConversationId.current) return;
+    prevConversationId.current = activeConversationId;
+
+    loadConversationMessages(activeConversationId).then(({ canvas_state }) => {
+      if (canvas_state && Object.keys(canvas_state).length > 0) {
+        setState((prev: any) => ({ ...prev, ...canvas_state }));
+      } else {
+        setState(() => ({ nodes: [], relations: [], active_document_id: activeDocumentId ?? null }));
+      }
+    });
+  }, [activeConversationId]);
+
+  // Persist canvas state when it changes (debounced)
+  const canvasSaveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!activeConversationId) return;
+    if (canvasSaveTimer.current) clearTimeout(canvasSaveTimer.current);
+    canvasSaveTimer.current = setTimeout(() => {
+      const { nodes, relations } = canvas;
+      updateConversation(activeConversationId, { canvas_state: { nodes, relations } } as any);
+    }, 1000);
+    return () => { if (canvasSaveTimer.current) clearTimeout(canvasSaveTimer.current); };
+  }, [canvas, activeConversationId]);
+
+  const { documents } = useApp();
   const allNodes = canvas?.nodes || [];
   const allRelations = canvas?.relations || [];
   const nodeMap = new Map(allNodes.map((node: any) => [node.id, node]));
-  const contextEvidence = sourceNodes.map((node: any) => {
-    const parentIds = allRelations
-      .filter((relation: any) => relation.to_id === node.id)
-      .map((relation: any) => relation.from_id);
-    const parents = parentIds
-      .map((parentId: string) => nodeMap.get(parentId))
-      .filter(Boolean);
-    const primaryParent = parents[0];
-    const parentLabel = primaryParent?.node_type === 'spec'
-      ? (primaryParent.spec_title || 'Specifications')
-      : (primaryParent?.text || primaryParent?.title || 'Evidence');
-    const preview = primaryHighlight(node);
-    const highlights: PDFHighlight[] = node.highlights && node.highlights.length > 0
-      ? node.highlights
-      : [preview];
+
+  // Evidence comes from relations that connect fact/spec nodes to document nodes
+  const evidenceRelations = (allRelations as any[]).filter((r: any) =>
+    r.to_id?.startsWith('__doc_') && r.page > 0
+  );
+  const contextEvidence = evidenceRelations.map((r: any) => {
+    const parentNode: any = nodeMap.get(r.from_id);
+    const doc = documents.find((d) => d.document_id === r.document_id);
+    const filename = doc?.filename ?? '';
+    const page = r.page ?? 1;
+    const bbox = r.bbox ?? [];
+    const highlights: PDFHighlight[] = r.highlights && r.highlights.length > 0
+      ? r.highlights
+      : [{ page, bbox }];
+    const parentLabel = parentNode?.node_type === 'spec'
+      ? (parentNode.spec_title || 'Specifications')
+      : (parentNode?.text || parentNode?.title || 'Evidence');
 
     return {
-      id: node.id,
-      filename: node.filename,
-      page: preview.page,
-      bbox: preview.bbox ?? [],
+      id: `${r.from_id}-${r.to_id}-${page}`,
+      filename,
+      page,
+      bbox,
       highlights,
-      previewUrl: buildEvidenceImageUrl(node.filename, preview.page, preview.bbox ?? []),
-      title: primaryParent?.node_type === 'spec' ? (primaryParent.spec_title || 'Specifications') : 'Fact evidence',
+      previewUrl: buildEvidenceImageUrl(filename, page, bbox),
+      title: parentNode?.node_type === 'spec' ? (parentNode.spec_title || 'Specifications') : 'Fact evidence',
       summary: String(parentLabel || '').replace(/\s+/g, ' ').trim(),
-      parentType: primaryParent?.node_type === 'spec' ? 'spec' : 'fact',
+      parentType: parentNode?.node_type === 'spec' ? 'spec' : 'fact',
     };
   });
 
   // Use ref to track latest conversations without causing effect re-runs
   const conversationsRef = React.useRef(conversations);
-
   React.useEffect(() => {
     conversationsRef.current = conversations;
   }, [conversations]);
 
+  // Track when we last switched conversations — don't persist on the first render after a switch
+  const lastSavedConversationId = React.useRef<string | null>(null);
+
   // Persist messages and update title
   React.useEffect(() => {
-    // 1. Basic Guard: No active conversation
     if (!activeConversationId) return;
 
-    // Use ref to get latest conversations without dependency
+    // Skip first render after switching conversations — visibleMessages still has old thread's messages
+    if (lastSavedConversationId.current !== activeConversationId) {
+      lastSavedConversationId.current = activeConversationId;
+      return;
+    }
+
     const currentConv = conversationsRef.current.find(c => c.id === activeConversationId);
     if (!currentConv) return;
 
     const currentMessages = currentConv.messages || [];
 
-    // 2. Guard: Avoid overwriting populated conversation with empty state
-    if (visibleMessages.length === 0 && currentMessages.length > 0) {
-      return;
-    }
+    if (visibleMessages.length === 0 && currentMessages.length > 0) return;
 
-    // 3. Optimization: Check if content actually changed
     if (currentMessages.length === visibleMessages.length) {
       const lastMsgIdx = visibleMessages.length - 1;
       if (lastMsgIdx >= 0) {
         const lastVisible = visibleMessages[lastMsgIdx] as any;
-        const lastStored = currentMessages[lastMsgIdx];
-
-        if (lastVisible?.id === lastStored?.id && lastVisible?.content === lastStored?.content) {
-          return; // No change
-        }
+        const lastStored = currentMessages[lastMsgIdx] as any;
+        if (lastVisible?.id === lastStored?.id && lastVisible?.content === lastStored?.content) return;
       } else {
-        return; // Both empty
+        return;
       }
     }
 
     const updates: any = {
-      messages: visibleMessages.map((msg: Message) => {
-        if (msg.isTextMessage()) {
-          const textMsg = msg as TextMessage;
-          return {
-            id: msg.id,
-            role: textMsg.role,
-            content: textMsg.content,
-            type: 'text'
-          };
-        }
-        return msg;
-      }),
+      messages: visibleMessages.map((msg: any) => ({
+        id: msg.id,
+        role: msg.role,
+        content: msg.content,
+        type: 'text',
+      })),
       lastMessageAt: 'Just now',
       preview: `${visibleMessages.length} messages - Just now`
     };
 
-    // 4. Auto-generate title from first user message
     if (currentConv.title === 'New Conversation' && visibleMessages.length > 0) {
-      const firstUserMsg = visibleMessages.find((m: Message) => m.isTextMessage() && m.role === 'user');
+      const firstUserMsg = visibleMessages.find((m: any) => m.role === 'user');
       if (firstUserMsg) {
-        const content = (firstUserMsg as TextMessage).content;
+        const content = firstUserMsg.content ?? '';
         updates.title = content.length > 30 ? content.substring(0, 30) + '...' : content;
       }
     }
 
-    // Safe to call since updateConversation uses functional state updates
     updateConversation(activeConversationId, updates);
-
   }, [visibleMessages, activeConversationId, updateConversation]);
+
   return (
     <div className="flex-1 h-full bg-neutral-50/50 dark:bg-neutral-950 overflow-y-auto p-4 md:p-8 scroll-smooth border-r border-neutral-200 dark:border-neutral-800">
       <div className="max-w-5xl mx-auto space-y-6">
@@ -188,17 +202,9 @@ export const MainContent: React.FC = () => {
           ))}
         </div>
 
-        {/* Canvas Tab — ReactFlow knowledge graph */}
-        {activeTab === 'canvas' && (
-          <CanvasGraph canvas={canvas} />
-        )}
+        {activeTab === 'canvas' && <CanvasGraph canvas={canvas} />}
+        {activeTab === 'facts' && <CanvasView canvas={canvas} />}
 
-        {/* Facts Tab — list view of notes */}
-        {activeTab === 'facts' && (
-          <CanvasView canvas={canvas} />
-        )}
-
-        {/* Context Tab */}
         {activeTab === 'context' && (
           <div className="space-y-6">
             {contextEvidence.length > 0 ? (

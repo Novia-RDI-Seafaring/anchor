@@ -64,16 +64,22 @@ export interface SpecProperty {
 
 export interface CanvasNodeData {
   id: string;
-  node_type: "entity" | "category" | "topic" | "fact" | "source" | "spec";
+  node_type: "topic" | "fact" | "spec" | "source" | "entity" | "category"; // source/entity/category kept for compat
   status?: NodeStatus;
   title?: string;
   text?: string;
-  filename?: string;
-  page?: number;
-  bbox?: number[];
-  highlights?: PDFHighlight[]; // ordered list of page+bbox refs for this source
   spec_title?: string;
   properties?: SpecProperty[];
+}
+
+export interface EvidenceRelation {
+  from_id: string;
+  to_id: string;  // __doc_{document_id}
+  label: string;
+  document_id: string;
+  page: number;
+  bbox: number[];
+  highlights: PDFHighlight[];
 }
 
 export interface TopicNodeData {
@@ -85,31 +91,18 @@ export interface TopicNodeData {
 
 export interface FactNodeData {
   node: CanvasNodeData;
-  // Source nodes directly connected to this fact (pre-computed in graph)
-  sources: CanvasNodeData[];
-  onOpenPDF: (filename: string, page: number, highlights: PDFHighlight[]) => void;
+  onOpenPDF?: (filename: string, page: number, highlights: PDFHighlight[]) => void;
 }
 
+// SourceNodeData uses `any` for the node because source nodes are legacy/backward-compat
+// and carry fields (filename, page, bbox, highlights) no longer in CanvasNodeData.
 export interface SourceNodeData {
-  node: CanvasNodeData;
+  node: any;
   onOpenPDF: (filename: string, page: number, highlights: PDFHighlight[]) => void;
 }
 
 export interface SpecNodeData {
   node: CanvasNodeData;
-}
-
-// --- URL helpers ---
-function bboxUrl(filename: string, page: number, bbox: number[]): string {
-  const [l = 0, t = 0, r = 0, b = 0] = bbox;
-  return `${API_URL}/api/documents/pdf/screenshot?filename=${encodeURIComponent(filename)}&page_no=${page}&bbox_l=${l}&bbox_t=${t}&bbox_r=${r}&bbox_b=${b}`;
-}
-
-function primaryHighlight(node: CanvasNodeData): PDFHighlight {
-  if (node.highlights && node.highlights.length > 0) {
-    return node.highlights[0]!;
-  }
-  return { page: node.page ?? 1, bbox: node.bbox ?? [] };
 }
 
 export interface EntityNodeData {
@@ -260,8 +253,7 @@ export function TopicNode({ data }: NodeProps) {
 // FACT NODE — indigo left-border, full text
 // ─────────────────────────────────────────────
 export function FactNode({ data }: NodeProps) {
-  const { node, sources, onOpenPDF } = data as unknown as FactNodeData;
-  const [expanded, setExpanded] = useState(false);
+  const { node } = data as unknown as FactNodeData;
 
   return (
     <>
@@ -285,55 +277,7 @@ export function FactNode({ data }: NodeProps) {
             {node.text}
           </p>
           <StatusBadge status={node.status} />
-          {sources.length > 0 && (
-            <button
-              onClick={() => setExpanded((e) => !e)}
-              className="shrink-0 p-0.5 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 transition-colors"
-              title={expanded ? "Hide sources" : "Show source screenshots"}
-            >
-              {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-            </button>
-          )}
         </div>
-
-        {/* Expanded: bbox screenshot thumbnails */}
-        {expanded && sources.length > 0 && (
-          <div className="border-t border-neutral-100 dark:border-neutral-800 px-2.5 pb-2.5 pt-2 flex flex-wrap gap-2">
-            {sources.map((src, i) => {
-              if (!src.filename) return null;
-              const preview = primaryHighlight(src);
-              const imgUrl = bboxUrl(src.filename, preview.page, preview.bbox ?? []);
-              return (
-                <button
-                  key={i}
-                  onClick={() =>
-                    onOpenPDF(
-                      src.filename!,
-                      preview.page,
-                      src.highlights && src.highlights.length > 0
-                        ? src.highlights
-                        : [preview]
-                    )
-                  }
-                  className="group relative w-20 h-14 rounded overflow-hidden border-2 border-indigo-200 dark:border-indigo-700 hover:border-indigo-400 transition-colors shadow-sm"
-                  title={`${src.filename} p.${preview.page} — open PDF`}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={imgUrl}
-                    alt=""
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                    loading="lazy"
-                  />
-                  <div className="absolute bottom-0.5 right-0.5 bg-black/60 rounded px-1 py-0.5 flex items-center gap-0.5">
-                    <FileText size={7} className="text-white" />
-                    <span className="text-[8px] text-white font-mono">{preview.page}</span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
       <Handle type="source" position={Position.Bottom} className="!bg-indigo-400 !border-indigo-600" />
     </>
@@ -481,17 +425,22 @@ export interface DocumentNodeData extends Record<string, unknown> {
   doc: KBDocument;
   isActive: boolean;
   onActivate: (id: string) => void;
+  onOpenPDF: (filename: string, page: number, highlights: PDFHighlight[]) => void;
+  evidenceCount: number;
 }
 
 export function DocumentNode({ data }: NodeProps) {
-  const { doc, isActive, onActivate } = data as DocumentNodeData;
+  const { doc, isActive, onActivate, onOpenPDF, evidenceCount } = data as DocumentNodeData;
   const isProcessing = doc.status === "processing" || doc.status === "pending";
   const isError = doc.status === "error" || doc.status === "failed";
   const stem = doc.filename.replace(/\.[^.]+$/, "");
 
   return (
     <button
-      onClick={() => onActivate(isActive ? "" : doc.document_id)}
+      onClick={() => {
+        onActivate(isActive ? "" : doc.document_id);
+        onOpenPDF(doc.filename, 1, []);
+      }}
       title={doc.filename}
       className={`group flex flex-col gap-1 px-3 py-2.5 rounded-xl border-2 transition-all shadow-sm text-left cursor-pointer w-full ${
         isActive
@@ -530,6 +479,11 @@ export function DocumentNode({ data }: NodeProps) {
         }`}>
           {isProcessing ? "processing" : isError ? "error" : `${doc.node_count} chunks`}
         </span>
+        {evidenceCount > 0 && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300">
+            {evidenceCount} ref{evidenceCount !== 1 ? "s" : ""}
+          </span>
+        )}
       </div>
     </button>
   );

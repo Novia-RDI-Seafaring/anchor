@@ -85,51 +85,6 @@ def _mark_node_for_run(node: CanvasNode, ctx: RunContext[AgentDeps]) -> None:
     if ctx.run_id:
         node.last_updated_run_id = ctx.run_id
 
-def _build_source_node(
-    *,
-    ctx: RunContext[AgentDeps],
-    filename: str,
-    page: int,
-    bbox: list[float],
-    highlights: list[SourceHighlight] | None = None,
-) -> CanvasNode:
-    resolved = highlights or [SourceHighlight(page=page, bbox=bbox)]
-    node = CanvasNode(
-        node_type="source",
-        status="found",
-        filename=filename,
-        page=page,
-        bbox=bbox,
-        highlights=resolved,
-    )
-    _mark_node_for_run(node, ctx)
-    return node
-
-def _get_or_create_source_node(
-    *,
-    ctx: RunContext[AgentDeps],
-    filename: str,
-    page: int,
-    bbox: list[float],
-    highlights: list[SourceHighlight] | None = None,
-) -> CanvasNode:
-    resolved = highlights or [SourceHighlight(page=page, bbox=bbox)]
-    for node in ctx.deps.state.nodes:
-        if node.node_type != "source":
-            continue
-        if node.filename == filename and node.page == page and node.bbox == bbox:
-            _mark_node_for_run(node, ctx)
-            if resolved and not node.highlights:
-                node.highlights = resolved
-            return node
-    return _build_source_node(
-        ctx=ctx,
-        filename=filename,
-        page=page,
-        bbox=bbox,
-        highlights=resolved,
-    )
-
 def _ensure_relation(ctx: RunContext[AgentDeps], from_id: str, to_id: str, label: str = "") -> None:
     existing = next(
         (rel for rel in ctx.deps.state.relations if rel.from_id == from_id and rel.to_id == to_id and rel.label == label),
@@ -243,6 +198,46 @@ def _requires_canvas_update(prompt: str) -> bool:
     if _DOCUMENT_LISTING_RE.search(normalized):
         return False
     return True
+
+def _ensure_evidence_relation(
+    ctx: RunContext[AgentDeps],
+    from_id: str,
+    document_id: str,
+    page: int = 0,
+    bbox: list[float] | None = None,
+    highlights: list[SourceHighlight] | None = None,
+    label: str = "",
+) -> None:
+    """Add an evidence edge from a fact/spec node to a document node.
+
+    The document node ID is derived from document_id using the convention __doc_{document_id}.
+    Evidence edges carry location metadata (page, bbox, highlights) to open the PDF at the right spot.
+    Deduplicates: won't add if identical (from_id, to_id, page) already exists.
+    """
+    to_id = f"__doc_{document_id}"
+    existing = next(
+        (rel for rel in ctx.deps.state.relations
+         if rel.from_id == from_id and rel.to_id == to_id and rel.page == page),
+        None,
+    )
+    if existing is None:
+        ctx.deps.state.relations.append(Relation(
+            from_id=from_id,
+            to_id=to_id,
+            label=label,
+            document_id=document_id,
+            page=page,
+            bbox=bbox or [],
+            highlights=highlights or [],
+        ))
+
+
+def _get_cached_document_id(ctx: RunContext[AgentDeps], chunk_index: int = 0) -> str | None:
+    chunk = _get_cached_chunk(ctx, chunk_index)
+    if not chunk:
+        return None
+    return chunk.get("document_id") or None
+
 
 def _clean_text_value(value: str) -> str:
     # Preserve newlines but trim leading/trailing space for each line

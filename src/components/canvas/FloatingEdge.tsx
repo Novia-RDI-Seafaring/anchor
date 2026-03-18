@@ -7,6 +7,7 @@ import {
   type EdgeProps,
   Position,
 } from "@xyflow/react";
+import React from "react";
 
 type NodeInternal = ReturnType<typeof useInternalNode>;
 
@@ -68,6 +69,7 @@ export function FloatingEdge({
   labelBgStyle,
   labelBgPadding,
   animated,
+  data,
 }: EdgeProps) {
   const sourceNode = useInternalNode(source);
   const targetNode = useInternalNode(target);
@@ -79,6 +81,8 @@ export function FloatingEdge({
     sourceX: sx, sourceY: sy, sourcePosition: sourcePos,
     targetX: tx, targetY: ty, targetPosition: targetPos,
   });
+
+  const isEvidenceEdge = target.startsWith('__doc_') && (data as any)?.page > 0;
 
   return (
     <>
@@ -113,6 +117,25 @@ export function FloatingEdge({
               {label as React.ReactNode}
             </span>
           </div>
+        </EdgeLabelRenderer>
+      )}
+      {isEvidenceEdge && (
+        <EdgeLabelRenderer>
+          <button
+            style={{
+              position: 'absolute',
+              transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+              pointerEvents: 'all',
+            }}
+            className="nodrag nopan flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-teal-100 dark:bg-teal-900/60 border border-teal-300 dark:border-teal-700 text-[10px] font-mono text-teal-700 dark:text-teal-300 hover:bg-teal-200 dark:hover:bg-teal-800 transition-colors shadow-sm"
+            onClick={() => {
+              const d = data as any;
+              if (d.onOpenPDF) d.onOpenPDF(d.filename, d.page, d.highlights ?? []);
+            }}
+            title={`Open PDF at page ${(data as any).page}`}
+          >
+            p.{(data as any).page}
+          </button>
         </EdgeLabelRenderer>
       )}
     </>

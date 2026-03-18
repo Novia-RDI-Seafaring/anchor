@@ -3,6 +3,9 @@
 import React, { useState } from "react";
 import { FileText, X, ChevronDown, ChevronRight, Tag, MessageSquare, MapPin, Table2 } from "lucide-react";
 import type { CanvasNodeData } from "./KnowledgeNodes";
+import type { PDFHighlight } from "./PDFModal";
+import type { KBDocument } from "@/contexts/AppContext";
+import { useApp } from "@/contexts/AppContext";
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
 
@@ -10,6 +13,10 @@ interface Relation {
   from_id: string;
   to_id: string;
   label: string;
+  document_id?: string;
+  page?: number;
+  bbox?: number[];
+  highlights?: PDFHighlight[];
 }
 
 interface CanvasState {
@@ -25,13 +32,6 @@ function buildImageUrl(filename: string, page: number, bbox: number[]): string {
     return `${API_URL}/api/documents/pdf/screenshot?filename=${encodeURIComponent(filename)}&page_no=${page}`;
   }
   return `${API_URL}/api/documents/pdf/screenshot?filename=${encodeURIComponent(filename)}&page_no=${page}&bbox_l=${l}&bbox_t=${t}&bbox_r=${r}&bbox_b=${b}`;
-}
-
-function primaryHighlight(node: CanvasNodeData) {
-  if (node.highlights && node.highlights.length > 0) {
-    return node.highlights[0]!;
-  }
-  return { page: node.page ?? 1, bbox: node.bbox ?? [] };
 }
 
 // --- Lightbox ---
@@ -55,12 +55,15 @@ function Lightbox({ url, caption, onClose }: { url: string; caption: string; onC
 }
 
 // --- Source chip ---
-function SourceChip({ node }: { node: CanvasNodeData }) {
+function SourceChip({ relation, documents }: { relation: Relation; documents: KBDocument[] }) {
   const [lightbox, setLightbox] = useState<{ url: string; caption: string } | null>(null);
-  if (!node.filename) return null;
-  const preview = primaryHighlight(node);
-  const imgUrl = buildImageUrl(node.filename, preview.page, preview.bbox ?? []);
-  const caption = `${node.filename} p.${preview.page}`;
+  const doc = documents.find(d => d.document_id === relation.document_id);
+  const filename = doc?.filename ?? '';
+  const page = relation.page ?? 0;
+  const bbox = relation.bbox ?? [];
+  if (!filename || !page) return null;
+  const imgUrl = buildImageUrl(filename, page, bbox);
+  const caption = `${filename} p.${page}`;
   return (
     <>
       <button
@@ -70,7 +73,7 @@ function SourceChip({ node }: { node: CanvasNodeData }) {
       >
         <MapPin size={10} className="text-teal-500 shrink-0" />
         <span className="text-[11px] font-mono text-teal-700 dark:text-teal-300 truncate max-w-[140px]">
-          {node.filename!.replace(/\.pdf$/i, "")} p.{preview.page}
+          {filename.replace(/\.pdf$/i, "")} p.{page}
         </span>
         <span className="relative shrink-0 w-8 h-8 rounded overflow-hidden border border-teal-200 dark:border-teal-700 bg-white dark:bg-neutral-900">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -87,10 +90,12 @@ function TopicGroup({
   topic,
   findings,
   evidenceByNode,
+  documents,
 }: {
   topic: CanvasNodeData;
   findings: FindingNode[];
-  evidenceByNode: Map<string, CanvasNodeData[]>;
+  evidenceByNode: Map<string, Relation[]>;
+  documents: KBDocument[];
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const totalSources = findings.reduce((n, finding) => n + (evidenceByNode.get(finding.id) ?? []).length, 0);
@@ -212,7 +217,7 @@ function TopicGroup({
                   )}
                   {sources.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 pl-5">
-                      {sources.map((src) => <SourceChip key={src.id} node={src} />)}
+                      {sources.map((rel, i) => <SourceChip key={i} relation={rel} documents={documents} />)}
                     </div>
                   )}
                 </div>
@@ -242,6 +247,7 @@ function EmptyFacts() {
 
 // --- Main export ---
 export function CanvasView({ canvas }: { canvas: CanvasState | null | undefined }) {
+  const { documents } = useApp();
   const nodes = canvas?.nodes ?? [];
   const relations = canvas?.relations ?? [];
 
@@ -274,13 +280,13 @@ export function CanvasView({ canvas }: { canvas: CanvasState | null | undefined 
     );
   }
 
-  // For each fact/spec node, find its source children
-  const evidenceByNode = new Map<string, CanvasNodeData[]>();
-  for (const n of nodes.filter((node) => node.node_type === "fact" || node.node_type === "spec")) {
-    const srcIds = (childrenOf.get(n.id) ?? []).filter(
-      (id) => nodeMap.get(id)?.node_type === "source"
-    );
-    evidenceByNode.set(n.id, srcIds.map((id) => nodeMap.get(id)!).filter(Boolean));
+  // New: evidence comes from relations that connect to __doc_ nodes
+  const evidenceRelations = relations.filter(r => r.to_id?.startsWith('__doc_') && (r.page ?? 0) > 0);
+  const evidenceByNode = new Map<string, Relation[]>();
+  for (const r of evidenceRelations) {
+    const arr = evidenceByNode.get(r.from_id) ?? [];
+    arr.push(r);
+    evidenceByNode.set(r.from_id, arr);
   }
 
   if (topics.length === 0 && nodes.length === 0) return <EmptyFacts />;
@@ -288,14 +294,14 @@ export function CanvasView({ canvas }: { canvas: CanvasState | null | undefined 
   const topicCount = topics.length;
   const factCount = nodes.filter((n) => n.node_type === "fact").length;
   const specCount = nodes.filter((n) => n.node_type === "spec").length;
-  const srcCount = nodes.filter((n) => n.node_type === "source").length;
+  const evidenceCount = evidenceRelations.length;
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 px-1">
         <h2 className="text-sm font-semibold text-neutral-900 dark:text-white uppercase tracking-wider">Facts</h2>
         <span className="text-[11px] text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2 py-0.5 rounded-full">
-          {topicCount} topics · {factCount} facts · {specCount} specs · {srcCount} sources
+          {topicCount} topics · {factCount} facts · {specCount} specs · {evidenceCount} evidence refs
         </span>
       </div>
       <div className="grid grid-cols-1 gap-4">
@@ -305,6 +311,7 @@ export function CanvasView({ canvas }: { canvas: CanvasState | null | undefined 
             topic={topic}
             findings={topicFindings.get(topic.id) ?? []}
             evidenceByNode={evidenceByNode}
+            documents={documents}
           />
         ))}
       </div>

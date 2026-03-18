@@ -38,6 +38,10 @@ interface Relation {
   from_id: string;
   to_id: string;
   label: string;
+  document_id?: string;
+  page?: number;
+  bbox?: number[];
+  highlights?: PDFHighlight[];
 }
 
 interface CanvasState {
@@ -239,21 +243,31 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
   );
 
   // Build document nodes from current KB documents
-  const buildDocNodes = useCallback((): Node[] => {
-    const docs = documentsRef.current;
+  const buildDocNodes = useCallback((rels: Relation[]): Node[] => {
+    const uniqueDocs = Array.from(new Map(documentsRef.current.map(d => [d.document_id, d])).values());
     const activeId = activeDocumentIdRef.current;
     const onActivate = (id: string) => setActiveDocumentIdRef.current(id || null);
-    return docs.map((doc, i) => ({
-      id: `__doc_${doc.document_id}`,
-      type: "documentNode",
-      position: { x: i * 176, y: -180 },
-      draggable: true,
-      data: { doc, isActive: doc.document_id === activeId, onActivate } satisfies DocumentNodeData,
-    }));
-  }, []);
+    return uniqueDocs.map((doc, i) => {
+      const docNodeId = `__doc_${doc.document_id}`;
+      const evidenceCount = rels.filter(r => r.to_id === docNodeId).length;
+      return {
+        id: docNodeId,
+        type: "documentNode",
+        position: { x: i * 176, y: -180 },
+        draggable: true,
+        data: {
+          doc,
+          isActive: doc.document_id === activeId,
+          onActivate,
+          onOpenPDF: handleOpenPDF,
+          evidenceCount,
+        } satisfies DocumentNodeData,
+      };
+    });
+  }, [handleOpenPDF]);
 
   useEffect(() => {
-    const docNodes = buildDocNodes();
+    const docNodes = buildDocNodes(relations);
 
     if (rawNodes.length === 0) {
       setNodes(docNodes);
@@ -272,19 +286,6 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
     }
 
     const hiddenIds = descendants([...collapsedIds], childrenOf);
-
-    // Pre-compute source children per fact node. Spec nodes are rendered
-    // directly in the graph, not treated as source thumbnails.
-    const factSources = new Map<string, CanvasNodeData[]>();
-    for (const r of relations) {
-      const from = nodeMap.get(r.from_id);
-      const to = nodeMap.get(r.to_id);
-      if (from?.node_type === "fact" && to?.node_type === "source") {
-        const arr = factSources.get(r.from_id) ?? [];
-        arr.push(to);
-        factSources.set(r.from_id, arr);
-      }
-    }
 
     // Build RF nodes (no position yet — dagre will assign them)
     const rfNodes: Node[] = rawNodes.map((n) => {
@@ -340,7 +341,6 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
           hidden,
           data: {
             node: n,
-            sources: factSources.get(n.id) ?? [],
             onOpenPDF: handleOpenPDF,
           },
         };
@@ -354,6 +354,7 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
           data: { node: n },
         };
       }
+      // backward-compat: source/entity/category fallback
       return {
         id: n.id,
         type: "sourceNode",
@@ -369,14 +370,17 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
       const isEntityCat = fromNode?.node_type === "entity";
       const isCatTopic  = fromNode?.node_type === "category";
       const isTopicFact = (fromNode?.node_type === "topic" || fromNode?.node_type === "category") && toNode?.node_type === "fact";
-      const isFactSrc   = fromNode?.node_type === "fact"  && toNode?.node_type === "source";
       const isSpec      = toNode?.node_type === "spec";
+      const isEvidence  = r.to_id.startsWith('__doc_');
       const strokeColor = isEntityCat ? "#64748b"
         : isCatTopic  ? "#3b82f6"
         : isTopicFact ? "#f59e0b"
         : isSpec       ? "#8b5cf6"
-        : isFactSrc    ? "#6366f1"
-        : "#14b8a6";
+        : isEvidence   ? "#14b8a6"
+        : "#6366f1";
+      const docForEdge = isEvidence
+        ? documentsRef.current.find(d => `__doc_${d.document_id}` === r.to_id)
+        : undefined;
       return {
         id: `e-${idx}`,
         source: r.from_id,
@@ -388,11 +392,19 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
         style: {
           stroke: strokeColor,
           strokeWidth: isEntityCat ? 2.5 : isCatTopic ? 2 : 1.5,
-          strokeDasharray: isFactSrc || isSpec ? "4 3" : undefined,
+          strokeDasharray: isEvidence || isSpec ? "4 3" : undefined,
         },
         labelStyle: { fill: "#6366f1", fontWeight: 500, fontSize: 10 },
         labelBgStyle: { fill: "#f5f3ff", fillOpacity: 0.9 },
         labelBgPadding: [3, 2] as [number, number],
+        data: isEvidence && r.page ? {
+          page: r.page,
+          bbox: r.bbox ?? [],
+          highlights: r.highlights ?? [],
+          document_id: r.document_id ?? '',
+          filename: docForEdge?.filename ?? '',
+          onOpenPDF: handleOpenPDF,
+        } : undefined,
       };
     });
 
@@ -412,16 +424,6 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
       arr.push(r.to_id);
       childrenOf.set(r.from_id, arr);
     }
-    const factSources = new Map<string, CanvasNodeData[]>();
-    for (const r of relations) {
-      const from = nodeMap.get(r.from_id);
-      const to = nodeMap.get(r.to_id);
-      if (from?.node_type === "fact" && to?.node_type === "source") {
-        const arr = factSources.get(r.from_id) ?? [];
-        arr.push(to);
-        factSources.set(r.from_id, arr);
-      }
-    }
 
     setNodes((prev) =>
       prev.map((rfNode) => {
@@ -431,7 +433,7 @@ export function CanvasGraph({ canvas }: CanvasGraphProps) {
           return { ...rfNode, data: { ...rfNode.data, node: n, childCount: descendants([n.id], childrenOf).size, collapsed: collapsedIds.has(n.id), onToggleCollapse: handleToggleCollapse } };
         }
         if (n.node_type === "fact") {
-          return { ...rfNode, data: { ...rfNode.data, node: n, sources: factSources.get(n.id) ?? [], onOpenPDF: handleOpenPDF } };
+          return { ...rfNode, data: { ...rfNode.data, node: n, onOpenPDF: handleOpenPDF } };
         }
         if (n.node_type === "spec") {
           return { ...rfNode, data: { ...rfNode.data, node: n } };

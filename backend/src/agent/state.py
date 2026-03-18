@@ -4,9 +4,10 @@ from __future__ import annotations
 from typing import Literal
 from uuid import uuid4
 
-NodeStatus = Literal["pending", "searching", "found", "partial", "not_found"]
-
 from pydantic import BaseModel, Field
+
+
+NodeStatus = Literal["pending", "searching", "found", "partial", "not_found"]
 
 
 class SourceHighlight(BaseModel):
@@ -27,27 +28,32 @@ class SpecProperty(BaseModel):
 
 class CanvasNode(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
-    node_type: Literal["entity", "category", "topic", "fact", "source", "spec"]
-    status: NodeStatus = "pending"
+    node_type: Literal["topic", "fact", "spec", "source", "entity", "category"]  # source/entity/category kept for backward compat
+    status: NodeStatus = "found"
     last_updated_run_id: str = ""
     # topic fields
     title: str = ""
     # fact fields
     text: str = ""
-    # source fields
-    filename: str = ""
-    page: int = 0                                        # primary / first page (legacy)
-    bbox: list[float] = Field(default_factory=list)      # primary bbox (legacy)
-    highlights: list[SourceHighlight] = Field(default_factory=list)  # ordered list of page+bbox refs
     # spec fields
     spec_title: str = ""
     properties: list[SpecProperty] = Field(default_factory=list)
+    # deprecated evidence fields (kept for backward compat loading old states)
+    filename: str = ""
+    page: int = 0
+    bbox: list[float] = Field(default_factory=list)
+    highlights: list[SourceHighlight] = Field(default_factory=list)
 
 
 class Relation(BaseModel):
     from_id: str
     to_id: str
     label: str = ""
+    # Evidence metadata — populated when this edge connects a fact/spec to a document node (__doc_{id})
+    document_id: str = ""
+    page: int = 0
+    bbox: list[float] = Field(default_factory=list)
+    highlights: list[SourceHighlight] = Field(default_factory=list)
 
 
 class Canvas(BaseModel):
@@ -55,5 +61,6 @@ class Canvas(BaseModel):
     relations: list[Relation] = Field(default_factory=list)
     last_updated_run_id: str = ""
     active_document_id: str | None = None
+
 
 __all__ = ["Canvas", "CanvasNode", "Relation", "SourceHighlight", "SpecProperty", "NodeStatus"]

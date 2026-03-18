@@ -82,11 +82,8 @@ def ensure_technical_queries_update_canvas(ctx: RunContext[AgentDeps], data: str
 agent.tool(canvas.check_canvas)
 agent.tool(canvas.add_topic)
 agent.tool(canvas.add_fact)
-agent.tool(canvas.add_source)
 agent.tool(canvas.add_relation)
 agent.tool(canvas.add_spec_node)
-agent.tool(canvas.finalize_fact_with_source)
-agent.tool(canvas.finalize_spec_with_source)
 agent.tool(canvas.update_node)
 agent.tool(canvas.delete_node)
 
