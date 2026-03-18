@@ -103,20 +103,24 @@ export const MainContent: React.FC = () => {
     };
     const paramLabel = Object.entries(numericParams).map(([k, v]) => `${k}=${v}`).join(', ') || 'simulate';
     const relation = { from_id: fmuNodeId, to_id: plotNode.id, label: paramLabel };
-    setState((prev: any) => ({
-      ...prev,
-      nodes: [...(prev?.nodes ?? []), plotNode],
-      relations: [...(prev?.relations ?? []), relation],
-    }));
-  }, [setState]);
+    // Use canvas directly from closure — CopilotKit's setState may not support
+    // functional updaters, so prev could be stale and wipe existing nodes.
+    const currentCanvas = canvas as any;
+    setState({
+      ...currentCanvas,
+      nodes: [...(currentCanvas?.nodes ?? []), plotNode],
+      relations: [...(currentCanvas?.relations ?? []), relation],
+    });
+  }, [setState, canvas]);
 
   const handleDeleteNode = React.useCallback((nodeId: string) => {
-    setState((prev: any) => ({
-      ...prev,
-      nodes: (prev?.nodes ?? []).filter((n: any) => n.id !== nodeId),
-      relations: (prev?.relations ?? []).filter((r: any) => r.from_id !== nodeId && r.to_id !== nodeId),
-    }));
-  }, [setState]);
+    const currentCanvas = canvas as any;
+    setState({
+      ...currentCanvas,
+      nodes: (currentCanvas?.nodes ?? []).filter((n: any) => n.id !== nodeId),
+      relations: (currentCanvas?.relations ?? []).filter((r: any) => r.from_id !== nodeId && r.to_id !== nodeId),
+    });
+  }, [setState, canvas]);
 
   const handleFmuUploaded = React.useCallback((payload: { filename: string; model_name: string; variables: any[] }) => {
     const newNode = {
@@ -132,8 +136,9 @@ export const MainContent: React.FC = () => {
       text: '', spec_title: '', properties: [], filename: '', page: 0, bbox: [], highlights: [],
       plot_job_id: '', plot_fmu_filename: '', plot_signal_names: [], plot_stop_time: 10,
     };
-    setState((prev: any) => ({ ...prev, nodes: [...(prev?.nodes ?? []), newNode] }));
-  }, [setState]);
+    const currentCanvas = canvas as any;
+    setState({ ...currentCanvas, nodes: [...(currentCanvas?.nodes ?? []), newNode] });
+  }, [setState, canvas]);
 
   const handlePositionsChange = React.useCallback((updated: Record<string, { x: number; y: number }>) => {
     setPositions(updated);

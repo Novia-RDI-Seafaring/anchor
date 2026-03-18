@@ -71,7 +71,17 @@ async def simulate_fmu_tool(
         if existing_fmu else []
     )
 
-    params = param_overrides or {}
+    # Merge default parameter values from FMU with any overrides so the plot
+    # node always records the actual values used, even when nothing was overridden.
+    default_params: dict[str, float] = {}
+    if existing_fmu:
+        for v in existing_fmu.fmu_variables:
+            if v.causality == "parameter" and v.start:
+                try:
+                    default_params[v.name] = float(v.start)
+                except (ValueError, TypeError):
+                    pass
+    params = {**default_params, **(param_overrides or {})}
     param_label = ", ".join(f"{k}={v:g}" for k, v in params.items()) if params else ""
 
     plot = CanvasNode(
