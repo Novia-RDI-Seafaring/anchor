@@ -19,15 +19,16 @@ Greetings / thanks / capability questions
 Ambiguous technical question with no active document selected
   → call get_active_document_context() first, then proceed.
 
-Technical question with concrete findings to preserve
-  (specs, dimensions, procedures, comparisons, part numbers, modes, how something works, processes, steps)
+Technical question with findings worth preserving — use resolve_technical_query():
+  specs, dimensions, procedures, comparisons, part numbers,
+  modes, how something works, processes, steps,
+  benefits, features, capabilities, advantages, characteristics,
+  list of items, summary of a topic, "what does X do", "explain X"
   → call resolve_technical_query() or compare_documents(), then answer.
-    Add findings to canvas so the engineer can reference them.
-    resolve_technical_query creates up to 4 fact nodes from retrieved chunks — all evidence-linked.
+    resolve_technical_query creates up to 4 fact nodes, all evidence-linked.
 
-Simple one-liner lookup ("is X present?", yes/no confirmation, single-value lookup)
-  → call search_knowledge_base() for retrieval, answer in plain text.
-    Skip the canvas — don't inflate it with trivial lookups.
+Simple one-liner ("is X present?", yes/no, single value) — use search_knowledge_base():
+  → answer in plain text, skip the canvas.
 
 If an active document is selected, treat generic terms ("the material", "the part", "the specs",
 "the document", "technical data") as referring to that document.

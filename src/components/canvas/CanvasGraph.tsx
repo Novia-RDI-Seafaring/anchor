@@ -475,9 +475,35 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange }
       };
     });
 
-    const laidOut = applyDagreLayout(rfNodes, rfEdges).map((n) => {
+    // Build parent lookup (excluding evidence edges) for offset propagation
+    const parentOf = new Map<string, string>();
+    for (const r of relations) {
+      if (!r.to_id.startsWith('__doc_')) parentOf.set(r.to_id, r.from_id);
+    }
+
+    const dagreResults = applyDagreLayout(rfNodes, rfEdges);
+    const dagrePos = new Map(dagreResults.map((n) => [n.id, n.position]));
+
+    const laidOut = dagreResults.map((n) => {
       const saved = positionOverridesRef.current[n.id];
-      return saved ? { ...n, position: saved } : n;
+      if (saved) return { ...n, position: saved };
+
+      // New node — walk up to find the closest ancestor with a saved position
+      // and apply the same offset so it lands near its actual parent.
+      let cur = n.id;
+      while (parentOf.has(cur)) {
+        const par = parentOf.get(cur)!;
+        const parSaved = positionOverridesRef.current[par];
+        const parDagre = dagrePos.get(par);
+        if (parSaved && parDagre) {
+          const dx = parSaved.x - parDagre.x;
+          const dy = parSaved.y - parDagre.y;
+          const base = dagrePos.get(n.id)!;
+          return { ...n, position: { x: base.x + dx, y: base.y + dy } };
+        }
+        cur = par;
+      }
+      return n;
     });
     const docNodesWithOverrides = docNodes.map((n) => {
       const saved = positionOverridesRef.current[n.id];
