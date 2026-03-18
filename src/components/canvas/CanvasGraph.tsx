@@ -529,7 +529,9 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
       const isTopicFact = (fromNode?.node_type === "topic" || fromNode?.node_type === "category") && toNode?.node_type === "fact";
       const isSpec      = toNode?.node_type === "spec";
       const isEvidence  = r.to_id.startsWith('__doc_');
-      const strokeColor = isConceptTopic ? "#8b5cf6"
+      const isSimPlot   = fromNode?.node_type === "fmu" && toNode?.node_type === "plot";
+      const strokeColor = isSimPlot    ? "#14b8a6"
+        : isConceptTopic ? "#8b5cf6"
         : isEntityCat ? "#64748b"
         : isCatTopic  ? "#3b82f6"
         : isTopicFact ? "#f59e0b"
@@ -552,8 +554,8 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
           strokeWidth: isEntityCat ? 2.5 : isConceptTopic || isCatTopic ? 2 : 1.5,
           strokeDasharray: isEvidence || isSpec ? "4 3" : undefined,
         },
-        labelStyle: { fill: "#6366f1", fontWeight: 500, fontSize: 10 },
-        labelBgStyle: { fill: "#f5f3ff", fillOpacity: 0.9 },
+        labelStyle: { fill: isSimPlot ? "#0f766e" : "#6366f1", fontWeight: 600, fontSize: 10 },
+        labelBgStyle: { fill: isSimPlot ? "#f0fdfa" : "#f5f3ff", fillOpacity: 0.92 },
         labelBgPadding: [3, 2] as [number, number],
         data: isEvidence && r.page ? {
           page: r.page,

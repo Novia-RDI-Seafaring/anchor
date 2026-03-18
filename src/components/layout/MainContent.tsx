@@ -101,7 +101,8 @@ export const MainContent: React.FC = () => {
       text: '', spec_title: '', properties: [], fmu_filename: '', fmu_model_name: '',
       fmu_variables: [], fmu_param_values: {}, filename: '', page: 0, bbox: [], highlights: [],
     };
-    const relation = { from_id: fmuNodeId, to_id: plotNode.id, label: 'simulates' };
+    const paramLabel = Object.entries(numericParams).map(([k, v]) => `${k}=${v}`).join(', ') || 'simulate';
+    const relation = { from_id: fmuNodeId, to_id: plotNode.id, label: paramLabel };
     setState((prev: any) => ({
       ...prev,
       nodes: [...(prev?.nodes ?? []), plotNode],

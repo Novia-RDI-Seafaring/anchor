@@ -71,6 +71,9 @@ async def simulate_fmu_tool(
         if existing_fmu else []
     )
 
+    params = param_overrides or {}
+    param_label = ", ".join(f"{k}={v:g}" for k, v in params.items()) if params else ""
+
     plot = CanvasNode(
         node_type="plot",
         title=f"{filename} — output",
@@ -78,13 +81,14 @@ async def simulate_fmu_tool(
         plot_fmu_filename=filename,
         plot_signal_names=signal_names,
         plot_stop_time=stop_time,
+        plot_param_values=params,
         status="found",
     )
     _mark_node_for_run(plot, ctx)
     ctx.deps.state.nodes.append(plot)
 
     if fmu_node_id:
-        _ensure_relation(ctx, fmu_node_id, plot.id, label="output")
+        _ensure_relation(ctx, fmu_node_id, plot.id, label=param_label or "simulate")
 
     result = _snapshot(ctx)
     result.return_value = {
