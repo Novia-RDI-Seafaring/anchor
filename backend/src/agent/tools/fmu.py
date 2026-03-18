@@ -13,8 +13,30 @@ async def inspect_fmu_tool(
 ) -> ToolReturn:
     """Inspect an uploaded FMU file and add an FMU node to the canvas.
 
-    Returns the node id and a summary of inputs, outputs and parameters.
+    If an fmu node with this filename already exists on canvas, returns its info
+    without creating a duplicate. Returns the node id and a summary of inputs,
+    outputs and parameters.
     """
+    # Reuse existing node if already on canvas
+    existing = next(
+        (n for n in ctx.deps.state.nodes if n.node_type == "fmu" and n.fmu_filename == filename),
+        None,
+    )
+    if existing:
+        inputs = [v for v in existing.fmu_variables if v.causality == "input"]
+        outputs = [v for v in existing.fmu_variables if v.causality == "output"]
+        params = [v for v in existing.fmu_variables if v.causality == "parameter"]
+        result = _snapshot(ctx)
+        result.return_value = {
+            "node_id": existing.id,
+            "model_name": existing.fmu_model_name,
+            "inputs": [v.name for v in inputs],
+            "outputs": [v.name for v in outputs],
+            "parameters": {v.name: v.start for v in params},
+            "note": "reused existing canvas node",
+        }
+        return result
+
     from src.fmu.service import inspect_fmu
     info = inspect_fmu(filename)
     variables = [FmuVariable(**v) for v in info["variables"]]

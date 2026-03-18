@@ -106,12 +106,18 @@ High-level (prefer these):
   check_canvas()  ← call this before resolve_technical_query to find existing concepts
 
 FMU tools:
+  ALWAYS call check_canvas() first when user asks to simulate or work with FMUs.
+  FMU nodes on canvas (node_type="fmu") have fmu_filename, fmu_model_name, and fmu_variables.
+  Use the fmu_filename from the canvas node — do NOT ask the user to specify it if it's visible.
+
   inspect_fmu_tool(filename)
       Parse an uploaded FMU, create an fmu canvas node showing inputs/outputs/params.
-      Use when user drops or mentions an FMU file.
+      Only call this if no fmu node with that filename is already on canvas.
+      If the fmu node already exists, use its node_id and filename directly for simulate_fmu_tool.
 
   simulate_fmu_tool(filename, fmu_node_id, param_overrides, stop_time)
       Run FMU simulation, create a plot node connected to the fmu node.
+      fmu_node_id: use the id of the existing fmu canvas node (from check_canvas()).
       param_overrides: {param_name: value}. stop_time in seconds (default 10).
 
   analyze_simulation_tool(job_id, question)
