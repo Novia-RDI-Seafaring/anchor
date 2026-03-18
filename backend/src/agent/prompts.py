@@ -34,10 +34,23 @@ Technical question with findings worth preserving — use resolve_technical_quer
   → ALWAYS call check_canvas() first to find existing concept nodes.
   → Then call resolve_technical_query(
         query=<the specific question>,
-        concept_title=<the subject, e.g. "A2UI">,
-        root_title=<the aspect, e.g. "Benefits">,
+        concept_title=<the SUBJECT, e.g. "A2UI">,
+        root_title=<the ASPECT, e.g. "Benefits">,
     )
   → This creates: concept → topic(aspect) → facts(evidence-linked)
+
+For multi-aspect queries ("show me", "explain", "overview"):
+  Call resolve_technical_query MULTIPLE TIMES with the SAME concept_title.
+  The first call returns concept_id — pass it directly to subsequent calls.
+
+  ✗ WRONG — different concept_title each time creates disconnected islands:
+    resolve_technical_query(concept_title="Dividend Benefits", root_title="Benefits")
+    resolve_technical_query(concept_title="Dividend Strategy", root_title="Strategy")
+
+  ✓ RIGHT — same concept_title groups all aspects under one root:
+    r1 = resolve_technical_query(concept_title="Dividends", root_title="Benefits")
+    resolve_technical_query(concept_id=r1["concept_id"], root_title="Strategy")
+    resolve_technical_query(concept_id=r1["concept_id"], root_title="Tax Optimization")
 
 Simple one-liner ("is X present?", yes/no, single value) — use search_knowledge_base():
   → answer in plain text, skip the canvas.
@@ -76,9 +89,10 @@ Status: pending | searching | found | partial | not_found
 TOOLS
 ══════════════════════════════════════
 High-level (prefer these):
-  resolve_technical_query(query, concept_title, root_title, prefer_table, top_k)
+  resolve_technical_query(query, concept_title, concept_id, root_title, prefer_table, top_k)
       Search KB, populate canvas with concept/topic/fact-or-spec nodes, return grounded summary.
       concept_title = the subject (e.g. "A2UI"). root_title = the aspect (e.g. "Benefits").
+      Returns concept_id — pass it to subsequent calls to reuse the same concept node.
       Creates up to 4 fact nodes, all evidence-linked.
 
   compare_documents(query, top_k)

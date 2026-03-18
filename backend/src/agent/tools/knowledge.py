@@ -326,6 +326,7 @@ async def resolve_technical_query(
             "summary": f"I could not find relevant technical information for '{query}' in the loaded knowledge base.",
             "topic_id": topic.id,
             "node_id": fact.id,
+            "concept_id": resolved_concept_id,
             "found": False,
         }
         return result
@@ -375,6 +376,7 @@ async def resolve_technical_query(
             "summary": summary,
             "topic_id": topic.id,
             "node_id": spec.id,
+            "concept_id": resolved_concept_id,
             "found": True,
             "format": "spec",
         }
@@ -436,6 +438,7 @@ async def resolve_technical_query(
         "summary": summary,
         "topic_id": topic.id,
         "node_id": first_fact.id,
+        "concept_id": resolved_concept_id,
         "found": True,
         "format": "fact",
         "fact_count": len(created_facts),
