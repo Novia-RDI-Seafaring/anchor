@@ -1,4 +1,5 @@
 """Agent tools for FMU inspection and simulation."""
+import os
 from pydantic_ai import ToolReturn
 from pydantic_ai._run_context import RunContext
 from ..deps import AgentDeps
@@ -93,3 +94,66 @@ async def simulate_fmu_tool(
         "stop_time": stop_time,
     }
     return result
+
+
+async def analyze_simulation_tool(
+    ctx: RunContext[AgentDeps],
+    job_id: str,
+    question: str = "",
+) -> str:
+    """Analyze a simulation result visually and numerically.
+
+    Renders the plot as an image and sends it together with sampled data
+    to a vision-capable model. Returns a text analysis grounded in the plot.
+
+    job_id: the plot_job_id from a plot canvas node.
+    question: optional specific question about the result (e.g. "why does it oscillate?").
+    """
+    from src.fmu.service import get_result, render_plot_image, sample_data
+
+    data = get_result(job_id)
+    if data is None:
+        return f"No simulation result found for job_id={job_id}."
+
+    image_b64 = render_plot_image(data)
+    csv_sample = sample_data(data)
+
+    question_text = question.strip() or (
+        "Describe the key dynamics of this simulation: trends, peaks, oscillations, "
+        "steady-state behaviour, and any notable features."
+    )
+    prompt = (
+        f"{question_text}\n\n"
+        f"Sampled data (time, signals):\n{csv_sample}"
+    )
+
+    # Build OpenAI client — supports both Azure and direct OpenAI
+    provider = os.getenv("DEFAULT_PROVIDER", "").lower()
+    if provider == "azure" or os.getenv("AZURE_OPENAI_API_KEY"):
+        from openai import AzureOpenAI
+        client = AzureOpenAI(
+            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
+            api_version=os.getenv("OPENAI_API_VERSION", "2024-12-01-preview"),
+        )
+        model = os.getenv("VISION_DEPLOYMENT") or os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
+    else:
+        from openai import OpenAI
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        model = os.getenv("VISION_MODEL", "gpt-4o-mini")
+
+    response = client.chat.completions.create(
+        model=model,
+        max_tokens=600,
+        messages=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{image_b64}", "detail": "low"},
+                },
+                {"type": "text", "text": prompt},
+            ],
+        }],
+    )
+    return response.choices[0].message.content or "No analysis returned."

@@ -39,7 +39,7 @@ async def _prepare_tools_for_turn(ctx: RunContext[AgentDeps], tool_defs: list[An
         "resolve_technical_query", "compare_documents",
         "search_knowledge_base", "get_active_document_context",
         "check_canvas", "list_documents", "add_concept",
-        "inspect_fmu_tool", "simulate_fmu_tool",
+        "inspect_fmu_tool", "simulate_fmu_tool", "analyze_simulation_tool",
     }
     return [tool_def for tool_def in tool_defs if tool_def.name in allowed]
 
@@ -103,5 +103,6 @@ agent.tool(vision.analyze_image_content)
 # Register FMU Tools
 agent.tool(fmu_tools.inspect_fmu_tool)
 agent.tool(fmu_tools.simulate_fmu_tool)
+agent.tool(fmu_tools.analyze_simulation_tool)
 
 AppState = Canvas

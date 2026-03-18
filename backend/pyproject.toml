@@ -30,6 +30,7 @@ dependencies = [
     "llama-index-embeddings-azure-openai>=0.3.0",
     "ketju[rag,docling,pgvector,observability,agent,agui]",
     "fmpy>=0.3.22",
+    "kaleido>=1.2.0",
 ]
 
 [tool.uv.sources]

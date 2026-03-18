@@ -99,3 +99,51 @@ def get_result(job_id: str) -> dict[str, Any] | None:
     if not path.exists():
         return None
     return json.loads(path.read_text())
+
+
+def render_plot_image(data: dict[str, Any], width: int = 600, height: int = 350) -> str:
+    """Render simulation result as a PNG and return base64-encoded string."""
+    import base64
+    import plotly.graph_objects as go
+
+    times: list[float] = data.get("time", [])
+    signals = [k for k in data if k != "time"]
+    COLORS = ["#14b8a6", "#6366f1", "#f59e0b", "#ef4444", "#8b5cf6"]
+
+    fig = go.Figure()
+    for i, sig in enumerate(signals):
+        fig.add_trace(go.Scatter(
+            x=times,
+            y=data[sig],
+            mode="lines",
+            name=sig,
+            line=dict(color=COLORS[i % len(COLORS)], width=2),
+        ))
+    fig.update_layout(
+        margin=dict(l=40, r=20, t=20, b=40),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font=dict(size=11),
+        legend=dict(orientation="h", y=-0.15),
+        xaxis=dict(gridcolor="#e5e7eb", title="time (s)"),
+        yaxis=dict(gridcolor="#e5e7eb"),
+    )
+    img_bytes: bytes = fig.to_image(format="png", width=width, height=height)
+    return base64.b64encode(img_bytes).decode()
+
+
+def sample_data(data: dict[str, Any], max_points: int = 60) -> str:
+    """Return a compact CSV-like string of sampled data for LLM context."""
+    times: list[float] = data.get("time", [])
+    signals = [k for k in data if k != "time"]
+    n = len(times)
+    if n == 0:
+        return "No data."
+    step = max(1, n // max_points)
+    indices = list(range(0, n, step))[:max_points]
+    header = "time," + ",".join(signals)
+    rows = []
+    for i in indices:
+        vals = [f"{times[i]:.3f}"] + [f"{data[s][i]:.4g}" for s in signals]
+        rows.append(",".join(vals))
+    return header + "\n" + "\n".join(rows)

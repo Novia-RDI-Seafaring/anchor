@@ -114,6 +114,13 @@ FMU tools:
       Run FMU simulation, create a plot node connected to the fmu node.
       param_overrides: {param_name: value}. stop_time in seconds (default 10).
 
+  analyze_simulation_tool(job_id, question)
+      Render the simulation result as a plot image and analyze it with a vision model.
+      Returns a text description of dynamics, trends, peaks, oscillations, steady-state.
+      Use when the user asks about a simulation result, wants explanation, or comparison.
+      job_id: the plot_job_id from a plot canvas node (find via check_canvas()).
+      question: optional focused question, e.g. "why does it oscillate?" or "when does it stabilize?"
+
 Low-level canvas tools (only when user explicitly asks to restructure):
   add_concept(title, status)
       — Creates a concept node. Returns id for use in resolve_technical_query.
