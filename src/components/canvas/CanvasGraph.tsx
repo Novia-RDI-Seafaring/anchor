@@ -201,13 +201,20 @@ const edgeTypes: EdgeTypes = {
 };
 
 // --- Main component ---
+interface FmuUploadedPayload {
+  filename: string;
+  model_name: string;
+  variables: Array<{ name: string; causality: string; variability: string; start: string; unit: string; description: string }>;
+}
+
 interface CanvasGraphProps {
   canvas: CanvasState | null | undefined;
   initialPositions?: Record<string, { x: number; y: number }>;
   onPositionsChange?: (positions: Record<string, { x: number; y: number }>) => void;
+  onFmuUploaded?: (payload: FmuUploadedPayload) => void;
 }
 
-export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange }: CanvasGraphProps) {
+export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, onFmuUploaded }: CanvasGraphProps) {
   const { documents, refreshDocuments, activeDocumentId, setActiveDocumentId } = useApp();
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [pdfModal, setPdfModal] = useState<PDFModalState | null>(null);
@@ -636,8 +643,11 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange }
         if (file.name.endsWith('.fmu')) {
           const formData = new FormData();
           formData.append('file', file);
-          await fetch(`${API_URL}/api/fmu/upload`, { method: 'POST', body: formData });
-          // FMU is uploaded; user can now ask the agent to inspect it
+          const res = await fetch(`${API_URL}/api/fmu/upload`, { method: 'POST', body: formData });
+          if (res.ok) {
+            const data = await res.json();
+            onFmuUploaded?.({ filename: data.filename, model_name: data.model_name, variables: data.variables ?? [] });
+          }
         } else if (/\.(pdf|docx|txt|md|html)$/i.test(file.name)) {
           const formData = new FormData();
           formData.append('file', file);
@@ -664,7 +674,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange }
           <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-indigo-50/90 dark:bg-indigo-950/80 border-2 border-dashed border-indigo-400 dark:border-indigo-500 rounded-xl pointer-events-none">
             <UploadCloud size={40} className="text-indigo-500 dark:text-indigo-400" />
             <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300">
-              Drop to upload to knowledge base
+              Drop documents or .fmu files
             </p>
           </div>
         )}

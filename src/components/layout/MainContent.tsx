@@ -78,6 +78,23 @@ export const MainContent: React.FC = () => {
 
   // Separate debounced save for position-only changes (faster, doesn't wait for canvas change)
   const posSaveTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleFmuUploaded = React.useCallback((payload: { filename: string; model_name: string; variables: any[] }) => {
+    const newNode = {
+      id: `fmu_${Date.now()}`,
+      node_type: 'fmu',
+      status: 'found',
+      title: payload.model_name || payload.filename,
+      fmu_filename: payload.filename,
+      fmu_model_name: payload.model_name,
+      fmu_variables: payload.variables,
+      fmu_param_values: {},
+      last_updated_run_id: '',
+      text: '', spec_title: '', properties: [], filename: '', page: 0, bbox: [], highlights: [],
+      plot_job_id: '', plot_fmu_filename: '', plot_signal_names: [], plot_stop_time: 10,
+    };
+    setState((prev: any) => ({ ...prev, nodes: [...(prev?.nodes ?? []), newNode] }));
+  }, [setState]);
+
   const handlePositionsChange = React.useCallback((updated: Record<string, { x: number; y: number }>) => {
     setPositions(updated);
     if (!activeConversationId) return;
@@ -225,7 +242,7 @@ export const MainContent: React.FC = () => {
           ))}
         </div>
 
-        {activeTab === 'canvas' && <CanvasGraph canvas={canvas} initialPositions={positions} onPositionsChange={handlePositionsChange} />}
+        {activeTab === 'canvas' && <CanvasGraph canvas={canvas} initialPositions={positions} onPositionsChange={handlePositionsChange} onFmuUploaded={handleFmuUploaded} />}
         {activeTab === 'facts' && <CanvasView canvas={canvas} />}
 
         {activeTab === 'context' && (
