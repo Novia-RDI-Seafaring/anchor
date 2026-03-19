@@ -47,3 +47,11 @@ async def result(job_id: str):
     if data is None:
         raise HTTPException(404, "Result not found")
     return data
+
+
+@router.get("/list")
+async def list_fmus():
+    """List uploaded FMU files."""
+    FMU_DIR.mkdir(parents=True, exist_ok=True)
+    files = sorted(p.name for p in FMU_DIR.glob("*.fmu"))
+    return {"files": files}

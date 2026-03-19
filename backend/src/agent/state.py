@@ -81,6 +81,7 @@ class Canvas(BaseModel):
     relations: list[Relation] = Field(default_factory=list)
     last_updated_run_id: str = ""
     active_document_id: str | None = None
+    workspace_doc_ids: list[str] = Field(default_factory=list)
 
 
 __all__ = ["Canvas", "CanvasNode", "Relation", "SourceHighlight", "SpecProperty", "NodeStatus", "FmuVariable"]

@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { AgCard } from '../ui/AgComponents';
-import { FileText, Database, LayoutDashboard, Network } from 'lucide-react';
+import { FileText, Database, LayoutDashboard, Network, BookOpen, X } from 'lucide-react';
 import { useCopilotChatInternal, useCoAgent } from "@copilotkit/react-core";
 import { CanvasView } from '../canvas/CanvasView';
 import { CanvasGraph } from '../canvas/CanvasGraph';
 import { PDFModal, type PDFHighlight } from '../canvas/PDFModal';
+import { LibraryDrawer } from './LibraryDrawer';
 
 type TabId = 'canvas' | 'facts' | 'context';
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
@@ -22,6 +23,7 @@ export const MainContent: React.FC = () => {
   const { messages: visibleMessages = [] } = useCopilotChatInternal();
   const { activeConversationId, updateConversation, conversations, loadConversationMessages } = useApp();
   const [activeTab, setActiveTab] = useState<TabId>('canvas');
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [contextPdf, setContextPdf] = useState<{
     filename: string;
     page: number;
@@ -140,6 +142,26 @@ export const MainContent: React.FC = () => {
     setState({ ...currentCanvas, nodes: [...(currentCanvas?.nodes ?? []), newNode] });
   }, [setState, canvas]);
 
+  const handleAddDocToWorkspace = React.useCallback((docId: string) => {
+    const currentCanvas = canvas as any;
+    const existing: string[] = currentCanvas?.workspace_doc_ids ?? [];
+    if (existing.includes(docId)) return;
+    setState({ ...currentCanvas, workspace_doc_ids: [...existing, docId] });
+  }, [setState, canvas]);
+
+  const handleFmuFromLibrary = React.useCallback(async (filename: string) => {
+    // Skip if already on canvas
+    const currentCanvas = canvas as any;
+    const alreadyOnCanvas = (currentCanvas?.nodes ?? []).some((n: any) => n.node_type === 'fmu' && n.fmu_filename === filename);
+    if (alreadyOnCanvas) return;
+    try {
+      const res = await fetch(`${API_URL}/api/fmu/inspect/${encodeURIComponent(filename)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      handleFmuUploaded({ filename, model_name: data.model_name, variables: data.variables ?? [] });
+    } catch { /* ignore */ }
+  }, [canvas, handleFmuUploaded]);
+
   const handlePositionsChange = React.useCallback((updated: Record<string, { x: number; y: number }>) => {
     setPositions(updated);
     if (!activeConversationId) return;
@@ -247,51 +269,89 @@ export const MainContent: React.FC = () => {
   }, [visibleMessages, activeConversationId, updateConversation]);
 
   return (
-    <div className="flex-1 h-full bg-neutral-50/50 dark:bg-neutral-950 overflow-y-auto p-4 md:p-8 scroll-smooth border-r border-neutral-200 dark:border-neutral-800">
-      <div className="max-w-5xl mx-auto space-y-6">
+    <div className="flex-1 h-full relative overflow-hidden bg-neutral-50 dark:bg-neutral-950">
 
-        {/* Header Section */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-semibold text-neutral-900 dark:text-white mb-1">Evidence Workspace</h1>
-            <p className="text-neutral-500 dark:text-neutral-400 text-sm">Cross-check retrieved facts against source-backed evidence here.</p>
+      {/* Full-screen canvas */}
+      <CanvasGraph
+        canvas={canvas}
+        initialPositions={positions}
+        onPositionsChange={handlePositionsChange}
+        onFmuUploaded={handleFmuUploaded}
+        onSimulateComplete={handleSimulateComplete}
+        onDeleteNode={handleDeleteNode}
+        workspaceDocIds={canvas?.workspace_doc_ids ?? []}
+        onAddDocToWorkspace={handleAddDocToWorkspace}
+        onFmuFromLibrary={handleFmuFromLibrary}
+      />
+
+      {/* Floating tab bar — top-left */}
+      <div className="absolute top-3 left-4 z-10 flex items-center gap-1 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm border border-neutral-200 dark:border-neutral-700 rounded-lg p-1 shadow-sm">
+        {(
+          [
+            { id: 'canvas', icon: <Network size={13} />, label: 'Canvas' },
+            { id: 'facts',  icon: <LayoutDashboard size={13} />, label: 'Facts' },
+            { id: 'context', icon: <Database size={13} />, label: 'Context' },
+          ] as const
+        ).map(({ id, icon, label }) => (
+          <button
+            key={id}
+            onClick={() => setActiveTab(id)}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              activeTab === id
+                ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-sm'
+                : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300'
+            }`}
+          >
+            {icon}
+            {label}
+            {id !== 'context' && (canvas?.nodes?.length ?? 0) > 0 && (
+              <span className="text-[10px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full">
+                {canvas.nodes.length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Library toggle — top-right */}
+      <button
+        onClick={() => setLibraryOpen(v => !v)}
+        className={`absolute top-3 right-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border shadow-sm transition-colors ${
+          libraryOpen
+            ? 'bg-indigo-600 dark:bg-indigo-500 text-white border-indigo-700 dark:border-indigo-600'
+            : 'bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200'
+        }`}
+      >
+        <BookOpen size={13} />
+        Library
+        {(canvas?.workspace_doc_ids?.length ?? 0) > 0 && (
+          <span className="bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded-full text-[10px]">
+            {canvas.workspace_doc_ids.length}
+          </span>
+        )}
+      </button>
+
+      {/* Facts overlay */}
+      {activeTab === 'facts' && (
+        <div className="absolute inset-0 z-10 bg-white/96 dark:bg-neutral-950/96 backdrop-blur-sm overflow-y-auto">
+          <div className="max-w-5xl mx-auto p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">Facts</h2>
+              <button onClick={() => setActiveTab('canvas')} className="p-1.5 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500"><X size={16} /></button>
+            </div>
+            <CanvasView canvas={canvas} />
           </div>
         </div>
+      )}
 
-        {/* Tabs */}
-        <div className="flex gap-1 bg-neutral-100 dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-lg p-1 w-fit">
-          {(
-            [
-              { id: 'canvas', icon: <Network size={14} />, label: 'Canvas' },
-              { id: 'facts',  icon: <LayoutDashboard size={14} />, label: 'Facts' },
-              { id: 'context', icon: <Database size={14} />, label: 'Context' },
-            ] as const
-          ).map(({ id, icon, label }) => (
-            <button
-              key={id}
-              onClick={() => setActiveTab(id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                activeTab === id
-                  ? 'bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-sm'
-                  : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-300'
-              }`}
-            >
-              {icon}
-              {label}
-              {id !== 'context' && canvas?.nodes?.length > 0 && (
-                <span className="text-[10px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full">
-                  {canvas.nodes.length}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {activeTab === 'canvas' && <CanvasGraph canvas={canvas} initialPositions={positions} onPositionsChange={handlePositionsChange} onFmuUploaded={handleFmuUploaded} onSimulateComplete={handleSimulateComplete} onDeleteNode={handleDeleteNode} />}
-        {activeTab === 'facts' && <CanvasView canvas={canvas} />}
-
-        {activeTab === 'context' && (
-          <div className="space-y-6">
+      {/* Context overlay */}
+      {activeTab === 'context' && (
+        <div className="absolute inset-0 z-10 bg-white/96 dark:bg-neutral-950/96 backdrop-blur-sm overflow-y-auto">
+          <div className="max-w-5xl mx-auto p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">Evidence Context</h2>
+              <button onClick={() => setActiveTab('canvas')} className="p-1.5 rounded-lg hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-500"><X size={16} /></button>
+            </div>
             {contextEvidence.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {contextEvidence.map((evidence: any) => (
@@ -326,41 +386,30 @@ export const MainContent: React.FC = () => {
                               {evidence.filename} · p.{evidence.page}
                             </p>
                           </div>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full shrink-0 ${
-                            evidence.parentType === 'spec'
-                              ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
-                              : 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300'
-                          }`}>
-                            {evidence.parentType}
-                          </span>
                         </div>
-                        <p className="text-xs text-neutral-600 dark:text-neutral-300 line-clamp-3">
-                          {evidence.summary}
-                        </p>
+                        <p className="text-xs text-neutral-600 dark:text-neutral-400 line-clamp-3">{evidence.summary}</p>
                       </div>
                     </button>
                   </AgCard>
                 ))}
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <AgCard className="p-4 border-neutral-200/60 dark:border-neutral-800 opacity-50">
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="h-10 w-10 bg-neutral-100 dark:bg-neutral-800 rounded-lg flex items-center justify-center">
-                      <Database size={20} className="text-neutral-400" />
-                    </div>
-                  </div>
-                  <h3 className="font-medium text-neutral-900 dark:text-white">No Context</h3>
-                  <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
-                    Ask a technical question to populate source evidence previews here.
-                  </p>
-                </AgCard>
-              </div>
+              <p className="text-sm text-neutral-400 dark:text-neutral-500">No evidence collected yet.</p>
             )}
           </div>
-        )}
+        </div>
+      )}
 
-      </div>
+      {/* Library drawer */}
+      <LibraryDrawer
+        open={libraryOpen}
+        onClose={() => setLibraryOpen(false)}
+        workspaceDocIds={canvas?.workspace_doc_ids ?? []}
+        onAddDoc={handleAddDocToWorkspace}
+        onAddFmu={handleFmuFromLibrary}
+      />
+
+      {/* Context PDF modal */}
       {contextPdf && (
         <PDFModal
           filename={contextPdf.filename}

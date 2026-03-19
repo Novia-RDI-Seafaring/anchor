@@ -214,9 +214,12 @@ interface CanvasGraphProps {
   onFmuUploaded?: (payload: FmuUploadedPayload) => void;
   onSimulateComplete?: (fmuNodeId: string, jobId: string, filename: string, signalNames: string[], paramValues: Record<string, string>, stopTime: number) => void;
   onDeleteNode?: (nodeId: string) => void;
+  workspaceDocIds?: string[];
+  onAddDocToWorkspace?: (docId: string) => void;
+  onFmuFromLibrary?: (filename: string) => void;
 }
 
-export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, onFmuUploaded, onSimulateComplete, onDeleteNode }: CanvasGraphProps) {
+export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, onFmuUploaded, onSimulateComplete, onDeleteNode, workspaceDocIds, onAddDocToWorkspace, onFmuFromLibrary }: CanvasGraphProps) {
   const { documents, refreshDocuments, activeDocumentId, setActiveDocumentId } = useApp();
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [pdfModal, setPdfModal] = useState<PDFModalState | null>(null);
@@ -357,13 +360,20 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
       [...collapsedIds].sort().join(",") +
       "|docs:" +
       documents.map((d) => d.document_id).join(",") +
+      "|workspace:" + (workspaceDocIds ?? []).join(",") +
       "|active:" + (activeDocumentId ?? ""),
-    [rawNodes, relations, collapsedIds, documents, activeDocumentId]
+    [rawNodes, relations, collapsedIds, documents, workspaceDocIds, activeDocumentId]
   );
 
   // Build document nodes from current KB documents
   const buildDocNodes = useCallback((rels: Relation[]): Node[] => {
-    const uniqueDocs = Array.from(new Map(documentsRef.current.map(d => [d.document_id, d])).values());
+    const wsSet = workspaceDocIds && workspaceDocIds.length > 0 ? new Set(workspaceDocIds) : null;
+    const uniqueDocs = Array.from(
+      new Map(documentsRef.current
+        .filter(d => wsSet === null || wsSet.has(d.document_id))
+        .map(d => [d.document_id, d])
+      ).values()
+    );
     const activeId = activeDocumentIdRef.current;
     const onActivate = (id: string) => setActiveDocumentIdRef.current(id || null);
     return uniqueDocs.map((doc, i) => {
@@ -383,7 +393,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
         } satisfies DocumentNodeData,
       };
     });
-  }, [handleOpenPDF]);
+  }, [handleOpenPDF, workspaceDocIds]);
 
   useEffect(() => {
     const docNodes = buildDocNodes(relations);
@@ -659,7 +669,9 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
 
   // File drop handlers
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    if (!e.dataTransfer.types.includes("Files")) return;
+    const hasFiles = e.dataTransfer.types.includes("Files");
+    const hasLibItem = e.dataTransfer.types.includes("application/anchor-doc") || e.dataTransfer.types.includes("application/anchor-fmu");
+    if (!hasFiles && !hasLibItem) return;
     e.preventDefault();
     setIsDraggingOver(true);
   }, []);
@@ -673,6 +685,13 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
   const handleDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDraggingOver(false);
+
+    // Handle library drawer drops (doc or fmu already on server)
+    const docId = e.dataTransfer.getData("application/anchor-doc");
+    const fmuFilename = e.dataTransfer.getData("application/anchor-fmu");
+    if (docId) { onAddDocToWorkspace?.(docId); return; }
+    if (fmuFilename) { onFmuFromLibrary?.(fmuFilename); return; }
+
     const files = Array.from(e.dataTransfer.files);
     if (!files.length) return;
     try {
@@ -696,13 +715,12 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
     } catch {
       // upload failed — user can retry; suppress to avoid dev overlay noise
     }
-  }, [refreshDocuments]);
+  }, [refreshDocuments, onAddDocToWorkspace, onFmuFromLibrary]);
 
   return (
     <>
       <div
-        className="w-full rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden relative"
-        style={{ height: "calc(100vh - 260px)", minHeight: 400 }}
+        className="w-full h-full overflow-hidden relative"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -733,7 +751,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
               Canvas is empty
             </h3>
             <p className="text-sm text-neutral-400 dark:text-neutral-500 max-w-xs">
-              Drag a PDF or FMU here to upload, or ask a technical question to build the graph.
+              Drag documents or FMUs from the library, or ask a technical question to build the graph.
             </p>
           </div>
         )}

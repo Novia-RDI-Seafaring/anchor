@@ -211,6 +211,10 @@ async def search_knowledge_base(
     document_id_filter = active_doc_id
     if document_id_filter is None and doc_ids and len(doc_ids) == 1:
         document_id_filter = doc_ids[0]
+    # Apply workspace filter when no specific doc is active/specified
+    workspace_ids = getattr(ctx.deps.state, 'workspace_doc_ids', [])
+    if document_id_filter is None and not doc_ids and workspace_ids:
+        doc_ids = workspace_ids
 
     service = await get_document_service()
     fetch_k = max(top_k, 40 if (filename or (doc_ids and len(doc_ids) > 1)) else top_k)
@@ -279,7 +283,15 @@ async def resolve_technical_query(
     if active_document_id:
         active_document = await service.get_document(active_document_id)
 
-    chunks = await service.search(query=query, top_k=top_k, document_id=active_document_id)
+    workspace_ids = getattr(ctx.deps.state, 'workspace_doc_ids', [])
+    if active_document_id:
+        chunks = await service.search(query=query, top_k=top_k, document_id=active_document_id)
+    elif workspace_ids:
+        # Search across all workspace docs — fetch more, then filter
+        chunks = await service.search(query=query, top_k=max(top_k, 40))
+        chunks = [c for c in chunks if c.get("document_id") in set(workspace_ids)][:top_k]
+    else:
+        chunks = await service.search(query=query, top_k=top_k, document_id=None)
     normalized_chunks: list[dict] = []
     for chunk in chunks[:top_k]:
         normalized = dict(chunk)

@@ -105,6 +105,12 @@ High-level (prefer these):
   get_active_document_context()
   check_canvas()  ← call this before resolve_technical_query to find existing concepts
 
+Workspace awareness:
+  The canvas state contains workspace_doc_ids — a list of document IDs the user has added
+  to their current workspace. When workspace_doc_ids is non-empty, restrict all searches to
+  those documents only. If you find a relevant document not in the workspace, suggest the user
+  add it via the library drawer (say "I found [doc], would you like to add it to your workspace?").
+
 FMU tools:
   ALWAYS call check_canvas() first when user asks to simulate or work with FMUs.
   FMU nodes on canvas (node_type="fmu") have fmu_filename, fmu_model_name, and fmu_variables.
