@@ -10,10 +10,12 @@ import {
   Trash2,
   Edit2,
   Check,
-  X
+  X,
+  LogOut,
 } from 'lucide-react';
 import { AgButton } from '../ui/AgComponents';
 import { useApp } from '@/contexts/AppContext';
+import { useSession, signOut } from 'next-auth/react';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -38,6 +40,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     isDarkMode,
     toggleDarkMode
   } = useApp();
+  const { data: session } = useSession();
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
@@ -208,10 +211,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Sidebar Footer */}
-      <div className="p-4 border-t border-neutral-200 dark:border-neutral-800">
+      <div className="p-4 border-t border-neutral-200 dark:border-neutral-800 space-y-2">
         <button
           onClick={toggleDarkMode}
-          className="flex items-center justify-between w-full px-3 py-2 text-sm text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md transition-colors mb-2"
+          className="flex items-center justify-between w-full px-3 py-2 text-sm text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md transition-colors"
         >
           <span className="flex items-center gap-2">
             {isDarkMode ? <Moon size={16} /> : <Sun size={16} />}
@@ -221,6 +224,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${isDarkMode ? 'translate-x-4' : 'translate-x-0'}`} />
           </div>
         </button>
+
+        {session?.user && (
+          <div className="flex items-center gap-2 px-2 py-1.5">
+            {session.user.image ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={session.user.image} alt="" className="w-7 h-7 rounded-full shrink-0" />
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-neutral-300 dark:bg-neutral-700 shrink-0 flex items-center justify-center text-xs font-semibold text-neutral-600 dark:text-neutral-300">
+                {session.user.name?.[0]?.toUpperCase() ?? '?'}
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-neutral-800 dark:text-neutral-200 truncate">{session.user.name}</p>
+              <p className="text-[10px] text-neutral-400 dark:text-neutral-500 truncate">{session.user.email}</p>
+            </div>
+            <button
+              onClick={() => signOut({ callbackUrl: '/login' })}
+              className="p-1.5 rounded-md hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+              title="Sign out"
+            >
+              <LogOut size={14} />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import "./globals.css";
 import "@copilotkit/react-ui/styles.css";
 import { AppProvider } from "@/contexts/AppContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { SessionProvider } from "@/components/providers/SessionProvider";
 
 export const metadata: Metadata = {
     title: "Anchor UI",
@@ -17,11 +18,13 @@ export default function RootLayout({
     return (
         <html lang="en">
             <body suppressHydrationWarning>
-                <ErrorBoundary>
-                    <AppProvider>
-                        {children}
-                    </AppProvider>
-                </ErrorBoundary>
+                <SessionProvider>
+                    <ErrorBoundary>
+                        <AppProvider>
+                            {children}
+                        </AppProvider>
+                    </ErrorBoundary>
+                </SessionProvider>
             </body>
         </html>
     );
