@@ -137,6 +137,9 @@ export interface FactNodeData {
   node: CanvasNodeData;
   onOpenPDF?: (filename: string, page: number, highlights: PDFHighlight[]) => void;
   onDelete?: (id: string) => void;
+  evidenceFilename?: string;
+  evidencePage?: number;
+  evidenceHighlights?: PDFHighlight[];
 }
 
 // SourceNodeData uses `any` for the node because source nodes are legacy/backward-compat
@@ -148,7 +151,11 @@ export interface SourceNodeData {
 
 export interface SpecNodeData {
   node: CanvasNodeData;
+  onOpenPDF?: (filename: string, page: number, highlights: PDFHighlight[]) => void;
   onDelete?: (id: string) => void;
+  evidenceFilename?: string;
+  evidencePage?: number;
+  evidenceHighlights?: PDFHighlight[];
 }
 
 export interface EntityNodeData {
@@ -356,7 +363,8 @@ export function TopicNode({ data }: NodeProps) {
 // FACT NODE — indigo left-border, full text
 // ─────────────────────────────────────────────
 export function FactNode({ data }: NodeProps) {
-  const { node, onDelete } = data as unknown as FactNodeData;
+  const { node, onDelete, onOpenPDF, evidenceFilename, evidencePage, evidenceHighlights } = data as unknown as FactNodeData;
+  const hasEvidence = evidenceFilename && evidencePage !== undefined;
 
   return (
     <>
@@ -390,6 +398,19 @@ export function FactNode({ data }: NodeProps) {
           </div>
           <StatusBadge status={node.status} />
         </div>
+        {/* Evidence link */}
+        {hasEvidence && (
+          <div className="px-3 pb-2 -mt-0.5">
+            <button
+              onClick={() => onOpenPDF?.(evidenceFilename!, evidencePage!, evidenceHighlights ?? [])}
+              className="flex items-center gap-1 text-[10px] text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
+              title={`Open source — page ${evidencePage}`}
+            >
+              <FileText size={11} className="shrink-0" />
+              <span>p.{evidencePage}</span>
+            </button>
+          </div>
+        )}
       </div>
       <Handle type="source" position={Position.Bottom} className="!bg-indigo-400 !border-indigo-600" />
     </>
@@ -400,7 +421,8 @@ export function FactNode({ data }: NodeProps) {
 // SPEC NODE — violet, two-column property table
 // ─────────────────────────────────────────────
 export function SpecNode({ data }: NodeProps) {
-  const { node, onDelete } = data as unknown as SpecNodeData;
+  const { node, onDelete, onOpenPDF, evidenceFilename, evidencePage, evidenceHighlights } = data as unknown as SpecNodeData;
+  const hasEvidence = evidenceFilename && evidencePage !== undefined;
   const props = node.properties ?? [];
   const isComparison = props.some((property) => property.left_value || property.right_value || property.comparison_status);
   const comparisonLeftLabel = props.find((property) => property.left_label)?.left_label || "Document A";
@@ -425,6 +447,16 @@ export function SpecNode({ data }: NodeProps) {
           <span className="flex-1 text-xs font-semibold text-violet-800 dark:text-violet-200 truncate">
             {node.spec_title || "Specifications"}
           </span>
+          {hasEvidence && (
+            <button
+              onClick={() => onOpenPDF?.(evidenceFilename!, evidencePage!, evidenceHighlights ?? [])}
+              className="flex items-center gap-0.5 text-[10px] text-violet-500 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 transition-colors mr-1"
+              title={`Open source — page ${evidencePage}`}
+            >
+              <FileText size={11} className="shrink-0" />
+              <span>p.{evidencePage}</span>
+            </button>
+          )}
           <StatusBadge status={node.status} />
         </div>
         {/* Property rows */}

@@ -471,6 +471,8 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
         };
       }
       if (n.node_type === "fact") {
+        const evRel = relations.find(r => r.from_id === n.id && r.to_id.startsWith("__doc_"));
+        const evDoc = evRel ? documentsRef.current.find(d => d.document_id === evRel.document_id) : undefined;
         return {
           id: n.id,
           type: "factNode",
@@ -480,16 +482,28 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
             node: n,
             onOpenPDF: handleOpenPDF,
             onDelete: onDeleteNode,
+            evidenceFilename: evDoc?.filename,
+            evidencePage: evRel?.page,
+            evidenceHighlights: evRel?.highlights,
           },
         };
       }
       if (n.node_type === "spec") {
+        const evRel = relations.find(r => r.from_id === n.id && r.to_id.startsWith("__doc_"));
+        const evDoc = evRel ? documentsRef.current.find(d => d.document_id === evRel.document_id) : undefined;
         return {
           id: n.id,
           type: "specNode",
           position: { x: 0, y: 0 },
           hidden,
-          data: { node: n, onDelete: onDeleteNode },
+          data: {
+            node: n,
+            onOpenPDF: handleOpenPDF,
+            onDelete: onDeleteNode,
+            evidenceFilename: evDoc?.filename,
+            evidencePage: evRel?.page,
+            evidenceHighlights: evRel?.highlights,
+          },
         };
       }
       if (n.node_type === "fmu") {
