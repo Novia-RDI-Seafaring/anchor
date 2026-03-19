@@ -79,6 +79,12 @@ def bootstrap_database() -> None:
             )
         """)
 
+        # 4a. Add user_id column if it doesn't exist yet (migration)
+        cur.execute(f"""
+            ALTER TABLE "{schema}".conversations
+            ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT ''
+        """)
+
         print(f"[db_init] Ready — schema={schema!r}, vector extension in public")
     finally:
         cur.close()

@@ -1,20 +1,35 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSession } from 'next-auth/react';
 import { Conversation } from '@/types';
 import { API_URL } from '@/lib/api-config';
 
 const CONVERSATIONS_URL = `${API_URL}/api/conversations`;
 
 export const useConversationHistory = () => {
+    const { data: session } = useSession();
+    const userId = (session?.user as any)?.id ?? '';
+    const userHeaders = { 'x-user-id': userId };
+
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [activeId, setActiveId] = useState<string | null>(null);
     const [isInitialized, setIsInitialized] = useState(false);
     const pendingUpdates = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
-    // Load from DB on mount
+    // Reset and reload when user changes
+    const prevUserId = useRef('');
     useEffect(() => {
-        if (isInitialized) return;
+        if (userId === prevUserId.current) return;
+        prevUserId.current = userId;
+        setIsInitialized(false);
+        setConversations([]);
+        setActiveId(null);
+    }, [userId]);
 
-        fetch(CONVERSATIONS_URL)
+    // Load from DB on mount (or when user changes)
+    useEffect(() => {
+        if (isInitialized || !userId) return;
+
+        fetch(CONVERSATIONS_URL, { headers: userHeaders })
             .then(r => r.ok ? r.json() : [])
             .then((rows: any[]) => {
                 if (rows.length > 0) {
@@ -44,7 +59,7 @@ export const useConversationHistory = () => {
         try {
             const r = await fetch(CONVERSATIONS_URL, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...userHeaders },
                 body: JSON.stringify({ id, title }),
             });
             if (!r.ok) return null;
@@ -89,7 +104,7 @@ export const useConversationHistory = () => {
             }
             return next;
         });
-        fetch(`${CONVERSATIONS_URL}/${id}`, { method: 'DELETE' }).catch(() => {});
+        fetch(`${CONVERSATIONS_URL}/${id}`, { method: 'DELETE', headers: userHeaders }).catch(() => {});
     }, [activeId]);
 
     const updateConversation = useCallback((id: string, updates: Partial<Conversation>) => {
@@ -108,7 +123,7 @@ export const useConversationHistory = () => {
 
             fetch(`${CONVERSATIONS_URL}/${id}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...userHeaders },
                 body: JSON.stringify(body),
             }).catch(() => {});
         }, 800);
@@ -118,7 +133,7 @@ export const useConversationHistory = () => {
 
     const loadConversationMessages = useCallback(async (id: string): Promise<{ messages: any[]; canvas_state: any }> => {
         try {
-            const r = await fetch(`${CONVERSATIONS_URL}/${id}`);
+            const r = await fetch(`${CONVERSATIONS_URL}/${id}`, { headers: userHeaders });
             if (!r.ok) return { messages: [], canvas_state: {} };
             const data = await r.json();
             return { messages: data.messages ?? [], canvas_state: data.canvas_state ?? {} };
