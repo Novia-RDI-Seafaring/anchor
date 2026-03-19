@@ -52,45 +52,75 @@ _PLATFORM_NAMES = {
 }
 
 
+def _simulate_worker(fmu_path: str, start_values: dict, stop_time: float, output_vars: list, result_path: str) -> None:
+    """Runs inside an isolated subprocess — fmpy native code cannot corrupt the server process."""
+    from fmpy.simulation import simulate_fmu
+    result = simulate_fmu(
+        fmu_path,
+        start_values=start_values,
+        stop_time=stop_time,
+        output=output_vars or None,
+    )
+    data: dict = {"time": result["time"].tolist()}
+    for var in result.dtype.names:
+        if var != "time":
+            data[var] = result[var].tolist()
+    Path(result_path).write_text(json.dumps(data))
+
+
 def run_simulation(
     filename: str,
     param_overrides: dict[str, float],
     stop_time: float = 10.0,
 ) -> str:
-    """Run FMU simulation synchronously. Returns job_id."""
+    """Run FMU simulation in an isolated subprocess. Returns job_id."""
     import platform
+    import multiprocessing
     from fmpy import read_model_description
-    from fmpy.simulation import simulate_fmu
+
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
     path = FMU_DIR / filename
-    md = read_model_description(str(path))
+
+    # Platform check before spawning subprocess
+    try:
+        md = read_model_description(str(path))
+    except Exception as exc:
+        raise RuntimeError(str(exc)) from exc
+
     output_vars = [v.name for v in md.modelVariables if v.causality == "output"]
     start_values = {k: float(v) for k, v in param_overrides.items()}
-    try:
-        result = simulate_fmu(
-            str(path),
-            start_values=start_values,
-            stop_time=stop_time,
-            output=output_vars or None,
-        )
-    except Exception as exc:
-        if "cannot be simulated on the current platform" in str(exc):
-            sys_platform = platform.system()
-            current = {"Darwin": "macOS", "Windows": "Windows", "Linux": "Linux"}.get(sys_platform, sys_platform)
-            fmu_platforms = _fmu_platforms(path)
+
+    job_id = str(uuid.uuid4())
+    result_path = str(RESULT_DIR / f"{job_id}.json")
+
+    # Spawn an isolated process so fmpy heap corruption can't crash uvicorn
+    ctx = multiprocessing.get_context("spawn")
+    proc = ctx.Process(
+        target=_simulate_worker,
+        args=(str(path), start_values, stop_time, output_vars, result_path),
+        daemon=True,
+    )
+    proc.start()
+    proc.join(timeout=120)
+
+    if proc.exitcode != 0:
+        if proc.exitcode is None:
+            proc.kill()
+            raise RuntimeError("Simulation timed out after 120 s.")
+        err_msg = f"Simulation process exited with code {proc.exitcode}."
+        # Check for the platform error that fmpy raises
+        sys_platform = platform.system()
+        current = {"Darwin": "macOS", "Windows": "Windows", "Linux": "Linux"}.get(sys_platform, sys_platform)
+        fmu_platforms = _fmu_platforms(path)
+        if fmu_platforms and not any(p.startswith("darwin") for p in fmu_platforms):
             friendly = [_PLATFORM_NAMES.get(p, p) for p in fmu_platforms]
-            required = ", ".join(friendly) if friendly else "an unsupported platform"
+            required = ", ".join(friendly)
             raise RuntimeError(
                 f"This FMU was compiled for {required}, but you are running on {current}. "
                 "Re-export the FMU with binaries for your platform to simulate it here."
-            ) from exc
-        raise
-    data: dict[str, Any] = {"time": result["time"].tolist()}
-    for var in result.dtype.names:
-        if var != "time":
-            data[var] = result[var].tolist()
-    job_id = str(uuid.uuid4())
-    (RESULT_DIR / f"{job_id}.json").write_text(json.dumps(data))
+            )
+        raise RuntimeError(err_msg)
+
     return job_id
 
 
