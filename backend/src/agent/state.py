@@ -37,9 +37,10 @@ class FmuVariable(BaseModel):
 
 class CanvasNode(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
-    node_type: Literal["concept", "topic", "fact", "spec", "source", "entity", "category", "fmu", "plot"]  # source/entity/category kept for backward compat
+    node_type: Literal["concept", "topic", "fact", "spec", "source", "entity", "category", "fmu", "plot", "image"]  # source/entity/category kept for backward compat
     status: NodeStatus = "found"
     last_updated_run_id: str = ""
+    color: str = ""  # user-set accent color (e.g. "violet", "blue", "emerald", "amber", "rose", "indigo", "slate")
     # topic fields
     title: str = ""
     # fact fields
@@ -57,6 +58,11 @@ class CanvasNode(BaseModel):
     fmu_model_name: str = ""
     fmu_variables: list[FmuVariable] = Field(default_factory=list)
     fmu_param_values: dict[str, str] = Field(default_factory=dict)
+    # image node fields
+    image_filename: str = ""
+    image_page: int = 0
+    image_bbox: list[float] = Field(default_factory=list)  # [l, t, r, b] cropped region, empty = full page
+    image_caption: str = ""
     # plot node fields
     plot_job_id: str = ""
     plot_fmu_filename: str = ""

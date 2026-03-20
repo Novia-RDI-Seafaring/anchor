@@ -3,11 +3,13 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   Controls,
   MiniMap,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   type Node,
   type Edge,
   type NodeTypes,
@@ -17,7 +19,7 @@ import {
 import { FloatingEdge } from "./FloatingEdge";
 import "@xyflow/react/dist/style.css";
 import dagre from "@dagrejs/dagre";
-import { Network, UploadCloud } from "lucide-react";
+import { Network, UploadCloud, Layers, Box, MessageSquare, Palette } from "lucide-react";
 import {
   ConceptNode,
   EntityNode,
@@ -27,6 +29,7 @@ import {
   SourceNode,
   SpecNode,
   DocumentNode,
+  ImageNode,
   FmuNode,
   PlotNode,
   type CanvasNodeData,
@@ -72,6 +75,7 @@ const NODE_SIZE: Record<string, { w: number; h: number }> = {
   specNode:     { w: 260, h: 130 },
   fmuNode:      { w: 280, h: 200 },
   plotNode:     { w: 320, h: 220 },
+  imageNode:    { w: 300, h: 200 },
 };
 const DEFAULT_SIZE = { w: 220, h: 80 };
 
@@ -182,6 +186,107 @@ function descendants(
   return hidden;
 }
 
+// --- Color accent for nodes ---
+const COLOR_HEX: Record<string, string> = {
+  violet:  '#8b5cf6',
+  blue:    '#3b82f6',
+  emerald: '#10b981',
+  amber:   '#f59e0b',
+  rose:    '#f43f5e',
+  indigo:  '#6366f1',
+  slate:   '#64748b',
+};
+
+function nodeStyle(color?: string): React.CSSProperties | undefined {
+  if (!color || !COLOR_HEX[color]) return undefined;
+  return { boxShadow: `0 0 0 2.5px ${COLOR_HEX[color]}, 0 2px 8px rgba(0,0,0,0.08)`, borderRadius: 12 };
+}
+
+// --- Add-node toolbar (bottom center) ---
+type NewNodeType = 'concept' | 'entity' | 'fact';
+
+function NodeAddToolbar({ onAddNode }: { onAddNode: (type: NewNodeType) => void }) {
+  const ITEMS: { type: NewNodeType; label: string; icon: React.ReactNode; cls: string }[] = [
+    { type: 'concept', label: 'Concept', icon: <Layers size={11} />,     cls: 'bg-violet-100 border-violet-400 text-violet-700 dark:bg-violet-950/40 dark:border-violet-600 dark:text-violet-300' },
+    { type: 'entity',  label: 'Entity',  icon: <Box size={11} />,        cls: 'bg-slate-100 border-slate-400 text-slate-600 dark:bg-slate-900 dark:border-slate-600 dark:text-slate-300' },
+    { type: 'fact',    label: 'Fact',    icon: <MessageSquare size={11} />, cls: 'bg-amber-100 border-amber-400 text-amber-700 dark:bg-amber-950/40 dark:border-amber-600 dark:text-amber-300' },
+  ];
+  return (
+    <div className="absolute bottom-14 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm border border-neutral-200 dark:border-neutral-700 rounded-xl px-2.5 py-1.5 shadow-md">
+      <span className="text-[10px] text-neutral-400 font-medium pr-0.5">Add</span>
+      {ITEMS.map(item => (
+        <div
+          key={item.type}
+          draggable
+          onDragStart={e => { e.dataTransfer.setData('application/anchor-nodetype', item.type); e.dataTransfer.effectAllowed = 'copy'; }}
+          onClick={() => onAddNode(item.type)}
+          className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg border cursor-grab active:cursor-grabbing select-none transition-opacity hover:opacity-75 ${item.cls}`}
+          title={`Drag to place or click to add ${item.label}`}
+        >
+          {item.icon}{item.label}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// --- Node context menu (right-click) ---
+const CTX_COLORS = [
+  { name: '',        hex: '#94a3b8', label: 'Default' },
+  { name: 'violet',  hex: '#8b5cf6', label: 'Violet' },
+  { name: 'indigo',  hex: '#6366f1', label: 'Indigo' },
+  { name: 'blue',    hex: '#3b82f6', label: 'Blue' },
+  { name: 'emerald', hex: '#10b981', label: 'Green' },
+  { name: 'amber',   hex: '#f59e0b', label: 'Amber' },
+  { name: 'rose',    hex: '#f43f5e', label: 'Rose' },
+  { name: 'slate',   hex: '#64748b', label: 'Slate' },
+];
+
+function NodeContextMenu({
+  nodeId, top, left, right, bottom, onSetColor, onDelete, onClose,
+}: {
+  nodeId: string;
+  top?: number | false; left?: number | false;
+  right?: number | false; bottom?: number | false;
+  onSetColor: (id: string, color: string) => void;
+  onDelete?: (id: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      style={{ top: top || undefined, left: left || undefined, right: right || undefined, bottom: bottom || undefined }}
+      className="absolute z-50 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-xl p-2.5 w-44"
+    >
+      <div className="flex items-center gap-1.5 mb-2">
+        <Palette size={11} className="text-neutral-400" />
+        <p className="text-[10px] text-neutral-400 font-semibold uppercase tracking-wide">Color</p>
+      </div>
+      <div className="flex gap-1.5 flex-wrap mb-2.5">
+        {CTX_COLORS.map(c => (
+          <button
+            key={c.name}
+            title={c.label}
+            onClick={() => { onSetColor(nodeId, c.name); onClose(); }}
+            className="w-5 h-5 rounded-full border-2 border-white dark:border-neutral-800 shadow-sm hover:scale-125 transition-transform"
+            style={{ background: c.hex }}
+          />
+        ))}
+      </div>
+      {onDelete && (
+        <>
+          <hr className="border-neutral-200 dark:border-neutral-700 mb-1.5" />
+          <button
+            onClick={() => { onDelete(nodeId); onClose(); }}
+            className="w-full text-left text-xs text-red-500 hover:text-red-600 dark:text-red-400 px-1 py-0.5 rounded hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+          >
+            Delete node
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 // --- Node type registry ---
 const nodeTypes: NodeTypes = {
   conceptNode:  ConceptNode,
@@ -194,11 +299,96 @@ const nodeTypes: NodeTypes = {
   documentNode: DocumentNode,
   fmuNode:      FmuNode,
   plotNode:     PlotNode,
+  imageNode:    ImageNode,
 };
 
 const edgeTypes: EdgeTypes = {
   floating: FloatingEdge,
 };
+
+// --- New node picker popup ---
+
+function NewNodePicker({
+  screenX,
+  screenY,
+  onConfirm,
+  onCancel,
+}: {
+  screenX: number;
+  screenY: number;
+  onConfirm: (type: NewNodeType, label: string) => void;
+  onCancel: () => void;
+}) {
+  const [type, setType] = useState<NewNodeType>('concept');
+  const [label, setLabel] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') { e.preventDefault(); if (label.trim()) onConfirm(type, label.trim()); }
+    else if (e.key === 'Escape') { onCancel(); }
+  };
+
+  const types: { id: NewNodeType; label: string }[] = [
+    { id: 'concept', label: 'Concept' },
+    { id: 'entity',  label: 'Entity'  },
+    { id: 'fact',    label: 'Fact'    },
+  ];
+
+  const clampedX = Math.min(screenX, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 248);
+  const clampedY = Math.min(screenY, (typeof window !== 'undefined' ? window.innerHeight : 800) - 180);
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[99]" onClick={onCancel} />
+      <div
+        className="fixed z-[100] bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-xl p-3 w-56"
+        style={{ left: clampedX, top: clampedY }}
+      >
+        <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wide mb-2">New node</p>
+        <div className="flex gap-1 mb-2.5">
+          {types.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setType(t.id)}
+              className={`flex-1 py-1 text-xs rounded-md font-medium border transition-colors ${
+                type === t.id
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700 hover:bg-neutral-200 dark:hover:bg-neutral-700'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <input
+          ref={inputRef}
+          value={label}
+          onChange={e => setLabel(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Label…"
+          className="w-full px-2.5 py-1.5 text-sm border border-neutral-200 dark:border-neutral-700 rounded-lg bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+        />
+        <div className="flex gap-1.5 mt-2">
+          <button
+            onClick={() => { if (label.trim()) onConfirm(type, label.trim()); }}
+            disabled={!label.trim()}
+            className="flex-1 py-1 text-xs rounded-md font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+          >
+            Add
+          </button>
+          <button
+            onClick={onCancel}
+            className="px-2 py-1 text-xs rounded-md text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
 
 // --- Main component ---
 interface FmuUploadedPayload {
@@ -214,12 +404,17 @@ interface CanvasGraphProps {
   onFmuUploaded?: (payload: FmuUploadedPayload) => void;
   onSimulateComplete?: (fmuNodeId: string, jobId: string, filename: string, signalNames: string[], paramValues: Record<string, string>, stopTime: number) => void;
   onDeleteNode?: (nodeId: string) => void;
+  onAddNode?: (node: any, relation: { from_id: string; to_id: string; label: string } | null) => void;
+  onAddEdge?: (fromId: string, toId: string, label: string) => void;
+  onSetNodeColor?: (nodeId: string, color: string) => void;
   workspaceDocIds?: string[];
   onAddDocToWorkspace?: (docId: string) => void;
   onFmuFromLibrary?: (filename: string) => void;
 }
 
-export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, onFmuUploaded, onSimulateComplete, onDeleteNode, workspaceDocIds, onAddDocToWorkspace, onFmuFromLibrary }: CanvasGraphProps) {
+function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, onFmuUploaded, onSimulateComplete, onDeleteNode, onAddNode, onAddEdge, onSetNodeColor, workspaceDocIds, onAddDocToWorkspace, onFmuFromLibrary }: CanvasGraphProps) {
+  const { screenToFlowPosition } = useReactFlow();
+  const rfContainerRef = useRef<HTMLDivElement>(null);
   const { documents, refreshDocuments, activeDocumentId, setActiveDocumentId } = useApp();
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [pdfModal, setPdfModal] = useState<PDFModalState | null>(null);
@@ -227,6 +422,85 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+
+  // Context menu (right-click on node)
+  const [contextMenu, setContextMenu] = useState<{
+    nodeId: string;
+    top?: number | false; left?: number | false;
+    right?: number | false; bottom?: number | false;
+  } | null>(null);
+
+  const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
+    event.preventDefault();
+    const pane = rfContainerRef.current?.getBoundingClientRect();
+    if (!pane) return;
+    setContextMenu({
+      nodeId: node.id,
+      top:    event.clientY - pane.top  < pane.height - 160 ? event.clientY - pane.top  : false,
+      left:   event.clientX - pane.left < pane.width  - 180 ? event.clientX - pane.left : false,
+      right:  event.clientX - pane.left >= pane.width  - 180 ? pane.width  - (event.clientX - pane.left) : false,
+      bottom: event.clientY - pane.top  >= pane.height - 160 ? pane.height - (event.clientY - pane.top)  : false,
+    });
+  }, []);
+
+  // New-node popup (drag-from-handle or double-click on pane)
+  const [newNodePopup, setNewNodePopup] = useState<{
+    screenX: number; screenY: number; flowX: number; flowY: number; sourceId: string | null;
+  } | null>(null);
+  const onConnectEnd = useCallback((event: MouseEvent | TouchEvent, connectionState: any) => {
+    // Only show picker when dropped on empty canvas (not on a valid handle)
+    if (connectionState?.isValid || !connectionState?.fromNode) return;
+    const sourceId = connectionState.fromNode.id as string;
+    const clientX = 'changedTouches' in event ? (event as TouchEvent).changedTouches[0]!.clientX : (event as MouseEvent).clientX;
+    const clientY = 'changedTouches' in event ? (event as TouchEvent).changedTouches[0]!.clientY : (event as MouseEvent).clientY;
+    const pos = screenToFlowPosition({ x: clientX, y: clientY });
+    setNewNodePopup({ screenX: clientX, screenY: clientY, flowX: pos.x, flowY: pos.y, sourceId });
+  }, [screenToFlowPosition]);
+
+  const onConnectStart = useCallback(() => {}, []);
+
+  const onConnect = useCallback((params: any) => {
+    if (params.source && params.target) onAddEdge?.(params.source, params.target, '');
+  }, [onAddEdge]);
+
+  const onPaneDoubleClick = useCallback((event: React.MouseEvent) => {
+    const target = event.target as Element;
+    // Only trigger on the canvas pane background, not on nodes/handles/controls
+    if (!target.closest('.react-flow__pane') || target.closest('.react-flow__node') || target.closest('.react-flow__controls')) return;
+    const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    setNewNodePopup({ screenX: event.clientX, screenY: event.clientY, flowX: pos.x, flowY: pos.y, sourceId: null });
+  }, [screenToFlowPosition]);
+
+  const _makeNode = useCallback((type: NewNodeType, label: string, flowPos: { x: number; y: number }) => {
+    const id = `user_${type}_${Date.now()}`;
+    const node: any = {
+      id, node_type: type, status: 'found',
+      title: type !== 'fact' ? label : '', text: type === 'fact' ? label : '',
+      spec_title: '', properties: [], last_updated_run_id: '',
+      filename: '', page: 0, bbox: [], highlights: [],
+      fmu_filename: '', fmu_model_name: '', fmu_variables: [], fmu_param_values: {},
+      plot_job_id: '', plot_fmu_filename: '', plot_signal_names: [], plot_stop_time: 10,
+    };
+    positionOverridesRef.current[id] = flowPos;
+    return { id, node };
+  }, []);
+
+  const handleToolbarAdd = useCallback((type: NewNodeType) => {
+    const rect = rfContainerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const jitter = () => (Math.random() - 0.5) * 80;
+    const pos = screenToFlowPosition({ x: rect.left + rect.width / 2 + jitter(), y: rect.top + rect.height / 2 + jitter() });
+    const label = type === 'fact' ? 'New fact' : `New ${type}`;
+    const { node } = _makeNode(type, label, pos);
+    onAddNode?.(node, null);
+  }, [screenToFlowPosition, _makeNode, onAddNode]);
+
+  const handleNewNodeConfirm = useCallback((type: NewNodeType, label: string) => {
+    if (!newNodePopup) return;
+    const { id, node } = _makeNode(type, label, { x: newNodePopup.flowX, y: newNodePopup.flowY });
+    onAddNode?.(node, newNodePopup.sourceId ? { from_id: newNodePopup.sourceId, to_id: id, label: '' } : null);
+    setNewNodePopup(null);
+  }, [newNodePopup, _makeNode, onAddNode]);
 
   // Keep fresh refs for use inside effects without adding to deps
   const documentsRef = useRef(documents);
@@ -426,6 +700,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
           type: "conceptNode",
           position: { x: 0, y: 0 },
           hidden,
+          style: nodeStyle(n.color),
           data: {
             node: n,
             childCount: descendants([n.id], childrenOf).size,
@@ -441,6 +716,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
           type: "entityNode",
           position: { x: 0, y: 0 },
           hidden,
+          style: nodeStyle(n.color),
           data: {
             node: n,
             childCount: descendants([n.id], childrenOf).size,
@@ -456,6 +732,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
           type: "categoryNode",
           position: { x: 0, y: 0 },
           hidden,
+          style: nodeStyle(n.color),
           data: {
             node: n,
             childCount: descendants([n.id], childrenOf).size,
@@ -471,6 +748,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
           type: "topicNode",
           position: { x: 0, y: 0 },
           hidden,
+          style: nodeStyle(n.color),
           data: {
             node: n,
             childCount: descendants([n.id], childrenOf).size,
@@ -488,6 +766,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
           type: "factNode",
           position: { x: 0, y: 0 },
           hidden,
+          style: nodeStyle(n.color),
           data: {
             node: n,
             onOpenPDF: handleOpenPDF,
@@ -506,6 +785,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
           type: "specNode",
           position: { x: 0, y: 0 },
           hidden,
+          style: nodeStyle(n.color),
           data: {
             node: n,
             onOpenPDF: handleOpenPDF,
@@ -516,12 +796,27 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
           },
         };
       }
+      if (n.node_type === "image") {
+        return {
+          id: n.id,
+          type: "imageNode",
+          position: { x: 0, y: 0 },
+          hidden,
+          style: nodeStyle(n.color),
+          data: {
+            node: n,
+            onOpenPDF: handleOpenPDF,
+            onDelete: onDeleteNode,
+          },
+        };
+      }
       if (n.node_type === "fmu") {
         return {
           id: n.id,
           type: "fmuNode",
           position: { x: 0, y: 0 },
           hidden,
+          style: nodeStyle(n.color),
           data: { node: n, onSimulate: handleSimulate, onDelete: onDeleteNode } satisfies FmuNodeData,
         };
       }
@@ -531,6 +826,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
           type: "plotNode",
           position: { x: 0, y: 0 },
           hidden,
+          style: nodeStyle(n.color),
           data: { node: n, onDelete: onDeleteNode } satisfies PlotNodeData,
         };
       }
@@ -540,6 +836,7 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
         type: "sourceNode",
         position: { x: 0, y: 0 },
         hidden,
+        style: nodeStyle(n.color),
         data: { node: n, onOpenPDF: handleOpenPDF },
       };
     });
@@ -661,6 +958,9 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
         if (n.node_type === "plot") {
           return { ...rfNode, data: { ...rfNode.data, node: n } };
         }
+        if (n.node_type === "image") {
+          return { ...rfNode, data: { ...rfNode.data, node: n, onOpenPDF: handleOpenPDF, onDelete: onDeleteNode } };
+        }
         return { ...rfNode, data: { ...rfNode.data, node: n } };
       })
     );
@@ -669,11 +969,13 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
 
   // File drop handlers
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    const hasFiles = e.dataTransfer.types.includes("Files");
-    const hasLibItem = e.dataTransfer.types.includes("application/anchor-doc") || e.dataTransfer.types.includes("application/anchor-fmu");
-    if (!hasFiles && !hasLibItem) return;
+    const t = e.dataTransfer.types;
+    const hasFiles = t.includes("Files");
+    const hasLibItem = t.includes("application/anchor-doc") || t.includes("application/anchor-fmu");
+    const hasNodeType = t.includes("application/anchor-nodetype");
+    if (!hasFiles && !hasLibItem && !hasNodeType) return;
     e.preventDefault();
-    setIsDraggingOver(true);
+    setIsDraggingOver(hasFiles || hasLibItem);
   }, []);
 
   const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -685,6 +987,16 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
   const handleDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDraggingOver(false);
+
+    // Handle toolbar node-type drops
+    const nodeType = e.dataTransfer.getData("application/anchor-nodetype") as NewNodeType | '';
+    if (nodeType) {
+      const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      const label = nodeType === 'fact' ? 'New fact' : `New ${nodeType}`;
+      const { node } = _makeNode(nodeType, label, pos);
+      onAddNode?.(node, null);
+      return;
+    }
 
     // Handle library drawer drops (doc or fmu already on server)
     const docId = e.dataTransfer.getData("application/anchor-doc");
@@ -715,15 +1027,17 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
     } catch {
       // upload failed — user can retry; suppress to avoid dev overlay noise
     }
-  }, [refreshDocuments, onAddDocToWorkspace, onFmuFromLibrary]);
+  }, [refreshDocuments, screenToFlowPosition, _makeNode, onAddNode, onAddDocToWorkspace, onFmuFromLibrary]);
 
   return (
     <>
       <div
+        ref={rfContainerRef}
         className="w-full h-full overflow-hidden relative"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
+        onDoubleClick={onPaneDoubleClick}
       >
         {isDraggingOver && (
           <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-indigo-50/90 dark:bg-indigo-950/80 border-2 border-dashed border-indigo-400 dark:border-indigo-500 rounded-xl pointer-events-none">
@@ -766,6 +1080,11 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
           onNodeDrag={onNodeDrag}
           onNodeDragStop={onNodeDragStop}
           onNodesDelete={(deleted) => deleted.forEach((n) => { if (!n.id.startsWith('__doc_')) onDeleteNode?.(n.id); })}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
+          onConnect={onConnect}
+          onNodeContextMenu={onNodeContextMenu}
+          onPaneClick={() => { setNewNodePopup(null); setContextMenu(null); }}
           deleteKeyCode={["Delete", "Backspace"]}
           fitView
           fitViewOptions={{ padding: 0.2 }}
@@ -787,7 +1106,16 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
             nodeColor="#e0e7ff"
             maskColor="rgba(0,0,0,0.06)"
           />
+          {contextMenu && (
+            <NodeContextMenu
+              {...contextMenu}
+              onSetColor={(id, color) => { onSetNodeColor?.(id, color); setContextMenu(null); }}
+              onDelete={!contextMenu.nodeId.startsWith('__doc_') ? onDeleteNode : undefined}
+              onClose={() => setContextMenu(null)}
+            />
+          )}
         </ReactFlow>
+        <NodeAddToolbar onAddNode={handleToolbarAdd} />
       </div>
 
       {pdfModal && (
@@ -798,6 +1126,23 @@ export function CanvasGraph({ canvas, initialPositions = {}, onPositionsChange, 
           onClose={() => setPdfModal(null)}
         />
       )}
+
+      {newNodePopup && (
+        <NewNodePicker
+          screenX={newNodePopup.screenX}
+          screenY={newNodePopup.screenY}
+          onConfirm={handleNewNodeConfirm}
+          onCancel={() => setNewNodePopup(null)}
+        />
+      )}
     </>
+  );
+}
+
+export function CanvasGraph(props: CanvasGraphProps) {
+  return (
+    <ReactFlowProvider>
+      <CanvasGraphInner {...props} />
+    </ReactFlowProvider>
   );
 }

@@ -23,6 +23,7 @@ import {
   Cpu,
   Activity,
   Play,
+  Image,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import type { KBDocument } from "@/contexts/AppContext";
@@ -96,7 +97,8 @@ export interface FmuVariableData {
 
 export interface CanvasNodeData {
   id: string;
-  node_type: "concept" | "topic" | "fact" | "spec" | "source" | "entity" | "category" | "fmu" | "plot"; // source/entity/category kept for compat
+  node_type: "concept" | "topic" | "fact" | "spec" | "source" | "entity" | "category" | "fmu" | "plot" | "image"; // source/entity/category kept for compat
+  color?: string;
   status?: NodeStatus;
   title?: string;
   text?: string;
@@ -107,6 +109,11 @@ export interface CanvasNodeData {
   fmu_model_name?: string;
   fmu_variables?: FmuVariableData[];
   fmu_param_values?: Record<string, string>;
+  // image node fields
+  image_filename?: string;
+  image_page?: number;
+  image_bbox?: number[];
+  image_caption?: string;
   // plot node fields
   plot_job_id?: string;
   plot_fmu_filename?: string;
@@ -171,6 +178,12 @@ export interface CategoryNodeData {
   childCount: number;
   collapsed: boolean;
   onToggleCollapse: (id: string) => void;
+  onDelete?: (id: string) => void;
+}
+
+export interface ImageNodeData {
+  node: CanvasNodeData;
+  onOpenPDF?: (filename: string, page: number, highlights: PDFHighlight[]) => void;
   onDelete?: (id: string) => void;
 }
 
@@ -268,6 +281,80 @@ export function CategoryNode({ data }: NodeProps) {
         )}
       </div>
       <Handle type="source" position={Position.Bottom} className="!bg-blue-500 !border-blue-700" />
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────
+// IMAGE NODE — sky blue, shows a PDF page screenshot
+// ─────────────────────────────────────────────
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
+
+function buildPageImageUrl(filename: string, page: number, bbox?: number[]): string {
+  const params = new URLSearchParams({ filename, page_no: String(page) });
+  if (bbox && bbox.length === 4) {
+    params.set("bbox_l", String(bbox[0]));
+    params.set("bbox_t", String(bbox[1]));
+    params.set("bbox_r", String(bbox[2]));
+    params.set("bbox_b", String(bbox[3]));
+  }
+  return `${API_BASE}/api/documents/pdf/screenshot?${params.toString()}`;
+}
+
+export function ImageNode({ data }: NodeProps) {
+  const { node, onDelete, onOpenPDF } = data as unknown as ImageNodeData;
+  const hasImage = !!(node.image_filename && node.image_page);
+  const imageUrl = hasImage
+    ? buildPageImageUrl(node.image_filename!, node.image_page!, node.image_bbox)
+    : null;
+
+  return (
+    <>
+      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
+      <Handle type="target" position={Position.Top} className="!bg-sky-400 !border-sky-600" />
+      <div
+        className="rounded-xl border border-sky-200 dark:border-sky-700 bg-white dark:bg-neutral-900 shadow-md overflow-hidden"
+        style={{ minWidth: 200, maxWidth: 320 }}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-1.5 px-3 py-2 bg-sky-50 dark:bg-sky-950/40 border-b border-sky-100 dark:border-sky-800">
+          <Image size={12} className="text-sky-500 shrink-0" />
+          <span className="flex-1 text-xs font-semibold text-sky-800 dark:text-sky-200 truncate">
+            {node.title || (hasImage ? `${node.image_filename} p.${node.image_page}` : "Image")}
+          </span>
+          {hasImage && (
+            <button
+              onClick={() => onOpenPDF?.(node.image_filename!, node.image_page!, [])}
+              className="text-sky-400 hover:text-sky-600 dark:hover:text-sky-300 transition-colors"
+              title="Open in PDF viewer"
+            >
+              <FileText size={11} />
+            </button>
+          )}
+          <StatusBadge status={node.status} />
+        </div>
+        {/* Screenshot */}
+        {imageUrl && (
+          <button
+            onClick={() => onOpenPDF?.(node.image_filename!, node.image_page!, [])}
+            className="block w-full"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imageUrl}
+              alt={node.title || "PDF page"}
+              className="w-full object-contain max-h-52"
+              loading="lazy"
+            />
+          </button>
+        )}
+        {node.image_caption && (
+          <p className="px-3 py-2 text-[10px] text-neutral-500 dark:text-neutral-400 italic">
+            {node.image_caption}
+          </p>
+        )}
+      </div>
+      <Handle type="source" position={Position.Bottom} className="!bg-sky-400 !border-sky-600" />
     </>
   );
 }

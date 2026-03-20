@@ -124,6 +124,39 @@ export const MainContent: React.FC = () => {
     });
   }, [setState, canvas]);
 
+  const handleAddNode = React.useCallback((node: any, relation: { from_id: string; to_id: string; label: string } | null) => {
+    const currentCanvas = canvas as any;
+    setState({
+      ...currentCanvas,
+      nodes: [...(currentCanvas?.nodes ?? []), node],
+      relations: relation
+        ? [...(currentCanvas?.relations ?? []), relation]
+        : (currentCanvas?.relations ?? []),
+    });
+  }, [setState, canvas]);
+
+  const handleSetNodeColor = React.useCallback((nodeId: string, color: string) => {
+    const currentCanvas = canvas as any;
+    setState({
+      ...currentCanvas,
+      nodes: (currentCanvas?.nodes ?? []).map((n: any) =>
+        n.id === nodeId ? { ...n, color: color || undefined } : n
+      ),
+    });
+  }, [setState, canvas]);
+
+  const handleAddEdge = React.useCallback((fromId: string, toId: string, label: string) => {
+    const currentCanvas = canvas as any;
+    const relations = currentCanvas?.relations ?? [];
+    // Avoid duplicate edges
+    const exists = relations.some((r: any) => r.from_id === fromId && r.to_id === toId);
+    if (exists) return;
+    setState({
+      ...currentCanvas,
+      relations: [...relations, { from_id: fromId, to_id: toId, label }],
+    });
+  }, [setState, canvas]);
+
   const handleFmuUploaded = React.useCallback((payload: { filename: string; model_name: string; variables: any[] }) => {
     const newNode = {
       id: `fmu_${Date.now()}`,
@@ -279,6 +312,9 @@ export const MainContent: React.FC = () => {
         onFmuUploaded={handleFmuUploaded}
         onSimulateComplete={handleSimulateComplete}
         onDeleteNode={handleDeleteNode}
+        onAddNode={handleAddNode}
+        onAddEdge={handleAddEdge}
+        onSetNodeColor={handleSetNodeColor}
         workspaceDocIds={canvas?.workspace_doc_ids ?? []}
         onAddDocToWorkspace={handleAddDocToWorkspace}
         onFmuFromLibrary={handleFmuFromLibrary}
