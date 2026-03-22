@@ -11,6 +11,12 @@ import { LibraryDrawer } from './LibraryDrawer';
 type TabId = 'canvas' | 'facts' | 'context';
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
 
+type CanvasState = {
+  nodes: any[];
+  relations: any[];
+  active_document_id: string | null;
+};
+
 function buildEvidenceImageUrl(filename: string, page: number, bbox: number[]): string {
   const [l = 0, t = 0, r = 0, b = 0] = bbox;
   if (!l && !t && !r && !b) {
@@ -32,7 +38,7 @@ export const MainContent: React.FC = () => {
   const { activeDocumentId } = useApp();
   const { state, setState } = useCoAgent({
     name: "my_agent",
-    initialState: { nodes: [], relations: [], active_document_id: null }
+    initialState: { nodes: [], relations: [], active_document_id: null as string | null } as CanvasState
   });
 
   const canvas = state as any;
@@ -58,7 +64,7 @@ export const MainContent: React.FC = () => {
         setState((prev: any) => ({ ...prev, ...canvas_state }));
         setPositions(canvas_state.positions ?? {});
       } else {
-        setState(() => ({ nodes: [], relations: [], active_document_id: activeDocumentId ?? null }));
+        setState({ nodes: [], relations: [], active_document_id: activeDocumentId ?? null } as CanvasState);
         setPositions({});
       }
     });
@@ -293,7 +299,12 @@ export const MainContent: React.FC = () => {
     if (currentConv.title === 'New Conversation' && visibleMessages.length > 0) {
       const firstUserMsg = visibleMessages.find((m: any) => m.role === 'user');
       if (firstUserMsg) {
-        const content = firstUserMsg.content ?? '';
+        const rawContent = firstUserMsg.content;
+        const content = typeof rawContent === 'string'
+          ? rawContent
+          : Array.isArray(rawContent)
+          ? rawContent.map((part: any) => part?.type === 'text' ? part.text : '').join(' ').trim()
+          : '';
         updates.title = content.length > 30 ? content.substring(0, 30) + '...' : content;
       }
     }

@@ -23,9 +23,6 @@ class Settings(BaseSettings):
     port: int = 8001
     reload: bool = True
     
-    # ===== Logfire (Observability) =====
-    logfire_token: str | None = None
-    
     # ===== pgvector/Supabase Settings =====
     # SECURITY: Critical fields with validation
     pgvector_host: str = Field(default="localhost", description="PostgreSQL host")

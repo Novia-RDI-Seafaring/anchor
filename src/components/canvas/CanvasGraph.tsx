@@ -78,6 +78,7 @@ const NODE_SIZE: Record<string, { w: number; h: number }> = {
   imageNode:    { w: 300, h: 200 },
 };
 const DEFAULT_SIZE = { w: 220, h: 80 };
+const KNOWLEDGE_FILE_PATTERN = /\.(pdf|docx|txt|md|html)$/i;
 
 function connectedComponents(nodes: Node[], edges: Edge[]): string[][] {
   const visibleIds = new Set(nodes.filter((node) => !node.hidden).map((node) => node.id));
@@ -410,6 +411,33 @@ interface CanvasGraphProps {
   workspaceDocIds?: string[];
   onAddDocToWorkspace?: (docId: string) => void;
   onFmuFromLibrary?: (filename: string) => void;
+}
+
+async function uploadCanvasFile(
+  file: File,
+  onFmuUploaded?: (payload: FmuUploadedPayload) => void,
+) {
+  if (file.name.endsWith(".fmu")) {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${API_URL}/api/fmu/upload`, { method: "POST", body: formData });
+    if (res.ok) {
+      const data = await res.json();
+      onFmuUploaded?.({ filename: data.filename, model_name: data.model_name, variables: data.variables ?? [] });
+    }
+    return;
+  }
+
+  if (!KNOWLEDGE_FILE_PATTERN.test(file.name)) {
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_URL}/api/documents/upload`, { method: "POST", body: formData });
+  if (!res.ok) {
+    throw new Error(`Upload failed: ${res.statusText}`);
+  }
 }
 
 function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, onFmuUploaded, onSimulateComplete, onDeleteNode, onAddNode, onAddEdge, onSetNodeColor, workspaceDocIds, onAddDocToWorkspace, onFmuFromLibrary }: CanvasGraphProps) {
@@ -1007,27 +1035,12 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     const files = Array.from(e.dataTransfer.files);
     if (!files.length) return;
     try {
-      await Promise.all(files.map(async (file) => {
-        if (file.name.endsWith('.fmu')) {
-          const formData = new FormData();
-          formData.append('file', file);
-          const res = await fetch(`${API_URL}/api/fmu/upload`, { method: 'POST', body: formData });
-          if (res.ok) {
-            const data = await res.json();
-            onFmuUploaded?.({ filename: data.filename, model_name: data.model_name, variables: data.variables ?? [] });
-          }
-        } else if (/\.(pdf|docx|txt|md|html)$/i.test(file.name)) {
-          const formData = new FormData();
-          formData.append('file', file);
-          const res = await fetch(`${API_URL}/api/documents/upload`, { method: 'POST', body: formData });
-          if (!res.ok) throw new Error(`Upload failed: ${res.statusText}`);
-        }
-      }));
+      await Promise.all(files.map((file) => uploadCanvasFile(file, onFmuUploaded)));
       refreshDocuments();
     } catch {
       // upload failed — user can retry; suppress to avoid dev overlay noise
     }
-  }, [refreshDocuments, screenToFlowPosition, _makeNode, onAddNode, onAddDocToWorkspace, onFmuFromLibrary]);
+  }, [onAddDocToWorkspace, onAddNode, onFmuFromLibrary, onFmuUploaded, refreshDocuments, screenToFlowPosition, _makeNode]);
 
   return (
     <>

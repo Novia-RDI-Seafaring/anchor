@@ -42,7 +42,9 @@
     },
     /* Types */
     "types": [
-      "node"
+      "node",
+      "react",
+      "react-dom"
     ],
     "incremental": true,
     "plugins": [

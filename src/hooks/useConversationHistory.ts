@@ -41,7 +41,7 @@ export const useConversationHistory = () => {
                         messages: [],
                     }));
                     setConversations(convs);
-                    setActiveId(convs[0].id);
+                    setActiveId(convs[0]?.id ?? null);
                 } else {
                     _createInDB(crypto.randomUUID(), 'New Conversation').then(conv => {
                         if (conv) {
@@ -92,7 +92,7 @@ export const useConversationHistory = () => {
             const next = prev.filter(c => c.id !== id);
             if (activeId === id) {
                 if (next.length > 0) {
-                    setActiveId(next[0].id);
+                    setActiveId(next[0]?.id ?? null);
                 } else {
                     // Create a fresh one if list becomes empty
                     const newId = crypto.randomUUID();
