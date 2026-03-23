@@ -24,9 +24,15 @@ from ..helpers import (
     _select_highlights,
     _clean_text_value,
     _find_node_by_title,
+    _select_best_chunk_index,
+    _select_relevant_properties,
 )
 
 _COMPARISON_QUERY_RE = re.compile(r"\b(compare|comparison|different|difference|diff|vs\.?|versus)\b", re.IGNORECASE)
+_BROAD_FACT_QUERY_RE = re.compile(
+    r"\b(overview|summar(?:y|ize)|benefits?|features?|capabilities|advantages|steps?|procedure|process|modes?|how does|how do|how it works|explain)\b",
+    re.IGNORECASE,
+)
 
 
 def _doc_label(filename: str | None) -> str:
@@ -391,6 +397,42 @@ async def resolve_technical_query(
             "concept_id": resolved_concept_id,
             "found": True,
             "format": "spec",
+        }
+        return result
+
+    if not _BROAD_FACT_QUERY_RE.search(query):
+        best_chunk_index = source_chunk_index if properties else _select_best_chunk_index(normalized_chunks, query)
+        fact_chunk = normalized_chunks[best_chunk_index]
+        matched_properties = _select_relevant_properties(properties, query) if properties else []
+        fact_text = _summarize_properties(matched_properties).rstrip(".") if matched_properties else _summarize_chunks([fact_chunk])
+        fact = CanvasNode(node_type="fact", text=fact_text, status="found")
+        _mark_node_for_run(fact, ctx)
+        ctx.deps.state.nodes.append(fact)
+        _ensure_relation(ctx, topic.id, fact.id)
+
+        doc_id = fact_chunk.get("document_id")
+        page = _select_page(fact_chunk)
+        if doc_id and page:
+            _ensure_evidence_relation(
+                ctx, fact.id, doc_id,
+                page=page,
+                bbox=_select_bbox(fact_chunk),
+                highlights=_select_highlights(fact_chunk),
+            )
+
+        summary = fact.text or ""
+        fact_filename = fact_chunk.get("filename") or resolved_filename
+        if fact_filename:
+            summary = f"{summary} Source: {fact_filename}."
+        result = _snapshot(ctx)
+        result.return_value = {
+            "summary": summary,
+            "topic_id": topic.id,
+            "node_id": fact.id,
+            "concept_id": resolved_concept_id,
+            "found": True,
+            "format": "fact",
+            "fact_count": 1,
         }
         return result
 

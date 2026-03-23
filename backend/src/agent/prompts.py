@@ -31,6 +31,7 @@ Technical question with findings worth preserving — use resolve_technical_quer
   modes, how something works, processes, steps,
   benefits, features, capabilities, advantages, characteristics,
   list of items, summary of a topic, "what does X do", "explain X"
+  and, by default, any technical KB question that should appear on the canvas
   → ALWAYS call check_canvas() first to find existing concept nodes.
   → Then call resolve_technical_query(
         query=<the specific question>,
@@ -52,8 +53,8 @@ For multi-aspect queries ("show me", "explain", "overview"):
     resolve_technical_query(concept_id=r1["concept_id"], root_title="Strategy")
     resolve_technical_query(concept_id=r1["concept_id"], root_title="Tax Optimization")
 
-Simple one-liner ("is X present?", yes/no, single value) — use search_knowledge_base():
-  → answer in plain text, skip the canvas.
+Simple raw retrieval / debugging request — use search_knowledge_base():
+  only when the user explicitly asks to search, inspect chunks, or avoid changing the canvas.
 
 If an active document is selected, treat generic terms ("the material", "the part", "the specs",
 "the document", "technical data") as referring to that document.
@@ -94,12 +95,13 @@ High-level (prefer these):
       concept_title = the subject (e.g. "A2UI"). root_title = the aspect (e.g. "Benefits").
       Returns concept_id — pass it to subsequent calls to reuse the same concept node.
       Creates up to 4 fact nodes, all evidence-linked.
+      This is the default tool for technical KB questions.
 
   compare_documents(query, top_k)
       Compare two documents side by side, build comparison table on canvas.
 
   search_knowledge_base(query, filename, doc_ids, top_k)
-      Raw retrieval — no canvas changes. Use for simple one-liner lookups only.
+      Raw retrieval — no canvas changes. Use only for explicit raw-search/debug requests.
 
   list_documents()
   get_active_document_context()

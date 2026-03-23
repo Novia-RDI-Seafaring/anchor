@@ -42,6 +42,11 @@ _TABLE_OR_SPEC_RE = re.compile(
     re.IGNORECASE,
 )
 _MODEL_CODE_RE = re.compile(r"\b([A-Z]{2,}(?:-\d+[A-Z]?)?)\b")
+_PROPERTY_MATCH_STOPWORDS = {
+    "what", "which", "when", "where", "why", "who", "how", "is", "are", "the", "a", "an",
+    "for", "from", "of", "to", "in", "on", "with", "and", "or", "does", "do", "it", "its",
+    "this", "that", "these", "those", "about", "tell", "me", "show", "give", "list",
+}
 
 def _early_prompt_to_text(prompt: str | list | tuple | None) -> str:
     if isinstance(prompt, str):
@@ -313,6 +318,31 @@ def _extract_properties_from_text(text: str, query: str) -> list[SpecProperty]:
             )
 
     return properties
+
+def _select_relevant_properties(properties: list[SpecProperty], query: str) -> list[SpecProperty]:
+    query_tokens = {
+        token
+        for token in re.findall(r"[a-z0-9]+", query.lower())
+        if len(token) > 2 and token not in _PROPERTY_MATCH_STOPWORDS
+    }
+    if not query_tokens:
+        return []
+
+    scored: list[tuple[int, int, SpecProperty]] = []
+    for index, prop in enumerate(properties):
+        key_text = prop.key.lower().strip()
+        key_tokens = set(re.findall(r"[a-z0-9]+", key_text))
+        overlap = len(query_tokens & key_tokens)
+        exact = 1 if key_text and key_text in query.lower() else 0
+        score = exact * 100 + overlap
+        if score > 0:
+            scored.append((score, index, prop))
+
+    if not scored:
+        return []
+
+    best_score = max(score for score, _, _ in scored)
+    return [prop for score, _, prop in scored if score == best_score]
 
 def _flatten_render_payload(value: Any, depth: int = 0) -> str:
     if depth > 4:

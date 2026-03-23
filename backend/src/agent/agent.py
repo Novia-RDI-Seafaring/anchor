@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 import os
+import re
 from typing import Any, cast
 
 from pydantic_ai import Agent, ModelRetry
@@ -25,6 +26,8 @@ from .state import Canvas
 from .tools import canvas, knowledge, vision
 from .tools import fmu as fmu_tools
 
+_COMPARISON_QUERY_RE = re.compile(r"\b(compare|comparison|different|difference|diff|vs\.?|versus)\b", re.IGNORECASE)
+
 async def _prepare_tools_for_turn(ctx: RunContext[AgentDeps], tool_defs: list[Any]) -> list[Any]:
     prompt_text = _early_prompt_to_text(getattr(ctx, "prompt", None)).strip().lower()
     if not prompt_text:
@@ -37,8 +40,8 @@ async def _prepare_tools_for_turn(ctx: RunContext[AgentDeps], tool_defs: list[An
         return tool_defs
     allowed = {
         "resolve_technical_query", "compare_documents",
-        "search_knowledge_base", "get_active_document_context",
-        "check_canvas", "list_documents", "add_concept",
+        "get_active_document_context",
+        "check_canvas", "list_documents",
         "inspect_fmu_tool", "simulate_fmu_tool", "analyze_simulation_tool",
     }
     return [tool_def for tool_def in tool_defs if tool_def.name in allowed]
@@ -54,6 +57,29 @@ agent = Agent(
     output_retries=2 if STRICT_CANVAS_VALIDATION else 0,
     prepare_tools=_prepare_tools_for_turn,
 )
+
+
+@agent.instructions
+def technical_query_instruction(ctx: RunContext[AgentDeps]) -> str | None:
+    prompt_text = _prompt_to_text(cast(Any, ctx.prompt)).strip()
+    if not prompt_text or not _requires_canvas_update(prompt_text):
+        return None
+    normalized = prompt_text.lower()
+    if _EARLY_SOCIAL_OR_META_RE.search(normalized) or _EARLY_DOCUMENT_LISTING_RE.search(normalized):
+        return None
+    if _EARLY_CANVAS_EDIT_RE.search(normalized):
+        return None
+    if _COMPARISON_QUERY_RE.search(normalized):
+        return (
+            "This is a document-comparison query. Before any text answer, call "
+            f"compare_documents(query={prompt_text!r}). Use its returned summary as the basis for the reply. "
+            "Do not answer from raw retrieval only."
+        )
+    return (
+        "This is a technical knowledge-base query. Before any text answer, call "
+        f"resolve_technical_query(query={prompt_text!r}). Use its returned summary as the basis for the reply. "
+        "Do not use search_knowledge_base for the final answer unless the user explicitly asks for raw retrieval only."
+    )
 
 
 @agent.output_validator
