@@ -18,15 +18,18 @@ def _open_pdf_document(pdf_path: Path) -> pdfium.PdfDocument:
     last_error: Exception | None = None
     for attempt in range(2):
         try:
-            return pdfium.PdfDocument(pdf_path.read_bytes())
+            return pdfium.PdfDocument(str(pdf_path))
         except Exception as exc:
             last_error = exc
             if attempt == 0:
                 time.sleep(0.05)
                 continue
-            raise
-    assert last_error is not None
-    raise last_error
+    try:
+        return pdfium.PdfDocument(pdf_path.read_bytes())
+    except Exception:
+        if last_error is not None:
+            raise last_error
+        raise
 
 
 def _iter_provs(node: NodeWithScore) -> List[Dict[str, Any]]:

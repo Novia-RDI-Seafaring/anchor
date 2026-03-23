@@ -1,8 +1,5 @@
 """Configuration and models API routes."""
-from typing import Optional
 from fastapi import APIRouter, HTTPException
-
-from .schemas import UpdateEmbeddingRequest
 
 router = APIRouter(prefix="/api", tags=["config"])
 
@@ -17,26 +14,5 @@ async def get_models():
         import os
         models = [os.getenv("DEFAULT_MODEL")]
         return {"success": True, "models": models}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/config/embedding")
-async def update_embedding_model(request: UpdateEmbeddingRequest):
-    """Update the active embedding model."""
-    try:
-        
-        # Parse model_id which might be "ollama:nomic-embed-text"
-        model_name = request.model_id
-        if ":" in model_name: 
-            # strip prefix if present in ID but not actual model name for Ollama
-            if request.provider == "Ollama" and model_name.startswith("ollama:"):
-                model_name = model_name.replace("ollama:", "")
-        
-        # Re-configure global settings
-        raise NotImplementedError("update_embedding_model is not implemented")
-        #configure_llama_index(model_name=model_name, provider=request.provider.lower())
-        
-        return {"success": True, "message": f"Embedding model updated to {model_name}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

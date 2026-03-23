@@ -13,8 +13,3 @@ class SearchRequest(BaseModel):
     query: str
     top_k: int = 5
     document_id: Optional[str] = None
-
-class UpdateEmbeddingRequest(BaseModel):
-    """Request to update the embedding model."""
-    model_id: str
-    provider: str

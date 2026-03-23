@@ -18,7 +18,7 @@ from ..helpers import (
     _derive_topic_title,
     _derive_spec_title,
     _extract_properties_from_text,
-    _TABLE_OR_SPEC_RE,
+    _MODEL_CODE_RE,
     _select_page,
     _select_bbox,
     _select_highlights,
@@ -81,11 +81,20 @@ def _normalize_property_key(key: str) -> str:
 
 
 def _extract_doc_properties(chunks: list[dict], query: str) -> tuple[int, list[SpecProperty]]:
+    fallback_index = 0
+    fallback_properties: list[SpecProperty] = []
     for index, chunk in enumerate(chunks):
-        properties = _extract_properties_from_text(str(chunk.get("content") or ""), query)
-        if properties:
+        chunk_text = str(chunk.get("content") or "")
+        properties = _extract_properties_from_text(chunk_text, query)
+        if not properties:
+            continue
+        if not fallback_properties:
+            fallback_index = index
+            fallback_properties = properties
+        matched_properties = _select_relevant_properties(properties, query)
+        if matched_properties:
             return index, properties
-    return 0, []
+    return fallback_index, fallback_properties
 
 
 def _build_comparison_properties(
@@ -321,7 +330,7 @@ async def resolve_technical_query(
 
     topic = CanvasNode(
         node_type="topic",
-        title=root_title or _derive_topic_title(query, active_document.get("filename") if active_document else None),
+        title=root_title or _derive_topic_title(query),
         status="found" if normalized_chunks else "not_found",
     )
     _mark_node_for_run(topic, ctx)
@@ -349,20 +358,18 @@ async def resolve_technical_query(
         }
         return result
 
-    source_chunk_index = 0
-    properties: list[SpecProperty] = []
-    for index, chunk in enumerate(normalized_chunks):
-        chunk_properties = _extract_properties_from_text(str(chunk.get("content") or ""), query)
-        if not chunk_properties:
-            continue
-        source_chunk_index = index
-        properties = chunk_properties
-        break
+    source_chunk_index, properties = _extract_doc_properties(normalized_chunks, query)
 
-    use_spec = prefer_table if prefer_table is not None else bool(properties) and _TABLE_OR_SPEC_RE.search(query) is not None
+    matched_properties = _select_relevant_properties(properties, query) if properties else []
+    use_spec = prefer_table if prefer_table is not None else bool(properties) and (
+        len(matched_properties) > 1
+        or len(properties) > 2
+        or (len(properties) > 1 and _MODEL_CODE_RE.search(query) is not None)
+    )
     if use_spec and not properties:
         summary_text = _summarize_chunks([normalized_chunks[source_chunk_index]])
         properties = [SpecProperty(key=_derive_spec_title(query), value=summary_text)]
+    display_properties = matched_properties if use_spec and matched_properties else properties
     resolved_filename, resolved_page, resolved_bbox, resolved_highlights = _resolve_source_details(
         ctx=ctx,
         chunk_index=source_chunk_index,
@@ -372,7 +379,7 @@ async def resolve_technical_query(
         spec = CanvasNode(
             node_type="spec",
             spec_title=_derive_spec_title(query),
-            properties=properties,
+            properties=display_properties,
             status="found",
         )
         _mark_node_for_run(spec, ctx)
@@ -388,7 +395,7 @@ async def resolve_technical_query(
                 highlights=resolved_highlights,
             )
 
-        summary = _summarize_properties(properties, resolved_filename)
+        summary = _summarize_properties(display_properties, resolved_filename)
         result = _snapshot(ctx)
         result.return_value = {
             "summary": summary,
@@ -403,7 +410,6 @@ async def resolve_technical_query(
     if not _BROAD_FACT_QUERY_RE.search(query):
         best_chunk_index = source_chunk_index if properties else _select_best_chunk_index(normalized_chunks, query)
         fact_chunk = normalized_chunks[best_chunk_index]
-        matched_properties = _select_relevant_properties(properties, query) if properties else []
         fact_text = _summarize_properties(matched_properties).rstrip(".") if matched_properties else _summarize_chunks([fact_chunk])
         fact = CanvasNode(node_type="fact", text=fact_text, status="found")
         _mark_node_for_run(fact, ctx)

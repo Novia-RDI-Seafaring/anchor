@@ -56,6 +56,10 @@ For multi-aspect queries ("show me", "explain", "overview"):
 Simple raw retrieval / debugging request — use search_knowledge_base():
   only when the user explicitly asks to search, inspect chunks, or avoid changing the canvas.
 
+Explicit canvas request ("add this to canvas", "turn this into a table on canvas"):
+  prefer resolve_technical_query() / compare_documents() first.
+  Use low-level canvas tools only to restructure or edit existing nodes.
+
 If an active document is selected, treat generic terms ("the material", "the part", "the specs",
 "the document", "technical data") as referring to that document.
 

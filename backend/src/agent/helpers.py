@@ -12,19 +12,6 @@ def _env_flag(name: str, default: str = "0") -> bool:
 
 STRICT_CANVAS_VALIDATION = _env_flag("STRICT_CANVAS_VALIDATION", "0")
 
-_EARLY_SOCIAL_OR_META_RE = re.compile(
-    r"^\s*(hi|hello|hey|thanks|thank you|ok|okay|great|cool|what can you do|who are you)\b",
-    re.IGNORECASE,
-)
-_EARLY_DOCUMENT_LISTING_RE = re.compile(
-    r"\b(what|which|list|show)\b.*\bdocuments?\b|\bloaded\b.*\bdocuments?\b",
-    re.IGNORECASE,
-)
-_EARLY_CANVAS_EDIT_RE = re.compile(
-    r"\b(canvas|node|nodes|relation|graph|connect|delete|remove|add to canvas)\b",
-    re.IGNORECASE,
-)
-
 _SOCIAL_OR_META_RE = re.compile(
     r"^\s*(hi|hello|hey|thanks|thank you|ok|okay|great|cool|what can you do|who are you)\b",
     re.IGNORECASE,
@@ -37,16 +24,44 @@ _CANVAS_EDIT_RE = re.compile(
     r"\b(canvas|node|nodes|relation|graph|connect|delete|remove|add to canvas)\b",
     re.IGNORECASE,
 )
-_TABLE_OR_SPEC_RE = re.compile(
-    r"\b(technical data|dimensions?|measures?|specs?|specifications?|materials?|properties|ratings?)\b",
+_RAW_SEARCH_RE = re.compile(
+    r"\b(raw retrieval|raw search|search results?|retrieved chunks?|inspect chunks?|inspect retrieval|debug retrieval|without (?:changing|updating) the canvas)\b",
     re.IGNORECASE,
 )
-_MODEL_CODE_RE = re.compile(r"\b([A-Z]{2,}(?:-\d+[A-Z]?)?)\b")
+_EARLY_SOCIAL_OR_META_RE = _SOCIAL_OR_META_RE
+_EARLY_DOCUMENT_LISTING_RE = _DOCUMENT_LISTING_RE
+_EARLY_CANVAS_EDIT_RE = _CANVAS_EDIT_RE
+_EARLY_RAW_SEARCH_RE = _RAW_SEARCH_RE
+_MODEL_CODE_RE = re.compile(r"\b([A-Z]{2,}(?:\d+[A-Z]?|-\d+[A-Z]?)?)\b")
+_ROW_LABEL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9() /-]{0,60}$")
+_LEADING_QUERY_PHRASE_RE = re.compile(
+    r"^\s*(what(?:'s| is| are)?|which|show(?: me)?|tell me|give me|list|describe|explain)\s+",
+    re.IGNORECASE,
+)
+_TRAILING_CONTEXT_RE = re.compile(r"\s+\bfrom\b\s+.+$", re.IGNORECASE)
 _PROPERTY_MATCH_STOPWORDS = {
     "what", "which", "when", "where", "why", "who", "how", "is", "are", "the", "a", "an",
     "for", "from", "of", "to", "in", "on", "with", "and", "or", "does", "do", "it", "its",
     "this", "that", "these", "those", "about", "tell", "me", "show", "give", "list",
 }
+
+def _normalize_match_token(token: str) -> str:
+    normalized = token.lower().strip()
+    if len(normalized) > 4 and normalized.endswith("ies"):
+        return normalized[:-3] + "y"
+    if len(normalized) > 3 and normalized.endswith("es"):
+        return normalized[:-2]
+    if len(normalized) > 3 and normalized.endswith("s"):
+        return normalized[:-1]
+    return normalized
+
+def _query_match_tokens(text: str) -> set[str]:
+    tokens = set()
+    for token in re.findall(r"[a-z0-9]+", text.lower()):
+        normalized = _normalize_match_token(token)
+        if len(normalized) > 2 and normalized not in _PROPERTY_MATCH_STOPWORDS:
+            tokens.add(normalized)
+    return tokens
 
 def _early_prompt_to_text(prompt: str | list | tuple | None) -> str:
     if isinstance(prompt, str):
@@ -273,11 +288,12 @@ def _split_candidate_lines(text: str) -> list[str]:
 
 def _extract_properties_from_text(text: str, query: str) -> list[SpecProperty]:
     properties: list[SpecProperty] = []
+    model_specific_properties: list[SpecProperty] = []
     seen: set[tuple[str, str, str]] = set()
     model_match = _MODEL_CODE_RE.search(query)
     query_model = model_match.group(1) if model_match else ""
 
-    def append_property(key: str, value: str) -> None:
+    def append_property(key: str, value: str, *, model_specific: bool = False) -> None:
         nonlocal properties, seen
         unit = ""
         unit_match = re.search(r"^(.*?)(?:\s+)([a-zA-Z°][a-zA-Z0-9/°]*)$", value)
@@ -292,9 +308,44 @@ def _extract_properties_from_text(text: str, query: str) -> list[SpecProperty]:
         if signature in seen:
             return
         seen.add(signature)
-        properties.append(SpecProperty(key=key, value=value, unit=unit))
+        prop = SpecProperty(key=key, value=value, unit=unit)
+        properties.append(prop)
+        if model_specific:
+            model_specific_properties.append(prop)
+
+    def looks_like_row_label(segment: str) -> bool:
+        return bool(
+            segment
+            and query_model.lower() not in segment.lower()
+            and "=" not in segment
+            and ":" not in segment
+            and _ROW_LABEL_RE.match(segment)
+        )
 
     for line in _split_candidate_lines(text):
+        if query_model and query_model.lower() in line.lower():
+            segments = [_clean_text_value(segment) for segment in re.split(r"[;,\t]", line) if _clean_text_value(segment)]
+            if segments:
+                row_label = ""
+                matched_model_segment = False
+                for segment in segments:
+                    model_value_match = re.search(
+                        rf"\b{re.escape(query_model)}\b\s*(?:=|:)?\s*(.+)$",
+                        segment,
+                        re.IGNORECASE,
+                    )
+                    if model_value_match:
+                        key = row_label or query_model
+                        value = _clean_text_value(model_value_match.group(1))
+                        if key and value:
+                            append_property(key, value, model_specific=True)
+                            matched_model_segment = True
+                        continue
+                    if looks_like_row_label(segment):
+                        row_label = segment
+                if matched_model_segment:
+                    continue
+
         pair_matches = list(re.finditer(r"([^:=.;\n]+)[:=]\s*([^.;\n]+)", line))
         if pair_matches:
             for match in pair_matches:
@@ -309,29 +360,22 @@ def _extract_properties_from_text(text: str, query: str) -> list[SpecProperty]:
             number_match = re.search(r"\b(\d+(?:[.,]\d+)?)\s*(mm|cm|m)\b", line, re.IGNORECASE)
             if not number_match:
                 continue
-            signature = (query_model.lower(), number_match.group(1).lower(), number_match.group(2).lower())
-            if signature in seen:
-                continue
-            seen.add(signature)
-            properties.append(
-                SpecProperty(key=query_model, value=number_match.group(1), unit=number_match.group(2))
-            )
+            append_property(query_model, f"{number_match.group(1)} {number_match.group(2)}", model_specific=True)
+
+    if query_model and model_specific_properties:
+        return model_specific_properties
 
     return properties
 
 def _select_relevant_properties(properties: list[SpecProperty], query: str) -> list[SpecProperty]:
-    query_tokens = {
-        token
-        for token in re.findall(r"[a-z0-9]+", query.lower())
-        if len(token) > 2 and token not in _PROPERTY_MATCH_STOPWORDS
-    }
+    query_tokens = _query_match_tokens(query)
     if not query_tokens:
         return []
 
     scored: list[tuple[int, int, SpecProperty]] = []
     for index, prop in enumerate(properties):
         key_text = prop.key.lower().strip()
-        key_tokens = set(re.findall(r"[a-z0-9]+", key_text))
+        key_tokens = _query_match_tokens(key_text)
         overlap = len(query_tokens & key_tokens)
         exact = 1 if key_text and key_text in query.lower() else 0
         score = exact * 100 + overlap
@@ -410,19 +454,30 @@ def _summarize_properties(properties: list[SpecProperty], filename: str | None =
         return f"{summary}. Source: {filename}."
     return f"{summary}."
 
-def _derive_topic_title(query: str, active_filename: str | None = None) -> str:
+def _derive_query_focus(query: str) -> str:
+    focus = _LEADING_QUERY_PHRASE_RE.sub("", query.strip().rstrip("?.!"))
+    focus = re.sub(r"^(?:the|a|an)\s+", "", focus, flags=re.IGNORECASE)
+    focus = _TRAILING_CONTEXT_RE.sub("", focus)
+    focus = re.sub(r"\s+", " ", focus).strip(" :-")
+    if not focus:
+        return ""
+    return focus[:1].upper() + focus[1:]
+
+def _derive_topic_title(query: str) -> str:
     normalized = query.strip().rstrip("?.!")
     lowered = normalized.lower()
-    if "technical data" in lowered and "material" in lowered:
-        return "Material Technical Data"
     if "dimension" in lowered or "measure" in lowered:
         model_match = _MODEL_CODE_RE.search(normalized)
         if model_match:
             return f"{model_match.group(1)} Dimensions"
         return "Dimensions"
-    if active_filename and any(token in lowered for token in ("material", "technical data", "spec", "dimension", "measure")):
-        filename = active_filename.rsplit(".", 1)[0]
-        return f"{filename} Technical Data"
+    if re.search(r"\bmaterials?\b", lowered):
+        return "Materials"
+    if re.search(r"\b(technical data|specs?|specifications?|properties|ratings?)\b", lowered):
+        return "Technical Data"
+    derived_focus = _derive_query_focus(normalized)
+    if derived_focus:
+        return derived_focus
     if normalized:
         return normalized[:80]
     return "Technical Query"
@@ -431,8 +486,8 @@ def _derive_spec_title(query: str) -> str:
     lowered = query.strip().lower()
     if "dimension" in lowered or "measure" in lowered:
         return "Dimensions"
-    if "material" in lowered and "technical data" in lowered:
-        return "Material Technical Data"
+    if re.search(r"\bmaterials?\b", lowered):
+        return "Materials"
     if "technical data" in lowered:
         return "Technical Data"
     return "Specifications"

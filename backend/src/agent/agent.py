@@ -16,6 +16,7 @@ from .helpers import (
     STRICT_CANVAS_VALIDATION,
     _EARLY_CANVAS_EDIT_RE,
     _EARLY_DOCUMENT_LISTING_RE,
+    _EARLY_RAW_SEARCH_RE,
     _EARLY_SOCIAL_OR_META_RE,
     _early_prompt_to_text,
     _prompt_to_text,
@@ -27,24 +28,43 @@ from .tools import canvas, knowledge, vision
 from .tools import fmu as fmu_tools
 
 _COMPARISON_QUERY_RE = re.compile(r"\b(compare|comparison|different|difference|diff|vs\.?|versus)\b", re.IGNORECASE)
+_LIST_ONLY_TOOLS = {"list_documents"}
+_RAW_SEARCH_TOOLS = {"search_knowledge_base", "get_active_document_context", "list_documents"}
+_LOW_LEVEL_CANVAS_TOOLS = {
+    "add_concept",
+    "add_topic",
+    "add_fact",
+    "add_relation",
+    "add_spec_node",
+    "update_node",
+    "delete_node",
+    "check_canvas",
+}
+_HIGH_LEVEL_TECHNICAL_TOOLS = {
+    "resolve_technical_query",
+    "compare_documents",
+    "get_active_document_context",
+    "check_canvas",
+    "list_documents",
+    "inspect_fmu_tool",
+    "simulate_fmu_tool",
+    "analyze_simulation_tool",
+}
+_CANVAS_EDIT_TOOLS = _LOW_LEVEL_CANVAS_TOOLS | _HIGH_LEVEL_TECHNICAL_TOOLS
 
 async def _prepare_tools_for_turn(ctx: RunContext[AgentDeps], tool_defs: list[Any]) -> list[Any]:
     prompt_text = _early_prompt_to_text(getattr(ctx, "prompt", None)).strip().lower()
     if not prompt_text:
         return tool_defs
     if _EARLY_SOCIAL_OR_META_RE.search(prompt_text):
-        return [tool_def for tool_def in tool_defs if tool_def.name in {"list_documents"}]
+        return [tool_def for tool_def in tool_defs if tool_def.name in _LIST_ONLY_TOOLS]
     if _EARLY_DOCUMENT_LISTING_RE.search(prompt_text):
-        return [tool_def for tool_def in tool_defs if tool_def.name in {"list_documents"}]
+        return [tool_def for tool_def in tool_defs if tool_def.name in _LIST_ONLY_TOOLS]
+    if _EARLY_RAW_SEARCH_RE.search(prompt_text):
+        return [tool_def for tool_def in tool_defs if tool_def.name in _RAW_SEARCH_TOOLS]
     if _EARLY_CANVAS_EDIT_RE.search(prompt_text):
-        return tool_defs
-    allowed = {
-        "resolve_technical_query", "compare_documents",
-        "get_active_document_context",
-        "check_canvas", "list_documents",
-        "inspect_fmu_tool", "simulate_fmu_tool", "analyze_simulation_tool",
-    }
-    return [tool_def for tool_def in tool_defs if tool_def.name in allowed]
+        return [tool_def for tool_def in tool_defs if tool_def.name in _CANVAS_EDIT_TOOLS]
+    return [tool_def for tool_def in tool_defs if tool_def.name in _HIGH_LEVEL_TECHNICAL_TOOLS]
 
 
 agent = Agent(
@@ -67,8 +87,18 @@ def technical_query_instruction(ctx: RunContext[AgentDeps]) -> str | None:
     normalized = prompt_text.lower()
     if _EARLY_SOCIAL_OR_META_RE.search(normalized) or _EARLY_DOCUMENT_LISTING_RE.search(normalized):
         return None
+    if _EARLY_RAW_SEARCH_RE.search(normalized):
+        return (
+            "This is an explicit raw-retrieval request. Call "
+            f"search_knowledge_base(query={prompt_text!r}) and answer from the returned chunks only. "
+            "Do not change the canvas unless the user explicitly asks for canvas changes."
+        )
     if _EARLY_CANVAS_EDIT_RE.search(normalized):
-        return None
+        return (
+            "This is an explicit canvas request. Prefer resolve_technical_query() or compare_documents() "
+            "when the user is asking to place technical findings on the canvas. Use low-level canvas tools "
+            "only to restructure, connect, update, or delete existing canvas nodes."
+        )
     if _COMPARISON_QUERY_RE.search(normalized):
         return (
             "This is a document-comparison query. Before any text answer, call "

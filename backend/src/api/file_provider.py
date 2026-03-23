@@ -2,15 +2,14 @@
 """File/screenshot helper API routes."""
 from typing import Any, List, Optional, cast
 
-from fastapi import APIRouter, HTTPException, Query, Response, Path
+from fastapi import APIRouter, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 
 from src.api.file_service import get_file_service
 from src.kb_engine.rag_engine import get_rag_engine
 from src.kb_engine.search_models import PdfSearchResponse
 from src.kb_engine.utils.pdf_rendering import render_pdf_page_to_image_bytes
-from llama_index.core.vector_stores.types import VectorStoreQuery
-from llama_index.core.storage.docstore.types import BaseDocumentStore
+
 router = APIRouter(prefix="/api", tags=["files"])
 
 @router.get("/documents/pdf/search", response_model=PdfSearchResponse)
@@ -19,18 +18,6 @@ async def get_document_hases(
 ):
     rag_engine = get_rag_engine()
     return rag_engine.query(f"Search for: {q}")
-
-@router.get("/documents/pdf/node/{node_id}", response_class=Response)
-async def get_pdf_node(
-    node_id: str = Path(..., description="Node ID"),
-):
-    rag_engine = get_rag_engine()
-    docstore:BaseDocumentStore = rag_engine.docstore
-    docs = await docstore.aget_all_ref_doc_info()
-
-    return "123456"
-    node = vector_index.vector_store.aquery(VectorStoreQuery(node_ids=[node_id]))
-    return node
 
 @router.get("/documents/pdf/screenshot", response_class=Response)
 def get_pdf_screenshot(

@@ -41,6 +41,25 @@ Simply open `index.html` in a web browser. The documentation includes:
 - ✅ Search functionality
 - ✅ Organized, multi-page structure
 
+## Concept Principles
+
+For this repo, the concept should stay easy to explain. The codebase should make it straightforward to answer:
+
+- what the agent does
+- how retrieval works
+- how evidence becomes canvas output
+- how a fact/spec is grounded to source
+
+The repo should privilege clarity over cleverness.
+
+Every new piece of logic should answer:
+
+- does this make the concept easier to explain?
+- does this generalize beyond one document?
+- can we remove it later without collapsing the core idea?
+
+If the answer is no, the logic should be treated as suspect and kept out of the main concept path.
+
 ## Updating Documentation
 
 When updating documentation:
