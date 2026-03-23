@@ -4,8 +4,12 @@ import GitHubProvider from "next-auth/providers/github";
 // import GoogleProvider from "next-auth/providers/google";
 // import AzureADProvider from "next-auth/providers/azure-ad";
 
+const githubAuthEnabled = Boolean(process.env.GITHUB_ID && process.env.GITHUB_SECRET);
+
 export const authOptions: NextAuthOptions = {
-    providers: [
+    // TODO(remove after development): local fallback so the UI can boot before real auth env vars are documented.
+    secret: process.env.NEXTAUTH_SECRET || (process.env.NODE_ENV !== "production" ? "dev-only-nextauth-secret-remove-later" : undefined),
+    providers: githubAuthEnabled ? [
         GitHubProvider({
             clientId: process.env.GITHUB_ID!,
             clientSecret: process.env.GITHUB_SECRET!,
@@ -19,7 +23,7 @@ export const authOptions: NextAuthOptions = {
         //     clientSecret: process.env.AZURE_AD_CLIENT_SECRET!,
         //     tenantId: process.env.AZURE_AD_TENANT_ID,
         // }),
-    ],
+    ] : [],
     pages: {
         signIn: "/login",
     },

@@ -7,7 +7,8 @@ const CONVERSATIONS_URL = `${API_URL}/api/conversations`;
 
 export const useConversationHistory = () => {
     const { data: session } = useSession();
-    const userId = (session?.user as any)?.id ?? '';
+    // TODO(remove after development): keep local conversations working when auth is bypassed.
+    const userId = (session?.user as any)?.id ?? 'local-dev-user';
     const userHeaders = { 'x-user-id': userId };
 
     const [conversations, setConversations] = useState<Conversation[]>([]);
