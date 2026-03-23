@@ -39,7 +39,7 @@ import {
   type PlotNodeData,
 } from "./KnowledgeNodes";
 import { PDFModal, type PDFHighlight } from "./PDFModal";
-import { useApp } from "@/contexts/AppContext";
+import { useApp, type KBDocument } from "@/contexts/AppContext";
 import { API_URL } from "@/lib/api-config";
 
 // --- Types ---
@@ -63,6 +63,8 @@ interface PDFModalState {
   page: number;
   highlights: PDFHighlight[];
 }
+
+type CollapsibleNodeType = "concept" | "entity" | "category" | "topic";
 
 // --- Node sizes (width × height in px) used by dagre for spacing ---
 const NODE_SIZE: Record<string, { w: number; h: number }> = {
@@ -201,6 +203,64 @@ const COLOR_HEX: Record<string, string> = {
 function nodeStyle(color?: string): React.CSSProperties | undefined {
   if (!color || !COLOR_HEX[color]) return undefined;
   return { boxShadow: `0 0 0 2.5px ${COLOR_HEX[color]}, 0 2px 8px rgba(0,0,0,0.08)`, borderRadius: 12 };
+}
+
+const COLLAPSIBLE_NODE_COMPONENTS: Record<CollapsibleNodeType, string> = {
+  concept: "conceptNode",
+  entity: "entityNode",
+  category: "categoryNode",
+  topic: "topicNode",
+};
+
+function isCollapsibleNodeType(nodeType: CanvasNodeData["node_type"]): nodeType is CollapsibleNodeType {
+  return nodeType === "concept" || nodeType === "entity" || nodeType === "category" || nodeType === "topic";
+}
+
+function buildFlowNode(
+  id: string,
+  type: string,
+  color: string | undefined,
+  hidden: boolean,
+  data: Record<string, unknown>,
+): Node {
+  return {
+    id,
+    type,
+    position: { x: 0, y: 0 },
+    hidden,
+    style: nodeStyle(color),
+    data,
+  };
+}
+
+function buildCollapsibleNodeData(
+  node: CanvasNodeData,
+  childrenOf: Map<string, string[]>,
+  collapsedIds: Set<string>,
+  onToggleCollapse: (id: string) => void,
+  onDelete?: (id: string) => void,
+) {
+  return {
+    node,
+    childCount: descendants([node.id], childrenOf).size,
+    collapsed: collapsedIds.has(node.id),
+    onToggleCollapse,
+    onDelete,
+  };
+}
+
+function getEvidenceData(
+  nodeId: string,
+  relations: Relation[],
+  documents: KBDocument[],
+) {
+  const relation = relations.find((item) => item.from_id === nodeId && item.to_id.startsWith("__doc_"));
+  const document = relation ? documents.find((item) => item.document_id === relation.document_id) : undefined;
+  return {
+    evidenceFilename: document?.filename,
+    evidencePage: relation?.page,
+    evidenceHighlights: relation?.highlights,
+  };
 }
 
 // --- Add-node toolbar (bottom center) ---
@@ -722,151 +782,56 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     const rfNodes: Node[] = rawNodes.map((n) => {
       const hidden = hiddenIds.has(n.id);
 
-      if (n.node_type === "concept") {
-        return {
-          id: n.id,
-          type: "conceptNode",
-          position: { x: 0, y: 0 },
+      if (isCollapsibleNodeType(n.node_type)) {
+        return buildFlowNode(
+          n.id,
+          COLLAPSIBLE_NODE_COMPONENTS[n.node_type],
+          n.color,
           hidden,
-          style: nodeStyle(n.color),
-          data: {
-            node: n,
-            childCount: descendants([n.id], childrenOf).size,
-            collapsed: collapsedIds.has(n.id),
-            onToggleCollapse: handleToggleCollapse,
-            onDelete: onDeleteNode,
-          },
-        };
-      }
-      if (n.node_type === "entity") {
-        return {
-          id: n.id,
-          type: "entityNode",
-          position: { x: 0, y: 0 },
-          hidden,
-          style: nodeStyle(n.color),
-          data: {
-            node: n,
-            childCount: descendants([n.id], childrenOf).size,
-            collapsed: collapsedIds.has(n.id),
-            onToggleCollapse: handleToggleCollapse,
-            onDelete: onDeleteNode,
-          },
-        };
-      }
-      if (n.node_type === "category") {
-        return {
-          id: n.id,
-          type: "categoryNode",
-          position: { x: 0, y: 0 },
-          hidden,
-          style: nodeStyle(n.color),
-          data: {
-            node: n,
-            childCount: descendants([n.id], childrenOf).size,
-            collapsed: collapsedIds.has(n.id),
-            onToggleCollapse: handleToggleCollapse,
-            onDelete: onDeleteNode,
-          },
-        };
-      }
-      if (n.node_type === "topic") {
-        return {
-          id: n.id,
-          type: "topicNode",
-          position: { x: 0, y: 0 },
-          hidden,
-          style: nodeStyle(n.color),
-          data: {
-            node: n,
-            childCount: descendants([n.id], childrenOf).size,
-            collapsed: collapsedIds.has(n.id),
-            onToggleCollapse: handleToggleCollapse,
-            onDelete: onDeleteNode,
-          },
-        };
+          buildCollapsibleNodeData(n, childrenOf, collapsedIds, handleToggleCollapse, onDeleteNode),
+        );
       }
       if (n.node_type === "fact") {
-        const evRel = relations.find(r => r.from_id === n.id && r.to_id.startsWith("__doc_"));
-        const evDoc = evRel ? documentsRef.current.find(d => d.document_id === evRel.document_id) : undefined;
-        return {
-          id: n.id,
-          type: "factNode",
-          position: { x: 0, y: 0 },
-          hidden,
-          style: nodeStyle(n.color),
-          data: {
-            node: n,
-            onOpenPDF: handleOpenPDF,
-            onDelete: onDeleteNode,
-            evidenceFilename: evDoc?.filename,
-            evidencePage: evRel?.page,
-            evidenceHighlights: evRel?.highlights,
-          },
-        };
+        return buildFlowNode(n.id, "factNode", n.color, hidden, {
+          node: n,
+          onOpenPDF: handleOpenPDF,
+          onDelete: onDeleteNode,
+          ...getEvidenceData(n.id, relations, documentsRef.current),
+        });
       }
       if (n.node_type === "spec") {
-        const evRel = relations.find(r => r.from_id === n.id && r.to_id.startsWith("__doc_"));
-        const evDoc = evRel ? documentsRef.current.find(d => d.document_id === evRel.document_id) : undefined;
-        return {
-          id: n.id,
-          type: "specNode",
-          position: { x: 0, y: 0 },
-          hidden,
-          style: nodeStyle(n.color),
-          data: {
-            node: n,
-            onOpenPDF: handleOpenPDF,
-            onDelete: onDeleteNode,
-            evidenceFilename: evDoc?.filename,
-            evidencePage: evRel?.page,
-            evidenceHighlights: evRel?.highlights,
-          },
-        };
+        return buildFlowNode(n.id, "specNode", n.color, hidden, {
+          node: n,
+          onOpenPDF: handleOpenPDF,
+          onDelete: onDeleteNode,
+          ...getEvidenceData(n.id, relations, documentsRef.current),
+        });
       }
       if (n.node_type === "image") {
-        return {
-          id: n.id,
-          type: "imageNode",
-          position: { x: 0, y: 0 },
-          hidden,
-          style: nodeStyle(n.color),
-          data: {
-            node: n,
-            onOpenPDF: handleOpenPDF,
-            onDelete: onDeleteNode,
-          },
-        };
+        return buildFlowNode(n.id, "imageNode", n.color, hidden, {
+          node: n,
+          onOpenPDF: handleOpenPDF,
+          onDelete: onDeleteNode,
+        });
       }
       if (n.node_type === "fmu") {
-        return {
-          id: n.id,
-          type: "fmuNode",
-          position: { x: 0, y: 0 },
-          hidden,
-          style: nodeStyle(n.color),
-          data: { node: n, onSimulate: handleSimulate, onDelete: onDeleteNode } satisfies FmuNodeData,
-        };
+        return buildFlowNode(n.id, "fmuNode", n.color, hidden, {
+          node: n,
+          onSimulate: handleSimulate,
+          onDelete: onDeleteNode,
+        } satisfies FmuNodeData);
       }
       if (n.node_type === "plot") {
-        return {
-          id: n.id,
-          type: "plotNode",
-          position: { x: 0, y: 0 },
-          hidden,
-          style: nodeStyle(n.color),
-          data: { node: n, onDelete: onDeleteNode } satisfies PlotNodeData,
-        };
+        return buildFlowNode(n.id, "plotNode", n.color, hidden, {
+          node: n,
+          onDelete: onDeleteNode,
+        } satisfies PlotNodeData);
       }
       // backward-compat: source/entity/category fallback
-      return {
-        id: n.id,
-        type: "sourceNode",
-        position: { x: 0, y: 0 },
-        hidden,
-        style: nodeStyle(n.color),
-        data: { node: n, onOpenPDF: handleOpenPDF },
-      };
+      return buildFlowNode(n.id, "sourceNode", n.color, hidden, {
+        node: n,
+        onOpenPDF: handleOpenPDF,
+      });
     });
 
     const rfEdges: Edge[] = relations.map((r, idx) => {
@@ -971,14 +936,26 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
       prev.map((rfNode) => {
         const n = nodeMap.get(rfNode.id);
         if (!n) return rfNode;
-        if (n.node_type === "concept" || n.node_type === "entity" || n.node_type === "category" || n.node_type === "topic") {
-          return { ...rfNode, data: { ...rfNode.data, node: n, childCount: descendants([n.id], childrenOf).size, collapsed: collapsedIds.has(n.id), onToggleCollapse: handleToggleCollapse, onDelete: onDeleteNode } };
+        if (isCollapsibleNodeType(n.node_type)) {
+          return {
+            ...rfNode,
+            data: {
+              ...rfNode.data,
+              ...buildCollapsibleNodeData(n, childrenOf, collapsedIds, handleToggleCollapse, onDeleteNode),
+            },
+          };
         }
-        if (n.node_type === "fact") {
-          return { ...rfNode, data: { ...rfNode.data, node: n, onOpenPDF: handleOpenPDF, onDelete: onDeleteNode } };
-        }
-        if (n.node_type === "spec") {
-          return { ...rfNode, data: { ...rfNode.data, node: n } };
+        if (n.node_type === "fact" || n.node_type === "spec") {
+          return {
+            ...rfNode,
+            data: {
+              ...rfNode.data,
+              node: n,
+              onOpenPDF: handleOpenPDF,
+              onDelete: onDeleteNode,
+              ...getEvidenceData(n.id, relations, documentsRef.current),
+            },
+          };
         }
         if (n.node_type === "fmu") {
           return { ...rfNode, data: { ...rfNode.data, node: n, onSimulate: handleSimulate } };

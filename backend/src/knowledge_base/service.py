@@ -242,7 +242,15 @@ class DocumentService:
     async def search(self, query: str, top_k: int = 5, document_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """Search the knowledge base, optionally filtered by document."""
         rag = get_rag_engine()
-        retrieved = rag.retrieve(query, document_id=document_id, top_k=top_k)
+        retriever_kwargs: Dict[str, Any] = {"similarity_top_k": top_k}
+        if document_id:
+            from llama_index.core.vector_stores import MetadataFilter, MetadataFilters, FilterOperator
+
+            retriever_kwargs["filters"] = MetadataFilters(
+                filters=[MetadataFilter(key="document_id", operator=FilterOperator.EQ, value=document_id)]
+            )
+
+        retrieved = rag.vector_index.as_retriever(**retriever_kwargs).retrieve(query)
 
         retrieval_id = create_retrieval_id()
         trace_id = get_current_trace_id()
