@@ -62,6 +62,7 @@ class CanvasNode(BaseModel):
     image_filename: str = ""
     image_page: int = 0
     image_bbox: list[float] = Field(default_factory=list)  # [l, t, r, b] cropped region, empty = full page
+    image_highlights: list[str] = Field(default_factory=list)  # text phrases to highlight on the rendered image
     image_caption: str = ""
     # plot node fields
     plot_job_id: str = ""

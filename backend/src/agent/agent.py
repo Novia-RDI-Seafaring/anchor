@@ -116,6 +116,24 @@ def technical_query_instruction(ctx: RunContext[AgentDeps]) -> str | None:
     )
 
 
+@agent.instructions
+def full_context_instruction(ctx: RunContext[AgentDeps]) -> str | None:
+    from src.core.config import get_settings
+    if not get_settings().is_full_context_mode:
+        return None
+    active_doc_id = ctx.deps.state.active_document_id
+    if not active_doc_id:
+        return None
+    return (
+        "FULL CONTEXT MODE is active. The model has a large context window — use it. "
+        "For any document query, call get_document_full_text with include_pages covering all "
+        "pages that contain tables, charts, or diagrams (e.g. include_pages=[1,2,3,4,5]). "
+        "Do NOT rely on search_knowledge_base alone — it uses cosine similarity and will miss "
+        "table rows and variant-specific data. Load the full document and read it directly. "
+        "After loading, extract all relevant data and build a complete canvas representation."
+    )
+
+
 @agent.output_validator
 def ensure_technical_queries_update_canvas(ctx: RunContext[AgentDeps], data: str) -> str:
     if not STRICT_CANVAS_VALIDATION:

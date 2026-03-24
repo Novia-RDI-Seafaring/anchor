@@ -38,6 +38,25 @@ class Settings(BaseSettings):
     ketju_table_name: str = "ketju_vectors"
     embedding_dimension: int = 3072  # text-embedding-3-large dimension
     
+    # ===== Model / Context Configuration =====
+    default_model: str = Field(default="openai:gpt-4o-mini", description="PydanticAI model string")
+    # full_context_mode: "auto" | "true" | "false"
+    # auto = enabled when model name matches a known large-context model (gpt-5, etc.)
+    full_context_mode: str = Field(default="auto", description="Full-document context mode")
+
+    _LARGE_CONTEXT_PATTERNS = ("gpt-5", "o3", "claude-3-7", "claude-3-5", "gemini-1.5", "gemini-2")
+
+    @property
+    def is_full_context_mode(self) -> bool:
+        mode = self.full_context_mode.strip().lower()
+        if mode == "true":
+            return True
+        if mode == "false":
+            return False
+        # auto: check DEFAULT_MODEL env var directly (Settings field may not be set)
+        model = (os.getenv("DEFAULT_MODEL") or self.default_model).lower()
+        return any(p in model for p in self._LARGE_CONTEXT_PATTERNS)
+
     # ===== RAG Configuration =====
     chunk_size: int = Field(default=512, ge=100, le=2000, description="Chunk size in tokens")
     chunk_overlap: int = Field(default=50, ge=0, le=500, description="Chunk overlap in tokens")

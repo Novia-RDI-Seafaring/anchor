@@ -1,28 +1,36 @@
 """Agent tools for full-document retrieval and PDF visual analysis."""
-import os
-import base64
-from pydantic_ai import ToolReturn
+import io
+from pydantic_ai import ToolReturn, BinaryContent
 from pydantic_ai._run_context import RunContext
 from ..deps import AgentDeps
 from ..state import CanvasNode
 from ..helpers import _snapshot, _mark_node_for_run, _ensure_relation
+
+_MAX_PAGES = 6  # cap on pages returned as images in a single call
 
 
 async def get_document_full_text(
     ctx: RunContext[AgentDeps],
     document_id: str | None = None,
     filename: str | None = None,
-) -> str:
+    include_pages: list[int] | None = None,
+) -> list[str | BinaryContent]:
     """Retrieve the complete text of a document by concatenating all chunks in page order.
 
     Use when chunk-based answers are incomplete — e.g. for summarising a full document,
-    answering questions spanning many pages, or when vector search misses relevant sections.
+    answering questions spanning many pages, or when vector search misses relevant sections
+    such as table rows or cross-referenced data.
 
     document_id: the KB document ID (preferred).
     filename: alternatively, resolve by filename.
+    include_pages: optional list of 1-indexed page numbers to also return as rendered images.
+                   Use this for pages that contain tables, charts, or diagrams that are better
+                   read visually (e.g. dimensions tables, flow charts). Capped at 6 pages.
     """
     from src.knowledge_base.service import get_document_service
     from src.kb_engine.rag_engine import get_rag_engine
+    from src.api.file_service import get_file_service
+    from src.kb_engine.utils.pdf_rendering import render_pdf_page_to_image_bytes
     from llama_index.core.vector_stores.types import MetadataFilters, MetadataFilter
 
     service = await get_document_service()
@@ -32,9 +40,17 @@ async def get_document_full_text(
         match = next((d for d in docs if d.get("filename") == filename), None)
         if match:
             document_id = match.get("document_id")
+            filename = filename or match.get("filename")
 
     if not document_id:
-        return "Document not found — provide a valid document_id or filename."
+        return ["Document not found — provide a valid document_id or filename."]
+
+    # Resolve filename for rendering if not provided
+    if not filename:
+        docs = await service.list_documents()
+        doc = next((d for d in docs if d.get("document_id") == document_id), None)
+        if doc:
+            filename = doc.get("filename")
 
     rag_engine = get_rag_engine()
     vs = rag_engine.vector_store
@@ -45,10 +61,10 @@ async def get_document_full_text(
         ])
         nodes = await vs.aget_nodes(filters=filters)
     except Exception as exc:
-        return f"Failed to retrieve document chunks: {exc}"
+        return [f"Failed to retrieve document chunks: {exc}"]
 
     if not nodes:
-        return f"No text chunks found for document_id={document_id}."
+        return [f"No text chunks found for document_id={document_id}."]
 
     def _page(n) -> int:
         m = n.metadata or {}
@@ -66,25 +82,21 @@ async def get_document_full_text(
         page = _page(node)
         parts.append(f"[Page {page}]\n{content}" if page else content)
 
-    return "\n\n".join(parts) or "Document appears to have no extractable text."
+    text_block = "\n\n".join(parts) or "Document appears to have no extractable text."
+    result: list[str | BinaryContent] = [text_block]
 
+    if include_pages and filename:
+        file_path = get_file_service().get_file_path(filename)
+        pages_to_render = include_pages[:_MAX_PAGES]
+        for page_no in pages_to_render:
+            try:
+                image_bytes = render_pdf_page_to_image_bytes(pdf_path=file_path, page_no=page_no)
+                result.append(f"[Page {page_no} image:]")
+                result.append(BinaryContent(data=image_bytes, media_type="image/png"))
+            except Exception as exc:
+                result.append(f"[Could not render page {page_no}: {exc}]")
 
-def _build_vision_client():
-    """Return (client, model) for the configured vision provider."""
-    provider = os.getenv("DEFAULT_PROVIDER", "").lower()
-    if provider == "azure" or os.getenv("AZURE_OPENAI_API_KEY"):
-        from openai import AzureOpenAI
-        client = AzureOpenAI(
-            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
-            api_version=os.getenv("OPENAI_API_VERSION", "2024-12-01-preview"),
-        )
-        model = os.getenv("VISION_DEPLOYMENT") or os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o")
-    else:
-        from openai import OpenAI
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        model = os.getenv("VISION_MODEL", "gpt-4o-mini")
-    return client, model
+    return result
 
 
 async def analyze_pdf_page(
@@ -93,18 +105,20 @@ async def analyze_pdf_page(
     page_no: int,
     question: str = "",
     bbox: list[float] | None = None,
-) -> str:
-    """Visually analyse a specific page or region of a PDF using a vision model.
+    highlights: list[str] | None = None,
+) -> list[str | BinaryContent]:
+    """Return a rendered PDF page (or cropped region) as an image for visual analysis.
 
     Use this to read charts, diagrams, flow charts, images, and tables that are
-    poorly captured by text extraction. The image is rendered server-side and sent
-    to the vision model — no external URL needed.
+    poorly captured by text extraction. The image is rendered server-side and returned
+    directly — the model can read it without a separate vision call.
 
     filename: PDF filename (must be in the knowledge base).
     page_no: 1-indexed page number.
-    question: specific question, e.g. "What flow rates does the LKH-70 achieve?".
-              Leave empty for a full description of the page content.
+    question: optional hint describing what you are looking for on this page.
     bbox: optional crop [left, top, right, bottom] in PDF coordinates (BOTTOMLEFT origin).
+    highlights: optional list of text phrases to highlight on the rendered page
+                (e.g. ["LKH-5", "600 kPa"]). Useful to draw attention to specific values.
     """
     from src.kb_engine.utils.pdf_rendering import render_pdf_page_to_image_bytes
     from src.api.file_service import get_file_service
@@ -119,36 +133,17 @@ async def analyze_pdf_page(
             pdf_path=path,
             page_no=page_no,
             crop_bbox=crop_bbox,
+            phrases=highlights or [],
         )
     except Exception as exc:
-        return f"Failed to render page {page_no} of '{filename}': {exc}"
+        return [f"Failed to render page {page_no} of '{filename}': {exc}"]
 
-    question_text = question.strip() or (
-        f"Describe all content on page {page_no} of '{filename}'. "
-        "Include data values, chart legends, axis labels, table contents, and any notable findings."
-    )
+    label = f"[Page {page_no} of '{filename}'"
+    if question:
+        label += f" — {question}"
+    label += "]"
 
-    image_b64 = base64.b64encode(image_bytes).decode()
-    client, model = _build_vision_client()
-
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            max_tokens=800,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{image_b64}", "detail": "high"},
-                    },
-                    {"type": "text", "text": question_text},
-                ],
-            }],
-        )
-        return response.choices[0].message.content or "No analysis returned."
-    except Exception as exc:
-        return f"Vision analysis failed: {exc}"
+    return [label, BinaryContent(data=image_bytes, media_type="image/png")]
 
 
 async def add_page_image_to_canvas(
@@ -157,18 +152,22 @@ async def add_page_image_to_canvas(
     page_no: int,
     title: str = "",
     bbox: list[float] | None = None,
+    highlights: list[str] | None = None,
     parent_node_id: str = "",
 ) -> ToolReturn:
     """Add a PDF page (or cropped region) as an image node on the canvas.
 
-    Use after analyze_pdf_page when the image itself is worth preserving — e.g. a
-    pump flow chart, a process diagram, a data table as a graphic.
+    Use when a visual is worth keeping on the canvas for the engineer:
+    performance charts, flow diagrams, dimension drawings, data tables as graphics.
+    Always connect to a parent topic node so it sits in the knowledge graph.
 
     filename: PDF filename.
     page_no: 1-indexed page number.
-    title: label for the canvas node.
+    title: descriptive label for the canvas node (e.g. "LKH-5 Flow Curve", "Dimensions Table").
     bbox: optional crop [l, t, r, b] — same coordinates as analyze_pdf_page.
-    parent_node_id: optional node to connect this image to with an edge.
+    highlights: text phrases to highlight on the image (e.g. ["LKH-5", "L = LKH-5"]).
+                Use to draw the engineer's eye to the relevant part of the page.
+    parent_node_id: topic or concept node to connect this image to.
     """
     node = CanvasNode(
         node_type="image",
@@ -176,6 +175,7 @@ async def add_page_image_to_canvas(
         image_filename=filename,
         image_page=page_no,
         image_bbox=bbox or [],
+        image_highlights=highlights or [],
         status="found",
     )
     _mark_node_for_run(node, ctx)

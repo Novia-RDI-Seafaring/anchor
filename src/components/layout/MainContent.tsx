@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { AgCard } from '../ui/AgComponents';
-import { FileText, Database, LayoutDashboard, Network, BookOpen, X } from 'lucide-react';
+import { FileText, Database, LayoutDashboard, Network, BookOpen, X, Activity } from 'lucide-react';
 import { useCopilotChatInternal, useCoAgent } from "@copilotkit/react-core";
 import { CanvasView } from '../canvas/CanvasView';
 import { CanvasGraph } from '../canvas/CanvasGraph';
 import { PDFModal, type PDFHighlight } from '../canvas/PDFModal';
 import { LibraryDrawer } from './LibraryDrawer';
+import { RunsPanel } from './RunsPanel';
 
-type TabId = 'canvas' | 'facts' | 'context';
+type TabId = 'canvas' | 'facts' | 'context' | 'runs';
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
 
 type CanvasState = {
@@ -338,6 +339,7 @@ export const MainContent: React.FC = () => {
             { id: 'canvas', icon: <Network size={13} />, label: 'Canvas' },
             { id: 'facts',  icon: <LayoutDashboard size={13} />, label: 'Facts' },
             { id: 'context', icon: <Database size={13} />, label: 'Context' },
+            { id: 'runs', icon: <Activity size={13} />, label: 'Runs' },
           ] as const
         ).map(({ id, icon, label }) => (
           <button
@@ -351,7 +353,7 @@ export const MainContent: React.FC = () => {
           >
             {icon}
             {label}
-            {id !== 'context' && (canvas?.nodes?.length ?? 0) > 0 && (
+            {(id === 'canvas' || id === 'facts') && (canvas?.nodes?.length ?? 0) > 0 && (
               <span className="text-[10px] bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full">
                 {canvas.nodes.length}
               </span>
@@ -445,6 +447,11 @@ export const MainContent: React.FC = () => {
             )}
           </div>
         </div>
+      )}
+
+      {/* Runs overlay */}
+      {activeTab === 'runs' && (
+        <RunsPanel onClose={() => setActiveTab('canvas')} />
       )}
 
       {/* Library drawer */}

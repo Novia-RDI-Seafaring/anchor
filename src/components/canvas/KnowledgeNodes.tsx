@@ -113,6 +113,7 @@ export interface CanvasNodeData {
   image_filename?: string;
   image_page?: number;
   image_bbox?: number[];
+  image_highlights?: string[];
   image_caption?: string;
   // plot node fields
   plot_job_id?: string;
@@ -290,13 +291,16 @@ export function CategoryNode({ data }: NodeProps) {
 // ─────────────────────────────────────────────
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
 
-function buildPageImageUrl(filename: string, page: number, bbox?: number[]): string {
+function buildPageImageUrl(filename: string, page: number, bbox?: number[], highlights?: string[]): string {
   const params = new URLSearchParams({ filename, page_no: String(page) });
   if (bbox && bbox.length === 4) {
     params.set("bbox_l", String(bbox[0]));
     params.set("bbox_t", String(bbox[1]));
     params.set("bbox_r", String(bbox[2]));
     params.set("bbox_b", String(bbox[3]));
+  }
+  if (highlights && highlights.length > 0) {
+    highlights.forEach(p => params.append("phrase", p));
   }
   return `${API_BASE}/api/documents/pdf/screenshot?${params.toString()}`;
 }
@@ -305,8 +309,9 @@ export function ImageNode({ data }: NodeProps) {
   const { node, onDelete, onOpenPDF } = data as unknown as ImageNodeData;
   const hasImage = !!(node.image_filename && node.image_page);
   const imageUrl = hasImage
-    ? buildPageImageUrl(node.image_filename!, node.image_page!, node.image_bbox)
+    ? buildPageImageUrl(node.image_filename!, node.image_page!, node.image_bbox, node.image_highlights)
     : null;
+  const pdfHighlights: PDFHighlight[] = [];
 
   return (
     <>
@@ -324,7 +329,7 @@ export function ImageNode({ data }: NodeProps) {
           </span>
           {hasImage && (
             <button
-              onClick={() => onOpenPDF?.(node.image_filename!, node.image_page!, [])}
+              onClick={() => onOpenPDF?.(node.image_filename!, node.image_page!, pdfHighlights)}
               className="text-sky-400 hover:text-sky-600 dark:hover:text-sky-300 transition-colors"
               title="Open in PDF viewer"
             >
@@ -336,7 +341,7 @@ export function ImageNode({ data }: NodeProps) {
         {/* Screenshot */}
         {imageUrl && (
           <button
-            onClick={() => onOpenPDF?.(node.image_filename!, node.image_page!, [])}
+            onClick={() => onOpenPDF?.(node.image_filename!, node.image_page!, pdfHighlights)}
             className="block w-full"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
