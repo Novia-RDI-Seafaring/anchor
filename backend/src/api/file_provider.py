@@ -17,7 +17,7 @@ async def get_document_hases(
     q: str = Query(..., description="Text to search for in PDFs"),
 ):
     rag_engine = get_rag_engine()
-    return rag_engine.query(f"Search for: {q}")
+    return rag_engine.query_handler.query(rag_engine, q, top_k=5)
 
 @router.get("/documents/pdf/screenshot", response_class=Response)
 def get_pdf_screenshot(

@@ -90,16 +90,9 @@ def _build_render_urls(filename: str, location: PdfCitationLocation | None) -> P
     return PdfCitationRender(image_url=image_url, pdf_url=pdf_url)
 
 
-def _to_pdf_search_response(result: Any) -> PdfSearchResponse:
-    answer = str(getattr(result, "response", "") or "")
-    source_nodes = getattr(result, "source_nodes", [])
-    if not isinstance(source_nodes, list):
-        source_nodes = []
-
+def _to_pdf_search_response(source_nodes: list[NodeWithScore]) -> PdfSearchResponse:
     citations: list[PdfCitation] = []
     for source in source_nodes:
-        if not isinstance(source, NodeWithScore):
-            continue
         metadata = _node_metadata(source)
         origin = metadata.get("origin", {})
         if not isinstance(origin, dict):
@@ -141,30 +134,94 @@ def _to_pdf_search_response(result: Any) -> PdfSearchResponse:
             )
         )
 
+    answer = ""
+    if source_nodes:
+        first_text = str(getattr(source_nodes[0].node, "text", "") or "").strip()
+        answer = first_text[:500]
+
     return PdfSearchResponse(answer=answer, citations=citations)
 
 
 class QueryHandler(SimpleLlamaIndexQueryHandler):
-    """App-specific query handler. retrieve() is inherited from SimpleLlamaIndexQueryHandler."""
+    """App-specific Ketju query handler for retrieval and PDF-aware responses."""
+
+    def _retriever_kwargs(
+        self,
+        document_id: str | None = None,
+        document_ids: list[str] | None = None,
+        top_k: int = 5,
+    ) -> dict[str, Any]:
+        from llama_index.core.vector_stores import (
+            FilterCondition,
+            FilterOperator,
+            MetadataFilter,
+            MetadataFilters,
+        )
+
+        retriever_kwargs: dict[str, Any] = {"similarity_top_k": top_k}
+        if document_id:
+            retriever_kwargs["filters"] = MetadataFilters(
+                filters=[MetadataFilter(key="document_id", operator=FilterOperator.EQ, value=document_id)]
+            )
+        elif document_ids:
+            retriever_kwargs["filters"] = MetadataFilters(
+                filters=[
+                    MetadataFilter(key="document_id", operator=FilterOperator.EQ, value=value)
+                    for value in dict.fromkeys(document_ids)
+                ],
+                condition=FilterCondition.OR,
+            )
+        return retriever_kwargs
+
+    def retrieve(
+        self,
+        rag: LlamaIndexRag,
+        question: str,
+        document_id: str | None = None,
+        document_ids: list[str] | None = None,
+        top_k: int = 5,
+    ) -> list[NodeWithScore]:
+        retriever = rag.vector_index.as_retriever(
+            **self._retriever_kwargs(document_id=document_id, document_ids=document_ids, top_k=top_k)
+        )
+        retrieved = retriever.retrieve(question)
+        source_nodes = [node for node in retrieved if isinstance(node, NodeWithScore)]
+        trace: list[dict[str, Any]] = []
+        for rank, node_with_score in enumerate(source_nodes, start=1):
+            metadata = _node_metadata(node_with_score)
+            origin = metadata.get("origin", {})
+            filename = ""
+            if isinstance(origin, dict):
+                filename = str(cast(Any, origin.get("filename", "")) or "")
+            location = _extract_location(metadata)
+            trace.append(
+                {
+                    "rank": rank,
+                    "filename": filename or metadata.get("filename") or metadata.get("file_name"),
+                    "page": location.page if location is not None else None,
+                    "score": float(node_with_score.score or 0.0),
+                }
+            )
+        if trace:
+            logger.info("Top retrieved chunks: %s", trace)
+        return source_nodes
 
     def query(
         self,
         rag: LlamaIndexRag,
         question: str,
         document_id: str | None = None,
+        document_ids: list[str] | None = None,
         top_k: int = 5,
     ) -> PdfSearchResponse:
-        from llama_index.core.vector_stores import MetadataFilter, MetadataFilters, FilterOperator
-
-        engine_kwargs: dict[str, Any] = {"similarity_top_k": top_k}
-        if document_id:
-            engine_kwargs["filters"] = MetadataFilters(
-                filters=[MetadataFilter(key="document_id", operator=FilterOperator.EQ, value=document_id)]
-            )
-        query_engine: Any = rag.vector_index.as_query_engine(**engine_kwargs)
-        result = query_engine.query(question)
-        logger.info("Result generated with %d source nodes", len(getattr(result, "source_nodes", []) or []))
-        return _to_pdf_search_response(result)
+        source_nodes = self.retrieve(
+            rag,
+            question,
+            document_id=document_id,
+            document_ids=document_ids,
+            top_k=top_k,
+        )
+        return _to_pdf_search_response(source_nodes)
 
     def get_page_image(self, node: NodeWithScore) -> bytes:
         to_image_bytes = getattr(node, "to_image_bytes", None)

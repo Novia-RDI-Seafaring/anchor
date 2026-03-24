@@ -273,7 +273,8 @@ def _clean_text_value(value: str) -> str:
     return "\n".join(line for line in lines if line).strip()
 
 def _split_candidate_lines(text: str) -> list[str]:
-    normalized = re.sub(r",\s*\d+\s*=", ":", text)
+    normalized = re.sub(r":\s*,\s*=\s*", ": ", text)
+    normalized = re.sub(r",\s*\d+\s*=", ":", normalized)
     normalized = re.sub(r"\.\s+(?=[A-Z][A-Za-z0-9 /()_-]{2,60}:)", "\n", normalized)
     base_lines = [_clean_text_value(line) for line in normalized.replace("\r", "\n").split("\n")]
     lines = [line for line in base_lines if line]
@@ -292,6 +293,7 @@ def _extract_properties_from_text(text: str, query: str) -> list[SpecProperty]:
     seen: set[tuple[str, str, str]] = set()
     model_match = _MODEL_CODE_RE.search(query)
     query_model = model_match.group(1) if model_match else ""
+    current_row_label = ""
 
     def append_property(key: str, value: str, *, model_specific: bool = False) -> None:
         nonlocal properties, seen
@@ -323,6 +325,10 @@ def _extract_properties_from_text(text: str, query: str) -> list[SpecProperty]:
         )
 
     for line in _split_candidate_lines(text):
+        if looks_like_row_label(line):
+            current_row_label = line
+            continue
+
         if query_model and query_model.lower() in line.lower():
             segments = [_clean_text_value(segment) for segment in re.split(r"[;,\t]", line) if _clean_text_value(segment)]
             if segments:
@@ -335,7 +341,7 @@ def _extract_properties_from_text(text: str, query: str) -> list[SpecProperty]:
                         re.IGNORECASE,
                     )
                     if model_value_match:
-                        key = row_label or query_model
+                        key = row_label or current_row_label or query_model
                         value = _clean_text_value(model_value_match.group(1))
                         if key and value:
                             append_property(key, value, model_specific=True)
@@ -348,6 +354,7 @@ def _extract_properties_from_text(text: str, query: str) -> list[SpecProperty]:
 
         pair_matches = list(re.finditer(r"([^:=.;\n]+)[:=]\s*([^.;\n]+)", line))
         if pair_matches:
+            current_row_label = ""
             for match in pair_matches:
                 key = _clean_text_value(match.group(1))
                 value = _clean_text_value(match.group(2))
@@ -387,52 +394,6 @@ def _select_relevant_properties(properties: list[SpecProperty], query: str) -> l
 
     best_score = max(score for score, _, _ in scored)
     return [prop for score, _, prop in scored if score == best_score]
-
-def _flatten_render_payload(value: Any, depth: int = 0) -> str:
-    if depth > 4:
-        return ""
-    if isinstance(value, SpecProperty):
-        rendered_value = value.value if not value.unit else f"{value.value} {value.unit}"
-        return f"{value.key} {rendered_value}"
-    if isinstance(value, str):
-        return value
-    if isinstance(value, dict):
-        return " ".join(_flatten_render_payload(item, depth + 1) for item in value.values())
-    if isinstance(value, list):
-        return " ".join(_flatten_render_payload(item, depth + 1) for item in value)
-    return str(value)
-
-def _chunk_overlap_score(chunk: dict, rendered_payload: Any) -> float:
-    rendered_text = _flatten_render_payload(rendered_payload).lower().strip()
-    if not rendered_text:
-        return -1.0
-    rendered_tokens = set(rendered_text.split())
-    if not rendered_tokens:
-        return -1.0
-
-    chunk_text = str(chunk.get("content") or "").lower().strip()
-    if not chunk_text:
-        return -1.0
-    chunk_tokens = set(chunk_text.split())
-    if not chunk_tokens:
-        return -1.0
-
-    overlap = len(rendered_tokens & chunk_tokens)
-    if overlap <= 0:
-        return 0.0
-    return overlap / len(chunk_tokens)
-
-def _select_best_chunk_index(chunks: list[dict], rendered_payload: Any) -> int:
-    if not chunks:
-        return 0
-    best_index = 0
-    best_score = -1.0
-    for index, chunk in enumerate(chunks):
-        score = _chunk_overlap_score(chunk, rendered_payload)
-        if score > best_score:
-            best_index = index
-            best_score = score
-    return best_index
 
 def _summarize_chunks(chunks: list[dict]) -> str:
     if not chunks:

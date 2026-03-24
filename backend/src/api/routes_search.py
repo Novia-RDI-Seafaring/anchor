@@ -22,6 +22,15 @@ async def search_knowledge_base(request: SearchRequest):
             "results": results,
             "retrieval_id": retrieval.get("retrieval_id"),
             "trace_id": trace.get("trace_id"),
+            "retrieval_trace": [
+                {
+                    "rank": item.get("provenance", {}).get("pipeline", {}).get("retrieval", {}).get("rank"),
+                    "filename": item.get("filename"),
+                    "page": item.get("page_no"),
+                    "score": item.get("similarity"),
+                }
+                for item in results
+            ],
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

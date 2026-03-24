@@ -1,8 +1,10 @@
 import re
 from pathlib import Path
+from urllib.parse import urlencode
 
 from pydantic_ai import ToolReturn
 from pydantic_ai._run_context import RunContext
+from src.core.config import get_settings
 from ..deps import AgentDeps
 from ..state import CanvasNode, SpecProperty
 from ..helpers import (
@@ -24,9 +26,9 @@ from ..helpers import (
     _select_highlights,
     _clean_text_value,
     _find_node_by_title,
-    _select_best_chunk_index,
     _select_relevant_properties,
 )
+from . import vision
 
 _COMPARISON_QUERY_RE = re.compile(r"\b(compare|comparison|different|difference|diff|vs\.?|versus)\b", re.IGNORECASE)
 _BROAD_FACT_QUERY_RE = re.compile(
@@ -224,16 +226,25 @@ async def search_knowledge_base(
 
     active_doc_id = ctx.deps.state.active_document_id
     document_id_filter = active_doc_id
-    if document_id_filter is None and doc_ids and len(doc_ids) == 1:
-        document_id_filter = doc_ids[0]
+    document_ids_filter = doc_ids
+    if document_id_filter is None and document_ids_filter and len(document_ids_filter) == 1:
+        document_id_filter = document_ids_filter[0]
+        document_ids_filter = None
     # Apply workspace filter when no specific doc is active/specified
     workspace_ids = getattr(ctx.deps.state, 'workspace_doc_ids', [])
-    if document_id_filter is None and not doc_ids and workspace_ids:
-        doc_ids = workspace_ids
+    if document_id_filter is None and not document_ids_filter and workspace_ids:
+        if len(workspace_ids) == 1:
+            document_id_filter = workspace_ids[0]
+        else:
+            document_ids_filter = workspace_ids
 
     service = await get_document_service()
-    fetch_k = max(top_k, 40 if (filename or (doc_ids and len(doc_ids) > 1)) else top_k)
-    chunks = await service.search(query=query, top_k=fetch_k, document_id=document_id_filter)
+    chunks = await service.search(
+        query=query,
+        top_k=top_k,
+        document_id=document_id_filter,
+        document_ids=document_ids_filter,
+    )
 
     if filename:
         normalized_filename = filename.strip().lower()
@@ -244,8 +255,8 @@ async def search_knowledge_base(
         if filtered_by_filename:
             chunks = filtered_by_filename
 
-    if doc_ids:
-        doc_id_set = set(doc_ids)
+    if document_ids_filter:
+        doc_id_set = set(document_ids_filter)
         filtered_by_doc_ids = [chunk for chunk in chunks if chunk.get("document_id") in doc_id_set]
         if filtered_by_doc_ids:
             chunks = filtered_by_doc_ids
@@ -269,6 +280,15 @@ async def search_knowledge_base(
         "sources": list(dict.fromkeys(chunk.get("filename") for chunk in normalized_chunks if chunk.get("filename"))),
         "retrieval_id": retrieval.get("retrieval_id"),
         "trace_id": trace.get("trace_id"),
+        "retrieval_trace": [
+            {
+                "rank": chunk.get("provenance", {}).get("pipeline", {}).get("retrieval", {}).get("rank"),
+                "filename": chunk.get("filename"),
+                "page": chunk.get("page_no"),
+                "score": chunk.get("similarity"),
+            }
+            for chunk in normalized_chunks
+        ],
     }
 
 async def resolve_technical_query(
@@ -302,9 +322,7 @@ async def resolve_technical_query(
     if active_document_id:
         chunks = await service.search(query=query, top_k=top_k, document_id=active_document_id)
     elif workspace_ids:
-        # Search across all workspace docs — fetch more, then filter
-        chunks = await service.search(query=query, top_k=max(top_k, 40))
-        chunks = [c for c in chunks if c.get("document_id") in set(workspace_ids)][:top_k]
+        chunks = await service.search(query=query, top_k=top_k, document_ids=workspace_ids)
     else:
         chunks = await service.search(query=query, top_k=top_k, document_id=None)
     normalized_chunks: list[dict] = []
@@ -328,18 +346,18 @@ async def resolve_technical_query(
             ctx.deps.state.nodes.append(concept_node)
             resolved_concept_id = concept_node.id
 
-    topic = CanvasNode(
-        node_type="topic",
-        title=root_title or _derive_topic_title(query),
-        status="found" if normalized_chunks else "not_found",
-    )
-    _mark_node_for_run(topic, ctx)
-    ctx.deps.state.nodes.append(topic)
-
-    if resolved_concept_id:
-        _ensure_relation(ctx, resolved_concept_id, topic.id)
+    requested_topic_title = root_title or _derive_topic_title(query)
 
     if not normalized_chunks:
+        topic = CanvasNode(
+            node_type="topic",
+            title=requested_topic_title,
+            status="not_found",
+        )
+        _mark_node_for_run(topic, ctx)
+        ctx.deps.state.nodes.append(topic)
+        if resolved_concept_id:
+            _ensure_relation(ctx, resolved_concept_id, topic.id)
         fact = CanvasNode(
             node_type="fact",
             text=f"No relevant data found for: {query}",
@@ -361,6 +379,131 @@ async def resolve_technical_query(
     source_chunk_index, properties = _extract_doc_properties(normalized_chunks, query)
 
     matched_properties = _select_relevant_properties(properties, query) if properties else []
+    fallback_answer_text: str | None = None
+    query_model_match = _MODEL_CODE_RE.search(query)
+    query_model = query_model_match.group(1).strip().lower() if query_model_match else ""
+
+    if not properties:
+        source_text = _clean_text_value(str(normalized_chunks[source_chunk_index].get("content") or ""))
+        if len(source_text.split()) <= 8:
+            for index, chunk in enumerate(normalized_chunks):
+                candidate_text = _clean_text_value(str(chunk.get("content") or ""))
+                if candidate_text.startswith("- ") or "\n- " in candidate_text or candidate_text.startswith("• ") or "\n• " in candidate_text:
+                    source_chunk_index = index
+                    fallback_answer_text = candidate_text
+                    break
+
+    model_only_match = bool(query_model and matched_properties and all(
+        prop.key.strip().lower() == query_model for prop in matched_properties
+    ))
+    selected_chunk_text = _clean_text_value(str(normalized_chunks[source_chunk_index].get("content") or ""))
+    is_list_like_chunk = bool(
+        selected_chunk_text.startswith("- ")
+        or selected_chunk_text.startswith("• ")
+        or "\n- " in selected_chunk_text
+        or "\n• " in selected_chunk_text
+    )
+    resolved_filename, resolved_page, resolved_bbox, resolved_highlights = _resolve_source_details(
+        ctx=ctx,
+        chunk_index=source_chunk_index,
+    )
+
+    if (
+        not _BROAD_FACT_QUERY_RE.search(query)
+        and (not matched_properties or model_only_match)
+        and not is_list_like_chunk
+        and resolved_filename
+        and resolved_page
+    ):
+        source_text = _clean_text_value(str(normalized_chunks[source_chunk_index].get("content") or ""))
+        if len(source_text.split()) > 24:
+            settings = get_settings()
+            screenshot_params: dict[str, str | int | float] = {
+                "filename": resolved_filename,
+                "page_no": resolved_page,
+            }
+            if len(resolved_bbox) == 4:
+                screenshot_params.update(
+                    {
+                        "bbox_l": resolved_bbox[0],
+                        "bbox_t": resolved_bbox[1],
+                        "bbox_r": resolved_bbox[2],
+                        "bbox_b": resolved_bbox[3],
+                    }
+                )
+            image_url = f"http://127.0.0.1:{settings.port}/api/documents/pdf/screenshot?{urlencode(screenshot_params)}"
+            vision_text = await vision.analyze_image_content(
+                ctx,
+                image_url,
+                (
+                    f"Extract only the minimal text needed to answer this question from the screenshot: {query}. "
+                    "If the answer is a list, return the list items as bullets. "
+                    "If the answer is a table row, return concise key-value text only. "
+                    "If uncertain, say so."
+                ),
+            )
+            if not vision_text.lower().startswith("image analysis failed:"):
+                cleaned_vision_text = _clean_text_value(vision_text)
+                vision_properties = _extract_properties_from_text(vision_text, query)
+                vision_matched = _select_relevant_properties(vision_properties, query) if vision_properties else []
+                if vision_matched:
+                    properties = vision_properties
+                    matched_properties = vision_matched
+                elif cleaned_vision_text:
+                    fallback_answer_text = cleaned_vision_text
+
+    topic = None
+    if not root_title and not _BROAD_FACT_QUERY_RE.search(query) and matched_properties:
+        for node in ctx.deps.state.nodes:
+            if node.node_type != "spec" or not node.properties:
+                continue
+            if not _select_relevant_properties(node.properties, query):
+                continue
+            parent_topic_relation = next(
+                (
+                    rel for rel in ctx.deps.state.relations
+                    if rel.to_id == node.id
+                    and any(candidate.id == rel.from_id and candidate.node_type == "topic" for candidate in ctx.deps.state.nodes)
+                ),
+                None,
+            )
+            if parent_topic_relation is None:
+                continue
+            topic = next(
+                (candidate for candidate in ctx.deps.state.nodes if candidate.id == parent_topic_relation.from_id and candidate.node_type == "topic"),
+                None,
+            )
+            if topic is not None:
+                break
+
+    if topic is None:
+        existing_topic = _find_node_by_title(ctx, requested_topic_title, "topic")
+        if existing_topic is not None:
+            topic = existing_topic
+
+    if topic is None:
+        topic = CanvasNode(
+            node_type="topic",
+            title=requested_topic_title,
+            status="found",
+        )
+        _mark_node_for_run(topic, ctx)
+        ctx.deps.state.nodes.append(topic)
+    else:
+        _mark_node_for_run(topic, ctx)
+
+    if resolved_concept_id:
+        _ensure_relation(ctx, resolved_concept_id, topic.id)
+    else:
+        concept_relation = next((rel for rel in ctx.deps.state.relations if rel.to_id == topic.id), None)
+        if concept_relation is not None:
+            concept_node = next(
+                (node for node in ctx.deps.state.nodes if node.id == concept_relation.from_id and node.node_type == "concept"),
+                None,
+            )
+            if concept_node is not None:
+                resolved_concept_id = concept_node.id
+
     use_spec = prefer_table if prefer_table is not None else bool(properties) and (
         len(matched_properties) > 1
         or len(properties) > 2
@@ -370,11 +513,6 @@ async def resolve_technical_query(
         summary_text = _summarize_chunks([normalized_chunks[source_chunk_index]])
         properties = [SpecProperty(key=_derive_spec_title(query), value=summary_text)]
     display_properties = matched_properties if use_spec and matched_properties else properties
-    resolved_filename, resolved_page, resolved_bbox, resolved_highlights = _resolve_source_details(
-        ctx=ctx,
-        chunk_index=source_chunk_index,
-    )
-
     if use_spec:
         spec = CanvasNode(
             node_type="spec",
@@ -408,9 +546,12 @@ async def resolve_technical_query(
         return result
 
     if not _BROAD_FACT_QUERY_RE.search(query):
-        best_chunk_index = source_chunk_index if properties else _select_best_chunk_index(normalized_chunks, query)
-        fact_chunk = normalized_chunks[best_chunk_index]
-        fact_text = _summarize_properties(matched_properties).rstrip(".") if matched_properties else _summarize_chunks([fact_chunk])
+        fact_chunk = normalized_chunks[source_chunk_index]
+        fact_text = (
+            _summarize_properties(matched_properties).rstrip(".")
+            if matched_properties
+            else (fallback_answer_text or _summarize_chunks([fact_chunk]))
+        )
         fact = CanvasNode(node_type="fact", text=fact_text, status="found")
         _mark_node_for_run(fact, ctx)
         ctx.deps.state.nodes.append(fact)
