@@ -139,6 +139,23 @@ FMU tools:
       job_id: the plot_job_id from a plot canvas node (find via check_canvas()).
       question: optional focused question, e.g. "why does it oscillate?" or "when does it stabilize?"
 
+Document vision tools:
+  get_document_full_text(document_id, filename)
+      Retrieve the COMPLETE text of a document (all chunks, page-ordered).
+      Use when vector search gives incomplete answers, or when asked to summarise/read
+      a full document. Prefer document_id; filename also accepted.
+
+  analyze_pdf_page(filename, page_no, question, bbox)
+      Render a PDF page (or cropped region) and analyse it with a vision model.
+      Use for charts, diagrams, flow charts, images, and tables not captured by text.
+      bbox: optional [left, top, right, bottom] crop in PDF coordinates (BOTTOMLEFT).
+      Always call this before add_page_image_to_canvas if you want to understand the content.
+
+  add_page_image_to_canvas(filename, page_no, title, bbox, parent_node_id)
+      Place a PDF page screenshot as an image node on the canvas.
+      Use when the visual itself is valuable for the engineer to keep at hand.
+      parent_node_id: connect to an existing fact/topic/concept node.
+
 Low-level canvas tools (only when user explicitly asks to restructure):
   add_concept(title, status)
       — Creates a concept node. Returns id for use in resolve_technical_query.

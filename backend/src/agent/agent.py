@@ -26,6 +26,7 @@ from .prompts import SYS_PROMPT as SYSTEM_PROMPT
 from .state import Canvas
 from .tools import canvas, knowledge, vision
 from .tools import fmu as fmu_tools
+from .tools import document as document_tools
 
 _COMPARISON_QUERY_RE = re.compile(r"\b(compare|comparison|different|difference|diff|vs\.?|versus)\b", re.IGNORECASE)
 _LIST_ONLY_TOOLS = {"list_documents"}
@@ -49,6 +50,9 @@ _HIGH_LEVEL_TECHNICAL_TOOLS = {
     "inspect_fmu_tool",
     "simulate_fmu_tool",
     "analyze_simulation_tool",
+    "get_document_full_text",
+    "analyze_pdf_page",
+    "add_page_image_to_canvas",
 }
 _CANVAS_EDIT_TOOLS = _LOW_LEVEL_CANVAS_TOOLS | _HIGH_LEVEL_TECHNICAL_TOOLS
 
@@ -160,5 +164,10 @@ agent.tool(vision.analyze_image_content)
 agent.tool(fmu_tools.inspect_fmu_tool)
 agent.tool(fmu_tools.simulate_fmu_tool)
 agent.tool(fmu_tools.analyze_simulation_tool)
+
+# Register Document Vision Tools
+agent.tool(document_tools.get_document_full_text)
+agent.tool(document_tools.analyze_pdf_page)
+agent.tool(document_tools.add_page_image_to_canvas)
 
 AppState = Canvas
