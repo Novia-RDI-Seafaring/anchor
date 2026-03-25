@@ -32,3 +32,14 @@
 body {
   font-family: 'Inter', system-ui, sans-serif;
 }
+
+/* Selected canvas node — strong ring so it's obvious */
+.react-flow__node.selected > div:first-child {
+  outline: 2.5px solid #6366f1 !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.18) !important;
+}
+.dark .react-flow__node.selected > div:first-child {
+  outline-color: #818cf8 !important;
+  box-shadow: 0 0 0 4px rgba(129, 140, 248, 0.22) !important;
+}

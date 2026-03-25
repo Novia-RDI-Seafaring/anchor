@@ -10,6 +10,7 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
+  SelectionMode,
   type Node,
   type Edge,
   type NodeTypes,
@@ -501,6 +502,7 @@ interface CanvasGraphProps {
   workspaceDocIds?: string[];
   onAddDocToWorkspace?: (docId: string) => void;
   onFmuFromLibrary?: (filename: string) => void;
+  onSaveSelection?: (selectedNodeIds: string[], name?: string) => Promise<void>;
 }
 
 async function uploadCanvasFile(
@@ -530,8 +532,8 @@ async function uploadCanvasFile(
   }
 }
 
-function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, onFmuUploaded, onSimulateComplete, onDeleteNode, onAddNode, onAddEdge, onSetNodeColor, workspaceDocIds, onAddDocToWorkspace, onFmuFromLibrary }: CanvasGraphProps) {
-  const { screenToFlowPosition } = useReactFlow();
+function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, onFmuUploaded, onSimulateComplete, onDeleteNode, onAddNode, onAddEdge, onSetNodeColor, workspaceDocIds, onAddDocToWorkspace, onFmuFromLibrary, onSaveSelection }: CanvasGraphProps) {
+  const { screenToFlowPosition, fitView } = useReactFlow();
   const rfContainerRef = useRef<HTMLDivElement>(null);
   const { documents, refreshDocuments, activeDocumentId, setActiveDocumentId } = useApp();
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
@@ -540,6 +542,21 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+
+  // Multi-select state
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const [isSavingSnippet, setIsSavingSnippet] = useState(false);
+
+  const onSelectionChange = useCallback(({ nodes: selNodes }: { nodes: Node[]; edges: Edge[] }) => {
+    setSelectedNodeIds(selNodes.filter(n => !n.id.startsWith('__doc_')).map(n => n.id));
+  }, []);
+
+  const handleSaveSnippet = useCallback(async () => {
+    if (!onSaveSelection || selectedNodeIds.length === 0) return;
+    setIsSavingSnippet(true);
+    await onSaveSelection(selectedNodeIds);
+    setIsSavingSnippet(false);
+  }, [onSaveSelection, selectedNodeIds]);
 
   // Context menu (right-click on node)
   const [contextMenu, setContextMenu] = useState<{
@@ -706,6 +723,13 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     });
   }, []);
 
+  const onNodeDoubleClick = useCallback((_evt: React.MouseEvent, node: Node) => {
+    const canvasNode = nodesRef.current.find((n: Node) => n.id === node.id);
+    const nodeType = canvasNode ? (canvasNode.data as any)?.node_type : undefined;
+    if (!nodeType || !isCollapsibleNodeType(nodeType)) return;
+    handleToggleCollapse(node.id);
+  }, [handleToggleCollapse]);
+
   const [simulateError, setSimulateError] = useState<string | null>(null);
 
   const handleSimulate = useCallback(async (nodeId: string, filename: string, paramValues: Record<string, string>, stopTime: number) => {
@@ -787,12 +811,38 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     });
   }, [handleOpenPDF, workspaceDocIds]);
 
+  // Refs used by the debounced layout effect
+  const layoutKeyRef = useRef<string>('');
+  const isFirstLayout = useRef(true);
+
   useEffect(() => {
+    layoutKeyRef.current = structureKey;
+    // Always debounce — including the first layout.
+    // Using delay=0 on the first layout caused streaming thrash: intermediate partial
+    // graphs (e.g. concept + topics before facts/edges arrive) got laid out by Dagre
+    // and spread wide before settling. 400 ms is imperceptible on load but eliminates
+    // the spread-then-collapse animation during agent streaming.
+    const firstLayout = isFirstLayout.current;
+    const delay = 400;
+
+    const timer = setTimeout(() => {
+      if (layoutKeyRef.current !== structureKey) return; // a newer layout superseded this one
+
     const docNodes = buildDocNodes(relations);
 
     if (rawNodes.length === 0) {
       setNodes(docNodes);
       setEdges([]);
+      return;
+    }
+
+    // Skip layout when multiple knowledge nodes exist but no structural edges yet.
+    // The custom layout places each rootless node at rootIdx × 1150px, spreading
+    // e.g. 8 orphan nodes across 8000px — exactly the "side-by-side" issue seen
+    // during streaming when nodes arrive before their relations.
+    // A single root node (e.g. the concept node alone) is fine — it lands at x=0.
+    const structuralRelations = relations.filter(r => !r.to_id.startsWith('__doc_'));
+    if (rawNodes.length > 1 && structuralRelations.length === 0) {
       return;
     }
 
@@ -896,7 +946,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         animated: isConceptTopic || isEntityCat || isCatTopic,
         style: {
           stroke: strokeColor,
-          strokeWidth: isEntityCat ? 2.5 : isConceptTopic || isCatTopic ? 2 : isEvidence ? 1 : 1.5,
+          strokeWidth: isEntityCat ? 3.5 : isConceptTopic || isCatTopic ? 3 : isTopicFact || isSpec ? 2.5 : isEvidence ? 1 : 2,
           strokeDasharray: isEvidence || isSpec ? "4 3" : undefined,
           opacity: isEvidence ? 0.5 : undefined,
         },
@@ -964,6 +1014,15 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     });
     setNodes([...docNodesWithOverrides, ...laidOut]);
     setEdges(rfEdges);
+
+    // Fit view after layout settles (skip the very first — handled by RF's fitView prop)
+    if (!firstLayout) {
+      setTimeout(() => fitView({ duration: 450, padding: 0.18 }), 60);
+    }
+    if (isFirstLayout.current) isFirstLayout.current = false;
+    }, delay);
+
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structureKey]);
 
@@ -1119,8 +1178,12 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
           onConnectStart={onConnectStart}
           onConnectEnd={onConnectEnd}
           onConnect={onConnect}
+          onNodeDoubleClick={onNodeDoubleClick}
           onNodeContextMenu={onNodeContextMenu}
           onPaneClick={() => { setNewNodePopup(null); setContextMenu(null); }}
+          onSelectionChange={onSelectionChange}
+          selectionMode={SelectionMode.Partial}
+          selectionOnDrag
           deleteKeyCode={["Delete", "Backspace"]}
           fitView
           fitViewOptions={{ padding: 0.2 }}
@@ -1152,6 +1215,23 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
           )}
         </ReactFlow>
         <NodeAddToolbar onAddNode={handleToolbarAdd} />
+
+        {/* Floating selection bar */}
+        {selectedNodeIds.length >= 1 && onSaveSelection && (
+          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-lg px-4 py-2">
+            <span className="text-xs text-neutral-500 dark:text-neutral-400">
+              {selectedNodeIds.length} node{selectedNodeIds.length > 1 ? 's' : ''} selected
+            </span>
+            <div className="w-px h-4 bg-neutral-200 dark:bg-neutral-700" />
+            <button
+              onClick={handleSaveSnippet}
+              disabled={isSavingSnippet}
+              className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200 disabled:opacity-50 transition-colors"
+            >
+              {isSavingSnippet ? 'Saving…' : '⬆ Save to library'}
+            </button>
+          </div>
+        )}
       </div>
 
       {pdfModal && (

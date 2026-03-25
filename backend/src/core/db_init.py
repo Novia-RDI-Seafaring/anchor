@@ -85,6 +85,18 @@ def bootstrap_database() -> None:
             ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT ''
         """)
 
+        # 5. Knowledge snippets table (reusable canvas sub-graphs)
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS "{schema}".knowledge_snippets (
+                id          TEXT PRIMARY KEY,
+                user_id     TEXT NOT NULL DEFAULT '',
+                name        TEXT NOT NULL DEFAULT 'Snippet',
+                nodes       JSONB NOT NULL DEFAULT '[]',
+                relations   JSONB NOT NULL DEFAULT '[]',
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         print(f"[db_init] Ready — schema={schema!r}, vector extension in public")
     finally:
         cur.close()

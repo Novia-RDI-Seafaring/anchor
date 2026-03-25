@@ -77,6 +77,18 @@ For multi-aspect queries ("show me", "explain", "overview"):
     resolve_technical_query(concept_id=r1["concept_id"], root_title="Strategy")
     resolve_technical_query(concept_id=r1["concept_id"], root_title="Tax Optimization")
 
+For COMPREHENSIVE queries ("tell me everything", "all about X", "full overview", "all things about"):
+  NEVER stop after 1-2 tool calls. NEVER say "That's all I found" or "Want me to continue?".
+  The mandatory sequence is:
+    1. check_canvas() — find existing concept node IDs to reuse
+    2. get_document_tree(document_id=<active doc>) — identify chapters and pages with tables/figures
+    3. get_document_full_text(document_id=<active doc>, include_pages=[all table/chart pages]) —
+       cosine search MISSES table rows and variant-specific data; full text is essential
+    4. resolve_technical_query() for EACH major aspect, passing the SAME concept_id each time:
+       Overview, Operating Limits, Dimensions, Connections, Motor, Performance, Features, etc.
+    5. add_page_image_to_canvas() for every chart, data table, or diagram page found
+  Keep calling tools until the canvas fully represents the subject.
+
 Simple raw retrieval / debugging request — use search_knowledge_base():
   only when the user explicitly asks to search, inspect chunks, or avoid changing the canvas.
 

@@ -77,6 +77,14 @@ class ConversationStore:
         """Upsert fields that are provided (None = keep existing)."""
         pool = await self._pool()
         async with pool.acquire() as conn:
+            # Ensure conversation row exists (creates it if the frontend has a
+            # stale ID that was never persisted — e.g. after a DB reset).
+            await conn.execute(f"""
+                INSERT INTO "{self._schema}".conversations (id, user_id)
+                VALUES ($1, $2)
+                ON CONFLICT (id) DO NOTHING
+            """, conversation_id, user_id)
+
             # Build update dynamically so we only touch provided fields
             sets = ["updated_at = CURRENT_TIMESTAMP"]
             params: list[Any] = [conversation_id]

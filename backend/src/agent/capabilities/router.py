@@ -23,6 +23,17 @@ import re
 _COMPARISON_QUERY_RE = re.compile(
     r"\b(compare|comparison|different|difference|diff|vs\.?|versus)\b", re.IGNORECASE
 )
+# Queries requesting exhaustive/comprehensive information in one go
+_COMPREHENSIVE_RE = re.compile(
+    r"\b("
+    r"tell me (all|everything)|everything about|all (things|about|you know)|"
+    r"full overview|deep dive|comprehensive|complete (guide|overview|summary|profile|picture)|"
+    r"what (all|everything)|show me everything|all (facts|specs|info|information|details)|"
+    r"give me everything|all aspects|full (profile|detail|breakdown|analysis)|"
+    r"entire|whole (document|picture)|summarize (everything|all)|walk me through"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -83,10 +94,38 @@ class RouterCapability(AbstractCapability[Any]):
                     f"compare_documents(query={prompt_text!r}). Use its returned summary as the basis for the reply. "
                     "Do not answer from raw retrieval only."
                 )
+            if _COMPREHENSIVE_RE.search(normalized):
+                return (
+                    "COMPREHENSIVE QUERY — the user wants ALL available information. "
+                    "Execute the full sequence autonomously in ONE response. Do NOT ask for permission to continue.\n"
+                    "\n"
+                    "Mandatory sequence:\n"
+                    "1. check_canvas() — find existing concept node IDs to reuse.\n"
+                    "2. get_document_tree(document_id=<active doc>) — identify chapters and which pages "
+                    "   have tables, charts, or figures.\n"
+                    "3. get_document_full_text(document_id=<active doc>, include_pages=[<every page that "
+                    "   has a table or figure per the tree>) — read the COMPLETE document text AND page "
+                    "   images. This is essential: cosine search misses table rows and variant-specific data.\n"
+                    "4. resolve_technical_query() for EACH major aspect (Overview, Operating Limits, "
+                    "   Dimensions, Connections, Motor, Performance, Features) — pass SAME concept_id "
+                    "   returned by the first call to ALL subsequent calls.\n"
+                    "5. add_page_image_to_canvas() for every chart, data table, or diagram page found "
+                    "   in step 2-3 — with highlights pointing to the relevant variant/model values.\n"
+                    "\n"
+                    "Rules:\n"
+                    "- Do NOT stop after 1-2 tool calls.\n"
+                    "- Do NOT say 'That's all I found' or 'Want me to continue?'.\n"
+                    "- Call tools until the canvas fully represents the subject.\n"
+                    f"- Subject of query: {prompt_text!r}"
+                )
             return (
-                "This is a technical knowledge-base query. Before any text answer, call "
-                f"resolve_technical_query(query={prompt_text!r}). Use its returned summary as the basis for the reply. "
-                "Do not use search_knowledge_base for the final answer unless the user explicitly asks for raw retrieval only."
+                "This is a technical knowledge-base query. Before any text answer:\n"
+                "1. Call check_canvas() to find existing concept node IDs.\n"
+                f"2. Call resolve_technical_query(query={prompt_text!r}, concept_title=<subject>, root_title=<aspect>).\n"
+                "3. If the query spans multiple aspects (e.g. 'overview and specs'), call "
+                "   resolve_technical_query MULTIPLE TIMES with the SAME concept_id, once per aspect.\n"
+                "Use the returned summaries as the basis for the final reply. "
+                "Do not use search_knowledge_base for the final answer unless the user explicitly asks."
             )
 
         return _instruction
