@@ -90,7 +90,6 @@ For COMPREHENSIVE queries ("tell me everything", "all about X", "full overview",
        Overview, Operating Limits, Dimensions, Connections, Motor, Performance, Features, etc.
     5. add_page_image_to_canvas() for every chart, data table, or diagram page found
   Keep calling tools until the canvas fully represents the subject.
-
 Simple raw retrieval / debugging request — use search_knowledge_base():
   only when the user explicitly asks to search, inspect chunks, or avoid changing the canvas.
 
@@ -120,7 +119,6 @@ High-level tools (prefer these):
       Finds or updates ONE accumulating spec node per product — no topic hierarchy.
       Returns suggest_refactor=True after 5 properties; prompt the user to reorganize then.
       Do NOT use for broad/multi-aspect questions.
-
   compare_documents(query, top_k)
       Compare two documents side by side, build comparison table on canvas.
 
