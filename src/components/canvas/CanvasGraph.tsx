@@ -121,53 +121,83 @@ function connectedComponents(nodes: Node[], edges: Edge[]): string[][] {
   return components;
 }
 
-function applyDagreLayout(nodes: Node[], edges: Edge[]): Node[] {
+function applyMindmapLayout(nodes: Node[], edges: Edge[]): Node[] {
   if (nodes.length === 0) return nodes;
 
-  const positions = new Map<string, { x: number; y: number }>();
-  const components = connectedComponents(nodes, edges);
-  let yOffset = 0;
-  const componentGap = 120;
-
-  for (const component of components) {
-    const g = new dagre.graphlib.Graph();
-    g.setDefaultEdgeLabel(() => ({}));
-    g.setGraph({ rankdir: "TB", nodesep: 50, ranksep: 80, edgesep: 10 });
-
-    for (const nodeId of component) {
-      const node = nodes.find((item) => item.id === nodeId);
-      if (!node || node.hidden) continue;
-      const sz = NODE_SIZE[node.type ?? ""] ?? DEFAULT_SIZE;
-      g.setNode(node.id, { width: sz.w, height: sz.h });
-    }
-
-    for (const edge of edges) {
-      if (edge.hidden) continue;
-      if (g.hasNode(edge.source) && g.hasNode(edge.target)) {
-        g.setEdge(edge.source, edge.target);
-      }
-    }
-
-    dagre.layout(g);
-
-    let maxBottom = yOffset;
-
-    for (const nodeId of component) {
-      if (!g.hasNode(nodeId)) continue;
-      const { x, y, width, height } = g.node(nodeId);
-      const position = { x: x - width / 2, y: y - height / 2 + yOffset };
-      positions.set(nodeId, position);
-      maxBottom = Math.max(maxBottom, position.y + height);
-    }
-
-    yOffset = maxBottom + componentGap;
+  // Build parent→children (ignoring doc nodes)
+  const childrenOf = new Map<string, string[]>();
+  const hasParent = new Set<string>();
+  for (const edge of edges) {
+    if (edge.hidden || edge.target.startsWith('__doc_')) continue;
+    const ch = childrenOf.get(edge.source) ?? [];
+    ch.push(edge.target);
+    childrenOf.set(edge.source, ch);
+    hasParent.add(edge.target);
   }
 
-  return nodes.map((node) => (
+  const visibleIds = new Set(nodes.filter(n => !n.hidden).map(n => n.id));
+  const roots = nodes.filter(n =>
+    !n.hidden && !n.id.startsWith('__doc_') && !hasParent.has(n.id)
+  );
+
+  const positions = new Map<string, { x: number; y: number }>();
+
+  const TOPIC_R = 380;      // radius: concept → topic
+  const LEAF_R  = 310;      // extra radius: topic → leaf
+  const CLUSTER_W = 1150;   // horizontal gap between concept clusters
+
+  roots.forEach((root, rootIdx) => {
+    const cx = rootIdx * CLUSTER_W;
+    positions.set(root.id, { x: cx, y: 0 });
+
+    const topics = (childrenOf.get(root.id) ?? []).filter(id => visibleIds.has(id));
+    const N = topics.length;
+
+    topics.forEach((topicId, i) => {
+      // Distribute topics evenly around the concept, starting from top
+      const angle = N <= 1 ? -Math.PI / 2 : -Math.PI / 2 + (2 * Math.PI * i) / N;
+      const tx = cx + TOPIC_R * Math.cos(angle);
+      const ty = TOPIC_R * Math.sin(angle);
+      positions.set(topicId, { x: tx, y: ty });
+
+      const leaves = (childrenOf.get(topicId) ?? []).filter(id => visibleIds.has(id));
+      const M = leaves.length;
+      leaves.forEach((leafId, j) => {
+        // Fan leaves in a 70° arc extending outward from concept→topic direction
+        const spread = Math.PI / (M <= 1 ? 1 : 2.2);
+        const leafAngle = M <= 1 ? angle : angle - spread / 2 + (spread * j) / (M - 1);
+        positions.set(leafId, {
+          x: tx + LEAF_R * Math.cos(leafAngle),
+          y: ty + LEAF_R * Math.sin(leafAngle),
+        });
+      });
+    });
+  });
+
+  // Doc nodes: row above all clusters
+  const docNodes = nodes.filter(n => !n.hidden && n.id.startsWith('__doc_'));
+  const docSpacing = 230;
+  const totalDocW = (docNodes.length - 1) * docSpacing;
+  const docCenterX = roots.length > 0
+    ? roots.reduce((s, _, i) => s + i * CLUSTER_W, 0) / roots.length
+    : 0;
+  docNodes.forEach((dn, i) => {
+    positions.set(dn.id, { x: docCenterX - totalDocW / 2 + i * docSpacing, y: -360 });
+  });
+
+  // Fallback: any visible node not yet positioned → stack below clusters
+  let fallbackX = 0;
+  for (const node of nodes) {
+    if (node.hidden || positions.has(node.id)) continue;
+    positions.set(node.id, { x: fallbackX, y: 800 });
+    fallbackX += 280;
+  }
+
+  return nodes.map(node =>
     node.hidden || !positions.has(node.id)
       ? node
       : { ...node, position: positions.get(node.id)! }
-  ));
+  );
 }
 
 // Collect all descendants of a set of node IDs
@@ -844,43 +874,59 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
       const isSpec      = toNode?.node_type === "spec";
       const isEvidence  = r.to_id.startsWith('__doc_');
       const isSimPlot   = fromNode?.node_type === "fmu" && toNode?.node_type === "plot";
+      // Hide evidence edges that originate from leaf nodes (fact/spec) — replaced by
+      // deduplicated topic→doc reference lines added below.
+      const isLeafEvidence = isEvidence &&
+        (fromNode?.node_type === "fact" || fromNode?.node_type === "spec");
       const strokeColor = isSimPlot    ? "#14b8a6"
         : isConceptTopic ? "#8b5cf6"
         : isEntityCat ? "#64748b"
         : isCatTopic  ? "#3b82f6"
         : isTopicFact ? "#f59e0b"
         : isSpec       ? "#8b5cf6"
-        : isEvidence   ? "#14b8a6"
+        : isEvidence   ? "#94a3b8"
         : "#6366f1";
-      const docForEdge = isEvidence
-        ? documentsRef.current.find(d => `__doc_${d.document_id}` === r.to_id)
-        : undefined;
       return {
         id: `e-${idx}`,
         source: r.from_id,
         target: r.to_id,
         label: r.label || undefined,
         type: "floating",
-        hidden: hiddenIds.has(r.from_id) || hiddenIds.has(r.to_id),
+        hidden: isLeafEvidence || hiddenIds.has(r.from_id) || hiddenIds.has(r.to_id),
         animated: isConceptTopic || isEntityCat || isCatTopic,
         style: {
           stroke: strokeColor,
-          strokeWidth: isEntityCat ? 2.5 : isConceptTopic || isCatTopic ? 2 : 1.5,
+          strokeWidth: isEntityCat ? 2.5 : isConceptTopic || isCatTopic ? 2 : isEvidence ? 1 : 1.5,
           strokeDasharray: isEvidence || isSpec ? "4 3" : undefined,
+          opacity: isEvidence ? 0.5 : undefined,
         },
         labelStyle: { fill: isSimPlot ? "#0f766e" : "#6366f1", fontWeight: 600, fontSize: 10 },
         labelBgStyle: { fill: isSimPlot ? "#f0fdfa" : "#f5f3ff", fillOpacity: 0.92 },
         labelBgPadding: [3, 2] as [number, number],
-        data: isEvidence && r.page ? {
-          page: r.page,
-          bbox: r.bbox ?? [],
-          highlights: r.highlights ?? [],
-          document_id: r.document_id ?? '',
-          filename: docForEdge?.filename ?? '',
-          onOpenPDF: handleOpenPDF,
-        } : undefined,
       };
     });
+
+    // Deduplicated topic→doc reference lines (one per topic-doc pair)
+    const seenTopicDoc = new Set<string>();
+    for (const r of relations) {
+      if (!r.to_id.startsWith('__doc_')) continue;
+      const fromNode = nodeMap.get(r.from_id);
+      if (fromNode?.node_type !== 'fact' && fromNode?.node_type !== 'spec') continue;
+      // Walk up to find the parent topic
+      const parentRel = relations.find(pr => pr.to_id === r.from_id && !pr.to_id.startsWith('__doc_'));
+      if (!parentRel) continue;
+      const key = `${parentRel.from_id}::${r.to_id}`;
+      if (seenTopicDoc.has(key)) continue;
+      seenTopicDoc.add(key);
+      rfEdges.push({
+        id: `e-ref-${rfEdges.length}`,
+        source: parentRel.from_id,
+        target: r.to_id,
+        type: 'floating',
+        hidden: hiddenIds.has(parentRel.from_id),
+        style: { stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 5', opacity: 0.45 },
+      });
+    }
 
     // Build parent lookup (excluding evidence edges) for offset propagation
     const parentOf = new Map<string, string>();
@@ -888,7 +934,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
       if (!r.to_id.startsWith('__doc_')) parentOf.set(r.to_id, r.from_id);
     }
 
-    const dagreResults = applyDagreLayout(rfNodes, rfEdges);
+    const dagreResults = applyMindmapLayout(rfNodes, rfEdges);
     const dagrePos = new Map(dagreResults.map((n) => [n.id, n.position]));
 
     const laidOut = dagreResults.map((n) => {

@@ -1,4 +1,4 @@
-"""Agent tools for full-document retrieval and PDF visual analysis."""
+"""Agent tools for full-document retrieval, chapter navigation, and PDF visual analysis."""
 import io
 from pydantic_ai import ToolReturn, BinaryContent
 from pydantic_ai._run_context import RunContext
@@ -7,6 +7,70 @@ from ..state import CanvasNode
 from ..helpers import _snapshot, _mark_node_for_run, _ensure_relation
 
 _MAX_PAGES = 6  # cap on pages returned as images in a single call
+
+
+async def get_document_tree(
+    ctx: RunContext[AgentDeps],
+    document_id: str | None = None,
+    filename: str | None = None,
+) -> str:
+    """Return the chapter/section tree for a document.
+
+    The tree shows the document's heading hierarchy with page numbers, whether
+    each chapter contains tables or figures, and LLM-generated metadata
+    (summary, questions answered, key concepts) when available.
+
+    Use this BEFORE get_document_full_text to navigate large documents:
+    the tree tells you exactly which pages to load — avoiding loading the whole document.
+
+    document_id: the KB document ID (preferred).
+    filename: alternatively, resolve by filename.
+
+    Returns a JSON object with:
+      chapters[]: [{heading, pages, has_table, has_figure, metadata: {summary, questions, key_concepts}}]
+      page_descriptions: {page_no: vision description} when vision enrichment has been run
+    """
+    import json
+    from src.knowledge_base.service import get_document_service
+    from src.kb_engine.rag_engine import get_rag_engine
+
+    service = await get_document_service()
+
+    if not document_id and filename:
+        docs = await service.list_documents()
+        match = next((d for d in docs if d.get("filename") == filename), None)
+        if match:
+            document_id = match.get("document_id")
+
+    if not document_id:
+        return "Document not found — provide a valid document_id or filename."
+
+    tree = get_rag_engine().get_document_tree(document_id)
+    if tree is None:
+        return (
+            f"No chapter tree found for document_id={document_id}. "
+            "The document may have been ingested before tree extraction was available. "
+            "Use get_document_full_text to access the content directly."
+        )
+
+    # Return a compact but readable representation
+    summary_lines = [f"Document: {tree.get('filename')} ({len(tree['chapters'])} chapters)\n"]
+    for ch in tree["chapters"]:
+        pages_str = f"pp.{ch['pages']}" if ch["pages"] else "p.?"
+        flags = []
+        if ch.get("has_table"):
+            flags.append("table")
+        if ch.get("has_figure"):
+            flags.append("figure")
+        flag_str = f" [{', '.join(flags)}]" if flags else ""
+        summary_lines.append(f"  {ch['heading']}  {pages_str}{flag_str}")
+        if ch.get("metadata") and ch["metadata"].get("summary"):
+            summary_lines.append(f"    → {ch['metadata']['summary'][:120]}...")
+
+    if tree.get("page_descriptions"):
+        summary_lines.append(f"\nPage descriptions available for pages: {sorted(tree['page_descriptions'].keys())}")
+
+    return "\n".join(summary_lines)
 
 
 async def get_document_full_text(
