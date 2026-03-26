@@ -60,20 +60,28 @@ export function PDFModal({
 
   const sidebarRef = useRef<HTMLDivElement>(null);
 
-  // Fetch page count + current page dimensions
+  // Fetch total page count once when the modal first opens for this filename.
+  // Do NOT include currentPage — re-fetching on every page turn causes race conditions
+  // that can overwrite the correct count with a stale response.
   useEffect(() => {
-    fetch(`${API_URL}/api/documents/pdf/info?filename=${encodeURIComponent(filename)}&page_no=${currentPage}`)
+    let cancelled = false;
+    fetch(`${API_URL}/api/documents/pdf/info?filename=${encodeURIComponent(filename)}&page_no=1`)
       .then((r) => {
-        if (!r.ok) {
-          throw new Error(`PDF info request failed: ${r.status}`);
-        }
+        if (!r.ok) throw new Error(`PDF info failed: ${r.status}`);
         return r.json();
       })
       .then((d) => {
-        setNumPages(Math.max(d.page_count ?? fallbackPageCount, fallbackPageCount));
+        if (!cancelled) {
+          const count = typeof d.page_count === "number" && d.page_count > 0
+            ? d.page_count
+            : fallbackPageCount;
+          setNumPages(Math.max(count, fallbackPageCount));
+        }
       })
-      .catch(() => setNumPages(fallbackPageCount));
-  }, [filename, currentPage, fallbackPageCount]);
+      .catch(() => { if (!cancelled) setNumPages(fallbackPageCount); });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filename]);
 
   // Close on Escape
   useEffect(() => {
@@ -147,7 +155,19 @@ export function PDFModal({
                   alt={`Page ${pg}`}
                   className="w-full h-auto block"
                   loading="lazy"
+                  onError={(e) => {
+                    const el = e.currentTarget;
+                    el.style.display = "none";
+                    const placeholder = el.nextElementSibling as HTMLElement | null;
+                    if (placeholder) placeholder.style.display = "flex";
+                  }}
                 />
+                <div
+                  className="w-full aspect-[3/4] bg-neutral-200 dark:bg-neutral-800 items-center justify-center text-neutral-400 text-xs"
+                  style={{ display: "none" }}
+                >
+                  ?
+                </div>
                 <div className="flex items-center gap-1 mt-0.5">
                   <span className="text-[10px] text-neutral-500 dark:text-neutral-400">{pg}</span>
                   {hasHL && (

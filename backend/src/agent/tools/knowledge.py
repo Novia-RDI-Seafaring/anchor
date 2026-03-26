@@ -345,6 +345,16 @@ async def resolve_technical_query(
             _mark_node_for_run(concept_node, ctx)
             ctx.deps.state.nodes.append(concept_node)
             resolved_concept_id = concept_node.id
+            # Adopt any standalone spec node created by resolve_simple_query with the same product name.
+            # This unifies the canvas when a simple query is followed by a comprehensive one.
+            _title_lower = concept_title.lower().strip()
+            for _orphan in ctx.deps.state.nodes:
+                if (
+                    _orphan.node_type == "spec"
+                    and (_orphan.spec_title or "").lower().strip() == _title_lower
+                    and not any(r.to_id == _orphan.id for r in ctx.deps.state.relations)
+                ):
+                    _ensure_relation(ctx, resolved_concept_id, _orphan.id)
 
     requested_topic_title = root_title or _derive_topic_title(query)
 
@@ -513,6 +523,65 @@ async def resolve_technical_query(
         summary_text = _summarize_chunks([normalized_chunks[source_chunk_index]])
         properties = [SpecProperty(key=_derive_spec_title(query), value=summary_text)]
     display_properties = matched_properties if use_spec and matched_properties else properties
+
+    # If this topic already has exactly one fact/spec child, update it instead of appending.
+    # New child is only created when the topic is truly empty or content needs to be split.
+    _direct_child_ids = {r.to_id for r in ctx.deps.state.relations if r.from_id == topic.id}
+    _existing_children = [
+        n for n in ctx.deps.state.nodes
+        if n.id in _direct_child_ids and n.node_type in ("fact", "spec")
+    ]
+    if len(_existing_children) == 1:
+        _existing = _existing_children[0]
+        _resolved_doc_id = normalized_chunks[source_chunk_index].get("document_id") if normalized_chunks else None
+
+        if use_spec and _existing.node_type == "spec" and display_properties:
+            # Merge new properties — skip keys already present
+            _existing_keys = {_normalize_property_key(p.key) for p in (_existing.properties or [])}
+            _new_props = [p for p in display_properties if _normalize_property_key(p.key) not in _existing_keys]
+            if _new_props:
+                _existing.properties = list(_existing.properties or []) + _new_props
+            _mark_node_for_run(_existing, ctx)
+            if _resolved_doc_id and (resolved_page or resolved_highlights):
+                _ensure_evidence_relation(
+                    ctx, _existing.id, _resolved_doc_id,
+                    page=resolved_page or 0, bbox=resolved_bbox, highlights=resolved_highlights,
+                )
+            result = _snapshot(ctx)
+            result.return_value = {
+                "summary": _summarize_properties(_existing.properties or [], resolved_filename),
+                "topic_id": topic.id, "node_id": _existing.id,
+                "concept_id": resolved_concept_id, "found": True, "format": "spec",
+            }
+            return result
+
+        if not use_spec and _existing.node_type == "fact" and not _BROAD_FACT_QUERY_RE.search(query):
+            # Update fact text if new content is richer
+            _new_text = (
+                _summarize_properties(matched_properties).rstrip(".")
+                if matched_properties
+                else (fallback_answer_text or _summarize_chunks([normalized_chunks[source_chunk_index]]))
+            )
+            if _new_text and len(_new_text) > len(_existing.text or ""):
+                _existing.text = _new_text
+            _mark_node_for_run(_existing, ctx)
+            _fact_chunk = normalized_chunks[source_chunk_index]
+            _page = _select_page(_fact_chunk)
+            if _resolved_doc_id and _page:
+                _ensure_evidence_relation(
+                    ctx, _existing.id, _resolved_doc_id,
+                    page=_page, bbox=_select_bbox(_fact_chunk), highlights=_select_highlights(_fact_chunk),
+                )
+            _summary = _existing.text or ""
+            if resolved_filename:
+                _summary = f"{_summary} Source: {resolved_filename}."
+            result = _snapshot(ctx)
+            result.return_value = {
+                "summary": _summary, "topic_id": topic.id, "node_id": _existing.id,
+                "concept_id": resolved_concept_id, "found": True, "format": "fact", "fact_count": 1,
+            }
+            return result
+
     if use_spec:
         spec = CanvasNode(
             node_type="spec",
@@ -643,6 +712,178 @@ async def resolve_technical_query(
         "found": True,
         "format": "fact",
         "fact_count": len(created_facts),
+    }
+    return result
+
+
+_SIMPLE_QUERY_REFACTOR_THRESHOLD = 5
+
+
+async def resolve_simple_query(
+    ctx: RunContext[AgentDeps],
+    query: str,
+    product_name: str,
+    property_key: str,
+    top_k: int = 5,
+) -> ToolReturn:
+    """Answer a single-value factual question and accumulate the result on the canvas.
+
+    Instead of creating a concept → topic → spec chain, this tool maintains ONE spec node
+    per product that grows with each simple question. When the user has asked 5+ properties,
+    the response signals it's time to reorganize.
+
+    product_name: the product/subject being asked about (e.g. "Alfa Laval LKH 10")
+    property_key: the specific property being requested (e.g. "Max Inlet Pressure")
+    """
+    from src.knowledge_base.service import get_document_service
+
+    service = await get_document_service()
+    active_document_id = ctx.deps.state.active_document_id
+    workspace_ids = getattr(ctx.deps.state, "workspace_doc_ids", [])
+    if active_document_id:
+        chunks = await service.search(query=query, top_k=top_k, document_id=active_document_id)
+    elif workspace_ids:
+        chunks = await service.search(query=query, top_k=top_k, document_ids=workspace_ids)
+    else:
+        chunks = await service.search(query=query, top_k=top_k, document_id=None)
+
+    normalized_chunks: list[dict] = []
+    for chunk in chunks[:top_k]:
+        normalized = dict(chunk)
+        normalized["page_no"] = _select_page(normalized)
+        normalized["bbox"] = _select_bbox(normalized)
+        normalized["highlights"] = _select_highlights(normalized)
+        normalized_chunks.append(normalized)
+    _remember_search_results(ctx, normalized_chunks)
+
+    # Check if a concept node already exists (created by a prior comprehensive query).
+    # If so, attach the spec to it. If not, the spec stands alone — no duplicate concept card.
+    existing_concept = _find_node_by_title(ctx, product_name, "concept")
+
+    if not normalized_chunks:
+        not_found_spec = CanvasNode(
+            node_type="spec",
+            spec_title=product_name,
+            properties=[SpecProperty(key=property_key, value="Not found in knowledge base")],
+            status="not_found",
+        )
+        _mark_node_for_run(not_found_spec, ctx)
+        ctx.deps.state.nodes.append(not_found_spec)
+        if existing_concept:
+            _ensure_relation(ctx, existing_concept.id, not_found_spec.id)
+        result = _snapshot(ctx)
+        result.return_value = {
+            "answer": f"No information found for '{property_key}' in the loaded knowledge base.",
+            "spec_node_id": not_found_spec.id,
+            "concept_id": existing_concept.id if existing_concept else None,
+            "property_count": 1,
+            "suggest_refactor": False,
+            "found": False,
+        }
+        return result
+
+    # Extract the property value from search results
+    source_chunk_index, properties = _extract_doc_properties(normalized_chunks, query)
+    matched_properties = _select_relevant_properties(properties, query) if properties else []
+
+    # Vision fallback when text extraction gives nothing useful
+    resolved_filename, resolved_page, resolved_bbox, resolved_highlights = _resolve_source_details(
+        ctx=ctx, chunk_index=source_chunk_index,
+    )
+    if not matched_properties and not properties and resolved_filename and resolved_page:
+        source_text = _clean_text_value(str(normalized_chunks[source_chunk_index].get("content") or ""))
+        if len(source_text.split()) > 12:
+            settings = get_settings()
+            screenshot_params: dict[str, str | int | float] = {
+                "filename": resolved_filename,
+                "page_no": resolved_page,
+            }
+            if len(resolved_bbox) == 4:
+                screenshot_params.update({
+                    "bbox_l": resolved_bbox[0], "bbox_t": resolved_bbox[1],
+                    "bbox_r": resolved_bbox[2], "bbox_b": resolved_bbox[3],
+                })
+            image_url = (
+                f"http://127.0.0.1:{settings.port}/api/documents/pdf/screenshot"
+                f"?{urlencode(screenshot_params)}"
+            )
+            vision_text = await vision.analyze_image_content(
+                ctx, image_url,
+                f"Extract only the minimal text needed to answer: {query}. "
+                "Return a concise key-value or short phrase only.",
+            )
+            if not vision_text.lower().startswith("image analysis failed:"):
+                vision_properties = _extract_properties_from_text(vision_text, query)
+                vision_matched = _select_relevant_properties(vision_properties, query) if vision_properties else []
+                if vision_matched:
+                    properties = vision_properties
+                    matched_properties = vision_matched
+                elif _clean_text_value(vision_text):
+                    properties = [SpecProperty(key=property_key, value=_clean_text_value(vision_text))]
+                    matched_properties = properties
+
+    # Build the single SpecProperty for this question
+    if matched_properties:
+        best = matched_properties[0]
+        new_prop = SpecProperty(key=property_key, value=best.value, unit=best.unit)
+    elif properties:
+        best = properties[0]
+        new_prop = SpecProperty(key=property_key, value=best.value, unit=best.unit)
+    else:
+        fallback_text = _clean_text_value(str(normalized_chunks[source_chunk_index].get("content") or ""))
+        new_prop = SpecProperty(key=property_key, value=fallback_text[:120] if fallback_text else "See source")
+
+    # Find existing accumulator: any spec node whose spec_title matches the product name.
+    # This works whether the spec was previously created standalone or under a concept.
+    accumulator = next(
+        (n for n in ctx.deps.state.nodes
+         if n.node_type == "spec" and (n.spec_title or "").lower().strip() == product_name.lower().strip()),
+        None,
+    )
+
+    if accumulator is not None:
+        # Append to existing accumulator — skip if same key already present
+        existing_keys = {p.key.lower().strip() for p in (accumulator.properties or [])}
+        if new_prop.key.lower().strip() not in existing_keys:
+            accumulator.properties = list(accumulator.properties or []) + [new_prop]
+        _mark_node_for_run(accumulator, ctx)
+        spec_node_id = accumulator.id
+    else:
+        # Create new standalone spec node (no concept node — avoids duplicate product title on canvas)
+        accumulator = CanvasNode(
+            node_type="spec",
+            spec_title=product_name,
+            properties=[new_prop],
+            status="found",
+        )
+        _mark_node_for_run(accumulator, ctx)
+        ctx.deps.state.nodes.append(accumulator)
+        # Connect to existing concept if one was created by a prior comprehensive query
+        if existing_concept:
+            _ensure_relation(ctx, existing_concept.id, accumulator.id)
+        spec_node_id = accumulator.id
+
+    # Update evidence to latest source
+    resolved_doc_id = normalized_chunks[source_chunk_index].get("document_id") if normalized_chunks else None
+    if resolved_doc_id and (resolved_page or resolved_highlights):
+        _ensure_evidence_relation(
+            ctx, spec_node_id, resolved_doc_id,
+            page=resolved_page or 0,
+            bbox=resolved_bbox,
+            highlights=resolved_highlights,
+        )
+
+    property_count = len(accumulator.properties or [])
+    answer = f"{new_prop.key}: {new_prop.value} {new_prop.unit}".strip().rstrip(":")
+
+    result = _snapshot(ctx)
+    result.return_value = {
+        "answer": answer,
+        "spec_node_id": spec_node_id,
+        "concept_id": existing_concept.id if existing_concept else None,
+        "property_count": property_count,
+        "suggest_refactor": property_count >= _SIMPLE_QUERY_REFACTOR_THRESHOLD,
+        "found": True,
     }
     return result
 

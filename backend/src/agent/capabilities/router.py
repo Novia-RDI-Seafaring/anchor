@@ -23,6 +23,17 @@ import re
 _COMPARISON_QUERY_RE = re.compile(
     r"\b(compare|comparison|different|difference|diff|vs\.?|versus)\b", re.IGNORECASE
 )
+# Simple single-value factual lookups — "what is X", "give me the Y for Z", "what's the warranty"
+_SIMPLE_FACTUAL_RE = re.compile(
+    r"(what(?:'s| is| are| was)[ \w]*?\b(max|min|maximum|minimum|range|limit|pressure|temperature|temp|flow|speed|"
+    r"power|voltage|weight|dimension|size|width|height|length|diameter|capacity|rating|torque|frequency|"
+    r"warranty|certif|approval|material|connection|port|inlet|outlet|noise|sound|viscosity|density|\bph\b|"
+    r"efficiency|head|current|rpm|seal|bearing|ip\s*\d|npshr?|npsh)\b"
+    r"|give( me)? (the |its )?(dimension|size|spec|measurement|rating|value|limit|range|max|min|warranty)"
+    r"|how (hot|cold|fast|heavy|big|tall|wide|long|loud|much|many)"
+    r")",
+    re.IGNORECASE,
+)
 # Queries requesting exhaustive/comprehensive information in one go
 _COMPREHENSIVE_RE = re.compile(
     r"\b("
@@ -117,6 +128,21 @@ class RouterCapability(AbstractCapability[Any]):
                     "- Do NOT say 'That's all I found' or 'Want me to continue?'.\n"
                     "- Call tools until the canvas fully represents the subject.\n"
                     f"- Subject of query: {prompt_text!r}"
+                )
+            if _SIMPLE_FACTUAL_RE.search(normalized):
+                return (
+                    "SIMPLE FACTUAL LOOKUP — use resolve_simple_query (NOT resolve_technical_query).\n"
+                    "\n"
+                    "Steps:\n"
+                    f"1. resolve_simple_query(query={prompt_text!r}, product_name=<product/subject name>, "
+                    "   property_key=<short label for what was asked, e.g. 'Max Inlet Pressure'>)\n"
+                    "2. Answer the user in one sentence using the returned 'answer' field.\n"
+                    "3. If the returned 'suggest_refactor' is True, add at the end: "
+                    "   'You've collected several properties for [product] — want me to organize these into topics?'\n"
+                    "\n"
+                    "Do NOT call check_canvas, resolve_technical_query, or any other tool. "
+                    "resolve_simple_query handles everything: it searches the KB, finds the value, and "
+                    "updates the canvas automatically."
                 )
             return (
                 "This is a technical knowledge-base query. Before any text answer:\n"

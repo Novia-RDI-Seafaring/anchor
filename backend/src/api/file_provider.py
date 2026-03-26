@@ -71,7 +71,11 @@ def get_pdf_screenshot(
             status_code=422,
             detail=f"Unable to render PDF preview for '{filename}': {exc}",
         ) from exc
-    return Response(content=image_bytes, media_type="image/png")
+    return Response(
+        content=image_bytes,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=3600, immutable"},
+    )
 
 
 @router.get("/documents/pdf/serve", response_class=Response)

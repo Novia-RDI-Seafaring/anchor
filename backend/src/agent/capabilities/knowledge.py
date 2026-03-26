@@ -20,6 +20,7 @@ RAW_SEARCH_TOOLS: frozenset[str] = frozenset({
 })
 HIGH_LEVEL_TOOLS: frozenset[str] = frozenset({
     "resolve_technical_query",
+    "resolve_simple_query",
     "compare_documents",
     "get_active_document_context",
     "check_canvas",
@@ -33,6 +34,7 @@ _toolset.tool(knowledge_tools.list_documents)
 _toolset.tool(knowledge_tools.get_active_document_context)
 _toolset.tool(knowledge_tools.search_knowledge_base)
 _toolset.tool(knowledge_tools.resolve_technical_query)
+_toolset.tool(knowledge_tools.resolve_simple_query)
 _toolset.tool(knowledge_tools.compare_documents)
 
 # ── Instructions ──────────────────────────────────────────────────────────────
@@ -106,6 +108,18 @@ High-level tools (prefer these):
       Returns concept_id — pass it to subsequent calls to reuse the same concept node.
       Creates up to 4 fact nodes, all evidence-linked.
       This is the default tool for technical KB questions.
+
+      Multi-variant data (e.g. motor options, model variants):
+        When the source lists multiple distinct variants (IEC80/IEC90, LKH-5/LKH-10, etc.),
+        call resolve_technical_query ONCE PER VARIANT with the same concept_id and a
+        variant-specific root_title (e.g. "Motor — IEC80", "Motor — IEC90").
+        Each call produces a separate spec node, making variants easy to compare.
+
+  resolve_simple_query(query, product_name, property_key, top_k)
+      For single-value factual lookups only (one specific measurement/rating/value).
+      Finds or updates ONE accumulating spec node per product — no topic hierarchy.
+      Returns suggest_refactor=True after 5 properties; prompt the user to reorganize then.
+      Do NOT use for broad/multi-aspect questions.
 
   compare_documents(query, top_k)
       Compare two documents side by side, build comparison table on canvas.
