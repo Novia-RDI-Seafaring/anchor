@@ -41,11 +41,17 @@ function makeTabId() { return `cv_${Date.now()}`; }
 
 export const MainContent: React.FC = () => {
   const { messages: visibleMessages = [] } = useCopilotChatInternal();
-  const { activeConversationId, updateConversation, conversations, loadConversationMessages } = useApp();
+  const {
+    activeConversationId,
+    updateConversation,
+    conversations,
+    loadConversationMessages,
+    activeDocumentId,
+    documents,
+  } = useApp();
   const { data: session } = useSession();
   const userId = (session?.user as any)?.id ?? 'local-dev-user';
   const userHeaders = { 'x-user-id': userId };
-
   const [activeTab, setActiveTab] = useState<TabId>('canvas');
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [contextPdf, setContextPdf] = useState<{
@@ -53,7 +59,6 @@ export const MainContent: React.FC = () => {
     page: number;
     highlights: PDFHighlight[];
   } | null>(null);
-  const { activeDocumentId } = useApp();
   const { state, setState } = useCoAgent({
     name: "my_agent",
     initialState: { nodes: [], relations: [], active_document_id: null as string | null } as CanvasState
@@ -380,7 +385,6 @@ export const MainContent: React.FC = () => {
   }, [canvas, handleFmuUploaded]);
 
   // ── Evidence data ────────────────────────────────────────────────────────────
-  const { documents } = useApp();
   const allNodes = canvas?.nodes || [];
   const allRelations = canvas?.relations || [];
   const nodeMap = new Map(allNodes.map((node: any) => [node.id, node]));

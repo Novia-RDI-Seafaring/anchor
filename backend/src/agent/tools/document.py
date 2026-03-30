@@ -1,5 +1,4 @@
 """Agent tools for full-document retrieval, chapter navigation, and PDF visual analysis."""
-import io
 from pydantic_ai import ToolReturn, BinaryContent
 from pydantic_ai._run_context import RunContext
 from ..deps import AgentDeps
