@@ -29,6 +29,56 @@ type CanvasTab = {
   positions: Record<string, { x: number; y: number }>;
 };
 
+type FlowPosition = { x: number; y: number };
+
+function makeDocumentCanvasNode(doc: { document_id: string; filename: string; node_count: number; status?: string }) {
+  return {
+    id: `__doc_${doc.document_id}`,
+    node_type: 'document',
+    status: doc.status === 'processing' || doc.status === 'pending' ? 'searching' : doc.status === 'error' || doc.status === 'failed' ? 'not_found' : 'found',
+    title: doc.filename,
+    text: '',
+    spec_title: '',
+    properties: [],
+    filename: doc.filename,
+    page: 0,
+    bbox: [],
+    highlights: [],
+    fmu_filename: '',
+    fmu_model_name: '',
+    fmu_variables: [],
+    fmu_param_values: {},
+    plot_job_id: '',
+    plot_fmu_filename: '',
+    plot_signal_names: [],
+    plot_stop_time: 10,
+    plot_param_values: {},
+    funnel_label: '',
+    area_label: '',
+    area_width: 0,
+    area_height: 0,
+    width: 150,
+    height: 64,
+    parent_id: '',
+    last_updated_run_id: '',
+  };
+}
+
+function materializeWorkspaceDocuments(nodes: any[], workspaceDocIds: string[] | undefined, documents: Array<{ document_id: string; filename: string; node_count: number; status?: string }>) {
+  const ids = workspaceDocIds ?? [];
+  if (ids.length === 0) return nodes;
+  const existingIds = new Set(nodes.map((node: any) => node.id));
+  const hydrated = [...nodes];
+  for (const docId of ids) {
+    const nodeId = `__doc_${docId}`;
+    if (existingIds.has(nodeId)) continue;
+    const doc = documents.find((item) => item.document_id === docId);
+    if (!doc) continue;
+    hydrated.push(makeDocumentCanvasNode(doc));
+  }
+  return hydrated;
+}
+
 function buildEvidenceImageUrl(filename: string, page: number, bbox: number[]): string {
   const [l = 0, t = 0, r = 0, b = 0] = bbox;
   if (!l && !t && !r && !b) {
@@ -108,7 +158,7 @@ export const MainContent: React.FC = () => {
           setPositions(activeTabData?.positions ?? {});
           setState((prev: any) => ({
             ...prev,
-            nodes: activeTabData?.nodes ?? [],
+            nodes: materializeWorkspaceDocuments(activeTabData?.nodes ?? [], canvas_state.workspace_doc_ids, documents),
             relations: activeTabData?.relations ?? [],
             workspace_doc_ids: canvas_state.workspace_doc_ids ?? prev.workspace_doc_ids,
           }));
@@ -126,7 +176,7 @@ export const MainContent: React.FC = () => {
           setPositions(tab.positions);
           setState((prev: any) => ({
             ...prev,
-            nodes: tab.nodes,
+            nodes: materializeWorkspaceDocuments(tab.nodes, canvas_state.workspace_doc_ids, documents),
             relations: tab.relations,
             workspace_doc_ids: canvas_state.workspace_doc_ids ?? prev.workspace_doc_ids,
           }));
@@ -139,7 +189,7 @@ export const MainContent: React.FC = () => {
         setState({ nodes: [], relations: [], active_document_id: activeDocumentId ?? null } as CanvasState);
       }
     });
-  }, [activeConversationId]);
+  }, [activeConversationId, documents]);
 
   // ── Helpers to build the canvas_state payload to persist ───────────────────
   // We need a function (not just state) so we can call it with latest values
@@ -244,7 +294,8 @@ export const MainContent: React.FC = () => {
 
   // ── Position save (debounced, separate from full canvas save) ──────────────
   const posSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const handlePositionsChange = useCallback((updated: Record<string, { x: number; y: number }>) => {
+  const persistPositions = useCallback((updated: Record<string, { x: number; y: number }>) => {
+    positionsRef.current = updated;
     setPositions(updated);
     if (!activeConversationId) return;
     if (posSaveTimer.current) clearTimeout(posSaveTimer.current);
@@ -261,12 +312,21 @@ export const MainContent: React.FC = () => {
     }, 500);
   }, [activeConversationId, canvas, updateConversation, buildCanvasStatePayload]);
 
+  const handlePositionsChange = useCallback((updated: Record<string, { x: number; y: number }>) => {
+    persistPositions(updated);
+  }, [persistPositions]);
+
   // ── Snippet save ────────────────────────────────────────────────────────────
   const handleSaveSelection = useCallback(async (selectedNodeIds: string[], name?: string) => {
     const allNodes: any[] = canvas?.nodes ?? [];
     const allRels: any[] = canvas?.relations ?? [];
     const nodeSet = new Set(selectedNodeIds);
-    const nodes = allNodes.filter(n => nodeSet.has(n.id));
+    const nodes = allNodes
+      .filter(n => nodeSet.has(n.id))
+      .map(n => ({
+        ...n,
+        position: positionsRef.current[n.id] ?? null,
+      }));
     const relations = allRels.filter(r => nodeSet.has(r.from_id) && nodeSet.has(r.to_id));
     const snippetName = name || (nodes[0]?.title || nodes[0]?.text || 'Snippet').slice(0, 40);
     const res = await fetch(`${API_URL}/api/snippets`, {
@@ -310,9 +370,18 @@ export const MainContent: React.FC = () => {
   }, [setState, canvas]);
 
   const handleDeleteNode = useCallback((nodeId: string) => {
-    const c = canvas as any;
-    setState({ ...c, nodes: (c?.nodes ?? []).filter((n: any) => n.id !== nodeId), relations: (c?.relations ?? []).filter((r: any) => r.from_id !== nodeId && r.to_id !== nodeId) });
-  }, [setState, canvas]);
+    setState((prev: any) => {
+      const nextWorkspaceDocIds = nodeId.startsWith('__doc_')
+        ? (prev?.workspace_doc_ids ?? []).filter((id: string) => `__doc_${id}` !== nodeId)
+        : (prev?.workspace_doc_ids ?? []);
+      return {
+        ...prev,
+        nodes: (prev?.nodes ?? []).filter((n: any) => n.id !== nodeId),
+        relations: (prev?.relations ?? []).filter((r: any) => r.from_id !== nodeId && r.to_id !== nodeId),
+        workspace_doc_ids: nextWorkspaceDocIds,
+      };
+    });
+  }, [setState]);
 
   const handleAddNode = useCallback((node: any, relation: { from_id: string; to_id: string; label: string } | null) => {
     const c = canvas as any;
@@ -331,7 +400,7 @@ export const MainContent: React.FC = () => {
     setState({ ...c, relations: [...rels, { from_id: fromId, to_id: toId, label }] });
   }, [setState, canvas]);
 
-  const handleFmuUploaded = useCallback((payload: { filename: string; model_name: string; variables: any[] }) => {
+  const handleFmuUploaded = useCallback((payload: { filename: string; model_name: string; variables: any[] }, position?: FlowPosition, parentId?: string | null) => {
     const newNode = {
       id: `fmu_${Date.now()}`,
       node_type: 'fmu',
@@ -344,25 +413,77 @@ export const MainContent: React.FC = () => {
       last_updated_run_id: '',
       text: '', spec_title: '', properties: [], filename: '', page: 0, bbox: [], highlights: [],
       plot_job_id: '', plot_fmu_filename: '', plot_signal_names: [], plot_stop_time: 10,
+      parent_id: parentId ?? '',
     };
     const c = canvas as any;
     setState({ ...c, nodes: [...(c?.nodes ?? []), newNode] });
-  }, [setState, canvas]);
+    if (position) {
+      persistPositions({
+        ...positionsRef.current,
+        [newNode.id]: position,
+      });
+    }
+  }, [setState, canvas, persistPositions]);
 
   const handleAddDocToWorkspace = useCallback((docId: string) => {
     const c = canvas as any;
     const existing: string[] = c?.workspace_doc_ids ?? [];
     if (existing.includes(docId)) return;
-    setState({ ...c, workspace_doc_ids: [...existing, docId] });
+    const doc = documents.find((item) => item.document_id === docId);
+    if (!doc) return;
+    const docNode = makeDocumentCanvasNode(doc);
+    const nextNodes = (c?.nodes ?? []).some((node: any) => node.id === docNode.id)
+      ? (c?.nodes ?? [])
+      : [...(c?.nodes ?? []), docNode];
+    setState({ ...c, nodes: nextNodes, workspace_doc_ids: [...existing, docId] });
+  }, [setState, canvas, documents]);
+
+  const handleRemoveDocFromWorkspace = useCallback((docId: string) => {
+    const c = canvas as any;
+    const existing: string[] = c?.workspace_doc_ids ?? [];
+    const nodeId = `__doc_${docId}`;
+    setState({
+      ...c,
+      nodes: (c?.nodes ?? []).filter((node: any) => node.id !== nodeId),
+      relations: (c?.relations ?? []).filter((rel: any) => rel.from_id !== nodeId && rel.to_id !== nodeId),
+      workspace_doc_ids: existing.filter((id: string) => id !== docId),
+    });
   }, [setState, canvas]);
 
-  const handleAddSnippet = useCallback((snippetNodes: any[], snippetRelations: any[]) => {
+  const handleSetParent = useCallback((nodeId: string, parentId: string | null, position?: FlowPosition) => {
+    const c = canvas as any;
+    const nodes = (c?.nodes ?? []).map((n: any) =>
+      n.id === nodeId ? { ...n, parent_id: parentId ?? '' } : n
+    );
+    setState({ ...c, nodes });
+    if (position) {
+      persistPositions({
+        ...positionsRef.current,
+        [nodeId]: position,
+      });
+    }
+  }, [setState, canvas, persistPositions]);
+
+  const handleAddSnippet = useCallback((
+    snippetNodes: any[],
+    snippetRelations: any[],
+    dropPosition?: FlowPosition,
+    placements?: Array<{ id?: string; parentId: string | null; position?: FlowPosition }>
+  ) => {
     // Remap node IDs to fresh ones to avoid collisions
     const idMap = new Map<string, string>();
+    const placementMap = new Map((placements ?? []).map((item) => [item.id, item]));
+    const sourcePositions = snippetNodes.map((n, index) => ({
+      index,
+      position: n?.position && typeof n.position.x === 'number' && typeof n.position.y === 'number'
+        ? n.position
+        : { x: (index % 3) * 260, y: Math.floor(index / 3) * 160 },
+    }));
     const newNodes = snippetNodes.map(n => {
       const newId = `sn_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       idMap.set(n.id, newId);
-      return { ...n, id: newId };
+      const placement = placementMap.get(n.id);
+      return { ...n, id: newId, parent_id: placement?.parentId ?? n.parent_id ?? '' };
     });
     const newRelations = snippetRelations.map(r => ({
       ...r,
@@ -371,16 +492,39 @@ export const MainContent: React.FC = () => {
     }));
     const c = canvas as any;
     setState({ ...c, nodes: [...(c?.nodes ?? []), ...newNodes], relations: [...(c?.relations ?? []), ...newRelations] });
-  }, [canvas, setState]);
+    if (dropPosition && newNodes.length > 0) {
+      const xs = sourcePositions.map(item => item.position.x);
+      const ys = sourcePositions.map(item => item.position.y);
+      const centerX = (Math.min(...xs) + Math.max(...xs)) / 2;
+      const centerY = (Math.min(...ys) + Math.max(...ys)) / 2;
+      const positionUpdates = Object.fromEntries(
+        newNodes.map((node, index) => {
+          const sourceNode = snippetNodes[index];
+          const placement = sourceNode ? placementMap.get(sourceNode.id) : undefined;
+          return [
+            node.id,
+            placement?.position ?? {
+              x: sourcePositions[index]!.position.x - centerX + dropPosition.x,
+              y: sourcePositions[index]!.position.y - centerY + dropPosition.y,
+            },
+          ];
+        })
+      );
+      persistPositions({
+        ...positionsRef.current,
+        ...positionUpdates,
+      });
+    }
+  }, [canvas, setState, persistPositions]);
 
-  const handleFmuFromLibrary = useCallback(async (filename: string) => {
+  const handleFmuFromLibrary = useCallback(async (filename: string, position?: FlowPosition, parentId?: string | null) => {
     const c = canvas as any;
     if ((c?.nodes ?? []).some((n: any) => n.node_type === 'fmu' && n.fmu_filename === filename)) return;
     try {
       const res = await fetch(`${API_URL}/api/fmu/inspect/${encodeURIComponent(filename)}`);
       if (!res.ok) return;
       const data = await res.json();
-      handleFmuUploaded({ filename, model_name: data.model_name, variables: data.variables ?? [] });
+      handleFmuUploaded({ filename, model_name: data.model_name, variables: data.variables ?? [] }, position, parentId);
     } catch { /* ignore */ }
   }, [canvas, handleFmuUploaded]);
 
@@ -464,8 +608,13 @@ export const MainContent: React.FC = () => {
         onSetNodeColor={handleSetNodeColor}
         workspaceDocIds={canvas?.workspace_doc_ids ?? []}
         onAddDocToWorkspace={handleAddDocToWorkspace}
+        onRemoveDocFromWorkspace={handleRemoveDocFromWorkspace}
+        onSetParent={handleSetParent}
         onFmuFromLibrary={handleFmuFromLibrary}
+        onAddSnippet={handleAddSnippet}
         onSaveSelection={handleSaveSelection}
+        libraryOpen={libraryOpen}
+        onToggleLibrary={() => setLibraryOpen(v => !v)}
       />
 
       {/* ── Canvas tab bar — top-left ─────────────────────────────────── */}
@@ -534,24 +683,6 @@ export const MainContent: React.FC = () => {
           </div>
         )}
       </div>
-
-      {/* Library toggle — top-right */}
-      <button
-        onClick={() => setLibraryOpen(v => !v)}
-        className={`absolute top-3 right-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border shadow-sm transition-colors ${
-          libraryOpen
-            ? 'bg-indigo-600 dark:bg-indigo-500 text-white border-indigo-700 dark:border-indigo-600'
-            : 'bg-white/90 dark:bg-neutral-900/90 backdrop-blur-sm border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-200'
-        }`}
-      >
-        <BookOpen size={13} />
-        Library
-        {(canvas?.workspace_doc_ids?.length ?? 0) > 0 && (
-          <span className="bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded-full text-[10px]">
-            {canvas.workspace_doc_ids.length}
-          </span>
-        )}
-      </button>
 
       {/* Facts overlay */}
       {activeTab === 'facts' && (

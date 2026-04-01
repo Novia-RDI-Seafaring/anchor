@@ -37,7 +37,7 @@ class FmuVariable(BaseModel):
 
 class CanvasNode(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
-    node_type: Literal["concept", "topic", "fact", "spec", "source", "entity", "category", "fmu", "plot", "image"]  # source/entity/category kept for backward compat
+    node_type: Literal["concept", "topic", "fact", "spec", "document", "source", "entity", "category", "fmu", "plot", "image", "funnel", "area"]  # source/entity/category kept for backward compat
     status: NodeStatus = "found"
     last_updated_run_id: str = ""
     color: str = ""  # user-set accent color (e.g. "violet", "blue", "emerald", "amber", "rose", "indigo", "slate")
@@ -70,6 +70,17 @@ class CanvasNode(BaseModel):
     plot_signal_names: list[str] = Field(default_factory=list)
     plot_stop_time: float = 10.0
     plot_param_values: dict[str, float] = Field(default_factory=dict)
+    # funnel node fields
+    funnel_label: str = ""
+    # area node fields
+    area_label: str = ""
+    area_width: float = 600.0
+    area_height: float = 400.0
+    # generic canvas dimensions
+    width: float = 0.0
+    height: float = 0.0
+    # parent-child (for area containment)
+    parent_id: str = ""
 
 
 class Relation(BaseModel):

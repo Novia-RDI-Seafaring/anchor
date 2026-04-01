@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import { Handle, Position, NodeToolbar, type NodeProps } from "@xyflow/react";
 import {
@@ -24,12 +24,26 @@ import {
   Activity,
   Play,
   Image,
+  Filter,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import type { KBDocument } from "@/contexts/AppContext";
 import type { PDFHighlight } from "./PDFModal";
+import type {
+  CanvasItem,
+  FmuVariableData,
+  NodeStatus,
+  SpecProperty,
+} from "./canvas-model";
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
+
+function nodeFrameStyle(node: CanvasNodeData, fallback: { w: number; h: number }): React.CSSProperties {
+  return {
+    width: node.width && node.width > 0 ? node.width : fallback.w,
+    height: node.height && node.height > 0 ? node.height : fallback.h,
+  };
+}
 
 // --- Shared delete toolbar (appears when node is selected) ---
 function DeleteToolbar({ nodeId, onDelete }: { nodeId: string; onDelete?: (id: string) => void }) {
@@ -47,9 +61,6 @@ function DeleteToolbar({ nodeId, onDelete }: { nodeId: string; onDelete?: (id: s
     </NodeToolbar>
   );
 }
-
-// --- Status badge ---
-type NodeStatus = "pending" | "searching" | "found" | "partial" | "not_found";
 
 function StatusBadge({ status }: { status?: NodeStatus }) {
   if (!status || status === "found") {
@@ -74,54 +85,8 @@ function StatusBadge({ status }: { status?: NodeStatus }) {
   return <CircleDashed size={12} className="text-neutral-400 shrink-0" />;
 }
 
-// --- Shared types (mirror backend CanvasNode) ---
-export interface SpecProperty {
-  key: string;
-  value: string;
-  unit?: string;
-  left_label?: string;
-  left_value?: string;
-  right_label?: string;
-  right_value?: string;
-  comparison_status?: string;
-}
-
-export interface FmuVariableData {
-  name: string;
-  causality: string;
-  variability?: string;
-  start?: string;
-  unit?: string;
-  description?: string;
-}
-
-export interface CanvasNodeData {
-  id: string;
-  node_type: "concept" | "topic" | "fact" | "spec" | "source" | "entity" | "category" | "fmu" | "plot" | "image"; // source/entity/category kept for compat
-  color?: string;
-  status?: NodeStatus;
-  title?: string;
-  text?: string;
-  spec_title?: string;
-  properties?: SpecProperty[];
-  // fmu node fields
-  fmu_filename?: string;
-  fmu_model_name?: string;
-  fmu_variables?: FmuVariableData[];
-  fmu_param_values?: Record<string, string>;
-  // image node fields
-  image_filename?: string;
-  image_page?: number;
-  image_bbox?: number[];
-  image_highlights?: string[];
-  image_caption?: string;
-  // plot node fields
-  plot_job_id?: string;
-  plot_fmu_filename?: string;
-  plot_signal_names?: string[];
-  plot_stop_time?: number;
-  plot_param_values?: Record<string, number>;
-}
+// --- Shared types (frontend canvas model) ---
+export type CanvasNodeData = CanvasItem;
 
 export interface EvidenceRelation {
   from_id: string;
@@ -206,32 +171,34 @@ export function EntityNode({ data }: NodeProps) {
       <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
       <Handle type="target" position={Position.Top} className="!bg-slate-500 !border-slate-700" />
       <div
-        className={`rounded-2xl border-2 shadow-xl select-none transition-all ${
+        className={`flex h-full w-full items-center justify-center rounded-full border-[3px] shadow-lg select-none transition-all ${
           collapsed
-            ? "border-slate-500 dark:border-slate-400 bg-slate-700 dark:bg-slate-800"
-            : "border-slate-600 dark:border-slate-400 bg-slate-800 dark:bg-slate-900"
+            ? "border-slate-500 dark:border-slate-400 bg-slate-100 dark:bg-slate-800"
+            : "border-slate-600 dark:border-slate-400 bg-white dark:bg-neutral-900"
         }`}
-        style={{ minWidth: 200, maxWidth: 320 }}
+        style={nodeFrameStyle(node, { w: 180, h: 180 })}
       >
-        <div className="flex items-center gap-2.5 px-4 py-3">
-          <div className="shrink-0 w-7 h-7 rounded-lg bg-slate-600 dark:bg-slate-700 flex items-center justify-center">
-            <Box size={14} className="text-slate-200" />
+        <div className="flex max-w-[80%] flex-col items-center gap-2 text-center">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200">
+            <Box size={16} />
           </div>
-          <p className="flex-1 text-sm font-extrabold text-white leading-snug tracking-tight break-words whitespace-normal">
+          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 leading-snug break-words whitespace-normal">
             {node.title}
           </p>
+        </div>
+        <div className="absolute right-3 top-3 flex items-center gap-1.5">
           <StatusBadge status={node.status} />
           <button
             onClick={() => onToggleCollapse(node.id)}
-            className="shrink-0 p-0.5 rounded hover:bg-slate-600 dark:hover:bg-slate-700 text-slate-300 transition-colors"
+            className="rounded-full bg-white/80 p-1 text-slate-500 shadow-sm transition-colors hover:bg-slate-100 dark:bg-neutral-800/90 dark:text-slate-300 dark:hover:bg-neutral-700"
             title={collapsed ? "Expand" : "Collapse"}
           >
             {collapsed ? <ChevronsUpDown size={13} /> : <ChevronsDownUp size={13} />}
           </button>
         </div>
         {collapsed && childCount > 0 && (
-          <div className="px-4 pb-2.5 -mt-1">
-            <span className="text-[10px] text-slate-300 bg-slate-600/60 px-2 py-0.5 rounded-full">
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2">
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600 dark:bg-slate-700 dark:text-slate-200">
               {childCount} hidden
             </span>
           </div>
@@ -374,16 +341,16 @@ export function ConceptNode({ data }: NodeProps) {
       <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
       <Handle type="target" position={Position.Top} className="!bg-violet-500 !border-violet-700" />
       <div
-        className={`rounded-xl border-2 shadow-lg select-none transition-all ${
+        className={`relative flex h-full w-full flex-col justify-between rounded-[28px] border-[3px] shadow-md select-none transition-all ${
           collapsed
-            ? "border-violet-300 dark:border-violet-600 bg-violet-50 dark:bg-violet-950/40"
-            : "border-violet-500 dark:border-violet-400 bg-violet-100 dark:bg-violet-900/30"
+            ? "border-violet-300 dark:border-violet-600 bg-violet-50 dark:bg-violet-950/30"
+            : "border-violet-500 dark:border-violet-400 bg-white dark:bg-neutral-900"
         }`}
-        style={{ minWidth: 180, maxWidth: 300 }}
+        style={nodeFrameStyle(node, { w: 220, h: 120 })}
       >
-        <div className="flex items-center gap-2 px-3 py-2.5">
+        <div className="flex items-center gap-2 px-4 py-3">
           <Layers size={14} className="text-violet-600 dark:text-violet-400 shrink-0" />
-          <p className="flex-1 text-sm font-bold text-violet-900 dark:text-violet-100 leading-snug break-words whitespace-normal">
+          <p className="flex-1 text-sm font-semibold text-violet-900 dark:text-violet-100 leading-snug break-words whitespace-normal">
             {node.title}
           </p>
           <StatusBadge status={node.status} />
@@ -396,7 +363,7 @@ export function ConceptNode({ data }: NodeProps) {
           </button>
         </div>
         {collapsed && childCount > 0 && (
-          <div className="px-3 pb-2 -mt-1">
+          <div className="px-4 pb-3">
             <span className="text-[10px] text-violet-600 dark:text-violet-400 bg-violet-200/60 dark:bg-violet-900/60 px-2 py-0.5 rounded-full">
               {childCount} hidden
             </span>
@@ -463,16 +430,12 @@ export function FactNode({ data }: NodeProps) {
       <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
       <Handle type="target" position={Position.Top} className="!bg-indigo-400 !border-indigo-600" />
       <div
-        className="rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-sm"
-        style={{
-          borderLeft: "4px solid rgb(99 102 241)",
-          minWidth: 180,
-          maxWidth: 280,
-        }}
+        className="relative h-full w-full rounded-[26px] border-[3px] border-amber-400 bg-white shadow-sm dark:border-amber-500 dark:bg-neutral-900"
+        style={nodeFrameStyle(node, { w: 240, h: 120 })}
       >
         {/* Text row */}
-        <div className="flex items-start gap-2 px-3 py-2.5">
-          <MessageSquare size={13} className="text-indigo-400 dark:text-indigo-500 shrink-0 mt-0.5" />
+        <div className="flex h-full items-start gap-2 px-4 py-3">
+          <MessageSquare size={13} className="text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
           <div className={`flex-1 text-xs leading-relaxed break-words min-w-0 ${
             node.status === "pending" || node.status === "searching"
               ? "text-neutral-400 dark:text-neutral-500 italic"
@@ -492,10 +455,10 @@ export function FactNode({ data }: NodeProps) {
         </div>
         {/* Evidence link */}
         {hasEvidence && (
-          <div className="px-3 pb-2 -mt-0.5">
+          <div className="absolute bottom-3 left-4">
             <button
               onClick={() => onOpenPDF?.(evidenceFilename!, evidencePage!, evidenceHighlights ?? [])}
-              className="flex items-center gap-1 text-[10px] text-indigo-500 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 transition-colors"
+              className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-300 hover:text-amber-700 dark:hover:text-amber-200 transition-colors"
               title={`Open source — page ${evidencePage}`}
             >
               <FileText size={11} className="shrink-0" />
@@ -846,18 +809,33 @@ export function PlotNode({ data }: NodeProps) {
 
 // ─── Document Node ─────────────────────────────────────────────────────────
 export interface DocumentNodeData extends Record<string, unknown> {
-  doc: KBDocument;
+  item?: CanvasNodeData;
+  doc?: KBDocument;
   isActive: boolean;
   onActivate: (id: string) => void;
   onOpenPDF: (filename: string, page: number, highlights: PDFHighlight[]) => void;
+  onRemoveFromCanvas?: (docId: string) => void;
   evidenceCount: number;
 }
 
 export function DocumentNode({ data }: NodeProps) {
-  const { doc, isActive, onActivate, onOpenPDF, evidenceCount } = data as DocumentNodeData;
-  const isProcessing = doc.status === "processing" || doc.status === "pending";
-  const isError = doc.status === "error" || doc.status === "failed";
-  const stem = doc.filename.replace(/\.[^.]+$/, "");
+  const { item, doc, isActive, onActivate, onOpenPDF, onRemoveFromCanvas, evidenceCount } = data as DocumentNodeData;
+  const resolvedDoc = doc ?? item?.metadata?.document;
+  if (!resolvedDoc) return null;
+  const docData = resolvedDoc;
+  const isProcessing = docData.status === "processing" || docData.status === "pending";
+  const isError = docData.status === "error" || docData.status === "failed";
+  const stem = docData.filename.replace(/\.[^.]+$/, "");
+
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("contextmenu", close);
+    return () => { window.removeEventListener("click", close); window.removeEventListener("contextmenu", close); };
+  }, [ctxMenu]);
 
   return (
     <>
@@ -869,10 +847,15 @@ export function DocumentNode({ data }: NodeProps) {
       />
       <button
         onClick={() => {
-          onActivate(isActive ? "" : doc.document_id);
-          onOpenPDF(doc.filename, 1, []);
+          onActivate(isActive ? "" : docData.document_id);
+          onOpenPDF(docData.filename, 1, []);
         }}
-        title={doc.filename}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setCtxMenu({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY });
+        }}
+        title={docData.filename}
         className={`group flex flex-col gap-1 px-3 py-2.5 rounded-xl border-2 transition-all shadow-sm text-left cursor-pointer w-full ${
           isActive
             ? "border-indigo-400 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-950/50"
@@ -908,7 +891,7 @@ export function DocumentNode({ data }: NodeProps) {
               ? "bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400"
               : "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400"
           }`}>
-            {isProcessing ? "processing" : isError ? "error" : `${doc.node_count} chunks`}
+            {isProcessing ? "processing" : isError ? "error" : `${docData.node_count} chunks`}
           </span>
           {evidenceCount > 0 && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300">
@@ -917,6 +900,104 @@ export function DocumentNode({ data }: NodeProps) {
           )}
         </div>
       </button>
+      {ctxMenu && (
+        <div
+          className="absolute z-50 min-w-[140px] rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg py-1"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); setCtxMenu(null); onRemoveFromCanvas?.(docData.document_id); }}
+            className="w-full text-left px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2"
+          >
+            <XCircle size={12} />
+            Remove from canvas
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── Funnel Node ──────────────────────────────────────────────────────────
+export interface FunnelNodeData extends Record<string, unknown> {
+  node: CanvasNodeData;
+  onDelete?: (id: string) => void;
+  connectedDocCount: number;
+}
+
+export function FunnelNode({ data }: NodeProps) {
+  const { node, onDelete, connectedDocCount } = data as FunnelNodeData;
+  const label = node.funnel_label || "Funnel";
+
+  return (
+    <>
+      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
+      <Handle type="target" position={Position.Top} className="!bg-teal-500 !border-teal-700" />
+      <Handle type="target" position={Position.Left} id="left" className="!bg-teal-500 !border-teal-700" />
+      <Handle type="target" position={Position.Right} id="right" className="!bg-teal-500 !border-teal-700" />
+      <div
+        className="relative h-full w-full select-none"
+        style={nodeFrameStyle(node, { w: 150, h: 150 })}
+      >
+        <div className="absolute inset-0 border-[3px] border-teal-500 bg-white shadow-md dark:border-teal-500 dark:bg-neutral-900"
+          style={{ clipPath: "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)" }}
+        />
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 px-6 text-center">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-teal-100 dark:bg-teal-900">
+            <Filter size={16} className="text-teal-600 dark:text-teal-400" />
+          </div>
+          <span className="text-[11px] font-semibold text-teal-700 dark:text-teal-300 break-words">
+            {label}
+          </span>
+          {connectedDocCount > 0 && (
+            <span className="rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] text-teal-600 dark:bg-teal-900/50 dark:text-teal-400">
+              {connectedDocCount} doc{connectedDocCount !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+      </div>
+      <Handle type="source" position={Position.Bottom} className="!bg-teal-500 !border-teal-700" />
+    </>
+  );
+}
+
+// ─── Area Node (container / subflow) ──────────────────────────────────────
+export interface AreaNodeData extends Record<string, unknown> {
+  node: CanvasNodeData;
+  onDelete?: (id: string) => void;
+  connectedSourceNames: string[];
+  highlighted?: boolean;
+}
+
+export function AreaNode({ data }: NodeProps) {
+  const { node, onDelete, connectedSourceNames, highlighted } = data as AreaNodeData;
+  const label = node.area_label || "Area";
+
+  return (
+    <>
+      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
+      <Handle type="target" position={Position.Top} className="!bg-indigo-400 !border-indigo-600" />
+      <Handle type="target" position={Position.Left} id="left" className="!bg-indigo-400 !border-indigo-600" />
+      <Handle type="target" position={Position.Right} id="right" className="!bg-indigo-400 !border-indigo-600" />
+      <div
+        className={`w-full h-full rounded-2xl border-[3px] border-dashed transition-all ${
+          highlighted
+            ? "border-indigo-500 dark:border-indigo-400 bg-indigo-100/55 dark:bg-indigo-900/35 shadow-[0_0_0_4px_rgba(99,102,241,0.12)]"
+            : "border-indigo-300 dark:border-indigo-700 bg-indigo-50/30 dark:bg-indigo-950/15"
+        }`}
+      >
+        <div className="absolute top-2 left-3 flex items-center gap-1.5">
+          <span className="text-[11px] font-semibold text-indigo-500 dark:text-indigo-400">
+            {label}
+          </span>
+          {connectedSourceNames.length > 0 && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-500 dark:text-indigo-400">
+              {connectedSourceNames.length} source{connectedSourceNames.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+      </div>
+      <Handle type="source" position={Position.Bottom} className="!bg-indigo-400 !border-indigo-600" />
     </>
   );
 }

@@ -15,6 +15,7 @@ export const useConversationHistory = () => {
     const [activeId, setActiveId] = useState<string | null>(null);
     const [isInitialized, setIsInitialized] = useState(false);
     const pendingUpdates = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+    const pendingCreates = useRef<Map<string, Promise<Conversation | null>>>(new Map());
 
     // Reset and reload when user changes
     const prevUserId = useRef('');
@@ -71,6 +72,22 @@ export const useConversationHistory = () => {
         }
     };
 
+    const ensureConversationExists = useCallback(async (id: string, title = 'New Conversation'): Promise<boolean> => {
+        if (pendingCreates.current.has(id)) {
+            const existing = await pendingCreates.current.get(id)!;
+            return existing !== null;
+        }
+
+        const createPromise = _createInDB(id, title)
+            .finally(() => {
+                pendingCreates.current.delete(id);
+            });
+
+        pendingCreates.current.set(id, createPromise);
+        const created = await createPromise;
+        return created !== null;
+    }, []);
+
     const createNewConversation = useCallback(async (): Promise<string> => {
         const id = crypto.randomUUID();
         const conv: Conversation = {
@@ -84,9 +101,9 @@ export const useConversationHistory = () => {
         setConversations(prev => [conv, ...prev]);
         setActiveId(id);
         // Persist
-        await _createInDB(id, 'New Conversation');
+        await ensureConversationExists(id, 'New Conversation');
         return id;
-    }, []);
+    }, [ensureConversationExists]);
 
     const deleteConversation = useCallback((id: string) => {
         setConversations(prev => {
@@ -115,33 +132,56 @@ export const useConversationHistory = () => {
         const existing = pendingUpdates.current.get(id);
         if (existing) clearTimeout(existing);
 
-        const timer = setTimeout(() => {
+        const timer = setTimeout(async () => {
             pendingUpdates.current.delete(id);
             const body: Record<string, any> = {};
             if (updates.title !== undefined) body.title = updates.title;
             if (updates.messages !== undefined) body.messages = updates.messages;
             if ((updates as any).canvas_state !== undefined) body.canvas_state = (updates as any).canvas_state;
 
-            fetch(`${CONVERSATIONS_URL}/${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', ...userHeaders },
-                body: JSON.stringify(body),
-            }).catch(() => {});
+            try {
+                let response = await fetch(`${CONVERSATIONS_URL}/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', ...userHeaders },
+                    body: JSON.stringify(body),
+                });
+
+                if (response.status === 404) {
+                    const conversation = conversations.find(c => c.id === id);
+                    const title = body.title ?? conversation?.title ?? 'New Conversation';
+                    const created = await ensureConversationExists(id, title);
+                    if (!created) return;
+
+                    response = await fetch(`${CONVERSATIONS_URL}/${id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json', ...userHeaders },
+                        body: JSON.stringify(body),
+                    });
+                }
+            } catch {
+                // swallow network issues; optimistic local state remains
+            }
         }, 800);
 
         pendingUpdates.current.set(id, timer);
-    }, []);
+    }, [conversations, ensureConversationExists]);
 
     const loadConversationMessages = useCallback(async (id: string): Promise<{ messages: any[]; canvas_state: any }> => {
         try {
-            const r = await fetch(`${CONVERSATIONS_URL}/${id}`, { headers: userHeaders });
+            let r = await fetch(`${CONVERSATIONS_URL}/${id}`, { headers: userHeaders });
+            if (r.status === 404) {
+                const conversation = conversations.find(c => c.id === id);
+                const created = await ensureConversationExists(id, conversation?.title ?? 'New Conversation');
+                if (!created) return { messages: [], canvas_state: {} };
+                r = await fetch(`${CONVERSATIONS_URL}/${id}`, { headers: userHeaders });
+            }
             if (!r.ok) return { messages: [], canvas_state: {} };
             const data = await r.json();
             return { messages: data.messages ?? [], canvas_state: data.canvas_state ?? {} };
         } catch {
             return { messages: [], canvas_state: {} };
         }
-    }, []);
+    }, [conversations, ensureConversationExists]);
 
     return {
         conversations,

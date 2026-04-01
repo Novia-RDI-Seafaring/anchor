@@ -14,7 +14,7 @@ import pypdfium2 as pdfium  # type: ignore[reportMissingTypeStubs]
 logger = getLogger(__name__)
 
 
-def _open_pdf_document(pdf_path: Path) -> pdfium.PdfDocument:
+def open_pdf_document(pdf_path: Path) -> pdfium.PdfDocument:
     last_error: Exception | None = None
     for attempt in range(2):
         try:
@@ -212,7 +212,7 @@ def _render_page_with_provs(
     scale: int = 2,
 ) -> Image.Image:
     try:
-        pdf = _open_pdf_document(pdf_path)
+        pdf = open_pdf_document(pdf_path)
         try:
             page_count = len(pdf)
             if page_count <= 0:

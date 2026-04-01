@@ -25,6 +25,31 @@ interface Snippet {
   created_at: string;
 }
 
+function setCustomDragPreview(
+  event: React.DragEvent<HTMLElement>,
+  options: {
+    label: string;
+    width: number;
+    height: number;
+    className: string;
+    caption?: string;
+  },
+) {
+  const preview = document.createElement("div");
+  preview.className = `fixed -left-[9999px] -top-[9999px] pointer-events-none rounded-xl border-2 shadow-xl ${options.className}`;
+  preview.style.width = `${options.width}px`;
+  preview.style.minHeight = `${options.height}px`;
+  preview.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:4px;padding:12px 14px;">
+      <div style="font-size:13px;font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${options.label}</div>
+      ${options.caption ? `<div style="font-size:11px;opacity:0.72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${options.caption}</div>` : ""}
+    </div>
+  `;
+  document.body.appendChild(preview);
+  event.dataTransfer.setDragImage(preview, options.width / 2, Math.min(options.height / 2, 32));
+  requestAnimationFrame(() => preview.remove());
+}
+
 export function LibraryDrawer({ open, onClose, workspaceDocIds, onAddDoc, onAddFmu, onAddSnippet }: LibraryDrawerProps) {
   const { documents } = useApp();
   const { data: session } = useSession();
@@ -111,6 +136,15 @@ export function LibraryDrawer({ open, onClose, workspaceDocIds, onAddDoc, onAddF
                   onDragStart={e => {
                     e.dataTransfer.setData("application/anchor-doc", doc.document_id);
                     e.dataTransfer.effectAllowed = "copy";
+                    setCustomDragPreview(e, {
+                      label: doc.filename,
+                      caption: `${doc.node_count} chunks`,
+                      width: 150,
+                      height: 64,
+                      className: inWs
+                        ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+                        : "bg-white border-neutral-200 text-neutral-900",
+                    });
                   }}
                   onClick={() => !inWs && onAddDoc(doc.document_id)}
                   className={`flex items-center gap-2 px-3 py-2.5 rounded-lg mb-1 cursor-grab active:cursor-grabbing select-none transition-colors ${
@@ -147,6 +181,13 @@ export function LibraryDrawer({ open, onClose, workspaceDocIds, onAddDoc, onAddF
                 onDragStart={e => {
                   e.dataTransfer.setData("application/anchor-fmu", filename);
                   e.dataTransfer.effectAllowed = "copy";
+                  setCustomDragPreview(e, {
+                    label: filename,
+                    caption: "FMU model",
+                    width: 260,
+                    height: 92,
+                    className: "bg-teal-50 border-teal-300 text-teal-950",
+                  });
                 }}
                 onClick={() => onAddFmu(filename)}
                 className="flex items-center gap-2 px-3 py-2.5 rounded-lg mb-1 cursor-grab active:cursor-grabbing select-none hover:bg-neutral-100 dark:hover:bg-neutral-800 border border-transparent transition-colors"
@@ -180,6 +221,13 @@ export function LibraryDrawer({ open, onClose, workspaceDocIds, onAddDoc, onAddF
                 onDragStart={e => {
                   e.dataTransfer.setData("application/anchor-snippet", JSON.stringify({ nodes: snippet.nodes, relations: snippet.relations }));
                   e.dataTransfer.effectAllowed = "copy";
+                  setCustomDragPreview(e, {
+                    label: snippet.name,
+                    caption: `${snippet.nodes.length} node${snippet.nodes.length !== 1 ? "s" : ""}`,
+                    width: 220,
+                    height: 84,
+                    className: "bg-indigo-50 border-indigo-300 text-indigo-950",
+                  });
                 }}
                 onClick={() => onAddSnippet?.(snippet.nodes, snippet.relations)}
                 className="group flex items-center gap-2 px-3 py-2.5 rounded-lg mb-1 cursor-grab active:cursor-grabbing select-none hover:bg-neutral-100 dark:hover:bg-neutral-800 border border-transparent transition-colors"

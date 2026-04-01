@@ -83,7 +83,11 @@ def serve_pdf(
     filename: str = Query(..., description="Filename of the PDF"),
 ):
     path = get_file_service().get_file_path(filename)
-    return FileResponse(path=path, media_type="application/pdf")
+    return FileResponse(
+        path=path,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{path.name}"'},
+    )
 
 
 @router.get("/documents/pdf/info")
@@ -92,15 +96,17 @@ def get_pdf_info(
     page_no: int = Query(1, description="1-indexed page number for dimensions"),
 ):
     """Return basic PDF metadata (page count and page dimensions in PDF points)."""
-    import pypdfium2 as pdfium  # type: ignore
+    from src.kb_engine.utils.pdf_rendering import open_pdf_document
     path = get_file_service().get_file_path(filename)
     try:
-        doc = pdfium.PdfDocument(str(path))
-        page_count = len(doc)
-        idx = max(0, min(page_no - 1, page_count - 1))
-        page = doc[idx]
-        page_w, page_h = page.get_size()
-        doc.close()
+        doc = open_pdf_document(path)
+        try:
+            page_count = len(doc)
+            idx = max(0, min(page_no - 1, page_count - 1))
+            page = doc[idx]
+            page_w, page_h = page.get_size()
+        finally:
+            doc.close()
     except Exception as exc:
         raise HTTPException(
             status_code=422,

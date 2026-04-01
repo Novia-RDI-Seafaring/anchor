@@ -65,20 +65,34 @@ export function PDFModal({
   // that can overwrite the correct count with a stale response.
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API_URL}/api/documents/pdf/info?filename=${encodeURIComponent(filename)}&page_no=1`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`PDF info failed: ${r.status}`);
-        return r.json();
-      })
-      .then((d) => {
-        if (!cancelled) {
+    const fetchInfo = (attempt: number) => {
+      fetch(`${API_URL}/api/documents/pdf/info?filename=${encodeURIComponent(filename)}&page_no=1`)
+        .then((r) => {
+          if (!r.ok) throw new Error(`PDF info failed: ${r.status}`);
+          return r.json();
+        })
+        .then((d) => {
+          if (cancelled) return;
           const count = typeof d.page_count === "number" && d.page_count > 0
             ? d.page_count
             : fallbackPageCount;
-          setNumPages(Math.max(count, fallbackPageCount));
-        }
-      })
-      .catch(() => { if (!cancelled) setNumPages(fallbackPageCount); });
+          if (count <= 1 && attempt < 2) {
+            // Page count of 1 may indicate a transient read — retry once
+            setTimeout(() => fetchInfo(attempt + 1), 300);
+          } else {
+            setNumPages(Math.max(count, fallbackPageCount));
+          }
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (attempt < 2) {
+            setTimeout(() => fetchInfo(attempt + 1), 300);
+          } else {
+            setNumPages(fallbackPageCount);
+          }
+        });
+    };
+    fetchInfo(0);
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filename]);
