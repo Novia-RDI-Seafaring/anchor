@@ -11,6 +11,7 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from ..deps import AgentDeps
 from ..tools import document as document_tools
+from ..tools.product_data import _find_by_filename
 
 # ── Toolset: reading tools only ──────────────────────────────────────────────
 
@@ -96,19 +97,66 @@ async def _documents_context(ctx: RunContext[AgentDeps]) -> str | None:
     )
 
 
+def _loaded_documents_context(ctx: RunContext[AgentDeps]) -> str | None:
+    """Auto-load gold-layer data for every document node on the canvas."""
+    state = ctx.deps.state
+    doc_nodes = [n for n in state.nodes if n.node_type == "document" and n.filename]
+    if not doc_nodes:
+        return None
+
+    loaded: list[str] = []
+    for node in doc_nodes:
+        gold = _find_by_filename(node.filename)
+        if gold:
+            # The actual uploaded filename may differ from the gold JSON filename.
+            # Tell the agent to use the real filename for source references.
+            gold_filename = gold.get("document", {}).get("filename", "")
+            filename_note = ""
+            if gold_filename and gold_filename != node.filename:
+                filename_note = (
+                    f"\n**IMPORTANT:** Use filename `{node.filename}` (not `{gold_filename}`) "
+                    f"in all source references for this document.\n"
+                )
+            loaded.append(
+                f"### {node.filename}\n{filename_note}"
+                f"```json\n{json.dumps(gold, indent=2, default=str)}\n```"
+            )
+
+    if not loaded:
+        return None
+
+    return (
+        "LOADED PRODUCT DATA (gold layer — pre-extracted structured data for documents on canvas):\n\n"
+        + "\n\n".join(loaded)
+    )
+
+
 # ── Static instructions ──────────────────────────────────────────────────────
 
 _INSTRUCTIONS = """
 You have full visibility of the canvas state and available documents above.
-To investigate a document, use read_document_page(document_id, page_no) — it returns
-the page text and a rendered screenshot.
-You can call it multiple times to explore.
+
+Documents on the canvas with pre-extracted gold-layer data are automatically loaded
+into your context — you already have their full structured product data (specs, tables,
+operating data, dimensions, bboxes, etc.). Use this data directly without calling any tool.
+DO NOT call read_document_page for documents that have gold data loaded.
+
+For documents without gold data, or to see the raw page content, use
+read_document_page(document_id, page_no) — it returns the page text and a rendered screenshot.
 
 Think like an engineer reading a document:
-- Check the document list to find the right doc
-- For short docs (≤6 pages), read all pages to understand the content
-- For longer docs, start with page 1 (often has overview/TOC), then navigate to relevant sections
-- Trust what you READ in the document over any other source
+- Gold data is authoritative — use it first when available
+- For docs without gold data: short docs (≤6 pages), read all pages; longer docs, start with page 1
+
+FMU wiring:
+- FMU nodes expose handles for each variable: inputs "in-{name}",
+  outputs "out-{name}", parameters "param-in-{name}".
+- Spec nodes expose per-row handles: "spec-row-out-{sectionIdx}-{rowIdx}" (right side)
+  and "spec-row-in-{sectionIdx}-{rowIdx}" (left side). Section/row indices are 0-based.
+- To wire a spec row to an FMU input, use add_relation with
+  source_handle="spec-row-out-{sectionIdx}-{rowIdx}" and target_handle="in-{varName}".
+- Match by engineering meaning: e.g. "Temperature" spec → FMU "temp_in",
+  "Mass flow" → "mass_in", etc.
 """.strip()
 
 
@@ -122,4 +170,4 @@ class ContextCapability(AbstractCapability[Any]):
         return _toolset
 
     def get_instructions(self) -> list:
-        return [_INSTRUCTIONS, _canvas_context, _documents_context]
+        return [_INSTRUCTIONS, _canvas_context, _documents_context, _loaded_documents_context]

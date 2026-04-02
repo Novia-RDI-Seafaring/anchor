@@ -65,7 +65,7 @@ class FmuVariable(BaseModel):
 
 class CanvasNode(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
-    node_type: Literal["concept", "topic", "fact", "spec", "document", "source", "entity", "category", "fmu", "plot", "image", "funnel", "area"]  # source/entity/category kept for backward compat
+    node_type: Literal["concept", "topic", "fact", "spec", "document", "source", "entity", "category", "fmu", "plot", "image", "funnel", "area", "model"]  # source/entity/category kept for backward compat
     status: NodeStatus = "found"
     last_updated_run_id: str = ""
     color: str = ""  # user-set accent color (e.g. "violet", "blue", "emerald", "amber", "rose", "indigo", "slate")

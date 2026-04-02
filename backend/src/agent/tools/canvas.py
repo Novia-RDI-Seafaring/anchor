@@ -243,7 +243,6 @@ async def add_spec_node(
     ctx: RunContext[AgentDeps],
     spec_title: str,
     sections: list[ParameterSection],
-    parent_id: str | None = None,
     status: NodeStatus = "found",
 ) -> ToolReturn:
     """Add a parameter table node to the canvas.
@@ -256,9 +255,9 @@ async def add_spec_node(
           - value: the value (e.g. "600", "-10 to +140")
           - unit: optional unit (e.g. "kPa", "°C")
           - source: { doc_id, filename, page } — where this value was found
-    parent_id: optional — connect to an existing node.
 
     Every row should have a source so the engineer can click through to the PDF page.
+    Evidence edges from rows to document nodes are created automatically by the frontend.
     """
     backfilled_rows = _backfill_section_row_bboxes(sections)
     if backfilled_rows:
@@ -272,8 +271,6 @@ async def add_spec_node(
     )
     _mark_node_for_run(node, ctx)
     ctx.deps.state.nodes.append(node)
-    if parent_id:
-        _ensure_relation(ctx, parent_id, node.id)
 
     result = _snapshot(ctx)
     result.return_value = {"success": True, "id": node.id}
@@ -309,10 +306,13 @@ async def update_node(
     text: str | None = None,
     spec_title: str | None = None,
     properties: list[SpecProperty] | None = None,
+    parameter_sections: list[ParameterSection] | None = None,
 ) -> ToolReturn:
     """Update fields on an existing canvas node.
 
     Only the fields you provide are changed; others stay as-is.
+    For spec nodes, pass parameter_sections to replace the table content entirely.
+    Same structure as add_spec_node sections — list of {name, rows: [{parameter, value, unit, source}]}.
     """
     node = next((n for n in ctx.deps.state.nodes if n.id == node_id), None)
     if node is None:
@@ -328,6 +328,11 @@ async def update_node(
         node.spec_title = spec_title
     if properties is not None:
         node.properties = properties
+    if parameter_sections is not None:
+        backfilled = _backfill_section_row_bboxes(parameter_sections)
+        if backfilled:
+            _LOGGER.info("Backfilled bbox for %s rows updating node '%s'", backfilled, node_id)
+        node.parameter_sections = parameter_sections
     return _snapshot(ctx)
 
 

@@ -46,22 +46,6 @@ function nodeFrameStyle(node: CanvasNodeData, fallback: { w: number; h: number }
   };
 }
 
-// --- Shared delete toolbar (appears when node is selected) ---
-function DeleteToolbar({ nodeId, onDelete }: { nodeId: string; onDelete?: (id: string) => void }) {
-  if (!onDelete) return null;
-  return (
-    <NodeToolbar isVisible={undefined} position={Position.Top} align="end" offset={6}>
-      <button
-        onClick={() => onDelete(nodeId)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg bg-white dark:bg-neutral-800 border border-red-200 dark:border-red-700 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950 shadow-md transition-colors"
-        title="Delete node"
-      >
-        <XCircle size={14} />
-        Delete
-      </button>
-    </NodeToolbar>
-  );
-}
 
 function StatusBadge({ status }: { status?: NodeStatus }) {
   if (!status || status === "found") {
@@ -107,12 +91,14 @@ export interface TopicNodeData {
   collapsed: boolean;
   onToggleCollapse: (id: string) => void;
   onDelete?: (id: string) => void;
+  onSetColor?: (id: string, color: string) => void;
 }
 
 export interface FactNodeData {
   node: CanvasNodeData;
   onOpenPDF?: (filename: string, page: number, highlights: PDFHighlight[]) => void;
   onDelete?: (id: string) => void;
+  onSetColor?: (id: string, color: string) => void;
   onPreviewSource?: (filename: string | null, page?: number | null) => void;
   evidenceFilename?: string;
   evidencePage?: number;
@@ -130,6 +116,7 @@ export interface SpecNodeData {
   node: CanvasNodeData;
   onOpenPDF?: (filename: string, page: number, highlights: PDFHighlight[]) => void;
   onDelete?: (id: string) => void;
+  onSetColor?: (id: string, color: string) => void;
   onPreviewSource?: (filename: string | null, page?: number | null) => void;
   evidenceFilename?: string;
   evidencePage?: number;
@@ -142,6 +129,7 @@ export interface EntityNodeData {
   collapsed: boolean;
   onToggleCollapse: (id: string) => void;
   onDelete?: (id: string) => void;
+  onSetColor?: (id: string, color: string) => void;
 }
 
 export interface CategoryNodeData {
@@ -150,12 +138,14 @@ export interface CategoryNodeData {
   collapsed: boolean;
   onToggleCollapse: (id: string) => void;
   onDelete?: (id: string) => void;
+  onSetColor?: (id: string, color: string) => void;
 }
 
 export interface ImageNodeData {
   node: CanvasNodeData;
   onOpenPDF?: (filename: string, page: number, highlights: PDFHighlight[]) => void;
   onDelete?: (id: string) => void;
+  onSetColor?: (id: string, color: string) => void;
 }
 
 export interface ConceptNodeData extends Record<string, unknown> {
@@ -164,24 +154,25 @@ export interface ConceptNodeData extends Record<string, unknown> {
   collapsed: boolean;
   onToggleCollapse: (id: string) => void;
   onDelete?: (id: string) => void;
+  onSetColor?: (id: string, color: string) => void;
 }
 
 // ─────────────────────────────────────────────
 // ENTITY NODE — dark slate, the product/system root
 // ─────────────────────────────────────────────
 export function EntityNode({ data }: NodeProps) {
-  const { node, childCount, collapsed, onToggleCollapse, onDelete } = data as unknown as EntityNodeData;
+  const { node, childCount, collapsed, onToggleCollapse, onDelete, onSetColor } = data as unknown as EntityNodeData;
   return (
     <>
-      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
+
       <Handle type="target" position={Position.Top} className="!bg-slate-500 !border-slate-700" />
       <div
-        className={`flex h-full w-full items-center justify-center rounded-full border-[3px] shadow-lg select-none transition-all ${
+        className={`flex items-center justify-center rounded-full border-[3px] shadow-lg select-none transition-all ${
           collapsed
             ? "border-slate-500 dark:border-slate-400 bg-slate-100 dark:bg-slate-800"
             : "border-slate-600 dark:border-slate-400 bg-white dark:bg-neutral-900"
         }`}
-        style={nodeFrameStyle(node, { w: 180, h: 180 })}
+        style={{ width: '100%', height: '100%' }}
       >
         <div className="flex max-w-[80%] flex-col items-center gap-2 text-center">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200">
@@ -218,10 +209,10 @@ export function EntityNode({ data }: NodeProps) {
 // CATEGORY NODE — blue, chapter/section level
 // ─────────────────────────────────────────────
 export function CategoryNode({ data }: NodeProps) {
-  const { node, childCount, collapsed, onToggleCollapse, onDelete } = data as unknown as CategoryNodeData;
+  const { node, childCount, collapsed, onToggleCollapse, onDelete, onSetColor } = data as unknown as CategoryNodeData;
   return (
     <>
-      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
+
       <Handle type="target" position={Position.Top} className="!bg-blue-500 !border-blue-700" />
       <div
         className={`rounded-xl border-2 shadow-md select-none transition-all ${
@@ -278,7 +269,7 @@ function buildPageImageUrl(filename: string, page: number, bbox?: number[], high
 }
 
 export function ImageNode({ data }: NodeProps) {
-  const { node, onDelete, onOpenPDF } = data as unknown as ImageNodeData;
+  const { node, onDelete, onSetColor, onOpenPDF } = data as unknown as ImageNodeData;
   const hasImage = !!(node.image_filename && node.image_page);
   const imageUrl = hasImage
     ? buildPageImageUrl(node.image_filename!, node.image_page!, node.image_bbox, node.image_highlights)
@@ -287,7 +278,7 @@ export function ImageNode({ data }: NodeProps) {
 
   return (
     <>
-      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
+
       <Handle type="target" position={Position.Top} className="!bg-sky-400 !border-sky-600" />
       <div
         className="rounded-xl border border-sky-200 dark:border-sky-700 bg-white dark:bg-neutral-900 shadow-md overflow-hidden"
@@ -340,18 +331,18 @@ export function ImageNode({ data }: NodeProps) {
 // CONCEPT NODE — violet, subject-level root
 // ─────────────────────────────────────────────
 export function ConceptNode({ data }: NodeProps) {
-  const { node, childCount, collapsed, onToggleCollapse, onDelete } = data as unknown as ConceptNodeData;
+  const { node, childCount, collapsed, onToggleCollapse, onDelete, onSetColor } = data as unknown as ConceptNodeData;
   return (
     <>
-      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
+
       <Handle type="target" position={Position.Top} className="!bg-violet-500 !border-violet-700" />
       <div
-        className={`relative flex h-full w-full flex-col justify-between rounded-[28px] border-[3px] shadow-md select-none transition-all ${
+        className={`relative flex flex-col justify-between rounded-[28px] border-[3px] shadow-md select-none transition-all ${
           collapsed
             ? "border-violet-300 dark:border-violet-600 bg-violet-50 dark:bg-violet-950/30"
             : "border-violet-500 dark:border-violet-400 bg-white dark:bg-neutral-900"
         }`}
-        style={nodeFrameStyle(node, { w: 220, h: 120 })}
+        style={{ width: '100%', height: '100%' }}
       >
         <div className="flex items-center gap-2 px-4 py-3">
           <Layers size={14} className="text-violet-600 dark:text-violet-400 shrink-0" />
@@ -384,10 +375,10 @@ export function ConceptNode({ data }: NodeProps) {
 // TOPIC NODE — amber, collapsible
 // ─────────────────────────────────────────────
 export function TopicNode({ data }: NodeProps) {
-  const { node, childCount, collapsed, onToggleCollapse, onDelete } = data as unknown as TopicNodeData;
+  const { node, childCount, collapsed, onToggleCollapse, onDelete, onSetColor } = data as unknown as TopicNodeData;
   return (
     <>
-      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
+
       <Handle type="target" position={Position.Top} className="!bg-amber-400 !border-amber-600" />
       <div
         className={`rounded-xl border-2 shadow-md min-w-[180px] max-w-[260px] select-none transition-all ${
@@ -427,16 +418,16 @@ export function TopicNode({ data }: NodeProps) {
 // FACT NODE — indigo left-border, full text
 // ─────────────────────────────────────────────
 export function FactNode({ data }: NodeProps) {
-  const { node, onDelete, onOpenPDF, onPreviewSource, evidenceFilename, evidencePage, evidenceHighlights } = data as unknown as FactNodeData;
+  const { node, onDelete, onSetColor, onOpenPDF, onPreviewSource, evidenceFilename, evidencePage, evidenceHighlights } = data as unknown as FactNodeData;
   const hasEvidence = evidenceFilename && evidencePage !== undefined;
 
   return (
     <>
-      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
+
       <Handle type="target" position={Position.Top} className="!bg-indigo-400 !border-indigo-600" />
       <div
-        className="relative h-full w-full rounded-[26px] border-[3px] border-amber-400 bg-white shadow-sm dark:border-amber-500 dark:bg-neutral-900"
-        style={nodeFrameStyle(node, { w: 240, h: 120 })}
+        className="relative rounded-[26px] border-[3px] border-amber-400 bg-white shadow-sm dark:border-amber-500 dark:bg-neutral-900"
+        style={{ width: '100%', height: '100%' }}
       >
         {/* Text row */}
         <div className="flex h-full items-start gap-2 px-4 py-3">
@@ -483,7 +474,7 @@ export function FactNode({ data }: NodeProps) {
 // SPEC NODE — violet, two-column property table
 // ─────────────────────────────────────────────
 export function SpecNode({ data }: NodeProps) {
-  const { node, onDelete, onOpenPDF, onPreviewSource, evidenceFilename, evidencePage, evidenceHighlights } = data as unknown as SpecNodeData;
+  const { node, onDelete, onSetColor, onOpenPDF, onPreviewSource, evidenceFilename, evidencePage, evidenceHighlights } = data as unknown as SpecNodeData;
   const hasEvidence = evidenceFilename && evidencePage !== undefined;
   const sections: ParameterSection[] = (node as any).parameter_sections ?? [];
   const useSections = sections.length > 0;
@@ -507,12 +498,12 @@ export function SpecNode({ data }: NodeProps) {
   const propertyOutputHandleId = (propertyIndex: number) => `spec-prop-out-${propertyIndex}`;
 
   return (
-    <>
-      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
+    <div style={{ padding: "0 14px" }}>
+
       <Handle type="target" position={Position.Top} className="!bg-violet-400 !border-violet-600" />
       <div
-        className="rounded-lg border border-violet-200 dark:border-violet-700 bg-white dark:bg-neutral-900 shadow-sm overflow-hidden"
-        style={{ borderLeft: "4px solid rgb(139 92 246)", minWidth: 240, maxWidth: useSections ? 600 : isComparison ? 520 : 400 }}
+        className="rounded-lg border border-violet-200 dark:border-violet-700 bg-white dark:bg-neutral-900 shadow-sm"
+        style={{ borderLeft: "4px solid rgb(139 92 246)", minWidth: 240, maxWidth: 520 }}
       >
         {/* Header */}
         <div className="flex items-center gap-1.5 px-3 py-2 bg-violet-50 dark:bg-violet-950/40 border-b border-violet-100 dark:border-violet-800">
@@ -541,22 +532,22 @@ export function SpecNode({ data }: NodeProps) {
               {sections.map((section, si) => (
                 <React.Fragment key={si}>
                   <tr className="bg-violet-100/70 dark:bg-violet-900/30">
-                    <td colSpan={4} className="px-2.5 py-1 text-[10px] font-bold text-violet-700 dark:text-violet-300 uppercase tracking-wide">
-                      {section.name}
+                    <td colSpan={4} className="px-2.5 py-1">
+                      <div className="text-[10px] font-bold text-violet-700 dark:text-violet-300 uppercase tracking-wide truncate max-w-[280px]" title={section.name}>
+                        {section.name}
+                      </div>
                     </td>
                   </tr>
                   {section.rows.map((row, ri) => (
                     <tr key={ri} className={ri % 2 === 0 ? "bg-white dark:bg-neutral-900" : "bg-violet-50/50 dark:bg-violet-950/20"}>
                       <td className="relative px-2.5 py-1 text-neutral-500 dark:text-neutral-400 font-medium whitespace-nowrap border-r border-violet-100 dark:border-violet-800/50">
-                        {row.source?.filename && row.source?.page ? (
-                          <Handle
-                            type="target"
-                            id={rowInputHandleId(si, ri)}
-                            position={Position.Left}
-                            className="!h-2.5 !w-2.5 !border-violet-700 !bg-white dark:!bg-violet-950"
-                            style={{ left: -8, top: "50%", transform: "translateY(-50%)" }}
-                          />
-                        ) : null}
+                        <Handle
+                          type="target"
+                          id={rowInputHandleId(si, ri)}
+                          position={Position.Left}
+                          className="!h-2.5 !w-2.5 !border-violet-400 !bg-white dark:!bg-violet-950"
+                          style={{ left: -6, top: "50%", transform: "translateY(-50%)" }}
+                        />
                         {row.parameter}
                       </td>
                       <td className="px-2.5 py-1 text-neutral-800 dark:text-neutral-200 font-mono whitespace-nowrap text-right">
@@ -565,7 +556,7 @@ export function SpecNode({ data }: NodeProps) {
                       <td className="px-1.5 py-1 text-neutral-400 dark:text-neutral-500 text-[10px] whitespace-nowrap">
                         {row.unit}
                       </td>
-                      <td className="relative px-1.5 py-1 text-right">
+                      <td className="relative px-1.5 py-1 text-right whitespace-nowrap">
                         {row.source?.filename && row.source?.page ? (
                           <button
                             onClick={() => {
@@ -587,8 +578,8 @@ export function SpecNode({ data }: NodeProps) {
                           type="source"
                           id={rowOutputHandleId(si, ri)}
                           position={Position.Right}
-                          className="!h-2.5 !w-2.5 !border-violet-700 !bg-violet-500"
-                          style={{ right: -8, top: "50%", transform: "translateY(-50%)" }}
+                          className="!h-2.5 !w-2.5 !border-violet-400 !bg-violet-500"
+                          style={{ right: -6, top: "50%", transform: "translateY(-50%)" }}
                         />
                       </td>
                     </tr>
@@ -714,7 +705,7 @@ export function SpecNode({ data }: NodeProps) {
         )}
       </div>
       <Handle type="source" position={Position.Bottom} className="!bg-violet-400 !border-violet-600" />
-    </>
+    </div>
   );
 }
 
@@ -790,7 +781,7 @@ export function FmuNode({ data }: NodeProps) {
 
   return (
     <>
-      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
+
       <Handle type="target" position={Position.Top} className="!bg-teal-500 !border-teal-700" />
       <div className="rounded-xl border-2 border-teal-400 dark:border-teal-500 bg-teal-50 dark:bg-teal-950/40 shadow-md select-none" style={{ minWidth: 220, maxWidth: 320 }}>
         {/* Header */}
@@ -904,6 +895,7 @@ export function PlotNode({ data }: NodeProps) {
 
   return (
     <>
+
       <Handle type="target" position={Position.Top} className="!bg-indigo-400 !border-indigo-600" />
       <div className="rounded-xl border-2 border-indigo-300 dark:border-indigo-600 bg-white dark:bg-neutral-900 shadow-md" style={{ minWidth: 280, maxWidth: 400 }}>
         <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-100 dark:border-neutral-800">
@@ -993,15 +985,20 @@ export function DocumentNode({ data }: NodeProps) {
       <Handle
         type="target"
         position={Position.Top}
-        className="!opacity-0 !pointer-events-none"
-        style={{ top: 0 }}
+        className="!h-2.5 !w-2.5 !bg-indigo-400 !border-indigo-600"
       />
       <Handle
         type="source"
         id="doc-evidence-out"
         position={Position.Right}
-        className={`!h-2.5 !w-2.5 !border-indigo-700 ${isPreviewing ? "!bg-indigo-500" : "!bg-white dark:!bg-neutral-900"}`}
+        className={`!h-2.5 !w-2.5 !border-indigo-700 ${isPreviewing ? "!bg-indigo-500" : "!bg-indigo-400 dark:!bg-indigo-500"}`}
         style={{ right: -8, top: "50%", transform: "translateY(-50%)" }}
+      />
+      <Handle
+        type="source"
+        id="doc-out-bottom"
+        position={Position.Bottom}
+        className="!h-2.5 !w-2.5 !bg-indigo-400 !border-indigo-600"
       />
       <button
         onClick={() => {
@@ -1139,22 +1136,23 @@ export function DocumentNode({ data }: NodeProps) {
 export interface FunnelNodeData extends Record<string, unknown> {
   node: CanvasNodeData;
   onDelete?: (id: string) => void;
+  onSetColor?: (id: string, color: string) => void;
   connectedDocCount: number;
 }
 
 export function FunnelNode({ data }: NodeProps) {
-  const { node, onDelete, connectedDocCount } = data as FunnelNodeData;
+  const { node, onDelete, onSetColor, connectedDocCount } = data as FunnelNodeData;
   const label = node.funnel_label || "Funnel";
 
   return (
     <>
-      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
+
       <Handle type="target" position={Position.Top} className="!bg-teal-500 !border-teal-700" />
       <Handle type="target" position={Position.Left} id="left" className="!bg-teal-500 !border-teal-700" />
       <Handle type="target" position={Position.Right} id="right" className="!bg-teal-500 !border-teal-700" />
       <div
-        className="relative h-full w-full select-none"
-        style={nodeFrameStyle(node, { w: 150, h: 150 })}
+        className="relative select-none"
+        style={{ width: '100%', height: '100%' }}
       >
         <div className="absolute inset-0 border-[3px] border-teal-500 bg-white shadow-md dark:border-teal-500 dark:bg-neutral-900"
           style={{ clipPath: "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)" }}
@@ -1179,20 +1177,433 @@ export function FunnelNode({ data }: NodeProps) {
 }
 
 // ─── Area Node (container / subflow) ──────────────────────────────────────
+// ─────────────────────────────────────────────
+// MODEL NODE — orange/copper, inline-editable label
+// Represents a named model concept (e.g. "Pump", "Heat Exchanger")
+// that bridges documents to FMU parameters
+// ─────────────────────────────────────────────
+export interface ModelNodeData extends Record<string, unknown> {
+  node: CanvasNodeData;
+  onDelete?: (id: string) => void;
+  onSetColor?: (id: string, color: string) => void;
+  onUpdateLabel?: (nodeId: string, label: string) => void;
+}
+
+export function ModelNode({ data }: NodeProps) {
+  const { node, onDelete, onSetColor, onUpdateLabel } = data as ModelNodeData;
+  const label = node.model_label || node.title || "Model";
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(label);
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setDraft(label); }, [label]);
+  useEffect(() => { if (editing) inputRef.current?.select(); }, [editing]);
+
+  const commit = () => {
+    setEditing(false);
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== label) {
+      onUpdateLabel?.(node.id, trimmed);
+    } else {
+      setDraft(label);
+    }
+  };
+
+  return (
+    <>
+
+      <Handle type="target" position={Position.Top} className="!bg-orange-500 !border-orange-700" />
+      <Handle type="target" position={Position.Left} id="left" className="!bg-orange-500 !border-orange-700" />
+      <div
+        className="relative flex flex-col justify-center rounded-2xl border-[3px] border-orange-400 dark:border-orange-500 bg-white dark:bg-neutral-900 shadow-md select-none transition-all hover:shadow-lg"
+        style={{ width: '100%', height: '100%' }}
+        onDoubleClick={() => setEditing(true)}
+      >
+        <div className="flex items-center gap-2.5 px-4">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-300">
+            <Cpu size={16} />
+          </div>
+          <div className="flex-1 min-w-0">
+            {editing ? (
+              <input
+                ref={inputRef}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={commit}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commit();
+                  if (e.key === "Escape") { setDraft(label); setEditing(false); }
+                }}
+                className="w-full bg-transparent text-sm font-semibold text-orange-900 dark:text-orange-100 outline-none border-b-2 border-orange-300 dark:border-orange-600 py-0.5"
+                autoFocus
+              />
+            ) : (
+              <p className="text-sm font-semibold text-orange-900 dark:text-orange-100 leading-snug truncate">
+                {label}
+              </p>
+            )}
+          </div>
+        </div>
+        {!editing && (
+          <div className="absolute bottom-1.5 right-3">
+            <span className="text-[9px] font-medium tracking-wide uppercase text-orange-400 dark:text-orange-500">
+              model
+            </span>
+          </div>
+        )}
+      </div>
+      <Handle type="source" position={Position.Right} id="right" className="!bg-orange-500 !border-orange-700" />
+      <Handle type="source" position={Position.Bottom} className="!bg-orange-500 !border-orange-700" />
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Shared inline-edit hook for shape nodes
+// ─────────────────────────────────────────────
+function useInlineEdit(
+  initialText: string,
+  nodeId: string,
+  onUpdateText?: (id: string, text: string) => void,
+) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(initialText);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setDraft(initialText); }, [initialText]);
+  useEffect(() => {
+    if (editing && ref.current) {
+      ref.current.focus();
+      // place cursor at end
+      const sel = window.getSelection();
+      if (sel && ref.current.childNodes.length) {
+        sel.selectAllChildren(ref.current);
+        sel.collapseToEnd();
+      }
+    }
+  }, [editing]);
+
+  const commit = () => {
+    setEditing(false);
+    const text = ref.current?.innerText?.trim() ?? "";
+    if (text !== initialText) {
+      onUpdateText?.(nodeId, text);
+    }
+  };
+
+  return { editing, setEditing, draft, setDraft, ref, commit };
+}
+
+// ─── SQUARE SHAPE NODE ──────────────────────────────────────────────
+export interface SquareShapeNodeData extends Record<string, unknown> {
+  node: CanvasNodeData;
+  onDelete?: (id: string) => void;
+  onSetColor?: (id: string, color: string) => void;
+  onUpdateText?: (id: string, text: string) => void;
+}
+
+export function SquareShapeNode({ data }: NodeProps) {
+  const { node, onDelete, onSetColor, onUpdateText } = data as SquareShapeNodeData;
+  const { editing, setEditing, ref, commit } = useInlineEdit(node.text || node.title || "", node.id, onUpdateText);
+
+  return (
+    <>
+
+      <Handle type="target" position={Position.Top} className="!bg-neutral-400 !border-neutral-500" />
+      <Handle type="target" position={Position.Left} id="left" className="!bg-neutral-400 !border-neutral-500" />
+      <div
+        className="flex items-center justify-center rounded-md border-2 border-neutral-400 dark:border-neutral-500 bg-white dark:bg-neutral-900 shadow-sm select-none"
+        style={{ width: '100%', height: '100%' }}
+        onDoubleClick={() => setEditing(true)}
+      >
+        <div
+          ref={ref}
+          contentEditable={editing}
+          suppressContentEditableWarning
+          onBlur={commit}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Escape") { commit(); }
+          }}
+          className={`text-sm text-center text-neutral-800 dark:text-neutral-200 outline-none max-w-[90%] break-words ${
+            editing ? "cursor-text" : "cursor-default"
+          }`}
+        >
+          {node.text || node.title || ""}
+        </div>
+      </div>
+      <Handle type="source" position={Position.Right} id="right" className="!bg-neutral-400 !border-neutral-500" />
+      <Handle type="source" position={Position.Bottom} className="!bg-neutral-400 !border-neutral-500" />
+    </>
+  );
+}
+
+// ─── CIRCLE SHAPE NODE ──────────────────────────────────────────────
+export interface CircleShapeNodeData extends Record<string, unknown> {
+  node: CanvasNodeData;
+  onDelete?: (id: string) => void;
+  onSetColor?: (id: string, color: string) => void;
+  onUpdateText?: (id: string, text: string) => void;
+}
+
+export function CircleShapeNode({ data }: NodeProps) {
+  const { node, onDelete, onSetColor, onUpdateText } = data as CircleShapeNodeData;
+  const { editing, setEditing, ref, commit } = useInlineEdit(node.text || node.title || "", node.id, onUpdateText);
+
+  return (
+    <>
+
+      <Handle type="target" position={Position.Top} className="!bg-neutral-400 !border-neutral-500" />
+      <Handle type="target" position={Position.Left} id="left" className="!bg-neutral-400 !border-neutral-500" />
+      <div
+        className="flex items-center justify-center rounded-full border-2 border-neutral-400 dark:border-neutral-500 bg-white dark:bg-neutral-900 shadow-sm select-none"
+        style={{ width: '100%', height: '100%' }}
+        onDoubleClick={() => setEditing(true)}
+      >
+        <div
+          ref={ref}
+          contentEditable={editing}
+          suppressContentEditableWarning
+          onBlur={commit}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Escape") { commit(); }
+          }}
+          className={`text-sm text-center text-neutral-800 dark:text-neutral-200 outline-none max-w-[70%] break-words ${
+            editing ? "cursor-text" : "cursor-default"
+          }`}
+        >
+          {node.text || node.title || ""}
+        </div>
+      </div>
+      <Handle type="source" position={Position.Right} id="right" className="!bg-neutral-400 !border-neutral-500" />
+      <Handle type="source" position={Position.Bottom} className="!bg-neutral-400 !border-neutral-500" />
+    </>
+  );
+}
+
+// ─── DIAMOND SHAPE NODE ─────────────────────────────────────────────
+export interface DiamondShapeNodeData extends Record<string, unknown> {
+  node: CanvasNodeData;
+  onDelete?: (id: string) => void;
+  onSetColor?: (id: string, color: string) => void;
+  onUpdateText?: (id: string, text: string) => void;
+}
+
+export function DiamondShapeNode({ data }: NodeProps) {
+  const { node, onDelete, onSetColor, onUpdateText } = data as DiamondShapeNodeData;
+  const { editing, setEditing, ref, commit } = useInlineEdit(node.text || node.title || "", node.id, onUpdateText);
+
+  return (
+    <>
+
+      <Handle type="target" position={Position.Top} className="!bg-neutral-400 !border-neutral-500" />
+      <Handle type="target" position={Position.Left} id="left" className="!bg-neutral-400 !border-neutral-500" />
+      <div
+        className="relative select-none"
+        style={{ width: '100%', height: '100%' }}
+        onDoubleClick={() => setEditing(true)}
+      >
+        <div
+          className="absolute inset-0 border-2 border-neutral-400 dark:border-neutral-500 bg-white dark:bg-neutral-900 shadow-sm"
+          style={{ clipPath: "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)" }}
+        />
+        <div className="absolute inset-0 flex items-center justify-center px-[25%]">
+          <div
+            ref={ref}
+            contentEditable={editing}
+            suppressContentEditableWarning
+            onBlur={commit}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Escape") { commit(); }
+            }}
+            className={`text-sm text-center text-neutral-800 dark:text-neutral-200 outline-none break-words ${
+              editing ? "cursor-text" : "cursor-default"
+            }`}
+          >
+            {node.text || node.title || ""}
+          </div>
+        </div>
+      </div>
+      <Handle type="source" position={Position.Right} id="right" className="!bg-neutral-400 !border-neutral-500" />
+      <Handle type="source" position={Position.Bottom} className="!bg-neutral-400 !border-neutral-500" />
+    </>
+  );
+}
+
+// ─── NOTE NODE (Sticky Note) ────────────────────────────────────────
+export interface NoteNodeData extends Record<string, unknown> {
+  node: CanvasNodeData;
+  onDelete?: (id: string) => void;
+  onSetColor?: (id: string, color: string) => void;
+  onUpdateText?: (id: string, text: string) => void;
+}
+
+export function NoteNode({ data }: NodeProps) {
+  const { node, onDelete, onSetColor, onUpdateText } = data as NoteNodeData;
+  const { editing, setEditing, ref, commit } = useInlineEdit(node.text || "", node.id, onUpdateText);
+
+  return (
+    <>
+
+      <Handle type="target" position={Position.Top} className="!bg-amber-400 !border-amber-500" />
+      <Handle type="target" position={Position.Left} id="left" className="!bg-amber-400 !border-amber-500" />
+      <div
+        className="flex flex-col rounded-sm bg-amber-100 dark:bg-amber-900/60 shadow-[2px_3px_8px_rgba(0,0,0,0.12)] select-none"
+        style={{ width: '100%', height: '100%' }}
+        onDoubleClick={() => setEditing(true)}
+      >
+        {/* Fold corner */}
+        <div className="absolute top-0 right-0 w-5 h-5 bg-amber-200 dark:bg-amber-800"
+          style={{ clipPath: "polygon(100% 0%, 0% 0%, 100% 100%)" }}
+        />
+        <div
+          ref={ref}
+          contentEditable={editing}
+          suppressContentEditableWarning
+          onBlur={commit}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Escape") { commit(); }
+          }}
+          className={`flex-1 p-3 text-sm text-amber-900 dark:text-amber-100 outline-none break-words whitespace-pre-wrap ${
+            editing ? "cursor-text" : "cursor-default"
+          }`}
+        >
+          {node.text || ""}
+        </div>
+      </div>
+      <Handle type="source" position={Position.Right} id="right" className="!bg-amber-400 !border-amber-500" />
+      <Handle type="source" position={Position.Bottom} className="!bg-amber-400 !border-amber-500" />
+    </>
+  );
+}
+
+// ─── RICH TEXT NODE ──────────────────────────────────────────────────
+const TEXT_FORMATS = [
+  { label: "H1", tag: "h1", className: "text-2xl font-bold" },
+  { label: "H2", tag: "h2", className: "text-xl font-semibold" },
+  { label: "H3", tag: "h3", className: "text-base font-semibold" },
+  { label: "P", tag: "p", className: "text-sm" },
+] as const;
+
+export interface RichTextNodeData extends Record<string, unknown> {
+  node: CanvasNodeData;
+  onDelete?: (id: string) => void;
+  onSetColor?: (id: string, color: string) => void;
+  onUpdateText?: (id: string, text: string) => void;
+}
+
+export function RichTextNode({ data }: NodeProps) {
+  const { node, onDelete, onSetColor, onUpdateText } = data as RichTextNodeData;
+  const [editing, setEditing] = useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (editing && ref.current) {
+      ref.current.focus();
+      const sel = window.getSelection();
+      if (sel && ref.current.childNodes.length) {
+        sel.selectAllChildren(ref.current);
+        sel.collapseToEnd();
+      }
+    }
+  }, [editing]);
+
+  const commit = () => {
+    setEditing(false);
+    const html = ref.current?.innerHTML ?? "";
+    if (html !== (node.text || "")) {
+      onUpdateText?.(node.id, html);
+    }
+  };
+
+  const applyFormat = (tag: string) => {
+    document.execCommand("formatBlock", false, tag);
+  };
+
+  const toggleStyle = (cmd: string) => {
+    document.execCommand(cmd, false);
+  };
+
+  return (
+    <>
+      {/* Actions toolbar (color + delete) */}
+
+      {/* Format toolbar — only visible when editing */}
+      {editing && (
+        <NodeToolbar isVisible position={Position.Top} align="center" offset={40}>
+          <div className="flex items-center gap-0.5 px-2 py-1 rounded-lg bg-white dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 shadow-lg">
+            {TEXT_FORMATS.map(f => (
+              <button
+                key={f.label}
+                onMouseDown={(e) => { e.preventDefault(); applyFormat(f.tag); }}
+                className="px-1.5 py-0.5 text-xs font-medium rounded hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300"
+              >
+                {f.label}
+              </button>
+            ))}
+            <div className="w-px h-4 bg-neutral-200 dark:bg-neutral-600 mx-0.5" />
+            <button
+              onMouseDown={(e) => { e.preventDefault(); toggleStyle("bold"); }}
+              className="px-1.5 py-0.5 text-xs font-bold rounded hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300"
+            >
+              B
+            </button>
+            <button
+              onMouseDown={(e) => { e.preventDefault(); toggleStyle("italic"); }}
+              className="px-1.5 py-0.5 text-xs italic rounded hover:bg-neutral-100 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-300"
+            >
+              I
+            </button>
+          </div>
+        </NodeToolbar>
+      )}
+      <Handle type="target" position={Position.Top} className="!bg-neutral-400 !border-neutral-500" />
+      <Handle type="target" position={Position.Left} id="left" className="!bg-neutral-400 !border-neutral-500" />
+      <div
+        className="select-none"
+        style={{ width: '100%', height: '100%' }}
+        onDoubleClick={() => setEditing(true)}
+      >
+        <div
+          ref={ref}
+          contentEditable={editing}
+          suppressContentEditableWarning
+          onBlur={commit}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Escape") { commit(); }
+          }}
+          className={`h-full w-full p-2 text-neutral-800 dark:text-neutral-200 outline-none break-words prose prose-sm dark:prose-invert max-w-none
+            prose-p:my-0.5 prose-headings:my-0.5 prose-headings:leading-snug ${
+            editing ? "cursor-text" : "cursor-default"
+          }`}
+          dangerouslySetInnerHTML={!editing ? { __html: node.text || "" } : undefined}
+        />
+      </div>
+      <Handle type="source" position={Position.Right} id="right" className="!bg-neutral-400 !border-neutral-500" />
+      <Handle type="source" position={Position.Bottom} className="!bg-neutral-400 !border-neutral-500" />
+    </>
+  );
+}
+
 export interface AreaNodeData extends Record<string, unknown> {
   node: CanvasNodeData;
   onDelete?: (id: string) => void;
+  onSetColor?: (id: string, color: string) => void;
   connectedSourceNames: string[];
   highlighted?: boolean;
 }
 
 export function AreaNode({ data }: NodeProps) {
-  const { node, onDelete, connectedSourceNames, highlighted } = data as AreaNodeData;
+  const { node, onDelete, onSetColor, connectedSourceNames, highlighted } = data as AreaNodeData;
   const label = node.area_label || "Area";
 
   return (
     <>
-      <DeleteToolbar nodeId={node.id} onDelete={onDelete} />
+
       <Handle type="target" position={Position.Top} className="!bg-indigo-400 !border-indigo-600" />
       <Handle type="target" position={Position.Left} id="left" className="!bg-indigo-400 !border-indigo-600" />
       <Handle type="target" position={Position.Right} id="right" className="!bg-indigo-400 !border-indigo-600" />

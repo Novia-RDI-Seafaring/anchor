@@ -109,3 +109,13 @@ async def get_stats():
         return {"success": True, **stats}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/documents/gold/{filename:path}")
+async def get_gold_data(filename: str):
+    """Get gold-layer pre-extracted product data for a document."""
+    from src.agent.tools.product_data import _find_by_filename
+    data = _find_by_filename(filename)
+    if not data:
+        raise HTTPException(status_code=404, detail="No gold data for this document")
+    return data

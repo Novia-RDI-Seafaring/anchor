@@ -43,3 +43,40 @@ body {
   outline-color: #818cf8 !important;
   box-shadow: 0 0 0 4px rgba(129, 140, 248, 0.22) !important;
 }
+
+/* Hide connection handles by default, show on hover / select */
+.react-flow__node .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.react-flow__node:hover .react-flow__handle,
+.react-flow__node.selected .react-flow__handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* When a connection is being dragged, show all handles so user can drop */
+.react-flow.connecting .react-flow__handle {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* NodeResizer — larger white handles, hidden until selected */
+.react-flow__resize-control {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.react-flow__node.selected .react-flow__resize-control {
+  opacity: 1;
+}
+.react-flow__resize-control.handle {
+  width: 12px !important;
+  height: 12px !important;
+  border-radius: 3px !important;
+  background: white !important;
+  border: 2px solid #6366f1 !important;
+}
+.dark .react-flow__resize-control.handle {
+  background: #1e1e1e !important;
+  border-color: #818cf8 !important;
+}

@@ -21,7 +21,7 @@ import { FloatingEdge } from "./FloatingEdge";
 import { AnchoredEdge } from "./AnchoredEdge";
 import "@xyflow/react/dist/style.css";
 import dagre from "@dagrejs/dagre";
-import { Network, UploadCloud, Layers, Box, MessageSquare, Palette, MousePointer2, Hand, Filter, SquareDashed, Wand2, Square, Circle, Diamond, ArrowRight, BookOpen, Type, Trash2 } from "lucide-react";
+import { Network, UploadCloud, Layers, Box, MessageSquare, MousePointer2, Hand, Filter, SquareDashed, Wand2, Square, Circle, Diamond, ArrowRight, Type, Trash2, Cpu, StickyNote, FileText, Activity } from "lucide-react";
 import {
   ConceptNode,
   EntityNode,
@@ -36,6 +36,7 @@ import {
   PlotNode,
   FunnelNode,
   AreaNode,
+  ModelNode,
   type CanvasNodeData,
   type ConceptNodeData,
   type DocumentNodeData,
@@ -43,6 +44,17 @@ import {
   type PlotNodeData,
   type FunnelNodeData,
   type AreaNodeData,
+  type ModelNodeData,
+  SquareShapeNode,
+  CircleShapeNode,
+  DiamondShapeNode,
+  NoteNode,
+  RichTextNode,
+  type SquareShapeNodeData,
+  type CircleShapeNodeData,
+  type DiamondShapeNodeData,
+  type NoteNodeData,
+  type RichTextNodeData,
 } from "./KnowledgeNodes";
 import {
   adaptDocumentToCanvasItem,
@@ -51,6 +63,7 @@ import {
   type LegacyCanvasNode,
 } from "./canvas-model";
 import { PDFModal, type PDFHighlight } from "./PDFModal";
+import { ResourcePalette, type PaletteTab } from "./ResourcePalette";
 import { useApp, type KBDocument } from "@/contexts/AppContext";
 import { API_URL } from "@/lib/api-config";
 
@@ -99,7 +112,13 @@ const NODE_SIZE: Record<string, { w: number; h: number }> = {
   plotNode:     { w: 320, h: 220 },
   imageNode:    { w: 300, h: 200 },
   funnelNode:   { w: 120, h: 90  },
+  modelNode:    { w: 200, h: 72  },
   areaNode:     { w: 600, h: 400 },
+  squareShapeNode:  { w: 150, h: 150 },
+  circleShapeNode:  { w: 160, h: 160 },
+  diamondShapeNode: { w: 150, h: 150 },
+  noteNode:         { w: 200, h: 200 },
+  richTextNode:     { w: 280, h: 60  },
 };
 const DEFAULT_SIZE = { w: 220, h: 80 };
 const DOCUMENT_NODE_SIZE = { w: 150, h: 64 };
@@ -261,6 +280,9 @@ function buildDerivedEvidenceRelations(
   );
   const filenameToDocNode = new Map(documents.map((doc) => [doc.filename, `__doc_${doc.document_id}`]));
   const filenameToDocId = new Map(documents.map((doc) => [doc.filename, doc.document_id]));
+  // Also index by stem (without .pdf) for fuzzy matching when gold-layer filenames differ
+  const stemToDocNode = new Map(documents.map((doc) => [doc.filename.replace(/\.pdf$/i, ''), `__doc_${doc.document_id}`]));
+  const stemToDocId = new Map(documents.map((doc) => [doc.filename.replace(/\.pdf$/i, ''), doc.document_id]));
   const derived: Relation[] = [];
   const seen = new Set<string>();
 
@@ -275,9 +297,21 @@ function buildDerivedEvidenceRelations(
     },
     targetHandle?: string,
   ) => {
-    const docNodeId = source.doc_id
+    let docNodeId = source.doc_id
       ? `__doc_${source.doc_id}`
       : (source.filename ? filenameToDocNode.get(source.filename) : undefined);
+    let resolvedDocId = source.doc_id || (source.filename ? filenameToDocId.get(source.filename) : undefined);
+    // Fuzzy stem match: if exact filename didn't match, try prefix matching
+    if (!docNodeId && source.filename) {
+      const stem = source.filename.replace(/\.pdf$/i, '');
+      for (const [knownStem, nodeId] of stemToDocNode) {
+        if (stem.startsWith(knownStem) || knownStem.startsWith(stem)) {
+          docNodeId = nodeId;
+          resolvedDocId = stemToDocId.get(knownStem);
+          break;
+        }
+      }
+    }
     if (!docNodeId || docNodeId === fromId) return;
 
     const key = `${fromId}>${docNodeId}>doc-evidence-out>${targetHandle ?? ""}`;
@@ -294,7 +328,7 @@ function buildDerivedEvidenceRelations(
       label: page > 0 ? `p.${page}` : "",
       source_handle: targetHandle,
       target_handle: "doc-evidence-out",
-      document_id: source.doc_id || (source.filename ? filenameToDocId.get(source.filename) : undefined),
+      document_id: resolvedDocId,
       page,
       bbox,
       highlights,
@@ -612,6 +646,7 @@ function buildCollapsibleNodeData(
   collapsedIds: Set<string>,
   onToggleCollapse: (id: string) => void,
   onDelete?: (id: string) => void,
+  onSetColor?: (id: string, color: string) => void,
 ) {
   return {
     node,
@@ -619,6 +654,7 @@ function buildCollapsibleNodeData(
     collapsed: collapsedIds.has(node.id),
     onToggleCollapse,
     onDelete,
+    onSetColor,
   };
 }
 
@@ -656,215 +692,101 @@ function setCustomDragPreview(
   requestAnimationFrame(() => preview.remove());
 }
 
-type NewNodeType = 'concept' | 'entity' | 'fact' | 'funnel' | 'area';
+type NewNodeType = 'concept' | 'entity' | 'fact' | 'funnel' | 'area' | 'model' | 'square' | 'circle_shape' | 'diamond_shape' | 'note' | 'rich_text';
 type CanvasTool = "move" | "select" | "connect" | NewNodeType;
 
+const INSERT_TOOLS = new Set<string>(['concept', 'entity', 'fact', 'funnel', 'area', 'model', 'square', 'circle_shape', 'diamond_shape', 'note', 'rich_text']);
 function isInsertTool(tool: CanvasTool): tool is NewNodeType {
-  return tool === "concept" || tool === "entity" || tool === "fact" || tool === "funnel" || tool === "area";
+  return INSERT_TOOLS.has(tool);
 }
 
 function LeftToolRail({
   activeTool,
   onChange,
   onArrange,
-  onToggleLibrary,
-  libraryOpen,
+  openPalette,
+  onTogglePalette,
 }: {
   activeTool: CanvasTool;
   onChange: (t: CanvasTool) => void;
   onArrange?: () => void;
-  onToggleLibrary?: () => void;
-  libraryOpen?: boolean;
+  openPalette: PaletteTab | null;
+  onTogglePalette: (tab: PaletteTab, anchorY: number) => void;
 }) {
-  const primaryTools: Array<{ id: CanvasTool; icon: React.ReactNode; label: string; shortcut?: string }> = [
-    { id: "select", icon: <Hand size={15} />, label: "Board", shortcut: "V" },
-    { id: "connect", icon: <ArrowRight size={15} />, label: "Arrow", shortcut: "A" },
-  ];
   const insertTools: Array<{ id: CanvasTool; icon: React.ReactNode; label: string; shortcut?: string }> = [
-    { id: "concept", icon: <Square size={15} />, label: "Box", shortcut: "1" },
-    { id: "entity", icon: <Circle size={15} />, label: "Circle", shortcut: "2" },
-    { id: "funnel", icon: <Diamond size={15} />, label: "Diamond", shortcut: "3" },
-    { id: "area", icon: <SquareDashed size={15} />, label: "Area", shortcut: "4" },
-    { id: "fact", icon: <Type size={15} />, label: "Text", shortcut: "5" },
+    { id: "model",         icon: <Cpu size={15} />,          label: "Model",   shortcut: "1" },
   ];
+
+  const resourceButtons: Array<{ tab: PaletteTab; icon: React.ReactNode; label: string }> = [
+    { tab: "docs",     icon: <FileText size={15} />, label: "Documents" },
+    { tab: "fmus",     icon: <Activity size={15} />,  label: "FMU Models" },
+    { tab: "snippets", icon: <Network size={15} />,   label: "Snippets" },
+  ];
+
+  const btnRef = useRef<Record<string, HTMLButtonElement | null>>({});
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
       if (e.key === "v" || e.key === "V") onChange("select");
-      if (e.key === "1") onChange("concept");
-      if (e.key === "2") onChange("entity");
-      if (e.key === "3") onChange("funnel");
-      if (e.key === "4") onChange("area");
-      if (e.key === "5") onChange("fact");
-      if (e.key === "a" || e.key === "A") onChange("connect");
+      if (e.key === "1") onChange("model");
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [onChange]);
 
+  const toolBtnClass = (active: boolean) =>
+    `flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${
+      active
+        ? "border-indigo-300 bg-indigo-100 text-indigo-700 dark:border-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300"
+        : "border-transparent text-neutral-500 hover:border-neutral-200 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:border-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+    }`;
+
   return (
     <div className="absolute left-4 top-20 z-30 flex flex-col gap-2 rounded-[22px] border border-neutral-200/80 bg-white/94 p-2 shadow-[0_14px_40px_rgba(15,23,42,0.10)] backdrop-blur-md dark:border-neutral-700/80 dark:bg-neutral-900/94">
-      <div className="flex flex-col gap-1.5">
-        {primaryTools.map((tool) => (
-          <button
-            key={tool.id}
-            onClick={() => onChange(tool.id)}
-            title={tool.shortcut ? `${tool.label} (${tool.shortcut})` : tool.label}
-            className={`flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${
-              activeTool === tool.id
-                ? "border-indigo-300 bg-indigo-100 text-indigo-700 dark:border-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300"
-                : "border-transparent text-neutral-500 hover:border-neutral-200 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:border-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
-            }`}
-          >
-            {tool.icon}
-          </button>
-        ))}
-      </div>
-      <div className="mx-auto h-px w-8 bg-neutral-200 dark:bg-neutral-700" />
+      {/* Insert tools */}
       <div className="flex flex-col gap-1.5">
         {insertTools.map((tool) => (
           <button
             key={tool.id}
             onClick={() => onChange(tool.id)}
             title={tool.shortcut ? `${tool.label} (${tool.shortcut})` : tool.label}
-            className={`flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${
-              activeTool === tool.id
-                ? "border-indigo-300 bg-indigo-100 text-indigo-700 dark:border-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300"
-                : "border-transparent text-neutral-500 hover:border-neutral-200 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:border-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
-            }`}
+            className={toolBtnClass(activeTool === tool.id)}
           >
             {tool.icon}
           </button>
         ))}
       </div>
       <div className="mx-auto h-px w-8 bg-neutral-200 dark:bg-neutral-700" />
+      {/* Resource palettes */}
+      <div className="flex flex-col gap-1.5">
+        {resourceButtons.map((rb) => (
+          <button
+            key={rb.tab}
+            ref={(el) => { btnRef.current[rb.tab] = el; }}
+            onClick={() => {
+              const rect = btnRef.current[rb.tab]?.getBoundingClientRect();
+              onTogglePalette(rb.tab, rect ? rect.top : 120);
+            }}
+            title={rb.label}
+            className={toolBtnClass(openPalette === rb.tab)}
+          >
+            {rb.icon}
+          </button>
+        ))}
+      </div>
+      <div className="mx-auto h-px w-8 bg-neutral-200 dark:bg-neutral-700" />
+      {/* Utilities */}
       <div className="flex flex-col gap-1.5">
         <button
           onClick={onArrange}
           title="Arrange canvas"
-          className="flex h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-neutral-500 transition-colors hover:border-neutral-200 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:border-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+          className={toolBtnClass(false)}
         >
           <Wand2 size={15} />
         </button>
-        {!libraryOpen && (
-          <button
-            onClick={onToggleLibrary}
-            title="Toggle library"
-            className="flex h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-neutral-500 transition-colors hover:border-neutral-200 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:border-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
-          >
-            <BookOpen size={15} />
-          </button>
-        )}
       </div>
-    </div>
-  );
-}
-
-function SelectionInspector({
-  node,
-  onSetColor,
-  onDelete,
-}: {
-  node: CanvasItem | null;
-  onSetColor?: (nodeId: string, color: string) => void;
-  onDelete?: (nodeId: string) => void;
-}) {
-  if (!node) return null;
-  const heading = node.semanticType === "document" ? "Document" : node.semanticType.charAt(0).toUpperCase() + node.semanticType.slice(1);
-  const previewText = node.text || node.title || node.funnel_label || node.area_label || node.spec_title || node.metadata?.document?.filename || "Untitled";
-  return (
-    <div className="absolute right-4 top-20 z-20 w-64 rounded-[24px] border border-neutral-200/80 bg-white/95 p-4 shadow-[0_16px_40px_rgba(15,23,42,0.10)] backdrop-blur-md dark:border-neutral-700/80 dark:bg-neutral-900/95">
-      <div className="mb-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-400">Properties</p>
-        <p className="mt-1 text-sm font-semibold text-neutral-900 dark:text-neutral-100">{heading}</p>
-        <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-neutral-500 dark:text-neutral-400">{previewText}</p>
-      </div>
-      <div className="mb-4">
-        <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-neutral-400">Accent</p>
-        <div className="flex flex-wrap gap-1.5">
-          {CTX_COLORS.map((c) => (
-            <button
-              key={c.name}
-              title={c.label}
-              onClick={() => onSetColor?.(node.id, c.name)}
-              className={`h-6 w-6 rounded-full border-2 transition-transform hover:scale-110 ${node.color === c.name || (!node.color && !c.name) ? "border-neutral-900 dark:border-white" : "border-white dark:border-neutral-800"}`}
-              style={{ background: c.hex }}
-            />
-          ))}
-        </div>
-      </div>
-      <div className="flex items-center justify-between rounded-2xl bg-neutral-50 px-3 py-2 text-[11px] text-neutral-500 dark:bg-neutral-800/70 dark:text-neutral-400">
-        <span>ID</span>
-        <span className="max-w-[120px] truncate font-mono">{node.id}</span>
-      </div>
-      {onDelete && (
-        <button
-          onClick={() => onDelete(node.id)}
-          className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-xl border border-red-200 px-3 py-2 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/30"
-        >
-          <Trash2 size={13} />
-          Remove
-        </button>
-      )}
-    </div>
-  );
-}
-
-// --- Node context menu (right-click) ---
-const CTX_COLORS = [
-  { name: '',        hex: '#94a3b8', label: 'Default' },
-  { name: 'violet',  hex: '#8b5cf6', label: 'Violet' },
-  { name: 'indigo',  hex: '#6366f1', label: 'Indigo' },
-  { name: 'blue',    hex: '#3b82f6', label: 'Blue' },
-  { name: 'emerald', hex: '#10b981', label: 'Green' },
-  { name: 'amber',   hex: '#f59e0b', label: 'Amber' },
-  { name: 'rose',    hex: '#f43f5e', label: 'Rose' },
-  { name: 'slate',   hex: '#64748b', label: 'Slate' },
-];
-
-function NodeContextMenu({
-  nodeId, top, left, right, bottom, onSetColor, onDelete, onClose,
-}: {
-  nodeId: string;
-  top?: number | false; left?: number | false;
-  right?: number | false; bottom?: number | false;
-  onSetColor: (id: string, color: string) => void;
-  onDelete?: (id: string) => void;
-  onClose: () => void;
-}) {
-  return (
-    <div
-      style={{ top: top || undefined, left: left || undefined, right: right || undefined, bottom: bottom || undefined }}
-      className="absolute z-50 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-xl p-2.5 w-44"
-    >
-      <div className="flex items-center gap-1.5 mb-2">
-        <Palette size={11} className="text-neutral-400" />
-        <p className="text-[10px] text-neutral-400 font-semibold uppercase tracking-wide">Color</p>
-      </div>
-      <div className="flex gap-1.5 flex-wrap mb-2.5">
-        {CTX_COLORS.map(c => (
-          <button
-            key={c.name}
-            title={c.label}
-            onClick={() => { onSetColor(nodeId, c.name); onClose(); }}
-            className="w-5 h-5 rounded-full border-2 border-white dark:border-neutral-800 shadow-sm hover:scale-125 transition-transform"
-            style={{ background: c.hex }}
-          />
-        ))}
-      </div>
-      {onDelete && (
-        <>
-          <hr className="border-neutral-200 dark:border-neutral-700 mb-1.5" />
-          <button
-            onClick={() => { onDelete(nodeId); onClose(); }}
-            className="w-full text-left text-xs text-red-500 hover:text-red-600 dark:text-red-400 px-1 py-0.5 rounded hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
-          >
-            Delete node
-          </button>
-        </>
-      )}
     </div>
   );
 }
@@ -883,7 +805,13 @@ const nodeTypes: NodeTypes = {
   plotNode:     PlotNode,
   imageNode:    ImageNode,
   funnelNode:   FunnelNode,
+  modelNode:    ModelNode,
   areaNode:     AreaNode,
+  squareShapeNode:  SquareShapeNode,
+  circleShapeNode:  CircleShapeNode,
+  diamondShapeNode: DiamondShapeNode,
+  noteNode:         NoteNode,
+  richTextNode:     RichTextNode,
 };
 
 const edgeTypes: EdgeTypes = {
@@ -891,91 +819,6 @@ const edgeTypes: EdgeTypes = {
   anchored: AnchoredEdge,
 };
 
-// --- New node picker popup ---
-
-function NewNodePicker({
-  screenX,
-  screenY,
-  onConfirm,
-  onCancel,
-}: {
-  screenX: number;
-  screenY: number;
-  onConfirm: (type: NewNodeType, label: string) => void;
-  onCancel: () => void;
-}) {
-  const [type, setType] = useState<NewNodeType>('concept');
-  const [label, setLabel] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => { inputRef.current?.focus(); }, []);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') { e.preventDefault(); if (label.trim()) onConfirm(type, label.trim()); }
-    else if (e.key === 'Escape') { onCancel(); }
-  };
-
-  const types: { id: NewNodeType; label: string }[] = [
-    { id: 'concept', label: 'Concept' },
-    { id: 'entity',  label: 'Entity'  },
-    { id: 'fact',    label: 'Fact'    },
-    { id: 'funnel',  label: 'Funnel'  },
-    { id: 'area',    label: 'Area'    },
-  ];
-
-  const clampedX = Math.min(screenX, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 248);
-  const clampedY = Math.min(screenY, (typeof window !== 'undefined' ? window.innerHeight : 800) - 180);
-
-  return (
-    <>
-      <div className="fixed inset-0 z-[99]" onClick={onCancel} />
-      <div
-        className="fixed z-[100] bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-xl shadow-xl p-3 w-56"
-        style={{ left: clampedX, top: clampedY }}
-      >
-        <p className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wide mb-2">New node</p>
-        <div className="flex gap-1 mb-2.5">
-          {types.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setType(t.id)}
-              className={`flex-1 py-1 text-xs rounded-md font-medium border transition-colors ${
-                type === t.id
-                  ? 'bg-indigo-600 text-white border-indigo-600'
-                  : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border-neutral-200 dark:border-neutral-700 hover:bg-neutral-200 dark:hover:bg-neutral-700'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        <input
-          ref={inputRef}
-          value={label}
-          onChange={e => setLabel(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Label…"
-          className="w-full px-2.5 py-1.5 text-sm border border-neutral-200 dark:border-neutral-700 rounded-lg bg-neutral-50 dark:bg-neutral-800 text-neutral-900 dark:text-white placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-indigo-400"
-        />
-        <div className="flex gap-1.5 mt-2">
-          <button
-            onClick={() => { if (label.trim()) onConfirm(type, label.trim()); }}
-            disabled={!label.trim()}
-            className="flex-1 py-1 text-xs rounded-md font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 transition-colors"
-          >
-            Add
-          </button>
-          <button
-            onClick={onCancel}
-            className="px-2 py-1 text-xs rounded-md text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300 transition-colors"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </>
-  );
-}
 
 // --- Main component ---
 interface FmuUploadedPayload {
@@ -993,6 +836,7 @@ interface CanvasGraphProps {
   onDeleteNode?: (nodeId: string) => void;
   onAddNode?: (node: any, relation: { from_id: string; to_id: string; label: string } | null) => void;
   onAddEdge?: (fromId: string, toId: string, label: string, sourceHandle?: string | null, targetHandle?: string | null) => void;
+  onDeleteEdge?: (fromId: string, toId: string, sourceHandle?: string, targetHandle?: string) => void;
   onSetNodeColor?: (nodeId: string, color: string) => void;
   workspaceDocIds?: string[];
   onAddDocToWorkspace?: (docId: string) => void;
@@ -1005,9 +849,9 @@ interface CanvasGraphProps {
     position?: FlowPosition,
     placements?: Array<{ id?: string; parentId: string | null; position?: FlowPosition }>
   ) => void;
+  onUpdateNode?: (nodeId: string, updates: Record<string, unknown>) => void;
   onSaveSelection?: (selectedNodeIds: string[], name?: string) => Promise<void>;
-  libraryOpen?: boolean;
-  onToggleLibrary?: () => void;
+  onParameterLookup?: (documentFilename: string, modelNodeId: string, params: Array<{ fmuNodeId: string; paramName: string; unit?: string }>) => void;
 }
 
 async function uploadCanvasFile(
@@ -1038,15 +882,20 @@ async function uploadCanvasFile(
   }
 }
 
-function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, onFmuUploaded, onSimulateComplete, onDeleteNode, onAddNode, onAddEdge, onSetNodeColor, workspaceDocIds, onAddDocToWorkspace, onRemoveDocFromWorkspace, onSetParent, onFmuFromLibrary, onAddSnippet, onSaveSelection, libraryOpen, onToggleLibrary }: CanvasGraphProps) {
+function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, onFmuUploaded, onSimulateComplete, onDeleteNode, onAddNode, onAddEdge, onDeleteEdge, onSetNodeColor, workspaceDocIds, onAddDocToWorkspace, onRemoveDocFromWorkspace, onSetParent, onFmuFromLibrary, onAddSnippet, onUpdateNode, onSaveSelection, onParameterLookup }: CanvasGraphProps) {
   const { screenToFlowPosition } = useReactFlow();
   const rfContainerRef = useRef<HTMLDivElement>(null);
+  const connectStartRef = useRef<{ nodeId: string; handleId: string; handleType: 'source' | 'target' } | null>(null);
   const { documents, refreshDocuments, activeDocumentId, setActiveDocumentId } = useApp();
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [pdfModal, setPdfModal] = useState<PDFModalState | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [highlightedAreaId, setHighlightedAreaId] = useState<string | null>(null);
   const [previewedSource, setPreviewedSource] = useState<{ filename: string; page: number } | null>(null);
+
+  // Resource palette state (replaces sidebar drawer)
+  const [openPalette, setOpenPalette] = useState<PaletteTab | null>(null);
+  const [paletteAnchorY, setPaletteAnchorY] = useState(120);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -1131,45 +980,30 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     setIsSavingSnippet(false);
   }, [onSaveSelection, selectedNodeIds]);
 
-  // Context menu (right-click on node)
-  const [contextMenu, setContextMenu] = useState<{
-    nodeId: string;
-    top?: number | false; left?: number | false;
-    right?: number | false; bottom?: number | false;
-  } | null>(null);
 
-  const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
-    event.preventDefault();
-    const pane = rfContainerRef.current?.getBoundingClientRect();
-    if (!pane) return;
-    setContextMenu({
-      nodeId: node.id,
-      top:    event.clientY - pane.top  < pane.height - 160 ? event.clientY - pane.top  : false,
-      left:   event.clientX - pane.left < pane.width  - 180 ? event.clientX - pane.left : false,
-      right:  event.clientX - pane.left >= pane.width  - 180 ? pane.width  - (event.clientX - pane.left) : false,
-      bottom: event.clientY - pane.top  >= pane.height - 160 ? pane.height - (event.clientY - pane.top)  : false,
-    });
-  }, []);
+  // --- Drag-from-handle: create model node on empty canvas, auto-connect ---
 
-  // New-node popup (drag-from-handle or double-click on pane)
-  const [newNodePopup, setNewNodePopup] = useState<{
-    screenX: number; screenY: number; flowX: number; flowY: number; sourceId: string | null;
-  } | null>(null);
-  const onConnectEnd = useCallback((event: MouseEvent | TouchEvent, connectionState: any) => {
-    // Only show picker when dropped on empty canvas (not on a valid handle)
-    if (connectionState?.isValid || !connectionState?.fromNode) return;
-    const sourceId = connectionState.fromNode.id as string;
-    const clientX = 'changedTouches' in event ? (event as TouchEvent).changedTouches[0]!.clientX : (event as MouseEvent).clientX;
-    const clientY = 'changedTouches' in event ? (event as TouchEvent).changedTouches[0]!.clientY : (event as MouseEvent).clientY;
-    const pos = screenToFlowPosition({ x: clientX, y: clientY });
-    setNewNodePopup({ screenX: clientX, screenY: clientY, flowX: pos.x, flowY: pos.y, sourceId });
-  }, [screenToFlowPosition]);
+  const onConnectStart = useCallback(
+    (_event: any, params: { nodeId: string | null; handleId: string | null; handleType: 'source' | 'target' | null }) => {
+      console.log('[onConnectStart]', params);
+      if (params.nodeId && params.handleId && params.handleType) {
+        connectStartRef.current = {
+          nodeId: params.nodeId,
+          handleId: params.handleId,
+          handleType: params.handleType,
+        };
+      }
+    },
+    [],
+  );
 
-  const onConnectStart = useCallback(() => {}, []);
+  const triggerLookupRef = useRef<((s: string, t: string) => void) | null>(null);
 
   const onConnect = useCallback((params: any) => {
     if (params.source && params.target) {
       onAddEdge?.(params.source, params.target, '', params.sourceHandle ?? null, params.targetHandle ?? null);
+      // Check if this model↔document connection should trigger param lookup
+      triggerLookupRef.current?.(params.source, params.target);
     }
   }, [onAddEdge]);
 
@@ -1180,8 +1014,6 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     event.preventDefault();
     event.stopPropagation();
     const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-    setContextMenu(null);
-    setNewNodePopup(null);
     setSelectedNodeIds([]);
     setDrawDraft({
       type: activeTool,
@@ -1192,21 +1024,27 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     });
   }, [activeTool, screenToFlowPosition]);
 
-  const onPaneDoubleClick = useCallback((event: React.MouseEvent) => {
-    if (isInsertTool(activeTool)) return;
-    const target = event.target as Element;
-    // Only trigger on the canvas pane background, not on nodes/handles/controls
-    if (!target.closest('.react-flow__pane') || target.closest('.react-flow__node') || target.closest('.react-flow__controls')) return;
-    const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-    setNewNodePopup({ screenX: event.clientX, screenY: event.clientY, flowX: pos.x, flowY: pos.y, sourceId: null });
-  }, [activeTool, screenToFlowPosition]);
+
+  const nodeSizeKey = useCallback((type: NewNodeType): string => {
+    const map: Record<string, string> = {
+      square: 'squareShapeNode', circle_shape: 'circleShapeNode', diamond_shape: 'diamondShapeNode',
+      note: 'noteNode', rich_text: 'richTextNode',
+      funnel: 'funnelNode', area: 'areaNode', fact: 'factNode',
+      entity: 'entityNode', model: 'modelNode', concept: 'conceptNode',
+    };
+    return map[type] ?? 'conceptNode';
+  }, []);
 
   const _makeNode = useCallback((type: NewNodeType, label: string, flowPos: { x: number; y: number }) => {
     const id = `user_${type}_${Date.now()}`;
+    const sizeKey = nodeSizeKey(type);
+    const isShape = type === 'square' || type === 'circle_shape' || type === 'diamond_shape';
+    const isNote = type === 'note';
+    const isRichText = type === 'rich_text';
     const node: any = {
       id, node_type: type, status: 'found',
-      title: (type !== 'fact' && type !== 'funnel' && type !== 'area') ? label : '',
-      text: type === 'fact' ? label : '',
+      title: isShape ? '' : isNote || isRichText ? '' : (type !== 'fact' && type !== 'funnel' && type !== 'area' && type !== 'model') ? label : '',
+      text: isNote ? '' : isRichText ? '' : type === 'fact' ? label : '',
       spec_title: '', properties: [], last_updated_run_id: '',
       filename: '', page: 0, bbox: [], highlights: [],
       fmu_filename: '', fmu_model_name: '', fmu_variables: [], fmu_param_values: {},
@@ -1215,37 +1053,21 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
       area_label: type === 'area' ? (label || 'Area') : '',
       area_width: type === 'area' ? 600 : 0,
       area_height: type === 'area' ? 400 : 0,
-      width: NODE_SIZE[
-        type === 'funnel' ? 'funnelNode'
-        : type === 'area' ? 'areaNode'
-        : type === 'fact' ? 'factNode'
-        : type === 'entity' ? 'entityNode'
-        : 'conceptNode'
-      ]?.w ?? 220,
-      height: NODE_SIZE[
-        type === 'funnel' ? 'funnelNode'
-        : type === 'area' ? 'areaNode'
-        : type === 'fact' ? 'factNode'
-        : type === 'entity' ? 'entityNode'
-        : 'conceptNode'
-      ]?.h ?? 80,
+      model_label: type === 'model' ? (label || 'Model') : '',
+      width: NODE_SIZE[sizeKey]?.w ?? 220,
+      height: NODE_SIZE[sizeKey]?.h ?? 80,
       parent_id: '',
     };
     positionOverridesRef.current[id] = flowPos;
     return { id, node };
-  }, []);
+  }, [nodeSizeKey]);
 
   const createToolbarNode = useCallback((type: NewNodeType, startFlow: FlowPosition, currentFlow: FlowPosition) => {
     const draftLeft = Math.min(startFlow.x, currentFlow.x);
     const draftTop = Math.min(startFlow.y, currentFlow.y);
     const draftWidth = Math.abs(currentFlow.x - startFlow.x);
     const draftHeight = Math.abs(currentFlow.y - startFlow.y);
-    const nodeSize =
-      type === "funnel" ? NODE_SIZE.funnelNode!
-      : type === "area" ? NODE_SIZE.areaNode!
-      : type === "fact" ? NODE_SIZE.factNode!
-      : type === "entity" ? NODE_SIZE.entityNode!
-      : NODE_SIZE.conceptNode!;
+    const nodeSize = NODE_SIZE[nodeSizeKey(type)] ?? DEFAULT_SIZE;
     const center = {
       x: draftLeft + Math.max(draftWidth, nodeSize.w) / 2,
       y: draftTop + Math.max(draftHeight, nodeSize.h) / 2,
@@ -1253,7 +1075,9 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     const basePosition = type === "area"
       ? { x: draftLeft, y: draftTop }
       : anchorAtCenter(center, nodeSize);
-    const label = type === 'fact' ? 'New note' : `New ${type}`;
+    const label = type === 'square' || type === 'circle_shape' || type === 'diamond_shape' || type === 'note' || type === 'rich_text'
+      ? ''
+      : type === 'model' ? 'Model' : type === 'fact' ? 'New note' : `New ${type}`;
     const { id, node } = _makeNode(type, label, basePosition);
     if (type === "area") {
       node.area_width = Math.max(260, draftWidth || nodeSize.w);
@@ -1268,6 +1092,63 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     onAddNode?.(node, null);
     setActiveTool("select");
   }, [_makeNode, commitPositionOverrides, onAddNode]);
+
+  // Drag from FMU handle to empty canvas → create model node at drop position
+  const onConnectEnd = useCallback(
+    (event: MouseEvent | TouchEvent) => {
+      const start = connectStartRef.current;
+      connectStartRef.current = null;
+      if (!start) return;
+
+      // Only act when the drag originated from an FMU-style handle
+      const isFmuHandle =
+        start.handleId.startsWith('in-') ||
+        start.handleId.startsWith('out-') ||
+        start.handleId.startsWith('param-in-');
+      if (!isFmuHandle) return;
+
+      // Check if dropped on empty canvas (not on a handle or node)
+      const target = event.target as Element;
+      console.log('[onConnectEnd] target:', target.className, 'start:', start);
+      const droppedOnHandle = target.closest('.react-flow__handle');
+      const droppedOnNode = target.closest('.react-flow__node');
+      if (droppedOnHandle || droppedOnNode) return;
+
+      // Get drop position in flow coordinates
+      const clientX = 'changedTouches' in event
+        ? (event as TouchEvent).changedTouches[0]?.clientX ?? 0
+        : (event as MouseEvent).clientX;
+      const clientY = 'changedTouches' in event
+        ? (event as TouchEvent).changedTouches[0]?.clientY ?? 0
+        : (event as MouseEvent).clientY;
+      const flowPos = screenToFlowPosition({ x: clientX, y: clientY });
+
+      // Extract variable name from handle ID for auto-label
+      let autoLabel = '';
+      if (start.handleId.startsWith('param-in-')) {
+        autoLabel = start.handleId.replace('param-in-', '');
+      } else if (start.handleId.startsWith('in-')) {
+        autoLabel = start.handleId.replace('in-', '');
+      } else if (start.handleId.startsWith('out-')) {
+        autoLabel = start.handleId.replace('out-', '');
+      }
+
+      // Create a model node at the drop position
+      const { id: modelId, node: modelNode } = _makeNode('model', autoLabel, flowPos);
+      commitPositionOverrides({ [modelId]: flowPos }, true);
+      onAddNode?.(modelNode, null);
+
+      // Create edge with correct direction based on FMU handle type
+      if (start.handleType === 'target') {
+        // FMU handle is a target (input/param) — model feeds INTO the FMU
+        onAddEdge?.(modelId, start.nodeId, '', 'right', start.handleId);
+      } else {
+        // FMU handle is a source (output) — FMU feeds INTO the model
+        onAddEdge?.(start.nodeId, modelId, '', start.handleId, 'left');
+      }
+    },
+    [screenToFlowPosition, _makeNode, commitPositionOverrides, onAddNode, onAddEdge],
+  );
 
   useEffect(() => {
     if (!drawDraft) return;
@@ -1296,15 +1177,6 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     };
   }, [drawDraft, createToolbarNode, screenToFlowPosition]);
 
-  const handleNewNodeConfirm = useCallback((type: NewNodeType, label: string) => {
-    if (!newNodePopup) return;
-    const { id, node } = _makeNode(type, label, { x: newNodePopup.flowX, y: newNodePopup.flowY });
-    commitPositionOverrides({ [id]: { x: newNodePopup.flowX, y: newNodePopup.flowY } }, true);
-    onAddNode?.(node, newNodePopup.sourceId ? { from_id: newNodePopup.sourceId, to_id: id, label: '' } : null);
-    setActiveTool("select");
-    setNewNodePopup(null);
-  }, [newNodePopup, _makeNode, commitPositionOverrides, onAddNode]);
-
   // Keep fresh refs for use inside effects without adding to deps
   const documentsRef = useRef(documents);
   const activeDocumentIdRef = useRef(activeDocumentId);
@@ -1315,6 +1187,56 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
   useEffect(() => { activeDocumentIdRef.current = activeDocumentId; }, [activeDocumentId]);
   useEffect(() => { setActiveDocumentIdRef.current = setActiveDocumentId; }, [setActiveDocumentId]);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+
+  // Trigger parameter lookup when a model↔document edge is created
+  const triggerParameterLookupIfNeeded = useCallback((
+    sourceId: string,
+    targetId: string,
+  ) => {
+    const allCanvasNodes = (canvas as any)?.nodes ?? [];
+    const allRelations: Relation[] = (canvas as any)?.relations ?? [];
+
+    let modelNodeId: string | undefined;
+    let docNodeId: string | undefined;
+
+    const sourceIsDoc = sourceId.startsWith('__doc_');
+    const targetIsDoc = targetId.startsWith('__doc_');
+    const sourceRaw = allCanvasNodes.find((n: any) => n.id === sourceId);
+    const targetRaw = allCanvasNodes.find((n: any) => n.id === targetId);
+
+    if (sourceRaw?.node_type === 'model' && targetIsDoc) {
+      modelNodeId = sourceId;
+      docNodeId = targetId;
+    } else if (targetRaw?.node_type === 'model' && sourceIsDoc) {
+      modelNodeId = targetId;
+      docNodeId = sourceId;
+    } else {
+      return;
+    }
+
+    const docId = docNodeId.replace(/^__doc_/, '');
+    const doc = documentsRef.current.find(d => d.document_id === docId);
+    if (!doc?.filename) return;
+
+    // Find FMU param handles connected to this model node
+    const connectedFmuParams: Array<{ fmuNodeId: string; paramName: string; unit?: string }> = [];
+    for (const r of allRelations) {
+      if (r.from_id === modelNodeId && (r.target_handle?.startsWith('param-in-') || r.target_handle?.startsWith('in-'))) {
+        const paramName = r.target_handle!.startsWith('param-in-')
+          ? r.target_handle!.replace('param-in-', '')
+          : r.target_handle!.replace('in-', '');
+        const fmuNode = allCanvasNodes.find((n: any) => n.id === r.to_id);
+        const fmuVar = (fmuNode?.fmu_variables ?? []).find((v: any) => v.name === paramName);
+        connectedFmuParams.push({ fmuNodeId: r.to_id, paramName, unit: fmuVar?.unit });
+      }
+    }
+
+    if (connectedFmuParams.length === 0) return;
+    onParameterLookup?.(doc.filename, modelNodeId, connectedFmuParams);
+  }, [canvas, onParameterLookup]);
+
+  // Keep ref in sync so onConnect can call the trigger without a dep cycle
+  useEffect(() => { triggerLookupRef.current = triggerParameterLookupIfNeeded; }, [triggerParameterLookupIfNeeded]);
 
   const updateAreaHighlight = useCallback((absolutePosition: FlowPosition, size: { w: number; h: number }, excludeNodeId?: string) => {
     const bestParent = findBestAreaParent(absolutePosition, size, nodesRef.current, excludeNodeId);
@@ -1377,12 +1299,6 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     commitPositionOverrides(updates);
     setNodes(arranged);
   }, [edges, commitPositionOverrides, setNodes]);
-
-  const selectedCanvasItem = useMemo<CanvasItem | null>(() => {
-    if (selectedNodeIds.length !== 1) return null;
-    const selected = nodes.find((node) => node.id === selectedNodeIds[0]);
-    return ((selected?.data as any)?.node ?? (selected?.data as any)?.item ?? null) as CanvasItem | null;
-  }, [nodes, selectedNodeIds]);
 
   const onNodeDragStop = useCallback((_evt: React.MouseEvent, node: Node) => {
     // Record final positions for the dragged node and all its descendants
@@ -1548,7 +1464,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
           COLLAPSIBLE_NODE_COMPONENTS[n.semanticType],
           n.color,
           hidden,
-          buildCollapsibleNodeData(n, childrenOf, collapsedIds, handleToggleCollapse, onDeleteNode),
+          buildCollapsibleNodeData(n, childrenOf, collapsedIds, handleToggleCollapse, onDeleteNode, onSetNodeColor),
         ), n.semanticType === "entity" ? NODE_SIZE.entityNode! : n.semanticType === "topic" ? NODE_SIZE.topicNode! : n.semanticType === "category" ? NODE_SIZE.categoryNode! : NODE_SIZE.conceptNode!);
       }
       if (n.semanticType === "fact") {
@@ -1557,17 +1473,21 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
           onOpenPDF: handleOpenPDF,
           onPreviewSource: (filename: string | null, page?: number | null) => setPreviewedSource(filename && page ? { filename, page } : null),
           onDelete: onDeleteNode,
+          onSetColor: onSetNodeColor,
           ...getEvidenceData(n.id, relations, documentsRef.current),
         }), NODE_SIZE.factNode!);
       }
       if (n.semanticType === "spec") {
-        return applyExplicitNodeSize(n, buildFlowNode(n.id, "specNode", n.color, hidden, {
+        const specFlowNode = buildFlowNode(n.id, "specNode", n.color, hidden, {
           node: n,
           onOpenPDF: handleOpenPDF,
           onPreviewSource: (filename: string | null, page?: number | null) => setPreviewedSource(filename && page ? { filename, page } : null),
           onDelete: onDeleteNode,
+          onSetColor: onSetNodeColor,
           ...getEvidenceData(n.id, relations, documentsRef.current),
-        }), NODE_SIZE.specNode!);
+        });
+        // Let spec nodes auto-size to fit content (handles + source buttons)
+        return { ...specFlowNode, width: undefined, height: undefined, style: { ...specFlowNode.style, width: "auto", height: "auto" } };
       }
       if (n.semanticType === "document") {
         const doc = documentsRef.current.find((item) => item.document_id === n.id.replace(/^__doc_/, ""));
@@ -1588,6 +1508,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
           node: n,
           onOpenPDF: handleOpenPDF,
           onDelete: onDeleteNode,
+          onSetColor: onSetNodeColor,
         }), NODE_SIZE.imageNode!);
       }
       if (n.semanticType === "fmu") {
@@ -1603,11 +1524,20 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
           onDelete: onDeleteNode,
         } satisfies PlotNodeData), NODE_SIZE.plotNode!);
       }
+      if (n.semanticType === "model") {
+        return applyExplicitNodeSize(n, buildFlowNode(n.id, "modelNode", n.color, hidden, {
+          node: n,
+          onDelete: onDeleteNode,
+          onSetColor: onSetNodeColor,
+          onUpdateLabel: (nodeId: string, label: string) => onUpdateNode?.(nodeId, { model_label: label, title: label }),
+        } satisfies ModelNodeData), NODE_SIZE.modelNode!);
+      }
       if (n.semanticType === "funnel") {
         const connectedDocCount = relations.filter(r => r.to_id === n.id && r.from_id.startsWith('__doc_')).length;
         return applyExplicitNodeSize(n, buildFlowNode(n.id, "funnelNode", n.color, hidden, {
           node: n,
           onDelete: onDeleteNode,
+          onSetColor: onSetNodeColor,
           connectedDocCount,
         } satisfies FunnelNodeData), NODE_SIZE.funnelNode!);
       }
@@ -1625,6 +1555,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         const areaNode = applyExplicitNodeSize(n, buildFlowNode(n.id, "areaNode", n.color, hidden, {
           node: n,
           onDelete: onDeleteNode,
+          onSetColor: onSetNodeColor,
           connectedSourceNames,
           highlighted: highlightedAreaId === n.id,
         } satisfies AreaNodeData), NODE_SIZE.areaNode!);
@@ -1635,6 +1566,23 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
           zIndex: -1,
         };
         return areaNode;
+      }
+      // New shape/note/text nodes
+      const shapeNodeMap: Record<string, { rfType: string; size: { w: number; h: number } }> = {
+        square:        { rfType: "squareShapeNode",  size: NODE_SIZE.squareShapeNode! },
+        circle_shape:  { rfType: "circleShapeNode",  size: NODE_SIZE.circleShapeNode! },
+        diamond_shape: { rfType: "diamondShapeNode", size: NODE_SIZE.diamondShapeNode! },
+        note:          { rfType: "noteNode",         size: NODE_SIZE.noteNode! },
+        rich_text:     { rfType: "richTextNode",     size: NODE_SIZE.richTextNode! },
+      };
+      const shapeInfo = shapeNodeMap[n.semanticType];
+      if (shapeInfo) {
+        return applyExplicitNodeSize(n, buildFlowNode(n.id, shapeInfo.rfType, n.color, hidden, {
+          node: n,
+          onDelete: onDeleteNode,
+          onSetColor: onSetNodeColor,
+          onUpdateText: (nodeId: string, text: string) => onUpdateNode?.(nodeId, { text, title: text }),
+        }), shapeInfo.size);
       }
       // backward-compat: source/entity/category fallback
       return buildFlowNode(n.id, "sourceNode", n.color, hidden, {
@@ -1709,11 +1657,11 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         label: r.label || undefined,
         type: usesAnchoredHandles ? "anchored" : "floating",
         hidden: hiddenIds.has(renderedSource) || hiddenIds.has(renderedTarget),
-        animated: isEvidence || isConceptTopic || isEntityCat || isCatTopic,
+        animated: true,
         style: {
           stroke: strokeColor,
           strokeWidth: isEntityCat ? 3.5 : isConceptTopic || isCatTopic ? 3 : isTopicFact || isSpec ? 2.5 : isEvidence ? 1.8 : 2,
-          strokeDasharray: isEvidence || isSpec ? "5 4" : undefined,
+          strokeDasharray: "5 4",
           opacity: isEvidence ? 0.72 : undefined,
         },
         labelStyle: { fill: isSimPlot ? "#0f766e" : "#6366f1", fontWeight: 600, fontSize: 10 },
@@ -1763,7 +1711,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
             ...rfNode,
             data: {
               ...rfNode.data,
-              ...buildCollapsibleNodeData(n, childrenOf, collapsedIds, handleToggleCollapse, onDeleteNode),
+              ...buildCollapsibleNodeData(n, childrenOf, collapsedIds, handleToggleCollapse, onDeleteNode, onSetNodeColor),
             },
           };
         }
@@ -1776,6 +1724,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
               onOpenPDF: handleOpenPDF,
               onPreviewSource: (filename: string | null, page?: number | null) => setPreviewedSource(filename && page ? { filename, page } : null),
               onDelete: onDeleteNode,
+              onSetColor: onSetNodeColor,
               ...getEvidenceData(n.id, relations, documentsRef.current),
             },
           };
@@ -1804,9 +1753,9 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
           return { ...rfNode, data: { ...rfNode.data, node: n } };
         }
         if (n.semanticType === "image") {
-          return { ...rfNode, data: { ...rfNode.data, node: n, onOpenPDF: handleOpenPDF, onDelete: onDeleteNode } };
+          return { ...rfNode, data: { ...rfNode.data, node: n, onOpenPDF: handleOpenPDF, onDelete: onDeleteNode, onSetColor: onSetNodeColor } };
         }
-        return { ...rfNode, data: { ...rfNode.data, node: n } };
+        return { ...rfNode, data: { ...rfNode.data, node: n, onSetColor: onSetNodeColor, onDelete: onDeleteNode, onUpdateText: (nodeId: string, text: string) => onUpdateNode?.(nodeId, { text, title: text }) } };
       })
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1827,11 +1776,8 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     const docId = e.dataTransfer.getData("application/anchor-doc");
     const snippetPayload = e.dataTransfer.getData("application/anchor-snippet");
     const size =
-      nodeType === "funnel" ? NODE_SIZE.funnelNode
-      : nodeType === "area" ? null
-      : nodeType === "fact" ? NODE_SIZE.factNode
-      : nodeType === "entity" ? NODE_SIZE.entityNode
-      : nodeType === "concept" ? NODE_SIZE.conceptNode
+      nodeType === "area" ? null
+      : nodeType ? (NODE_SIZE[nodeSizeKey(nodeType)] ?? null)
       : fmuFilename ? NODE_SIZE.fmuNode
       : docId ? DOCUMENT_NODE_SIZE
       : snippetPayload ? { w: 220, h: 84 }
@@ -1859,12 +1805,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     // Handle toolbar node-type drops
     const nodeType = e.dataTransfer.getData("application/anchor-nodetype") as NewNodeType | '';
     if (nodeType) {
-      const nodeSize =
-        nodeType === "funnel" ? NODE_SIZE.funnelNode!
-        : nodeType === "area" ? NODE_SIZE.areaNode!
-        : nodeType === "fact" ? NODE_SIZE.factNode!
-        : nodeType === "entity" ? NODE_SIZE.entityNode!
-        : NODE_SIZE.conceptNode!;
+      const nodeSize = NODE_SIZE[nodeSizeKey(nodeType)] ?? DEFAULT_SIZE;
       const absolutePos = anchorAtCenter(
         screenToFlowPosition({ x: e.clientX, y: e.clientY }),
         nodeSize,
@@ -1873,7 +1814,9 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         ? null
         : findBestAreaParent(absolutePos, nodeSize, nodesRef.current);
       const pos = areaParent?.position ?? absolutePos;
-      const label = nodeType === 'fact' ? 'New fact' : `New ${nodeType}`;
+      const label = nodeType === 'square' || nodeType === 'circle_shape' || nodeType === 'diamond_shape' || nodeType === 'note' || nodeType === 'rich_text'
+        ? ''
+        : nodeType === 'fact' ? 'New fact' : nodeType === 'model' ? 'Model' : `New ${nodeType}`;
       const { id, node } = _makeNode(nodeType, label, pos);
       if (areaParent) node.parent_id = areaParent.id;
       commitPositionOverrides({ [id]: pos }, true);
@@ -1927,6 +1870,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
             : rawNode?.node_type === "plot" ? NODE_SIZE.plotNode!
             : rawNode?.node_type === "image" ? NODE_SIZE.imageNode!
             : rawNode?.node_type === "funnel" ? NODE_SIZE.funnelNode!
+            : rawNode?.node_type === "model" ? NODE_SIZE.modelNode!
             : rawNode?.node_type === "area" ? NODE_SIZE.areaNode!
             : rawNode?.node_type === "spec" ? NODE_SIZE.specNode!
             : rawNode?.node_type === "entity" ? NODE_SIZE.entityNode!
@@ -1984,23 +1928,27 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onMouseDown={handleCanvasMouseDown}
-        onDoubleClick={onPaneDoubleClick}
+        onContextMenu={(e) => e.preventDefault()}
       >
         <LeftToolRail
           activeTool={activeTool}
           onChange={setActiveTool}
           onArrange={handleArrangeCanvas}
-          onToggleLibrary={onToggleLibrary}
-          libraryOpen={libraryOpen}
+          openPalette={openPalette}
+          onTogglePalette={(tab, anchorY) => {
+            setOpenPalette(prev => prev === tab ? null : tab);
+            setPaletteAnchorY(anchorY);
+          }}
         />
-        {selectedCanvasItem && (
-          <SelectionInspector
-            node={selectedCanvasItem}
-            onSetColor={onSetNodeColor}
-            onDelete={(nodeId) => {
-              if (nodeId.startsWith("__doc_")) onRemoveDocFromWorkspace?.(nodeId.replace(/^__doc_/, ""));
-              else onDeleteNode?.(nodeId);
-            }}
+        {openPalette && (
+          <ResourcePalette
+            tab={openPalette}
+            anchorY={paletteAnchorY}
+            workspaceDocIds={workspaceDocIds ?? []}
+            onAddDoc={(docId) => { onAddDocToWorkspace?.(docId); }}
+            onAddFmu={(filename) => { onFmuFromLibrary?.(filename); }}
+            onAddSnippet={(nodes, relations) => { onAddSnippet?.(nodes, relations); }}
+            onClose={() => setOpenPalette(null)}
           />
         )}
         {activeTool === "connect" && (
@@ -2015,23 +1963,25 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         )}
         {drawDraft && (
           <div
-            className={`absolute z-20 pointer-events-none rounded-2xl border-2 ${
+            className={`absolute z-20 pointer-events-none border-2 ${
               drawDraft.type === "area"
-                ? "border-dashed border-indigo-500 bg-indigo-100/30 dark:bg-indigo-900/20"
-                : drawDraft.type === "funnel"
-                ? "border-teal-500 bg-teal-100/30 dark:bg-teal-900/20"
-                : drawDraft.type === "entity"
-                ? "border-slate-500 bg-slate-100/30 dark:bg-slate-900/20"
-                : drawDraft.type === "fact"
-                ? "border-amber-500 bg-amber-100/30 dark:bg-amber-900/20"
-                : "border-violet-500 bg-violet-100/30 dark:bg-violet-900/20"
+                ? "border-dashed border-indigo-500 bg-indigo-100/30 dark:bg-indigo-900/20 rounded-2xl"
+                : drawDraft.type === "note"
+                ? "border-amber-400 bg-amber-100/50 dark:bg-amber-900/30 rounded-sm"
+                : drawDraft.type === "circle_shape" || drawDraft.type === "entity"
+                ? "border-neutral-400 bg-neutral-100/30 dark:bg-neutral-800/30 rounded-full"
+                : drawDraft.type === "diamond_shape" || drawDraft.type === "funnel"
+                ? "border-neutral-400 bg-neutral-100/30 dark:bg-neutral-800/30 rounded-none"
+                : drawDraft.type === "rich_text" || drawDraft.type === "fact"
+                ? "border-neutral-300 border-dashed bg-transparent rounded-md"
+                : "border-neutral-400 bg-neutral-100/30 dark:bg-neutral-800/30 rounded-md"
             }`}
             style={{
               left: Math.min(drawDraft.startClient.x, drawDraft.currentClient.x) - (rfContainerRef.current?.getBoundingClientRect().left ?? 0),
               top: Math.min(drawDraft.startClient.y, drawDraft.currentClient.y) - (rfContainerRef.current?.getBoundingClientRect().top ?? 0),
               width: Math.max(24, Math.abs(drawDraft.currentClient.x - drawDraft.startClient.x)),
               height: Math.max(24, Math.abs(drawDraft.currentClient.y - drawDraft.startClient.y)),
-              clipPath: drawDraft.type === "funnel" ? "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)" : undefined,
+              clipPath: (drawDraft.type === "diamond_shape" || drawDraft.type === "funnel") ? "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)" : undefined,
             }}
           />
         )}
@@ -2079,17 +2029,19 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
             if (n.id.startsWith('__doc_')) onRemoveDocFromWorkspace?.(n.id.replace(/^__doc_/, ""));
             else onDeleteNode?.(n.id);
           })}
+          onEdgesDelete={(deleted) => deleted.forEach((e) => {
+            onDeleteEdge?.(e.source, e.target, e.sourceHandle ?? '', e.targetHandle ?? '');
+          })}
           onConnectStart={onConnectStart}
           onConnectEnd={onConnectEnd}
           onConnect={onConnect}
           onNodeDoubleClick={onNodeDoubleClick}
-          onNodeContextMenu={onNodeContextMenu}
-          onPaneClick={() => { setNewNodePopup(null); setContextMenu(null); }}
+          onPaneClick={() => {}}
           onSelectionStart={onSelectionStart}
           onSelectionChange={onSelectionChange}
           selectionMode={SelectionMode.Partial}
           selectionOnDrag={!isInsertTool(activeTool) && activeTool !== "connect"}
-          panOnDrag={[1]}
+          panOnDrag={[1, 2]}
           autoPanOnNodeFocus={false}
           deleteKeyCode={["Delete", "Backspace"]}
           minZoom={0.1}
@@ -2110,16 +2062,6 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
             nodeColor="#e0e7ff"
             maskColor="rgba(0,0,0,0.06)"
           />
-          {contextMenu && (
-            <NodeContextMenu
-              {...contextMenu}
-              onSetColor={(id, color) => { onSetNodeColor?.(id, color); setContextMenu(null); }}
-              onDelete={contextMenu.nodeId.startsWith('__doc_')
-                ? ((id) => onRemoveDocFromWorkspace?.(id.replace(/^__doc_/, "")))
-                : onDeleteNode}
-              onClose={() => setContextMenu(null)}
-            />
-          )}
         </ReactFlow>
 
         {/* Floating selection bar */}
@@ -2149,14 +2091,6 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         />
       )}
 
-      {newNodePopup && (
-        <NewNodePicker
-          screenX={newNodePopup.screenX}
-          screenY={newNodePopup.screenY}
-          onConfirm={handleNewNodeConfirm}
-          onCancel={() => setNewNodePopup(null)}
-        />
-      )}
     </>
   );
 }

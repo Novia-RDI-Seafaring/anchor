@@ -59,7 +59,13 @@ export type LegacyCanvasNodeType =
   | "plot"
   | "image"
   | "funnel"
-  | "area";
+  | "area"
+  | "model"
+  | "square"
+  | "circle_shape"
+  | "diamond_shape"
+  | "note"
+  | "rich_text";
 
 export interface LegacyCanvasNode {
   id: string;
@@ -94,6 +100,7 @@ export interface LegacyCanvasNode {
   area_label?: string;
   area_width?: number;
   area_height?: number;
+  model_label?: string;
   width?: number;
   height?: number;
   parent_id?: string;
@@ -117,7 +124,13 @@ export type CanvasItemRenderKind =
   | "fmuCard"
   | "plotCard"
   | "funnelChip"
-  | "areaContainer";
+  | "areaContainer"
+  | "modelCard"
+  | "squareShape"
+  | "circleShape"
+  | "diamondShape"
+  | "noteCard"
+  | "richTextBlock";
 
 export interface CanvasItemMetadata {
   legacy?: LegacyCanvasNode;
@@ -161,6 +174,9 @@ export interface CanvasItemMetadata {
     width?: number;
     height?: number;
   };
+  model?: {
+    label?: string;
+  };
 }
 
 export interface CanvasItem {
@@ -202,6 +218,7 @@ export interface CanvasItem {
   area_label?: string;
   area_width?: number;
   area_height?: number;
+  model_label?: string;
   width?: number;
   height?: number;
   parent_id?: string;
@@ -210,7 +227,7 @@ export interface CanvasItem {
 
 function resolveCanvasItemKind(nodeType: LegacyCanvasNodeType): CanvasItemKind {
   if (nodeType === "document") return "document";
-  if (nodeType === "fmu") return "model";
+  if (nodeType === "fmu" || nodeType === "model") return "model";
   if (nodeType === "plot") return "result";
   if (nodeType === "image") return "media";
   if (nodeType === "funnel" || nodeType === "area") return "container";
@@ -224,9 +241,15 @@ function resolveCanvasItemRenderKind(nodeType: LegacyCanvasNodeType): CanvasItem
   if (nodeType === "source") return "sourceChip";
   if (nodeType === "image") return "imageCard";
   if (nodeType === "fmu") return "fmuCard";
+  if (nodeType === "model") return "modelCard";
   if (nodeType === "plot") return "plotCard";
   if (nodeType === "funnel") return "funnelChip";
   if (nodeType === "area") return "areaContainer";
+  if (nodeType === "square") return "squareShape";
+  if (nodeType === "circle_shape") return "circleShape";
+  if (nodeType === "diamond_shape") return "diamondShape";
+  if (nodeType === "note") return "noteCard";
+  if (nodeType === "rich_text") return "richTextBlock";
   return "treeLabel";
 }
 
@@ -283,6 +306,9 @@ export function adaptLegacyNodeToCanvasItem(node: LegacyCanvasNode): CanvasItem 
         width: node.area_width,
         height: node.area_height,
       },
+      model: {
+        label: node.model_label,
+      },
     },
     node_type: node.node_type,
     spec_title: node.spec_title,
@@ -310,6 +336,7 @@ export function adaptLegacyNodeToCanvasItem(node: LegacyCanvasNode): CanvasItem 
     area_label: node.area_label,
     area_width: node.area_width,
     area_height: node.area_height,
+    model_label: node.model_label,
     width: node.width,
     height: node.height,
     parent_id: node.parent_id,

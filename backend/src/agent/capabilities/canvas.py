@@ -26,23 +26,25 @@ LOW_LEVEL_TOOLS: frozenset[str] = frozenset({
 # ── Toolset ───────────────────────────────────────────────────────────────────
 
 _toolset: FunctionToolset[AgentDeps] = FunctionToolset()
-# Minimal set: only spec table creation for now
 _toolset.tool(canvas_tools.add_spec_node)
+_toolset.tool(canvas_tools.update_node)
+_toolset.tool(canvas_tools.delete_node)
+_toolset.tool(canvas_tools.add_relation)
 
 # ── Instructions ──────────────────────────────────────────────────────────────
 
 _INSTRUCTIONS = dedent("""
 ══════════════════════════════════════
-CANVAS — PARAMETER TABLE
+CANVAS TOOLS
 ══════════════════════════════════════
-You have ONE canvas tool: add_spec_node. It creates a parameter table on the canvas.
 
-  add_spec_node(
-    spec_title: str,           — title at the top (e.g. "LKH-5 Operating Data")
-    sections: list,            — parameter groups (see structure below)
-  )
+TOOLS:
+  add_spec_node(spec_title, sections)  — create a parameter table
+  update_node(node_id, spec_title?, parameter_sections?, title?, text?, status?)  — edit an existing node
+  delete_node(node_id)  — remove a node and its relations
+  add_relation(from_id, to_id, label?, source_handle?, target_handle?)  — connect two nodes
 
-Structure:
+PARAMETER TABLE STRUCTURE (for add_spec_node sections and update_node parameter_sections):
   sections = [
     {
       "name": "Max inlet pressure",
@@ -50,38 +52,31 @@ Structure:
         {"parameter": "LKH-5", "value": "600", "unit": "kPa", "source": {"filename": "...", "page": 2}},
         {"parameter": "LKH-10 - 70", "value": "1000", "unit": "kPa", "source": {"filename": "...", "page": 2}}
       ]
-    },
-    {
-      "name": "Temperature",
-      "rows": [
-        {"parameter": "Range", "value": "-10 to +140", "unit": "°C", "source": {"filename": "...", "page": 2}},
-        {"parameter": "Flush media max", "value": "70", "unit": "°C", "source": {"filename": "...", "page": 2}}
-      ]
     }
   ]
 
-EVERY row MUST have a source with at least filename and page number.
-When you know the exact location on the page, include bbox coordinates in the
-source so the PDF viewer highlights the exact location:
+SOURCES:
+  EVERY row MUST have a source with at least filename and page.
+  Include bbox [left, top, right, bottom] in BOTTOMLEFT PDF coords when available from gold data.
   "source": {"filename": "...", "page": 2, "bbox": [l, t, r, b]}
-The bbox is [left, top, right, bottom] in PDF coordinates (BOTTOMLEFT origin).
-The engineer needs to click through to verify each value.
-If you only know filename + page, provide that. The backend will try to enrich bbox
-automatically from the PDF text layout.
+
+EDITING SPEC TABLES:
+  To replace a spec table's content, call update_node(node_id=..., parameter_sections=[...]).
+  This replaces ALL sections — include the full desired content.
+  You can also update just the title: update_node(node_id=..., spec_title="New Title").
 
 WORKFLOW:
-1. Read the document with read_document_page() to find the data.
-2. Extract the relevant values, noting which page each comes from.
-3. Call add_spec_node() ONCE with ALL the data organized in sections.
-4. Answer the user concisely — the table on the canvas holds the detail.
+1. Use gold data from context (preferred) or read_document_page() to find values.
+2. Call add_spec_node() ONCE with all data organized in sections.
+3. To refine, call update_node() on the existing spec node.
 
 RULES:
-- ONE table per answer, not multiple.
+- ONE table per extraction, not multiple small ones.
 - Short, clear parameter names.
-- Units go in the unit field, NOT in the value.
+- Units in the unit field, NOT in the value.
 - Group related rows into sections.
-- EVERY row must have a source (filename + page).
-- Do NOT add to canvas for greetings or meta-questions.
+- EVERY row needs a source.
+- Do NOT modify canvas for greetings or meta-questions.
 """).strip()
 
 

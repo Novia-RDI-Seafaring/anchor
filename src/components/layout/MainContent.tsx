@@ -6,7 +6,7 @@ import { useCopilotChatInternal, useCoAgent } from "@copilotkit/react-core";
 import { CanvasView } from '../canvas/CanvasView';
 import { CanvasGraph } from '../canvas/CanvasGraph';
 import { PDFModal, type PDFHighlight } from '../canvas/PDFModal';
-import { LibraryDrawer } from './LibraryDrawer';
+
 import { RunsPanel } from './RunsPanel';
 import { useSession } from 'next-auth/react';
 import { API_URL } from '@/lib/api-config';
@@ -30,6 +30,55 @@ type CanvasTab = {
 };
 
 type FlowPosition = { x: number; y: number };
+
+/** Search gold-layer JSON for parameter values by name (best-effort fuzzy match). */
+function searchGoldForParams(
+  gold: any,
+  paramNames: string[],
+): Record<string, { value: string; unit?: string; page?: number }> {
+  const results: Record<string, { value: string; unit?: string; page?: number }> = {};
+  const lower: string[] = paramNames.map(n => n.toLowerCase().replace(/[_-]/g, ' '));
+
+  function visitSection(section: any) {
+    if (section.rows) {
+      for (const row of section.rows) {
+        const rowParam = (row.parameter ?? row.label ?? '').toLowerCase().replace(/[_-]/g, ' ');
+        for (let i = 0; i < lower.length; i++) {
+          const l = lower[i]!;
+          const pn = paramNames[i]!;
+          if (rowParam.includes(l) || l.includes(rowParam)) {
+            if (row.value != null && !results[pn]) {
+              results[pn] = { value: String(row.value), unit: row.unit, page: section.page };
+            }
+          }
+        }
+      }
+    }
+    if (section.properties && typeof section.properties === 'object') {
+      for (const [key, val] of Object.entries(section.properties)) {
+        const keyLower = key.toLowerCase().replace(/[_-]/g, ' ');
+        for (let i = 0; i < lower.length; i++) {
+          const l = lower[i]!;
+          const pn = paramNames[i]!;
+          if (keyLower.includes(l) || l.includes(keyLower)) {
+            if (val != null && !results[pn]) {
+              const v = typeof val === 'object' && val !== null && 'value' in val
+                ? { value: String((val as any).value), unit: (val as any).unit, page: section.page }
+                : { value: String(val), page: section.page };
+              results[pn] = v;
+            }
+          }
+        }
+      }
+    }
+    if (section.subsections) {
+      for (const sub of section.subsections) visitSection(sub);
+    }
+  }
+
+  for (const section of gold.sections ?? []) visitSection(section);
+  return results;
+}
 
 function makeDocumentCanvasNode(doc: { document_id: string; filename: string; node_count: number; status?: string }) {
   return {
@@ -103,7 +152,6 @@ export const MainContent: React.FC = () => {
   const userId = (session?.user as any)?.id ?? 'local-dev-user';
   const userHeaders = { 'x-user-id': userId };
   const [activeTab, setActiveTab] = useState<TabId>('canvas');
-  const [libraryOpen, setLibraryOpen] = useState(false);
   const [contextPdf, setContextPdf] = useState<{
     filename: string;
     page: number;
@@ -388,6 +436,11 @@ export const MainContent: React.FC = () => {
     setState({ ...c, nodes: [...(c?.nodes ?? []), node], relations: relation ? [...(c?.relations ?? []), relation] : (c?.relations ?? []) });
   }, [setState, canvas]);
 
+  const handleUpdateNode = useCallback((nodeId: string, updates: Record<string, unknown>) => {
+    const c = canvas as any;
+    setState({ ...c, nodes: (c?.nodes ?? []).map((n: any) => n.id === nodeId ? { ...n, ...updates } : n) });
+  }, [setState, canvas]);
+
   const handleSetNodeColor = useCallback((nodeId: string, color: string) => {
     const c = canvas as any;
     setState({ ...c, nodes: (c?.nodes ?? []).map((n: any) => n.id === nodeId ? { ...n, color: color || undefined } : n) });
@@ -413,6 +466,17 @@ export const MainContent: React.FC = () => {
       }],
     });
   }, [setState, canvas]);
+
+  const handleDeleteEdge = useCallback((fromId: string, toId: string, sourceHandle?: string, targetHandle?: string) => {
+    setState((prev: any) => ({
+      ...prev,
+      relations: (prev?.relations ?? []).filter((r: any) =>
+        !(r.from_id === fromId && r.to_id === toId &&
+          (r.source_handle ?? '') === (sourceHandle ?? '') &&
+          (r.target_handle ?? '') === (targetHandle ?? ''))
+      ),
+    }));
+  }, [setState]);
 
   const handleFmuUploaded = useCallback((payload: { filename: string; model_name: string; variables: any[] }, position?: FlowPosition, parentId?: string | null) => {
     const newNode = {
@@ -542,6 +606,40 @@ export const MainContent: React.FC = () => {
     } catch { /* ignore */ }
   }, [canvas, handleFmuUploaded]);
 
+  // ── Parameter auto-lookup via gold-layer data ────────────────────────────────
+  const handleParameterLookup = useCallback(async (
+    documentFilename: string,
+    _modelNodeId: string,
+    params: Array<{ fmuNodeId: string; paramName: string; unit?: string }>
+  ) => {
+    try {
+      const res = await fetch(`${API_URL}/api/documents/gold/${encodeURIComponent(documentFilename)}`);
+      if (!res.ok) return;
+      const gold = await res.json();
+
+      // Search gold data for matching parameter values
+      const found = searchGoldForParams(gold, params.map(p => p.paramName));
+
+      const c = canvas as any;
+      for (const { fmuNodeId, paramName } of params) {
+        const match = found[paramName];
+        if (match?.value != null) {
+          const fmuNode = (c?.nodes ?? []).find((n: any) => n.id === fmuNodeId);
+          if (fmuNode) {
+            handleUpdateNode(fmuNodeId, {
+              fmu_param_values: {
+                ...fmuNode.fmu_param_values,
+                [paramName]: String(match.value),
+              },
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Parameter lookup failed:', err);
+    }
+  }, [canvas, handleUpdateNode]);
+
   // ── Evidence data ────────────────────────────────────────────────────────────
   const allNodes = canvas?.nodes || [];
   const allRelations = canvas?.relations || [];
@@ -619,7 +717,9 @@ export const MainContent: React.FC = () => {
         onDeleteNode={handleDeleteNode}
         onAddNode={handleAddNode}
         onAddEdge={handleAddEdge}
+        onDeleteEdge={handleDeleteEdge}
         onSetNodeColor={handleSetNodeColor}
+        onUpdateNode={handleUpdateNode}
         workspaceDocIds={canvas?.workspace_doc_ids ?? []}
         onAddDocToWorkspace={handleAddDocToWorkspace}
         onRemoveDocFromWorkspace={handleRemoveDocFromWorkspace}
@@ -627,8 +727,7 @@ export const MainContent: React.FC = () => {
         onFmuFromLibrary={handleFmuFromLibrary}
         onAddSnippet={handleAddSnippet}
         onSaveSelection={handleSaveSelection}
-        libraryOpen={libraryOpen}
-        onToggleLibrary={() => setLibraryOpen(v => !v)}
+        onParameterLookup={handleParameterLookup}
       />
 
       {/* ── Canvas tab bar — top-left ─────────────────────────────────── */}
@@ -752,16 +851,6 @@ export const MainContent: React.FC = () => {
       {activeTab === 'runs' && (
         <RunsPanel onClose={() => setActiveTab('canvas')} />
       )}
-
-      {/* Library drawer */}
-      <LibraryDrawer
-        open={libraryOpen}
-        onClose={() => setLibraryOpen(false)}
-        workspaceDocIds={canvas?.workspace_doc_ids ?? []}
-        onAddDoc={handleAddDocToWorkspace}
-        onAddFmu={handleFmuFromLibrary}
-        onAddSnippet={handleAddSnippet}
-      />
 
       {/* Context PDF modal */}
       {contextPdf && (
