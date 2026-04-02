@@ -21,8 +21,48 @@ const InputAreaAdapter = (props: any) => (
 
 function AgentActivityStrip() {
     const { messages = [] } = useCopilotChatInternal();
-
+    const recentActions: string[] = [];
     let latestLabel = "Thinking";
+
+    const formatToolLabel = (name: string, args: any) => {
+        const parsedArgs = (() => {
+            if (typeof args !== "string") return args;
+            try {
+                return JSON.parse(args);
+            } catch {
+                return args;
+            }
+        })();
+
+        const page = typeof parsedArgs?.page_no === "number" ? ` page ${parsedArgs.page_no}` : "";
+        const title = typeof parsedArgs?.spec_title === "string" ? ` ${parsedArgs.spec_title}` : "";
+        const filename = typeof parsedArgs?.filename === "string" ? ` ${parsedArgs.filename}` : "";
+        const query = typeof parsedArgs?.query === "string" ? ` "${parsedArgs.query}"` : "";
+
+        switch (name) {
+            case "list_documents":
+                return "Looking up documents";
+            case "get_document_page_count":
+                return `Checking document length${filename}`;
+            case "read_document_page":
+                return `Reading${filename}${page}`;
+            case "analyze_pdf_page":
+                return `Inspecting PDF${filename}${page}`;
+            case "get_document_full_text":
+                return `Loading document text${filename}`;
+            case "resolve_technical_query":
+                return `Searching for${query || " technical data"}`;
+            case "add_spec_node":
+                return `Adding spec table${title}`;
+            case "add_fact":
+                return "Adding fact to canvas";
+            case "add_topic":
+                return "Adding topic to canvas";
+            default:
+                return `Calling ${name || "tool"}`;
+        }
+    };
+
     for (let index = messages.length - 1; index >= 0; index -= 1) {
         const currentMessage = messages[index];
         if (!currentMessage) continue;
@@ -30,12 +70,15 @@ function AgentActivityStrip() {
         if (!legacyMessage) continue;
         if (legacyMessage?.role === "user") break;
         if (legacyMessage.isActionExecutionMessage?.()) {
-            latestLabel = `Calling ${legacyMessage.name || "tool"}`;
-            break;
+            const label = formatToolLabel(legacyMessage.name || "tool", legacyMessage.arguments);
+            if (recentActions.length === 0) latestLabel = label;
+            if (!recentActions.includes(label)) recentActions.push(label);
+            if (recentActions.length >= 3) break;
+            continue;
         }
         if (legacyMessage.isAgentStateMessage?.() && legacyMessage.running) {
             latestLabel = legacyMessage.nodeName ? `Thinking · ${legacyMessage.nodeName}` : "Thinking";
-            break;
+            continue;
         }
     }
 
@@ -45,6 +88,13 @@ function AgentActivityStrip() {
                 <Loader2 size={14} className="animate-spin" />
                 <span>{latestLabel}</span>
             </div>
+            {recentActions.length > 1 ? (
+                <div className="mt-2 space-y-1 text-[11px] text-blue-600 dark:text-blue-300">
+                    {recentActions.slice(0, 3).map((label, index) => (
+                        <div key={`${label}-${index}`}>• {label}</div>
+                    ))}
+                </div>
+            ) : null}
         </div>
     );
 }

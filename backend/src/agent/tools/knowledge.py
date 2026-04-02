@@ -27,6 +27,8 @@ from ..helpers import (
     _clean_text_value,
     _find_node_by_title,
     _select_relevant_properties,
+    _is_section_table_query,
+    _query_requests_multiple_property_groups,
 )
 from . import vision
 
@@ -83,6 +85,30 @@ def _normalize_property_key(key: str) -> str:
 
 
 def _extract_doc_properties(chunks: list[dict], query: str) -> tuple[int, list[SpecProperty]]:
+    if _is_section_table_query(query) or _query_requests_multiple_property_groups(query):
+        aggregate_index = 0
+        aggregate_properties: list[SpecProperty] = []
+        seen: set[tuple[str, str, str]] = set()
+        for index, chunk in enumerate(chunks):
+            chunk_text = str(chunk.get("content") or "")
+            properties = _extract_properties_from_text(chunk_text, query)
+            if not properties:
+                continue
+            if not aggregate_properties:
+                aggregate_index = index
+            for prop in properties:
+                signature = (
+                    _normalize_property_key(prop.key),
+                    prop.value.lower().strip(),
+                    prop.unit.lower().strip(),
+                )
+                if signature in seen:
+                    continue
+                seen.add(signature)
+                aggregate_properties.append(prop)
+        if aggregate_properties:
+            return aggregate_index, aggregate_properties
+
     fallback_index = 0
     fallback_properties: list[SpecProperty] = []
     for index, chunk in enumerate(chunks):
@@ -148,6 +174,41 @@ def _build_comparison_properties(
             )
         )
     return rows
+
+
+def _apply_property_reference(
+    property_row: SpecProperty,
+    *,
+    filename: str | None,
+    page: int | None,
+    bbox: list[float],
+    highlights: list,
+) -> SpecProperty:
+    property_row.ref_filename = filename or ""
+    property_row.ref_page = page or 0
+    property_row.ref_bbox = list(bbox or [])
+    property_row.ref_highlights = list(highlights or [])
+    return property_row
+
+
+def _apply_property_references(
+    properties: list[SpecProperty],
+    *,
+    filename: str | None,
+    page: int | None,
+    bbox: list[float],
+    highlights: list,
+) -> list[SpecProperty]:
+    return [
+        _apply_property_reference(
+            prop,
+            filename=filename,
+            page=page,
+            bbox=bbox,
+            highlights=highlights,
+        )
+        for prop in properties
+    ]
 
 async def list_documents(ctx: RunContext[AgentDeps]):
     """List ingested documents available in the knowledge base."""
@@ -523,6 +584,13 @@ async def resolve_technical_query(
         summary_text = _summarize_chunks([normalized_chunks[source_chunk_index]])
         properties = [SpecProperty(key=_derive_spec_title(query), value=summary_text)]
     display_properties = matched_properties if use_spec and matched_properties else properties
+    display_properties = _apply_property_references(
+        display_properties,
+        filename=resolved_filename,
+        page=resolved_page,
+        bbox=resolved_bbox,
+        highlights=resolved_highlights,
+    )
 
     # If this topic already has exactly one fact/spec child, update it instead of appending.
     # New child is only created when the topic is truly empty or content needs to be split.
@@ -832,6 +900,14 @@ async def resolve_simple_query(
     else:
         fallback_text = _clean_text_value(str(normalized_chunks[source_chunk_index].get("content") or ""))
         new_prop = SpecProperty(key=property_key, value=fallback_text[:120] if fallback_text else "See source")
+
+    new_prop = _apply_property_reference(
+        new_prop,
+        filename=resolved_filename,
+        page=resolved_page,
+        bbox=resolved_bbox,
+        highlights=resolved_highlights,
+    )
 
     # Find existing accumulator: any spec node whose spec_title matches the product name.
     # This works whether the spec was previously created standalone or under a concept.

@@ -1,40 +1,25 @@
-"""Agent capabilities — assemble the routing registry and export all capabilities."""
-from .base import RoutingRegistry
-from .canvas import CanvasCapability, LOW_LEVEL_TOOLS as _CANVAS_LOW_LEVEL
-from .knowledge import KnowledgeCapability, LIST_ONLY_TOOLS, RAW_SEARCH_TOOLS, HIGH_LEVEL_TOOLS as _KNOWLEDGE_HIGH_LEVEL
-from .fmu import FmuCapability, HIGH_LEVEL_TOOLS as _FMU_HIGH_LEVEL
-from .document_vision import DocumentVisionCapability, HIGH_LEVEL_TOOLS as _DOC_HIGH_LEVEL
-from .router import RouterCapability
+"""Agent capabilities — minimal setup: context injection + reading + canvas editing."""
+from .context import ContextCapability
+from .canvas import CanvasCapability
 
-# Assemble the routing registry from each capability's declared tool names.
-# canvas.check_canvas lives in both low-level and high-level sets by design.
-_registry = RoutingRegistry(
-    list_only_tools=LIST_ONLY_TOOLS,
-    raw_search_tools=RAW_SEARCH_TOOLS,
-    low_level_canvas_tools=_CANVAS_LOW_LEVEL,
-    high_level_technical_tools=(
-        _KNOWLEDGE_HIGH_LEVEL
-        | _FMU_HIGH_LEVEL
-        | _DOC_HIGH_LEVEL
-        | _CANVAS_LOW_LEVEL  # check_canvas is available even in high-level mode
-    ),
-)
+# Minimal capability set:
+# 1. ContextCapability — injects canvas state + doc list into context, provides read_document_page
+# 2. CanvasCapability — CRUD tools for canvas nodes and relations
+#
+# Disabled for now (can re-enable as needed):
+# - KnowledgeCapability (resolve_technical_query, search_knowledge_base, etc.)
+# - DocumentVisionCapability (get_document_tree, get_document_full_text, analyze_pdf_page, etc.)
+# - FmuCapability
+# - EngineeringKnowledgeCapability
+# - RouterCapability (dynamic tool filtering and prompt routing)
 
-# Ready-to-use capability instances — pass directly to Agent(capabilities=[...]).
 CAPABILITIES = [
+    ContextCapability(),
     CanvasCapability(),
-    KnowledgeCapability(),
-    FmuCapability(),
-    DocumentVisionCapability(),
-    RouterCapability(registry=_registry),
 ]
 
 __all__ = [
     "CAPABILITIES",
-    "RoutingRegistry",
+    "ContextCapability",
     "CanvasCapability",
-    "KnowledgeCapability",
-    "FmuCapability",
-    "DocumentVisionCapability",
-    "RouterCapability",
 ]

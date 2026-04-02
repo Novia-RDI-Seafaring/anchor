@@ -223,6 +223,61 @@ class QueryHandler(SimpleLlamaIndexQueryHandler):
         )
         return _to_pdf_search_response(source_nodes)
 
+    def get_chunks_for_page(
+        self,
+        rag: LlamaIndexRag,
+        document_id: str,
+        page_no: int,
+    ) -> list[dict[str, Any]]:
+        """Return all docling chunks that belong to a specific page of a document.
+
+        Each chunk includes: text content, label (table/text/etc), headings,
+        page number, and bbox coordinates from docling provenance.
+        """
+        from llama_index.core.vector_stores import (
+            FilterOperator,
+            MetadataFilter,
+            MetadataFilters,
+        )
+
+        retriever = rag.vector_index.as_retriever(
+            similarity_top_k=200,
+            filters=MetadataFilters(
+                filters=[
+                    MetadataFilter(key="document_id", operator=FilterOperator.EQ, value=document_id),
+                ],
+            ),
+        )
+        # Retrieve a large batch and filter by page in Python
+        # (pgvector doesn't support nested JSON field filtering well)
+        all_nodes = retriever.retrieve("")
+        page_chunks: list[dict[str, Any]] = []
+        for node_with_score in all_nodes:
+            metadata = _node_metadata(node_with_score)
+            location = _extract_location(metadata)
+            if location is None or location.page != page_no:
+                continue
+            doc_item = _first_doc_item(metadata)
+            label = doc_item.get("label", "text")
+            headings_raw = metadata.get("headings", [])
+            headings: list[str] = [str(h) for h in headings_raw if isinstance(h, str)] if isinstance(headings_raw, list) else []
+            chunk: dict[str, Any] = {
+                "text": str(getattr(node_with_score.node, "text", "") or ""),
+                "label": str(label),
+                "headings": headings,
+                "page": page_no,
+            }
+            if location.bbox:
+                chunk["bbox"] = {
+                    "l": location.bbox.l,
+                    "t": location.bbox.t,
+                    "r": location.bbox.r,
+                    "b": location.bbox.b,
+                    "coord_origin": location.bbox.coord_origin,
+                }
+            page_chunks.append(chunk)
+        return page_chunks
+
     def get_page_image(self, node: NodeWithScore) -> bytes:
         to_image_bytes = getattr(node, "to_image_bytes", None)
         if callable(to_image_bytes):

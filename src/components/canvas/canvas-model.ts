@@ -2,15 +2,39 @@ import type { KBDocument } from "@/contexts/AppContext";
 
 export type NodeStatus = "pending" | "searching" | "found" | "partial" | "not_found";
 
+export interface ParameterSource {
+  doc_id?: string;
+  filename?: string;
+  page?: number;
+  bbox?: number[];
+}
+
+export interface ParameterRow {
+  parameter: string;
+  value: string;
+  unit?: string;
+  source?: ParameterSource;
+}
+
+export interface ParameterSection {
+  name: string;
+  rows: ParameterRow[];
+}
+
 export interface SpecProperty {
   key: string;
   value: string;
   unit?: string;
+  group?: string;
   left_label?: string;
   left_value?: string;
   right_label?: string;
   right_value?: string;
   comparison_status?: string;
+  ref_filename?: string;
+  ref_page?: number;
+  ref_bbox?: number[];
+  ref_highlights?: Array<{ page: number; bbox: number[] }>;
 }
 
 export interface FmuVariableData {
@@ -47,6 +71,7 @@ export interface LegacyCanvasNode {
   text?: string;
   spec_title?: string;
   properties?: SpecProperty[];
+  parameter_sections?: ParameterSection[];
   filename?: string;
   page?: number;
   bbox?: number[];
@@ -154,6 +179,7 @@ export interface CanvasItem {
   node_type: LegacyCanvasNodeType | "document";
   spec_title?: string;
   properties?: SpecProperty[];
+  parameter_sections?: ParameterSection[];
   filename?: string;
   page?: number;
   bbox?: number[];
@@ -261,6 +287,7 @@ export function adaptLegacyNodeToCanvasItem(node: LegacyCanvasNode): CanvasItem 
     node_type: node.node_type,
     spec_title: node.spec_title,
     properties: node.properties,
+    parameter_sections: node.parameter_sections,
     filename: node.filename,
     page: node.page,
     bbox: node.bbox,

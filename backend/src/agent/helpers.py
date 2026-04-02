@@ -44,6 +44,20 @@ _PROPERTY_MATCH_STOPWORDS = {
     "for", "from", "of", "to", "in", "on", "with", "and", "or", "does", "do", "it", "its",
     "this", "that", "these", "those", "about", "tell", "me", "show", "give", "list",
 }
+_SECTION_TABLE_QUERY_RE = re.compile(
+    r"\b(operating data|technical data|specs?|specifications?|fact sheet|fact table|properties)\b",
+    re.IGNORECASE,
+)
+_PROPERTY_GROUP_ALIASES: dict[str, set[str]] = {
+    "temperature": {"temperature", "temp", "thermal", "sterilization"},
+    "pressure": {"pressure", "pressur", "bar", "kpa", "mpa"},
+    "flow": {"flow", "capacity", "consumption"},
+    "speed": {"speed", "rpm"},
+    "power": {"power", "kw", "hp", "horsepower", "w"},
+    "connection": {"connection", "connections", "port", "ports", "thread", "inlet", "outlet"},
+    "material": {"material", "materials", "steel", "elastomer", "seal"},
+    "motor": {"motor", "frequency", "voltage", "current", "phase"},
+}
 
 def _normalize_match_token(token: str) -> str:
     normalized = token.lower().strip()
@@ -62,6 +76,23 @@ def _query_match_tokens(text: str) -> set[str]:
         if len(normalized) > 2 and normalized not in _PROPERTY_MATCH_STOPWORDS:
             tokens.add(normalized)
     return tokens
+
+
+def _is_section_table_query(query: str) -> bool:
+    return bool(_SECTION_TABLE_QUERY_RE.search(query))
+
+
+def _property_groups_for_text(text: str) -> set[str]:
+    tokens = _query_match_tokens(text)
+    matched: set[str] = set()
+    for group, aliases in _PROPERTY_GROUP_ALIASES.items():
+        if tokens & aliases:
+            matched.add(group)
+    return matched
+
+
+def _query_requests_multiple_property_groups(query: str) -> bool:
+    return len(_property_groups_for_text(query)) > 1
 
 def _early_prompt_to_text(prompt: str | list | tuple | None) -> str:
     if isinstance(prompt, str):
@@ -375,6 +406,25 @@ def _extract_properties_from_text(text: str, query: str) -> list[SpecProperty]:
     return properties
 
 def _select_relevant_properties(properties: list[SpecProperty], query: str) -> list[SpecProperty]:
+    if _is_section_table_query(query):
+        return properties
+
+    if _query_requests_multiple_property_groups(query):
+        requested_groups = _property_groups_for_text(query)
+        multi_matches: list[SpecProperty] = []
+        seen_signatures: set[tuple[str, str, str]] = set()
+        for prop in properties:
+            prop_groups = _property_groups_for_text(f"{prop.key} {prop.value} {prop.unit}".strip())
+            if not (prop_groups & requested_groups):
+                continue
+            signature = (prop.key.lower().strip(), prop.value.lower().strip(), prop.unit.lower().strip())
+            if signature in seen_signatures:
+                continue
+            seen_signatures.add(signature)
+            multi_matches.append(prop)
+        if multi_matches:
+            return multi_matches
+
     query_tokens = _query_match_tokens(query)
     if not query_tokens:
         return []
@@ -427,11 +477,29 @@ def _derive_query_focus(query: str) -> str:
 def _derive_topic_title(query: str) -> str:
     normalized = query.strip().rstrip("?.!")
     lowered = normalized.lower()
+    if re.search(r"\boperating data\b", lowered):
+        return "Operating Data"
+    if re.search(r"\btechnical data\b", lowered):
+        return "Technical Data"
     if "dimension" in lowered or "measure" in lowered:
         model_match = _MODEL_CODE_RE.search(normalized)
         if model_match:
             return f"{model_match.group(1)} Dimensions"
         return "Dimensions"
+    if re.search(r"\b(materials?|construction|wetted parts?|seal material)\b", lowered):
+        return "Materials"
+    if re.search(r"\b(max|min|maximum|minimum|limit|pressure|temperature|viscosity|density|rating|ratings|operating)\b", lowered):
+        return "Operating Limits"
+    if re.search(r"\b(flow|curve|performance|capacity|speed|rpm|power|efficiency|head|npsh)\b", lowered):
+        return "Performance"
+    if re.search(r"\b(connection|connections|port|ports|thread|flange|inlet|outlet)\b", lowered):
+        return "Connections"
+    if re.search(r"\b(motor|voltage|frequency|current|phase)\b", lowered):
+        return "Motor"
+    if re.search(r"\b(installation|mounting|setup|wiring)\b", lowered):
+        return "Installation"
+    if re.search(r"\b(overview|summary|what is|what are|describe|explain|features?|benefits?|capabilities)\b", lowered):
+        return "Overview"
     if re.search(r"\bmaterials?\b", lowered):
         return "Materials"
     if re.search(r"\b(technical data|specs?|specifications?|properties|ratings?)\b", lowered):
@@ -445,6 +513,8 @@ def _derive_topic_title(query: str) -> str:
 
 def _derive_spec_title(query: str) -> str:
     lowered = query.strip().lower()
+    if re.search(r"\boperating data\b", lowered):
+        return "Operating Data"
     if "dimension" in lowered or "measure" in lowered:
         return "Dimensions"
     if re.search(r"\bmaterials?\b", lowered):

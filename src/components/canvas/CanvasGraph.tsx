@@ -18,6 +18,7 @@ import {
   BackgroundVariant,
 } from "@xyflow/react";
 import { FloatingEdge } from "./FloatingEdge";
+import { AnchoredEdge } from "./AnchoredEdge";
 import "@xyflow/react/dist/style.css";
 import dagre from "@dagrejs/dagre";
 import { Network, UploadCloud, Layers, Box, MessageSquare, Palette, MousePointer2, Hand, Filter, SquareDashed, Wand2, Square, Circle, Diamond, ArrowRight, BookOpen, Type, Trash2 } from "lucide-react";
@@ -58,6 +59,8 @@ interface Relation {
   from_id: string;
   to_id: string;
   label: string;
+  source_handle?: string;
+  target_handle?: string;
   document_id?: string;
   page?: number;
   bbox?: number[];
@@ -91,7 +94,7 @@ const NODE_SIZE: Record<string, { w: number; h: number }> = {
   factNode:     { w: 280, h: 100 },
   documentNode: { w: 150, h: 64  },
   sourceNode:   { w: 180, h: 40  },
-  specNode:     { w: 260, h: 130 },
+  specNode:     { w: 420, h: 200 },
   fmuNode:      { w: 280, h: 200 },
   plotNode:     { w: 320, h: 220 },
   imageNode:    { w: 300, h: 200 },
@@ -246,6 +249,91 @@ function pickEdgeSourceColor(
     if (c) return c;
   }
   return null;
+}
+
+function buildDerivedEvidenceRelations(
+  nodes: CanvasItem[],
+  relations: Relation[],
+  documents: KBDocument[],
+): Relation[] {
+  const existing = new Set(
+    relations.map((r) => `${r.from_id}>${r.to_id}>${r.source_handle ?? ""}>${r.target_handle ?? ""}`),
+  );
+  const filenameToDocNode = new Map(documents.map((doc) => [doc.filename, `__doc_${doc.document_id}`]));
+  const filenameToDocId = new Map(documents.map((doc) => [doc.filename, doc.document_id]));
+  const derived: Relation[] = [];
+  const seen = new Set<string>();
+
+  const addEvidence = (
+    fromId: string,
+    source: {
+      doc_id?: string;
+      filename?: string;
+      page?: number;
+      bbox?: number[];
+      highlights?: PDFHighlight[];
+    },
+    targetHandle?: string,
+  ) => {
+    const docNodeId = source.doc_id
+      ? `__doc_${source.doc_id}`
+      : (source.filename ? filenameToDocNode.get(source.filename) : undefined);
+    if (!docNodeId || docNodeId === fromId) return;
+
+    const key = `${fromId}>${docNodeId}>doc-evidence-out>${targetHandle ?? ""}`;
+    if (existing.has(key) || seen.has(key)) return;
+    seen.add(key);
+
+    const page = typeof source.page === "number" ? source.page : 0;
+    const bbox = Array.isArray(source.bbox) ? source.bbox : [];
+    const highlights = source.highlights ?? (page > 0 && bbox.length === 4 ? [{ page, bbox }] : []);
+
+    derived.push({
+      from_id: fromId,
+      to_id: docNodeId,
+      label: page > 0 ? `p.${page}` : "",
+      source_handle: targetHandle,
+      target_handle: "doc-evidence-out",
+      document_id: source.doc_id || (source.filename ? filenameToDocId.get(source.filename) : undefined),
+      page,
+      bbox,
+      highlights,
+    });
+  };
+
+  for (const node of nodes) {
+    if (node.id.startsWith("__doc_")) continue;
+
+    if (Array.isArray(node.parameter_sections)) {
+      node.parameter_sections.forEach((section, sectionIndex) => {
+        (section.rows ?? []).forEach((row, rowIndex) => {
+          if (row?.source) addEvidence(node.id, row.source, `spec-row-in-${sectionIndex}-${rowIndex}`);
+        });
+      });
+    }
+
+    if (Array.isArray(node.properties)) {
+      node.properties.forEach((prop, propertyIndex) => {
+        addEvidence(node.id, {
+          filename: prop?.ref_filename,
+          page: prop?.ref_page,
+          bbox: prop?.ref_bbox,
+          highlights: prop?.ref_highlights as PDFHighlight[] | undefined,
+        }, `spec-prop-in-${propertyIndex}`);
+      });
+    }
+
+    if (node.filename && node.page && !node.id.startsWith("__doc_")) {
+      addEvidence(node.id, {
+        filename: node.filename,
+        page: node.page,
+        bbox: node.bbox,
+        highlights: node.highlights as PDFHighlight[] | undefined,
+      });
+    }
+  }
+
+  return derived;
 }
 
 function connectedComponents(nodes: Node[], edges: Edge[]): string[][] {
@@ -578,17 +666,18 @@ function isInsertTool(tool: CanvasTool): tool is NewNodeType {
 function LeftToolRail({
   activeTool,
   onChange,
+  onArrange,
   onToggleLibrary,
   libraryOpen,
 }: {
   activeTool: CanvasTool;
   onChange: (t: CanvasTool) => void;
+  onArrange?: () => void;
   onToggleLibrary?: () => void;
   libraryOpen?: boolean;
 }) {
   const primaryTools: Array<{ id: CanvasTool; icon: React.ReactNode; label: string; shortcut?: string }> = [
-    { id: "move", icon: <Hand size={15} />, label: "Move", shortcut: "V" },
-    { id: "select", icon: <MousePointer2 size={15} />, label: "Select", shortcut: "S" },
+    { id: "select", icon: <Hand size={15} />, label: "Board", shortcut: "V" },
     { id: "connect", icon: <ArrowRight size={15} />, label: "Arrow", shortcut: "A" },
   ];
   const insertTools: Array<{ id: CanvasTool; icon: React.ReactNode; label: string; shortcut?: string }> = [
@@ -603,8 +692,7 @@ function LeftToolRail({
     const handleKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
-      if (e.key === "v" || e.key === "V") onChange("move");
-      if (e.key === "s" || e.key === "S") onChange("select");
+      if (e.key === "v" || e.key === "V") onChange("select");
       if (e.key === "1") onChange("concept");
       if (e.key === "2") onChange("entity");
       if (e.key === "3") onChange("funnel");
@@ -652,47 +740,24 @@ function LeftToolRail({
         ))}
       </div>
       <div className="mx-auto h-px w-8 bg-neutral-200 dark:bg-neutral-700" />
-      <button
-        onClick={onToggleLibrary}
-        title="Toggle library"
-        className={`flex h-10 w-10 items-center justify-center rounded-2xl border transition-colors ${
-          libraryOpen
-            ? "border-indigo-300 bg-indigo-100 text-indigo-700 dark:border-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-300"
-            : "border-transparent text-neutral-500 hover:border-neutral-200 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:border-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
-        }`}
-      >
-        <BookOpen size={15} />
-      </button>
-    </div>
-  );
-}
-
-function TopUtilityBar({
-  activeTool,
-  onArrange,
-}: {
-  activeTool: CanvasTool;
-  onArrange: () => void;
-}) {
-  const label = activeTool === "move"
-    ? "Pan board"
-    : activeTool === "select"
-    ? "Select items"
-    : activeTool === "connect"
-    ? "Connect with arrows"
-    : `Draw ${activeTool}`;
-  return (
-    <div className="absolute right-4 top-3 z-30 flex items-center gap-2 rounded-2xl border border-neutral-200/80 bg-white/94 px-2.5 py-2 shadow-[0_10px_30px_rgba(15,23,42,0.08)] backdrop-blur-md dark:border-neutral-700/80 dark:bg-neutral-900/94">
-      <div className="rounded-xl bg-neutral-100 px-2.5 py-1 text-[11px] font-medium text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-        {label}
+      <div className="flex flex-col gap-1.5">
+        <button
+          onClick={onArrange}
+          title="Arrange canvas"
+          className="flex h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-neutral-500 transition-colors hover:border-neutral-200 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:border-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+        >
+          <Wand2 size={15} />
+        </button>
+        {!libraryOpen && (
+          <button
+            onClick={onToggleLibrary}
+            title="Toggle library"
+            className="flex h-10 w-10 items-center justify-center rounded-2xl border border-transparent text-neutral-500 transition-colors hover:border-neutral-200 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:border-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+          >
+            <BookOpen size={15} />
+          </button>
+        )}
       </div>
-      <button
-        onClick={onArrange}
-        title="Arrange canvas"
-        className="flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-neutral-500 transition-colors hover:border-neutral-200 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:border-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
-      >
-        <Wand2 size={15} />
-      </button>
     </div>
   );
 }
@@ -823,6 +888,7 @@ const nodeTypes: NodeTypes = {
 
 const edgeTypes: EdgeTypes = {
   floating: FloatingEdge,
+  anchored: AnchoredEdge,
 };
 
 // --- New node picker popup ---
@@ -926,7 +992,7 @@ interface CanvasGraphProps {
   onSimulateComplete?: (fmuNodeId: string, jobId: string, filename: string, signalNames: string[], paramValues: Record<string, string>, stopTime: number) => void;
   onDeleteNode?: (nodeId: string) => void;
   onAddNode?: (node: any, relation: { from_id: string; to_id: string; label: string } | null) => void;
-  onAddEdge?: (fromId: string, toId: string, label: string) => void;
+  onAddEdge?: (fromId: string, toId: string, label: string, sourceHandle?: string | null, targetHandle?: string | null) => void;
   onSetNodeColor?: (nodeId: string, color: string) => void;
   workspaceDocIds?: string[];
   onAddDocToWorkspace?: (docId: string) => void;
@@ -980,6 +1046,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
   const [pdfModal, setPdfModal] = useState<PDFModalState | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [highlightedAreaId, setHighlightedAreaId] = useState<string | null>(null);
+  const [previewedSource, setPreviewedSource] = useState<{ filename: string; page: number } | null>(null);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -1035,12 +1102,12 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
   const onSelectionChange = useCallback(({ nodes: selNodes }: { nodes: Node[]; edges: Edge[] }) => {
     const incoming = selNodes.map(n => n.id);
     const { shift, alt } = modKeys.current;
-    if (shift && alt) {
-      // Alt+Shift: subtract incoming from snapshot
+    if (shift) {
+      // Shift-drag subtracts from the existing selection
       const remove = new Set(incoming);
       setSelectedNodeIds(selectionSnapshot.current.filter(id => !remove.has(id)));
-    } else if (shift) {
-      // Shift: add incoming to snapshot (union)
+    } else if (alt) {
+      // Alt-drag adds incoming to the existing selection
       const merged = new Set([...selectionSnapshot.current, ...incoming]);
       setSelectedNodeIds(Array.from(merged));
     } else {
@@ -1101,7 +1168,9 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
   const onConnectStart = useCallback(() => {}, []);
 
   const onConnect = useCallback((params: any) => {
-    if (params.source && params.target) onAddEdge?.(params.source, params.target, '');
+    if (params.source && params.target) {
+      onAddEdge?.(params.source, params.target, '', params.sourceHandle ?? null, params.targetHandle ?? null);
+    }
   }, [onAddEdge]);
 
   const handleCanvasMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
@@ -1197,7 +1266,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     }
     commitPositionOverrides({ [id]: basePosition }, true);
     onAddNode?.(node, null);
-    setActiveTool("move");
+    setActiveTool("select");
   }, [_makeNode, commitPositionOverrides, onAddNode]);
 
   useEffect(() => {
@@ -1232,7 +1301,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     const { id, node } = _makeNode(type, label, { x: newNodePopup.flowX, y: newNodePopup.flowY });
     commitPositionOverrides({ [id]: { x: newNodePopup.flowX, y: newNodePopup.flowY } }, true);
     onAddNode?.(node, newNodePopup.sourceId ? { from_id: newNodePopup.sourceId, to_id: id, label: '' } : null);
-    setActiveTool("move");
+    setActiveTool("select");
     setNewNodePopup(null);
   }, [newNodePopup, _makeNode, commitPositionOverrides, onAddNode]);
 
@@ -1411,7 +1480,11 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
 
   const rawNodes = (canvas?.nodes ?? []) as LegacyCanvasNode[];
   const canvasItems = useMemo(() => rawNodes.map(adaptLegacyNodeToCanvasItem), [rawNodes]);
-  const relations = canvas?.relations ?? [];
+  const explicitRelations = canvas?.relations ?? [];
+  const relations = useMemo(
+    () => [...explicitRelations, ...buildDerivedEvidenceRelations(canvasItems, explicitRelations, documents)],
+    [canvasItems, explicitRelations, documents],
+  );
   relationsRef.current = relations;
 
   // Structural key — re-layout only when nodes/edges are added or removed,
@@ -1482,6 +1555,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         return applyExplicitNodeSize(n, buildFlowNode(n.id, "factNode", n.color, hidden, {
           node: n,
           onOpenPDF: handleOpenPDF,
+          onPreviewSource: (filename: string | null, page?: number | null) => setPreviewedSource(filename && page ? { filename, page } : null),
           onDelete: onDeleteNode,
           ...getEvidenceData(n.id, relations, documentsRef.current),
         }), NODE_SIZE.factNode!);
@@ -1490,6 +1564,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         return applyExplicitNodeSize(n, buildFlowNode(n.id, "specNode", n.color, hidden, {
           node: n,
           onOpenPDF: handleOpenPDF,
+          onPreviewSource: (filename: string | null, page?: number | null) => setPreviewedSource(filename && page ? { filename, page } : null),
           onDelete: onDeleteNode,
           ...getEvidenceData(n.id, relations, documentsRef.current),
         }), NODE_SIZE.specNode!);
@@ -1501,6 +1576,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
           item: doc ? adaptDocumentToCanvasItem(doc) : n,
           doc,
           isActive: doc?.document_id === activeDocumentIdRef.current,
+          previewPage: previewedSource && previewedSource.filename === doc?.filename ? previewedSource.page : null,
           onActivate: (id: string) => setActiveDocumentIdRef.current(id || null),
           onOpenPDF: handleOpenPDF,
           onRemoveFromCanvas: onRemoveDocFromWorkspace,
@@ -1604,9 +1680,6 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
       const isSimPlot   = fromNode?.semanticType === "fmu" && toNode?.semanticType === "plot";
       // Hide evidence edges that originate from leaf nodes (fact/spec) — replaced by
       // deduplicated topic→doc reference lines added below.
-      const isLeafEvidence = isEvidence &&
-        (fromNode?.semanticType === "fact" || fromNode?.semanticType === "spec");
-
       // Source-colored edges: if the source node has provenance, use its color
       const provenanceColor = !isEvidence
         ? pickEdgeSourceColor(nodeSources.get(r.from_id), sourceColorMap)
@@ -1622,47 +1695,32 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         : isSpec       ? "#8b5cf6"
         : isEvidence   ? "#94a3b8"
         : "#6366f1";
+      const renderedSource = isEvidence ? r.to_id : r.from_id;
+      const renderedTarget = isEvidence ? r.from_id : r.to_id;
+      const renderedSourceHandle = isEvidence ? (r.target_handle || undefined) : (r.source_handle || undefined);
+      const renderedTargetHandle = isEvidence ? (r.source_handle || undefined) : (r.target_handle || undefined);
+      const usesAnchoredHandles = !!(renderedSourceHandle || renderedTargetHandle);
       return {
         id: `e-${idx}`,
-        source: r.from_id,
-        target: r.to_id,
+        source: renderedSource,
+        target: renderedTarget,
+        sourceHandle: renderedSourceHandle,
+        targetHandle: renderedTargetHandle,
         label: r.label || undefined,
-        type: "floating",
-        hidden: isLeafEvidence || hiddenIds.has(r.from_id) || hiddenIds.has(r.to_id),
-        animated: isConceptTopic || isEntityCat || isCatTopic,
+        type: usesAnchoredHandles ? "anchored" : "floating",
+        hidden: hiddenIds.has(renderedSource) || hiddenIds.has(renderedTarget),
+        animated: isEvidence || isConceptTopic || isEntityCat || isCatTopic,
         style: {
           stroke: strokeColor,
-          strokeWidth: isEntityCat ? 3.5 : isConceptTopic || isCatTopic ? 3 : isTopicFact || isSpec ? 2.5 : isEvidence ? 1 : 2,
-          strokeDasharray: isEvidence || isSpec ? "4 3" : undefined,
-          opacity: isEvidence ? 0.5 : undefined,
+          strokeWidth: isEntityCat ? 3.5 : isConceptTopic || isCatTopic ? 3 : isTopicFact || isSpec ? 2.5 : isEvidence ? 1.8 : 2,
+          strokeDasharray: isEvidence || isSpec ? "5 4" : undefined,
+          opacity: isEvidence ? 0.72 : undefined,
         },
         labelStyle: { fill: isSimPlot ? "#0f766e" : "#6366f1", fontWeight: 600, fontSize: 10 },
         labelBgStyle: { fill: isSimPlot ? "#f0fdfa" : "#f5f3ff", fillOpacity: 0.92 },
         labelBgPadding: [3, 2] as [number, number],
       };
     });
-
-    // Deduplicated topic→doc reference lines (one per topic-doc pair)
-    const seenTopicDoc = new Set<string>();
-    for (const r of relations) {
-      if (!r.to_id.startsWith('__doc_')) continue;
-      const fromNode = nodeMap.get(r.from_id);
-      if (fromNode?.semanticType !== 'fact' && fromNode?.semanticType !== 'spec') continue;
-      // Walk up to find the parent topic
-      const parentRel = relations.find(pr => pr.to_id === r.from_id && !pr.to_id.startsWith('__doc_'));
-      if (!parentRel) continue;
-      const key = `${parentRel.from_id}::${r.to_id}`;
-      if (seenTopicDoc.has(key)) continue;
-      seenTopicDoc.add(key);
-      rfEdges.push({
-        id: `e-ref-${rfEdges.length}`,
-        source: parentRel.from_id,
-        target: r.to_id,
-        type: 'floating',
-        hidden: hiddenIds.has(parentRel.from_id),
-        style: { stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '3 5', opacity: 0.45 },
-      });
-    }
 
     // Build parent lookup (excluding evidence edges) for default manual placement
     const parentOf = new Map<string, string>();
@@ -1716,6 +1774,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
               ...rfNode.data,
               node: n,
               onOpenPDF: handleOpenPDF,
+              onPreviewSource: (filename: string | null, page?: number | null) => setPreviewedSource(filename && page ? { filename, page } : null),
               onDelete: onDeleteNode,
               ...getEvidenceData(n.id, relations, documentsRef.current),
             },
@@ -1730,6 +1789,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
               item: doc ? adaptDocumentToCanvasItem(doc) : n,
               doc,
               isActive: doc?.document_id === activeDocumentIdRef.current,
+              previewPage: previewedSource && previewedSource.filename === doc?.filename ? previewedSource.page : null,
               onActivate: (id: string) => setActiveDocumentIdRef.current(id || null),
               onOpenPDF: handleOpenPDF,
               onRemoveFromCanvas: onRemoveDocFromWorkspace,
@@ -1750,7 +1810,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
       })
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvasItems, relations, onRemoveDocFromWorkspace]);
+  }, [canvasItems, relations, onRemoveDocFromWorkspace, previewedSource]);
 
   // File drop handlers
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
@@ -1916,9 +1976,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
       <div
         ref={rfContainerRef}
         className={`w-full h-full overflow-hidden relative ${
-          activeTool === "move"
-            ? "cursor-grab"
-            : isInsertTool(activeTool) || activeTool === "connect"
+          isInsertTool(activeTool) || activeTool === "connect"
             ? "cursor-crosshair"
             : "cursor-default"
         }`}
@@ -1931,12 +1989,9 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         <LeftToolRail
           activeTool={activeTool}
           onChange={setActiveTool}
+          onArrange={handleArrangeCanvas}
           onToggleLibrary={onToggleLibrary}
           libraryOpen={libraryOpen}
-        />
-        <TopUtilityBar
-          activeTool={activeTool}
-          onArrange={handleArrangeCanvas}
         />
         {selectedCanvasItem && (
           <SelectionInspector
@@ -2033,8 +2088,8 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
           onSelectionStart={onSelectionStart}
           onSelectionChange={onSelectionChange}
           selectionMode={SelectionMode.Partial}
-          selectionOnDrag={activeTool === "select"}
-          panOnDrag={activeTool === "move" ? [0] : false}
+          selectionOnDrag={!isInsertTool(activeTool) && activeTool !== "connect"}
+          panOnDrag={[1]}
           autoPanOnNodeFocus={false}
           deleteKeyCode={["Delete", "Backspace"]}
           minZoom={0.1}

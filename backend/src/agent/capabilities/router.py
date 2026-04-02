@@ -13,8 +13,10 @@ from ..helpers import (
     _EARLY_DOCUMENT_LISTING_RE,
     _EARLY_RAW_SEARCH_RE,
     _EARLY_SOCIAL_OR_META_RE,
+    _is_section_table_query,
     _early_prompt_to_text,
     _prompt_to_text,
+    _query_requests_multiple_property_groups,
     _requires_canvas_update,
 )
 from .base import RoutingRegistry
@@ -129,29 +131,72 @@ class RouterCapability(AbstractCapability[Any]):
                     "- Call tools until the canvas fully represents the subject.\n"
                     f"- Subject of query: {prompt_text!r}"
                 )
-            if _SIMPLE_FACTUAL_RE.search(normalized):
+            if _is_section_table_query(normalized) or _query_requests_multiple_property_groups(normalized):
+                root_title = "Operating Data" if "operating data" in normalized else "Technical Data"
                 return (
-                    "SIMPLE FACTUAL LOOKUP — use resolve_simple_query (NOT resolve_technical_query).\n"
+                    "SECTION/TABLE QUERY — the user wants one grounded fact table.\n"
+                    "Think like a human: find the document, understand its structure, read the right page, extract the table.\n"
                     "\n"
                     "Steps:\n"
-                    f"1. resolve_simple_query(query={prompt_text!r}, product_name=<product/subject name>, "
-                    "   property_key=<short label for what was asked, e.g. 'Max Inlet Pressure'>)\n"
-                    "2. Answer the user in one sentence using the returned 'answer' field.\n"
-                    "3. If the returned 'suggest_refactor' is True, add at the end: "
-                    "   'You've collected several properties for [product] — want me to organize these into topics?'\n"
+                    "1. Call check_canvas() to find an existing concept node to reuse.\n"
+                    "2. Identify the document — use get_active_document_context() or list_documents().\n"
+                    "3. Assess the document:\n"
+                    "   a. Call get_document_page_count() to check document size.\n"
+                    "   b. Short document (≤6 pages): call get_document_full_text(include_pages=[1,2,...all]) "
+                    "      to read the ENTIRE document with page screenshots. Then extract the answer from what you see.\n"
+                    "   c. Longer document: call get_document_tree() to find which section/pages contain "
+                    "      the relevant data (look for table flags, section headings matching the query). "
+                    "      Then call read_document_page() or analyze_pdf_page() on those specific pages.\n"
+                    "4. From the page text and/or screenshots, extract the relevant rows/values.\n"
+                    "   You are looking at the ACTUAL document — trust what you see over vector search results.\n"
+                    f"5. Call resolve_technical_query(query={prompt_text!r}, concept_title=<subject>, "
+                    f"root_title={root_title!r}, prefer_table=True) to create the canvas spec table.\n"
+                    "   If resolve_technical_query misses rows you found by reading, add them manually.\n"
+                    "6. Answer from what you found.\n"
                     "\n"
-                    "Do NOT call check_canvas, resolve_technical_query, or any other tool. "
-                    "resolve_simple_query handles everything: it searches the KB, finds the value, and "
-                    "updates the canvas automatically."
+                    "Rules:\n"
+                    "- Create ONE spec table with the relevant rows — not multiple nodes.\n"
+                    "- Do NOT split this into multiple aspect calls or chart/image nodes.\n"
+                    "- If the user asks for multiple values together, keep them in the same table.\n"
+                    "- Ignore FMU nodes when organizing knowledge. Do NOT connect the new knowledge nodes to any FMU.\n"
+                    "- ALWAYS read the document pages before creating canvas nodes. Vector search alone misses table data."
+                )
+            if _SIMPLE_FACTUAL_RE.search(normalized) and not _is_section_table_query(normalized) and not _query_requests_multiple_property_groups(normalized):
+                return (
+                    "SIMPLE FACTUAL LOOKUP — read the document, find the answer, record it.\n"
+                    "\n"
+                    "Steps:\n"
+                    "1. Identify the document — use get_active_document_context() or list_documents().\n"
+                    "2. Assess the document size with get_document_page_count().\n"
+                    "   - Short doc (≤6 pages): call get_document_full_text(include_pages=[all pages]) "
+                    "     to read the ENTIRE document. Find the answer in the text/screenshots.\n"
+                    "   - Longer doc: call get_document_tree() to find likely sections, then "
+                    "     read_document_page() on the relevant pages.\n"
+                    f"3. Call resolve_technical_query(query={prompt_text!r}, concept_title=<subject>, "
+                    "   root_title=<aspect>, prefer_table=True) to record the answer on canvas.\n"
+                    "4. Answer the user concisely.\n"
+                    "\n"
+                    "Read the document first — vector search misses data in tables. "
+                    "Trust what you see in the document over search results."
                 )
             return (
-                "This is a technical knowledge-base query. Before any text answer:\n"
+                "TECHNICAL QUERY — read the document, then build the canvas.\n"
+                "\n"
+                "Steps:\n"
                 "1. Call check_canvas() to find existing concept node IDs.\n"
-                f"2. Call resolve_technical_query(query={prompt_text!r}, concept_title=<subject>, root_title=<aspect>).\n"
-                "3. If the query spans multiple aspects (e.g. 'overview and specs'), call "
-                "   resolve_technical_query MULTIPLE TIMES with the SAME concept_id, once per aspect.\n"
-                "Use the returned summaries as the basis for the final reply. "
-                "Do not use search_knowledge_base for the final answer unless the user explicitly asks."
+                "2. Identify the document and assess its size with get_document_page_count().\n"
+                "   - Short doc (≤6 pages): call get_document_full_text(include_pages=[all pages]) "
+                "     to read the ENTIRE document with page screenshots.\n"
+                "   - Longer doc: call get_document_tree() to find relevant sections, then "
+                "     read_document_page() on those pages.\n"
+                "3. Based on what you read, call resolve_technical_query() to build canvas nodes.\n"
+                f"   Query: {prompt_text!r}\n"
+                    "4. If the query spans multiple aspects, call resolve_technical_query MULTIPLE TIMES "
+                    "   with the SAME concept_id, once per aspect.\n"
+                    "\n"
+                    "Ignore FMU nodes when building the knowledge graph. Do NOT attach knowledge nodes to FMUs.\n"
+                    "ALWAYS read the document before creating canvas nodes. "
+                    "Vector search alone misses tables, variant-specific data, and document structure."
             )
 
         return _instruction

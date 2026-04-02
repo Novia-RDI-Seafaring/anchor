@@ -393,11 +393,25 @@ export const MainContent: React.FC = () => {
     setState({ ...c, nodes: (c?.nodes ?? []).map((n: any) => n.id === nodeId ? { ...n, color: color || undefined } : n) });
   }, [setState, canvas]);
 
-  const handleAddEdge = useCallback((fromId: string, toId: string, label: string) => {
+  const handleAddEdge = useCallback((fromId: string, toId: string, label: string, sourceHandle?: string | null, targetHandle?: string | null) => {
     const c = canvas as any;
     const rels = c?.relations ?? [];
-    if (rels.some((r: any) => r.from_id === fromId && r.to_id === toId)) return;
-    setState({ ...c, relations: [...rels, { from_id: fromId, to_id: toId, label }] });
+    if (rels.some((r: any) =>
+      r.from_id === fromId &&
+      r.to_id === toId &&
+      (r.source_handle ?? '') === (sourceHandle ?? '') &&
+      (r.target_handle ?? '') === (targetHandle ?? '')
+    )) return;
+    setState({
+      ...c,
+      relations: [...rels, {
+        from_id: fromId,
+        to_id: toId,
+        label,
+        source_handle: sourceHandle ?? '',
+        target_handle: targetHandle ?? '',
+      }],
+    });
   }, [setState, canvas]);
 
   const handleFmuUploaded = useCallback((payload: { filename: string; model_name: string; variables: any[] }, position?: FlowPosition, parentId?: string | null) => {

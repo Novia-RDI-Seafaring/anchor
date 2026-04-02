@@ -20,7 +20,6 @@ RAW_SEARCH_TOOLS: frozenset[str] = frozenset({
 })
 HIGH_LEVEL_TOOLS: frozenset[str] = frozenset({
     "resolve_technical_query",
-    "resolve_simple_query",
     "compare_documents",
     "get_active_document_context",
     "check_canvas",
@@ -34,7 +33,6 @@ _toolset.tool(knowledge_tools.list_documents)
 _toolset.tool(knowledge_tools.get_active_document_context)
 _toolset.tool(knowledge_tools.search_knowledge_base)
 _toolset.tool(knowledge_tools.resolve_technical_query)
-_toolset.tool(knowledge_tools.resolve_simple_query)
 _toolset.tool(knowledge_tools.compare_documents)
 
 # ── Instructions ──────────────────────────────────────────────────────────────
@@ -93,6 +91,23 @@ For COMPREHENSIVE queries ("tell me everything", "all about X", "full overview",
 Simple raw retrieval / debugging request — use search_knowledge_base():
   only when the user explicitly asks to search, inspect chunks, or avoid changing the canvas.
 
+Table/section queries:
+  Queries like "operating data", "technical data", "specifications", or questions that ask
+  for multiple properties at once (e.g. temperature and pressure) require DOCUMENT READING,
+  not just vector search. Tables are poorly captured by embeddings.
+
+  Before creating canvas nodes, ALWAYS read the relevant document pages:
+    - Short docs (≤6 pages): read the entire document with get_document_full_text(include_pages=all)
+    - Longer docs: use get_document_tree() to find the right section, then read those pages
+    - Look at the page screenshots — tables are visual, trust what you see
+
+  Then create:
+    - one concept node for the product
+    - one topic bucket such as Operating Data or Technical Data
+    - one spec table containing ALL relevant rows you found by reading
+  Do NOT split this intent into multiple aspect calls or chart/image nodes unless the user asks.
+  Do NOT rely on resolve_technical_query alone for table data — it uses cosine search.
+
 Explicit canvas request ("add this to canvas", "turn this into a table on canvas"):
   prefer resolve_technical_query() / compare_documents() first.
   Use low-level canvas tools only to restructure or edit existing nodes.
@@ -104,9 +119,22 @@ High-level tools (prefer these):
   resolve_technical_query(query, concept_title, concept_id, root_title, prefer_table, top_k)
       Search KB, populate canvas with concept/topic/fact-or-spec nodes, return grounded summary.
       concept_title = the subject (e.g. "A2UI"). root_title = the aspect (e.g. "Benefits").
+      root_title should be a reusable aspect bucket, not the literal user question.
+      Prefer: Overview, Technical Data, Operating Limits, Dimensions, Performance, Connections,
+      Materials, Installation, or Motor.
       Returns concept_id — pass it to subsequent calls to reuse the same concept node.
       Creates up to 4 fact nodes, all evidence-linked.
       This is the default tool for technical KB questions.
+
+      Organization rule:
+        Avoid messy one-child chains. If a narrow answer would create a topic that only wraps
+        one fact/spec and duplicates the query wording, reuse an existing broader aspect topic
+        instead of creating a new skinny topic.
+
+      For section/table intents:
+        When the user's intent is "show me the operating data / technical data / specs" or
+        a small bundle of related values, prefer ONE spec node with multiple rows. Do not
+        decompose it into several separate facts or subtopics unless the user asked for analysis.
 
       Multi-variant data (e.g. motor options, model variants):
         When the source lists multiple distinct variants (IEC80/IEC90, LKH-5/LKH-10, etc.),
@@ -114,11 +142,6 @@ High-level tools (prefer these):
         variant-specific root_title (e.g. "Motor — IEC80", "Motor — IEC90").
         Each call produces a separate spec node, making variants easy to compare.
 
-  resolve_simple_query(query, product_name, property_key, top_k)
-      For single-value factual lookups only (one specific measurement/rating/value).
-      Finds or updates ONE accumulating spec node per product — no topic hierarchy.
-      Returns suggest_refactor=True after 5 properties; prompt the user to reorganize then.
-      Do NOT use for broad/multi-aspect questions.
   compare_documents(query, top_k)
       Compare two documents side by side, build comparison table on canvas.
 
@@ -134,6 +157,11 @@ Workspace awareness:
   to their current workspace. When workspace_doc_ids is non-empty, restrict all searches to
   those documents only. If you find a relevant document not in the workspace, suggest the user
   add it via the library drawer (say "I found [doc], would you like to add it to your workspace?").
+
+FMU separation:
+  FMU nodes are simulation objects, not knowledge-graph parents.
+  When answering document or KB questions, do NOT connect concept/topic/fact/spec nodes to FMU nodes.
+  Only create FMU→plot relations for simulation results, or user-requested manual parameter wiring.
 """).strip()
 
 

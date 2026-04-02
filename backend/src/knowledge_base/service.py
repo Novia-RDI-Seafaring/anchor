@@ -14,6 +14,7 @@ from ..core.config import get_settings
 from ..core.provenance import build_retrieved_chunk, create_retrieval_id, get_current_trace_id
 from ..api.file_service import get_file_service
 from ..kb_engine.rag_engine import get_rag_engine
+from ..kb_engine.docling_cache import remove_docling_json, clear_docling_cache
 from .vector_store import get_vector_store
 
 
@@ -212,6 +213,7 @@ class DocumentService:
             file_path = Path(doc["file_path"])
             if file_path.exists():
                 file_path.unlink()
+            remove_docling_json(document_id, str(doc.get("filename") or ""))
         
         return await vector_store.delete_document(document_id)
     
@@ -220,6 +222,7 @@ class DocumentService:
         vector_store = await get_vector_store()
         db_result = await vector_store.reset()
         file_result = get_file_service().reset_storage()
+        clear_docling_cache()
         return {**db_result, **file_result}
     
     async def reingest_all(self) -> Dict[str, Any]:

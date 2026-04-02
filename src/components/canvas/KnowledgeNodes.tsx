@@ -34,6 +34,7 @@ import type {
   FmuVariableData,
   NodeStatus,
   SpecProperty,
+  ParameterSection,
 } from "./canvas-model";
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8001";
@@ -92,6 +93,8 @@ export interface EvidenceRelation {
   from_id: string;
   to_id: string;  // __doc_{document_id}
   label: string;
+  source_handle?: string;
+  target_handle?: string;
   document_id: string;
   page: number;
   bbox: number[];
@@ -110,6 +113,7 @@ export interface FactNodeData {
   node: CanvasNodeData;
   onOpenPDF?: (filename: string, page: number, highlights: PDFHighlight[]) => void;
   onDelete?: (id: string) => void;
+  onPreviewSource?: (filename: string | null, page?: number | null) => void;
   evidenceFilename?: string;
   evidencePage?: number;
   evidenceHighlights?: PDFHighlight[];
@@ -126,6 +130,7 @@ export interface SpecNodeData {
   node: CanvasNodeData;
   onOpenPDF?: (filename: string, page: number, highlights: PDFHighlight[]) => void;
   onDelete?: (id: string) => void;
+  onPreviewSource?: (filename: string | null, page?: number | null) => void;
   evidenceFilename?: string;
   evidencePage?: number;
   evidenceHighlights?: PDFHighlight[];
@@ -422,7 +427,7 @@ export function TopicNode({ data }: NodeProps) {
 // FACT NODE — indigo left-border, full text
 // ─────────────────────────────────────────────
 export function FactNode({ data }: NodeProps) {
-  const { node, onDelete, onOpenPDF, evidenceFilename, evidencePage, evidenceHighlights } = data as unknown as FactNodeData;
+  const { node, onDelete, onOpenPDF, onPreviewSource, evidenceFilename, evidencePage, evidenceHighlights } = data as unknown as FactNodeData;
   const hasEvidence = evidenceFilename && evidencePage !== undefined;
 
   return (
@@ -458,6 +463,8 @@ export function FactNode({ data }: NodeProps) {
           <div className="absolute bottom-3 left-4">
             <button
               onClick={() => onOpenPDF?.(evidenceFilename!, evidencePage!, evidenceHighlights ?? [])}
+              onMouseEnter={() => onPreviewSource?.(evidenceFilename!, evidencePage!)}
+              onMouseLeave={() => onPreviewSource?.(null, null)}
               className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-300 hover:text-amber-700 dark:hover:text-amber-200 transition-colors"
               title={`Open source — page ${evidencePage}`}
             >
@@ -476,8 +483,10 @@ export function FactNode({ data }: NodeProps) {
 // SPEC NODE — violet, two-column property table
 // ─────────────────────────────────────────────
 export function SpecNode({ data }: NodeProps) {
-  const { node, onDelete, onOpenPDF, evidenceFilename, evidencePage, evidenceHighlights } = data as unknown as SpecNodeData;
+  const { node, onDelete, onOpenPDF, onPreviewSource, evidenceFilename, evidencePage, evidenceHighlights } = data as unknown as SpecNodeData;
   const hasEvidence = evidenceFilename && evidencePage !== undefined;
+  const sections: ParameterSection[] = (node as any).parameter_sections ?? [];
+  const useSections = sections.length > 0;
   const props = node.properties ?? [];
   const isComparison = props.some((property) => property.left_value || property.right_value || property.comparison_status);
   const comparisonLeftLabel = props.find((property) => property.left_label)?.left_label || "Document A";
@@ -487,6 +496,15 @@ export function SpecNode({ data }: NodeProps) {
     if (status === "missing") return "text-amber-700 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/40";
     return "text-rose-700 bg-rose-50 dark:text-rose-300 dark:bg-rose-950/40";
   };
+  const propertyHighlights = (property: SpecProperty): PDFHighlight[] => {
+    if (property.ref_highlights && property.ref_highlights.length > 0) return property.ref_highlights;
+    if (property.ref_page) return [{ page: property.ref_page, bbox: property.ref_bbox ?? [] }];
+    return [];
+  };
+  const rowInputHandleId = (sectionIndex: number, rowIndex: number) => `spec-row-in-${sectionIndex}-${rowIndex}`;
+  const rowOutputHandleId = (sectionIndex: number, rowIndex: number) => `spec-row-out-${sectionIndex}-${rowIndex}`;
+  const propertyInputHandleId = (propertyIndex: number) => `spec-prop-in-${propertyIndex}`;
+  const propertyOutputHandleId = (propertyIndex: number) => `spec-prop-out-${propertyIndex}`;
 
   return (
     <>
@@ -494,17 +512,19 @@ export function SpecNode({ data }: NodeProps) {
       <Handle type="target" position={Position.Top} className="!bg-violet-400 !border-violet-600" />
       <div
         className="rounded-lg border border-violet-200 dark:border-violet-700 bg-white dark:bg-neutral-900 shadow-sm overflow-hidden"
-        style={{ borderLeft: "4px solid rgb(139 92 246)", minWidth: 180, maxWidth: isComparison ? 480 : 300 }}
+        style={{ borderLeft: "4px solid rgb(139 92 246)", minWidth: 240, maxWidth: useSections ? 600 : isComparison ? 520 : 400 }}
       >
         {/* Header */}
         <div className="flex items-center gap-1.5 px-3 py-2 bg-violet-50 dark:bg-violet-950/40 border-b border-violet-100 dark:border-violet-800">
           <Table2 size={12} className="text-violet-500 shrink-0" />
-          <span className="flex-1 text-xs font-semibold text-violet-800 dark:text-violet-200 truncate">
+          <span className="flex-1 text-xs font-semibold text-violet-800 dark:text-violet-200">
             {node.spec_title || "Specifications"}
           </span>
           {hasEvidence && (
             <button
               onClick={() => onOpenPDF?.(evidenceFilename!, evidencePage!, evidenceHighlights ?? [])}
+              onMouseEnter={() => onPreviewSource?.(evidenceFilename!, evidencePage!)}
+              onMouseLeave={() => onPreviewSource?.(null, null)}
               className="flex items-center gap-0.5 text-[10px] text-violet-500 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 transition-colors mr-1"
               title={`Open source — page ${evidencePage}`}
             >
@@ -514,8 +534,71 @@ export function SpecNode({ data }: NodeProps) {
           )}
           <StatusBadge status={node.status} />
         </div>
-        {/* Property rows */}
-        {props.length > 0 ? (
+        {/* Parameter sections (new structured format) */}
+        {useSections ? (
+          <table className="w-full text-[11px] border-collapse">
+            <tbody>
+              {sections.map((section, si) => (
+                <React.Fragment key={si}>
+                  <tr className="bg-violet-100/70 dark:bg-violet-900/30">
+                    <td colSpan={4} className="px-2.5 py-1 text-[10px] font-bold text-violet-700 dark:text-violet-300 uppercase tracking-wide">
+                      {section.name}
+                    </td>
+                  </tr>
+                  {section.rows.map((row, ri) => (
+                    <tr key={ri} className={ri % 2 === 0 ? "bg-white dark:bg-neutral-900" : "bg-violet-50/50 dark:bg-violet-950/20"}>
+                      <td className="relative px-2.5 py-1 text-neutral-500 dark:text-neutral-400 font-medium whitespace-nowrap border-r border-violet-100 dark:border-violet-800/50">
+                        {row.source?.filename && row.source?.page ? (
+                          <Handle
+                            type="target"
+                            id={rowInputHandleId(si, ri)}
+                            position={Position.Left}
+                            className="!h-2.5 !w-2.5 !border-violet-700 !bg-white dark:!bg-violet-950"
+                            style={{ left: -8, top: "50%", transform: "translateY(-50%)" }}
+                          />
+                        ) : null}
+                        {row.parameter}
+                      </td>
+                      <td className="px-2.5 py-1 text-neutral-800 dark:text-neutral-200 font-mono whitespace-nowrap text-right">
+                        {row.value}
+                      </td>
+                      <td className="px-1.5 py-1 text-neutral-400 dark:text-neutral-500 text-[10px] whitespace-nowrap">
+                        {row.unit}
+                      </td>
+                      <td className="relative px-1.5 py-1 text-right">
+                        {row.source?.filename && row.source?.page ? (
+                          <button
+                            onClick={() => {
+                              const highlights: PDFHighlight[] = row.source!.bbox?.length === 4
+                                ? [{ page: row.source!.page!, bbox: row.source!.bbox! }]
+                                : [];
+                              onOpenPDF?.(row.source!.filename!, row.source!.page!, highlights);
+                            }}
+                            onMouseEnter={() => onPreviewSource?.(row.source!.filename!, row.source!.page!)}
+                            onMouseLeave={() => onPreviewSource?.(null, null)}
+                            className="inline-flex items-center gap-0.5 rounded border border-violet-200 px-1 py-0.5 text-[9px] font-medium text-violet-500 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-400 dark:hover:bg-violet-950/40"
+                            title={`Page ${row.source.page}`}
+                          >
+                            <FileText size={8} className="shrink-0" />
+                            <span>p.{row.source.page}</span>
+                          </button>
+                        ) : null}
+                        <Handle
+                          type="source"
+                          id={rowOutputHandleId(si, ri)}
+                          position={Position.Right}
+                          className="!h-2.5 !w-2.5 !border-violet-700 !bg-violet-500"
+                          style={{ right: -8, top: "50%", transform: "translateY(-50%)" }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        ) : props.length > 0 ? (
+          /* Legacy property rows */
           <table className="w-full text-[11px] border-collapse">
             <tbody>
               {isComparison && (
@@ -532,37 +615,94 @@ export function SpecNode({ data }: NodeProps) {
                   <td className="px-2.5 py-1 text-neutral-500 dark:text-neutral-400 font-semibold">
                     Status
                   </td>
+                  <td className="px-2.5 py-1 text-neutral-500 dark:text-neutral-400 font-semibold">
+                    Ref
+                  </td>
                 </tr>
               )}
-              {props.map((p, i) => (
-                <tr
-                  key={i}
-                  className={i % 2 === 0 ? "bg-white dark:bg-neutral-900" : "bg-violet-50/50 dark:bg-violet-950/20"}
-                >
-                  <td className="px-2.5 py-1 text-neutral-500 dark:text-neutral-400 font-medium whitespace-nowrap border-r border-violet-100 dark:border-violet-800/50 max-w-[120px] truncate">
-                    {p.key}
-                  </td>
-                  {isComparison ? (
-                    <>
-                      <td className="px-2.5 py-1 text-neutral-800 dark:text-neutral-200 font-mono border-r border-violet-100 dark:border-violet-800/50">
-                        {p.left_value || "—"}
+              {props.map((p, i) => {
+                const refButton = p.ref_filename && p.ref_page ? (
+                  <button
+                    onClick={() => onOpenPDF?.(p.ref_filename!, p.ref_page!, propertyHighlights(p))}
+                    onMouseEnter={() => onPreviewSource?.(p.ref_filename!, p.ref_page!)}
+                    onMouseLeave={() => onPreviewSource?.(null, null)}
+                    className="inline-flex items-center gap-1 rounded-md border border-violet-200 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-950/40"
+                    title={`Open source — page ${p.ref_page}`}
+                  >
+                    <FileText size={10} className="shrink-0" />
+                    <span>ref</span>
+                  </button>
+                ) : null;
+                const colSpan = isComparison ? 5 : 3;
+                const prevGroup = i > 0 ? props[i - 1]?.group : undefined;
+                const showGroup = p.group && p.group !== prevGroup;
+                return (
+                  <React.Fragment key={i}>
+                    {showGroup && (
+                      <tr className="bg-violet-100/70 dark:bg-violet-900/30">
+                        <td colSpan={colSpan} className="px-2.5 py-1 text-[10px] font-bold text-violet-700 dark:text-violet-300 uppercase tracking-wide">
+                          {p.group}
+                        </td>
+                      </tr>
+                    )}
+                    <tr className={i % 2 === 0 ? "bg-white dark:bg-neutral-900" : "bg-violet-50/50 dark:bg-violet-950/20"}>
+                      <td className="relative px-2.5 py-1 text-neutral-500 dark:text-neutral-400 font-medium whitespace-nowrap border-r border-violet-100 dark:border-violet-800/50">
+                        {p.ref_filename && p.ref_page ? (
+                          <Handle
+                            type="target"
+                            id={propertyInputHandleId(i)}
+                            position={Position.Left}
+                            className="!h-2.5 !w-2.5 !border-violet-700 !bg-white dark:!bg-violet-950"
+                            style={{ left: -8, top: "50%", transform: "translateY(-50%)" }}
+                          />
+                        ) : null}
+                        {p.key}
                       </td>
-                      <td className="px-2.5 py-1 text-neutral-800 dark:text-neutral-200 font-mono border-r border-violet-100 dark:border-violet-800/50">
-                        {p.right_value || "—"}
-                      </td>
-                      <td className="px-2.5 py-1">
-                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${comparisonTone(p.comparison_status)}`}>
-                          {p.comparison_status || "different"}
-                        </span>
-                      </td>
-                    </>
-                  ) : (
-                    <td className="px-2.5 py-1 text-neutral-800 dark:text-neutral-200 font-mono">
-                      {p.value}{p.unit ? <span className="text-neutral-400 ml-1">{p.unit}</span> : null}
-                    </td>
-                  )}
-                </tr>
-              ))}
+                      {isComparison ? (
+                        <>
+                          <td className="px-2.5 py-1 text-neutral-800 dark:text-neutral-200 font-mono whitespace-nowrap border-r border-violet-100 dark:border-violet-800/50">
+                            {p.left_value || "—"}
+                          </td>
+                          <td className="px-2.5 py-1 text-neutral-800 dark:text-neutral-200 font-mono whitespace-nowrap border-r border-violet-100 dark:border-violet-800/50">
+                            {p.right_value || "—"}
+                          </td>
+                          <td className="px-2.5 py-1">
+                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${comparisonTone(p.comparison_status)}`}>
+                              {p.comparison_status || "different"}
+                            </span>
+                          </td>
+                          <td className="relative px-2.5 py-1 text-right">
+                            {refButton}
+                            <Handle
+                              type="source"
+                              id={propertyOutputHandleId(i)}
+                              position={Position.Right}
+                              className="!h-2.5 !w-2.5 !border-violet-700 !bg-violet-500"
+                              style={{ right: -8, top: "50%", transform: "translateY(-50%)" }}
+                            />
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-2.5 py-1 text-neutral-800 dark:text-neutral-200 font-mono whitespace-nowrap">
+                            {p.value}{p.unit ? <span className="text-neutral-400 dark:text-neutral-500 ml-1.5 font-sans text-[10px]">{p.unit}</span> : null}
+                          </td>
+                          <td className="relative px-2.5 py-1 text-right">
+                            {refButton}
+                            <Handle
+                              type="source"
+                              id={propertyOutputHandleId(i)}
+                              position={Position.Right}
+                              className="!h-2.5 !w-2.5 !border-violet-700 !bg-violet-500"
+                              style={{ right: -8, top: "50%", transform: "translateY(-50%)" }}
+                            />
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         ) : node.status === "pending" || node.status === "searching" ? (
@@ -690,7 +830,14 @@ export function FmuNode({ data }: NodeProps) {
           <div className="px-3 py-1.5 border-b border-teal-100 dark:border-teal-900">
             <p className="text-[9px] font-semibold text-teal-500 uppercase tracking-wide mb-1">Parameters</p>
             {params.map((v: FmuVariableData) => (
-              <div key={v.name} className="flex items-center gap-2 py-0.5">
+              <div key={v.name} className="relative flex items-center gap-2 py-0.5">
+                <Handle
+                  type="target"
+                  id={`param-in-${v.name}`}
+                  position={Position.Left}
+                  className="!bg-teal-400 !w-2.5 !h-2.5 !border-teal-700"
+                  style={{ left: -8, top: "50%", transform: "translateY(-50%)" }}
+                />
                 <span className="font-mono text-[10px] text-teal-700 dark:text-teal-300 w-20 truncate">{v.name}</span>
                 <input
                   type="text"
@@ -812,6 +959,7 @@ export interface DocumentNodeData extends Record<string, unknown> {
   item?: CanvasNodeData;
   doc?: KBDocument;
   isActive: boolean;
+  previewPage?: number | null;
   onActivate: (id: string) => void;
   onOpenPDF: (filename: string, page: number, highlights: PDFHighlight[]) => void;
   onRemoveFromCanvas?: (docId: string) => void;
@@ -819,13 +967,16 @@ export interface DocumentNodeData extends Record<string, unknown> {
 }
 
 export function DocumentNode({ data }: NodeProps) {
-  const { item, doc, isActive, onActivate, onOpenPDF, onRemoveFromCanvas, evidenceCount } = data as DocumentNodeData;
+  const { item, doc, isActive, previewPage, onActivate, onOpenPDF, onRemoveFromCanvas, evidenceCount } = data as DocumentNodeData;
   const resolvedDoc = doc ?? item?.metadata?.document;
   if (!resolvedDoc) return null;
   const docData = resolvedDoc;
   const isProcessing = docData.status === "processing" || docData.status === "pending";
   const isError = docData.status === "error" || docData.status === "failed";
   const stem = docData.filename.replace(/\.[^.]+$/, "");
+  const coverUrl = buildPageImageUrl(docData.filename, 1);
+  const hoveredCoverUrl = previewPage && previewPage > 1 ? buildPageImageUrl(docData.filename, previewPage) : null;
+  const isPreviewing = !!hoveredCoverUrl;
 
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -845,6 +996,13 @@ export function DocumentNode({ data }: NodeProps) {
         className="!opacity-0 !pointer-events-none"
         style={{ top: 0 }}
       />
+      <Handle
+        type="source"
+        id="doc-evidence-out"
+        position={Position.Right}
+        className={`!h-2.5 !w-2.5 !border-indigo-700 ${isPreviewing ? "!bg-indigo-500" : "!bg-white dark:!bg-neutral-900"}`}
+        style={{ right: -8, top: "50%", transform: "translateY(-50%)" }}
+      />
       <button
         onClick={() => {
           onActivate(isActive ? "" : docData.document_id);
@@ -856,48 +1014,107 @@ export function DocumentNode({ data }: NodeProps) {
           setCtxMenu({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY });
         }}
         title={docData.filename}
-        className={`group flex flex-col gap-1 px-3 py-2.5 rounded-xl border-2 transition-all shadow-sm text-left cursor-pointer w-full ${
+        className={`group relative flex flex-col overflow-hidden rounded-[20px] border transition-all shadow-[0_14px_30px_rgba(15,23,42,0.16)] text-left cursor-pointer w-full ${
           isActive
             ? "border-indigo-400 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-950/50"
-            : "border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-indigo-300 dark:hover:border-indigo-600 hover:bg-indigo-50/40 dark:hover:bg-indigo-950/20"
+            : "border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-indigo-300 dark:hover:border-indigo-600"
         }`}
-        style={{ minWidth: 140, maxWidth: 160 }}
+        style={{
+          width: 176,
+          boxShadow: isPreviewing
+            ? "0 18px 42px rgba(99, 102, 241, 0.24), 0 0 0 2px rgba(99, 102, 241, 0.16)"
+            : undefined,
+          transform: isPreviewing ? "translateY(-2px)" : undefined,
+        }}
       >
-        <div className="flex items-center gap-2">
-          <div className={`h-7 w-7 rounded-lg flex items-center justify-center shrink-0 ${
+        <div className="relative px-3 pt-3">
+          <div className={`relative overflow-hidden rounded-[14px] border shadow-sm ${
             isActive
-              ? "bg-indigo-100 dark:bg-indigo-900"
-              : "bg-neutral-100 dark:bg-neutral-800 group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900/50"
-          }`}>
-            {isProcessing ? (
-              <Loader2 size={14} className="animate-spin text-amber-500" />
-            ) : isError ? (
-              <XCircle size={14} className="text-red-500" />
-            ) : (
-              <FileText size={14} className={isActive ? "text-indigo-600 dark:text-indigo-400" : "text-neutral-500 dark:text-neutral-400"} />
+              ? "border-indigo-200 dark:border-indigo-700"
+              : "border-neutral-200 dark:border-neutral-700"
+          }`} style={{ aspectRatio: "0.707 / 1" }}>
+            <div className={`absolute inset-0 z-10 transition-all duration-200 ${
+              isPreviewing
+                ? "bg-gradient-to-b from-indigo-400/10 via-transparent to-indigo-950/16"
+                : "bg-gradient-to-b from-transparent via-transparent to-neutral-950/10"
+            }`} />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={coverUrl}
+              alt={`${docData.filename} cover`}
+              className={`absolute inset-0 block h-full w-full object-cover object-top bg-neutral-100 dark:bg-neutral-800 transition-all duration-300 ${
+                isPreviewing ? "scale-[0.985] opacity-0" : "scale-100 opacity-100"
+              }`}
+              loading="lazy"
+            />
+            {hoveredCoverUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={hoveredCoverUrl}
+                alt={`${docData.filename} preview page ${previewPage}`}
+                className={`absolute inset-0 block h-full w-full object-cover object-top bg-neutral-100 dark:bg-neutral-800 transition-all duration-300 ${
+                  isPreviewing ? "scale-100 opacity-100" : "scale-[1.015] opacity-0"
+                }`}
+                loading="lazy"
+              />
+            ) : null}
+            <div className="pointer-events-none absolute right-2 top-2 z-20 flex items-center gap-1">
+              {isPreviewing ? (
+                <>
+                  <span className="rounded-full bg-indigo-600/92 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white shadow-sm">
+                    preview
+                  </span>
+                  <span className="rounded-full bg-indigo-500/92 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white shadow-sm">
+                    p.{previewPage}
+                  </span>
+                </>
+              ) : null}
+              <span className="rounded-full bg-white/92 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-neutral-700 shadow-sm dark:bg-neutral-900/92 dark:text-neutral-200">
+                PDF
+              </span>
+              {isProcessing ? (
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/92 shadow-sm dark:bg-neutral-900/92">
+                  <Loader2 size={11} className="animate-spin text-amber-500" />
+                </span>
+              ) : isError ? (
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/92 shadow-sm dark:bg-neutral-900/92">
+                  <XCircle size={11} className="text-red-500" />
+                </span>
+              ) : (
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/92 shadow-sm dark:bg-neutral-900/92">
+                  <FileText size={11} className={isActive ? "text-indigo-600 dark:text-indigo-400" : "text-neutral-500 dark:text-neutral-300"} />
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 px-3 pb-3 pt-2">
+          <div className="min-w-0">
+            <div className={`text-[11px] font-semibold leading-tight truncate ${
+              isActive ? "text-indigo-700 dark:text-indigo-300" : "text-neutral-800 dark:text-neutral-200"
+            }`}>
+              {stem}
+            </div>
+            <div className="mt-0.5 text-[10px] uppercase tracking-[0.18em] text-neutral-400 dark:text-neutral-500">
+              Product leaflet
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+              isProcessing
+                ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400"
+                : isError
+                ? "bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400"
+                : "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400"
+            }`}>
+              {isProcessing ? "processing" : isError ? "error" : `${docData.node_count} chunks`}
+            </span>
+            {evidenceCount > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300">
+                {evidenceCount} ref{evidenceCount !== 1 ? "s" : ""}
+              </span>
             )}
           </div>
-          <span className={`text-[11px] font-medium truncate leading-tight ${
-            isActive ? "text-indigo-700 dark:text-indigo-300" : "text-neutral-700 dark:text-neutral-300"
-          }`}>
-            {stem}
-          </span>
-        </div>
-        <div className="flex items-center gap-1.5 pl-0.5">
-          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-            isProcessing
-              ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400"
-              : isError
-              ? "bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400"
-              : "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400"
-          }`}>
-            {isProcessing ? "processing" : isError ? "error" : `${docData.node_count} chunks`}
-          </span>
-          {evidenceCount > 0 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300">
-              {evidenceCount} ref{evidenceCount !== 1 ? "s" : ""}
-            </span>
-          )}
         </div>
       </button>
       {ctxMenu && (

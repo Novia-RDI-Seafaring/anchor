@@ -16,14 +16,42 @@ class SourceHighlight(BaseModel):
 
 
 class SpecProperty(BaseModel):
+    """Legacy flat property — kept for backward compat."""
     key: str
     value: str
     unit: str = ""
+    group: str = ""
     left_label: str = ""
     left_value: str = ""
     right_label: str = ""
     right_value: str = ""
     comparison_status: str = ""
+    ref_filename: str = ""
+    ref_page: int = 0
+    ref_bbox: list[float] = Field(default_factory=list)
+    ref_highlights: list[SourceHighlight] = Field(default_factory=list)
+
+
+class ParameterSource(BaseModel):
+    """Source reference for a single parameter value."""
+    doc_id: str = ""
+    filename: str = ""
+    page: int = 0
+    bbox: list[float] = Field(default_factory=list)
+
+
+class ParameterRow(BaseModel):
+    """One row in a parameter table."""
+    parameter: str       # e.g. "LKH-5", "Temperature range"
+    value: str           # e.g. "600", "-10 to +140"
+    unit: str = ""       # e.g. "kPa", "°C"
+    source: ParameterSource = Field(default_factory=ParameterSource)
+
+
+class ParameterSection(BaseModel):
+    """A named group of parameter rows."""
+    name: str            # e.g. "Max inlet pressure", "Temperature"
+    rows: list[ParameterRow] = Field(default_factory=list)
 
 
 class FmuVariable(BaseModel):
@@ -47,7 +75,8 @@ class CanvasNode(BaseModel):
     text: str = ""
     # spec fields
     spec_title: str = ""
-    properties: list[SpecProperty] = Field(default_factory=list)
+    properties: list[SpecProperty] = Field(default_factory=list)  # legacy flat properties
+    parameter_sections: list[ParameterSection] = Field(default_factory=list)  # new structured sections
     # deprecated evidence fields (kept for backward compat loading old states)
     filename: str = ""
     page: int = 0
@@ -87,6 +116,8 @@ class Relation(BaseModel):
     from_id: str
     to_id: str
     label: str = ""
+    source_handle: str = ""
+    target_handle: str = ""
     # Evidence metadata — populated when this edge connects a fact/spec to a document node (__doc_{id})
     document_id: str = ""
     page: int = 0
@@ -102,4 +133,4 @@ class Canvas(BaseModel):
     workspace_doc_ids: list[str] = Field(default_factory=list)
 
 
-__all__ = ["Canvas", "CanvasNode", "Relation", "SourceHighlight", "SpecProperty", "NodeStatus", "FmuVariable"]
+__all__ = ["Canvas", "CanvasNode", "Relation", "SourceHighlight", "SpecProperty", "ParameterSource", "ParameterRow", "ParameterSection", "NodeStatus", "FmuVariable"]

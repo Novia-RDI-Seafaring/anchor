@@ -8,6 +8,7 @@ from pathlib import Path
 
 import uuid
 import re
+import json
 from pathlib import Path
 from typing import Any, List, Sequence
 
@@ -18,6 +19,7 @@ from llama_index.readers.docling import DoclingReader
 
 from ketju.core.instrumentation import add_span_event
 from ketju.rag.llama_index.variants.simple import LlamaIndexRag
+from .docling_cache import register_docling_json
 
 
 def gen_id(doc: DLDocument, file_path: str | Path) -> str:
@@ -85,6 +87,21 @@ class IngestionHandler(DoclingFullCtxIngestionHandler):
             documents[0].metadata["filename"] = file.name
             if document_id:
                 documents[0].metadata["document_id"] = document_id
+
+            if document_id:
+                try:
+                    register_docling_json(document_id, file.name, json.loads(documents[0].text))
+                    add_span_event("docling.cache_saved", attributes={"document_id": document_id, "filename": file.name})
+                except Exception:
+                    pass
+
+            # Save the full docling JSON alongside the PDF for direct page-level access
+            try:
+                docling_json_path = file.with_suffix(file.suffix + ".docling.json")
+                docling_json_path.write_text(documents[0].text, encoding="utf-8")
+                add_span_event("docling.json_saved", attributes={"path": str(docling_json_path)})
+            except Exception:
+                pass  # non-critical — agent falls back to PyMuPDF text
 
         add_span_event("docling.loaded", attributes={"file": str(file)})
         pipeline = IngestionPipeline(
