@@ -1,0 +1,394 @@
+{
+  "page": 2,
+  "regions": [
+    {
+      "id": "r1",
+      "page": 2,
+      "bbox": [
+        55.3424072265625,
+        774.8610005078125,
+        552.9893798828125,
+        687.7207336425781
+      ],
+      "kind": "spec_block",
+      "title": "Technical data: materials",
+      "description": "Technical data section header with a materials specification table listing wetted parts, elastomers, and seal face materials.",
+      "markdown": null,
+      "data": null,
+      "tags": [
+        "materials"
+      ],
+      "entities": [],
+      "crops": {
+        "png": "2/r1.png",
+        "svg": null,
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 2,
+          "bbox": [
+            55.3424072265625,
+            774.8610005078125,
+            552.9893798828125,
+            687.7207336425781
+          ],
+          "item_indices": [
+            20,
+            21
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r2",
+      "page": 2,
+      "bbox": [
+        56.693,
+        670.8430005078125,
+        546.98,
+        642.1180005078126
+      ],
+      "kind": "spec_block",
+      "title": "Motor",
+      "description": "Motor subsection containing a descriptive paragraph with IEC motor standard, pole counts, speeds, IP rating, and insulation class.",
+      "markdown": null,
+      "data": null,
+      "tags": [],
+      "entities": [],
+      "crops": {
+        "png": "2/r2.png",
+        "svg": null,
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 2,
+          "bbox": [
+            56.693,
+            670.8430005078125,
+            546.98,
+            642.1180005078126
+          ],
+          "item_indices": [
+            22,
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r3",
+      "page": 2,
+      "bbox": [
+        55.55853271484375,
+        623.9578552246094,
+        552.6896362304688,
+        592.2099914550781
+      ],
+      "kind": "table",
+      "title": "Motor sizes",
+      "description": "Table listing motor size ranges for 50 Hz and 60 Hz.",
+      "markdown": null,
+      "data": null,
+      "tags": [],
+      "entities": [],
+      "crops": {
+        "png": "2/r3.png",
+        "svg": null,
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 2,
+          "bbox": [
+            55.55853271484375,
+            623.9578552246094,
+            552.6896362304688,
+            592.2099914550781
+          ],
+          "item_indices": [
+            24
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r4",
+      "page": 2,
+      "bbox": [
+        55.545677185058594,
+        575.7942199707031,
+        552.8178100585938,
+        532.9090270996094
+      ],
+      "kind": "table",
+      "title": "Min/max motor speed",
+      "description": "Table showing minimum and maximum motor speeds for different pole and power ranges.",
+      "markdown": null,
+      "data": null,
+      "tags": [],
+      "entities": [],
+      "crops": {
+        "png": "2/r4.png",
+        "svg": null,
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 2,
+          "bbox": [
+            55.545677185058594,
+            575.7942199707031,
+            552.8178100585938,
+            532.9090270996094
+          ],
+          "item_indices": [
+            25
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r5",
+      "page": 2,
+      "bbox": [
+        56.693,
+        516.0700005078126,
+        493.423,
+        497.34500050781253
+      ],
+      "kind": "spec_block",
+      "title": "Warranty",
+      "description": "Warranty subsection describing the extended 3-year warranty for LKH pumps and its conditions.",
+      "markdown": null,
+      "data": null,
+      "tags": [
+        "warranty"
+      ],
+      "entities": [
+        "LKH"
+      ],
+      "crops": {
+        "png": "2/r5.png",
+        "svg": null,
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 2,
+          "bbox": [
+            56.693,
+            516.0700005078126,
+            493.423,
+            497.34500050781253
+          ],
+          "item_indices": [
+            26,
+            27
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r6",
+      "page": 2,
+      "bbox": [
+        55.37226867675781,
+        477.0710005078125,
+        552.8954467773438,
+        410.9588928222656
+      ],
+      "kind": "spec_block",
+      "title": "Operating data: max inlet pressure",
+      "description": "Operating data section header with a table of maximum inlet pressure values for several LKH pump models.",
+      "markdown": null,
+      "data": null,
+      "tags": [],
+      "entities": [
+        "LKH-5",
+        "LKH-10",
+        "LKH-70",
+        "LKH-85",
+        "LKH-90"
+      ],
+      "crops": {
+        "png": "2/r6.png",
+        "svg": null,
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 2,
+          "bbox": [
+            55.37226867675781,
+            477.0710005078125,
+            552.8954467773438,
+            410.9588928222656
+          ],
+          "item_indices": [
+            28,
+            29
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r7",
+      "page": 2,
+      "bbox": [
+        55.6194953918457,
+        394.6553649902344,
+        552.8693237304688,
+        352.9180603027344
+      ],
+      "kind": "table",
+      "title": "Temperature",
+      "description": "Table listing temperature range, flush media limit, and flush housing sterilization limit.",
+      "markdown": null,
+      "data": null,
+      "tags": [],
+      "entities": [],
+      "crops": {
+        "png": "2/r7.png",
+        "svg": null,
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 2,
+          "bbox": [
+            55.6194953918457,
+            394.6553649902344,
+            552.8693237304688,
+            352.9180603027344
+          ],
+          "item_indices": [
+            30
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r8",
+      "page": 2,
+      "bbox": [
+        55.443626403808594,
+        336.0108642578125,
+        552.8471069335938,
+        303.54833984375
+      ],
+      "kind": "table",
+      "title": "Flushed shaft seal",
+      "description": "Table giving water pressure inlet and water consumption values for the flushed shaft seal.",
+      "markdown": null,
+      "data": null,
+      "tags": [],
+      "entities": [],
+      "crops": {
+        "png": "2/r8.png",
+        "svg": null,
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 2,
+          "bbox": [
+            55.443626403808594,
+            336.0108642578125,
+            552.8471069335938,
+            303.54833984375
+          ],
+          "item_indices": [
+            31
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r9",
+      "page": 2,
+      "bbox": [
+        55.29119873046875,
+        287.7576904296875,
+        552.9518432617188,
+        245.14544677734375
+      ],
+      "kind": "table",
+      "title": "Double mechanical shaft seal",
+      "description": "Table listing inlet water pressure and water consumption values for double mechanical shaft seals by model range.",
+      "markdown": null,
+      "data": null,
+      "tags": [],
+      "entities": [
+        "LKH-5",
+        "LKH-60",
+        "LKH-70",
+        "LKH-90"
+      ],
+      "crops": {
+        "png": "2/r9.png",
+        "svg": null,
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 2,
+          "bbox": [
+            55.29119873046875,
+            287.7576904296875,
+            552.9518432617188,
+            245.14544677734375
+          ],
+          "item_indices": [
+            32
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r10",
+      "page": 2,
+      "bbox": [
+        55.31038284301758,
+        228.9833984375,
+        552.8456420898438,
+        197.24505615234375
+      ],
+      "kind": "table",
+      "title": "Connections for flushed and double mechanical shaft seal",
+      "description": "Table listing connection sizes for flushed and double mechanical shaft seal for specified LKH models.",
+      "markdown": null,
+      "data": null,
+      "tags": [
+        "connections"
+      ],
+      "entities": [
+        "LKH-5",
+        "LKH-70",
+        "LKH-90",
+        "LKH-85"
+      ],
+      "crops": {
+        "png": "2/r10.png",
+        "svg": null,
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 2,
+          "bbox": [
+            55.31038284301758,
+            228.9833984375,
+            552.8456420898438,
+            197.24505615234375
+          ],
+          "item_indices": [
+            33
+          ]
+        }
+      ]
+    }
+  ],
+  "schema_version": 1
+}

@@ -11,7 +11,11 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from ..deps import AgentDeps
 from ..tools import document as document_tools
-from ..tools.product_data import _find_by_filename
+from ..tools.product_data import (
+    _find_by_filename,
+    _find_index_by_filename,
+    _find_silver_pages_by_filename,
+)
 
 # ── Toolset: reading tools only ──────────────────────────────────────────────
 
@@ -98,18 +102,24 @@ async def _documents_context(ctx: RunContext[AgentDeps]) -> str | None:
 
 
 def _loaded_documents_context(ctx: RunContext[AgentDeps]) -> str | None:
-    """Auto-load gold-layer data for every document node on the canvas."""
+    """Auto-load gold data and silver index for every document node on the canvas.
+
+    - Gold (if present) is authoritative — the agent can answer without reading pages.
+    - Index (always preferred when present) is a cheap TOC the agent uses to decide
+      which page + bbox to open via read_document_page.
+    """
     state = ctx.deps.state
     doc_nodes = [n for n in state.nodes if n.node_type == "document" and n.filename]
     if not doc_nodes:
         return None
 
-    loaded: list[str] = []
+    gold_sections: list[str] = []
+    index_sections: list[str] = []
+    silver_md_sections: list[str] = []
+
     for node in doc_nodes:
         gold = _find_by_filename(node.filename)
         if gold:
-            # The actual uploaded filename may differ from the gold JSON filename.
-            # Tell the agent to use the real filename for source references.
             gold_filename = gold.get("document", {}).get("filename", "")
             filename_note = ""
             if gold_filename and gold_filename != node.filename:
@@ -117,18 +127,49 @@ def _loaded_documents_context(ctx: RunContext[AgentDeps]) -> str | None:
                     f"\n**IMPORTANT:** Use filename `{node.filename}` (not `{gold_filename}`) "
                     f"in all source references for this document.\n"
                 )
-            loaded.append(
+            gold_sections.append(
                 f"### {node.filename}\n{filename_note}"
                 f"```json\n{json.dumps(gold, indent=2, default=str)}\n```"
             )
+            # Gold is enough — skip the index for this doc to save context.
+            continue
 
-    if not loaded:
-        return None
+        index = _find_index_by_filename(node.filename)
+        if index:
+            index_sections.append(
+                f"### {node.filename}\n"
+                f"```json\n{json.dumps(index, indent=2, default=str)}\n```"
+            )
+            continue
 
-    return (
-        "LOADED PRODUCT DATA (gold layer — pre-extracted structured data for documents on canvas):\n\n"
-        + "\n\n".join(loaded)
-    )
+        # Final fallback: silver per-page md (always cheap, no LLM cost).
+        pages_md = _find_silver_pages_by_filename(node.filename)
+        if pages_md:
+            joined = "\n\n".join(
+                f"#### page {p}\n{md.strip()}" for p, md in sorted(pages_md.items())
+            )
+            silver_md_sections.append(f"### {node.filename}\n{joined}")
+
+    parts: list[str] = []
+    if gold_sections:
+        parts.append(
+            "LOADED PRODUCT DATA (gold layer — pre-extracted structured data, authoritative):\n\n"
+            + "\n\n".join(gold_sections)
+        )
+    if index_sections:
+        parts.append(
+            "DOCUMENT INDEXES (silver layer — outline, tables, figures with page + bbox).\n"
+            "Use these to decide which page to open with read_document_page — prefer jumping\n"
+            "directly to a relevant table's page + bbox over scanning pages sequentially.\n\n"
+            + "\n\n".join(index_sections)
+        )
+    if silver_md_sections:
+        parts.append(
+            "SILVER PAGES (per-page markdown — fallback when no gold or index is available).\n\n"
+            + "\n\n".join(silver_md_sections)
+        )
+
+    return "\n\n".join(parts) if parts else None
 
 
 # ── Static instructions ──────────────────────────────────────────────────────
@@ -141,12 +182,19 @@ into your context — you already have their full structured product data (specs
 operating data, dimensions, bboxes, etc.). Use this data directly without calling any tool.
 DO NOT call read_document_page for documents that have gold data loaded.
 
-For documents without gold data, or to see the raw page content, use
-read_document_page(document_id, page_no) — it returns the page text and a rendered screenshot.
+For documents WITHOUT gold data, you may instead receive a DOCUMENT INDEX — a compact
+outline listing sections, tables (with header row + first-column values), and figures,
+each stamped with `page` and `bbox`. Use the index to jump straight to the right page
+and region via read_document_page(document_id, page_no) rather than scanning sequentially.
+The `first_column_values` of each table often reveals whether it's per-model — e.g. rows
+like ["LKH-5", "LKH-10", ...] tells you that's the table to open for per-model specs.
+
+For documents without gold OR index data, use read_document_page to see the raw page.
 
 Think like an engineer reading a document:
 - Gold data is authoritative — use it first when available
-- For docs without gold data: short docs (≤6 pages), read all pages; longer docs, start with page 1
+- Index present? Open the specific page+bbox pointed to by the relevant table/section
+- Nothing loaded? Short docs (≤6 pages), read all pages; longer docs, start with page 1
 
 FMU wiring:
 - FMU nodes expose handles for each variable: inputs "in-{name}",
