@@ -139,3 +139,93 @@ export function buildEvidenceImageUrl(filename: string, page: number, bbox: numb
 export function makeTabId() {
   return `cv_${Date.now()}`;
 }
+
+export function createDefaultCanvasTab(): CanvasTab {
+  return { id: "default", name: "Canvas 1", nodes: [], relations: [], positions: {} };
+}
+
+export function mergeActiveCanvasTab(
+  tabs: CanvasTab[],
+  activeTabId: string,
+  activeNodes: any[],
+  activeRelations: any[],
+  activePositions: Record<string, { x: number; y: number }>,
+): CanvasTab[] {
+  return tabs.map((tab) =>
+    tab.id === activeTabId
+      ? { ...tab, nodes: activeNodes, relations: activeRelations, positions: activePositions }
+      : tab,
+  );
+}
+
+export function buildCanvasStatePayload(
+  tabs: CanvasTab[],
+  activeTabId: string,
+  activeNodes: any[],
+  activeRelations: any[],
+  activePositions: Record<string, { x: number; y: number }>,
+  workspaceDocIds: string[],
+) {
+  return {
+    tabs: mergeActiveCanvasTab(tabs, activeTabId, activeNodes, activeRelations, activePositions),
+    activeTabId,
+    workspace_doc_ids: workspaceDocIds,
+  };
+}
+
+export function createCanvasTab(index: number, id = makeTabId()): CanvasTab {
+  return {
+    id,
+    name: `Canvas ${index}`,
+    nodes: [],
+    relations: [],
+    positions: {},
+  };
+}
+
+export function normalizeSavedCanvasState(
+  canvasState: any,
+  documents: DocumentSummary[],
+) {
+  if (canvasState && Object.keys(canvasState).length > 0) {
+    if (canvasState.tabs && Array.isArray(canvasState.tabs)) {
+      const tabs: CanvasTab[] = canvasState.tabs;
+      const activeTabId = canvasState.activeTabId ?? tabs[0]?.id ?? "default";
+      const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0] ?? createDefaultCanvasTab();
+      return {
+        tabs,
+        activeTabId,
+        positions: activeTab.positions ?? {},
+        nodes: materializeWorkspaceDocuments(activeTab.nodes ?? [], canvasState.workspace_doc_ids, documents),
+        relations: activeTab.relations ?? [],
+        workspaceDocIds: canvasState.workspace_doc_ids ?? [],
+      };
+    }
+
+    const legacyTab: CanvasTab = {
+      id: "default",
+      name: "Canvas 1",
+      nodes: canvasState.nodes ?? [],
+      relations: canvasState.relations ?? [],
+      positions: canvasState.positions ?? {},
+    };
+    return {
+      tabs: [legacyTab],
+      activeTabId: "default",
+      positions: legacyTab.positions,
+      nodes: materializeWorkspaceDocuments(legacyTab.nodes, canvasState.workspace_doc_ids, documents),
+      relations: legacyTab.relations,
+      workspaceDocIds: canvasState.workspace_doc_ids ?? [],
+    };
+  }
+
+  const emptyTab = createDefaultCanvasTab();
+  return {
+    tabs: [emptyTab],
+    activeTabId: "default",
+    positions: {},
+    nodes: [],
+    relations: [],
+    workspaceDocIds: [],
+  };
+}

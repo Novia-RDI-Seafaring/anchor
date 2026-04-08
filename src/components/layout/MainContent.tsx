@@ -10,13 +10,17 @@ import { RunsPanel } from './RunsPanel';
 import { useSession } from 'next-auth/react';
 import { API_URL } from '@/lib/api-config';
 import {
+  buildCanvasStatePayload,
   buildEvidenceImageUrl,
   type CanvasState,
   type CanvasTab,
+  createCanvasTab,
+  createDefaultCanvasTab,
   type FlowPosition,
   makeDocumentCanvasNode,
-  makeTabId,
+  mergeActiveCanvasTab,
   materializeWorkspaceDocuments,
+  normalizeSavedCanvasState,
   searchGoldForParams,
 } from './mainContentUtils';
 
@@ -52,7 +56,7 @@ export const MainContent: React.FC = () => {
   // `canvasTabs` holds metadata + saved state for ALL tabs.
   // The active tab's nodes/relations live in coagent state (not duplicated here).
   const [canvasTabs, setCanvasTabs] = useState<CanvasTab[]>([
-    { id: 'default', name: 'Canvas 1', nodes: [], relations: [], positions: {} },
+    createDefaultCanvasTab(),
   ]);
   const [activeCanvasId, setActiveCanvasId] = useState<string>('default');
 
@@ -79,72 +83,19 @@ export const MainContent: React.FC = () => {
     prevConversationId.current = activeConversationId;
 
     loadConversationMessages(activeConversationId).then(({ canvas_state }) => {
-      if (canvas_state && Object.keys(canvas_state).length > 0) {
-        if (canvas_state.tabs && Array.isArray(canvas_state.tabs)) {
-          // New multi-canvas format
-          const tabs: CanvasTab[] = canvas_state.tabs;
-          const aid = canvas_state.activeTabId ?? tabs[0]?.id ?? 'default';
-          const activeTabData = tabs.find(t => t.id === aid) ?? tabs[0];
-          setCanvasTabs(tabs);
-          setActiveCanvasId(aid);
-          setPositions(activeTabData?.positions ?? {});
-          setState((prev: any) => ({
-            ...prev,
-            nodes: materializeWorkspaceDocuments(activeTabData?.nodes ?? [], canvas_state.workspace_doc_ids, documents),
-            relations: activeTabData?.relations ?? [],
-            workspace_doc_ids: canvas_state.workspace_doc_ids ?? prev.workspace_doc_ids,
-          }));
-        } else {
-          // Legacy single-canvas format — wrap in a tab
-          const tab: CanvasTab = {
-            id: 'default',
-            name: 'Canvas 1',
-            nodes: canvas_state.nodes ?? [],
-            relations: canvas_state.relations ?? [],
-            positions: canvas_state.positions ?? {},
-          };
-          setCanvasTabs([tab]);
-          setActiveCanvasId('default');
-          setPositions(tab.positions);
-          setState((prev: any) => ({
-            ...prev,
-            nodes: materializeWorkspaceDocuments(tab.nodes, canvas_state.workspace_doc_ids, documents),
-            relations: tab.relations,
-            workspace_doc_ids: canvas_state.workspace_doc_ids ?? prev.workspace_doc_ids,
-          }));
-        }
-      } else {
-        const tab: CanvasTab = { id: 'default', name: 'Canvas 1', nodes: [], relations: [], positions: {} };
-        setCanvasTabs([tab]);
-        setActiveCanvasId('default');
-        setPositions({});
-        setState({ nodes: [], relations: [], active_document_id: activeDocumentId ?? null } as CanvasState);
-      }
+      const restored = normalizeSavedCanvasState(canvas_state, documents);
+      setCanvasTabs(restored.tabs);
+      setActiveCanvasId(restored.activeTabId);
+      setPositions(restored.positions);
+      setState((prev: any) => ({
+        ...prev,
+        nodes: restored.nodes,
+        relations: restored.relations,
+        workspace_doc_ids: restored.workspaceDocIds.length > 0 ? restored.workspaceDocIds : prev.workspace_doc_ids,
+        active_document_id: activeDocumentId ?? prev.active_document_id ?? null,
+      }));
     });
   }, [activeConversationId, documents]);
-
-  // ── Helpers to build the canvas_state payload to persist ───────────────────
-  // We need a function (not just state) so we can call it with latest values
-  const buildCanvasStatePayload = useCallback((
-    tabs: CanvasTab[],
-    aid: string,
-    activeNodes: any[],
-    activeRelations: any[],
-    activePositions: Record<string, { x: number; y: number }>,
-    wsDocIds: string[],
-  ) => {
-    // Merge the live coagent state back into the active tab slot
-    const merged = tabs.map(t =>
-      t.id === aid
-        ? { ...t, nodes: activeNodes, relations: activeRelations, positions: activePositions }
-        : t
-    );
-    return {
-      tabs: merged,
-      activeTabId: aid,
-      workspace_doc_ids: wsDocIds,
-    };
-  }, []);
 
   // ── Persist canvas state on change ─────────────────────────────────────────
   const canvasSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -169,12 +120,15 @@ export const MainContent: React.FC = () => {
   const switchCanvasTab = useCallback((newId: string) => {
     if (newId === activeCanvasIdRef.current) return;
 
-    // Save current coagent state into the current tab slot
-    setCanvasTabs(prev => prev.map(t =>
-      t.id === activeCanvasIdRef.current
-        ? { ...t, nodes: (canvas as any)?.nodes ?? [], relations: (canvas as any)?.relations ?? [], positions: positionsRef.current }
-        : t
-    ));
+    setCanvasTabs((prev) =>
+      mergeActiveCanvasTab(
+        prev,
+        activeCanvasIdRef.current,
+        (canvas as any)?.nodes ?? [],
+        (canvas as any)?.relations ?? [],
+        positionsRef.current,
+      ),
+    );
 
     // Load new tab
     const newTab = canvasTabsRef.current.find(t => t.id === newId);
@@ -187,20 +141,19 @@ export const MainContent: React.FC = () => {
 
   // ── Create a new canvas tab ─────────────────────────────────────────────────
   const addCanvasTab = useCallback(() => {
-    // Save current tab first
     setCanvasTabs(prev => {
-      const saved = prev.map(t =>
-        t.id === activeCanvasIdRef.current
-          ? { ...t, nodes: (canvas as any)?.nodes ?? [], relations: (canvas as any)?.relations ?? [], positions: positionsRef.current }
-          : t
+      const saved = mergeActiveCanvasTab(
+        prev,
+        activeCanvasIdRef.current,
+        (canvas as any)?.nodes ?? [],
+        (canvas as any)?.relations ?? [],
+        positionsRef.current,
       );
-      const newId = makeTabId();
-      const newTab: CanvasTab = { id: newId, name: `Canvas ${saved.length + 1}`, nodes: [], relations: [], positions: {} };
-      // Switch to new tab
+      const newTab = createCanvasTab(saved.length + 1);
       setTimeout(() => {
         setState((prev: any) => ({ ...prev, nodes: [], relations: [] }));
         setPositions({});
-        setActiveCanvasId(newId);
+        setActiveCanvasId(newTab.id);
       }, 0);
       return [...saved, newTab];
     });
