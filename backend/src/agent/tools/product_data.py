@@ -115,6 +115,81 @@ def _find_silver_pages_by_filename(filename: str) -> dict[int, str] | None:
     return _match_by_filename(_load_all_silver_pages(), filename)  # type: ignore[return-value]
 
 
+def find_product_data_by_filename(filename: str) -> dict | None:
+    """Public gold-layer lookup by document filename."""
+    return _find_by_filename(filename)
+
+
+def find_product_index_by_filename(filename: str) -> dict | None:
+    """Public silver-index lookup by document filename."""
+    return _find_index_by_filename(filename)
+
+
+def find_silver_pages_by_filename(filename: str) -> dict[int, str] | None:
+    """Public per-page silver markdown lookup by document filename."""
+    return _find_silver_pages_by_filename(filename)
+
+
+def build_loaded_documents_context(filenames: list[str]) -> str | None:
+    """Build injected context for documents with gold/silver product data."""
+    gold_sections: list[str] = []
+    index_sections: list[str] = []
+    silver_md_sections: list[str] = []
+
+    for filename in filenames:
+        gold = find_product_data_by_filename(filename)
+        if gold:
+            gold_filename = gold.get("document", {}).get("filename", "")
+            filename_note = ""
+            if gold_filename and gold_filename != filename:
+                filename_note = (
+                    f"\n**IMPORTANT:** Use filename `{filename}` (not `{gold_filename}`) "
+                    f"in all source references for this document.\n"
+                )
+            gold_sections.append(
+                f"### {filename}\n{filename_note}"
+                f"```json\n{json.dumps(gold, indent=2, default=str)}\n```"
+            )
+            continue
+
+        index = find_product_index_by_filename(filename)
+        if index:
+            index_sections.append(
+                f"### {filename}\n"
+                f"```json\n{json.dumps(index, indent=2, default=str)}\n```"
+            )
+            continue
+
+        pages_md = find_silver_pages_by_filename(filename)
+        if pages_md:
+            joined = "\n\n".join(
+                f"#### page {page_no}\n{md.strip()}"
+                for page_no, md in sorted(pages_md.items())
+            )
+            silver_md_sections.append(f"### {filename}\n{joined}")
+
+    parts: list[str] = []
+    if gold_sections:
+        parts.append(
+            "LOADED PRODUCT DATA (gold layer — pre-extracted structured data, authoritative):\n\n"
+            + "\n\n".join(gold_sections)
+        )
+    if index_sections:
+        parts.append(
+            "DOCUMENT INDEXES (silver layer — outline, tables, figures with page + bbox).\n"
+            "Use these to decide which page to open with read_document_page — prefer jumping\n"
+            "directly to a relevant table's page + bbox over scanning pages sequentially.\n\n"
+            + "\n\n".join(index_sections)
+        )
+    if silver_md_sections:
+        parts.append(
+            "SILVER PAGES (per-page markdown — fallback when no gold or index is available).\n\n"
+            + "\n\n".join(silver_md_sections)
+        )
+
+    return "\n\n".join(parts) if parts else None
+
+
 async def get_product_data(
     ctx: RunContext[AgentDeps],
     filename: str,

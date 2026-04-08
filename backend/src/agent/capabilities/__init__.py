@@ -1,19 +1,24 @@
-"""Agent capabilities — minimal setup: context injection + reading + canvas editing."""
+"""Agent capabilities.
+
+This branch currently runs a small live capability set while keeping several
+in-progress capability modules in the tree for later activation.
+"""
 from .context import ContextCapability
 from .canvas import CanvasCapability
 
-# Minimal capability set:
-# 1. ContextCapability — injects canvas state + doc list into context, provides read_document_page
-#    Also auto-loads gold-layer product data for documents on the canvas.
-# 2. CanvasCapability — CRUD tools for canvas nodes and relations
-#
-# Disabled for now (can re-enable as needed):
-# - ProductDataCapability (now folded into ContextCapability as auto-loaded context)
-# - KnowledgeCapability (resolve_technical_query, search_knowledge_base, etc.)
-# - DocumentVisionCapability (get_document_tree, get_document_full_text, analyze_pdf_page, etc.)
-# - FmuCapability
-# - EngineeringKnowledgeCapability
-# - RouterCapability (dynamic tool filtering and prompt routing)
+LIVE_CAPABILITY_NAMES = (
+    "ContextCapability",
+    "CanvasCapability",
+)
+
+DORMANT_CAPABILITY_NAMES = (
+    "ProductDataCapability",
+    "KnowledgeCapability",
+    "DocumentVisionCapability",
+    "FmuCapability",
+    "EngineeringKnowledgeCapability",
+    "RouterCapability",
+)
 
 CAPABILITIES = [
     ContextCapability(),
@@ -22,6 +27,8 @@ CAPABILITIES = [
 
 __all__ = [
     "CAPABILITIES",
+    "LIVE_CAPABILITY_NAMES",
+    "DORMANT_CAPABILITY_NAMES",
     "ContextCapability",
     "CanvasCapability",
 ]
