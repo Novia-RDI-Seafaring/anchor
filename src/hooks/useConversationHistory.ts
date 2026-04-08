@@ -6,10 +6,14 @@ import { API_URL } from '@/lib/api-config';
 const CONVERSATIONS_URL = `${API_URL}/api/conversations`;
 
 export const useConversationHistory = () => {
-    const { data: session } = useSession();
+    const { data: session, status } = useSession();
     // TODO(remove after development): keep local conversations working when auth is bypassed.
-    const userId = (session?.user as any)?.id ?? 'local-dev-user';
-    const userHeaders = { 'x-user-id': userId };
+    // Only fall back to the dev user once the session has actually resolved — otherwise the
+    // first render (status === 'loading') briefly fetches the dev user's threads before the
+    // real session arrives, flashing "not logged in" state in the sidebar.
+    const sessionReady = status !== 'loading';
+    const userId: string | null = sessionReady ? ((session?.user as any)?.id ?? 'local-dev-user') : null;
+    const userHeaders: Record<string, string> = userId ? { 'x-user-id': userId } : {};
 
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [activeId, setActiveId] = useState<string | null>(null);
@@ -18,8 +22,9 @@ export const useConversationHistory = () => {
     const pendingCreates = useRef<Map<string, Promise<Conversation | null>>>(new Map());
 
     // Reset and reload when user changes
-    const prevUserId = useRef('');
+    const prevUserId = useRef<string | null>(null);
     useEffect(() => {
+        if (!userId) return;
         if (userId === prevUserId.current) return;
         prevUserId.current = userId;
         setIsInitialized(false);
@@ -55,7 +60,7 @@ export const useConversationHistory = () => {
                 setIsInitialized(true);
             })
             .catch(() => setIsInitialized(true));
-    }, [isInitialized]);
+    }, [isInitialized, userId]);
 
     const _createInDB = async (id: string, title: string): Promise<Conversation | null> => {
         try {
