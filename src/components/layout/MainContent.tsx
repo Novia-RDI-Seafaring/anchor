@@ -6,137 +6,21 @@ import { useCopilotChatInternal, useCoAgent } from "@copilotkit/react-core";
 import { CanvasView } from '../canvas/CanvasView';
 import { CanvasGraph } from '../canvas/CanvasGraph';
 import { PDFModal, type PDFHighlight } from '../canvas/PDFModal';
-
 import { RunsPanel } from './RunsPanel';
 import { useSession } from 'next-auth/react';
 import { API_URL } from '@/lib/api-config';
+import {
+  buildEvidenceImageUrl,
+  type CanvasState,
+  type CanvasTab,
+  type FlowPosition,
+  makeDocumentCanvasNode,
+  makeTabId,
+  materializeWorkspaceDocuments,
+  searchGoldForParams,
+} from './mainContentUtils';
 
 type TabId = 'canvas' | 'facts' | 'context' | 'runs';
-
-type CanvasState = {
-  nodes: any[];
-  relations: any[];
-  active_document_id: string | null;
-  workspace_doc_ids?: string[];
-};
-
-// A named canvas tab — stores the saved state of non-active tabs
-type CanvasTab = {
-  id: string;
-  name: string;
-  nodes: any[];
-  relations: any[];
-  positions: Record<string, { x: number; y: number }>;
-};
-
-type FlowPosition = { x: number; y: number };
-
-/** Search gold-layer JSON for parameter values by name (best-effort fuzzy match). */
-function searchGoldForParams(
-  gold: any,
-  paramNames: string[],
-): Record<string, { value: string; unit?: string; page?: number }> {
-  const results: Record<string, { value: string; unit?: string; page?: number }> = {};
-  const lower: string[] = paramNames.map(n => n.toLowerCase().replace(/[_-]/g, ' '));
-
-  function visitSection(section: any) {
-    if (section.rows) {
-      for (const row of section.rows) {
-        const rowParam = (row.parameter ?? row.label ?? '').toLowerCase().replace(/[_-]/g, ' ');
-        for (let i = 0; i < lower.length; i++) {
-          const l = lower[i]!;
-          const pn = paramNames[i]!;
-          if (rowParam.includes(l) || l.includes(rowParam)) {
-            if (row.value != null && !results[pn]) {
-              results[pn] = { value: String(row.value), unit: row.unit, page: section.page };
-            }
-          }
-        }
-      }
-    }
-    if (section.properties && typeof section.properties === 'object') {
-      for (const [key, val] of Object.entries(section.properties)) {
-        const keyLower = key.toLowerCase().replace(/[_-]/g, ' ');
-        for (let i = 0; i < lower.length; i++) {
-          const l = lower[i]!;
-          const pn = paramNames[i]!;
-          if (keyLower.includes(l) || l.includes(keyLower)) {
-            if (val != null && !results[pn]) {
-              const v = typeof val === 'object' && val !== null && 'value' in val
-                ? { value: String((val as any).value), unit: (val as any).unit, page: section.page }
-                : { value: String(val), page: section.page };
-              results[pn] = v;
-            }
-          }
-        }
-      }
-    }
-    if (section.subsections) {
-      for (const sub of section.subsections) visitSection(sub);
-    }
-  }
-
-  for (const section of gold.sections ?? []) visitSection(section);
-  return results;
-}
-
-function makeDocumentCanvasNode(doc: { document_id: string; filename: string; node_count: number; status?: string }) {
-  return {
-    id: `__doc_${doc.document_id}`,
-    node_type: 'document',
-    status: doc.status === 'processing' || doc.status === 'pending' ? 'searching' : doc.status === 'error' || doc.status === 'failed' ? 'not_found' : 'found',
-    title: doc.filename,
-    text: '',
-    spec_title: '',
-    properties: [],
-    filename: doc.filename,
-    page: 0,
-    bbox: [],
-    highlights: [],
-    fmu_filename: '',
-    fmu_model_name: '',
-    fmu_variables: [],
-    fmu_param_values: {},
-    plot_job_id: '',
-    plot_fmu_filename: '',
-    plot_signal_names: [],
-    plot_stop_time: 10,
-    plot_param_values: {},
-    funnel_label: '',
-    area_label: '',
-    area_width: 0,
-    area_height: 0,
-    width: 150,
-    height: 64,
-    parent_id: '',
-    last_updated_run_id: '',
-  };
-}
-
-function materializeWorkspaceDocuments(nodes: any[], workspaceDocIds: string[] | undefined, documents: Array<{ document_id: string; filename: string; node_count: number; status?: string }>) {
-  const ids = workspaceDocIds ?? [];
-  if (ids.length === 0) return nodes;
-  const existingIds = new Set(nodes.map((node: any) => node.id));
-  const hydrated = [...nodes];
-  for (const docId of ids) {
-    const nodeId = `__doc_${docId}`;
-    if (existingIds.has(nodeId)) continue;
-    const doc = documents.find((item) => item.document_id === docId);
-    if (!doc) continue;
-    hydrated.push(makeDocumentCanvasNode(doc));
-  }
-  return hydrated;
-}
-
-function buildEvidenceImageUrl(filename: string, page: number, bbox: number[]): string {
-  const [l = 0, t = 0, r = 0, b = 0] = bbox;
-  if (!l && !t && !r && !b) {
-    return `${API_URL}/api/documents/pdf/screenshot?filename=${encodeURIComponent(filename)}&page_no=${page}`;
-  }
-  return `${API_URL}/api/documents/pdf/screenshot?filename=${encodeURIComponent(filename)}&page_no=${page}&bbox_l=${l}&bbox_t=${t}&bbox_r=${r}&bbox_b=${b}`;
-}
-
-function makeTabId() { return `cv_${Date.now()}`; }
 
 export const MainContent: React.FC = () => {
   const { messages: visibleMessages = [] } = useCopilotChatInternal();
