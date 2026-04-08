@@ -3,17 +3,18 @@ from logging import getLogger
 from pathlib import Path
 from typing import Any, Sequence
 
-from ketju.rag.llama_index.variants.anchor import AnchorDoclingRag
+from ketju.rag.llama_index.variants.simple_docling_full_ctx import SimpleDoclingFullCtxRag
 from ketju.rag.llama_index.storage.pgvector import PgVectorStorageBackend
 
 from .query import QueryHandler
+from .ingest import IngestionHandler
 from src.core.config import get_settings
 
 logger = getLogger(__name__)
 
 
-class RagEngine(AnchorDoclingRag):
-    """Anchor-KB RAG engine — extends AnchorDoclingRag with file tracking."""
+class RagEngine(SimpleDoclingFullCtxRag):
+    """Anchor-KB RAG engine with file tracking."""
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -82,7 +83,7 @@ def get_rag_engine() -> RagEngine:
             persist_dir=persist_dir,
             embedding_model=embedding_model_id,
             storage_backend=storage_backend,
-            enrich_metadata=enrich,
+            ingestion_handler=IngestionHandler(),
             query_handler=QueryHandler(),
         )
     return _rag_engine
