@@ -26,7 +26,7 @@ interface AppContextType {
     activeDocumentId: string | null;
     setActiveDocumentId: (id: string | null) => void;
     documents: KBDocument[];
-    refreshDocuments: () => void;
+    refreshDocuments: () => Promise<void>;
     activeConversationId: string;
     setActiveConversationId: (id: string) => void;
     conversations: Conversation[];
@@ -47,11 +47,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
     const [documents, setDocuments] = useState<KBDocument[]>([]);
 
-    const refreshDocuments = () => {
-        fetch(`${API_URL}/api/documents`)
-            .then(r => r.ok ? r.json() : null)
-            .then(data => { if (data) setDocuments(data.documents || []); })
-            .catch(() => {});
+    const refreshDocuments = async () => {
+        try {
+            const r = await fetch(`${API_URL}/api/documents`);
+            if (r.ok) {
+                const data = await r.json();
+                if (data) setDocuments(data.documents || []);
+            }
+        } catch { /* ignore */ }
     };
 
     useEffect(() => {

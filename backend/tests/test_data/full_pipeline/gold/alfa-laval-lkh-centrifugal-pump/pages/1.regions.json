@@ -1,0 +1,299 @@
+{
+  "page": 1,
+  "regions": [
+    {
+      "id": "r1",
+      "page": 1,
+      "bbox": [
+        424.59417724609375,
+        806.5837860107422,
+        554.6649780273438,
+        761.0201644897461
+      ],
+      "kind": "figure",
+      "title": "Alfa Laval logo",
+      "description": "Brand logo graphic placed in the upper-right corner of the page.",
+      "markdown": null,
+      "data": null,
+      "tags": [],
+      "entities": [
+        "Alfa Laval"
+      ],
+      "crops": {
+        "png": "1/r1.png",
+        "svg": "1/r1.svg",
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 1,
+          "bbox": [
+            424.59417724609375,
+            806.5837860107422,
+            554.6649780273438,
+            761.0201644897461
+          ],
+          "item_indices": [
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r2",
+      "page": 1,
+      "bbox": [
+        56.691,
+        723.4370005078125,
+        187.659,
+        672.8120005078125
+      ],
+      "kind": "text",
+      "title": "Product title",
+      "description": "Main page title naming the Alfa Laval LKH centrifugal pumps product family.",
+      "markdown": null,
+      "data": null,
+      "tags": [],
+      "entities": [
+        "Alfa Laval",
+        "LKH"
+      ],
+      "crops": {
+        "png": "1/r2.png",
+        "svg": "1/r2.svg",
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 1,
+          "bbox": [
+            56.691,
+            723.4370005078125,
+            187.659,
+            672.8120005078125
+          ],
+          "item_indices": [
+            1,
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r3",
+      "page": 1,
+      "bbox": [
+        56.693,
+        627.4590005078124,
+        297.578,
+        498.8800005078125
+      ],
+      "kind": "text",
+      "title": "Introduction",
+      "description": "Introductory section describing the LKH pump's hygienic use, efficiency, and operating range.",
+      "markdown": null,
+      "data": null,
+      "tags": [
+        "introduction"
+      ],
+      "entities": [
+        "Alfa Laval",
+        "LKH"
+      ],
+      "crops": {
+        "png": "1/r3.png",
+        "svg": "1/r3.svg",
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 1,
+          "bbox": [
+            56.693,
+            627.4590005078124,
+            297.578,
+            498.8800005078125
+          ],
+          "item_indices": [
+            4,
+            5,
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r4",
+      "page": 1,
+      "bbox": [
+        309.72186279296875,
+        629.2694854736328,
+        594.2993774414062,
+        377.31109619140625
+      ],
+      "kind": "figure",
+      "title": "LKH pump product image",
+      "description": "Large product photograph/illustration of the Alfa Laval LKH centrifugal pump.",
+      "markdown": null,
+      "data": null,
+      "tags": [],
+      "entities": [
+        "Alfa Laval",
+        "LKH"
+      ],
+      "crops": {
+        "png": "1/r4.png",
+        "svg": "1/r4.svg",
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 1,
+          "bbox": [
+            309.72186279296875,
+            629.2694854736328,
+            594.2993774414062,
+            377.31109619140625
+          ],
+          "item_indices": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r5",
+      "page": 1,
+      "bbox": [
+        56.693,
+        487.4510005078125,
+        295.409,
+        382.8720005078125
+      ],
+      "kind": "text",
+      "title": "Application",
+      "description": "Application section covering CIP use cases, hygienic industries, and performance limits.",
+      "markdown": null,
+      "data": null,
+      "tags": [
+        "application"
+      ],
+      "entities": [
+        "Alfa Laval",
+        "LKH"
+      ],
+      "crops": {
+        "png": "1/r5.png",
+        "svg": "1/r5.svg",
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 1,
+          "bbox": [
+            56.693,
+            487.4510005078125,
+            295.409,
+            382.8720005078125
+          ],
+          "item_indices": [
+            7,
+            8,
+            9
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r6",
+      "page": 1,
+      "bbox": [
+        56.693,
+        371.4430005078125,
+        539.007,
+        227.36900050781253
+      ],
+      "kind": "text",
+      "title": "Benefits",
+      "description": "Benefits section listing energy efficiency, hygienic design, performance envelope, and uptime advantages, with continuation text about shaft seal maintenance.",
+      "markdown": null,
+      "data": null,
+      "tags": [
+        "benefits"
+      ],
+      "entities": [
+        "LKH"
+      ],
+      "crops": {
+        "png": "1/r6.png",
+        "svg": "1/r6.svg",
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 1,
+          "bbox": [
+            56.693,
+            371.4430005078125,
+            539.007,
+            227.36900050781253
+          ],
+          "item_indices": [
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r7",
+      "page": 1,
+      "bbox": [
+        56.693,
+        215.94000050781256,
+        297.56,
+        66.85700050781247
+      ],
+      "kind": "text",
+      "title": "Standard design",
+      "description": "Standard design section describing materials, construction, impeller design, and seal configuration.",
+      "markdown": null,
+      "data": null,
+      "tags": [
+        "materials"
+      ],
+      "entities": [
+        "LKH",
+        "AISI 316L",
+        "W. 1.4404"
+      ],
+      "crops": {
+        "png": "1/r7.png",
+        "svg": "1/r7.svg",
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 1,
+          "bbox": [
+            56.693,
+            215.94000050781256,
+            297.56,
+            66.85700050781247
+          ],
+          "item_indices": [
+            16,
+            17,
+            18,
+            19
+          ]
+        }
+      ]
+    }
+  ],
+  "schema_version": 1
+}

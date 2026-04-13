@@ -166,6 +166,52 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
     }
   };
 
+  const handleRunPipeline = async (documentId: string, filename: string) => {
+    setIsLoading(true);
+    setLoadingAction(`pipeline-${documentId}`);
+    setError(null);
+
+    try {
+      const res = await fetch(`${API_URL}/api/documents/${documentId}/pipeline`, {
+        method: 'POST',
+      });
+
+      if (!res.ok) throw new Error('Pipeline failed');
+
+      const data = await res.json();
+      setSuccess(`Pipeline done for ${filename}: ${data.polished ?? 0} polished, ${data.regions ?? 0} regions`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Pipeline failed');
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
+  };
+
+  const handleRunPipelineAll = async () => {
+    if (!confirm('Run the full ingestion pipeline (polish + regions) for all documents? This calls the OpenAI API.')) return;
+
+    setIsLoading(true);
+    setLoadingAction('pipeline-all');
+    setError(null);
+
+    try {
+      const res = await fetch(`${API_URL}/api/documents/pipeline/all`, {
+        method: 'POST',
+      });
+
+      if (!res.ok) throw new Error('Pipeline failed');
+
+      const data = await res.json();
+      setSuccess(`Pipeline done: ${data.processed ?? 0} processed, ${data.failed ?? 0} failed`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Pipeline failed');
+    } finally {
+      setIsLoading(false);
+      setLoadingAction(null);
+    }
+  };
+
   const handleReingest = async () => {
     if (!confirm('This will re-process all documents. Continue?')) return;
 
@@ -367,13 +413,23 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                                 <span className="truncate">{doc.filename}</span>
                                 <span className="text-xs text-neutral-400">({doc.chunk_count} nodes)</span>
                               </div>
-                              <button
-                                onClick={() => handleDeleteDocument(doc.document_id)}
-                                className="opacity-0 group-hover:opacity-100 p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-opacity"
-                                title="Delete document"
-                              >
-                                <Trash2 size={12} />
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => handleRunPipeline(doc.document_id, doc.filename)}
+                                  disabled={isLoading}
+                                  className="opacity-0 group-hover:opacity-100 p-1 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded transition-opacity"
+                                  title="Run full pipeline (polish + regions)"
+                                >
+                                  {loadingAction === `pipeline-${doc.document_id}` ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteDocument(doc.document_id)}
+                                  className="opacity-0 group-hover:opacity-100 p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-opacity"
+                                  title="Delete document"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -385,6 +441,21 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ onBack }) => {
                 <div className="space-y-4">
                   <div className="border border-red-200 dark:border-red-900/50 rounded-lg p-4 bg-red-50/10 dark:bg-red-900/10 space-y-4">
                     <div className="text-sm font-bold text-red-600 dark:text-red-400">Maintenance</div>
+
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium text-neutral-900 dark:text-white">Run pipeline (all)</div>
+                      <div className="text-xs text-neutral-500">Runs the full ingestion pipeline (silver → polish → gold regions) for all documents. Calls OpenAI.</div>
+                      <button
+                        onClick={handleRunPipelineAll}
+                        disabled={isLoading || documents.length === 0}
+                        className="w-full px-3 py-2 border border-indigo-200 dark:border-indigo-900 text-indigo-600 dark:text-indigo-400 rounded text-sm font-medium hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors disabled:opacity-50 flex items-center justify-center gap-1"
+                      >
+                        {loadingAction === 'pipeline-all' && <Loader2 size={12} className="animate-spin" />}
+                        Run Pipeline
+                      </button>
+                    </div>
+
+                    <div className="h-px bg-red-100 dark:bg-red-900/30 w-full" />
 
                     <div className="space-y-2">
                       <div className="text-sm font-medium text-neutral-900 dark:text-white">Reingest all documents</div>

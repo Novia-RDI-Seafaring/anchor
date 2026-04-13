@@ -1,11 +1,12 @@
 """
 Document Service.
 
-Orchestrates document lifecycle: upload → ingest (via RagEngine) → search → delete.
+Orchestrates document lifecycle: upload → ingest → search → delete.
 """
 
 import os
 import hashlib
+import threading
 import aiofiles
 from typing import Optional, Dict, Any, List
 from pathlib import Path
@@ -16,6 +17,35 @@ from ..api.file_service import get_file_service
 from ..kb_engine.rag_engine import get_rag_engine
 from ..kb_engine.docling_cache import remove_docling_json, clear_docling_cache
 from .vector_store import get_vector_store
+
+
+# ---------------------------------------------------------------------------
+# In-memory pipeline progress tracker
+# ---------------------------------------------------------------------------
+_pipeline_jobs: Dict[str, Dict[str, Any]] = {}   # filename -> status dict
+_pipeline_lock = threading.Lock()
+
+
+def _update_pipeline_status(filename: str, stage: str, current: int, total: int) -> None:
+    with _pipeline_lock:
+        _pipeline_jobs[filename] = {
+            "stage": stage,
+            "current": current,
+            "total": total,
+        }
+        if stage == "done":
+            # Keep for a short while so the frontend can see "done"
+            pass
+
+
+def get_pipeline_status(filename: str) -> Optional[Dict[str, Any]]:
+    with _pipeline_lock:
+        return _pipeline_jobs.get(filename)
+
+
+def clear_pipeline_status(filename: str) -> None:
+    with _pipeline_lock:
+        _pipeline_jobs.pop(filename, None)
 
 
 class DocumentService:
@@ -152,39 +182,176 @@ class DocumentService:
     
     async def process_document(self, document_id: str) -> Dict[str, Any]:
         """
-        Process a document via RagEngine (KETJU ingestion).
-        
-        Args:
-            document_id: The document ID to process
-            
-        Returns:
-            Processing result info
+        Process a document through Anchor's ingestion pipeline.
+
+        Runs the full pipeline (silver + gold) in a background thread so the
+        HTTP response returns immediately.  The document status is updated
+        in the DB as stages complete.
         """
         vector_store = await get_vector_store()
         doc = await vector_store.get_document(document_id)
-        
+
         if not doc:
             raise ValueError(f"Document not found: {document_id}")
-        
+
         file_path = doc.get("file_path")
         if not file_path or not os.path.exists(file_path):
             raise ValueError(f"File not found: {file_path}")
 
         await vector_store.update_document_status(document_id, "processing")
+
+        # Clean up any legacy KETJU chunks
         await vector_store.delete_rag_chunks(document_id, file_path, doc.get("filename"))
 
-        rag = get_rag_engine()
-        chunk_count = rag.ingest(files=[file_path], document_ids=[document_id])
-
-        await vector_store.update_document_status(document_id, "processed", chunk_count=chunk_count)
+        # Run entire pipeline in background thread
+        self._run_pipeline_bg(document_id, Path(file_path))
 
         return {
             "document_id": document_id,
             "filename": doc["filename"],
-            "status": "processed",
-            "chunks": chunk_count,
+            "status": "processing",
         }
+
+    def _run_pipeline_bg(self, document_id: str, file_path: Path) -> None:
+        """Run the full pipeline (silver + gold) in a background thread."""
+        import asyncio
+        filename = file_path.name
+
+        def _on_progress(stage: str, current: int, total: int) -> None:
+            _update_pipeline_status(filename, stage, current, total)
+
+        def _run() -> None:
+            try:
+                import json as _json
+                from ..ingestion.pipeline import run_silver_pipeline, run_full_pipeline
+                from ..agent.tools.product_data import _refresh_data_dir
+
+                _update_pipeline_status(filename, "docling", 0, 0)
+
+                # Silver (deterministic: docling + index + pages + md)
+                data_dir = self.settings.backend_dir / "data"
+                silver_dir = run_silver_pipeline(file_path, data_dir)
+
+                # Update DB with page count
+                index_path = silver_dir / "index.json"
+                page_count = 0
+                if index_path.exists():
+                    index = _json.loads(index_path.read_text())
+                    page_count = index.get("document", {}).get("page_count", 0)
+
+                # Update document status in DB (need event loop for async)
+                loop = asyncio.new_event_loop()
+                try:
+                    vs = loop.run_until_complete(get_vector_store())
+                    loop.run_until_complete(
+                        vs.update_document_status(document_id, "processed", chunk_count=page_count)
+                    )
+                finally:
+                    loop.close()
+
+                # Gold (LLM polish + regions) with progress
+                _update_pipeline_status(filename, "polishing", 0, page_count)
+                run_full_pipeline(file_path, data_dir, on_progress=_on_progress)
+                _refresh_data_dir()
+
+            except Exception:
+                _update_pipeline_status(filename, "error", 0, 0)
+                import traceback
+                traceback.print_exc()
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
     
+    def run_full_pipeline(
+        self,
+        file_path: Path,
+        filename: str,
+        *,
+        polish: bool = True,
+        regions: bool = True,
+        model: str = "gpt-5.4",
+    ) -> Dict[str, Any]:
+        """Run the full ingestion pipeline (silver + gold) for a single document.
+
+        Returns a summary of what was produced.
+        """
+        from ..ingestion.pipeline import run_full_pipeline
+        from ..agent.tools.product_data import _refresh_data_dir
+
+        data_dir = self.settings.backend_dir / "data"
+        result = run_full_pipeline(
+            file_path, data_dir, polish=polish, regions=regions, model=model,
+        )
+        _refresh_data_dir()
+        return result
+
+    async def run_pipeline_for_document(
+        self,
+        document_id: str,
+        *,
+        polish: bool = True,
+        regions: bool = True,
+        model: str = "gpt-5.4",
+    ) -> Dict[str, Any]:
+        """Run full pipeline for a document by ID."""
+        vector_store = await get_vector_store()
+        doc = await vector_store.get_document(document_id)
+        if not doc:
+            raise ValueError(f"Document not found: {document_id}")
+
+        file_path = doc.get("file_path")
+        if not file_path or not os.path.exists(file_path):
+            raise ValueError(f"File not found: {file_path}")
+
+        return self.run_full_pipeline(
+            Path(file_path),
+            doc.get("filename", ""),
+            polish=polish,
+            regions=regions,
+            model=model,
+        )
+
+    async def run_pipeline_all(
+        self,
+        *,
+        polish: bool = True,
+        regions: bool = True,
+        model: str = "gpt-5.4",
+    ) -> Dict[str, Any]:
+        """Run full pipeline for all documents."""
+        vector_store = await get_vector_store()
+        docs = await vector_store.list_documents()
+        results = {"processed": 0, "failed": 0, "details": []}
+
+        for doc in docs:
+            file_path = doc.get("file_path")
+            if not file_path or not os.path.exists(file_path):
+                results["failed"] += 1
+                results["details"].append({
+                    "document_id": doc["document_id"],
+                    "error": f"file not found: {file_path}",
+                })
+                continue
+            try:
+                detail = self.run_full_pipeline(
+                    Path(file_path),
+                    doc.get("filename", ""),
+                    polish=polish,
+                    regions=regions,
+                    model=model,
+                )
+                detail["document_id"] = doc["document_id"]
+                results["processed"] += 1
+                results["details"].append(detail)
+            except Exception as e:
+                results["failed"] += 1
+                results["details"].append({
+                    "document_id": doc["document_id"],
+                    "error": str(e),
+                })
+
+        return results
+
     async def list_documents(self) -> List[Dict[str, Any]]:
         """List all documents from the documents registry table."""
         vector_store = await get_vector_store()

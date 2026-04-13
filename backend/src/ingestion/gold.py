@@ -139,7 +139,14 @@ def crop_region_svg(
     bbox: list[float],
     out_path: Path,
 ) -> Path:
-    """Export a BOTTOMLEFT bbox region of a PDF page as SVG (vector preserved)."""
+    """Export a BOTTOMLEFT bbox region of a PDF page as SVG (vector preserved).
+
+    PyMuPDF always exports the full page as SVG. We crop by:
+    1. Setting the viewBox to the region rect (so it renders only that area).
+    2. Setting explicit width/height so the SVG scales correctly.
+    """
+    import re as _re
+
     import pymupdf
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -147,9 +154,27 @@ def crop_region_svg(
         p = doc[page - 1]
         rect = pymupdf.Rect(*_bottomleft_to_pymupdf(p.rect.height, bbox))
         svg = p.get_svg_image(matrix=pymupdf.Identity, text_as_path=False)
-        # PyMuPDF SVG export is whole-page; clip via viewBox.
-        viewbox = f'viewBox="{rect.x0} {rect.y0} {rect.width} {rect.height}"'
-        svg = svg.replace('viewBox="0 0', viewbox.split(" ")[0] + " " + viewbox.split(" ")[1], 1)
+
+        # Replace the <svg> tag's viewBox, width, and height to crop to the region.
+        new_viewbox = f"{rect.x0:.1f} {rect.y0:.1f} {rect.width:.1f} {rect.height:.1f}"
+        svg = _re.sub(
+            r'viewBox="[^"]*"',
+            f'viewBox="{new_viewbox}"',
+            svg,
+            count=1,
+        )
+        svg = _re.sub(
+            r'width="[^"]*"',
+            f'width="{rect.width:.1f}pt"',
+            svg,
+            count=1,
+        )
+        svg = _re.sub(
+            r'height="[^"]*"',
+            f'height="{rect.height:.1f}pt"',
+            svg,
+            count=1,
+        )
         out_path.write_text(svg, encoding="utf-8")
     return out_path
 

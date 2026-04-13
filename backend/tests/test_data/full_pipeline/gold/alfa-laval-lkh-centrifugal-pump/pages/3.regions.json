@@ -1,0 +1,303 @@
+{
+  "page": 3,
+  "regions": [
+    {
+      "id": "r1",
+      "page": 3,
+      "bbox": [
+        56.373104095458984,
+        783.3650005078125,
+        290.9975280761719,
+        653.1546020507812
+      ],
+      "kind": "diagram",
+      "title": "Dimensions",
+      "description": "Dimensioned pump drawing showing labeled measurements A, B, C, D, E, F, G, H, I, J1, J2, M1 and M2.",
+      "markdown": null,
+      "data": null,
+      "tags": [
+        "dimensions"
+      ],
+      "entities": [
+        "J1",
+        "J2",
+        "M1",
+        "M2"
+      ],
+      "crops": {
+        "png": "3/r1.png",
+        "svg": "3/r1.svg",
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 3,
+          "bbox": [
+            56.373104095458984,
+            783.3650005078125,
+            290.9975280761719,
+            653.1546020507812
+          ],
+          "item_indices": [
+            34,
+            35,
+            36,
+            37,
+            38,
+            39,
+            40,
+            41,
+            42,
+            43,
+            44,
+            45,
+            46,
+            47,
+            48,
+            49
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r2",
+      "page": 3,
+      "bbox": [
+        55.81125259399414,
+        639.6710005078126,
+        552.6360473632812,
+        564.0472412109375
+      ],
+      "kind": "table",
+      "title": "Pump specific measures (mm)",
+      "description": "Table of pump-specific dimensions A to E for pump models from LKH-5 through LKH-90.",
+      "markdown": null,
+      "data": null,
+      "tags": [
+        "dimensions"
+      ],
+      "entities": [
+        "LKH-5",
+        "LKH-10",
+        "LKH-15",
+        "LKH-20",
+        "LKH-25",
+        "LKH-35",
+        "LKH-40",
+        "LKH-45",
+        "LKH-50",
+        "LKH-60",
+        "LKH-70",
+        "LKH-85",
+        "LKH-90"
+      ],
+      "crops": {
+        "png": "3/r2.png",
+        "svg": "3/r2.svg",
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 3,
+          "bbox": [
+            55.81125259399414,
+            639.6710005078126,
+            552.6360473632812,
+            564.0472412109375
+          ],
+          "item_indices": [
+            50,
+            51
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r3",
+      "page": 3,
+      "bbox": [
+        55.67295837402344,
+        543.6680005078125,
+        552.7077026367188,
+        432.4290005078125
+      ],
+      "kind": "table",
+      "title": "Motor specific measures (mm)",
+      "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+      "markdown": null,
+      "data": null,
+      "tags": [
+        "dimensions"
+      ],
+      "entities": [
+        "IEC80",
+        "IEC90",
+        "IEC100",
+        "IEC112",
+        "IEC132",
+        "IEC160",
+        "IEC180",
+        "IEC200",
+        "IEC250",
+        "IEC280",
+        "LKH-5",
+        "LKH-10",
+        "LKH-60",
+        "LKH-70",
+        "LKH-90"
+      ],
+      "crops": {
+        "png": "3/r3.png",
+        "svg": "3/r3.svg",
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 3,
+          "bbox": [
+            55.67295837402344,
+            543.6680005078125,
+            552.7077026367188,
+            432.4290005078125
+          ],
+          "item_indices": [
+            52,
+            53,
+            54
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r4",
+      "page": 3,
+      "bbox": [
+        55.728477478027344,
+        408.6110005078125,
+        552.9400634765625,
+        345.5280005078125
+      ],
+      "kind": "table",
+      "title": "Motor overview",
+      "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+      "markdown": null,
+      "data": null,
+      "tags": [],
+      "entities": [
+        "LKH-5",
+        "LKH-10",
+        "LKH-15",
+        "LKH-20",
+        "LKH-25",
+        "LKH-35",
+        "LKH-40",
+        "LKH-45",
+        "LKH-50",
+        "LKH-60",
+        "LKH-70",
+        "LKH-85",
+        "LKH-90",
+        "ABB",
+        "IEC80",
+        "IEC90",
+        "IEC100",
+        "IEC112",
+        "IEC160",
+        "IEC180",
+        "IEC200",
+        "IEC250",
+        "IEC280"
+      ],
+      "crops": {
+        "png": "3/r4.png",
+        "svg": "3/r4.svg",
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 3,
+          "bbox": [
+            55.728477478027344,
+            408.6110005078125,
+            552.9400634765625,
+            345.5280005078125
+          ],
+          "item_indices": [
+            55,
+            56,
+            57,
+            58
+          ]
+        }
+      ]
+    },
+    {
+      "id": "r5",
+      "page": 3,
+      "bbox": [
+        55.66300964355469,
+        324.2550005078125,
+        552.9445190429688,
+        53.912000507812536
+      ],
+      "kind": "table",
+      "title": "Connections (mm)",
+      "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+      "markdown": null,
+      "data": null,
+      "tags": [
+        "connections",
+        "dimensions"
+      ],
+      "entities": [
+        "LKH-5",
+        "LKH-10",
+        "LKH-15",
+        "LKH-20",
+        "LKH-25",
+        "LKH-35",
+        "LKH-40",
+        "LKH-45",
+        "LKH-50",
+        "LKH-60",
+        "LKH-70",
+        "LKH-85",
+        "LKH-90",
+        "ISO 2037",
+        "ISO(IDF)",
+        "DIN/ISO",
+        "SMS",
+        "BS/RJT",
+        "DS",
+        "DIN/DIN",
+        "ASME BPE",
+        "J1",
+        "J2",
+        "ESE00263/7"
+      ],
+      "crops": {
+        "png": "3/r5.png",
+        "svg": "3/r5.svg",
+        "pdf": null
+      },
+      "source_refs": [
+        {
+          "page": 3,
+          "bbox": [
+            55.66300964355469,
+            324.2550005078125,
+            552.9445190429688,
+            53.912000507812536
+          ],
+          "item_indices": [
+            59,
+            60,
+            61,
+            62
+          ]
+        }
+      ]
+    }
+  ],
+  "schema_version": 1
+}

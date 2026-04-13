@@ -294,7 +294,7 @@ async function uploadCanvasFile(
   file: File,
   onFmuUploaded?: (payload: FmuUploadedPayload, position?: FlowPosition) => void,
   position?: FlowPosition,
-) {
+): Promise<string | null> {
   if (file.name.endsWith(".fmu")) {
     const formData = new FormData();
     formData.append("file", file);
@@ -303,11 +303,11 @@ async function uploadCanvasFile(
       const data = await res.json();
       onFmuUploaded?.({ filename: data.filename, model_name: data.model_name, variables: data.variables ?? [] }, position);
     }
-    return;
+    return null;
   }
 
   if (!KNOWLEDGE_FILE_PATTERN.test(file.name)) {
-    return;
+    return null;
   }
 
   const formData = new FormData();
@@ -316,6 +316,8 @@ async function uploadCanvasFile(
   if (!res.ok) {
     throw new Error(`Upload failed: ${res.statusText}`);
   }
+  const data = await res.json();
+  return data?.document?.document_id ?? null;
 }
 
 function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, onFmuUploaded, onSimulateComplete, onDeleteNode, onAddNode, onAddEdge, onDeleteEdge, onSetNodeColor, workspaceDocIds, onAddDocToWorkspace, onRemoveDocFromWorkspace, onSetParent, onFmuFromLibrary, onAddSnippet, onUpdateNode, onSaveSelection, onParameterLookup }: CanvasGraphProps) {
@@ -1333,19 +1335,34 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     const files = Array.from(e.dataTransfer.files);
     if (!files.length) return;
     try {
-      commitPositionOverrides({}, true);
-      await Promise.all(files.map((file, index) => uploadCanvasFile(
+      // Compute drop positions per file upfront
+      const positions = files.map((file, index) => ({
         file,
-        onFmuUploaded,
-        anchorAtCenter(
-          {
-            x: dropPos.x + index * 36,
-            y: dropPos.y + index * 28,
-          },
+        pos: anchorAtCenter(
+          { x: dropPos.x + index * 36, y: dropPos.y + index * 28 },
           file.name.endsWith(".fmu") ? NODE_SIZE.fmuNode! : DOCUMENT_NODE_SIZE,
         ),
-      )));
-      refreshDocuments();
+      }));
+
+      const docIds = await Promise.all(positions.map(({ file, pos }) =>
+        uploadCanvasFile(file, onFmuUploaded, pos),
+      ));
+      await refreshDocuments();
+
+      // Add each uploaded doc to the canvas at its drop position
+      const overrides: Record<string, { x: number; y: number }> = {};
+      for (let i = 0; i < docIds.length; i++) {
+        const docId = docIds[i];
+        if (docId) {
+          overrides[`__doc_${docId}`] = positions[i]!.pos;
+        }
+      }
+      if (Object.keys(overrides).length) {
+        commitPositionOverrides(overrides, true);
+      }
+      for (const docId of docIds) {
+        if (docId) onAddDocToWorkspace?.(docId);
+      }
     } catch {
       // upload failed — user can retry; suppress to avoid dev overlay noise
     }

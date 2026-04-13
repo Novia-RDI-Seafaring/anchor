@@ -1,0 +1,4750 @@
+{
+  "entities": {
+    "200006086-1-EN-GB": [
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "text",
+        "title": "Copyright and document notice",
+        "description": "Small-print legal notice about copyright, permissions, and disclaimer, along with the document identifier and company copyright line.",
+        "entities": [
+          "200006086-1-EN-GB",
+          "Alfa Laval Corporate AB"
+        ],
+        "svg": "4/r5.svg",
+        "png": "4/r5.png"
+      }
+    ],
+    "ABB": [
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      }
+    ],
+    "AISI 316L": [
+      {
+        "region_id": "r7",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "text",
+        "title": "Standard design",
+        "description": "Standard design section describing materials, construction, impeller design, and seal configuration.",
+        "entities": [
+          "LKH",
+          "AISI 316L",
+          "W. 1.4404"
+        ],
+        "tags": [
+          "materials"
+        ],
+        "svg": "1/r7.svg",
+        "png": "1/r7.png"
+      }
+    ],
+    "ASME BPE": [
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      }
+    ],
+    "Alfa Laval": [
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "figure",
+        "title": "Alfa Laval logo",
+        "description": "Brand logo graphic placed in the upper-right corner of the page.",
+        "entities": [
+          "Alfa Laval"
+        ],
+        "svg": "1/r1.svg",
+        "png": "1/r1.png"
+      },
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "text",
+        "title": "Product title",
+        "description": "Main page title naming the Alfa Laval LKH centrifugal pumps product family.",
+        "entities": [
+          "Alfa Laval",
+          "LKH"
+        ],
+        "svg": "1/r2.svg",
+        "png": "1/r2.png"
+      },
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "text",
+        "title": "Introduction",
+        "description": "Introductory section describing the LKH pump's hygienic use, efficiency, and operating range.",
+        "entities": [
+          "Alfa Laval",
+          "LKH"
+        ],
+        "tags": [
+          "introduction"
+        ],
+        "svg": "1/r3.svg",
+        "png": "1/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "figure",
+        "title": "LKH pump product image",
+        "description": "Large product photograph/illustration of the Alfa Laval LKH centrifugal pump.",
+        "entities": [
+          "Alfa Laval",
+          "LKH"
+        ],
+        "svg": "1/r4.svg",
+        "png": "1/r4.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "text",
+        "title": "Application",
+        "description": "Application section covering CIP use cases, hygienic industries, and performance limits.",
+        "entities": [
+          "Alfa Laval",
+          "LKH"
+        ],
+        "tags": [
+          "application"
+        ],
+        "svg": "1/r5.svg",
+        "png": "1/r5.png"
+      },
+      {
+        "region_id": "r6",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "text",
+        "title": "How to contact Alfa Laval",
+        "description": "Footer contact section pointing readers to the Alfa Laval website for country-specific contact details.",
+        "entities": [
+          "Alfa Laval",
+          "www.alfalaval.com"
+        ],
+        "svg": "4/r6.svg",
+        "png": "4/r6.png"
+      }
+    ],
+    "Alfa Laval Corporate AB": [
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "text",
+        "title": "Copyright and document notice",
+        "description": "Small-print legal notice about copyright, permissions, and disclaimer, along with the document identifier and company copyright line.",
+        "entities": [
+          "200006086-1-EN-GB",
+          "Alfa Laval Corporate AB"
+        ],
+        "svg": "4/r5.svg",
+        "png": "4/r5.png"
+      }
+    ],
+    "BS/RJT": [
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      }
+    ],
+    "DIN/DIN": [
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      }
+    ],
+    "DIN/ISO": [
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      }
+    ],
+    "DS": [
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      }
+    ],
+    "ESE00263/7": [
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      }
+    ],
+    "ESE00698": [
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "caption",
+        "title": "Note on further details",
+        "description": "Callout note directing the reader to document ESE00698 for additional details.",
+        "entities": [
+          "ESE00698"
+        ],
+        "svg": "4/r4.svg",
+        "png": "4/r4.png"
+      }
+    ],
+    "FEP": [
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "text",
+        "title": "Options",
+        "description": "Bulleted list of available pump configuration and material options, including seal, elastomer, finish, motor, and ATEX variations.",
+        "entities": [
+          "LKH-10",
+          "LKH-50",
+          "LKHex",
+          "NBR",
+          "FPM",
+          "FEP"
+        ],
+        "tags": [
+          "options",
+          "materials"
+        ],
+        "svg": "4/r2.svg",
+        "png": "4/r2.png"
+      }
+    ],
+    "FPM": [
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "text",
+        "title": "Options",
+        "description": "Bulleted list of available pump configuration and material options, including seal, elastomer, finish, motor, and ATEX variations.",
+        "entities": [
+          "LKH-10",
+          "LKH-50",
+          "LKHex",
+          "NBR",
+          "FPM",
+          "FEP"
+        ],
+        "tags": [
+          "options",
+          "materials"
+        ],
+        "svg": "4/r2.svg",
+        "png": "4/r2.png"
+      }
+    ],
+    "IEC100": [
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      }
+    ],
+    "IEC112": [
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      }
+    ],
+    "IEC132": [
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      }
+    ],
+    "IEC160": [
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      }
+    ],
+    "IEC180": [
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      }
+    ],
+    "IEC200": [
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      }
+    ],
+    "IEC250": [
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      }
+    ],
+    "IEC280": [
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      }
+    ],
+    "IEC80": [
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      }
+    ],
+    "IEC90": [
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      }
+    ],
+    "ISO 2037": [
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      }
+    ],
+    "ISO(IDF)": [
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      }
+    ],
+    "J1": [
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "diagram",
+        "title": "Dimensions",
+        "description": "Dimensioned pump drawing showing labeled measurements A, B, C, D, E, F, G, H, I, J1, J2, M1 and M2.",
+        "entities": [
+          "J1",
+          "J2",
+          "M1",
+          "M2"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r1.svg",
+        "png": "3/r1.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      }
+    ],
+    "J2": [
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "diagram",
+        "title": "Dimensions",
+        "description": "Dimensioned pump drawing showing labeled measurements A, B, C, D, E, F, G, H, I, J1, J2, M1 and M2.",
+        "entities": [
+          "J1",
+          "J2",
+          "M1",
+          "M2"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r1.svg",
+        "png": "3/r1.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      }
+    ],
+    "LKH": [
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "text",
+        "title": "Product title",
+        "description": "Main page title naming the Alfa Laval LKH centrifugal pumps product family.",
+        "entities": [
+          "Alfa Laval",
+          "LKH"
+        ],
+        "svg": "1/r2.svg",
+        "png": "1/r2.png"
+      },
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "text",
+        "title": "Introduction",
+        "description": "Introductory section describing the LKH pump's hygienic use, efficiency, and operating range.",
+        "entities": [
+          "Alfa Laval",
+          "LKH"
+        ],
+        "tags": [
+          "introduction"
+        ],
+        "svg": "1/r3.svg",
+        "png": "1/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "figure",
+        "title": "LKH pump product image",
+        "description": "Large product photograph/illustration of the Alfa Laval LKH centrifugal pump.",
+        "entities": [
+          "Alfa Laval",
+          "LKH"
+        ],
+        "svg": "1/r4.svg",
+        "png": "1/r4.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "text",
+        "title": "Application",
+        "description": "Application section covering CIP use cases, hygienic industries, and performance limits.",
+        "entities": [
+          "Alfa Laval",
+          "LKH"
+        ],
+        "tags": [
+          "application"
+        ],
+        "svg": "1/r5.svg",
+        "png": "1/r5.png"
+      },
+      {
+        "region_id": "r6",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "text",
+        "title": "Benefits",
+        "description": "Benefits section listing energy efficiency, hygienic design, performance envelope, and uptime advantages, with continuation text about shaft seal maintenance.",
+        "entities": [
+          "LKH"
+        ],
+        "tags": [
+          "benefits"
+        ],
+        "svg": "1/r6.svg",
+        "png": "1/r6.png"
+      },
+      {
+        "region_id": "r7",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "text",
+        "title": "Standard design",
+        "description": "Standard design section describing materials, construction, impeller design, and seal configuration.",
+        "entities": [
+          "LKH",
+          "AISI 316L",
+          "W. 1.4404"
+        ],
+        "tags": [
+          "materials"
+        ],
+        "svg": "1/r7.svg",
+        "png": "1/r7.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "spec_block",
+        "title": "Warranty",
+        "description": "Warranty section describing the extended 3-year warranty for LKH pumps and its spare-parts condition.",
+        "entities": [
+          "LKH"
+        ],
+        "tags": [
+          "warranty"
+        ],
+        "svg": "2/r5.svg",
+        "png": "2/r5.png"
+      }
+    ],
+    "LKH-10": [
+      {
+        "region_id": "r6",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "spec_block",
+        "title": "Operating data — Max inlet pressure",
+        "description": "Operating data table listing maximum inlet pressure values for several LKH pump models and variants.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "svg": "2/r6.svg",
+        "png": "2/r6.png"
+      },
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Pump specific measures (mm)",
+        "description": "Table of pump-specific dimensions A to E for pump models from LKH-5 through LKH-90.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r2.svg",
+        "png": "3/r2.png"
+      },
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      },
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "chart",
+        "title": "Flow chart",
+        "description": "Pump performance chart plotting head H(m) against flow Q (m³/h) with labeled curves A–M and model legend for LKH pump sizes at 50 Hz and 3000 rpm.",
+        "entities": [
+          "LKH-70",
+          "LKH-85",
+          "LKH-40",
+          "LKH-35",
+          "LKH-60",
+          "LKH-25",
+          "LKH-50",
+          "LKH-45",
+          "LKH-90",
+          "LKH-20",
+          "LKH-10",
+          "LKH-5",
+          "LKH-15"
+        ],
+        "svg": "4/r1.svg",
+        "png": "4/r1.png"
+      },
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "text",
+        "title": "Options",
+        "description": "Bulleted list of available pump configuration and material options, including seal, elastomer, finish, motor, and ATEX variations.",
+        "entities": [
+          "LKH-10",
+          "LKH-50",
+          "LKHex",
+          "NBR",
+          "FPM",
+          "FEP"
+        ],
+        "tags": [
+          "options",
+          "materials"
+        ],
+        "svg": "4/r2.svg",
+        "png": "4/r2.png"
+      }
+    ],
+    "LKH-15": [
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Pump specific measures (mm)",
+        "description": "Table of pump-specific dimensions A to E for pump models from LKH-5 through LKH-90.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r2.svg",
+        "png": "3/r2.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      },
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "chart",
+        "title": "Flow chart",
+        "description": "Pump performance chart plotting head H(m) against flow Q (m³/h) with labeled curves A–M and model legend for LKH pump sizes at 50 Hz and 3000 rpm.",
+        "entities": [
+          "LKH-70",
+          "LKH-85",
+          "LKH-40",
+          "LKH-35",
+          "LKH-60",
+          "LKH-25",
+          "LKH-50",
+          "LKH-45",
+          "LKH-90",
+          "LKH-20",
+          "LKH-10",
+          "LKH-5",
+          "LKH-15"
+        ],
+        "svg": "4/r1.svg",
+        "png": "4/r1.png"
+      }
+    ],
+    "LKH-20": [
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Pump specific measures (mm)",
+        "description": "Table of pump-specific dimensions A to E for pump models from LKH-5 through LKH-90.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r2.svg",
+        "png": "3/r2.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      },
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "chart",
+        "title": "Flow chart",
+        "description": "Pump performance chart plotting head H(m) against flow Q (m³/h) with labeled curves A–M and model legend for LKH pump sizes at 50 Hz and 3000 rpm.",
+        "entities": [
+          "LKH-70",
+          "LKH-85",
+          "LKH-40",
+          "LKH-35",
+          "LKH-60",
+          "LKH-25",
+          "LKH-50",
+          "LKH-45",
+          "LKH-90",
+          "LKH-20",
+          "LKH-10",
+          "LKH-5",
+          "LKH-15"
+        ],
+        "svg": "4/r1.svg",
+        "png": "4/r1.png"
+      }
+    ],
+    "LKH-25": [
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Pump specific measures (mm)",
+        "description": "Table of pump-specific dimensions A to E for pump models from LKH-5 through LKH-90.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r2.svg",
+        "png": "3/r2.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      },
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "chart",
+        "title": "Flow chart",
+        "description": "Pump performance chart plotting head H(m) against flow Q (m³/h) with labeled curves A–M and model legend for LKH pump sizes at 50 Hz and 3000 rpm.",
+        "entities": [
+          "LKH-70",
+          "LKH-85",
+          "LKH-40",
+          "LKH-35",
+          "LKH-60",
+          "LKH-25",
+          "LKH-50",
+          "LKH-45",
+          "LKH-90",
+          "LKH-20",
+          "LKH-10",
+          "LKH-5",
+          "LKH-15"
+        ],
+        "svg": "4/r1.svg",
+        "png": "4/r1.png"
+      }
+    ],
+    "LKH-35": [
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Pump specific measures (mm)",
+        "description": "Table of pump-specific dimensions A to E for pump models from LKH-5 through LKH-90.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r2.svg",
+        "png": "3/r2.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      },
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "chart",
+        "title": "Flow chart",
+        "description": "Pump performance chart plotting head H(m) against flow Q (m³/h) with labeled curves A–M and model legend for LKH pump sizes at 50 Hz and 3000 rpm.",
+        "entities": [
+          "LKH-70",
+          "LKH-85",
+          "LKH-40",
+          "LKH-35",
+          "LKH-60",
+          "LKH-25",
+          "LKH-50",
+          "LKH-45",
+          "LKH-90",
+          "LKH-20",
+          "LKH-10",
+          "LKH-5",
+          "LKH-15"
+        ],
+        "svg": "4/r1.svg",
+        "png": "4/r1.png"
+      }
+    ],
+    "LKH-40": [
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Pump specific measures (mm)",
+        "description": "Table of pump-specific dimensions A to E for pump models from LKH-5 through LKH-90.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r2.svg",
+        "png": "3/r2.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      },
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "chart",
+        "title": "Flow chart",
+        "description": "Pump performance chart plotting head H(m) against flow Q (m³/h) with labeled curves A–M and model legend for LKH pump sizes at 50 Hz and 3000 rpm.",
+        "entities": [
+          "LKH-70",
+          "LKH-85",
+          "LKH-40",
+          "LKH-35",
+          "LKH-60",
+          "LKH-25",
+          "LKH-50",
+          "LKH-45",
+          "LKH-90",
+          "LKH-20",
+          "LKH-10",
+          "LKH-5",
+          "LKH-15"
+        ],
+        "svg": "4/r1.svg",
+        "png": "4/r1.png"
+      }
+    ],
+    "LKH-45": [
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Pump specific measures (mm)",
+        "description": "Table of pump-specific dimensions A to E for pump models from LKH-5 through LKH-90.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r2.svg",
+        "png": "3/r2.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      },
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "chart",
+        "title": "Flow chart",
+        "description": "Pump performance chart plotting head H(m) against flow Q (m³/h) with labeled curves A–M and model legend for LKH pump sizes at 50 Hz and 3000 rpm.",
+        "entities": [
+          "LKH-70",
+          "LKH-85",
+          "LKH-40",
+          "LKH-35",
+          "LKH-60",
+          "LKH-25",
+          "LKH-50",
+          "LKH-45",
+          "LKH-90",
+          "LKH-20",
+          "LKH-10",
+          "LKH-5",
+          "LKH-15"
+        ],
+        "svg": "4/r1.svg",
+        "png": "4/r1.png"
+      }
+    ],
+    "LKH-5": [
+      {
+        "region_id": "r6",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "spec_block",
+        "title": "Operating data — Max inlet pressure",
+        "description": "Operating data table listing maximum inlet pressure values for several LKH pump models and variants.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "svg": "2/r6.svg",
+        "png": "2/r6.png"
+      },
+      {
+        "region_id": "r9",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Double mechanical shaft seal",
+        "description": "Table listing inlet water pressure and water consumption data for double mechanical shaft seals across LKH model ranges.",
+        "entities": [
+          "LKH-5",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "svg": "2/r9.svg",
+        "png": "2/r9.png"
+      },
+      {
+        "region_id": "r10",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Connections for flushed and double mechanical shaft seal",
+        "description": "Table showing connection types for flushed and double mechanical shaft seals for specified LKH models.",
+        "entities": [
+          "LKH-5",
+          "LKH-70",
+          "LKH-90",
+          "LKH-85"
+        ],
+        "tags": [
+          "connections"
+        ],
+        "svg": "2/r10.svg",
+        "png": "2/r10.png"
+      },
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Pump specific measures (mm)",
+        "description": "Table of pump-specific dimensions A to E for pump models from LKH-5 through LKH-90.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r2.svg",
+        "png": "3/r2.png"
+      },
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      },
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "chart",
+        "title": "Flow chart",
+        "description": "Pump performance chart plotting head H(m) against flow Q (m³/h) with labeled curves A–M and model legend for LKH pump sizes at 50 Hz and 3000 rpm.",
+        "entities": [
+          "LKH-70",
+          "LKH-85",
+          "LKH-40",
+          "LKH-35",
+          "LKH-60",
+          "LKH-25",
+          "LKH-50",
+          "LKH-45",
+          "LKH-90",
+          "LKH-20",
+          "LKH-10",
+          "LKH-5",
+          "LKH-15"
+        ],
+        "svg": "4/r1.svg",
+        "png": "4/r1.png"
+      }
+    ],
+    "LKH-50": [
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Pump specific measures (mm)",
+        "description": "Table of pump-specific dimensions A to E for pump models from LKH-5 through LKH-90.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r2.svg",
+        "png": "3/r2.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      },
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "chart",
+        "title": "Flow chart",
+        "description": "Pump performance chart plotting head H(m) against flow Q (m³/h) with labeled curves A–M and model legend for LKH pump sizes at 50 Hz and 3000 rpm.",
+        "entities": [
+          "LKH-70",
+          "LKH-85",
+          "LKH-40",
+          "LKH-35",
+          "LKH-60",
+          "LKH-25",
+          "LKH-50",
+          "LKH-45",
+          "LKH-90",
+          "LKH-20",
+          "LKH-10",
+          "LKH-5",
+          "LKH-15"
+        ],
+        "svg": "4/r1.svg",
+        "png": "4/r1.png"
+      },
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "text",
+        "title": "Options",
+        "description": "Bulleted list of available pump configuration and material options, including seal, elastomer, finish, motor, and ATEX variations.",
+        "entities": [
+          "LKH-10",
+          "LKH-50",
+          "LKHex",
+          "NBR",
+          "FPM",
+          "FEP"
+        ],
+        "tags": [
+          "options",
+          "materials"
+        ],
+        "svg": "4/r2.svg",
+        "png": "4/r2.png"
+      }
+    ],
+    "LKH-60": [
+      {
+        "region_id": "r9",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Double mechanical shaft seal",
+        "description": "Table listing inlet water pressure and water consumption data for double mechanical shaft seals across LKH model ranges.",
+        "entities": [
+          "LKH-5",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "svg": "2/r9.svg",
+        "png": "2/r9.png"
+      },
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Pump specific measures (mm)",
+        "description": "Table of pump-specific dimensions A to E for pump models from LKH-5 through LKH-90.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r2.svg",
+        "png": "3/r2.png"
+      },
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      },
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "chart",
+        "title": "Flow chart",
+        "description": "Pump performance chart plotting head H(m) against flow Q (m³/h) with labeled curves A–M and model legend for LKH pump sizes at 50 Hz and 3000 rpm.",
+        "entities": [
+          "LKH-70",
+          "LKH-85",
+          "LKH-40",
+          "LKH-35",
+          "LKH-60",
+          "LKH-25",
+          "LKH-50",
+          "LKH-45",
+          "LKH-90",
+          "LKH-20",
+          "LKH-10",
+          "LKH-5",
+          "LKH-15"
+        ],
+        "svg": "4/r1.svg",
+        "png": "4/r1.png"
+      }
+    ],
+    "LKH-70": [
+      {
+        "region_id": "r6",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "spec_block",
+        "title": "Operating data — Max inlet pressure",
+        "description": "Operating data table listing maximum inlet pressure values for several LKH pump models and variants.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "svg": "2/r6.svg",
+        "png": "2/r6.png"
+      },
+      {
+        "region_id": "r9",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Double mechanical shaft seal",
+        "description": "Table listing inlet water pressure and water consumption data for double mechanical shaft seals across LKH model ranges.",
+        "entities": [
+          "LKH-5",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "svg": "2/r9.svg",
+        "png": "2/r9.png"
+      },
+      {
+        "region_id": "r10",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Connections for flushed and double mechanical shaft seal",
+        "description": "Table showing connection types for flushed and double mechanical shaft seals for specified LKH models.",
+        "entities": [
+          "LKH-5",
+          "LKH-70",
+          "LKH-90",
+          "LKH-85"
+        ],
+        "tags": [
+          "connections"
+        ],
+        "svg": "2/r10.svg",
+        "png": "2/r10.png"
+      },
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Pump specific measures (mm)",
+        "description": "Table of pump-specific dimensions A to E for pump models from LKH-5 through LKH-90.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r2.svg",
+        "png": "3/r2.png"
+      },
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      },
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "chart",
+        "title": "Flow chart",
+        "description": "Pump performance chart plotting head H(m) against flow Q (m³/h) with labeled curves A–M and model legend for LKH pump sizes at 50 Hz and 3000 rpm.",
+        "entities": [
+          "LKH-70",
+          "LKH-85",
+          "LKH-40",
+          "LKH-35",
+          "LKH-60",
+          "LKH-25",
+          "LKH-50",
+          "LKH-45",
+          "LKH-90",
+          "LKH-20",
+          "LKH-10",
+          "LKH-5",
+          "LKH-15"
+        ],
+        "svg": "4/r1.svg",
+        "png": "4/r1.png"
+      }
+    ],
+    "LKH-85": [
+      {
+        "region_id": "r6",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "spec_block",
+        "title": "Operating data — Max inlet pressure",
+        "description": "Operating data table listing maximum inlet pressure values for several LKH pump models and variants.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "svg": "2/r6.svg",
+        "png": "2/r6.png"
+      },
+      {
+        "region_id": "r10",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Connections for flushed and double mechanical shaft seal",
+        "description": "Table showing connection types for flushed and double mechanical shaft seals for specified LKH models.",
+        "entities": [
+          "LKH-5",
+          "LKH-70",
+          "LKH-90",
+          "LKH-85"
+        ],
+        "tags": [
+          "connections"
+        ],
+        "svg": "2/r10.svg",
+        "png": "2/r10.png"
+      },
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Pump specific measures (mm)",
+        "description": "Table of pump-specific dimensions A to E for pump models from LKH-5 through LKH-90.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r2.svg",
+        "png": "3/r2.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      },
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "chart",
+        "title": "Flow chart",
+        "description": "Pump performance chart plotting head H(m) against flow Q (m³/h) with labeled curves A–M and model legend for LKH pump sizes at 50 Hz and 3000 rpm.",
+        "entities": [
+          "LKH-70",
+          "LKH-85",
+          "LKH-40",
+          "LKH-35",
+          "LKH-60",
+          "LKH-25",
+          "LKH-50",
+          "LKH-45",
+          "LKH-90",
+          "LKH-20",
+          "LKH-10",
+          "LKH-5",
+          "LKH-15"
+        ],
+        "svg": "4/r1.svg",
+        "png": "4/r1.png"
+      }
+    ],
+    "LKH-90": [
+      {
+        "region_id": "r6",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "spec_block",
+        "title": "Operating data — Max inlet pressure",
+        "description": "Operating data table listing maximum inlet pressure values for several LKH pump models and variants.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "svg": "2/r6.svg",
+        "png": "2/r6.png"
+      },
+      {
+        "region_id": "r9",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Double mechanical shaft seal",
+        "description": "Table listing inlet water pressure and water consumption data for double mechanical shaft seals across LKH model ranges.",
+        "entities": [
+          "LKH-5",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "svg": "2/r9.svg",
+        "png": "2/r9.png"
+      },
+      {
+        "region_id": "r10",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Connections for flushed and double mechanical shaft seal",
+        "description": "Table showing connection types for flushed and double mechanical shaft seals for specified LKH models.",
+        "entities": [
+          "LKH-5",
+          "LKH-70",
+          "LKH-90",
+          "LKH-85"
+        ],
+        "tags": [
+          "connections"
+        ],
+        "svg": "2/r10.svg",
+        "png": "2/r10.png"
+      },
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Pump specific measures (mm)",
+        "description": "Table of pump-specific dimensions A to E for pump models from LKH-5 through LKH-90.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r2.svg",
+        "png": "3/r2.png"
+      },
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      },
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "chart",
+        "title": "Flow chart",
+        "description": "Pump performance chart plotting head H(m) against flow Q (m³/h) with labeled curves A–M and model legend for LKH pump sizes at 50 Hz and 3000 rpm.",
+        "entities": [
+          "LKH-70",
+          "LKH-85",
+          "LKH-40",
+          "LKH-35",
+          "LKH-60",
+          "LKH-25",
+          "LKH-50",
+          "LKH-45",
+          "LKH-90",
+          "LKH-20",
+          "LKH-10",
+          "LKH-5",
+          "LKH-15"
+        ],
+        "svg": "4/r1.svg",
+        "png": "4/r1.png"
+      }
+    ],
+    "LKHex": [
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "text",
+        "title": "Options",
+        "description": "Bulleted list of available pump configuration and material options, including seal, elastomer, finish, motor, and ATEX variations.",
+        "entities": [
+          "LKH-10",
+          "LKH-50",
+          "LKHex",
+          "NBR",
+          "FPM",
+          "FEP"
+        ],
+        "tags": [
+          "options",
+          "materials"
+        ],
+        "svg": "4/r2.svg",
+        "png": "4/r2.png"
+      }
+    ],
+    "M1": [
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "diagram",
+        "title": "Dimensions",
+        "description": "Dimensioned pump drawing showing labeled measurements A, B, C, D, E, F, G, H, I, J1, J2, M1 and M2.",
+        "entities": [
+          "J1",
+          "J2",
+          "M1",
+          "M2"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r1.svg",
+        "png": "3/r1.png"
+      }
+    ],
+    "M2": [
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "diagram",
+        "title": "Dimensions",
+        "description": "Dimensioned pump drawing showing labeled measurements A, B, C, D, E, F, G, H, I, J1, J2, M1 and M2.",
+        "entities": [
+          "J1",
+          "J2",
+          "M1",
+          "M2"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r1.svg",
+        "png": "3/r1.png"
+      }
+    ],
+    "NBR": [
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "text",
+        "title": "Options",
+        "description": "Bulleted list of available pump configuration and material options, including seal, elastomer, finish, motor, and ATEX variations.",
+        "entities": [
+          "LKH-10",
+          "LKH-50",
+          "LKHex",
+          "NBR",
+          "FPM",
+          "FEP"
+        ],
+        "tags": [
+          "options",
+          "materials"
+        ],
+        "svg": "4/r2.svg",
+        "png": "4/r2.png"
+      }
+    ],
+    "SMS": [
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      }
+    ],
+    "W. 1.4404": [
+      {
+        "region_id": "r7",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "text",
+        "title": "Standard design",
+        "description": "Standard design section describing materials, construction, impeller design, and seal configuration.",
+        "entities": [
+          "LKH",
+          "AISI 316L",
+          "W. 1.4404"
+        ],
+        "tags": [
+          "materials"
+        ],
+        "svg": "1/r7.svg",
+        "png": "1/r7.png"
+      }
+    ],
+    "www.alfalaval.com": [
+      {
+        "region_id": "r6",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "text",
+        "title": "How to contact Alfa Laval",
+        "description": "Footer contact section pointing readers to the Alfa Laval website for country-specific contact details.",
+        "entities": [
+          "Alfa Laval",
+          "www.alfalaval.com"
+        ],
+        "svg": "4/r6.svg",
+        "png": "4/r6.png"
+      }
+    ]
+  },
+  "topics": {
+    "connections": [
+      {
+        "region_id": "r10",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Connections for flushed and double mechanical shaft seal",
+        "description": "Table showing connection types for flushed and double mechanical shaft seals for specified LKH models.",
+        "entities": [
+          "LKH-5",
+          "LKH-70",
+          "LKH-90",
+          "LKH-85"
+        ],
+        "tags": [
+          "connections"
+        ],
+        "svg": "2/r10.svg",
+        "png": "2/r10.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      }
+    ],
+    "dimensions": [
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Motor sizes",
+        "description": "Table listing available motor size ranges for 50 Hz and 60 Hz operation.",
+        "svg": "2/r3.svg",
+        "png": "2/r3.png"
+      },
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "diagram",
+        "title": "Dimensions",
+        "description": "Dimensioned pump drawing showing labeled measurements A, B, C, D, E, F, G, H, I, J1, J2, M1 and M2.",
+        "entities": [
+          "J1",
+          "J2",
+          "M1",
+          "M2"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r1.svg",
+        "png": "3/r1.png"
+      },
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Pump specific measures (mm)",
+        "description": "Table of pump-specific dimensions A to E for pump models from LKH-5 through LKH-90.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r2.svg",
+        "png": "3/r2.png"
+      },
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      },
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "chart",
+        "title": "Flow chart",
+        "description": "Pump performance chart plotting head H(m) against flow Q (m³/h) with labeled curves A–M and model legend for LKH pump sizes at 50 Hz and 3000 rpm.",
+        "entities": [
+          "LKH-70",
+          "LKH-85",
+          "LKH-40",
+          "LKH-35",
+          "LKH-60",
+          "LKH-25",
+          "LKH-50",
+          "LKH-45",
+          "LKH-90",
+          "LKH-20",
+          "LKH-10",
+          "LKH-5",
+          "LKH-15"
+        ],
+        "svg": "4/r1.svg",
+        "png": "4/r1.png"
+      }
+    ],
+    "figures": [
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "figure",
+        "title": "Alfa Laval logo",
+        "description": "Brand logo graphic placed in the upper-right corner of the page.",
+        "entities": [
+          "Alfa Laval"
+        ],
+        "svg": "1/r1.svg",
+        "png": "1/r1.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "figure",
+        "title": "LKH pump product image",
+        "description": "Large product photograph/illustration of the Alfa Laval LKH centrifugal pump.",
+        "entities": [
+          "Alfa Laval",
+          "LKH"
+        ],
+        "svg": "1/r4.svg",
+        "png": "1/r4.png"
+      }
+    ],
+    "general": [
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "text",
+        "title": "Product title",
+        "description": "Main page title naming the Alfa Laval LKH centrifugal pumps product family.",
+        "entities": [
+          "Alfa Laval",
+          "LKH"
+        ],
+        "svg": "1/r2.svg",
+        "png": "1/r2.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "text",
+        "title": "Copyright and document notice",
+        "description": "Small-print legal notice about copyright, permissions, and disclaimer, along with the document identifier and company copyright line.",
+        "entities": [
+          "200006086-1-EN-GB",
+          "Alfa Laval Corporate AB"
+        ],
+        "svg": "4/r5.svg",
+        "png": "4/r5.png"
+      }
+    ],
+    "materials": [
+      {
+        "region_id": "r6",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "text",
+        "title": "Benefits",
+        "description": "Benefits section listing energy efficiency, hygienic design, performance envelope, and uptime advantages, with continuation text about shaft seal maintenance.",
+        "entities": [
+          "LKH"
+        ],
+        "tags": [
+          "benefits"
+        ],
+        "svg": "1/r6.svg",
+        "png": "1/r6.png"
+      },
+      {
+        "region_id": "r7",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "text",
+        "title": "Standard design",
+        "description": "Standard design section describing materials, construction, impeller design, and seal configuration.",
+        "entities": [
+          "LKH",
+          "AISI 316L",
+          "W. 1.4404"
+        ],
+        "tags": [
+          "materials"
+        ],
+        "svg": "1/r7.svg",
+        "png": "1/r7.png"
+      },
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "spec_block",
+        "title": "Technical data",
+        "description": "Technical data section containing the materials specification table for pump wetted parts, seals, and finishes.",
+        "tags": [
+          "materials"
+        ],
+        "svg": "2/r1.svg",
+        "png": "2/r1.png"
+      },
+      {
+        "region_id": "r8",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Flushed shaft seal",
+        "description": "Table specifying inlet water pressure and water consumption for the flushed shaft seal.",
+        "svg": "2/r8.svg",
+        "png": "2/r8.png"
+      },
+      {
+        "region_id": "r9",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Double mechanical shaft seal",
+        "description": "Table listing inlet water pressure and water consumption data for double mechanical shaft seals across LKH model ranges.",
+        "entities": [
+          "LKH-5",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "svg": "2/r9.svg",
+        "png": "2/r9.png"
+      },
+      {
+        "region_id": "r10",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Connections for flushed and double mechanical shaft seal",
+        "description": "Table showing connection types for flushed and double mechanical shaft seals for specified LKH models.",
+        "entities": [
+          "LKH-5",
+          "LKH-70",
+          "LKH-90",
+          "LKH-85"
+        ],
+        "tags": [
+          "connections"
+        ],
+        "svg": "2/r10.svg",
+        "png": "2/r10.png"
+      },
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "text",
+        "title": "Options",
+        "description": "Bulleted list of available pump configuration and material options, including seal, elastomer, finish, motor, and ATEX variations.",
+        "entities": [
+          "LKH-10",
+          "LKH-50",
+          "LKHex",
+          "NBR",
+          "FPM",
+          "FEP"
+        ],
+        "tags": [
+          "options",
+          "materials"
+        ],
+        "svg": "4/r2.svg",
+        "png": "4/r2.png"
+      }
+    ],
+    "motor": [
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "spec_block",
+        "title": "Motor",
+        "description": "Motor section with descriptive specifications for IEC metric foot-flanged motors, pole counts, speeds, IP rating, and insulation class.",
+        "svg": "2/r2.svg",
+        "png": "2/r2.png"
+      },
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Motor sizes",
+        "description": "Table listing available motor size ranges for 50 Hz and 60 Hz operation.",
+        "svg": "2/r3.svg",
+        "png": "2/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Min/max motor speed",
+        "description": "Table showing minimum and maximum motor speeds for different pole counts and power ranges.",
+        "svg": "2/r4.svg",
+        "png": "2/r4.png"
+      },
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      },
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "text",
+        "title": "Options",
+        "description": "Bulleted list of available pump configuration and material options, including seal, elastomer, finish, motor, and ATEX variations.",
+        "entities": [
+          "LKH-10",
+          "LKH-50",
+          "LKHex",
+          "NBR",
+          "FPM",
+          "FEP"
+        ],
+        "tags": [
+          "options",
+          "materials"
+        ],
+        "svg": "4/r2.svg",
+        "png": "4/r2.png"
+      }
+    ],
+    "operating_data": [
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "text",
+        "title": "Introduction",
+        "description": "Introductory section describing the LKH pump's hygienic use, efficiency, and operating range.",
+        "entities": [
+          "Alfa Laval",
+          "LKH"
+        ],
+        "tags": [
+          "introduction"
+        ],
+        "svg": "1/r3.svg",
+        "png": "1/r3.png"
+      },
+      {
+        "region_id": "r6",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "spec_block",
+        "title": "Operating data — Max inlet pressure",
+        "description": "Operating data table listing maximum inlet pressure values for several LKH pump models and variants.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "svg": "2/r6.svg",
+        "png": "2/r6.png"
+      },
+      {
+        "region_id": "r7",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Temperature",
+        "description": "Table with temperature range, flush media limit, and flush housing sterilization limit.",
+        "svg": "2/r7.svg",
+        "png": "2/r7.png"
+      },
+      {
+        "region_id": "r8",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Flushed shaft seal",
+        "description": "Table specifying inlet water pressure and water consumption for the flushed shaft seal.",
+        "svg": "2/r8.svg",
+        "png": "2/r8.png"
+      },
+      {
+        "region_id": "r9",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Double mechanical shaft seal",
+        "description": "Table listing inlet water pressure and water consumption data for double mechanical shaft seals across LKH model ranges.",
+        "entities": [
+          "LKH-5",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "svg": "2/r9.svg",
+        "png": "2/r9.png"
+      }
+    ],
+    "overview": [
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "text",
+        "title": "Introduction",
+        "description": "Introductory section describing the LKH pump's hygienic use, efficiency, and operating range.",
+        "entities": [
+          "Alfa Laval",
+          "LKH"
+        ],
+        "tags": [
+          "introduction"
+        ],
+        "svg": "1/r3.svg",
+        "png": "1/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      }
+    ],
+    "performance": [
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "text",
+        "title": "Application",
+        "description": "Application section covering CIP use cases, hygienic industries, and performance limits.",
+        "entities": [
+          "Alfa Laval",
+          "LKH"
+        ],
+        "tags": [
+          "application"
+        ],
+        "svg": "1/r5.svg",
+        "png": "1/r5.png"
+      },
+      {
+        "region_id": "r6",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 1,
+        "kind": "text",
+        "title": "Benefits",
+        "description": "Benefits section listing energy efficiency, hygienic design, performance envelope, and uptime advantages, with continuation text about shaft seal maintenance.",
+        "entities": [
+          "LKH"
+        ],
+        "tags": [
+          "benefits"
+        ],
+        "svg": "1/r6.svg",
+        "png": "1/r6.png"
+      },
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "chart",
+        "title": "Flow chart",
+        "description": "Pump performance chart plotting head H(m) against flow Q (m³/h) with labeled curves A–M and model legend for LKH pump sizes at 50 Hz and 3000 rpm.",
+        "entities": [
+          "LKH-70",
+          "LKH-85",
+          "LKH-40",
+          "LKH-35",
+          "LKH-60",
+          "LKH-25",
+          "LKH-50",
+          "LKH-45",
+          "LKH-90",
+          "LKH-20",
+          "LKH-10",
+          "LKH-5",
+          "LKH-15"
+        ],
+        "svg": "4/r1.svg",
+        "png": "4/r1.png"
+      }
+    ],
+    "specifications": [
+      {
+        "region_id": "r1",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "spec_block",
+        "title": "Technical data",
+        "description": "Technical data section containing the materials specification table for pump wetted parts, seals, and finishes.",
+        "tags": [
+          "materials"
+        ],
+        "svg": "2/r1.svg",
+        "png": "2/r1.png"
+      },
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "spec_block",
+        "title": "Motor",
+        "description": "Motor section with descriptive specifications for IEC metric foot-flanged motors, pole counts, speeds, IP rating, and insulation class.",
+        "svg": "2/r2.svg",
+        "png": "2/r2.png"
+      },
+      {
+        "region_id": "r8",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Flushed shaft seal",
+        "description": "Table specifying inlet water pressure and water consumption for the flushed shaft seal.",
+        "svg": "2/r8.svg",
+        "png": "2/r8.png"
+      },
+      {
+        "region_id": "r10",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "table",
+        "title": "Connections for flushed and double mechanical shaft seal",
+        "description": "Table showing connection types for flushed and double mechanical shaft seals for specified LKH models.",
+        "entities": [
+          "LKH-5",
+          "LKH-70",
+          "LKH-90",
+          "LKH-85"
+        ],
+        "tags": [
+          "connections"
+        ],
+        "svg": "2/r10.svg",
+        "png": "2/r10.png"
+      },
+      {
+        "region_id": "r2",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Pump specific measures (mm)",
+        "description": "Table of pump-specific dimensions A to E for pump models from LKH-5 through LKH-90.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r2.svg",
+        "png": "3/r2.png"
+      },
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "text",
+        "title": "Ordering",
+        "description": "Ordering guidance listing the information required when specifying a pump order.",
+        "tags": [
+          "ordering"
+        ],
+        "svg": "4/r3.svg",
+        "png": "4/r3.png"
+      },
+      {
+        "region_id": "r6",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "text",
+        "title": "How to contact Alfa Laval",
+        "description": "Footer contact section pointing readers to the Alfa Laval website for country-specific contact details.",
+        "entities": [
+          "Alfa Laval",
+          "www.alfalaval.com"
+        ],
+        "svg": "4/r6.svg",
+        "png": "4/r6.png"
+      }
+    ],
+    "warranty_safety": [
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 2,
+        "kind": "spec_block",
+        "title": "Warranty",
+        "description": "Warranty section describing the extended 3-year warranty for LKH pumps and its spare-parts condition.",
+        "entities": [
+          "LKH"
+        ],
+        "tags": [
+          "warranty"
+        ],
+        "svg": "2/r5.svg",
+        "png": "2/r5.png"
+      },
+      {
+        "region_id": "r3",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor specific measures (mm)",
+        "description": "Table of motor-specific dimensions by IEC motor frame and motor power, followed by a note about reducing dimension F.",
+        "entities": [
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC132",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280",
+          "LKH-5",
+          "LKH-10",
+          "LKH-60",
+          "LKH-70",
+          "LKH-90"
+        ],
+        "tags": [
+          "dimensions"
+        ],
+        "svg": "3/r3.svg",
+        "png": "3/r3.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Motor overview",
+        "description": "Table mapping pump models to IEC motor ranges, with notes on ABB 2-pole and 4-pole dimensional data.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ABB",
+          "IEC80",
+          "IEC90",
+          "IEC100",
+          "IEC112",
+          "IEC160",
+          "IEC180",
+          "IEC200",
+          "IEC250",
+          "IEC280"
+        ],
+        "svg": "3/r4.svg",
+        "png": "3/r4.png"
+      },
+      {
+        "region_id": "r5",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 3,
+        "kind": "table",
+        "title": "Connections (mm)",
+        "description": "Large table of connection dimensions for multiple standards and pump models, including J1 and J2 values and two footnotes.",
+        "entities": [
+          "LKH-5",
+          "LKH-10",
+          "LKH-15",
+          "LKH-20",
+          "LKH-25",
+          "LKH-35",
+          "LKH-40",
+          "LKH-45",
+          "LKH-50",
+          "LKH-60",
+          "LKH-70",
+          "LKH-85",
+          "LKH-90",
+          "ISO 2037",
+          "ISO(IDF)",
+          "DIN/ISO",
+          "SMS",
+          "BS/RJT",
+          "DS",
+          "DIN/DIN",
+          "ASME BPE",
+          "J1",
+          "J2",
+          "ESE00263/7"
+        ],
+        "tags": [
+          "connections",
+          "dimensions"
+        ],
+        "svg": "3/r5.svg",
+        "png": "3/r5.png"
+      },
+      {
+        "region_id": "r4",
+        "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+        "page": 4,
+        "kind": "caption",
+        "title": "Note on further details",
+        "description": "Callout note directing the reader to document ESE00698 for additional details.",
+        "entities": [
+          "ESE00698"
+        ],
+        "svg": "4/r4.svg",
+        "png": "4/r4.png"
+      }
+    ]
+  },
+  "documents": {
+    "alfa-laval-lkh-centrifugal-pump": {
+      "slug": "alfa-laval-lkh-centrifugal-pump",
+      "region_count": 28
+    }
+  },
+  "stats": {
+    "entity_count": 49,
+    "topic_count": 11,
+    "document_count": 1,
+    "region_count": 28
+  }
+}

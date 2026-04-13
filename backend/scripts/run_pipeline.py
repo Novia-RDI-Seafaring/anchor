@@ -65,6 +65,10 @@ def main() -> int:
     p.add_argument("--pages", help="comma-separated 1-indexed page subset")
     p.add_argument("--skip-polish", action="store_true")
     p.add_argument("--skip-regions", action="store_true")
+    p.add_argument("--build-graph", action="store_true", help="build knowledge graph from gold regions")
+    p.add_argument("--embed", action="store_true", help="embed gold regions for semantic search")
+    p.add_argument("--build-queries", action="store_true", help="generate + embed Q&A index from gold regions")
+    p.add_argument("--all-post", action="store_true", help="shortcut for --build-graph --embed --build-queries")
     p.add_argument("--force", action="store_true", help="re-run stages even if outputs exist")
     args = p.parse_args()
 
@@ -183,6 +187,32 @@ def main() -> int:
                 continue
             out_json.write_text(page_regions.model_dump_json(indent=2), encoding="utf-8")
             print(f"    p{pg}: {len(page_regions.regions)} region(s) → {out_json.relative_to(out)}")
+
+    # ── Resolve --all-post shortcut ──────────────────────────────────────
+    if args.all_post:
+        args.build_graph = True
+        args.embed = True
+        args.build_queries = True
+
+    # ── Knowledge graph ──────────────────────────────────────────────────
+    if args.build_graph:
+        from src.ingestion.knowledge_graph import build_and_save
+        graph_path = build_and_save(out)
+        print(f"  [graph] wrote {graph_path.relative_to(out)}")
+
+    # ── Embeddings ────────────────────────────────────────────────────────
+    if args.embed:
+        from src.ingestion.embed import embed_regions
+        embeddings_path = out / "embeddings.jsonl"
+        count = embed_regions(out / "gold", embeddings_path, model="text-embedding-3-large")
+        print(f"  [embed] {count} region(s) embedded → {embeddings_path.relative_to(out)}")
+
+    # ── Q&A query index ─────────────────────────────────────────────────
+    if args.build_queries:
+        from src.ingestion.query_index import build_and_save as build_queries
+        qi_path = build_queries(out, model=args.model)
+        qi = json.loads(qi_path.read_text())
+        print(f"  [queries] {len(qi)} query templates → {qi_path.relative_to(out)}")
 
     print("✓ done")
     return 0

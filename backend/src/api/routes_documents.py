@@ -111,6 +111,69 @@ async def get_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/documents/pipeline-status")
+async def get_pipeline_statuses(filenames: str = ""):
+    """Get pipeline progress for one or more documents (comma-separated filenames)."""
+    from src.knowledge_base.service import get_pipeline_status, clear_pipeline_status
+
+    names = [f.strip() for f in filenames.split(",") if f.strip()]
+    result: dict = {}
+    for fn in names:
+        status = get_pipeline_status(fn)
+        if status:
+            result[fn] = status
+            # Auto-clear "done" status after the frontend has seen it
+            if status.get("stage") == "done":
+                clear_pipeline_status(fn)
+    return result
+
+
+@router.post("/documents/{document_id}/pipeline")
+async def run_document_pipeline(
+    document_id: str,
+    polish: bool = True,
+    regions: bool = True,
+    model: str = "gpt-5.4",
+):
+    """Run the full ingestion pipeline (silver + polish + gold regions) for one document."""
+    try:
+        service = await get_document_service()
+        result = await service.run_pipeline_for_document(
+            document_id,
+            polish=polish,
+            regions=regions,
+            model=model,
+        )
+        return {"success": True, **result}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/documents/pipeline/all")
+async def run_pipeline_all(
+    polish: bool = True,
+    regions: bool = True,
+    model: str = "gpt-5.4",
+):
+    """Run the full ingestion pipeline for all documents."""
+    try:
+        service = await get_document_service()
+        result = await service.run_pipeline_all(
+            polish=polish,
+            regions=regions,
+            model=model,
+        )
+        return {"success": True, **result}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/documents/gold/{filename:path}")
 async def get_gold_data(filename: str):
     """Get gold-layer pre-extracted product data for a document."""
@@ -119,3 +182,100 @@ async def get_gold_data(filename: str):
     if not data:
         raise HTTPException(status_code=404, detail="No gold data for this document")
     return data
+
+
+@router.get("/documents/regions/{filename:path}")
+async def get_document_regions(filename: str):
+    """Get all gold regions for a document (all pages)."""
+    import os
+    import re
+    from pathlib import Path
+
+    data_dir = Path(os.environ.get("ANCHOR_DATA_DIR") or (
+        Path(__file__).resolve().parents[2] / "data"
+    ))
+    gold_dir = data_dir / "gold"
+
+    # Slugify the filename to find the gold dir
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", filename.removesuffix(".pdf")).strip("-").lower()
+
+    # Try exact slug, then scan for prefix match
+    candidates = [gold_dir / slug]
+    if not candidates[0].exists():
+        candidates = [d for d in gold_dir.iterdir() if d.is_dir() and slug in d.name]
+
+    pages: dict = {}
+    for gold_slug_dir in candidates:
+        pages_dir = gold_slug_dir / "pages"
+        if not pages_dir.is_dir():
+            continue
+        import json as _json
+        for rf in sorted(pages_dir.glob("*.regions.json")):
+            try:
+                data = _json.loads(rf.read_text())
+            except Exception:
+                continue
+            page_no = data.get("page", 0)
+            pages[page_no] = data.get("regions", [])
+
+    if not pages:
+        raise HTTPException(status_code=404, detail="No regions found for this document")
+    return {"filename": filename, "pages": pages}
+
+
+@router.get("/documents/regions/{filename:path}/{page}/{asset:path}")
+async def get_region_asset(filename: str, page: int, asset: str):
+    """Serve a gold region crop file (SVG or PNG)."""
+    import os
+    import re
+    from pathlib import Path
+
+    from fastapi.responses import FileResponse
+
+    data_dir = Path(os.environ.get("ANCHOR_DATA_DIR") or (
+        Path(__file__).resolve().parents[2] / "data"
+    ))
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", filename.removesuffix(".pdf")).strip("-").lower()
+    asset_path = data_dir / "gold" / slug / "pages" / asset
+
+    if not asset_path.exists():
+        # Try scanning for prefix match
+        for d in (data_dir / "gold").iterdir():
+            if d.is_dir() and slug in d.name:
+                candidate = d / "pages" / asset
+                if candidate.exists():
+                    asset_path = candidate
+                    break
+
+    if not asset_path.exists():
+        raise HTTPException(status_code=404, detail=f"Asset not found: {asset}")
+
+    media = "image/svg+xml" if asset.endswith(".svg") else "image/png"
+    return FileResponse(asset_path, media_type=media)
+
+
+@router.get("/documents/query-search")
+async def query_search(q: str, entity: Optional[str] = None, top_k: int = 10):
+    """Search the pre-computed Q&A index by natural language query.
+
+    Returns instant answers with region refs — no LLM in the loop.
+    """
+    import os
+    from pathlib import Path
+
+    from openai import OpenAI
+    from src.ingestion.query_index import load_query_index, search_queries
+
+    data_dir = Path(os.environ.get("ANCHOR_DATA_DIR") or (
+        Path(__file__).resolve().parents[2] / "data"
+    ))
+    index = load_query_index(data_dir)
+    if not index:
+        return {"results": [], "message": "No query index built yet."}
+
+    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    response = client.embeddings.create(model="text-embedding-3-large", input=[q])
+    query_vector = response.data[0].embedding
+
+    results = search_queries(index, query_vector, top_k=top_k, entity_filter=entity)
+    return {"results": results}

@@ -947,6 +947,16 @@ export function PlotNode({ data }: NodeProps) {
 }
 
 // ─── Document Node ─────────────────────────────────────────────────────────
+interface GoldRegion {
+  id: string;
+  page: number;
+  kind: string;
+  title: string;
+  description: string;
+  entities: string[];
+  crops?: { png?: string; svg?: string };
+}
+
 export interface DocumentNodeData extends Record<string, unknown> {
   item?: CanvasNodeData;
   doc?: KBDocument;
@@ -971,6 +981,52 @@ export function DocumentNode({ data }: NodeProps) {
   const isPreviewing = !!hoveredCoverUrl;
 
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [regionsExpanded, setRegionsExpanded] = useState(false);
+  const [regions, setRegions] = useState<GoldRegion[]>([]);
+  const [regionsLoading, setRegionsLoading] = useState(false);
+  const [regionsFetched, setRegionsFetched] = useState(false);
+  const [expandedRegion, setExpandedRegion] = useState<string | null>(null);
+  const [pipelineStatus, setPipelineStatus] = useState<{ stage: string; current: number; total: number } | null>(null);
+
+  // Poll pipeline progress while active
+  useEffect(() => {
+    if (!docData.filename) return;
+    let active = true;
+    const poll = () => {
+      fetch(`${API_URL}/api/documents/pipeline-status?filenames=${encodeURIComponent(docData.filename)}`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((data) => {
+          if (!active) return;
+          const status = data?.[docData.filename];
+          setPipelineStatus(status ?? null);
+          if (status && status.stage !== "done" && status.stage !== "error") {
+            timer = setTimeout(poll, 2000);
+          }
+        })
+        .catch(() => {});
+    };
+    let timer = setTimeout(poll, 1000);
+    return () => { active = false; clearTimeout(timer); };
+  }, [docData.filename]);
+
+  useEffect(() => {
+    if (!regionsExpanded || regionsFetched) return;
+    setRegionsLoading(true);
+    fetch(`${API_URL}/api/documents/regions/${encodeURIComponent(docData.filename)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.pages) {
+          const all: GoldRegion[] = [];
+          for (const [, pageRegions] of Object.entries(data.pages)) {
+            for (const r of pageRegions as GoldRegion[]) all.push(r);
+          }
+          setRegions(all);
+        }
+        setRegionsFetched(true);
+      })
+      .catch(() => setRegionsFetched(true))
+      .finally(() => setRegionsLoading(false));
+  }, [regionsExpanded, regionsFetched, docData.filename]);
 
   useEffect(() => {
     if (!ctxMenu) return;
@@ -1084,6 +1140,17 @@ export function DocumentNode({ data }: NodeProps) {
               )}
             </div>
           </div>
+          {/* Pipeline progress bar */}
+          {pipelineStatus && pipelineStatus.stage !== "done" && pipelineStatus.stage !== "error" && (
+            <div className="absolute bottom-0 left-0 right-0 z-20">
+              <div className="h-[3px] w-full bg-neutral-200/60 dark:bg-neutral-700/60">
+                <div
+                  className="h-full bg-indigo-500 transition-all duration-500 ease-out"
+                  style={{ width: `${pipelineStatus.total > 0 ? (pipelineStatus.current / pipelineStatus.total) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex flex-col gap-2 px-3 pb-3 pt-2">
           <div className="min-w-0">
@@ -1092,9 +1159,17 @@ export function DocumentNode({ data }: NodeProps) {
             }`}>
               {stem}
             </div>
-            <div className="mt-0.5 text-[10px] uppercase tracking-[0.18em] text-neutral-400 dark:text-neutral-500">
-              Product leaflet
-            </div>
+            {pipelineStatus && pipelineStatus.stage !== "done" ? (
+              <div className="mt-0.5 text-[10px] text-indigo-500 dark:text-indigo-400">
+                {pipelineStatus.stage === "error" ? "pipeline error" :
+                 pipelineStatus.stage === "starting" ? "starting pipeline..." :
+                 `${pipelineStatus.stage} ${pipelineStatus.current}/${pipelineStatus.total}`}
+              </div>
+            ) : (
+              <div className="mt-0.5 text-[10px] uppercase tracking-[0.18em] text-neutral-400 dark:text-neutral-500">
+                Product leaflet
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
             <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
@@ -1114,6 +1189,95 @@ export function DocumentNode({ data }: NodeProps) {
           </div>
         </div>
       </button>
+
+      {/* Regions toggle */}
+      <button
+        onClick={(e) => { e.stopPropagation(); setRegionsExpanded(!regionsExpanded); }}
+        className="w-full flex items-center justify-center gap-1 py-1 text-[10px] text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+      >
+        <Layers size={10} />
+        <span>{regionsExpanded ? "hide regions" : "regions"}</span>
+        {regionsExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+      </button>
+
+      {regionsExpanded && (
+        <div className="w-[176px] border border-neutral-200 dark:border-neutral-700 border-t-0 rounded-b-[14px] bg-white dark:bg-neutral-900 overflow-hidden">
+          {regionsLoading ? (
+            <div className="flex items-center justify-center py-3">
+              <Loader2 size={14} className="animate-spin text-neutral-400" />
+            </div>
+          ) : regions.length === 0 ? (
+            <div className="text-[10px] text-neutral-400 text-center py-2">No regions yet</div>
+          ) : (
+            <div className="max-h-[300px] overflow-y-auto">
+              {regions.map((region) => {
+                const isOpen = expandedRegion === region.id;
+                const kindColors: Record<string, string> = {
+                  chart: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+                  spec_block: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+                  table: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+                  diagram: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+                  figure: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+                  text: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
+                };
+                const kindClass = kindColors[region.kind] || kindColors.text;
+                const svgUrl = region.crops?.svg
+                  ? `${API_URL}/api/documents/regions/${encodeURIComponent(docData.filename)}/${region.page}/${region.crops.svg}`
+                  : null;
+
+                return (
+                  <div key={region.id} className="border-t border-neutral-100 dark:border-neutral-800 first:border-t-0">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setExpandedRegion(isOpen ? null : region.id); }}
+                      className="w-full text-left px-2 py-1.5 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span className={`text-[8px] px-1 py-0.5 rounded ${kindClass} font-medium shrink-0`}>
+                          {region.kind}
+                        </span>
+                        <span className="text-[10px] text-neutral-700 dark:text-neutral-300 truncate font-medium">
+                          {region.title}
+                        </span>
+                        <span className="text-[9px] text-neutral-400 shrink-0 ml-auto">p{region.page}</span>
+                      </div>
+                      {region.entities.length > 0 && (
+                        <div className="flex flex-wrap gap-0.5 mt-0.5">
+                          {region.entities.slice(0, 4).map((e) => (
+                            <span key={e} className="text-[8px] px-1 py-0 rounded bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
+                              {e}
+                            </span>
+                          ))}
+                          {region.entities.length > 4 && (
+                            <span className="text-[8px] text-neutral-400">+{region.entities.length - 4}</span>
+                          )}
+                        </div>
+                      )}
+                    </button>
+                    {isOpen && (
+                      <div className="px-2 pb-2">
+                        <div className="text-[9px] text-neutral-500 dark:text-neutral-400 mb-1">
+                          {region.description}
+                        </div>
+                        {svgUrl && (
+                          <div className="rounded border border-neutral-200 dark:border-neutral-700 overflow-hidden bg-white dark:bg-neutral-800">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={svgUrl}
+                              alt={region.title}
+                              className="w-full h-auto"
+                              loading="lazy"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
       {ctxMenu && (
         <div
           className="absolute z-50 min-w-[140px] rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-lg py-1"
