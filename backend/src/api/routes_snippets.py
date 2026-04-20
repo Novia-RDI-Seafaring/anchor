@@ -1,19 +1,42 @@
-"""Knowledge snippet persistence API."""
+"""Knowledge snippet persistence API — JSON-file-backed."""
 import json
+import threading
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, List
 
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 
-from ..knowledge_base.vector_store import get_vector_store
 from ..core.config import get_settings
 
 router = APIRouter(prefix="/api/snippets", tags=["snippets"])
 
+_lock = threading.Lock()
 
-async def _pool():
-    vs = await get_vector_store()
-    return vs.pool
+
+def _snippets_path() -> Path:
+    settings = get_settings()
+    d = settings.data_dir / "store"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / "snippets.json"
+
+
+def _load() -> List[dict]:
+    p = _snippets_path()
+    if not p.exists():
+        return []
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def _save(data: List[dict]) -> None:
+    p = _snippets_path()
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    tmp.replace(p)
 
 
 class CreateSnippetRequest(BaseModel):
@@ -25,50 +48,37 @@ class CreateSnippetRequest(BaseModel):
 
 @router.get("")
 async def list_snippets(x_user_id: str = Header(default="")):
-    schema = get_settings().db_schema
-    pool = await _pool()
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(f"""
-            SELECT id, name, nodes, relations, created_at
-            FROM "{schema}".knowledge_snippets
-            WHERE user_id = $1
-            ORDER BY created_at DESC
-        """, x_user_id)
-    return [
-        {
-            "id": r["id"],
-            "name": r["name"],
-            "nodes": json.loads(r["nodes"]) if isinstance(r["nodes"], str) else r["nodes"],
-            "relations": json.loads(r["relations"]) if isinstance(r["relations"], str) else r["relations"],
-            "created_at": r["created_at"],
-        }
-        for r in rows
-    ]
+    with _lock:
+        snippets = _load()
+    return [s for s in snippets if s.get("user_id", "") == x_user_id]
 
 
 @router.post("")
 async def create_snippet(req: CreateSnippetRequest, x_user_id: str = Header(default="")):
-    schema = get_settings().db_schema
-    pool = await _pool()
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(f"""
-            INSERT INTO "{schema}".knowledge_snippets (id, user_id, name, nodes, relations)
-            VALUES ($1, $2, $3, $4::jsonb, $5::jsonb)
-            ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, nodes = EXCLUDED.nodes,
-                relations = EXCLUDED.relations
-            RETURNING id, name, created_at
-        """, req.id, x_user_id, req.name, json.dumps(req.nodes), json.dumps(req.relations))
-    return dict(row)
+    now = datetime.now(timezone.utc).isoformat()
+    entry = {
+        "id": req.id,
+        "user_id": x_user_id,
+        "name": req.name,
+        "nodes": req.nodes,
+        "relations": req.relations,
+        "created_at": now,
+    }
+    with _lock:
+        snippets = _load()
+        snippets = [s for s in snippets if s["id"] != req.id]
+        snippets.insert(0, entry)
+        _save(snippets)
+    return {"id": entry["id"], "name": entry["name"], "created_at": entry["created_at"]}
 
 
 @router.delete("/{snippet_id}")
 async def delete_snippet(snippet_id: str, x_user_id: str = Header(default="")):
-    schema = get_settings().db_schema
-    pool = await _pool()
-    async with pool.acquire() as conn:
-        result = await conn.execute(f"""
-            DELETE FROM "{schema}".knowledge_snippets WHERE id = $1 AND user_id = $2
-        """, snippet_id, x_user_id)
-    if result != "DELETE 1":
-        raise HTTPException(status_code=404, detail="Snippet not found")
+    with _lock:
+        snippets = _load()
+        before = len(snippets)
+        snippets = [s for s in snippets if not (s["id"] == snippet_id and s.get("user_id", "") == x_user_id)]
+        if len(snippets) == before:
+            raise HTTPException(status_code=404, detail="Snippet not found")
+        _save(snippets)
     return {"success": True}

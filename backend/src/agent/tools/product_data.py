@@ -9,20 +9,20 @@ from pydantic_ai._run_context import RunContext
 from ..deps import AgentDeps
 from ..helpers import _snapshot
 
-# Data dir is configurable so tests (and any alternative deployments) can
-# point at a scratch directory instead of the canonical `backend/data`.
-# Override with the `ANCHOR_DATA_DIR` env var.
-_DEFAULT_DATA_DIR = Path(__file__).resolve().parents[3] / "data"
-DATA_DIR = Path(os.environ.get("ANCHOR_DATA_DIR") or _DEFAULT_DATA_DIR)
+from ...core.config import get_settings
+
+def _data_dir() -> Path:
+    return get_settings().data_dir
+
+DATA_DIR = _data_dir()
 GOLD_DIR = DATA_DIR / "gold"
 SILVER_DIR = DATA_DIR / "silver"
 
 
 def _refresh_data_dir() -> None:
-    """Re-read `ANCHOR_DATA_DIR` and clear caches. Tests use this to point
-    the loaders at a fresh tmp dir between cases."""
+    """Re-resolve data_dir from settings and clear caches."""
     global DATA_DIR, GOLD_DIR, SILVER_DIR
-    DATA_DIR = Path(os.environ.get("ANCHOR_DATA_DIR") or _DEFAULT_DATA_DIR)
+    DATA_DIR = _data_dir()
     GOLD_DIR = DATA_DIR / "gold"
     SILVER_DIR = DATA_DIR / "silver"
     _gold_cache.clear()

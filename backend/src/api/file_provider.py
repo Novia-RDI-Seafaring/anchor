@@ -6,18 +6,10 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 
 from src.api.file_service import get_file_service
-from src.kb_engine.rag_engine import get_rag_engine
-from src.kb_engine.search_models import PdfSearchResponse
 from src.kb_engine.utils.pdf_rendering import render_pdf_page_to_image_bytes
 
 router = APIRouter(prefix="/api", tags=["files"])
 
-@router.get("/documents/pdf/search", response_model=PdfSearchResponse)
-async def get_document_hases(
-    q: str = Query(..., description="Text to search for in PDFs"),
-):
-    rag_engine = get_rag_engine()
-    return rag_engine.query_handler.query(rag_engine, q, top_k=5)
 
 @router.get("/documents/pdf/screenshot", response_class=Response)
 def get_pdf_screenshot(

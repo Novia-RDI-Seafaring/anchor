@@ -351,56 +351,85 @@ async def get_document_tree(
     document_id: str | None = None,
     filename: str | None = None,
 ) -> str:
-    """Return the chapter/section tree for a document.
+    """Return the outline / table-of-contents for a document.
 
-    The tree shows the document's heading hierarchy with page numbers, whether
-    each chapter contains tables or figures, and LLM-generated metadata
-    (summary, questions answered, key concepts) when available.
-
-    Use this BEFORE get_document_full_text to navigate large documents:
-    the tree tells you exactly which pages to load — avoiding loading the whole document.
+    Shows the document's heading hierarchy with page numbers, plus an inventory
+    of tables and figures with their locations. Use this BEFORE reading pages
+    to know where to look.
 
     document_id: the KB document ID (preferred).
     filename: alternatively, resolve by filename.
-
-    Returns a JSON object with:
-      chapters[]: [{heading, pages, has_table, has_figure, metadata: {summary, questions, key_concepts}}]
-      page_descriptions: {page_no: vision description} when vision enrichment has been run
     """
-    from src.kb_engine.rag_engine import get_rag_engine
+    import json as _json
+    import re
+    from pathlib import Path
+    from src.core.config import get_settings
 
     document_id, resolved_filename = await _resolve_document_reference(document_id, filename)
     filename = filename or resolved_filename
 
-    if not document_id:
+    if not document_id and not filename:
         return "Document not found — provide a valid document_id or filename."
 
-    tree = get_rag_engine().get_document_tree(document_id)
-    if tree is None:
+    # Find the silver index.json for this document
+    settings = get_settings()
+    data_dir = settings.data_dir
+    silver_dir = data_dir / "silver"
+
+    stem = Path(filename).stem if filename else ""
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", stem).strip("-").lower() or "doc"
+
+    index_path = silver_dir / slug / "index.json"
+    if not index_path.exists():
+        # Try scanning silver dirs
+        for d in silver_dir.iterdir() if silver_dir.exists() else []:
+            candidate = d / "index.json"
+            if d.is_dir() and candidate.exists() and slug in d.name:
+                index_path = candidate
+                break
+
+    if not index_path.exists():
         return (
-            f"No chapter tree found for document_id={document_id}. "
-            "The document may have been ingested before tree extraction was available. "
-            "Use get_document_full_text to access the content directly."
+            f"No index found for '{filename}'. "
+            "The document may not have been processed yet. "
+            "Use read_document_page to access pages directly."
         )
 
-    # Return a compact but readable representation
-    summary_lines = [f"Document: {tree.get('filename')} ({len(tree['chapters'])} chapters)\n"]
-    for ch in tree["chapters"]:
-        pages_str = f"pp.{ch['pages']}" if ch["pages"] else "p.?"
-        flags = []
-        if ch.get("has_table"):
-            flags.append("table")
-        if ch.get("has_figure"):
-            flags.append("figure")
-        flag_str = f" [{', '.join(flags)}]" if flags else ""
-        summary_lines.append(f"  {ch['heading']}  {pages_str}{flag_str}")
-        if ch.get("metadata") and ch["metadata"].get("summary"):
-            summary_lines.append(f"    → {ch['metadata']['summary'][:120]}...")
+    index = _json.loads(index_path.read_text())
+    doc_info = index.get("document", {})
+    outline = index.get("outline", [])
+    tables = index.get("tables", [])
+    figures = index.get("figures", [])
 
-    if tree.get("page_descriptions"):
-        summary_lines.append(f"\nPage descriptions available for pages: {sorted(tree['page_descriptions'].keys())}")
+    lines = [f"Document: {doc_info.get('filename', filename)} ({doc_info.get('page_count', '?')} pages)\n"]
 
-    return "\n".join(summary_lines)
+    if outline:
+        lines.append("Outline:")
+        for entry in outline:
+            indent = "  " * entry.get("level", 1)
+            lines.append(f"{indent}{entry.get('title', '?')}  p.{entry.get('page', '?')}")
+
+    if tables:
+        lines.append(f"\nTables ({len(tables)}):")
+        for t in tables:
+            shape = t.get("shape", {})
+            cols = t.get("header_row", [])
+            first_col = t.get("first_column_values", [])
+            lines.append(
+                f"  [{t.get('id', '?')}] p.{t.get('page', '?')} — {t.get('caption', 'untitled')} "
+                f"({shape.get('rows', '?')}x{shape.get('cols', '?')})"
+            )
+            if cols:
+                lines.append(f"    headers: {cols}")
+            if first_col:
+                lines.append(f"    models/rows: {first_col[:8]}{'...' if len(first_col) > 8 else ''}")
+
+    if figures:
+        lines.append(f"\nFigures ({len(figures)}):")
+        for f in figures:
+            lines.append(f"  p.{f.get('page', '?')} — {f.get('caption', 'untitled')}")
+
+    return "\n".join(lines)
 
 
 async def get_document_page_count(
@@ -539,7 +568,7 @@ async def get_document_full_text(
     filename: str | None = None,
     include_pages: list[int] | None = None,
 ) -> list[str | BinaryContent]:
-    """Retrieve the complete text of a document by concatenating all chunks in page order.
+    """Retrieve the complete text of a document from silver page markdown.
 
     Use when chunk-based answers are incomplete — e.g. for summarising a full document,
     answering questions spanning many pages, or when vector search misses relevant sections
@@ -551,58 +580,72 @@ async def get_document_full_text(
                    Use this for pages that contain tables, charts, or diagrams that are better
                    read visually (e.g. dimensions tables, flow charts). Capped at 6 pages.
     """
-    from src.kb_engine.rag_engine import get_rag_engine
+    import re
+    from pathlib import Path
     from src.api.file_service import get_file_service
     from src.kb_engine.utils.pdf_rendering import render_pdf_page_to_image_bytes
-    from llama_index.core.vector_stores.types import MetadataFilters, MetadataFilter
+    from src.core.config import get_settings
 
     document_id, resolved_filename = await _resolve_document_reference(document_id, filename)
     filename = filename or resolved_filename
 
-    if not document_id:
+    if not document_id and not filename:
         return ["Document not found — provide a valid document_id or filename."]
 
-    # Resolve filename for rendering if not provided
     if not filename:
         _, filename = await _resolve_document_reference(document_id=document_id)
 
-    rag_engine = get_rag_engine()
-    vs = rag_engine.vector_store
+    # Find silver pages directory
+    settings = get_settings()
+    data_dir = settings.data_dir
+    silver_dir = data_dir / "silver"
 
-    try:
-        filters = MetadataFilters(filters=[
-            MetadataFilter(key="document_id", value=document_id)
-        ])
-        nodes = await vs.aget_nodes(filters=filters)
-    except Exception as exc:
-        return [f"Failed to retrieve document chunks: {exc}"]
+    stem = Path(filename).stem if filename else ""
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", stem).strip("-").lower() or "doc"
+    pages_dir = silver_dir / slug / "pages"
 
-    if not nodes:
-        return [f"No text chunks found for document_id={document_id}."]
+    if not pages_dir.exists():
+        # Try scanning
+        for d in silver_dir.iterdir() if silver_dir.exists() else []:
+            candidate = d / "pages"
+            if d.is_dir() and candidate.exists() and slug in d.name:
+                pages_dir = candidate
+                break
 
-    def _page(n) -> int:
-        m = n.metadata or {}
-        return m.get("page_no") or m.get("page_number") or m.get("page") or 0
+    if not pages_dir.exists():
+        return [f"No silver data found for '{filename}'. The document may not have been processed yet."]
 
-    sorted_nodes = sorted(nodes, key=_page)
+    # Read all page markdown files (prefer polished .md, fall back to .raw.md)
+    md_files: list[tuple[int, str]] = []
+    for f in sorted(pages_dir.iterdir()):
+        if f.suffix == ".md" and not f.stem.endswith(".raw"):
+            try:
+                page_no = int(f.stem)
+                md_files.append((page_no, f.read_text(encoding="utf-8")))
+            except (ValueError, OSError):
+                continue
 
-    parts: list[str] = []
-    seen: set[str] = set()
-    for node in sorted_nodes:
-        content = node.get_content().strip()
-        if not content or content in seen:
-            continue
-        seen.add(content)
-        page = _page(node)
-        parts.append(f"[Page {page}]\n{content}" if page else content)
+    if not md_files:
+        # Fall back to raw markdown
+        for f in sorted(pages_dir.iterdir()):
+            if f.name.endswith(".raw.md"):
+                try:
+                    page_no = int(f.stem.replace(".raw", ""))
+                    md_files.append((page_no, f.read_text(encoding="utf-8")))
+                except (ValueError, OSError):
+                    continue
 
+    if not md_files:
+        return [f"No page content found for '{filename}'."]
+
+    md_files.sort(key=lambda x: x[0])
+    parts = [f"[Page {pg}]\n{content.strip()}" for pg, content in md_files if content.strip()]
     text_block = "\n\n".join(parts) or "Document appears to have no extractable text."
     result: list[str | BinaryContent] = [text_block]
 
     if include_pages and filename:
         file_path = get_file_service().get_file_path(filename)
-        pages_to_render = include_pages[:_MAX_PAGES]
-        for page_no in pages_to_render:
+        for page_no in (include_pages or [])[:_MAX_PAGES]:
             try:
                 image_bytes = render_pdf_page_to_image_bytes(pdf_path=file_path, page_no=page_no)
                 result.append(f"[Page {page_no} image:]")

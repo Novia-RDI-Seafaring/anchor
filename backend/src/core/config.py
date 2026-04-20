@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     similarity_threshold: float = Field(default=0.3, ge=0.0, le=1.0, description="Similarity threshold")
     
     # ===== Document Storage =====
-    uploads_dir: str = "../uploads"
+    uploads_dir: str = "../uploads"  # legacy, unused — bronze dir is under data_dir
     
     @field_validator('pgvector_password')
     @classmethod
@@ -112,17 +112,22 @@ class Settings(BaseSettings):
         return Path(__file__).resolve().parents[2]
 
     @property
-    def uploads_path(self) -> Path:
-        """Resolved uploads directory used by both document ingest and file serving."""
-        raw_path = Path(self.uploads_dir)
-        if raw_path.is_absolute():
-            return raw_path
-        return (self.backend_dir / raw_path).resolve()
+    def data_dir(self) -> Path:
+        """Root data directory.  Set ANCHOR_DATA_DIR to override."""
+        env = os.environ.get("ANCHOR_DATA_DIR")
+        if env:
+            return Path(env).resolve()
+        return Path("data").resolve()
 
     @property
-    def rag_workspace_dir(self) -> Path:
-        """Persistent KETJU workspace colocated with the repository data directory."""
-        return (self.uploads_path.parent / "data" / "rag_workspace").resolve()
+    def bronze_dir(self) -> Path:
+        """Bronze layer — raw uploaded PDFs live here."""
+        return self.data_dir / "bronze"
+
+    @property
+    def uploads_path(self) -> Path:
+        """Alias for bronze_dir (backward compat)."""
+        return self.bronze_dir
     
     class Config:
         env_file = ".env"

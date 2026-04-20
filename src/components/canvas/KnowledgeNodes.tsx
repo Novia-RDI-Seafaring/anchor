@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import { Handle, Position, NodeToolbar, type NodeProps } from "@xyflow/react";
 import {
@@ -946,6 +947,432 @@ export function PlotNode({ data }: NodeProps) {
   );
 }
 
+// ─── Pipeline Detail Modal ────────────────────────────────────────────────
+interface PipelineDetail {
+  filename: string;
+  slug: string;
+  bronze: { path: string; size_kb: number } | null;
+  silver: {
+    has_index: boolean;
+    has_docling: boolean;
+    page_count?: number;
+    outline_count?: number;
+    table_count?: number;
+    figure_count?: number;
+    pages: {
+      page: number;
+      has_png: boolean;
+      has_raw_md: boolean;
+      has_md: boolean;
+      md_preview?: string;
+    }[];
+  } | null;
+  gold: {
+    pages: {
+      page: number;
+      region_count: number;
+      region_kinds: string[];
+    }[];
+  } | null;
+  status?: { stage: string; current: number; total: number };
+}
+
+function SilverPageDetail({ filename, page }: { filename: string; page: number }) {
+  const [tab, setTab] = useState<"png" | "md" | "raw">("png");
+  const [mdContent, setMdContent] = useState<string | null>(null);
+  const [mdLoading, setMdLoading] = useState(false);
+
+  const pngUrl = `${API_URL}/api/documents/silver/${encodeURIComponent(filename)}/page/${page}?kind=png`;
+
+  useEffect(() => {
+    if (tab === "png") return;
+    setMdLoading(true);
+    fetch(`${API_URL}/api/documents/silver/${encodeURIComponent(filename)}/page/${page}?kind=${tab}`)
+      .then((r) => r.ok ? r.text() : null)
+      .then((t) => setMdContent(t))
+      .catch(() => setMdContent(null))
+      .finally(() => setMdLoading(false));
+  }, [filename, page, tab]);
+
+  return (
+    <div className="mx-1 mb-2 rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden">
+      <div className="flex border-b border-neutral-100 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-800/40">
+        {(["png", "md", "raw"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`flex-1 py-1.5 text-[10px] font-medium transition-colors ${
+              tab === t
+                ? "text-indigo-600 dark:text-indigo-400 bg-white dark:bg-neutral-900 border-b-2 border-indigo-500"
+                : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+            }`}
+          >
+            {t === "png" ? "Page Image" : t === "md" ? "Polished MD" : "Raw MD"}
+          </button>
+        ))}
+      </div>
+      <div className="max-h-[360px] overflow-auto">
+        {tab === "png" ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img src={pngUrl} alt={`Page ${page}`} className="w-full h-auto bg-neutral-100 dark:bg-neutral-800" loading="lazy" />
+        ) : mdLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 size={14} className="animate-spin text-neutral-400" />
+          </div>
+        ) : mdContent ? (
+          <div className="p-3">
+            <div className="prose prose-xs dark:prose-invert max-w-none text-[11px] leading-relaxed">
+              <ReactMarkdown>{mdContent}</ReactMarkdown>
+            </div>
+          </div>
+        ) : (
+          <div className="text-[11px] text-neutral-400 text-center py-6">Not available</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface GoldPageRegion {
+  id: string;
+  kind: string;
+  title: string;
+  description?: string;
+  markdown?: string;
+  entities?: string[];
+  tags?: string[];
+  bbox?: number[];
+  crops?: { png?: string; svg?: string };
+}
+
+function GoldPageDetail({ filename, slug, page }: { filename: string; slug: string; page: number }) {
+  const [regions, setRegions] = useState<GoldPageRegion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/documents/gold/${encodeURIComponent(filename)}/page/${page}/regions`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.regions) setRegions(d.regions); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [filename, page]);
+
+  if (loading) return <div className="flex justify-center py-4"><Loader2 size={14} className="animate-spin text-neutral-400" /></div>;
+  if (!regions.length) return <div className="text-[11px] text-neutral-400 text-center py-3">No regions loaded</div>;
+
+  const kindColors: Record<string, string> = {
+    chart: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+    spec_block: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+    table: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+    diagram: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+    figure: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+    caption: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
+    text: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
+  };
+
+  return (
+    <div className="mx-1 mb-2 space-y-0.5">
+      {regions.map((r) => {
+        const isOpen = expandedId === r.id;
+        const svgUrl = r.crops?.svg
+          ? `${API_URL}/api/documents/region-asset/${encodeURIComponent(slug)}/${r.crops.svg}`
+          : null;
+        const pngUrl = r.crops?.png
+          ? `${API_URL}/api/documents/region-asset/${encodeURIComponent(slug)}/${r.crops.png}`
+          : null;
+
+        return (
+          <div key={r.id} className="rounded-lg border border-neutral-100 dark:border-neutral-800 overflow-hidden">
+            <button
+              onClick={() => setExpandedId(isOpen ? null : r.id)}
+              className="w-full flex items-center gap-2 px-2.5 py-2 text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors"
+            >
+              <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium shrink-0 ${kindColors[r.kind] || kindColors.text}`}>
+                {r.kind}
+              </span>
+              <span className="text-[11px] text-neutral-700 dark:text-neutral-200 truncate font-medium flex-1">
+                {r.title}
+              </span>
+              {isOpen ? <ChevronUp size={12} className="text-neutral-400 shrink-0" /> : <ChevronDown size={12} className="text-neutral-400 shrink-0" />}
+            </button>
+            {isOpen && (
+              <div className="px-2.5 pb-2.5 space-y-2">
+                {r.description && (
+                  <p className="text-[11px] text-neutral-500 dark:text-neutral-400">{r.description}</p>
+                )}
+                {r.entities && r.entities.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {r.entities.map((e) => (
+                      <span key={e} className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">{e}</span>
+                    ))}
+                  </div>
+                )}
+                {r.tags && r.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {r.tags.map((t) => (
+                      <span key={t} className="text-[9px] px-1.5 py-0.5 rounded-full bg-neutral-100 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">#{t}</span>
+                    ))}
+                  </div>
+                )}
+                {r.markdown && (
+                  <div className="rounded border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 p-2 max-h-[200px] overflow-auto">
+                    <div className="prose prose-xs dark:prose-invert max-w-none text-[11px] leading-relaxed">
+                      <ReactMarkdown>{r.markdown}</ReactMarkdown>
+                    </div>
+                  </div>
+                )}
+                {(svgUrl || pngUrl) && (
+                  <div className="rounded border border-neutral-200 dark:border-neutral-700 overflow-hidden bg-white dark:bg-neutral-800">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={svgUrl || pngUrl!} alt={r.title} className="w-full h-auto" loading="lazy" />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PipelineDetailModal({
+  filename,
+  onClose,
+}: {
+  filename: string;
+  onClose: () => void;
+}) {
+  const [detail, setDetail] = useState<PipelineDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [expandedSilverPage, setExpandedSilverPage] = useState<number | null>(null);
+  const [expandedGoldPage, setExpandedGoldPage] = useState<number | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const load = () => {
+      fetch(`${API_URL}/api/documents/pipeline-detail/${encodeURIComponent(filename)}`)
+        .then((r) => r.ok ? r.json() : null)
+        .then((d) => { if (active) setDetail(d); })
+        .catch(() => {})
+        .finally(() => { if (active) setLoading(false); });
+    };
+    load();
+    const iv = setInterval(load, 3000);
+    return () => { active = false; clearInterval(iv); };
+  }, [filename]);
+
+  const isActive = detail?.status && detail.status.stage !== "done" && detail.status.stage !== "error";
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="relative w-[640px] max-h-[85vh] overflow-y-auto rounded-2xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-neutral-100 dark:border-neutral-800 bg-white/95 dark:bg-neutral-900/95 backdrop-blur px-5 py-4">
+          <Activity size={18} className="text-indigo-500" />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100 truncate">
+              Pipeline: {filename}
+            </h2>
+            {detail?.slug && (
+              <div className="text-[10px] text-neutral-400 font-mono">{detail.slug}</div>
+            )}
+          </div>
+          {isActive && (
+            <span className="flex items-center gap-1.5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 px-2.5 py-1 text-[10px] font-medium text-indigo-600 dark:text-indigo-400">
+              <Loader2 size={10} className="animate-spin" />
+              {detail!.status!.stage} {detail!.status!.current}/{detail!.status!.total}
+            </span>
+          )}
+          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors">
+            <XCircle size={16} className="text-neutral-400" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 size={20} className="animate-spin text-neutral-400" />
+          </div>
+        ) : !detail ? (
+          <div className="text-sm text-neutral-400 text-center py-12">Could not load pipeline details.</div>
+        ) : (
+          <div className="px-5 py-4 space-y-4">
+            {/* Bronze */}
+            <PipelineSection
+              title="Bronze"
+              subtitle="Raw PDF"
+              icon={<FileText size={14} />}
+              status={detail.bronze ? "done" : "missing"}
+            >
+              {detail.bronze ? (
+                <div className="text-[11px] text-neutral-500 dark:text-neutral-400">
+                  {detail.bronze.size_kb} KB
+                </div>
+              ) : (
+                <div className="text-[11px] text-neutral-400 italic">No PDF in bronze directory</div>
+              )}
+            </PipelineSection>
+
+            {/* Silver */}
+            <PipelineSection
+              title="Silver"
+              subtitle="Docling extraction"
+              icon={<Layers size={14} />}
+              status={detail.silver ? (detail.silver.has_index ? "done" : "partial") : "missing"}
+            >
+              {detail.silver ? (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2 text-[11px]">
+                    <Pill ok={detail.silver.has_docling}>docling.json</Pill>
+                    <Pill ok={detail.silver.has_index}>index.json</Pill>
+                    {detail.silver.page_count != null && (
+                      <span className="text-neutral-500">{detail.silver.page_count} pages</span>
+                    )}
+                    {(detail.silver.outline_count ?? 0) > 0 && (
+                      <span className="text-neutral-500">{detail.silver.outline_count} headings</span>
+                    )}
+                    {(detail.silver.table_count ?? 0) > 0 && (
+                      <span className="text-neutral-500">{detail.silver.table_count} tables</span>
+                    )}
+                    {(detail.silver.figure_count ?? 0) > 0 && (
+                      <span className="text-neutral-500">{detail.silver.figure_count} figures</span>
+                    )}
+                  </div>
+                  {detail.silver.pages.length > 0 && (
+                    <div className="space-y-0.5">
+                      {detail.silver.pages.map((p) => (
+                        <div key={p.page}>
+                          <button
+                            onClick={() => setExpandedSilverPage(expandedSilverPage === p.page ? null : p.page)}
+                            className="w-full flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors text-left"
+                          >
+                            <span className="text-[10px] font-mono text-neutral-500 w-5 text-right shrink-0">
+                              {p.page}
+                            </span>
+                            <Pill ok={p.has_png} small>png</Pill>
+                            <Pill ok={p.has_raw_md} small>raw</Pill>
+                            <Pill ok={p.has_md} small>md</Pill>
+                            {expandedSilverPage === p.page
+                              ? <ChevronUp size={10} className="ml-auto text-neutral-400" />
+                              : <ChevronDown size={10} className="ml-auto text-neutral-400" />}
+                          </button>
+                          {expandedSilverPage === p.page && (
+                            <SilverPageDetail filename={filename} page={p.page} />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-[11px] text-neutral-400 italic">Not yet processed</div>
+              )}
+            </PipelineSection>
+
+            {/* Gold */}
+            <PipelineSection
+              title="Gold"
+              subtitle="LLM polish + regions"
+              icon={<Cpu size={14} />}
+              status={detail.gold && detail.gold.pages.length > 0 ? "done" : isActive ? "running" : "missing"}
+            >
+              {detail.gold && detail.gold.pages.length > 0 ? (
+                <div className="space-y-0.5">
+                  {detail.gold.pages.map((p) => (
+                    <div key={p.page}>
+                      <button
+                        onClick={() => setExpandedGoldPage(expandedGoldPage === p.page ? null : p.page)}
+                        className="w-full flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors text-left"
+                      >
+                        <span className="font-mono text-neutral-500 text-[10px] w-5 text-right shrink-0">{p.page}</span>
+                        <span className="text-[11px] text-neutral-600 dark:text-neutral-300">{p.region_count} regions</span>
+                        <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+                          {p.region_kinds.map((k, i) => (
+                            <span key={i} className="px-1.5 py-0.5 rounded text-[9px] bg-neutral-100 dark:bg-neutral-800 text-neutral-500">{k}</span>
+                          ))}
+                        </div>
+                        {expandedGoldPage === p.page
+                          ? <ChevronUp size={10} className="text-neutral-400 shrink-0" />
+                          : <ChevronDown size={10} className="text-neutral-400 shrink-0" />}
+                      </button>
+                      {expandedGoldPage === p.page && (
+                        <GoldPageDetail filename={filename} slug={detail?.slug || ""} page={p.page} />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : isActive ? (
+                <div className="flex items-center gap-2 text-[11px] text-indigo-500">
+                  <Loader2 size={12} className="animate-spin" />
+                  Running...
+                </div>
+              ) : (
+                <div className="text-[11px] text-neutral-400 italic">Not yet extracted</div>
+              )}
+            </PipelineSection>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PipelineSection({
+  title,
+  subtitle,
+  icon,
+  status,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  status: "done" | "partial" | "running" | "missing";
+  children: React.ReactNode;
+}) {
+  const statusColors = {
+    done: "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400",
+    partial: "bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400",
+    running: "bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400",
+    missing: "bg-neutral-100 text-neutral-400 dark:bg-neutral-800 dark:text-neutral-500",
+  };
+  const statusLabels = { done: "done", partial: "partial", running: "running", missing: "—" };
+
+  return (
+    <div className="rounded-xl border border-neutral-100 dark:border-neutral-800 overflow-hidden">
+      <div className="flex items-center gap-2.5 px-3 py-2.5 bg-neutral-50/60 dark:bg-neutral-800/40">
+        <span className="text-indigo-500">{icon}</span>
+        <div className="flex-1 min-w-0">
+          <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">{title}</span>
+          <span className="ml-1.5 text-[10px] text-neutral-400">{subtitle}</span>
+        </div>
+        <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${statusColors[status]}`}>
+          {statusLabels[status]}
+        </span>
+      </div>
+      <div className="px-3 py-2">{children}</div>
+    </div>
+  );
+}
+
+function Pill({ ok, small, children }: { ok: boolean; small?: boolean; children: React.ReactNode }) {
+  return (
+    <span className={`inline-flex items-center gap-0.5 rounded-full font-medium ${
+      small ? "text-[9px] px-1 py-0" : "text-[10px] px-1.5 py-0.5"
+    } ${ok
+      ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
+      : "bg-neutral-100 text-neutral-400 dark:bg-neutral-800 dark:text-neutral-500"
+    }`}>
+      {ok ? <CheckCircle2 size={small ? 8 : 10} /> : <CircleDashed size={small ? 8 : 10} />}
+      {children}
+    </span>
+  );
+}
+
 // ─── Document Node ─────────────────────────────────────────────────────────
 interface GoldRegion {
   id: string;
@@ -987,6 +1414,13 @@ export function DocumentNode({ data }: NodeProps) {
   const [regionsFetched, setRegionsFetched] = useState(false);
   const [expandedRegion, setExpandedRegion] = useState<string | null>(null);
   const [pipelineStatus, setPipelineStatus] = useState<{ stage: string; current: number; total: number } | null>(null);
+  const [pipelineModalOpen, setPipelineModalOpen] = useState(false);
+  const [docIndex, setDocIndex] = useState<{
+    document?: { filename?: string; title?: string; page_count?: number };
+    outline?: { level: number; title: string; page: number }[];
+    tables?: { id: string; page: number; caption: string; shape?: { rows: number; cols: number }; header_row?: string[]; first_column_values?: string[] }[];
+    figures?: { page: number; caption: string }[];
+  } | null>(null);
 
   // Poll pipeline progress while active
   useEffect(() => {
@@ -1012,20 +1446,21 @@ export function DocumentNode({ data }: NodeProps) {
   useEffect(() => {
     if (!regionsExpanded || regionsFetched) return;
     setRegionsLoading(true);
-    fetch(`${API_URL}/api/documents/regions/${encodeURIComponent(docData.filename)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.pages) {
-          const all: GoldRegion[] = [];
-          for (const [, pageRegions] of Object.entries(data.pages)) {
-            for (const r of pageRegions as GoldRegion[]) all.push(r);
-          }
-          setRegions(all);
+    const fn = encodeURIComponent(docData.filename);
+    Promise.all([
+      fetch(`${API_URL}/api/documents/index/${fn}`).then((r) => r.ok ? r.json() : null).catch(() => null),
+      fetch(`${API_URL}/api/documents/regions/${fn}`).then((r) => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([indexData, regionsData]) => {
+      if (indexData) setDocIndex(indexData);
+      if (regionsData?.pages) {
+        const all: GoldRegion[] = [];
+        for (const [, pageRegions] of Object.entries(regionsData.pages)) {
+          for (const r of pageRegions as GoldRegion[]) all.push(r);
         }
-        setRegionsFetched(true);
-      })
-      .catch(() => setRegionsFetched(true))
-      .finally(() => setRegionsLoading(false));
+        setRegions(all);
+      }
+      setRegionsFetched(true);
+    }).finally(() => setRegionsLoading(false));
   }, [regionsExpanded, regionsFetched, docData.filename]);
 
   useEffect(() => {
@@ -1172,15 +1607,18 @@ export function DocumentNode({ data }: NodeProps) {
             )}
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-              isProcessing
-                ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400"
-                : isError
-                ? "bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400"
-                : "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400"
-            }`}>
-              {isProcessing ? "processing" : isError ? "error" : `${docData.node_count} chunks`}
-            </span>
+            <button
+              onClick={(e) => { e.stopPropagation(); setPipelineModalOpen(true); }}
+              className={`text-[10px] px-1.5 py-0.5 rounded-full cursor-pointer hover:ring-1 hover:ring-current/20 transition-all ${
+                isProcessing
+                  ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400"
+                  : isError
+                  ? "bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400"
+                  : "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400"
+              }`}
+            >
+              {isProcessing ? "processing" : isError ? "error" : `${docData.node_count} pages`}
+            </button>
             {evidenceCount > 0 && (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300">
                 {evidenceCount} ref{evidenceCount !== 1 ? "s" : ""}
@@ -1190,13 +1628,13 @@ export function DocumentNode({ data }: NodeProps) {
         </div>
       </button>
 
-      {/* Regions toggle */}
+      {/* Contents toggle */}
       <button
         onClick={(e) => { e.stopPropagation(); setRegionsExpanded(!regionsExpanded); }}
         className="w-full flex items-center justify-center gap-1 py-1 text-[10px] text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
       >
         <Layers size={10} />
-        <span>{regionsExpanded ? "hide regions" : "regions"}</span>
+        <span>{regionsExpanded ? "hide" : "contents"}</span>
         {regionsExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
       </button>
 
@@ -1206,74 +1644,171 @@ export function DocumentNode({ data }: NodeProps) {
             <div className="flex items-center justify-center py-3">
               <Loader2 size={14} className="animate-spin text-neutral-400" />
             </div>
-          ) : regions.length === 0 ? (
-            <div className="text-[10px] text-neutral-400 text-center py-2">No regions yet</div>
           ) : (
-            <div className="max-h-[300px] overflow-y-auto">
-              {regions.map((region) => {
-                const isOpen = expandedRegion === region.id;
-                const kindColors: Record<string, string> = {
-                  chart: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
-                  spec_block: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-                  table: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-                  diagram: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-                  figure: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-                  text: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
-                };
-                const kindClass = kindColors[region.kind] || kindColors.text;
-                const svgUrl = region.crops?.svg
-                  ? `${API_URL}/api/documents/regions/${encodeURIComponent(docData.filename)}/${region.page}/${region.crops.svg}`
-                  : null;
-
-                return (
-                  <div key={region.id} className="border-t border-neutral-100 dark:border-neutral-800 first:border-t-0">
+            <div className="max-h-[400px] overflow-y-auto">
+              {/* Index: outline */}
+              {docIndex?.outline && docIndex.outline.length > 0 && (
+                <div className="px-2 py-1.5 border-b border-neutral-100 dark:border-neutral-800">
+                  <div className="text-[9px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-1">Outline</div>
+                  {docIndex.outline.map((entry, i) => (
                     <button
-                      onClick={(e) => { e.stopPropagation(); setExpandedRegion(isOpen ? null : region.id); }}
-                      className="w-full text-left px-2 py-1.5 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors"
+                      key={i}
+                      onClick={(e) => { e.stopPropagation(); onOpenPDF(docData.filename, entry.page, []); }}
+                      className="w-full text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/50 rounded px-1 py-0.5 transition-colors"
+                    >
+                      <div className="flex items-baseline gap-1" style={{ paddingLeft: `${(entry.level - 1) * 8}px` }}>
+                        <span className="text-[10px] text-neutral-700 dark:text-neutral-300 truncate leading-tight">
+                          {entry.title}
+                        </span>
+                        <span className="text-[9px] text-neutral-400 shrink-0 ml-auto">p{entry.page}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {/* Index: tables */}
+              {docIndex?.tables && docIndex.tables.length > 0 && (
+                <div className="px-2 py-1.5 border-b border-neutral-100 dark:border-neutral-800">
+                  <div className="text-[9px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-1">
+                    Tables ({docIndex.tables.length})
+                  </div>
+                  {docIndex.tables.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={(e) => { e.stopPropagation(); onOpenPDF(docData.filename, t.page, []); }}
+                      className="w-full text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/50 rounded px-1 py-0.5 transition-colors"
                     >
                       <div className="flex items-center gap-1">
-                        <span className={`text-[8px] px-1 py-0.5 rounded ${kindClass} font-medium shrink-0`}>
-                          {region.kind}
+                        <Table2 size={9} className="text-blue-500 shrink-0" />
+                        <span className="text-[10px] text-neutral-700 dark:text-neutral-300 truncate">
+                          {t.caption || "Untitled table"}
                         </span>
-                        <span className="text-[10px] text-neutral-700 dark:text-neutral-300 truncate font-medium">
-                          {region.title}
-                        </span>
-                        <span className="text-[9px] text-neutral-400 shrink-0 ml-auto">p{region.page}</span>
+                        <span className="text-[9px] text-neutral-400 shrink-0 ml-auto">p{t.page}</span>
                       </div>
-                      {region.entities.length > 0 && (
-                        <div className="flex flex-wrap gap-0.5 mt-0.5">
-                          {region.entities.slice(0, 4).map((e) => (
-                            <span key={e} className="text-[8px] px-1 py-0 rounded bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
-                              {e}
+                      {t.shape && (
+                        <div className="text-[8px] text-neutral-400 pl-3.5">
+                          {t.shape.rows}×{t.shape.cols}
+                          {t.header_row && t.header_row.length > 0 && (
+                            <span className="ml-1">· {t.header_row.slice(0, 3).join(", ")}{t.header_row.length > 3 ? "…" : ""}</span>
+                          )}
+                        </div>
+                      )}
+                      {t.first_column_values && t.first_column_values.length > 0 && (
+                        <div className="flex flex-wrap gap-0.5 mt-0.5 pl-3.5">
+                          {t.first_column_values.slice(0, 5).map((v) => (
+                            <span key={v} className="text-[8px] px-1 rounded bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
+                              {v}
                             </span>
                           ))}
-                          {region.entities.length > 4 && (
-                            <span className="text-[8px] text-neutral-400">+{region.entities.length - 4}</span>
+                          {t.first_column_values.length > 5 && (
+                            <span className="text-[8px] text-neutral-400">+{t.first_column_values.length - 5}</span>
                           )}
                         </div>
                       )}
                     </button>
-                    {isOpen && (
-                      <div className="px-2 pb-2">
-                        <div className="text-[9px] text-neutral-500 dark:text-neutral-400 mb-1">
-                          {region.description}
-                        </div>
-                        {svgUrl && (
-                          <div className="rounded border border-neutral-200 dark:border-neutral-700 overflow-hidden bg-white dark:bg-neutral-800">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={svgUrl}
-                              alt={region.title}
-                              className="w-full h-auto"
-                              loading="lazy"
-                            />
+                  ))}
+                </div>
+              )}
+              {/* Index: figures */}
+              {docIndex?.figures && docIndex.figures.length > 0 && (
+                <div className="px-2 py-1.5 border-b border-neutral-100 dark:border-neutral-800">
+                  <div className="text-[9px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-1">
+                    Figures ({docIndex.figures.length})
+                  </div>
+                  {docIndex.figures.map((f, i) => (
+                    <button
+                      key={i}
+                      onClick={(e) => { e.stopPropagation(); onOpenPDF(docData.filename, f.page, []); }}
+                      className="w-full text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/50 rounded px-1 py-0.5 transition-colors"
+                    >
+                      <div className="flex items-center gap-1">
+                        <Image size={9} className="text-amber-500 shrink-0" />
+                        <span className="text-[10px] text-neutral-700 dark:text-neutral-300 truncate">{f.caption || "Untitled"}</span>
+                        <span className="text-[9px] text-neutral-400 shrink-0 ml-auto">p{f.page}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {/* No index data message */}
+              {!docIndex && regions.length === 0 && (
+                <div className="text-[10px] text-neutral-400 text-center py-2">No data yet</div>
+              )}
+              {/* Gold regions */}
+              {regions.length > 0 && (
+                <>
+                  <div className="px-2 pt-1.5 pb-0.5">
+                    <div className="text-[9px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
+                      Regions ({regions.length})
+                    </div>
+                  </div>
+                  {regions.map((region) => {
+                    const isOpen = expandedRegion === region.id;
+                    const kindColors: Record<string, string> = {
+                      chart: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+                      spec_block: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+                      table: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+                      diagram: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+                      figure: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+                      text: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
+                    };
+                    const kindClass = kindColors[region.kind] || kindColors.text;
+                    const docSlug = docData.filename.replace(/\.pdf$/i, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase();
+                    const svgUrl = region.crops?.svg
+                      ? `${API_URL}/api/documents/region-asset/${encodeURIComponent(docSlug)}/${region.crops.svg}`
+                      : null;
+
+                    return (
+                      <div key={region.id} className="border-t border-neutral-100 dark:border-neutral-800">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setExpandedRegion(isOpen ? null : region.id); }}
+                          className="w-full text-left px-2 py-1.5 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span className={`text-[8px] px-1 py-0.5 rounded ${kindClass} font-medium shrink-0`}>
+                              {region.kind}
+                            </span>
+                            <span className="text-[10px] text-neutral-700 dark:text-neutral-300 truncate font-medium">
+                              {region.title}
+                            </span>
+                            <span className="text-[9px] text-neutral-400 shrink-0 ml-auto">p{region.page}</span>
+                          </div>
+                          {region.entities.length > 0 && (
+                            <div className="flex flex-wrap gap-0.5 mt-0.5">
+                              {region.entities.slice(0, 4).map((e) => (
+                                <span key={e} className="text-[8px] px-1 py-0 rounded bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
+                                  {e}
+                                </span>
+                              ))}
+                              {region.entities.length > 4 && (
+                                <span className="text-[8px] text-neutral-400">+{region.entities.length - 4}</span>
+                              )}
+                            </div>
+                          )}
+                        </button>
+                        {isOpen && (
+                          <div className="px-2 pb-2">
+                            <div className="text-[9px] text-neutral-500 dark:text-neutral-400 mb-1">
+                              {region.description}
+                            </div>
+                            {svgUrl && (
+                              <div className="rounded border border-neutral-200 dark:border-neutral-700 overflow-hidden bg-white dark:bg-neutral-800">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={svgUrl}
+                                  alt={region.title}
+                                  className="w-full h-auto"
+                                  loading="lazy"
+                                />
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </>
+              )}
             </div>
           )}
         </div>
@@ -1284,6 +1819,13 @@ export function DocumentNode({ data }: NodeProps) {
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
         >
           <button
+            onClick={(e) => { e.stopPropagation(); setCtxMenu(null); setPipelineModalOpen(true); }}
+            className="w-full text-left px-3 py-1.5 text-xs text-neutral-700 dark:text-neutral-300 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 flex items-center gap-2"
+          >
+            <Activity size={12} />
+            Pipeline details
+          </button>
+          <button
             onClick={(e) => { e.stopPropagation(); setCtxMenu(null); onRemoveFromCanvas?.(docData.document_id); }}
             className="w-full text-left px-3 py-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2"
           >
@@ -1291,6 +1833,13 @@ export function DocumentNode({ data }: NodeProps) {
             Remove from canvas
           </button>
         </div>
+      )}
+      {pipelineModalOpen && createPortal(
+        <PipelineDetailModal
+          filename={docData.filename}
+          onClose={() => setPipelineModalOpen(false)}
+        />,
+        document.body,
       )}
     </>
   );

@@ -12,10 +12,7 @@ from typing import Optional, Dict, Any, List
 from pathlib import Path
 
 from ..core.config import get_settings
-from ..core.provenance import build_retrieved_chunk, create_retrieval_id, get_current_trace_id
 from ..api.file_service import get_file_service
-from ..kb_engine.rag_engine import get_rag_engine
-from ..kb_engine.docling_cache import remove_docling_json, clear_docling_cache
 from .vector_store import get_vector_store
 
 
@@ -223,23 +220,23 @@ class DocumentService:
         def _run() -> None:
             try:
                 import json as _json
+                import asyncio
                 from ..ingestion.pipeline import run_silver_pipeline, run_full_pipeline
                 from ..agent.tools.product_data import _refresh_data_dir
 
                 _update_pipeline_status(filename, "docling", 0, 0)
 
                 # Silver (deterministic: docling + index + pages + md)
-                data_dir = self.settings.backend_dir / "data"
+                data_dir = self.settings.data_dir
                 silver_dir = run_silver_pipeline(file_path, data_dir)
 
-                # Update DB with page count
+                # Update document status with page count
                 index_path = silver_dir / "index.json"
                 page_count = 0
                 if index_path.exists():
                     index = _json.loads(index_path.read_text())
                     page_count = index.get("document", {}).get("page_count", 0)
 
-                # Update document status in DB (need event loop for async)
                 loop = asyncio.new_event_loop()
                 try:
                     vs = loop.run_until_complete(get_vector_store())
@@ -278,7 +275,7 @@ class DocumentService:
         from ..ingestion.pipeline import run_full_pipeline
         from ..agent.tools.product_data import _refresh_data_dir
 
-        data_dir = self.settings.backend_dir / "data"
+        data_dir = self.settings.data_dir
         result = run_full_pipeline(
             file_path, data_dir, polish=polish, regions=regions, model=model,
         )
@@ -374,22 +371,20 @@ class DocumentService:
     async def delete_document(self, document_id: str) -> bool:
         """Delete a document and its chunks."""
         vector_store = await get_vector_store()
-        
+
         doc = await vector_store.get_document(document_id)
         if doc and doc.get("file_path"):
             file_path = Path(doc["file_path"])
             if file_path.exists():
                 file_path.unlink()
-            remove_docling_json(document_id, str(doc.get("filename") or ""))
-        
+
         return await vector_store.delete_document(document_id)
-    
+
     async def reset_knowledge_base(self) -> Dict[str, int]:
         """Reset the entire knowledge base."""
         vector_store = await get_vector_store()
         db_result = await vector_store.reset()
         file_result = get_file_service().reset_storage()
-        clear_docling_cache()
         return {**db_result, **file_result}
     
     async def reingest_all(self) -> Dict[str, Any]:
@@ -416,43 +411,59 @@ class DocumentService:
         document_id: Optional[str] = None,
         document_ids: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
-        """Search the knowledge base, optionally filtered by document."""
-        rag = get_rag_engine()
-        retrieved = rag.query_handler.retrieve(
-            rag,
-            query,
-            document_id=document_id,
-            document_ids=document_ids,
-            top_k=top_k,
-        )
+        """Search the knowledge base using the pre-computed query index.
 
-        retrieval_id = create_retrieval_id()
-        trace_id = get_current_trace_id()
+        Falls back to empty results if the query index hasn't been built yet.
+        """
+        from ..ingestion.query_index import load_query_index, search_queries
+
+        data_dir = self.settings.data_dir
+        index = load_query_index(data_dir)
+        if not index:
+            return []
+
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+            response = client.embeddings.create(
+                model="text-embedding-3-large", input=[query],
+            )
+            query_vector = response.data[0].embedding
+        except Exception:
+            return []
+
+        results = search_queries(index, query_vector, top_k=top_k)
+
+        # Filter by document if requested
+        if document_id or document_ids:
+            vector_store = await get_vector_store()
+            # Resolve document_id(s) to filenames for filtering
+            filter_filenames: set[str] = set()
+            ids_to_check = [document_id] if document_id else (document_ids or [])
+            for did in ids_to_check:
+                doc = await vector_store.get_document(did)
+                if doc:
+                    filter_filenames.add(doc.get("filename", ""))
+            if filter_filenames:
+                results = [
+                    r for r in results
+                    if any(fn in (r.get("doc_slug") or "") for fn in filter_filenames)
+                ]
 
         chunks: List[Dict[str, Any]] = []
-        for rank, result in enumerate(retrieved, start=1):
-            node = result.node
-            metadata = dict(node.metadata or {})
-            doc_id = document_id or metadata.get('document_id')
-            filename = metadata.get('filename') or metadata.get('file_name')
-            score = float(result.score or 0.0)
-
-            chunks.append(
-                build_retrieved_chunk(
-                    chunk_id=node.node_id,
-                    content=node.get_content(),
-                    metadata=metadata,
-                    score=score,
-                    rank=rank,
-                    query=query,
-                    top_k=top_k,
-                    retrieval_id=retrieval_id,
-                    collection_name=f'{self.settings.ketju_schema_name}.data_{self.settings.ketju_table_name}',
-                    document_id=doc_id,
-                    filename=filename,
-                    trace_id=trace_id,
-                )
-            )
+        for rank, r in enumerate(results[:top_k], start=1):
+            chunks.append({
+                "content": r.get("global_answer") or r.get("query", ""),
+                "metadata": {
+                    "query": r.get("query"),
+                    "topic": r.get("topic"),
+                    "doc_slug": r.get("doc_slug"),
+                    "page": r.get("page"),
+                    "region_id": r.get("region_id"),
+                },
+                "similarity": r.get("score", 0.0),
+                "rank": rank,
+            })
 
         return chunks
     
