@@ -1,7 +1,7 @@
 """Anchor Canvas Server — HTTP API + WebSocket for real-time canvas sync.
 
 Start with:
-    anchor-canvas --state-file ./canvas.json --port 8002
+    anchor-canvas --state-file ./canvas.json --data-dir ./data --port 8002
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from typing import Any
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from .state import Canvas, CanvasNode, CanvasEdge
@@ -32,6 +32,7 @@ app.add_middleware(
 
 # Singleton canvas — set at startup
 _canvas: Canvas | None = None
+_data_dir: Path | None = None
 _ws_clients: set[WebSocket] = set()
 
 
@@ -173,75 +174,172 @@ async def clear():
     return {"cleared": True}
 
 
-# --- Minimal embedded UI (placeholder until we build the React app) ---
+# --- Document data API (reads from anchor-ingest data dir) ---
+
+@app.get("/api/documents")
+async def list_documents():
+    """List all ingested documents from the data directory."""
+    if not _data_dir:
+        return []
+    silver = _data_dir / "silver"
+    if not silver.is_dir():
+        return []
+    docs = []
+    for d in sorted(silver.iterdir()):
+        if not d.is_dir():
+            continue
+        slug = d.name
+        index_path = d / "index.json"
+        info = {"slug": slug, "title": slug, "pages": 0, "has_gold": False}
+        if index_path.exists():
+            idx = json.loads(index_path.read_text())
+            info["title"] = idx.get("document", {}).get("title", slug)
+            info["pages"] = idx.get("document", {}).get("page_count", 0)
+        gold_dir = _data_dir / "gold" / slug / "pages"
+        info["has_gold"] = gold_dir.is_dir()
+        docs.append(info)
+    return docs
+
+
+@app.get("/api/documents/{slug}/index")
+async def get_document_index(slug: str):
+    """Get the silver index for a document (outline, tables, figures)."""
+    if not _data_dir:
+        return {"error": "No data directory configured"}
+    index_path = _data_dir / "silver" / slug / "index.json"
+    if not index_path.exists():
+        return {"error": f"No index for '{slug}'"}
+    return json.loads(index_path.read_text())
+
+
+@app.get("/api/documents/{slug}/regions")
+async def get_document_regions(slug: str, page: int | None = None):
+    """Get gold regions for a document, optionally filtered by page."""
+    if not _data_dir:
+        return {"error": "No data directory configured"}
+    gold_pages = _data_dir / "gold" / slug / "pages"
+    if not gold_pages.is_dir():
+        return {"slug": slug, "pages": {}}
+    result: dict = {"slug": slug, "pages": {}}
+    for rf in sorted(gold_pages.glob("*.regions.json")):
+        rdata = json.loads(rf.read_text())
+        pg = rdata.get("page", 0)
+        if page is not None and pg != page:
+            continue
+        result["pages"][str(pg)] = rdata.get("regions", [])
+    return result
+
+
+@app.get("/api/documents/{slug}/gold-map")
+async def get_gold_map(slug: str):
+    """Get all gold regions + page dimensions for rendering region map overlay.
+
+    Returns page_width, page_height (PDF points), page_count, and regions per page.
+    Same format as the React app's gold-map endpoint.
+    """
+    if not _data_dir:
+        return {"error": "No data directory"}
+
+    # Load gold regions
+    gold_pages = _data_dir / "gold" / slug / "pages"
+    pages_data: dict = {}
+    if gold_pages.is_dir():
+        for rf in sorted(gold_pages.glob("*.regions.json")):
+            try:
+                data = json.loads(rf.read_text())
+            except Exception:
+                continue
+            page_no = data.get("page", 0)
+            pages_data[page_no] = data.get("regions", [])
+
+    # Get page count from index
+    page_count = 0
+    index_path = _data_dir / "silver" / slug / "index.json"
+    if index_path.exists():
+        try:
+            idx = json.loads(index_path.read_text())
+            page_count = idx.get("document", {}).get("page_count", 0)
+        except Exception:
+            pass
+
+    # Default A4 in points
+    page_width = 595.0
+    page_height = 842.0
+
+    # Try actual page dimensions from pages.meta.json bbox_union
+    meta_path = _data_dir / "silver" / slug / "pages.meta.json"
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text())
+            pages_meta = meta.get("pages", {})
+            if pages_meta:
+                first_key = next(iter(pages_meta))
+                bbox_union = pages_meta[first_key].get("bbox_union", [])
+                if len(bbox_union) == 4:
+                    page_width = max(bbox_union[2], page_width)
+                    page_height = max(bbox_union[1], page_height)
+        except Exception:
+            pass
+
+    return {
+        "slug": slug,
+        "page_count": page_count,
+        "page_width": page_width,
+        "page_height": page_height,
+        "pages": pages_data,
+    }
+
+
+@app.get("/api/documents/{slug}/pages/{page_num}/image")
+async def get_page_image(slug: str, page_num: int):
+    """Get the PNG image for a document page."""
+    if not _data_dir:
+        return Response(status_code=404)
+    img_path = _data_dir / "silver" / slug / "pages" / f"{page_num}.png"
+    if not img_path.exists():
+        return Response(status_code=404)
+    return FileResponse(img_path, media_type="image/png")
+
+
+@app.get("/api/documents/{slug}/pages/{page_num}/text")
+async def get_page_text(slug: str, page_num: int):
+    """Get the markdown text for a document page."""
+    if not _data_dir:
+        return {"error": "No data directory"}
+    md_path = _data_dir / "silver" / slug / "pages" / f"{page_num}.md"
+    if not md_path.exists():
+        md_path = _data_dir / "silver" / slug / "pages" / f"{page_num}.raw.md"
+    if not md_path.exists():
+        return {"error": f"No text for page {page_num}"}
+    return {"text": md_path.read_text()}
+
+
+@app.get("/api/documents/{slug}/crops/{path:path}")
+async def get_crop(slug: str, path: str):
+    """Serve a gold region crop (SVG or PNG)."""
+    if not _data_dir:
+        return Response(status_code=404)
+    crop_path = _data_dir / "gold" / slug / "pages" / path
+    if not crop_path.exists():
+        return Response(status_code=404)
+    media = "image/svg+xml" if crop_path.suffix == ".svg" else "image/png"
+    return FileResponse(crop_path, media_type=media)
+
+
+# --- Web UI ---
+
+_static_dir = Path(__file__).parent / "static"
+
 
 @app.get("/")
 async def index():
-    return HTMLResponse("""<!DOCTYPE html>
-<html><head><title>Anchor Canvas</title>
-<style>
-  body { font-family: system-ui; margin: 0; background: #1a1a2e; color: #eee; }
-  #canvas { width: 100vw; height: 100vh; position: relative; overflow: hidden; }
-  .node { position: absolute; padding: 8px 12px; border-radius: 6px; background: #16213e;
-           border: 1px solid #0f3460; font-size: 13px; cursor: move; min-width: 60px; text-align: center; }
-  .node.concept { border-color: #4a9eff; }
-  .node.entity { border-color: #ff6b6b; border-radius: 50%; }
-  .node.fact { border-color: #ffd93d; }
-  .node.document { border-color: #6bcb77; }
-  .node.image { border-color: #a66cff; }
-  #status { position: fixed; top: 8px; right: 12px; font-size: 12px; opacity: 0.6; }
-</style></head>
-<body>
-<div id="canvas"></div>
-<div id="status">connecting...</div>
-<script>
-const canvas = document.getElementById('canvas');
-const status = document.getElementById('status');
-let nodes = {}, edges = {};
-
-function render() {
-  canvas.innerHTML = '';
-  for (const n of Object.values(nodes)) {
-    const el = document.createElement('div');
-    el.className = 'node ' + (n.node_type || 'concept');
-    el.style.left = n.x + 'px';
-    el.style.top = n.y + 'px';
-    if (n.width) el.style.width = n.width + 'px';
-    el.textContent = n.label || n.node_type;
-    el.title = JSON.stringify(n.data || {}, null, 2);
-    canvas.appendChild(el);
-  }
-}
-
-function connect() {
-  const ws = new WebSocket('ws://' + location.host + '/ws');
-  ws.onopen = () => { status.textContent = 'connected'; };
-  ws.onclose = () => { status.textContent = 'disconnected'; setTimeout(connect, 2000); };
-  ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
-    if (msg.event === 'state') {
-      nodes = {}; edges = {};
-      (msg.nodes || []).forEach(n => nodes[n.id] = n);
-      (msg.edges || []).forEach(e => edges[e.id] = e);
-    } else if (msg.event === 'node_added' || msg.event === 'node_updated') {
-      nodes[msg.node.id] = msg.node;
-    } else if (msg.event === 'node_removed') {
-      delete nodes[msg.id];
-    } else if (msg.event === 'cleared') {
-      nodes = {}; edges = {};
-    }
-    status.textContent = 'v' + (msg.version || '?');
-    render();
-  };
-}
-connect();
-</script>
-</body></html>""")
+    return FileResponse(_static_dir / "index.html")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Anchor Canvas Server")
     parser.add_argument("--state-file", "-s", default="./canvas.json", help="JSON file for persistence")
+    parser.add_argument("--data-dir", "-d", default=None, help="Ingestion data directory (for document browsing)")
     parser.add_argument("--port", "-p", type=int, default=8002)
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--verbose", "-v", action="store_true")
@@ -250,9 +348,12 @@ def main():
     if args.verbose:
         logging.basicConfig(level=logging.INFO)
 
-    global _canvas
+    global _canvas, _data_dir
     _canvas = Canvas(state_file=Path(args.state_file).resolve())
     _canvas.on_change(_broadcast)
+    if args.data_dir:
+        _data_dir = Path(args.data_dir).resolve()
+        logger.info("Data directory: %s", _data_dir)
 
     logger.info("Canvas server at http://%s:%d (state: %s)", args.host, args.port, args.state_file)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info" if args.verbose else "warning")
