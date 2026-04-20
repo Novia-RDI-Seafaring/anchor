@@ -30,8 +30,10 @@ dependencies = [
     "kaleido>=1.2.0",
     "pymupdf>=1.27.2.2",
     "mcp>=1.27.0",
+    "anchor-ingest",
 ]
 
 [tool.uv.sources]
 ketju = { path = "../../mini_apps/ketju", editable = true }
+anchor-ingest = { path = "../packages/anchor-ingest", editable = true }
 

@@ -107,6 +107,29 @@ wheels = [
 ]
 
 [[package]]
+name = "anchor-ingest"
+version = "0.1.0"
+source = { editable = "../packages/anchor-ingest" }
+dependencies = [
+    { name = "docling" },
+    { name = "mcp" },
+    { name = "openai" },
+    { name = "pydantic" },
+    { name = "pymupdf" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "docling", specifier = ">=2.63.0" },
+    { name = "llama-index-embeddings-azure-openai", marker = "extra == 'embed'", specifier = ">=0.3.0" },
+    { name = "mcp", specifier = ">=1.27.0" },
+    { name = "openai", specifier = ">=1.0" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pymupdf", specifier = ">=1.27.2.2" },
+]
+provides-extras = ["embed"]
+
+[[package]]
 name = "annotated-doc"
 version = "0.0.4"
 source = { registry = "https://pypi.org/simple" }
@@ -234,6 +257,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "ag-ui-protocol" },
     { name = "aiofiles" },
+    { name = "anchor-ingest" },
     { name = "asyncpg" },
     { name = "devtools" },
     { name = "docling" },
@@ -263,6 +287,7 @@ dependencies = [
 requires-dist = [
     { name = "ag-ui-protocol", specifier = ">=0.1.10" },
     { name = "aiofiles", specifier = ">=24.1.0" },
+    { name = "anchor-ingest", editable = "../packages/anchor-ingest" },
     { name = "asyncpg", specifier = ">=0.29.0" },
     { name = "devtools", specifier = ">=0.12.2" },
     { name = "docling", specifier = ">=2.63.0" },
