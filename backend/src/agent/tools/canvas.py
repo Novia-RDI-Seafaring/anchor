@@ -15,7 +15,7 @@ from ..helpers import (
     _get_cached_document_id,
     _find_node_by_title,
 )
-from .document import get_docling_page_items_for_filename
+# bbox backfill from docling items removed — gold regions carry bboxes now
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -108,7 +108,7 @@ def _backfill_section_row_bboxes(sections: list[ParameterSection]) -> int:
 
             cache_key = (source.filename, source.page)
             if cache_key not in page_item_cache:
-                page_item_cache[cache_key] = get_docling_page_items_for_filename(source.filename, source.page)
+                page_item_cache[cache_key] = []  # docling items removed; gold regions carry bboxes
             page_items = page_item_cache[cache_key]
             if not page_items:
                 _LOGGER.warning(

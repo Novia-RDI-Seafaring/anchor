@@ -1205,7 +1205,8 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     const hasFiles = t.includes("Files");
     const hasLibItem = t.includes("application/anchor-doc") || t.includes("application/anchor-fmu") || t.includes("application/anchor-snippet");
     const hasNodeType = t.includes("application/anchor-nodetype");
-    if (!hasFiles && !hasLibItem && !hasNodeType) return;
+    const hasRegion = t.includes("application/anchor-region");
+    if (!hasFiles && !hasLibItem && !hasNodeType && !hasRegion) return;
     e.preventDefault();
     setIsDraggingOver(hasFiles || hasLibItem);
     const absolutePosition = screenToFlowPosition({ x: e.clientX, y: e.clientY });
@@ -1219,6 +1220,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
       : fmuFilename ? NODE_SIZE.fmuNode
       : docId ? DOCUMENT_NODE_SIZE
       : snippetPayload ? { w: 220, h: 84 }
+      : hasRegion ? NODE_SIZE.imageNode
       : hasFiles ? DOCUMENT_NODE_SIZE
       : null;
     if (size) {
@@ -1328,6 +1330,65 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         onAddSnippet?.(parsed.nodes ?? [], parsed.relations ?? [], dropPos, placements);
       } catch {
         // ignore malformed snippet payload
+      }
+      return;
+    }
+
+    // Handle gold region drops from DocumentRegionMap
+    const regionPayload = e.dataTransfer.getData("application/anchor-region");
+    if (regionPayload) {
+      try {
+        const region = JSON.parse(regionPayload);
+        const nodeSize = NODE_SIZE.imageNode!;
+        const absolutePos = anchorAtCenter(dropPos, nodeSize);
+        const areaParent = findBestAreaParent(absolutePos, nodeSize, nodesRef.current);
+        const finalPos = areaParent?.position ?? absolutePos;
+        const id = `region_${Date.now()}`;
+        const node: any = {
+          id,
+          node_type: "image",
+          status: "found",
+          title: region.title || "",
+          text: region.description || "",
+          spec_title: "",
+          properties: [],
+          last_updated_run_id: "",
+          filename: region.filename || "",
+          page: region.page || 0,
+          bbox: region.bbox || [],
+          highlights: [],
+          fmu_filename: "",
+          fmu_model_name: "",
+          fmu_variables: [],
+          fmu_param_values: {},
+          plot_job_id: "",
+          plot_fmu_filename: "",
+          plot_signal_names: [],
+          plot_stop_time: 10,
+          funnel_label: "",
+          area_label: "",
+          area_width: 0,
+          area_height: 0,
+          model_label: "",
+          image_filename: region.filename || "",
+          image_page: region.page || 0,
+          image_bbox: region.bbox || [],
+          image_highlights: [],
+          image_caption: region.title || "",
+          image_url: region.crops?.svg
+            ? `${API_URL}/api/documents/region-asset/${encodeURIComponent(region.slug)}/${region.crops.svg}`
+            : region.crops?.png
+            ? `${API_URL}/api/documents/region-asset/${encodeURIComponent(region.slug)}/${region.crops.png}`
+            : undefined,
+          width: nodeSize.w,
+          height: nodeSize.h,
+          parent_id: areaParent?.id ?? "",
+        };
+        positionOverridesRef.current[id] = finalPos;
+        commitPositionOverrides({ [id]: finalPos }, true);
+        onAddNode?.(node, null);
+      } catch {
+        // ignore malformed region payload
       }
       return;
     }

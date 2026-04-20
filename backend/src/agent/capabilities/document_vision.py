@@ -19,7 +19,6 @@ HIGH_LEVEL_TOOLS: frozenset[str] = frozenset({
     "get_document_page_count",
     "read_document_page",
     "get_document_full_text",
-    "analyze_pdf_page",
     "add_page_image_to_canvas",
     "analyze_image_content",
 })
@@ -31,7 +30,6 @@ _toolset.tool(document_tools.get_document_tree)
 _toolset.tool(document_tools.get_document_page_count)
 _toolset.tool(document_tools.read_document_page)
 _toolset.tool(document_tools.get_document_full_text)
-_toolset.tool(document_tools.analyze_pdf_page)
 _toolset.tool(document_tools.add_page_image_to_canvas)
 _toolset.tool(vision_tools.analyze_image_content)
 

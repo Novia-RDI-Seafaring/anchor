@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import { Handle, Position, NodeToolbar, type NodeProps } from "@xyflow/react";
@@ -272,9 +272,9 @@ function buildPageImageUrl(filename: string, page: number, bbox?: number[], high
 export function ImageNode({ data }: NodeProps) {
   const { node, onDelete, onSetColor, onOpenPDF } = data as unknown as ImageNodeData;
   const hasImage = !!(node.image_filename && node.image_page);
-  const imageUrl = hasImage
-    ? buildPageImageUrl(node.image_filename!, node.image_page!, node.image_bbox, node.image_highlights)
-    : null;
+  // Prefer direct image_url (e.g. gold region SVG crop) over bbox screenshot
+  const imageUrl = (node as any).image_url
+    || (hasImage ? buildPageImageUrl(node.image_filename!, node.image_page!, node.image_bbox, node.image_highlights) : null);
   const pdfHighlights: PDFHighlight[] = [];
 
   return (
@@ -1373,6 +1373,174 @@ function Pill({ ok, small, children }: { ok: boolean; small?: boolean; children:
   );
 }
 
+// ─── Document Region Map ──────────────────────────────────────────────────
+
+interface GoldMapRegion {
+  id: string;
+  kind: string;
+  title: string;
+  description?: string;
+  bbox?: number[];  // [left, top, right, bottom] BOTTOMLEFT origin
+  entities?: string[];
+  crops?: { png?: string; svg?: string };
+}
+
+interface GoldMapData {
+  slug: string;
+  page_count: number;
+  page_width: number;
+  page_height: number;
+  pages: Record<string, GoldMapRegion[]>;
+}
+
+function DocumentRegionMap({
+  filename,
+  onDragRegion,
+}: {
+  filename: string;
+  onDragRegion?: (region: GoldMapRegion, page: number) => void;
+}) {
+  const [mapData, setMapData] = useState<GoldMapData | null>(null);
+  const [hoveredRegion, setHoveredRegion] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(152);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/documents/gold-map/${encodeURIComponent(filename)}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.pages && Object.keys(d.pages).length > 0) setMapData(d); })
+      .catch(() => {});
+  }, [filename]);
+
+  // Measure container width (must be before early return to keep hooks order stable)
+  useEffect(() => {
+    if (!mapData) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) setContainerWidth(e.contentRect.width);
+    });
+    ro.observe(el);
+    setContainerWidth(el.clientWidth || 152);
+    return () => ro.disconnect();
+  }, [mapData]);
+
+  if (!mapData) return null;
+
+  const { slug, page_width, page_height, page_count } = mapData;
+  const scale = containerWidth / page_width;
+  const renderHeight = page_height * scale;
+
+  const pageNums = Array.from({ length: page_count }, (_, i) => i + 1);
+  const regions = mapData.pages[String(currentPage)] || [];
+
+  const kindColors: Record<string, string> = {
+    chart: "rgba(147, 51, 234, 0.18)",
+    spec_block: "rgba(59, 130, 246, 0.18)",
+    table: "rgba(59, 130, 246, 0.18)",
+    diagram: "rgba(245, 158, 11, 0.18)",
+    figure: "rgba(245, 158, 11, 0.18)",
+    text: "rgba(107, 114, 128, 0.12)",
+    caption: "rgba(20, 184, 166, 0.15)",
+  };
+  const kindBorders: Record<string, string> = {
+    chart: "rgba(147, 51, 234, 0.5)",
+    spec_block: "rgba(59, 130, 246, 0.5)",
+    table: "rgba(59, 130, 246, 0.5)",
+    diagram: "rgba(245, 158, 11, 0.5)",
+    figure: "rgba(245, 158, 11, 0.5)",
+    text: "rgba(107, 114, 128, 0.3)",
+    caption: "rgba(20, 184, 166, 0.4)",
+  };
+
+  return (
+    <div ref={containerRef} className="relative w-full" style={{ height: renderHeight }}>
+      {/* Page PNG background */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={`${API_URL}/api/documents/silver/${encodeURIComponent(filename)}/page/${currentPage}?kind=png`}
+        alt={`Page ${currentPage}`}
+        className="absolute inset-0 w-full h-full object-cover"
+        loading="lazy"
+      />
+      {/* Region overlays */}
+      {regions.map((r) => {
+        if (!r.bbox || r.bbox.length < 4) return null;
+        const [left = 0, top = 0, right = 0, bottom = 0] = r.bbox;
+        // Convert BOTTOMLEFT to top-left CSS coordinates
+        const cssLeft = left * scale;
+        const cssTop = (page_height - top) * scale;
+        const cssWidth = (right - left) * scale;
+        const cssHeight = (top - bottom) * scale;
+        const isHovered = hoveredRegion === r.id;
+
+        return (
+          <div
+            key={r.id}
+            className="absolute cursor-grab transition-all duration-150 nodrag nopan"
+            style={{
+              left: cssLeft,
+              top: cssTop,
+              width: cssWidth,
+              height: cssHeight,
+              background: isHovered ? (kindColors[r.kind] || kindColors.text)?.replace(/[\d.]+\)$/, "0.35)") : (kindColors[r.kind] || kindColors.text),
+              border: `1px solid ${isHovered ? (kindBorders[r.kind] || kindBorders.text)?.replace(/[\d.]+\)$/, "0.8)") : (kindBorders[r.kind] || kindBorders.text)}`,
+              borderRadius: 2,
+              zIndex: isHovered ? 10 : 1,
+              transform: isHovered ? "scale(1.01)" : undefined,
+            }}
+            title={`${r.kind}: ${r.title}`}
+            onMouseEnter={() => setHoveredRegion(r.id)}
+            onMouseLeave={() => setHoveredRegion(null)}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData("application/anchor-region", JSON.stringify({
+                ...r,
+                page: currentPage,
+                filename,
+                slug,
+              }));
+              e.dataTransfer.effectAllowed = "copy";
+              onDragRegion?.(r, currentPage);
+            }}
+          >
+            {/* Show title on hover */}
+            {isHovered && cssWidth > 20 && (
+              <div
+                className="absolute left-0 right-0 pointer-events-none overflow-hidden"
+                style={{ top: -14 }}
+              >
+                <span className="text-[7px] font-medium text-neutral-700 dark:text-neutral-200 bg-white/90 dark:bg-neutral-900/90 px-1 py-0.5 rounded shadow-sm whitespace-nowrap">
+                  {r.title}
+                </span>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {/* Page navigation */}
+      {page_count > 1 && (
+        <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-0.5 bg-black/50 rounded-full px-1.5 py-0.5 z-20 nodrag nopan">
+          {pageNums.map((pg) => (
+            <button
+              key={pg}
+              onClick={(e) => { e.stopPropagation(); setCurrentPage(pg); }}
+              className={`w-4 h-4 flex items-center justify-center rounded-full text-[8px] font-medium transition-colors ${
+                currentPage === pg
+                  ? "bg-white text-neutral-800"
+                  : "text-white/70 hover:text-white hover:bg-white/20"
+              }`}
+            >
+              {pg}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Document Node ─────────────────────────────────────────────────────────
 interface GoldRegion {
   id: string;
@@ -1415,6 +1583,7 @@ export function DocumentNode({ data }: NodeProps) {
   const [expandedRegion, setExpandedRegion] = useState<string | null>(null);
   const [pipelineStatus, setPipelineStatus] = useState<{ stage: string; current: number; total: number } | null>(null);
   const [pipelineModalOpen, setPipelineModalOpen] = useState(false);
+  const [hasGoldMap, setHasGoldMap] = useState(false);
   const [docIndex, setDocIndex] = useState<{
     document?: { filename?: string; title?: string; page_count?: number };
     outline?: { level: number; title: string; page: number }[];
@@ -1435,12 +1604,29 @@ export function DocumentNode({ data }: NodeProps) {
           setPipelineStatus(status ?? null);
           if (status && status.stage !== "done" && status.stage !== "error") {
             timer = setTimeout(poll, 2000);
+          } else if (status?.stage === "done") {
+            // Pipeline finished — check for gold map
+            fetch(`${API_URL}/api/documents/gold-map/${encodeURIComponent(docData.filename)}`)
+              .then((r) => r.ok ? r.json() : null)
+              .then((d) => { if (active && d?.pages && Object.keys(d.pages).length > 0) setHasGoldMap(true); })
+              .catch(() => {});
           }
         })
         .catch(() => {});
     };
     let timer = setTimeout(poll, 1000);
     return () => { active = false; clearTimeout(timer); };
+  }, [docData.filename]);
+
+  // Check for gold map on mount
+  useEffect(() => {
+    if (!docData.filename) return;
+    let active = true;
+    fetch(`${API_URL}/api/documents/gold-map/${encodeURIComponent(docData.filename)}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (active && d?.pages && Object.keys(d.pages).length > 0) setHasGoldMap(true); })
+      .catch(() => {});
+    return () => { active = false; };
   }, [docData.filename]);
 
   useEffect(() => {
@@ -1491,18 +1677,14 @@ export function DocumentNode({ data }: NodeProps) {
         position={Position.Bottom}
         className="!h-2.5 !w-2.5 !bg-indigo-400 !border-indigo-600"
       />
-      <button
-        onClick={() => {
-          onActivate(isActive ? "" : docData.document_id);
-          onOpenPDF(docData.filename, 1, []);
-        }}
+      <div
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
           setCtxMenu({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY });
         }}
         title={docData.filename}
-        className={`group relative flex flex-col overflow-hidden rounded-[20px] border transition-all shadow-[0_14px_30px_rgba(15,23,42,0.16)] text-left cursor-pointer w-full ${
+        className={`group relative flex flex-col overflow-hidden rounded-[20px] border transition-all shadow-[0_14px_30px_rgba(15,23,42,0.16)] text-left w-full ${
           isActive
             ? "border-indigo-400 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-950/50"
             : "border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-indigo-300 dark:hover:border-indigo-600"
@@ -1521,21 +1703,33 @@ export function DocumentNode({ data }: NodeProps) {
               ? "border-indigo-200 dark:border-indigo-700"
               : "border-neutral-200 dark:border-neutral-700"
           }`} style={{ aspectRatio: "0.707 / 1" }}>
-            <div className={`absolute inset-0 z-10 transition-all duration-200 ${
+            <div className={`absolute inset-0 z-10 transition-all duration-200 pointer-events-none ${
               isPreviewing
                 ? "bg-gradient-to-b from-indigo-400/10 via-transparent to-indigo-950/16"
-                : "bg-gradient-to-b from-transparent via-transparent to-neutral-950/10"
+                : hasGoldMap ? "" : "bg-gradient-to-b from-transparent via-transparent to-neutral-950/10"
             }`} />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={coverUrl}
-              alt={`${docData.filename} cover`}
-              className={`absolute inset-0 block h-full w-full object-cover object-top bg-neutral-100 dark:bg-neutral-800 transition-all duration-300 ${
-                isPreviewing ? "scale-[0.985] opacity-0" : "scale-100 opacity-100"
-              }`}
-              loading="lazy"
-            />
-            {hoveredCoverUrl ? (
+            {hasGoldMap ? (
+              <div className="absolute inset-0 nodrag nopan">
+                <DocumentRegionMap filename={docData.filename} />
+              </div>
+            ) : (
+              <div
+                className="absolute inset-0 cursor-pointer"
+                onClick={() => {
+                  onActivate(isActive ? "" : docData.document_id);
+                  onOpenPDF(docData.filename, 1, []);
+                }}
+              >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={coverUrl}
+                alt={`${docData.filename} cover`}
+                className={`absolute inset-0 block h-full w-full object-cover object-top bg-neutral-100 dark:bg-neutral-800 transition-all duration-300 ${
+                  isPreviewing ? "scale-[0.985] opacity-0" : "scale-100 opacity-100"
+                }`}
+                loading="lazy"
+              />
+              {hoveredCoverUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={hoveredCoverUrl}
@@ -1546,6 +1740,8 @@ export function DocumentNode({ data }: NodeProps) {
                 loading="lazy"
               />
             ) : null}
+              </div>
+            )}
             <div className="pointer-events-none absolute right-2 top-2 z-20 flex items-center gap-1">
               {isPreviewing ? (
                 <>
@@ -1587,7 +1783,13 @@ export function DocumentNode({ data }: NodeProps) {
             </div>
           )}
         </div>
-        <div className="flex flex-col gap-2 px-3 pb-3 pt-2">
+        <div
+          className="flex flex-col gap-2 px-3 pb-3 pt-2 cursor-pointer"
+          onClick={() => {
+            onActivate(isActive ? "" : docData.document_id);
+            onOpenPDF(docData.filename, 1, []);
+          }}
+        >
           <div className="min-w-0">
             <div className={`text-[11px] font-semibold leading-tight truncate ${
               isActive ? "text-indigo-700 dark:text-indigo-300" : "text-neutral-800 dark:text-neutral-200"
@@ -1607,8 +1809,11 @@ export function DocumentNode({ data }: NodeProps) {
             )}
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <button
+            <span
+              role="button"
+              tabIndex={0}
               onClick={(e) => { e.stopPropagation(); setPipelineModalOpen(true); }}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setPipelineModalOpen(true); } }}
               className={`text-[10px] px-1.5 py-0.5 rounded-full cursor-pointer hover:ring-1 hover:ring-current/20 transition-all ${
                 isProcessing
                   ? "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400"
@@ -1618,7 +1823,7 @@ export function DocumentNode({ data }: NodeProps) {
               }`}
             >
               {isProcessing ? "processing" : isError ? "error" : `${docData.node_count} pages`}
-            </button>
+            </span>
             {evidenceCount > 0 && (
               <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300">
                 {evidenceCount} ref{evidenceCount !== 1 ? "s" : ""}
@@ -1626,7 +1831,7 @@ export function DocumentNode({ data }: NodeProps) {
             )}
           </div>
         </div>
-      </button>
+      </div>
 
       {/* Contents toggle */}
       <button

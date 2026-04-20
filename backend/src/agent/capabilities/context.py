@@ -15,10 +15,13 @@ from ..tools.product_data import (
     build_loaded_documents_context,
 )
 
-# ── Toolset: reading tools only ──────────────────────────────────────────────
+# ── Toolset: document reading tools ─────────────────────────────────────────
 
 _toolset: FunctionToolset[AgentDeps] = FunctionToolset()
+_toolset.tool(document_tools.get_document_tree)
 _toolset.tool(document_tools.read_document_page)
+_toolset.tool(document_tools.get_document_full_text)
+_toolset.tool(document_tools.get_document_page_count)
 
 
 # ── Dynamic context injection ────────────────────────────────────────────────
@@ -62,8 +65,12 @@ def _canvas_context(ctx: RunContext[AgentDeps]) -> str | None:
 
 
 async def _documents_context(ctx: RunContext[AgentDeps]) -> str | None:
-    """List available documents with metadata."""
-    from src.knowledge_base.service import get_document_service
+    """List available documents with metadata and pipeline status."""
+    from src.knowledge_base.service import get_document_service, get_pipeline_status
+    from src.agent.tools.product_data import (
+        find_product_data_by_filename,
+        find_product_index_by_filename,
+    )
 
     try:
         service = await get_document_service()
@@ -80,23 +87,37 @@ async def _documents_context(ctx: RunContext[AgentDeps]) -> str | None:
     doc_entries = []
     for doc in documents:
         doc_id = doc.get("document_id", "")
+        filename = doc.get("filename", "")
         entry: dict[str, Any] = {
             "id": doc_id,
-            "filename": doc.get("filename", ""),
-            "pages": doc.get("page_count", "?"),
-            "chunks": doc.get("chunk_count", 0),
+            "filename": filename,
+            "status": doc.get("status", "unknown"),
+            "pages": doc.get("node_count") or doc.get("chunk_count") or 0,
         }
         if doc_id == active_id:
             entry["active"] = True
         if doc_id in workspace_ids:
             entry["in_workspace"] = True
+
+        # Pipeline progress (if currently running)
+        pipeline = get_pipeline_status(filename)
+        if pipeline:
+            entry["pipeline"] = f"{pipeline['stage']} {pipeline['current']}/{pipeline['total']}"
+
+        # Data availability
+        has_gold = find_product_data_by_filename(filename) is not None
+        has_index = find_product_index_by_filename(filename) is not None
+        if has_gold:
+            entry["data"] = "gold"
+        elif has_index:
+            entry["data"] = "index"
+        else:
+            entry["data"] = "none"
+
         doc_entries.append(entry)
 
     docs_json = json.dumps(doc_entries, indent=2, default=str)
-    return (
-        f"AVAILABLE DOCUMENTS:\n```json\n{docs_json}\n```\n"
-        "Use read_document_page(document_id=..., page_no=N) to read any page."
-    )
+    return f"AVAILABLE DOCUMENTS:\n```json\n{docs_json}\n```"
 
 
 def _loaded_documents_context(ctx: RunContext[AgentDeps]) -> str | None:
@@ -118,34 +139,41 @@ def _loaded_documents_context(ctx: RunContext[AgentDeps]) -> str | None:
 _INSTRUCTIONS = """
 You have full visibility of the canvas state and available documents above.
 
-Documents on the canvas with pre-extracted gold-layer data are automatically loaded
-into your context — you already have their full structured product data (specs, tables,
-operating data, dimensions, bboxes, etc.). Use this data directly without calling any tool.
-DO NOT call read_document_page for documents that have gold data loaded.
+## Document data — three tiers
 
-For documents WITHOUT gold data, you may instead receive a DOCUMENT INDEX — a compact
-outline listing sections, tables (with header row + first-column values), and figures,
-each stamped with `page` and `bbox`. Use the index to jump straight to the right page
-and region via read_document_page(document_id, page_no) rather than scanning sequentially.
-The `first_column_values` of each table often reveals whether it's per-model — e.g. rows
-like ["LKH-5", "LKH-10", ...] tells you that's the table to open for per-model specs.
+1. **Gold data** (in context) — pre-extracted structured product data with specs, tables,
+   operating data, bboxes. Use directly without calling any tool.
 
-For documents without gold OR index data, use read_document_page to see the raw page.
+2. **Silver index** (in context) — compact outline listing sections, tables (with header
+   row + first-column values), and figures, each with page + bbox. Use it to decide
+   which page to jump to with read_document_page.
 
-Think like an engineer reading a document:
-- Gold data is authoritative — use it first when available
-- Index present? Open the specific page+bbox pointed to by the relevant table/section
-- Nothing loaded? Short docs (≤6 pages), read all pages; longer docs, start with page 1
+3. **Silver page markdown** (in context as fallback) — per-page text when no gold/index
+   is available.
 
-FMU wiring:
-- FMU nodes expose handles for each variable: inputs "in-{name}",
-  outputs "out-{name}", parameters "param-in-{name}".
-- Spec nodes expose per-row handles: "spec-row-out-{sectionIdx}-{rowIdx}" (right side)
-  and "spec-row-in-{sectionIdx}-{rowIdx}" (left side). Section/row indices are 0-based.
-- To wire a spec row to an FMU input, use add_relation with
-  source_handle="spec-row-out-{sectionIdx}-{rowIdx}" and target_handle="in-{varName}".
-- Match by engineering meaning: e.g. "Temperature" spec → FMU "temp_in",
-  "Mass flow" → "mass_in", etc.
+## Document tools
+
+- `get_document_tree(document_id?, filename?)` — get the table of contents (outline,
+  tables, figures). Useful when the index wasn't pre-loaded into context.
+- `read_document_page(document_id?, filename?, page_no, include_image?)` — read one page.
+  Returns polished markdown + page image + gold regions (if available).
+- `get_document_full_text(document_id?, filename?, include_pages?)` — get all page text
+  at once. Use for full-document analysis or when you need multiple pages.
+- `get_document_page_count(document_id?, filename?)` — get total page count.
+
+## Strategy
+
+- Gold data is authoritative — use it first when available, don't read pages.
+- Index present? Jump directly to the relevant table/section page.
+- Nothing loaded? Short docs (≤6 pages): use get_document_full_text. Longer: start
+  with get_document_tree, then read specific pages.
+
+## FMU wiring
+
+- FMU nodes expose handles: inputs "in-{name}", outputs "out-{name}", parameters "param-in-{name}".
+- Spec nodes expose per-row handles: "spec-row-out-{sectionIdx}-{rowIdx}" (right side).
+- Wire with add_relation using source_handle and target_handle.
+- Match by engineering meaning: "Temperature" → "temp_in", "Mass flow" → "mass_in", etc.
 """.strip()
 
 

@@ -441,6 +441,93 @@ async def get_document_regions(filename: str):
     return {"filename": filename, "pages": pages}
 
 
+@router.get("/documents/gold-map/{filename:path}")
+async def get_gold_map(filename: str):
+    """Get all gold regions + page metadata for rendering a region map overlay.
+
+    Returns pages with regions, bbox coordinates (PDF points, BOTTOMLEFT origin),
+    and the page size in PDF points (inferred from bbox_union in pages.meta.json
+    or defaulting to A4).
+    """
+    import re
+    import json as _json
+
+    data_dir = get_settings().data_dir
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", filename.removesuffix(".pdf")).strip("-").lower()
+
+    # Load gold regions
+    gold_dir = data_dir / "gold" / slug
+    if not gold_dir.exists():
+        parent = data_dir / "gold"
+        if parent.exists():
+            for d in parent.iterdir():
+                if d.is_dir() and slug in d.name:
+                    gold_dir = d
+                    break
+
+    pages_data: dict = {}
+    if gold_dir.exists():
+        pages_dir = gold_dir / "pages"
+        if pages_dir.is_dir():
+            for rf in sorted(pages_dir.glob("*.regions.json")):
+                try:
+                    data = _json.loads(rf.read_text())
+                except Exception:
+                    continue
+                page_no = data.get("page", 0)
+                pages_data[page_no] = data.get("regions", [])
+
+    # Load page metadata for dimensions
+    silver_dir = data_dir / "silver" / slug
+    if not silver_dir.exists():
+        sr = data_dir / "silver"
+        if sr.exists():
+            for d in sr.iterdir():
+                if d.is_dir() and slug in d.name:
+                    silver_dir = d
+                    break
+
+    page_count = 0
+    # Default A4 in points
+    page_width = 595.0
+    page_height = 842.0
+
+    index_path = silver_dir / "index.json"
+    if index_path.exists():
+        try:
+            idx = _json.loads(index_path.read_text())
+            page_count = idx.get("document", {}).get("page_count", 0)
+        except Exception:
+            pass
+
+    # Try to get actual page dimensions from pages.meta.json bbox_union
+    meta_path = silver_dir / "pages.meta.json"
+    if meta_path.exists():
+        try:
+            meta = _json.loads(meta_path.read_text())
+            pages_meta = meta.get("pages", {})
+            if pages_meta:
+                first_key = next(iter(pages_meta))
+                bbox_union = pages_meta[first_key].get("bbox_union", [])
+                if len(bbox_union) == 4:
+                    # bbox_union is [left, top, right, bottom] in BOTTOMLEFT coords
+                    # top is the highest y, which approximates page height
+                    # right approximates page width
+                    page_width = max(bbox_union[2], page_width)
+                    page_height = max(bbox_union[1], page_height)
+        except Exception:
+            pass
+
+    return {
+        "filename": filename,
+        "slug": slug,
+        "page_count": page_count,
+        "page_width": page_width,
+        "page_height": page_height,
+        "pages": pages_data,
+    }
+
+
 @router.get("/documents/query-search")
 async def query_search(q: str, entity: Optional[str] = None, top_k: int = 10):
     """Search the pre-computed Q&A index by natural language query.
