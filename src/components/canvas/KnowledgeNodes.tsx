@@ -26,6 +26,10 @@ import {
   Play,
   Image,
   Filter,
+  ChevronRight,
+  ChevronLeft,
+  GripVertical,
+  X,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import type { KBDocument } from "@/contexts/AppContext";
@@ -1541,6 +1545,353 @@ function DocumentRegionMap({
   );
 }
 
+// ─── Contents Sidecart ────────────────────────────────────────────────────
+// Drill-down panel that opens to the right of the document node.
+// Levels: root → page → region detail
+// Items are draggable to the canvas.
+
+type SidecartLevel = { kind: "root" } | { kind: "page"; page: number } | { kind: "region"; page: number; regionId: string };
+
+interface DocIndex {
+  document?: { filename?: string; title?: string; page_count?: number };
+  outline?: { level: number; title: string; page: number }[];
+  tables?: { id: string; page: number; caption: string; shape?: { rows: number; cols: number }; header_row?: string[]; first_column_values?: string[] }[];
+  figures?: { page: number; caption: string }[];
+}
+
+function ContentsSidecart({
+  filename,
+  anchorRef,
+  onClose,
+  onOpenPDF,
+}: {
+  filename: string;
+  anchorRef: React.RefObject<HTMLElement | null>;
+  onClose: () => void;
+  onOpenPDF: (filename: string, page: number, highlights: PDFHighlight[]) => void;
+}) {
+  const [level, setLevel] = useState<SidecartLevel>({ kind: "root" });
+  const [docIndex, setDocIndex] = useState<DocIndex | null>(null);
+  const [goldRegions, setGoldRegions] = useState<Record<number, GoldRegion[]>>({});
+  const [loading, setLoading] = useState(true);
+  const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+
+  const slug = filename.replace(/\.pdf$/i, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase();
+
+  // Position relative to anchor node
+  useEffect(() => {
+    const el = anchorRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setPos({ top: rect.top, left: rect.right + 12 });
+  }, [anchorRef]);
+
+  // Fetch index + gold regions
+  useEffect(() => {
+    const fn = encodeURIComponent(filename);
+    Promise.all([
+      fetch(`${API_URL}/api/documents/index/${fn}`).then((r) => r.ok ? r.json() : null).catch(() => null),
+      fetch(`${API_URL}/api/documents/regions/${fn}`).then((r) => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([idx, reg]) => {
+      if (idx) setDocIndex(idx);
+      if (reg?.pages) {
+        const byPage: Record<number, GoldRegion[]> = {};
+        for (const [p, rs] of Object.entries(reg.pages)) {
+          byPage[Number(p)] = rs as GoldRegion[];
+        }
+        setGoldRegions(byPage);
+      }
+    }).finally(() => setLoading(false));
+  }, [filename]);
+
+  const pageCount = docIndex?.document?.page_count || Math.max(...Object.keys(goldRegions).map(Number), 0);
+  const pages = Array.from({ length: pageCount }, (_, i) => i + 1);
+
+  // Count items per page
+  const pageItemCount = (pg: number) => {
+    let count = goldRegions[pg]?.length || 0;
+    if (docIndex?.outline) count += docIndex.outline.filter((o) => o.page === pg).length;
+    if (docIndex?.tables) count += docIndex.tables.filter((t) => t.page === pg).length;
+    if (docIndex?.figures) count += docIndex.figures.filter((f) => f.page === pg).length;
+    return count;
+  };
+
+  const makeDragData = (region: GoldRegion) => JSON.stringify({
+    ...region,
+    filename,
+    slug,
+  });
+
+  const kindBadge = (kind: string) => {
+    const map: Record<string, string> = {
+      chart: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
+      spec_block: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+      table: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+      diagram: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+      figure: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
+      text: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
+      caption: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
+    };
+    return map[kind] || map.text;
+  };
+
+  const renderRoot = () => (
+    <div className="flex flex-col">
+      {pages.map((pg) => {
+        const count = pageItemCount(pg);
+        const regions = goldRegions[pg] || [];
+        const hasGold = regions.length > 0;
+        return (
+          <button
+            key={pg}
+            onClick={() => setLevel({ kind: "page", page: pg })}
+            className="flex items-center gap-3 px-4 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors border-b border-neutral-100 dark:border-neutral-800 text-left"
+          >
+            {/* Page thumbnail */}
+            <div className="w-10 h-14 rounded border border-neutral-200 dark:border-neutral-700 overflow-hidden bg-neutral-100 dark:bg-neutral-800 shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`${API_URL}/api/documents/silver/${encodeURIComponent(filename)}/page/${pg}?kind=png`}
+                alt={`Page ${pg}`}
+                className="w-full h-full object-cover object-top"
+                loading="lazy"
+              />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-semibold text-neutral-800 dark:text-neutral-200">
+                Page {pg}
+              </div>
+              <div className="text-[10px] text-neutral-500 dark:text-neutral-400 mt-0.5">
+                {count} item{count !== 1 ? "s" : ""}
+                {hasGold && <span className="ml-1 text-emerald-600 dark:text-emerald-400">· {regions.length} regions</span>}
+              </div>
+              {/* Show first few region titles */}
+              {regions.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {regions.slice(0, 3).map((r) => (
+                    <span key={r.id} className={`text-[8px] px-1.5 py-0.5 rounded-full ${kindBadge(r.kind)}`}>
+                      {r.title}
+                    </span>
+                  ))}
+                  {regions.length > 3 && <span className="text-[8px] text-neutral-400">+{regions.length - 3}</span>}
+                </div>
+              )}
+            </div>
+            <ChevronRight size={14} className="text-neutral-400 shrink-0" />
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const renderPage = (pg: number) => {
+    const regions = goldRegions[pg] || [];
+    const outline = docIndex?.outline?.filter((o) => o.page === pg) || [];
+    const tables = docIndex?.tables?.filter((t) => t.page === pg) || [];
+    const figures = docIndex?.figures?.filter((f) => f.page === pg) || [];
+
+    return (
+      <div className="flex flex-col">
+        {/* Page preview */}
+        <div
+          className="mx-4 mt-3 mb-2 rounded-lg border border-neutral-200 dark:border-neutral-700 overflow-hidden cursor-pointer hover:ring-2 hover:ring-indigo-300 transition-all"
+          onClick={() => onOpenPDF(filename, pg, [])}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`${API_URL}/api/documents/silver/${encodeURIComponent(filename)}/page/${pg}?kind=png`}
+            alt={`Page ${pg}`}
+            className="w-full h-auto"
+            loading="lazy"
+          />
+        </div>
+
+        {/* Outline entries */}
+        {outline.length > 0 && (
+          <div className="px-4 py-2 border-b border-neutral-100 dark:border-neutral-800">
+            <div className="text-[10px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-1">Sections</div>
+            {outline.map((o, i) => (
+              <button
+                key={i}
+                onClick={() => onOpenPDF(filename, pg, [])}
+                className="w-full text-left px-2 py-1 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 rounded transition-colors"
+                style={{ paddingLeft: `${8 + (o.level - 1) * 12}px` }}
+              >
+                <span className="text-xs text-neutral-700 dark:text-neutral-300">{o.title}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Tables from index */}
+        {tables.length > 0 && (
+          <div className="px-4 py-2 border-b border-neutral-100 dark:border-neutral-800">
+            <div className="text-[10px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-1">Tables</div>
+            {tables.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => onOpenPDF(filename, pg, [])}
+                className="w-full text-left px-2 py-1.5 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 rounded transition-colors"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Table2 size={11} className="text-blue-500 shrink-0" />
+                  <span className="text-xs text-neutral-700 dark:text-neutral-300">{t.caption || "Untitled"}</span>
+                </div>
+                {t.first_column_values && t.first_column_values.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1 pl-5">
+                    {t.first_column_values.slice(0, 6).map((v) => (
+                      <span key={v} className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">{v}</span>
+                    ))}
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Figures from index */}
+        {figures.length > 0 && (
+          <div className="px-4 py-2 border-b border-neutral-100 dark:border-neutral-800">
+            <div className="text-[10px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-1">Figures</div>
+            {figures.map((f, i) => (
+              <button
+                key={i}
+                onClick={() => onOpenPDF(filename, pg, [])}
+                className="w-full text-left px-2 py-1 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 rounded transition-colors"
+              >
+                <div className="flex items-center gap-1.5">
+                  <Image size={11} className="text-amber-500 shrink-0" />
+                  <span className="text-xs text-neutral-700 dark:text-neutral-300">{f.caption || "Untitled"}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Gold regions — draggable */}
+        {regions.length > 0 && (
+          <div className="px-4 py-2">
+            <div className="text-[10px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-2">Regions</div>
+            <div className="flex flex-col gap-2">
+              {regions.map((r) => {
+                const svgUrl = r.crops?.svg
+                  ? `${API_URL}/api/documents/region-asset/${encodeURIComponent(slug)}/${r.crops.svg}`
+                  : null;
+                const pngUrl = r.crops?.png
+                  ? `${API_URL}/api/documents/region-asset/${encodeURIComponent(slug)}/${r.crops.png}`
+                  : null;
+                const previewUrl = svgUrl || pngUrl;
+
+                return (
+                  <div
+                    key={r.id}
+                    className="group rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-850 overflow-hidden hover:border-indigo-300 dark:hover:border-indigo-600 hover:shadow-md transition-all cursor-grab active:cursor-grabbing"
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("application/anchor-region", makeDragData(r));
+                      e.dataTransfer.effectAllowed = "copy";
+                    }}
+                  >
+                    {/* Region header */}
+                    <div className="flex items-center gap-2 px-3 py-2">
+                      <GripVertical size={12} className="text-neutral-300 dark:text-neutral-600 shrink-0 group-hover:text-indigo-400 transition-colors" />
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${kindBadge(r.kind)}`}>
+                        {r.kind}
+                      </span>
+                      <span className="text-xs font-medium text-neutral-800 dark:text-neutral-200 truncate">
+                        {r.title}
+                      </span>
+                    </div>
+                    {/* SVG/PNG preview */}
+                    {previewUrl && (
+                      <div className="px-2 pb-2">
+                        <div className="rounded border border-neutral-100 dark:border-neutral-700 overflow-hidden bg-neutral-50 dark:bg-neutral-800">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={previewUrl} alt={r.title} className="w-full h-auto" loading="lazy" />
+                        </div>
+                      </div>
+                    )}
+                    {/* Description */}
+                    {r.description && (
+                      <div className="px-3 pb-2 text-[10px] text-neutral-500 dark:text-neutral-400 leading-snug">
+                        {r.description}
+                      </div>
+                    )}
+                    {/* Entities */}
+                    {r.entities.length > 0 && (
+                      <div className="flex flex-wrap gap-1 px-3 pb-2">
+                        {r.entities.map((e) => (
+                          <span key={e} className="text-[8px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">{e}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {outline.length === 0 && tables.length === 0 && figures.length === 0 && regions.length === 0 && (
+          <div className="px-4 py-6 text-center text-xs text-neutral-400">No content extracted for this page</div>
+        )}
+      </div>
+    );
+  };
+
+  const title = level.kind === "root"
+    ? "Contents"
+    : level.kind === "page"
+    ? `Page ${level.page}`
+    : "Region";
+
+  return createPortal(
+    <div
+      className="fixed z-[9999] flex flex-col bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-2xl shadow-2xl overflow-hidden"
+      style={{
+        top: pos.top,
+        left: pos.left,
+        width: 340,
+        maxHeight: "min(600px, calc(100vh - 80px))",
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* Header */}
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-850 shrink-0">
+        {level.kind !== "root" && (
+          <button
+            onClick={() => setLevel(level.kind === "region" ? { kind: "page", page: level.page } : { kind: "root" })}
+            className="p-1 -ml-1 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+          >
+            <ChevronLeft size={16} className="text-neutral-500" />
+          </button>
+        )}
+        <Layers size={14} className="text-neutral-500 shrink-0" />
+        <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-200 flex-1">{title}</span>
+        <button
+          onClick={onClose}
+          className="p-1 -mr-1 rounded-lg hover:bg-neutral-200 dark:hover:bg-neutral-700 transition-colors"
+        >
+          <X size={14} className="text-neutral-400" />
+        </button>
+      </div>
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto">
+        {loading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 size={18} className="animate-spin text-neutral-400" />
+          </div>
+        ) : level.kind === "root" ? (
+          renderRoot()
+        ) : level.kind === "page" ? (
+          renderPage(level.page)
+        ) : null}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 // ─── Document Node ─────────────────────────────────────────────────────────
 interface GoldRegion {
   id: string;
@@ -1576,20 +1927,11 @@ export function DocumentNode({ data }: NodeProps) {
   const isPreviewing = !!hoveredCoverUrl;
 
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
-  const [regionsExpanded, setRegionsExpanded] = useState(false);
-  const [regions, setRegions] = useState<GoldRegion[]>([]);
-  const [regionsLoading, setRegionsLoading] = useState(false);
-  const [regionsFetched, setRegionsFetched] = useState(false);
-  const [expandedRegion, setExpandedRegion] = useState<string | null>(null);
   const [pipelineStatus, setPipelineStatus] = useState<{ stage: string; current: number; total: number } | null>(null);
   const [pipelineModalOpen, setPipelineModalOpen] = useState(false);
+  const [contentsOpen, setContentsOpen] = useState(false);
+  const nodeRef = useRef<HTMLDivElement>(null);
   const [hasGoldMap, setHasGoldMap] = useState(false);
-  const [docIndex, setDocIndex] = useState<{
-    document?: { filename?: string; title?: string; page_count?: number };
-    outline?: { level: number; title: string; page: number }[];
-    tables?: { id: string; page: number; caption: string; shape?: { rows: number; cols: number }; header_row?: string[]; first_column_values?: string[] }[];
-    figures?: { page: number; caption: string }[];
-  } | null>(null);
 
   // Poll pipeline progress while active
   useEffect(() => {
@@ -1630,26 +1972,6 @@ export function DocumentNode({ data }: NodeProps) {
   }, [docData.filename]);
 
   useEffect(() => {
-    if (!regionsExpanded || regionsFetched) return;
-    setRegionsLoading(true);
-    const fn = encodeURIComponent(docData.filename);
-    Promise.all([
-      fetch(`${API_URL}/api/documents/index/${fn}`).then((r) => r.ok ? r.json() : null).catch(() => null),
-      fetch(`${API_URL}/api/documents/regions/${fn}`).then((r) => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([indexData, regionsData]) => {
-      if (indexData) setDocIndex(indexData);
-      if (regionsData?.pages) {
-        const all: GoldRegion[] = [];
-        for (const [, pageRegions] of Object.entries(regionsData.pages)) {
-          for (const r of pageRegions as GoldRegion[]) all.push(r);
-        }
-        setRegions(all);
-      }
-      setRegionsFetched(true);
-    }).finally(() => setRegionsLoading(false));
-  }, [regionsExpanded, regionsFetched, docData.filename]);
-
-  useEffect(() => {
     if (!ctxMenu) return;
     const close = () => setCtxMenu(null);
     window.addEventListener("click", close);
@@ -1678,6 +2000,7 @@ export function DocumentNode({ data }: NodeProps) {
         className="!h-2.5 !w-2.5 !bg-indigo-400 !border-indigo-600"
       />
       <div
+        ref={nodeRef}
         onContextMenu={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -1833,190 +2156,24 @@ export function DocumentNode({ data }: NodeProps) {
         </div>
       </div>
 
-      {/* Contents toggle */}
+      {/* Contents button */}
       <button
-        onClick={(e) => { e.stopPropagation(); setRegionsExpanded(!regionsExpanded); }}
+        onClick={(e) => { e.stopPropagation(); setContentsOpen(!contentsOpen); }}
         className="w-full flex items-center justify-center gap-1 py-1 text-[10px] text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
       >
         <Layers size={10} />
-        <span>{regionsExpanded ? "hide" : "contents"}</span>
-        {regionsExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+        <span>{contentsOpen ? "hide" : "contents"}</span>
+        {contentsOpen ? <ChevronUp size={10} /> : <ChevronRight size={10} />}
       </button>
 
-      {regionsExpanded && (
-        <div className="w-[176px] border border-neutral-200 dark:border-neutral-700 border-t-0 rounded-b-[14px] bg-white dark:bg-neutral-900 overflow-hidden">
-          {regionsLoading ? (
-            <div className="flex items-center justify-center py-3">
-              <Loader2 size={14} className="animate-spin text-neutral-400" />
-            </div>
-          ) : (
-            <div className="max-h-[400px] overflow-y-auto">
-              {/* Index: outline */}
-              {docIndex?.outline && docIndex.outline.length > 0 && (
-                <div className="px-2 py-1.5 border-b border-neutral-100 dark:border-neutral-800">
-                  <div className="text-[9px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-1">Outline</div>
-                  {docIndex.outline.map((entry, i) => (
-                    <button
-                      key={i}
-                      onClick={(e) => { e.stopPropagation(); onOpenPDF(docData.filename, entry.page, []); }}
-                      className="w-full text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/50 rounded px-1 py-0.5 transition-colors"
-                    >
-                      <div className="flex items-baseline gap-1" style={{ paddingLeft: `${(entry.level - 1) * 8}px` }}>
-                        <span className="text-[10px] text-neutral-700 dark:text-neutral-300 truncate leading-tight">
-                          {entry.title}
-                        </span>
-                        <span className="text-[9px] text-neutral-400 shrink-0 ml-auto">p{entry.page}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {/* Index: tables */}
-              {docIndex?.tables && docIndex.tables.length > 0 && (
-                <div className="px-2 py-1.5 border-b border-neutral-100 dark:border-neutral-800">
-                  <div className="text-[9px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-1">
-                    Tables ({docIndex.tables.length})
-                  </div>
-                  {docIndex.tables.map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={(e) => { e.stopPropagation(); onOpenPDF(docData.filename, t.page, []); }}
-                      className="w-full text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/50 rounded px-1 py-0.5 transition-colors"
-                    >
-                      <div className="flex items-center gap-1">
-                        <Table2 size={9} className="text-blue-500 shrink-0" />
-                        <span className="text-[10px] text-neutral-700 dark:text-neutral-300 truncate">
-                          {t.caption || "Untitled table"}
-                        </span>
-                        <span className="text-[9px] text-neutral-400 shrink-0 ml-auto">p{t.page}</span>
-                      </div>
-                      {t.shape && (
-                        <div className="text-[8px] text-neutral-400 pl-3.5">
-                          {t.shape.rows}×{t.shape.cols}
-                          {t.header_row && t.header_row.length > 0 && (
-                            <span className="ml-1">· {t.header_row.slice(0, 3).join(", ")}{t.header_row.length > 3 ? "…" : ""}</span>
-                          )}
-                        </div>
-                      )}
-                      {t.first_column_values && t.first_column_values.length > 0 && (
-                        <div className="flex flex-wrap gap-0.5 mt-0.5 pl-3.5">
-                          {t.first_column_values.slice(0, 5).map((v) => (
-                            <span key={v} className="text-[8px] px-1 rounded bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
-                              {v}
-                            </span>
-                          ))}
-                          {t.first_column_values.length > 5 && (
-                            <span className="text-[8px] text-neutral-400">+{t.first_column_values.length - 5}</span>
-                          )}
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {/* Index: figures */}
-              {docIndex?.figures && docIndex.figures.length > 0 && (
-                <div className="px-2 py-1.5 border-b border-neutral-100 dark:border-neutral-800">
-                  <div className="text-[9px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider mb-1">
-                    Figures ({docIndex.figures.length})
-                  </div>
-                  {docIndex.figures.map((f, i) => (
-                    <button
-                      key={i}
-                      onClick={(e) => { e.stopPropagation(); onOpenPDF(docData.filename, f.page, []); }}
-                      className="w-full text-left hover:bg-neutral-50 dark:hover:bg-neutral-800/50 rounded px-1 py-0.5 transition-colors"
-                    >
-                      <div className="flex items-center gap-1">
-                        <Image size={9} className="text-amber-500 shrink-0" />
-                        <span className="text-[10px] text-neutral-700 dark:text-neutral-300 truncate">{f.caption || "Untitled"}</span>
-                        <span className="text-[9px] text-neutral-400 shrink-0 ml-auto">p{f.page}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {/* No index data message */}
-              {!docIndex && regions.length === 0 && (
-                <div className="text-[10px] text-neutral-400 text-center py-2">No data yet</div>
-              )}
-              {/* Gold regions */}
-              {regions.length > 0 && (
-                <>
-                  <div className="px-2 pt-1.5 pb-0.5">
-                    <div className="text-[9px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">
-                      Regions ({regions.length})
-                    </div>
-                  </div>
-                  {regions.map((region) => {
-                    const isOpen = expandedRegion === region.id;
-                    const kindColors: Record<string, string> = {
-                      chart: "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
-                      spec_block: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-                      table: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
-                      diagram: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-                      figure: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",
-                      text: "bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400",
-                    };
-                    const kindClass = kindColors[region.kind] || kindColors.text;
-                    const docSlug = docData.filename.replace(/\.pdf$/i, "").replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase();
-                    const svgUrl = region.crops?.svg
-                      ? `${API_URL}/api/documents/region-asset/${encodeURIComponent(docSlug)}/${region.crops.svg}`
-                      : null;
-
-                    return (
-                      <div key={region.id} className="border-t border-neutral-100 dark:border-neutral-800">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setExpandedRegion(isOpen ? null : region.id); }}
-                          className="w-full text-left px-2 py-1.5 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors"
-                        >
-                          <div className="flex items-center gap-1">
-                            <span className={`text-[8px] px-1 py-0.5 rounded ${kindClass} font-medium shrink-0`}>
-                              {region.kind}
-                            </span>
-                            <span className="text-[10px] text-neutral-700 dark:text-neutral-300 truncate font-medium">
-                              {region.title}
-                            </span>
-                            <span className="text-[9px] text-neutral-400 shrink-0 ml-auto">p{region.page}</span>
-                          </div>
-                          {region.entities.length > 0 && (
-                            <div className="flex flex-wrap gap-0.5 mt-0.5">
-                              {region.entities.slice(0, 4).map((e) => (
-                                <span key={e} className="text-[8px] px-1 py-0 rounded bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">
-                                  {e}
-                                </span>
-                              ))}
-                              {region.entities.length > 4 && (
-                                <span className="text-[8px] text-neutral-400">+{region.entities.length - 4}</span>
-                              )}
-                            </div>
-                          )}
-                        </button>
-                        {isOpen && (
-                          <div className="px-2 pb-2">
-                            <div className="text-[9px] text-neutral-500 dark:text-neutral-400 mb-1">
-                              {region.description}
-                            </div>
-                            {svgUrl && (
-                              <div className="rounded border border-neutral-200 dark:border-neutral-700 overflow-hidden bg-white dark:bg-neutral-800">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={svgUrl}
-                                  alt={region.title}
-                                  className="w-full h-auto"
-                                  loading="lazy"
-                                />
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </>
-              )}
-            </div>
-          )}
-        </div>
+      {/* Sidecart */}
+      {contentsOpen && (
+        <ContentsSidecart
+          filename={docData.filename}
+          anchorRef={nodeRef}
+          onClose={() => setContentsOpen(false)}
+          onOpenPDF={onOpenPDF}
+        />
       )}
       {ctxMenu && (
         <div
