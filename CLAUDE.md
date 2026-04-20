@@ -1,5 +1,10 @@
 # Anchor KB — Knowledge-Grounded Engineering Canvas
 
+## Python
+
+the backend is python
+we use uv.
+
 ## What this app does
 
 A full-stack tool for engineers to work with technical documents (PDF datasheets, product leaflets) alongside simulation models (FMUs). An AI agent reads documents, extracts structured data, and helps connect document-sourced parameters to simulation inputs.

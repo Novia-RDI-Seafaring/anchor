@@ -29,6 +29,7 @@ dependencies = [
     "fmpy>=0.3.22",
     "kaleido>=1.2.0",
     "pymupdf>=1.27.2.2",
+    "mcp>=1.27.0",
 ]
 
 [tool.uv.sources]
