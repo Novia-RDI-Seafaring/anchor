@@ -107,6 +107,29 @@ wheels = [
 ]
 
 [[package]]
+name = "anchor-canvas"
+version = "0.1.0"
+source = { editable = "../packages/anchor-canvas" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "mcp" },
+    { name = "pydantic" },
+    { name = "uvicorn" },
+    { name = "websockets" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
+    { name = "mcp", specifier = ">=1.27.0" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "uvicorn", specifier = ">=0.30.0" },
+    { name = "websockets", specifier = ">=12.0" },
+]
+
+[[package]]
 name = "anchor-ingest"
 version = "0.1.0"
 source = { editable = "../packages/anchor-ingest" }
@@ -257,6 +280,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "ag-ui-protocol" },
     { name = "aiofiles" },
+    { name = "anchor-canvas" },
     { name = "anchor-ingest" },
     { name = "asyncpg" },
     { name = "devtools" },
@@ -287,6 +311,7 @@ dependencies = [
 requires-dist = [
     { name = "ag-ui-protocol", specifier = ">=0.1.10" },
     { name = "aiofiles", specifier = ">=24.1.0" },
+    { name = "anchor-canvas", editable = "../packages/anchor-canvas" },
     { name = "anchor-ingest", editable = "../packages/anchor-ingest" },
     { name = "asyncpg", specifier = ">=0.29.0" },
     { name = "devtools", specifier = ">=0.12.2" },

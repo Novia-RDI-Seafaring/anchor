@@ -31,9 +31,11 @@ dependencies = [
     "pymupdf>=1.27.2.2",
     "mcp>=1.27.0",
     "anchor-ingest",
+    "anchor-canvas",
 ]
 
 [tool.uv.sources]
 ketju = { path = "../../mini_apps/ketju", editable = true }
 anchor-ingest = { path = "../packages/anchor-ingest", editable = true }
+anchor-canvas = { path = "../packages/anchor-canvas", editable = true }
 
