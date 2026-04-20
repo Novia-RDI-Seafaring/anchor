@@ -1334,15 +1334,19 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
       return;
     }
 
-    // Handle gold region drops from DocumentRegionMap
+    // Handle gold region drops — add single region, then re-arrange all from same doc
     const regionPayload = e.dataTransfer.getData("application/anchor-region");
     if (regionPayload) {
       try {
         const region = JSON.parse(regionPayload);
         const nodeSize = NODE_SIZE.imageNode!;
-        const absolutePos = anchorAtCenter(dropPos, nodeSize);
-        const areaParent = findBestAreaParent(absolutePos, nodeSize, nodesRef.current);
-        const finalPos = areaParent?.position ?? absolutePos;
+        const cropUrl = region.crops?.svg
+          ? `${API_URL}/api/documents/region-asset/${encodeURIComponent(region.slug)}/${region.crops.svg}`
+          : region.crops?.png
+          ? `${API_URL}/api/documents/region-asset/${encodeURIComponent(region.slug)}/${region.crops.png}`
+          : undefined;
+
+        // Add the single dragged region
         const id = `region_${Date.now()}`;
         const node: any = {
           id,
@@ -1350,43 +1354,46 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
           status: "found",
           title: region.title || "",
           text: region.description || "",
-          spec_title: "",
-          properties: [],
-          last_updated_run_id: "",
-          filename: region.filename || "",
-          page: region.page || 0,
-          bbox: region.bbox || [],
-          highlights: [],
-          fmu_filename: "",
-          fmu_model_name: "",
-          fmu_variables: [],
-          fmu_param_values: {},
-          plot_job_id: "",
-          plot_fmu_filename: "",
-          plot_signal_names: [],
-          plot_stop_time: 10,
-          funnel_label: "",
-          area_label: "",
-          area_width: 0,
-          area_height: 0,
-          model_label: "",
+          spec_title: "", properties: [], last_updated_run_id: "",
+          filename: region.filename || "", page: region.page || 0,
+          bbox: region.bbox || [], highlights: [],
+          fmu_filename: "", fmu_model_name: "", fmu_variables: [], fmu_param_values: {},
+          plot_job_id: "", plot_fmu_filename: "", plot_signal_names: [], plot_stop_time: 10,
+          funnel_label: "", area_label: "", area_width: 0, area_height: 0, model_label: "",
           image_filename: region.filename || "",
           image_page: region.page || 0,
           image_bbox: region.bbox || [],
           image_highlights: [],
           image_caption: region.title || "",
-          image_url: region.crops?.svg
-            ? `${API_URL}/api/documents/region-asset/${encodeURIComponent(region.slug)}/${region.crops.svg}`
-            : region.crops?.png
-            ? `${API_URL}/api/documents/region-asset/${encodeURIComponent(region.slug)}/${region.crops.png}`
-            : undefined,
-          width: nodeSize.w,
-          height: nodeSize.h,
-          parent_id: areaParent?.id ?? "",
+          image_url: cropUrl,
+          width: nodeSize.w, height: nodeSize.h, parent_id: "",
         };
-        positionOverridesRef.current[id] = finalPos;
-        commitPositionOverrides({ [id]: finalPos }, true);
+        const absolutePos = anchorAtCenter(dropPos, nodeSize);
+        positionOverridesRef.current[id] = absolutePos;
         onAddNode?.(node, null);
+
+        // Place in the next available grid slot to the right of the document node
+        const fn = region.filename || "";
+        const docNode = nodesRef.current.find(
+          (n) => n.type === "documentNode" && (n.data as any)?.doc?.filename === fn
+        );
+        const existingSiblings = nodesRef.current.filter(
+          (n) => n.type === "imageNode" && (n.data as any)?.node?.image_filename === fn
+        );
+        const slotIndex = existingSiblings.length; // new node is the Nth
+        const gap = 20;
+        const cellW = nodeSize.w + gap;
+        const cellH = nodeSize.h + gap + 40; // extra for caption
+        const cols = 2;
+        const col = slotIndex % cols;
+        const row = Math.floor(slotIndex / cols);
+        // Anchor grid to the right of the document node
+        const gridOriginX = docNode ? docNode.position.x + 210 : absolutePos.x;
+        const gridOriginY = docNode ? docNode.position.y : absolutePos.y;
+        const gridPos = { x: gridOriginX + col * cellW, y: gridOriginY + row * cellH };
+
+        positionOverridesRef.current[id] = gridPos;
+        commitPositionOverrides({ [id]: gridPos }, true);
       } catch {
         // ignore malformed region payload
       }
