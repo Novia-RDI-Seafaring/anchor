@@ -21,7 +21,7 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
-  const { documents, activeDocumentId, setActiveDocumentId, refreshDocuments } = useApp();
+  const { documents, activeDocumentId, setActiveDocumentId, refreshDocuments, focusedChatNodes, removeFocusedChatNode, clearFocusedChatNodes } = useApp();
   const activeDoc = documents.find(d => d.document_id === activeDocumentId) ?? null;
 
   // Close picker on outside click
@@ -153,6 +153,40 @@ const InputAreaComponent: React.FC<InputAreaProps> = ({ onSendMessage, disabled 
       )}
 
       <div className="relative group rounded-2xl bg-white dark:bg-neutral-900 shadow-sm border border-neutral-200 dark:border-neutral-800 focus-within:ring-2 focus-within:ring-brand-500/20 focus-within:border-brand-500 transition-all duration-200">
+
+        {focusedChatNodes.length > 0 && (
+          <div className="px-3 pt-2.5 pb-0">
+            <div className="flex flex-wrap items-center gap-2">
+              {focusedChatNodes.map((node) => (
+                <div
+                  key={node.nodeId}
+                  className="inline-flex max-w-full items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs text-indigo-700 dark:border-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300"
+                >
+                  <span className="truncate">
+                    {node.title || node.nodeType}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeFocusedChatNode(node.nodeId)}
+                    className="rounded-full p-0.5 hover:bg-indigo-200/70 dark:hover:bg-indigo-800/70"
+                    title="Remove focused node"
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              ))}
+              {focusedChatNodes.length > 1 && (
+                <button
+                  type="button"
+                  onClick={clearFocusedChatNodes}
+                  className="text-xs text-neutral-500 hover:text-neutral-700 dark:text-neutral-400 dark:hover:text-neutral-200"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Document scope selector */}
         <div className="px-3 pt-2.5 pb-0 flex items-center gap-1.5" ref={pickerRef}>

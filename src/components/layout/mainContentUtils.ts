@@ -5,6 +5,15 @@ export type CanvasState = {
   relations: any[];
   active_document_id: string | null;
   workspace_doc_ids?: string[];
+  focused_chat_nodes?: Array<{
+    node_id: string;
+    node_type: string;
+    title?: string;
+    summary?: string;
+    filename?: string;
+    page?: number;
+    bbox?: number[];
+  }>;
 };
 
 export type CanvasTab = {

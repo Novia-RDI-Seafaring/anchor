@@ -64,6 +64,36 @@ def _canvas_context(ctx: RunContext[AgentDeps]) -> str | None:
     return f"CANVAS STATE (current nodes and relations):\n```json\n{canvas_json}\n```"
 
 
+def _focused_chat_node_context(ctx: RunContext[AgentDeps]) -> str | None:
+    """Expose the user-selected canvas nodes as preferred chat context."""
+    focus_nodes = ctx.deps.state.focused_chat_nodes
+    if not focus_nodes:
+        return None
+
+    focus_json = json.dumps(
+        [
+            {
+                "node_id": focus.node_id,
+                "node_type": focus.node_type,
+                "title": focus.title,
+                "summary": focus.summary,
+                "filename": focus.filename,
+                "page": focus.page,
+                "bbox": focus.bbox,
+            }
+            for focus in focus_nodes
+        ],
+        indent=2,
+        default=str,
+    )
+    return (
+        "USER-FOCUSED CANVAS NODES:\n"
+        "The user explicitly selected these nodes as the preferred context for the current chat.\n"
+        "Use them as the primary starting points, then verify or enrich from the loaded document context if needed.\n"
+        f"```json\n{focus_json}\n```"
+    )
+
+
 async def _documents_context(ctx: RunContext[AgentDeps]) -> str | None:
     """List available documents with metadata and pipeline status."""
     from src.knowledge_base.service import get_document_service, get_pipeline_status
@@ -187,4 +217,4 @@ class ContextCapability(AbstractCapability[Any]):
         return _toolset
 
     def get_instructions(self) -> list:
-        return [_INSTRUCTIONS, _canvas_context, _documents_context, _loaded_documents_context]
+        return [_INSTRUCTIONS, _canvas_context, _focused_chat_node_context, _documents_context, _loaded_documents_context]

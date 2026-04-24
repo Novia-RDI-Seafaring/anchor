@@ -63,6 +63,16 @@ class FmuVariable(BaseModel):
     description: str = ""
 
 
+class FocusedChatNode(BaseModel):
+    node_id: str
+    node_type: str = ""
+    title: str = ""
+    summary: str = ""
+    filename: str = ""
+    page: int = 0
+    bbox: list[float] = Field(default_factory=list)
+
+
 class CanvasNode(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid4()))
     node_type: Literal["concept", "topic", "fact", "spec", "document", "source", "entity", "category", "fmu", "plot", "image", "funnel", "area", "model"]  # source/entity/category kept for backward compat
@@ -131,6 +141,7 @@ class Canvas(BaseModel):
     last_updated_run_id: str = ""
     active_document_id: str | None = None
     workspace_doc_ids: list[str] = Field(default_factory=list)
+    focused_chat_nodes: list[FocusedChatNode] = Field(default_factory=list)
 
 
-__all__ = ["Canvas", "CanvasNode", "Relation", "SourceHighlight", "SpecProperty", "ParameterSource", "ParameterRow", "ParameterSection", "NodeStatus", "FmuVariable"]
+__all__ = ["Canvas", "CanvasNode", "Relation", "SourceHighlight", "SpecProperty", "ParameterSource", "ParameterRow", "ParameterSection", "NodeStatus", "FmuVariable", "FocusedChatNode"]

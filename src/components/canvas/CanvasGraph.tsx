@@ -290,6 +290,36 @@ interface CanvasGraphProps {
   onParameterLookup?: (documentFilename: string, modelNodeId: string, params: Array<{ fmuNodeId: string; paramName: string; unit?: string }>) => void;
 }
 
+function compactText(value: string, limit = 220): string {
+  const flattened = value.replace(/[#*_`>-]/g, " ").replace(/\s+/g, " ").trim();
+  if (!flattened) return "";
+  return flattened.length > limit ? `${flattened.slice(0, limit - 1)}…` : flattened;
+}
+
+function summarizeNodeForChat(node: CanvasItem): string {
+  if (node.semanticType === "fact") {
+    return compactText(node.text || "");
+  }
+  if (node.semanticType === "spec") {
+    const sections = node.parameter_sections ?? [];
+    if (sections.length > 0) {
+      return sections
+        .flatMap((section) => section.rows.slice(0, 2).map((row) => `${section.name}: ${row.parameter} = ${row.value}${row.unit ? ` ${row.unit}` : ""}`))
+        .slice(0, 3)
+        .join("; ");
+    }
+    const props = node.properties ?? [];
+    return props
+      .slice(0, 3)
+      .map((property) => `${property.key}: ${property.value}`)
+      .join("; ");
+  }
+  if (node.semanticType === "image") {
+    return compactText(node.image_caption || node.text || node.title || "Selected visual region");
+  }
+  return compactText(node.text || node.title || "");
+}
+
 async function uploadCanvasFile(
   file: File,
   onFmuUploaded?: (payload: FmuUploadedPayload, position?: FlowPosition) => void,
@@ -324,7 +354,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
   const { screenToFlowPosition } = useReactFlow();
   const rfContainerRef = useRef<HTMLDivElement>(null);
   const connectStartRef = useRef<{ nodeId: string; handleId: string; handleType: 'source' | 'target' } | null>(null);
-  const { documents, refreshDocuments, activeDocumentId, setActiveDocumentId } = useApp();
+  const { documents, refreshDocuments, activeDocumentId, setActiveDocumentId, addFocusedChatNode, setIsChatOpen } = useApp();
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [pdfModal, setPdfModal] = useState<PDFModalState | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -417,6 +447,19 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     await onSaveSelection(selectedNodeIds);
     setIsSavingSnippet(false);
   }, [onSaveSelection, selectedNodeIds]);
+
+  const focusNodeForChat = useCallback((node: CanvasItem, evidence?: { filename?: string; page?: number; bbox?: number[] }) => {
+    addFocusedChatNode({
+      nodeId: node.id,
+      nodeType: node.semanticType,
+      title: node.title || node.spec_title || node.image_caption || "Canvas node",
+      summary: summarizeNodeForChat(node),
+      filename: evidence?.filename || node.image_filename || node.filename || "",
+      page: evidence?.page || node.image_page || node.page || 0,
+      bbox: evidence?.bbox || node.image_bbox || node.bbox || [],
+    });
+    setIsChatOpen(true);
+  }, [addFocusedChatNode, setIsChatOpen]);
 
 
   // --- Drag-from-handle: create model node on empty canvas, auto-connect ---
@@ -906,23 +949,35 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         ), n.semanticType === "entity" ? NODE_SIZE.entityNode! : n.semanticType === "topic" ? NODE_SIZE.topicNode! : n.semanticType === "category" ? NODE_SIZE.categoryNode! : NODE_SIZE.conceptNode!);
       }
       if (n.semanticType === "fact") {
+        const evidence = getEvidenceData(n.id, relations, documentsRef.current);
         return applyExplicitNodeSize(n, buildFlowNode(n.id, "factNode", n.color, hidden, {
           node: n,
           onOpenPDF: handleOpenPDF,
+          onUseInChat: () => focusNodeForChat(n, {
+            filename: evidence.evidenceFilename,
+            page: evidence.evidencePage,
+            bbox: evidence.evidenceHighlights?.[0]?.bbox ?? [],
+          }),
           onPreviewSource: (filename: string | null, page?: number | null) => setPreviewedSource(filename && page ? { filename, page } : null),
           onDelete: onDeleteNode,
           onSetColor: onSetNodeColor,
-          ...getEvidenceData(n.id, relations, documentsRef.current),
+          ...evidence,
         }), NODE_SIZE.factNode!);
       }
       if (n.semanticType === "spec") {
+        const evidence = getEvidenceData(n.id, relations, documentsRef.current);
         const specFlowNode = buildFlowNode(n.id, "specNode", n.color, hidden, {
           node: n,
           onOpenPDF: handleOpenPDF,
+          onUseInChat: () => focusNodeForChat(n, {
+            filename: evidence.evidenceFilename,
+            page: evidence.evidencePage,
+            bbox: evidence.evidenceHighlights?.[0]?.bbox ?? [],
+          }),
           onPreviewSource: (filename: string | null, page?: number | null) => setPreviewedSource(filename && page ? { filename, page } : null),
           onDelete: onDeleteNode,
           onSetColor: onSetNodeColor,
-          ...getEvidenceData(n.id, relations, documentsRef.current),
+          ...evidence,
         });
         // Let spec nodes auto-size to fit content (handles + source buttons)
         return { ...specFlowNode, width: undefined, height: undefined, style: { ...specFlowNode.style, width: "auto", height: "auto" } };
@@ -945,6 +1000,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         return applyExplicitNodeSize(n, buildFlowNode(n.id, "imageNode", n.color, hidden, {
           node: n,
           onOpenPDF: handleOpenPDF,
+          onUseInChat: () => focusNodeForChat(n),
           onDelete: onDeleteNode,
           onSetColor: onSetNodeColor,
         }), NODE_SIZE.imageNode!);
@@ -1154,16 +1210,22 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
           };
         }
         if (n.semanticType === "fact" || n.semanticType === "spec") {
+          const evidence = getEvidenceData(n.id, relations, documentsRef.current);
           return {
             ...rfNode,
             data: {
               ...rfNode.data,
               node: n,
               onOpenPDF: handleOpenPDF,
+              onUseInChat: () => focusNodeForChat(n, {
+                filename: evidence.evidenceFilename,
+                page: evidence.evidencePage,
+                bbox: evidence.evidenceHighlights?.[0]?.bbox ?? [],
+              }),
               onPreviewSource: (filename: string | null, page?: number | null) => setPreviewedSource(filename && page ? { filename, page } : null),
               onDelete: onDeleteNode,
               onSetColor: onSetNodeColor,
-              ...getEvidenceData(n.id, relations, documentsRef.current),
+              ...evidence,
             },
           };
         }
@@ -1191,7 +1253,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
           return { ...rfNode, data: { ...rfNode.data, node: n } };
         }
         if (n.semanticType === "image") {
-          return { ...rfNode, data: { ...rfNode.data, node: n, onOpenPDF: handleOpenPDF, onDelete: onDeleteNode, onSetColor: onSetNodeColor } };
+          return { ...rfNode, data: { ...rfNode.data, node: n, onOpenPDF: handleOpenPDF, onUseInChat: () => focusNodeForChat(n), onDelete: onDeleteNode, onSetColor: onSetNodeColor } };
         }
         return { ...rfNode, data: { ...rfNode.data, node: n, onSetColor: onSetNodeColor, onDelete: onDeleteNode, onUpdateText: (nodeId: string, text: string) => onUpdateNode?.(nodeId, { text, title: text }) } };
       })

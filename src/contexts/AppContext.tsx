@@ -12,6 +12,18 @@ export interface KBDocument {
     status?: string;
 }
 
+export interface FocusedChatNode {
+    nodeId: string;
+    nodeType: string;
+    title: string;
+    summary: string;
+    filename?: string;
+    page?: number;
+    bbox?: number[];
+}
+
+const MAX_FOCUSED_CHAT_NODES = 2;
+
 interface AppContextType {
     currentView: 'workspace' | 'settings';
     setCurrentView: (view: 'workspace' | 'settings') => void;
@@ -25,6 +37,10 @@ interface AppContextType {
     setSelectedModel: (model: string) => void;
     activeDocumentId: string | null;
     setActiveDocumentId: (id: string | null) => void;
+    focusedChatNodes: FocusedChatNode[];
+    addFocusedChatNode: (node: FocusedChatNode) => void;
+    removeFocusedChatNode: (nodeId: string) => void;
+    clearFocusedChatNodes: () => void;
     documents: KBDocument[];
     refreshDocuments: () => Promise<void>;
     activeConversationId: string;
@@ -45,7 +61,24 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const [isDarkMode, setIsDarkMode] = useState(false);
     const [selectedModel, setSelectedModel] = useState('');
     const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
+    const [focusedChatNodes, setFocusedChatNodes] = useState<FocusedChatNode[]>([]);
     const [documents, setDocuments] = useState<KBDocument[]>([]);
+
+    const addFocusedChatNode = (node: FocusedChatNode) => {
+        setFocusedChatNodes((prev) => {
+            const withoutExisting = prev.filter((item) => item.nodeId !== node.nodeId);
+            const next = [...withoutExisting, node];
+            return next.slice(-MAX_FOCUSED_CHAT_NODES);
+        });
+    };
+
+    const removeFocusedChatNode = (nodeId: string) => {
+        setFocusedChatNodes((prev) => prev.filter((item) => item.nodeId !== nodeId));
+    };
+
+    const clearFocusedChatNodes = () => {
+        setFocusedChatNodes([]);
+    };
 
     const refreshDocuments = async () => {
         try {
@@ -94,6 +127,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             setSelectedModel,
             activeDocumentId,
             setActiveDocumentId,
+            focusedChatNodes,
+            addFocusedChatNode,
+            removeFocusedChatNode,
+            clearFocusedChatNodes,
             documents,
             refreshDocuments,
             activeConversationId: activeConversationId || '',

@@ -35,6 +35,8 @@ export const MainContent: React.FC = () => {
     loadConversationMessages,
     activeDocumentId,
     documents,
+    focusedChatNodes,
+    clearFocusedChatNodes,
   } = useApp();
   const { data: session } = useSession();
   const userId = (session?.user as any)?.id ?? 'local-dev-user';
@@ -47,7 +49,7 @@ export const MainContent: React.FC = () => {
   } | null>(null);
   const { state, setState } = useCoAgent({
     name: "my_agent",
-    initialState: { nodes: [], relations: [], active_document_id: null as string | null } as CanvasState
+    initialState: { nodes: [], relations: [], active_document_id: null as string | null, focused_chat_nodes: [] } as CanvasState
   });
 
   const canvas = state as any;
@@ -76,6 +78,23 @@ export const MainContent: React.FC = () => {
     setState((prev: any) => ({ ...prev, active_document_id: activeDocumentId ?? null }));
   }, [activeDocumentId]);
 
+  useEffect(() => {
+    setState((prev: any) => ({
+      ...prev,
+      focused_chat_nodes: focusedChatNodes.map((node) => ({
+        node_id: node.nodeId,
+        node_type: node.nodeType,
+        title: node.title,
+        summary: node.summary,
+        filename: node.filename,
+        page: node.page,
+        bbox: node.bbox ?? [],
+      })),
+    }));
+    // setState from useCoAgent may not be referentially stable; do not depend on it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusedChatNodes]);
+
   // ── Restore canvas state when switching conversations ───────────────────────
   const prevConversationId = useRef<string | null>(null);
   useEffect(() => {
@@ -84,6 +103,7 @@ export const MainContent: React.FC = () => {
 
     loadConversationMessages(activeConversationId).then(({ canvas_state }) => {
       const restored = normalizeSavedCanvasState(canvas_state, documents);
+      clearFocusedChatNodes();
       setCanvasTabs(restored.tabs);
       setActiveCanvasId(restored.activeTabId);
       setPositions(restored.positions);
@@ -93,9 +113,10 @@ export const MainContent: React.FC = () => {
         relations: restored.relations,
         workspace_doc_ids: restored.workspaceDocIds.length > 0 ? restored.workspaceDocIds : prev.workspace_doc_ids,
         active_document_id: activeDocumentId ?? prev.active_document_id ?? null,
+        focused_chat_nodes: [],
       }));
     });
-  }, [activeConversationId, documents]);
+  }, [activeConversationId, activeDocumentId, clearFocusedChatNodes, documents, loadConversationMessages]);
 
   // ── Persist canvas state on change ─────────────────────────────────────────
   const canvasSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

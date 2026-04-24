@@ -104,6 +104,7 @@ export interface FactNodeData {
   onOpenPDF?: (filename: string, page: number, highlights: PDFHighlight[]) => void;
   onDelete?: (id: string) => void;
   onSetColor?: (id: string, color: string) => void;
+  onUseInChat?: () => void;
   onPreviewSource?: (filename: string | null, page?: number | null) => void;
   evidenceFilename?: string;
   evidencePage?: number;
@@ -122,6 +123,7 @@ export interface SpecNodeData {
   onOpenPDF?: (filename: string, page: number, highlights: PDFHighlight[]) => void;
   onDelete?: (id: string) => void;
   onSetColor?: (id: string, color: string) => void;
+  onUseInChat?: () => void;
   onPreviewSource?: (filename: string | null, page?: number | null) => void;
   evidenceFilename?: string;
   evidencePage?: number;
@@ -151,6 +153,7 @@ export interface ImageNodeData {
   onOpenPDF?: (filename: string, page: number, highlights: PDFHighlight[]) => void;
   onDelete?: (id: string) => void;
   onSetColor?: (id: string, color: string) => void;
+  onUseInChat?: () => void;
 }
 
 export interface ConceptNodeData extends Record<string, unknown> {
@@ -274,7 +277,7 @@ function buildPageImageUrl(filename: string, page: number, bbox?: number[], high
 }
 
 export function ImageNode({ data }: NodeProps) {
-  const { node, onDelete, onSetColor, onOpenPDF } = data as unknown as ImageNodeData;
+  const { node, onDelete, onSetColor, onOpenPDF, onUseInChat } = data as unknown as ImageNodeData;
   const hasImage = !!(node.image_filename && node.image_page);
   // Prefer direct image_url (e.g. gold region SVG crop) over bbox screenshot
   const imageUrl = (node as any).image_url
@@ -304,6 +307,13 @@ export function ImageNode({ data }: NodeProps) {
               <FileText size={11} />
             </button>
           )}
+          <button
+            onClick={() => onUseInChat?.()}
+            className="text-sky-400 hover:text-sky-600 dark:hover:text-sky-300 transition-colors"
+            title="Use this node as chat context"
+          >
+            <MessageSquare size={11} />
+          </button>
           <StatusBadge status={node.status} />
         </div>
         {/* Screenshot */}
@@ -423,7 +433,7 @@ export function TopicNode({ data }: NodeProps) {
 // FACT NODE — indigo left-border, full text
 // ─────────────────────────────────────────────
 export function FactNode({ data }: NodeProps) {
-  const { node, onDelete, onSetColor, onOpenPDF, onPreviewSource, evidenceFilename, evidencePage, evidenceHighlights } = data as unknown as FactNodeData;
+  const { node, onDelete, onSetColor, onOpenPDF, onUseInChat, onPreviewSource, evidenceFilename, evidencePage, evidenceHighlights } = data as unknown as FactNodeData;
   const hasEvidence = evidenceFilename && evidencePage !== undefined;
 
   return (
@@ -434,6 +444,16 @@ export function FactNode({ data }: NodeProps) {
         className="relative rounded-[26px] border-[3px] border-amber-400 bg-white shadow-sm dark:border-amber-500 dark:bg-neutral-900"
         style={{ width: '100%', height: '100%' }}
       >
+        <div className="absolute right-3 top-3 flex items-center gap-1.5">
+          <button
+            onClick={() => onUseInChat?.()}
+            className="text-amber-500 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-200 transition-colors"
+            title="Use this node as chat context"
+          >
+            <MessageSquare size={12} />
+          </button>
+          <StatusBadge status={node.status} />
+        </div>
         {/* Text row */}
         <div className="flex h-full items-start gap-2 px-4 py-3">
           <MessageSquare size={13} className="text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
@@ -452,7 +472,6 @@ export function FactNode({ data }: NodeProps) {
           `}>
             <ReactMarkdown>{node.text ?? ""}</ReactMarkdown>
           </div>
-          <StatusBadge status={node.status} />
         </div>
         {/* Evidence link */}
         {hasEvidence && (
@@ -479,7 +498,7 @@ export function FactNode({ data }: NodeProps) {
 // SPEC NODE — violet, two-column property table
 // ─────────────────────────────────────────────
 export function SpecNode({ data }: NodeProps) {
-  const { node, onDelete, onSetColor, onOpenPDF, onPreviewSource, evidenceFilename, evidencePage, evidenceHighlights } = data as unknown as SpecNodeData;
+  const { node, onDelete, onSetColor, onOpenPDF, onUseInChat, onPreviewSource, evidenceFilename, evidencePage, evidenceHighlights } = data as unknown as SpecNodeData;
   const hasEvidence = evidenceFilename && evidencePage !== undefined;
   const sections: ParameterSection[] = (node as any).parameter_sections ?? [];
   const useSections = sections.length > 0;
@@ -528,6 +547,13 @@ export function SpecNode({ data }: NodeProps) {
               <span>p.{evidencePage}</span>
             </button>
           )}
+          <button
+            onClick={() => onUseInChat?.()}
+            className="text-violet-500 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 transition-colors mr-1"
+            title="Use this node as chat context"
+          >
+            <MessageSquare size={11} />
+          </button>
           <StatusBadge status={node.status} />
         </div>
         {/* Parameter sections (new structured format) */}
