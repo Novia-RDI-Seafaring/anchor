@@ -267,6 +267,7 @@ interface CanvasGraphProps {
   canvas: CanvasState | null | undefined;
   initialPositions?: Record<string, { x: number; y: number }>;
   onPositionsChange?: (positions: Record<string, { x: number; y: number }>) => void;
+  showInternalToolbar?: boolean;
   onFmuUploaded?: (payload: FmuUploadedPayload, position?: FlowPosition) => void;
   onSimulateComplete?: (fmuNodeId: string, jobId: string, filename: string, signalNames: string[], paramValues: Record<string, string>, stopTime: number) => void;
   onDeleteNode?: (nodeId: string) => void;
@@ -350,11 +351,11 @@ async function uploadCanvasFile(
   return data?.document?.document_id ?? null;
 }
 
-function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, onFmuUploaded, onSimulateComplete, onDeleteNode, onAddNode, onAddEdge, onDeleteEdge, onSetNodeColor, workspaceDocIds, onAddDocToWorkspace, onRemoveDocFromWorkspace, onSetParent, onFmuFromLibrary, onAddSnippet, onUpdateNode, onSaveSelection, onParameterLookup }: CanvasGraphProps) {
+function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, showInternalToolbar = true, onFmuUploaded, onSimulateComplete, onDeleteNode, onAddNode, onAddEdge, onDeleteEdge, onSetNodeColor, workspaceDocIds, onAddDocToWorkspace, onRemoveDocFromWorkspace, onSetParent, onFmuFromLibrary, onAddSnippet, onUpdateNode, onSaveSelection, onParameterLookup }: CanvasGraphProps) {
   const { screenToFlowPosition } = useReactFlow();
   const rfContainerRef = useRef<HTMLDivElement>(null);
   const connectStartRef = useRef<{ nodeId: string; handleId: string; handleType: 'source' | 'target' } | null>(null);
-  const { documents, refreshDocuments, activeDocumentId, setActiveDocumentId, addFocusedChatNode, setIsChatOpen } = useApp();
+  const { documents, refreshDocuments, activeDocumentId, setActiveDocumentId, addFocusedChatNode } = useApp();
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [pdfModal, setPdfModal] = useState<PDFModalState | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -458,8 +459,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
       page: evidence?.page || node.image_page || node.page || 0,
       bbox: evidence?.bbox || node.image_bbox || node.bbox || [],
     });
-    setIsChatOpen(true);
-  }, [addFocusedChatNode, setIsChatOpen]);
+  }, [addFocusedChatNode]);
 
 
   // --- Drag-from-handle: create model node on empty canvas, auto-connect ---
@@ -1513,17 +1513,19 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         onMouseDown={handleCanvasMouseDown}
         onContextMenu={(e) => e.preventDefault()}
       >
-        <LeftToolRail
-          activeTool={activeTool}
-          onChange={setActiveTool}
-          onArrange={handleArrangeCanvas}
-          openPalette={openPalette}
-          onTogglePalette={(tab, anchorY) => {
-            setOpenPalette(prev => prev === tab ? null : tab);
-            setPaletteAnchorY(anchorY);
-          }}
-        />
-        {openPalette && (
+        {showInternalToolbar && (
+          <LeftToolRail
+            activeTool={activeTool}
+            onChange={setActiveTool}
+            onArrange={handleArrangeCanvas}
+            openPalette={openPalette}
+            onTogglePalette={(tab, anchorY) => {
+              setOpenPalette(prev => prev === tab ? null : tab);
+              setPaletteAnchorY(anchorY);
+            }}
+          />
+        )}
+        {showInternalToolbar && openPalette && (
           <ResourcePalette
             tab={openPalette}
             anchorY={paletteAnchorY}
@@ -1534,12 +1536,12 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
             onClose={() => setOpenPalette(null)}
           />
         )}
-        {activeTool === "connect" && (
+        {showInternalToolbar && activeTool === "connect" && (
           <div className="absolute left-1/2 top-16 z-20 -translate-x-1/2 rounded-full border border-neutral-200/80 bg-white/90 px-3 py-1 text-[11px] text-neutral-500 shadow-sm backdrop-blur-md dark:border-neutral-700/80 dark:bg-neutral-900/90 dark:text-neutral-400">
             Drag from node handles to connect items
           </div>
         )}
-        {isInsertTool(activeTool) && (
+        {showInternalToolbar && isInsertTool(activeTool) && (
           <div className="absolute left-1/2 top-16 z-20 -translate-x-1/2 rounded-full border border-neutral-200/80 bg-white/90 px-3 py-1 text-[11px] text-neutral-500 shadow-sm backdrop-blur-md dark:border-neutral-700/80 dark:bg-neutral-900/90 dark:text-neutral-400">
             Click and drag on the canvas to create a {activeTool}
           </div>

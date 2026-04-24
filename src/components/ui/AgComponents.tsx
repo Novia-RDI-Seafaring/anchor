@@ -1,17 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
 
-// --- Types ---
-interface AgButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'icon';
-  size?: 'sm' | 'md' | 'lg' | 'icon';
-}
-
-interface AgInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
-  label?: string;
-  error?: string;
-}
-
 interface AgSelectProps {
   options: { id: string; label: string;[key: string]: any }[];
   value: string;
@@ -21,54 +10,6 @@ interface AgSelectProps {
   align?: 'left' | 'right';
   className?: string;
 }
-
-// --- Components ---
-
-export const AgButton: React.FC<AgButtonProps> = ({
-  children,
-  variant = 'primary',
-  size = 'md',
-  className = '',
-  ...props
-}) => { // remove justify-center from the baseStyles 
-  const baseStyles = "inline-flex items-center rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:opacity-50 disabled:pointer-events-none";
-
-  const variants = {
-    primary: "bg-black text-white hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200 shadow-sm",
-    secondary: "bg-neutral-100 text-neutral-900 hover:bg-neutral-200 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700",
-    ghost: "hover:bg-neutral-100 hover:text-neutral-900 text-neutral-600 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-200",
-    icon: "hover:bg-neutral-100 text-neutral-700 rounded-full dark:text-neutral-300 dark:hover:bg-neutral-800",
-  };
-
-  const sizes = {
-    sm: "h-8 px-3 text-xs",
-    md: "h-10 px-4 py-2",
-    lg: "h-12 px-8",
-    icon: "h-9 w-9",
-  };
-
-  return (
-    <button
-      className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${className}`}
-      {...props}
-    >
-      {children}
-    </button>
-  );
-};
-
-export const AgInput: React.FC<AgInputProps> = ({ label, error, className = '', ...props }) => {
-  return (
-    <div className="w-full">
-      {label && <label className="block text-sm font-medium text-neutral-700 dark:text-neutral-300 mb-1">{label}</label>}
-      <input
-        className={`flex h-10 w-full rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm ring-offset-white dark:ring-offset-neutral-950 file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-neutral-500 dark:placeholder:text-neutral-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 disabled:cursor-not-allowed disabled:opacity-50 dark:text-neutral-100 ${className}`}
-        {...props}
-      />
-      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
-    </div>
-  );
-};
 
 export const AgSelect: React.FC<AgSelectProps> = ({
   options,
@@ -134,14 +75,6 @@ export const AgSelect: React.FC<AgSelectProps> = ({
           </div>
         </div>
       )}
-    </div>
-  );
-};
-
-export const AgCard: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => {
-  return (
-    <div className={`rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 text-neutral-950 dark:text-neutral-50 shadow-sm ${className}`}>
-      {children}
     </div>
   );
 };

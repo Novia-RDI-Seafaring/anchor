@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { useCopilotChatInternal } from '@copilotkit/react-core';
 import { useApp } from '@/contexts/AppContext';
+import { toPersistableChatMessages } from '@/lib/chat-history';
 
 /**
  * Restores stored messages from the DB into CopilotKit when a conversation
@@ -21,9 +22,8 @@ export function ConversationRestorer() {
         loadConversationMessages(activeConversationId).then(({ messages }) => {
             if (!messages?.length) return;
 
-            const restored = messages
-                .filter((m: any) => m.role && m.content)
-                .map((m: any) => ({ id: m.id, role: m.role, content: m.content }));
+            const restored = toPersistableChatMessages(messages)
+                .map(({ id, role, content }) => ({ id, role, content }));
 
             if (restored.length > 0) {
                 chat.setMessages(restored as any);
