@@ -26,6 +26,10 @@ LOW_LEVEL_TOOLS: frozenset[str] = frozenset({
 # ── Toolset ───────────────────────────────────────────────────────────────────
 
 _toolset: FunctionToolset[AgentDeps] = FunctionToolset()
+_toolset.tool(canvas_tools.check_canvas)
+_toolset.tool(canvas_tools.add_concept)
+_toolset.tool(canvas_tools.add_topic)
+_toolset.tool(canvas_tools.add_fact)
 _toolset.tool(canvas_tools.add_spec_node)
 _toolset.tool(canvas_tools.update_node)
 _toolset.tool(canvas_tools.delete_node)
@@ -39,6 +43,10 @@ CANVAS TOOLS
 ══════════════════════════════════════
 
 TOOLS:
+  check_canvas()  — inspect current nodes and relations before adding new content
+  add_concept(title)  — create a high-level subject/root node
+  add_topic(title)  — create a topic/aspect bucket
+  add_fact(text, topic_id, source...)  — create a focused evidence-backed finding
   add_spec_node(spec_title, sections)  — create a parameter table
   update_node(node_id, spec_title?, parameter_sections?, title?, text?, status?)  — edit an existing node
   delete_node(node_id)  — remove a node and its relations
@@ -67,11 +75,13 @@ EDITING SPEC TABLES:
 
 WORKFLOW:
 1. Use gold data from context (preferred) or read_document_page() to find values.
-2. Call add_spec_node() ONCE with all data organized in sections.
-3. To refine, call update_node() on the existing spec node.
+2. Use add_fact() for one focused finding.
+3. Use add_spec_node() for table-like or multi-row structured data.
+4. To refine, call update_node() on the existing node.
 
 RULES:
 - ONE table per extraction, not multiple small ones.
+- Use facts for scalar findings like warranty, pressure, temperature, and single limits.
 - Short, clear parameter names.
 - Units in the unit field, NOT in the value.
 - Group related rows into sections.

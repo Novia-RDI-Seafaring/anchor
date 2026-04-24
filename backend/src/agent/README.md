@@ -51,6 +51,10 @@ Responsibilities:
 
 Current registered tools:
 
+- `check_canvas`
+- `add_concept`
+- `add_topic`
+- `add_fact`
 - `add_spec_node`
 - `update_node`
 - `delete_node`
