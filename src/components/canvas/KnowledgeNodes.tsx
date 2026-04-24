@@ -104,6 +104,7 @@ export interface FactNodeData {
   onOpenPDF?: (filename: string, page: number, highlights: PDFHighlight[]) => void;
   onDelete?: (id: string) => void;
   onSetColor?: (id: string, color: string) => void;
+  onUpdateText?: (id: string, text: string) => void;
   onUseInChat?: () => void;
   onPreviewSource?: (filename: string | null, page?: number | null) => void;
   evidenceFilename?: string;
@@ -433,45 +434,93 @@ export function TopicNode({ data }: NodeProps) {
 // FACT NODE — indigo left-border, full text
 // ─────────────────────────────────────────────
 export function FactNode({ data }: NodeProps) {
-  const { node, onDelete, onSetColor, onOpenPDF, onUseInChat, onPreviewSource, evidenceFilename, evidencePage, evidenceHighlights } = data as unknown as FactNodeData;
+  const { node, onDelete, onSetColor, onUpdateText, onOpenPDF, onUseInChat, onPreviewSource, evidenceFilename, evidencePage, evidenceHighlights } = data as unknown as FactNodeData;
   const hasEvidence = evidenceFilename && evidencePage !== undefined;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(node.text ?? "");
+
+  useEffect(() => {
+    setDraft(node.text ?? "");
+  }, [node.text]);
+
+  const commit = () => {
+    setEditing(false);
+    const next = draft.trim();
+    if (next !== (node.text ?? "")) {
+      onUpdateText?.(node.id, next);
+    }
+  };
 
   return (
     <>
 
       <Handle type="target" position={Position.Top} className="!bg-indigo-400 !border-indigo-600" />
       <div
-        className="relative rounded-[26px] border-[3px] border-amber-400 bg-white shadow-sm dark:border-amber-500 dark:bg-neutral-900"
+        className="relative overflow-hidden rounded-[26px] border-[3px] border-amber-400 bg-white shadow-sm dark:border-amber-500 dark:bg-neutral-900"
         style={{ width: '100%', height: '100%' }}
+        onDoubleClick={() => setEditing(true)}
+        title="Double-click to edit"
       >
-        <div className="absolute right-3 top-3 flex items-center gap-1.5">
+        <div className="absolute right-3 top-3 z-10 flex items-center gap-1.5">
           <button
-            onClick={() => onUseInChat?.()}
+            onClick={(event) => {
+              event.stopPropagation();
+              onUseInChat?.();
+            }}
             className="text-amber-500 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-200 transition-colors"
             title="Use this node as chat context"
           >
             <MessageSquare size={12} />
           </button>
           <StatusBadge status={node.status} />
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete?.(node.id);
+            }}
+            className="text-neutral-400 transition-colors hover:text-red-500 dark:text-neutral-500 dark:hover:text-red-400"
+            title="Remove from canvas"
+          >
+            <X size={12} />
+          </button>
         </div>
         {/* Text row */}
-        <div className="flex h-full items-start gap-2 px-4 py-3">
+        <div className={`flex h-full min-h-0 items-start gap-2 pl-4 pr-12 pt-3 ${hasEvidence ? "pb-8" : "pb-4"}`}>
           <MessageSquare size={13} className="text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
-          <div className={`flex-1 text-xs leading-relaxed break-words min-w-0 ${
-            node.status === "pending" || node.status === "searching"
-              ? "text-neutral-400 dark:text-neutral-500 italic"
-              : "text-neutral-800 dark:text-neutral-200"
-          } prose prose-xs dark:prose-invert max-w-none
-            prose-p:my-0.5 prose-p:leading-relaxed
-            prose-ul:my-0.5 prose-ul:pl-4
-            prose-ol:my-0.5 prose-ol:pl-4
-            prose-li:my-0
-            prose-strong:font-semibold
-            prose-headings:text-xs prose-headings:font-semibold prose-headings:my-1
-            prose-code:text-[10px] prose-code:bg-neutral-100 dark:prose-code:bg-neutral-800 prose-code:px-1 prose-code:rounded
-          `}>
-            <ReactMarkdown>{node.text ?? ""}</ReactMarkdown>
-          </div>
+          {editing ? (
+            <textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onBlur={commit}
+              onPointerDown={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                event.stopPropagation();
+                if ((event.ctrlKey || event.metaKey) && event.key === "Enter") commit();
+                if (event.key === "Escape") {
+                  setDraft(node.text ?? "");
+                  setEditing(false);
+                }
+              }}
+              className="mt-0.5 h-full min-h-0 flex-1 resize-none rounded-md border border-amber-200 bg-white/80 p-2 text-xs leading-relaxed text-neutral-800 outline-none focus:border-amber-400 dark:border-amber-800 dark:bg-neutral-950/80 dark:text-neutral-100"
+              autoFocus
+            />
+          ) : (
+            <div className={`h-full min-h-0 flex-1 overflow-y-auto pr-1 text-xs leading-relaxed break-words min-w-0 ${
+              node.status === "pending" || node.status === "searching"
+                ? "text-neutral-400 dark:text-neutral-500 italic"
+                : "text-neutral-800 dark:text-neutral-200"
+            } prose prose-xs dark:prose-invert max-w-none
+              prose-p:my-0.5 prose-p:leading-relaxed
+              prose-ul:my-0.5 prose-ul:pl-4
+              prose-ol:my-0.5 prose-ol:pl-4
+              prose-li:my-0
+              prose-strong:font-semibold
+              prose-headings:text-xs prose-headings:font-semibold prose-headings:my-1
+              prose-code:text-[10px] prose-code:bg-neutral-100 dark:prose-code:bg-neutral-800 prose-code:px-1 prose-code:rounded
+            `}>
+              <ReactMarkdown>{node.text ?? ""}</ReactMarkdown>
+            </div>
+          )}
         </div>
         {/* Evidence link */}
         {hasEvidence && (

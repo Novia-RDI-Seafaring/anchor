@@ -9,16 +9,19 @@ import { useSession } from "next-auth/react";
 import {
   Activity,
   ArrowUp,
+  Check,
   ChevronDown,
   Cpu,
   Database,
   FileText,
+  GripVertical,
   Layers,
   Loader2,
   MessageSquare,
   Network,
   PanelRight,
   Paperclip,
+  Pencil,
   Plus,
   StopCircle,
   X,
@@ -774,7 +777,7 @@ function useWorkspaceV2Controller() {
 }
 
 function useReadableChatMessages() {
-  const { messages = [], isLoading, stopGeneration } = useCopilotChatInternal();
+  const { messages = [], isLoading, stopGeneration, setMessages } = useCopilotChatInternal();
 
   const readableMessages = useMemo(() => {
     return messages
@@ -801,10 +804,29 @@ function useReadableChatMessages() {
           id: legacyMessage.id ?? message.id ?? `${legacyMessage.role}-${index}`,
           role: legacyMessage.role ?? message.role,
           content,
+          sourceIndex: index,
         };
       })
-      .filter(Boolean) as Array<{ id: string; role: string; content: string }>;
+      .filter(Boolean) as Array<{ id: string; role: string; content: string; sourceIndex: number }>;
   }, [messages]);
+
+  const updateMessageContent = useCallback(
+    (messageId: string, sourceIndex: number, content: string) => {
+      const next = messages.map((message: any, index: number) => {
+        const legacyMessage: any = aguiToGQL(message)[0];
+        const readableId = legacyMessage?.id ?? message?.id ?? `${legacyMessage?.role ?? message?.role}-${index}`;
+        if (index !== sourceIndex && readableId !== messageId && message?.id !== messageId) {
+          return message;
+        }
+        return {
+          ...message,
+          content,
+        };
+      });
+      setMessages(next as any);
+    },
+    [messages, setMessages],
+  );
 
   const recentActions = useMemo(() => {
     const actions: string[] = [];
@@ -843,7 +865,7 @@ function useReadableChatMessages() {
     return actions;
   }, [messages]);
 
-  return { messages: readableMessages, recentActions, isLoading, stopGeneration };
+  return { messages: readableMessages, recentActions, isLoading, stopGeneration, updateMessageContent };
 }
 
 function WorkspaceTopBar({
@@ -1226,8 +1248,24 @@ function WorkspaceComposer({ onOpenActivity }: { onOpenActivity: () => void }) {
 }
 
 function ActivityDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { messages, recentActions, isLoading } = useReadableChatMessages();
+  const { messages, recentActions, isLoading, updateMessageContent } = useReadableChatMessages();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
   if (!open) return null;
+
+  const startEditing = (message: { id: string; content: string }) => {
+    setEditingId(message.id);
+    setDraft(message.content);
+  };
+
+  const commitEdit = (message: { id: string; sourceIndex: number; content: string }) => {
+    const next = draft.trim();
+    if (next && next !== message.content) {
+      updateMessageContent(message.id, message.sourceIndex, next);
+    }
+    setEditingId(null);
+    setDraft("");
+  };
 
   return (
     <div className="absolute bottom-[8.75rem] left-1/2 z-30 flex h-[min(360px,calc(100vh-13rem))] w-[min(760px,calc(100vw-2rem))] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white/96 shadow-xl backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-950/94">
@@ -1260,13 +1298,86 @@ function ActivityDrawer({ open, onClose }: { open: boolean; onClose: () => void 
           messages.map((message) => (
             <div
               key={message.id}
-              className={`max-w-[86%] rounded-lg px-3 py-2 text-sm leading-6 ${
+              draggable={message.role === "assistant" && editingId !== message.id}
+              onDragStart={(event) => {
+                if (message.role !== "assistant") return;
+                const content = editingId === message.id ? draft : message.content;
+                event.dataTransfer.setData(
+                  "application/anchor-chat-message",
+                  JSON.stringify({
+                    id: message.id,
+                    role: message.role,
+                    title: "Explanation",
+                    content,
+                  }),
+                );
+                event.dataTransfer.setData("text/plain", content);
+                event.dataTransfer.effectAllowed = "copy";
+              }}
+              className={`group max-w-[86%] rounded-lg px-3 py-2 text-sm leading-6 ${
                 message.role === "user"
                   ? "ml-auto bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
                   : "mr-auto border border-neutral-200 bg-neutral-50 text-neutral-800 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
-              }`}
+              } ${message.role === "assistant" && editingId !== message.id ? "cursor-grab active:cursor-grabbing" : ""}`}
+              title={message.role === "assistant" ? "Drag onto the canvas to create an editable fact node." : undefined}
             >
-              {message.content}
+              {editingId === message.id ? (
+                <div className="space-y-2">
+                  <textarea
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      event.stopPropagation();
+                      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+                        commitEdit(message);
+                      }
+                      if (event.key === "Escape") {
+                        setEditingId(null);
+                        setDraft("");
+                      }
+                    }}
+                    className="min-h-24 w-full resize-y rounded-md border border-neutral-200 bg-white p-2 text-sm leading-6 text-neutral-800 outline-none focus:border-blue-300 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-100"
+                    autoFocus
+                  />
+                  <div className="flex justify-end gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingId(null);
+                        setDraft("");
+                      }}
+                      className="rounded-md px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => commitEdit(message)}
+                      className="inline-flex items-center gap-1 rounded-md bg-neutral-900 px-2 py-1 text-xs font-medium text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
+                    >
+                      <Check size={12} />
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2">
+                  {message.role === "assistant" && (
+                    <GripVertical size={14} className="mt-1 shrink-0 text-neutral-300 opacity-0 transition-opacity group-hover:opacity-100 dark:text-neutral-600" />
+                  )}
+                  <div className="min-w-0 flex-1 whitespace-pre-wrap">{message.content}</div>
+                  {message.role === "assistant" && (
+                    <button
+                      type="button"
+                      onClick={() => startEditing(message)}
+                      className="mt-0.5 shrink-0 rounded-md p-1 text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-100 hover:text-neutral-800 group-hover:opacity-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+                      title="Edit explanation"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           ))
         )}

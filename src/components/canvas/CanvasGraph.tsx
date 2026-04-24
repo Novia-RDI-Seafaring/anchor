@@ -961,6 +961,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, sh
           onPreviewSource: (filename: string | null, page?: number | null) => setPreviewedSource(filename && page ? { filename, page } : null),
           onDelete: onDeleteNode,
           onSetColor: onSetNodeColor,
+          onUpdateText: (nodeId: string, text: string) => onUpdateNode?.(nodeId, { text, title: "Explanation" }),
           ...evidence,
         }), NODE_SIZE.factNode!);
       }
@@ -1225,6 +1226,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, sh
               onPreviewSource: (filename: string | null, page?: number | null) => setPreviewedSource(filename && page ? { filename, page } : null),
               onDelete: onDeleteNode,
               onSetColor: onSetNodeColor,
+              onUpdateText: n.semanticType === "fact" ? (nodeId: string, text: string) => onUpdateNode?.(nodeId, { text, title: "Explanation" }) : undefined,
               ...evidence,
             },
           };
@@ -1268,9 +1270,10 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, sh
     const hasLibItem = t.includes("application/anchor-doc") || t.includes("application/anchor-fmu") || t.includes("application/anchor-snippet");
     const hasNodeType = t.includes("application/anchor-nodetype");
     const hasRegion = t.includes("application/anchor-region");
-    if (!hasFiles && !hasLibItem && !hasNodeType && !hasRegion) return;
+    const hasChatMessage = t.includes("application/anchor-chat-message");
+    if (!hasFiles && !hasLibItem && !hasNodeType && !hasRegion && !hasChatMessage) return;
     e.preventDefault();
-    setIsDraggingOver(hasFiles || hasLibItem);
+    setIsDraggingOver(hasFiles || hasLibItem || hasChatMessage);
     const absolutePosition = screenToFlowPosition({ x: e.clientX, y: e.clientY });
     const nodeType = e.dataTransfer.getData("application/anchor-nodetype") as NewNodeType | '';
     const fmuFilename = e.dataTransfer.getData("application/anchor-fmu");
@@ -1283,6 +1286,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, sh
       : docId ? DOCUMENT_NODE_SIZE
       : snippetPayload ? { w: 220, h: 84 }
       : hasRegion ? NODE_SIZE.imageNode
+      : hasChatMessage ? { w: 340, h: 180 }
       : hasFiles ? DOCUMENT_NODE_SIZE
       : null;
     if (size) {
@@ -1331,6 +1335,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, sh
     const docId = e.dataTransfer.getData("application/anchor-doc");
     const fmuFilename = e.dataTransfer.getData("application/anchor-fmu");
     const snippetPayload = e.dataTransfer.getData("application/anchor-snippet");
+    const chatMessagePayload = e.dataTransfer.getData("application/anchor-chat-message");
     if (docId) {
       const docPos = anchorAtCenter(dropPos, DOCUMENT_NODE_SIZE);
       commitPositionOverrides({ [`__doc_${docId}`]: docPos }, true);
@@ -1392,6 +1397,56 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, sh
         onAddSnippet?.(parsed.nodes ?? [], parsed.relations ?? [], dropPos, placements);
       } catch {
         // ignore malformed snippet payload
+      }
+      return;
+    }
+    if (chatMessagePayload) {
+      try {
+        const parsed = JSON.parse(chatMessagePayload);
+        const content = String(parsed?.content ?? "").trim();
+        if (!content) return;
+        const id = `chat_fact_${Date.now()}`;
+        const nodeSize = {
+          w: 340,
+          h: Math.min(260, Math.max(130, 82 + Math.ceil(content.length / 82) * 20)),
+        };
+        const absolutePos = anchorAtCenter(dropPos, nodeSize);
+        const areaParent = findBestAreaParent(absolutePos, nodeSize, nodesRef.current);
+        const finalPos = areaParent?.position ?? absolutePos;
+        const node: any = {
+          id,
+          node_type: "fact",
+          status: "found",
+          title: parsed?.title || "Explanation",
+          text: content,
+          spec_title: "",
+          properties: [],
+          last_updated_run_id: "",
+          filename: "",
+          page: 0,
+          bbox: [],
+          highlights: [],
+          fmu_filename: "",
+          fmu_model_name: "",
+          fmu_variables: [],
+          fmu_param_values: {},
+          plot_job_id: "",
+          plot_fmu_filename: "",
+          plot_signal_names: [],
+          plot_stop_time: 10,
+          funnel_label: "",
+          area_label: "",
+          area_width: 0,
+          area_height: 0,
+          model_label: "",
+          width: nodeSize.w,
+          height: nodeSize.h,
+          parent_id: areaParent?.id ?? "",
+        };
+        commitPositionOverrides({ [id]: finalPos }, true);
+        onAddNode?.(node, null);
+      } catch {
+        // ignore malformed chat payload
       }
       return;
     }
