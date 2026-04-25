@@ -316,6 +316,16 @@ export function ImageNode({ data }: NodeProps) {
             <MessageSquare size={11} />
           </button>
           <StatusBadge status={node.status} />
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete?.(node.id);
+            }}
+            className="text-neutral-400 transition-colors hover:text-red-500 dark:text-neutral-500 dark:hover:text-red-400"
+            title="Remove from canvas"
+          >
+            <X size={11} />
+          </button>
         </div>
         {/* Screenshot */}
         {imageUrl && (
@@ -613,6 +623,16 @@ export function SpecNode({ data }: NodeProps) {
             <MessageSquare size={11} />
           </button>
           <StatusBadge status={node.status} />
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              onDelete?.(node.id);
+            }}
+            className="text-neutral-400 transition-colors hover:text-red-500 dark:text-neutral-500 dark:hover:text-red-400"
+            title="Remove from canvas"
+          >
+            <X size={11} />
+          </button>
         </div>
         {/* Parameter sections (new structured format) */}
         {useSections ? (
