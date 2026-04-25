@@ -435,7 +435,9 @@ export function TopicNode({ data }: NodeProps) {
 // ─────────────────────────────────────────────
 export function FactNode({ data }: NodeProps) {
   const { node, onDelete, onSetColor, onUpdateText, onOpenPDF, onUseInChat, onPreviewSource, evidenceFilename, evidencePage, evidenceHighlights } = data as unknown as FactNodeData;
-  const hasEvidence = evidenceFilename && evidencePage !== undefined;
+  const hasEvidence = !!evidenceFilename;
+  const sourceIsOpenable = !!evidenceFilename && typeof evidencePage === "number" && evidencePage > 0;
+  const sourceLabel = evidenceFilename ? `${evidenceFilename}${sourceIsOpenable ? ` p.${evidencePage}` : ""}` : "";
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(node.text ?? "");
 
@@ -524,17 +526,24 @@ export function FactNode({ data }: NodeProps) {
         </div>
         {/* Evidence link */}
         {hasEvidence && (
-          <div className="absolute bottom-3 left-4">
-            <button
-              onClick={() => onOpenPDF?.(evidenceFilename!, evidencePage!, evidenceHighlights ?? [])}
-              onMouseEnter={() => onPreviewSource?.(evidenceFilename!, evidencePage!)}
-              onMouseLeave={() => onPreviewSource?.(null, null)}
-              className="flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-300 hover:text-amber-700 dark:hover:text-amber-200 transition-colors"
-              title={`Open source — page ${evidencePage}`}
-            >
-              <FileText size={11} className="shrink-0" />
-              <span>p.{evidencePage}</span>
-            </button>
+          <div className="absolute bottom-3 left-4 right-4">
+            {sourceIsOpenable ? (
+              <button
+                onClick={() => onOpenPDF?.(evidenceFilename!, evidencePage!, evidenceHighlights ?? [])}
+                onMouseEnter={() => onPreviewSource?.(evidenceFilename!, evidencePage!)}
+                onMouseLeave={() => onPreviewSource?.(null, null)}
+                className="flex max-w-full items-center gap-1 text-[10px] text-amber-600 dark:text-amber-300 hover:text-amber-700 dark:hover:text-amber-200 transition-colors"
+                title={`Open source — ${sourceLabel}`}
+              >
+                <FileText size={11} className="shrink-0" />
+                <span className="truncate">{sourceLabel}</span>
+              </button>
+            ) : (
+              <div className="flex max-w-full items-center gap-1 text-[10px] text-amber-600 dark:text-amber-300" title={`Source — ${sourceLabel}`}>
+                <FileText size={11} className="shrink-0" />
+                <span className="truncate">{sourceLabel}</span>
+              </div>
+            )}
           </div>
         )}
       </div>

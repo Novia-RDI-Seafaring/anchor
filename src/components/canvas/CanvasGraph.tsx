@@ -1405,6 +1405,13 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, sh
         const parsed = JSON.parse(chatMessagePayload);
         const content = String(parsed?.content ?? "").trim();
         if (!content) return;
+        const source = parsed?.source && typeof parsed.source === "object" ? parsed.source : {};
+        const sourceFilename = typeof source.filename === "string" ? source.filename : "";
+        const sourcePage = Number(source.page ?? 0);
+        const sourceBbox = Array.isArray(source.bbox) && source.bbox.length === 4
+          ? source.bbox.map((item: any) => Number(item)).filter((item: number) => Number.isFinite(item))
+          : [];
+        const sourceHighlights = Array.isArray(source.highlights) ? source.highlights : [];
         const id = `chat_fact_${Date.now()}`;
         const nodeSize = {
           w: 340,
@@ -1422,10 +1429,10 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, sh
           spec_title: "",
           properties: [],
           last_updated_run_id: "",
-          filename: "",
-          page: 0,
-          bbox: [],
-          highlights: [],
+          filename: sourceFilename,
+          page: Number.isFinite(sourcePage) && sourcePage > 0 ? sourcePage : 0,
+          bbox: sourceBbox.length === 4 ? sourceBbox : [],
+          highlights: sourceHighlights,
           fmu_filename: "",
           fmu_model_name: "",
           fmu_variables: [],

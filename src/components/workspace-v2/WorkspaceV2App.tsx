@@ -76,6 +76,22 @@ type UploadingFile = {
 
 type Controller = ReturnType<typeof useWorkspaceV2Controller>;
 
+type ChatMessageSource = {
+  docId?: string;
+  filename?: string;
+  page?: number;
+  bbox?: number[];
+  highlights?: PDFHighlight[];
+};
+
+type ReadableChatMessage = {
+  id: string;
+  role: string;
+  content: string;
+  sourceIndex: number;
+  source?: ChatMessageSource;
+};
+
 function useWorkspaceV2Controller() {
   const { messages: visibleMessages = [] } = useCopilotChatInternal();
   const {
@@ -682,7 +698,8 @@ function useWorkspaceV2Controller() {
   const evidenceRelations = (allRelations as any[]).filter((rel: any) => rel.to_id?.startsWith("__doc_") && rel.page > 0);
   const contextEvidence = evidenceRelations.map((rel: any) => {
     const parentNode: any = nodeMap.get(rel.from_id);
-    const doc = documents.find((item) => item.document_id === rel.document_id);
+    const documentId = rel.document_id || String(rel.to_id ?? "").replace(/^__doc_/, "");
+    const doc = documents.find((item) => item.document_id === documentId);
     const filename = doc?.filename ?? "";
     const page = rel.page ?? 1;
     const bbox = rel.bbox ?? [];
@@ -693,6 +710,7 @@ function useWorkspaceV2Controller() {
         : parentNode?.text || parentNode?.title || "Evidence";
     return {
       id: `${rel.from_id}-${rel.to_id}-${page}`,
+      documentId,
       filename,
       page,
       bbox,
@@ -776,39 +794,186 @@ function useWorkspaceV2Controller() {
   };
 }
 
+function parseMaybeJson(value: any): any {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function plainMessageContent(rawContent: any): string {
+  if (typeof rawContent === "string") return rawContent;
+  if (Array.isArray(rawContent)) return rawContent.map((part: any) => part?.text ?? "").join(" ");
+  return String(rawContent ?? "");
+}
+
+function validBbox(value: any): number[] | undefined {
+  if (!Array.isArray(value) || value.length !== 4) return undefined;
+  const bbox = value.map((item) => Number(item));
+  return bbox.every(Number.isFinite) ? bbox : undefined;
+}
+
+function validHighlights(value: any): PDFHighlight[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const highlights = value
+    .map((item) => {
+      const page = Number(item?.page);
+      const bbox = validBbox(item?.bbox);
+      return Number.isFinite(page) && page > 0 && bbox ? { page, bbox } : null;
+    })
+    .filter(Boolean) as PDFHighlight[];
+  return highlights.length > 0 ? highlights : undefined;
+}
+
+function normalizeChatSource(value: any, documentsById: Map<string, string>): ChatMessageSource | null {
+  const item = parseMaybeJson(value);
+  if (!item || typeof item !== "object") return null;
+
+  const rawDocId = item.doc_id ?? item.document_id ?? item.docId;
+  const docId = typeof rawDocId === "string" && rawDocId.trim() ? rawDocId.trim() : undefined;
+  const rawFilename = item.filename ?? item.file_name ?? item.document_filename ?? item.ref_filename;
+  const filename =
+    typeof rawFilename === "string" && rawFilename.trim()
+      ? rawFilename.trim()
+      : docId
+        ? documentsById.get(docId)
+        : undefined;
+
+  if (!filename && !docId) return null;
+
+  const rawPage = item.page ?? item.page_no ?? item.pageNo ?? item.ref_page;
+  const pageNumber = typeof rawPage === "number" ? rawPage : typeof rawPage === "string" ? Number(rawPage) : undefined;
+  const page = typeof pageNumber === "number" && Number.isFinite(pageNumber) && pageNumber > 0 ? pageNumber : undefined;
+  const bbox = validBbox(item.bbox ?? item.ref_bbox);
+  const highlights = validHighlights(item.highlights ?? item.ref_highlights);
+
+  return { docId, filename, page, bbox, highlights };
+}
+
+function findFirstChatSource(value: any, documentsById: Map<string, string>, depth = 0): ChatMessageSource | null {
+  if (depth > 5) return null;
+  const item = parseMaybeJson(value);
+  const direct = normalizeChatSource(item, documentsById);
+  if (direct) return direct;
+
+  if (Array.isArray(item)) {
+    for (const child of item) {
+      const source = findFirstChatSource(child, documentsById, depth + 1);
+      if (source) return source;
+    }
+    return null;
+  }
+
+  if (!item || typeof item !== "object") return null;
+
+  const priorityKeys = [
+    "source",
+    "sources",
+    "provenance",
+    "parameter_sections",
+    "sections",
+    "rows",
+    "properties",
+    "arguments",
+    "result",
+  ];
+
+  for (const key of priorityKeys) {
+    if (key in item) {
+      const source = findFirstChatSource(item[key], documentsById, depth + 1);
+      if (source) return source;
+    }
+  }
+
+  for (const child of Object.values(item)) {
+    const source = findFirstChatSource(child, documentsById, depth + 1);
+    if (source) return source;
+  }
+
+  return null;
+}
+
+function sourceFromActionMessage(legacyMessage: any, documentsById: Map<string, string>): ChatMessageSource | null {
+  const name = legacyMessage?.name ?? legacyMessage?.toolName ?? "";
+  const args = parseMaybeJson(
+    legacyMessage?.arguments ?? legacyMessage?.args ?? legacyMessage?.input ?? legacyMessage?.content ?? {},
+  );
+
+  if (name === "read_document_page") {
+    return normalizeChatSource(
+      { filename: args?.filename, page: args?.page_no ?? args?.page, bbox: args?.bbox, highlights: args?.highlights },
+      documentsById,
+    );
+  }
+  if (name === "get_product_data") {
+    return normalizeChatSource({ filename: args?.filename }, documentsById);
+  }
+  if (name === "add_fact") {
+    return normalizeChatSource(args, documentsById);
+  }
+  if (name === "add_spec_node") {
+    return findFirstChatSource(args?.sections ?? args?.parameter_sections ?? args, documentsById);
+  }
+
+  return findFirstChatSource(args, documentsById);
+}
+
+function formatChatSource(source?: ChatMessageSource): string {
+  if (!source?.filename) return "";
+  return source.page ? `${source.filename} p.${source.page}` : source.filename;
+}
+
 function useReadableChatMessages() {
   const { messages = [], isLoading, stopGeneration, setMessages } = useCopilotChatInternal();
+  const { documents } = useApp();
+  const documentsById = useMemo(
+    () => new Map(documents.map((document) => [document.document_id, document.filename])),
+    [documents],
+  );
 
   const readableMessages = useMemo(() => {
-    return messages
-      .map((message: any, index: number) => {
-        const legacyMessage: any = aguiToGQL(message)[0];
-        if (!legacyMessage) return null;
-        if (
-          legacyMessage?.isActionExecutionMessage?.() ||
-          legacyMessage?.isAgentStateMessage?.() ||
-          legacyMessage?.isResultMessage?.() ||
-          legacyMessage?.isImageMessage?.()
-        ) {
-          return null;
-        }
-        const rawContent = legacyMessage.content ?? message.content ?? "";
-        const content =
-          typeof rawContent === "string"
-            ? rawContent
-            : Array.isArray(rawContent)
-              ? rawContent.map((part: any) => part?.text ?? "").join(" ")
-              : String(rawContent ?? "");
-        if (!content.trim()) return null;
-        return {
-          id: legacyMessage.id ?? message.id ?? `${legacyMessage.role}-${index}`,
-          role: legacyMessage.role ?? message.role,
-          content,
-          sourceIndex: index,
-        };
-      })
-      .filter(Boolean) as Array<{ id: string; role: string; content: string; sourceIndex: number }>;
-  }, [messages]);
+    const readable: ReadableChatMessage[] = [];
+    let pendingSource: ChatMessageSource | null = null;
+
+    messages.forEach((message: any, index: number) => {
+      const legacyMessage: any = aguiToGQL(message)[0];
+      if (!legacyMessage) return;
+
+      if (legacyMessage?.isActionExecutionMessage?.()) {
+        pendingSource = sourceFromActionMessage(legacyMessage, documentsById) ?? pendingSource;
+        return;
+      }
+
+      if (legacyMessage?.isResultMessage?.()) {
+        pendingSource = findFirstChatSource(
+          legacyMessage?.result ?? legacyMessage?.content ?? message?.content,
+          documentsById,
+        ) ?? pendingSource;
+        return;
+      }
+
+      if (legacyMessage?.isAgentStateMessage?.() || legacyMessage?.isImageMessage?.()) return;
+
+      const role = legacyMessage.role ?? message.role;
+      if (role === "user") pendingSource = null;
+
+      const rawContent = legacyMessage.content ?? message.content ?? "";
+      const content = plainMessageContent(rawContent);
+      if (!content.trim()) return;
+
+      readable.push({
+        id: legacyMessage.id ?? message.id ?? `${role}-${index}`,
+        role,
+        content,
+        sourceIndex: index,
+        source: role === "assistant" ? pendingSource ?? undefined : undefined,
+      });
+    });
+
+    return readable;
+  }, [documentsById, messages]);
 
   const updateMessageContent = useCallback(
     (messageId: string, sourceIndex: number, content: string) => {
@@ -1253,12 +1418,12 @@ function ActivityDrawer({ open, onClose }: { open: boolean; onClose: () => void 
   const [draft, setDraft] = useState("");
   if (!open) return null;
 
-  const startEditing = (message: { id: string; content: string }) => {
+  const startEditing = (message: ReadableChatMessage) => {
     setEditingId(message.id);
     setDraft(message.content);
   };
 
-  const commitEdit = (message: { id: string; sourceIndex: number; content: string }) => {
+  const commitEdit = (message: ReadableChatMessage) => {
     const next = draft.trim();
     if (next && next !== message.content) {
       updateMessageContent(message.id, message.sourceIndex, next);
@@ -1309,6 +1474,7 @@ function ActivityDrawer({ open, onClose }: { open: boolean; onClose: () => void 
                     role: message.role,
                     title: "Explanation",
                     content,
+                    source: message.source,
                   }),
                 );
                 event.dataTransfer.setData("text/plain", content);
@@ -1365,7 +1531,15 @@ function ActivityDrawer({ open, onClose }: { open: boolean; onClose: () => void 
                   {message.role === "assistant" && (
                     <GripVertical size={14} className="mt-1 shrink-0 text-neutral-300 opacity-0 transition-opacity group-hover:opacity-100 dark:text-neutral-600" />
                   )}
-                  <div className="min-w-0 flex-1 whitespace-pre-wrap">{message.content}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="whitespace-pre-wrap">{message.content}</div>
+                    {message.role === "assistant" && message.source?.filename && (
+                      <div className="mt-2 inline-flex max-w-full items-center gap-1 rounded-md border border-neutral-200 bg-white px-1.5 py-0.5 text-[10px] text-neutral-500 dark:border-neutral-700 dark:bg-neutral-950 dark:text-neutral-400">
+                        <FileText size={10} className="shrink-0" />
+                        <span className="truncate">{formatChatSource(message.source)}</span>
+                      </div>
+                    )}
+                  </div>
                   {message.role === "assistant" && (
                     <button
                       type="button"
@@ -1408,7 +1582,9 @@ function MedallionInspector({
 
   useEffect(() => {
     const first = docsForPanel[0]?.filename ?? "";
-    setSelectedFilename((current) => current || first);
+    setSelectedFilename((current) =>
+      current && docsForPanel.some((document) => document.filename === current) ? current : first,
+    );
   }, [docsForPanel]);
 
   useEffect(() => {
@@ -1431,6 +1607,8 @@ function MedallionInspector({
   }, [selectedFilename]);
 
   const goldRegions = detail?.gold?.pages?.reduce((sum, page) => sum + (page.region_count ?? 0), 0) ?? 0;
+  const selectedDocument = docsForPanel.find((document) => document.filename === selectedFilename) ?? null;
+  const selectedEvidence = controller.contextEvidence.filter((evidence: any) => evidence.filename === selectedFilename);
 
   if (!isOpen) {
     return (
@@ -1522,9 +1700,9 @@ function MedallionInspector({
 
           <div>
             <h3 className="mb-2 text-xs font-semibold text-neutral-700 dark:text-neutral-200">Canvas evidence</h3>
-            {controller.contextEvidence.length > 0 ? (
+            {selectedEvidence.length > 0 ? (
               <div className="space-y-2">
-                {controller.contextEvidence.slice(0, 4).map((evidence: any) => (
+                {selectedEvidence.slice(0, 4).map((evidence: any) => (
                   <button
                     key={evidence.id}
                     onClick={() =>
@@ -1549,7 +1727,7 @@ function MedallionInspector({
               </div>
             ) : (
               <p className="rounded-md border border-neutral-200 bg-neutral-50 p-2 text-xs text-neutral-400 dark:border-neutral-800 dark:bg-neutral-900">
-                No row-level evidence edges yet.
+                No canvas evidence for {selectedDocument?.filename ?? "the selected document"} yet.
               </p>
             )}
           </div>

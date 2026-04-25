@@ -282,7 +282,8 @@ export function getEvidenceData(
   documents: KBDocument[],
 ) {
   const relation = relations.find((item) => item.from_id === nodeId && item.to_id.startsWith("__doc_"));
-  const document = relation ? documents.find((item) => item.document_id === relation.document_id) : undefined;
+  const documentId = relation?.document_id || relation?.to_id.replace(/^__doc_/, "");
+  const document = documentId ? documents.find((item) => item.document_id === documentId) : undefined;
   return {
     evidenceFilename: document?.filename,
     evidencePage: relation?.page,

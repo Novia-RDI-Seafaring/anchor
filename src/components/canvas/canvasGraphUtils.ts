@@ -288,7 +288,7 @@ export function buildDerivedEvidenceRelations(
       });
     }
 
-    if (node.filename && node.page && !node.id.startsWith("__doc_")) {
+    if (node.filename && !node.id.startsWith("__doc_")) {
       addEvidence(node.id, {
         filename: node.filename,
         page: node.page,

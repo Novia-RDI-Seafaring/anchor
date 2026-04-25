@@ -158,6 +158,15 @@ def build_loaded_documents_context(filenames: list[str]) -> str | None:
                 f"### {filename}\n"
                 f"```json\n{json.dumps(index, indent=2, default=str)}\n```"
             )
+
+            page_count = int(index.get("document", {}).get("page_count") or 0)
+            pages_md = find_silver_pages_by_filename(filename)
+            if pages_md and page_count <= 6:
+                joined = "\n\n".join(
+                    f"#### page {page_no}\n{md.strip()}"
+                    for page_no, md in sorted(pages_md.items())
+                )
+                silver_md_sections.append(f"### {filename}\n{joined}")
             continue
 
         pages_md = find_silver_pages_by_filename(filename)

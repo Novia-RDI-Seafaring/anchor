@@ -60,6 +60,19 @@ Current registered tools:
 - `delete_node`
 - `add_relation`
 
+Behavioral rule:
+
+- For document-grounded scalar extraction questions, the agent should answer and create an
+  evidence-backed fact node automatically only when it can attach source provenance.
+- This rule is mandatory for sourced values such as pressures, operating temperature ranges,
+  dimensions, materials, and single limits; the canvas update happens before the final answer.
+- The agent should reuse or create a scoped topic such as `<model> Operating data` for these
+  facts, avoid duplicate fact cards, and update an existing matching fact when the value changes.
+- If one question returns multiple related scalar values, the agent should create one compact
+  sourced spec table instead of several facts.
+- It should not auto-add nodes for explanations, summaries, greetings, UI/meta questions, or
+  ungrounded answers.
+
 ## Important branch note
 
 This branch also contains additional capability modules such as:
