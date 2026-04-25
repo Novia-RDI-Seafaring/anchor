@@ -20,14 +20,10 @@ export function ConversationRestorer() {
         restoredForId.current = activeConversationId;
 
         loadConversationMessages(activeConversationId).then(({ messages }) => {
-            if (!messages?.length) return;
-
             const restored = toPersistableChatMessages(messages)
                 .map(({ id, role, content }) => ({ id, role, content }));
 
-            if (restored.length > 0) {
-                chat.setMessages(restored as any);
-            }
+            chat.setMessages(restored as any);
         });
     }, [activeConversationId]);
 

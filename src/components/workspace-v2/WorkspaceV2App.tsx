@@ -17,12 +17,15 @@ import {
   GripVertical,
   Layers,
   Loader2,
+  Menu,
   MessageSquare,
   Network,
+  MousePointer2,
   PanelRight,
   Paperclip,
   Pencil,
   Plus,
+  SquareDashedMousePointer,
   StopCircle,
   X,
 } from "lucide-react";
@@ -757,8 +760,7 @@ function useWorkspaceV2Controller() {
     if (currentConv.title === "New Conversation" && persistableMessages.length > 0) {
       const firstUserMsg = persistableMessages.find((message) => message.role === "user");
       if (firstUserMsg) {
-        const content = firstUserMsg.content;
-        updates.title = content.length > 30 ? `${content.substring(0, 30)}...` : content;
+        updates.title = deriveWorkspaceTitle(firstUserMsg.content);
       }
     }
     updateConversation(activeConversationId, updates);
@@ -825,6 +827,28 @@ function validHighlights(value: any): PDFHighlight[] | undefined {
     })
     .filter(Boolean) as PDFHighlight[];
   return highlights.length > 0 ? highlights : undefined;
+}
+
+function deriveWorkspaceTitle(content: string): string {
+  let title = content
+    .replace(/[#*_`>]/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/[?.!]+$/g, "")
+    .trim();
+
+  title = title
+    .replace(/^(please\s+)?(can|could|would)\s+you\s+/i, "")
+    .replace(/^(what(?:'s| is| are)?|give me|show me|tell me|find|extract|list)\s+/i, "")
+    .replace(/^the\s+/i, "")
+    .trim();
+
+  const modelScoped = title.match(/^(.*?)\s+\bfor\b\s+([A-Z]{2,})[-\s]?(\d+[A-Z]?)$/i);
+  if (modelScoped?.[1] && modelScoped[2] && modelScoped[3]) {
+    title = `${modelScoped[2].toUpperCase()}-${modelScoped[3].toUpperCase()} ${modelScoped[1].trim()}`;
+  }
+
+  if (!title) return "New Conversation";
+  return title.length > 44 ? `${title.slice(0, 43).trim()}…` : title;
 }
 
 function normalizeChatSource(value: any, documentsById: Map<string, string>): ChatMessageSource | null {
@@ -1042,36 +1066,157 @@ function WorkspaceTopBar({
   onModelChange: (id: string) => void;
   models: ModelOption[];
 }) {
-  const { documents, conversations, activeConversationId, createNewConversation, setActiveConversationId } = useApp();
+  const { documents, conversations, activeConversationId, createNewConversation, setActiveConversationId, updateConversation } = useApp();
   const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draftTitle, setDraftTitle] = useState("");
+  const historyRef = useRef<HTMLDivElement>(null);
+  const title = activeConversation?.title || "Anchor workspace";
+
+  useEffect(() => {
+    if (!renaming) setDraftTitle(activeConversation?.title || "");
+  }, [activeConversation?.title, renaming]);
+
+  useEffect(() => {
+    const close = (event: MouseEvent) => {
+      if (!historyRef.current?.contains(event.target as Node)) {
+        setHistoryOpen(false);
+        setRenaming(false);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+
+  const historyConversations = useMemo(
+    () =>
+      conversations
+        .filter((conversation) =>
+          conversation.id === activeConversationId ||
+          conversation.title !== "New Conversation" ||
+          !String(conversation.preview || "").startsWith("0 messages"),
+        )
+        .slice(0, 10),
+    [activeConversationId, conversations],
+  );
 
   const handleNewWorkspace = useCallback(async () => {
     const id = await createNewConversation();
     setActiveConversationId(id);
+    setHistoryOpen(false);
+    setRenaming(false);
   }, [createNewConversation, setActiveConversationId]);
 
+  const handleRename = useCallback(() => {
+    if (!activeConversationId) return;
+    const nextTitle = draftTitle.trim() || "New Conversation";
+    updateConversation(activeConversationId, { title: nextTitle });
+    setRenaming(false);
+  }, [activeConversationId, draftTitle, updateConversation]);
+
   return (
-    <div className="absolute left-4 right-4 top-3 z-30 flex h-12 items-center justify-between gap-3 rounded-lg border border-neutral-200/80 bg-white/92 px-3 shadow-sm backdrop-blur-md dark:border-neutral-800/80 dark:bg-neutral-950/88">
-      <div className="flex min-w-0 items-center gap-3">
-        <div
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-neutral-200 bg-white text-neutral-700 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-200"
-          title="Anchor workspace"
+    <div className="absolute left-4 right-4 top-3 z-50 flex h-12 items-center justify-between gap-3 rounded-lg border border-neutral-200/80 bg-white/92 px-3 shadow-sm backdrop-blur-md dark:border-neutral-800/80 dark:bg-neutral-950/88">
+      <div ref={historyRef} className="relative min-w-0">
+        <button
+          type="button"
+          onClick={() => setHistoryOpen((open) => !open)}
+          className="flex min-w-0 items-center gap-3 rounded-md pr-2 text-left transition-colors hover:bg-neutral-100/80 dark:hover:bg-neutral-900"
         >
-          <Network size={15} />
-        </div>
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-              {activeConversation?.title || "Anchor workspace"}
-            </span>
-            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
-              medallion
-            </span>
+          <div
+            className="flex h-8 w-8 items-center justify-center rounded-md border border-neutral-200 bg-white text-neutral-700 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-200"
+            title="Workspace history"
+          >
+            <Menu size={15} />
           </div>
-          <p className="truncate text-[11px] text-neutral-500 dark:text-neutral-400">
-            {documents.length} document{documents.length === 1 ? "" : "s"} in knowledge base
-          </p>
-        </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+                {title}
+              </span>
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                medallion
+              </span>
+              <ChevronDown size={13} className="shrink-0 text-neutral-400" />
+            </div>
+            <p className="truncate text-[11px] text-neutral-500 dark:text-neutral-400">
+              {documents.length} document{documents.length === 1 ? "" : "s"} in knowledge base
+            </p>
+          </div>
+        </button>
+
+        {historyOpen && (
+          <div className="absolute left-0 top-11 z-50 w-80 rounded-xl border border-neutral-200 bg-white p-2 shadow-xl dark:border-neutral-800 dark:bg-neutral-950">
+            <div className="flex items-center justify-between px-2 py-1.5">
+              <span className="text-xs font-semibold text-neutral-700 dark:text-neutral-200">Workspaces</span>
+              <button
+                type="button"
+                onClick={handleNewWorkspace}
+                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-900"
+              >
+                <Plus size={12} />
+                New
+              </button>
+            </div>
+
+            <div className="border-t border-neutral-100 px-2 py-2 dark:border-neutral-800">
+              {renaming ? (
+                <div className="flex items-center gap-1.5">
+                  <input
+                    value={draftTitle}
+                    onChange={(event) => setDraftTitle(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") handleRename();
+                      if (event.key === "Escape") setRenaming(false);
+                    }}
+                    className="h-8 min-w-0 flex-1 rounded-md border border-neutral-200 bg-white px-2 text-xs outline-none focus:border-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
+                    autoFocus
+                  />
+                  <button type="button" onClick={handleRename} className="rounded-md p-1.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40">
+                    <Check size={13} />
+                  </button>
+                  <button type="button" onClick={() => setRenaming(false)} className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900">
+                    <X size={13} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setRenaming(true)}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-900"
+                >
+                  <Pencil size={12} />
+                  Rename current workspace
+                </button>
+              )}
+            </div>
+
+            <div className="max-h-72 overflow-y-auto border-t border-neutral-100 pt-1 dark:border-neutral-800">
+              {historyConversations.map((conversation) => (
+                <button
+                  key={conversation.id}
+                  type="button"
+                  onClick={() => {
+                    setActiveConversationId(conversation.id);
+                    setHistoryOpen(false);
+                    setRenaming(false);
+                  }}
+                  className={`flex w-full flex-col rounded-lg px-3 py-2 text-left transition-colors ${
+                    conversation.id === activeConversationId
+                      ? "bg-neutral-100 text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100"
+                      : "text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-900"
+                  }`}
+                >
+                  <span className="truncate text-xs font-medium">{conversation.title || "New Conversation"}</span>
+                  <span className="truncate text-[10px] text-neutral-400">{conversation.preview || conversation.lastMessageAt}</span>
+                </button>
+              ))}
+              {historyConversations.length === 0 && (
+                <div className="px-3 py-4 text-xs text-neutral-400">No previous workspaces yet.</div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-2">
@@ -1097,21 +1242,33 @@ function WorkspaceTopBar({
 
 function WorkspaceAssetRail({ controller }: { controller: Controller }) {
   const [openPalette, setOpenPalette] = useState<PaletteTab | null>(null);
-  const buttons: Array<{ id: PaletteTab; icon: React.ReactNode; label: string }> = [
-    { id: "docs", icon: <FileText size={16} />, label: "Documents" },
-    { id: "fmus", icon: <Cpu size={16} />, label: "FMUs" },
-    { id: "snippets", icon: <Layers size={16} />, label: "Snippets" },
+  const [activeMode, setActiveMode] = useState<"select" | "pan" | "edit" | "mark">("select");
+  const [paletteAnchorY, setPaletteAnchorY] = useState(120);
+  const buttonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const buttons: Array<{ id: "select" | "pan" | "edit" | "mark"; icon: React.ReactNode; label: string; palette?: PaletteTab }> = [
+    { id: "select", icon: <MousePointer2 size={16} />, label: "Select" },
+    { id: "mark", icon: <SquareDashedMousePointer size={16} />, label: "Mark regions", palette: "docs" },
+    { id: "edit", icon: <Pencil size={16} />, label: "Direct edit", palette: "snippets" },
+    { id: "pan", icon: <GripVertical size={16} />, label: "Pan" },
   ];
 
   return (
     <>
-      <div className="absolute left-4 top-20 z-30 flex flex-col gap-2 rounded-lg border border-neutral-200/80 bg-white/92 p-2 shadow-sm backdrop-blur-md dark:border-neutral-800/80 dark:bg-neutral-950/88">
+      <div className="absolute left-4 top-1/2 z-30 flex -translate-y-1/2 flex-col gap-2 rounded-lg border border-neutral-200/80 bg-white/92 p-2 shadow-sm backdrop-blur-md dark:border-neutral-800/80 dark:bg-neutral-950/88">
         {buttons.map((button) => (
           <button
             key={button.id}
-            onClick={() => setOpenPalette((current) => (current === button.id ? null : button.id))}
+            ref={(element) => {
+              buttonRefs.current[button.id] = element;
+            }}
+            onClick={() => {
+              setActiveMode(button.id);
+              const rect = buttonRefs.current[button.id]?.getBoundingClientRect();
+              if (rect) setPaletteAnchorY(rect.top);
+              setOpenPalette((current) => (button.palette ? (current === button.palette ? null : button.palette) : null));
+            }}
             className={`flex h-10 w-10 items-center justify-center rounded-md transition-colors ${
-              openPalette === button.id
+              activeMode === button.id || (button.palette && openPalette === button.palette)
                 ? "bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
                 : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-900 dark:hover:text-neutral-100"
             }`}
@@ -1124,7 +1281,7 @@ function WorkspaceAssetRail({ controller }: { controller: Controller }) {
       {openPalette && (
         <ResourcePalette
           tab={openPalette}
-          anchorY={80}
+          anchorY={paletteAnchorY}
           workspaceDocIds={controller.canvas?.workspace_doc_ids ?? []}
           onAddDoc={controller.handlers.handleAddDocToWorkspace}
           onAddFmu={controller.handlers.handleFmuFromLibrary}
