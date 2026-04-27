@@ -5,7 +5,7 @@ from pydantic_ai import ToolReturn
 from pydantic_ai._run_context import RunContext
 from ag_ui.core import EventType, StateSnapshotEvent  # type: ignore
 from .deps import AgentDeps
-from .state import CanvasNode, Relation, SourceHighlight, SpecProperty
+from .state import Canvas, CanvasNode, Relation, SourceHighlight, SpecProperty
 
 def _env_flag(name: str, default: str = "0") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "y", "on"}
@@ -45,18 +45,21 @@ _PROPERTY_MATCH_STOPWORDS = {
     "this", "that", "these", "those", "about", "tell", "me", "show", "give", "list",
 }
 _SECTION_TABLE_QUERY_RE = re.compile(
-    r"\b(operating data|technical data|specs?|specifications?|fact sheet|fact table|properties)\b",
+    r"\b(operating data|technical data|specs?|specifications?|fact sheet|fact table|properties|dimensions?|parameters?|table|all values|values for)\b",
     re.IGNORECASE,
 )
 _PROPERTY_GROUP_ALIASES: dict[str, set[str]] = {
     "temperature": {"temperature", "temp", "thermal", "sterilization"},
     "pressure": {"pressure", "pressur", "bar", "kpa", "mpa"},
+    "limit": {"limit", "limits", "range", "ranges", "value", "values", "minimum", "maximum", "min", "max"},
+    "dimension": {"dimension", "dimensions", "dim", "dims", "length", "width", "height"},
     "flow": {"flow", "capacity", "consumption"},
     "speed": {"speed", "rpm"},
     "power": {"power", "kw", "hp", "horsepower", "w"},
     "connection": {"connection", "connections", "port", "ports", "thread", "inlet", "outlet"},
     "material": {"material", "materials", "steel", "elastomer", "seal"},
     "motor": {"motor", "frequency", "voltage", "current", "phase"},
+    "warranty": {"warranty", "warranties", "guarantee", "guarantees"},
 }
 
 def _normalize_match_token(token: str) -> str:
@@ -123,6 +126,61 @@ def _prompt_to_text(prompt: str | list | tuple | None) -> str:
             if rendered:
                 return rendered
     return ""
+
+_EXPLANATION_OR_META_RE = re.compile(
+    r"\b(explain|summari[sz]e|describe|what is this|what does this|why|how does|ui|interface|button|reload|error)\b",
+    re.IGNORECASE,
+)
+
+def _request_signal_text(prompt: object, output: object | None = None) -> str:
+    prompt_text = _prompt_to_text(prompt).strip()
+    if prompt_text:
+        return prompt_text
+    return str(output or "").strip()
+
+def _requires_canvas_materialization(prompt: object, state: Canvas, output: object | None = None) -> bool:
+    text = _request_signal_text(prompt, output)
+    if not text:
+        return False
+    if _EXPLANATION_OR_META_RE.search(text) or not _requires_canvas_update(text):
+        return False
+    if not (_is_section_table_query(text) or _property_groups_for_text(text)):
+        return False
+    return any(node.node_type == "document" and node.filename for node in state.nodes)
+
+def _has_materialized_canvas_content(ctx: RunContext[AgentDeps]) -> bool:
+    run_id = ctx.run_id or ""
+    content_nodes = [node for node in ctx.deps.state.nodes if node.node_type in {"fact", "spec"}]
+    if run_id and any(node.last_updated_run_id == run_id for node in content_nodes):
+        return True
+
+    # If an earlier matching node already exists, the agent may correctly reuse it.
+    prompt_tokens = _query_match_tokens(_prompt_to_text(ctx.prompt))
+    for node in content_nodes:
+        text = " ".join([
+            node.title,
+            node.text,
+            node.spec_title,
+            " ".join(
+                " ".join([section.name, *[f"{row.parameter} {row.value} {row.unit}" for row in section.rows]])
+                for section in node.parameter_sections
+            ),
+        ]).lower()
+        if prompt_tokens and prompt_tokens & _query_match_tokens(text):
+            return True
+    return False
+
+def _requires_spec_materialization(prompt: object, state: Canvas, output: object | None = None) -> bool:
+    if not _requires_canvas_materialization(prompt, state, output):
+        return False
+    return _is_section_table_query(_request_signal_text(prompt, output))
+
+def _has_materialized_spec(ctx: RunContext[AgentDeps]) -> bool:
+    run_id = ctx.run_id or ""
+    specs = [node for node in ctx.deps.state.nodes if node.node_type == "spec"]
+    if run_id and any(node.last_updated_run_id == run_id for node in specs):
+        return True
+    return any(node.parameter_sections for node in specs)
 
 def _snapshot(ctx: RunContext[AgentDeps]) -> ToolReturn:
     if ctx.run_id:
@@ -265,7 +323,15 @@ def _ensure_evidence_relation(
     Evidence edges carry location metadata (page, bbox, highlights) to open the PDF at the right spot.
     Deduplicates: won't add if identical (from_id, to_id, page) already exists.
     """
-    to_id = f"__doc_{document_id}"
+    normalized_document_id = document_id.removeprefix("__doc_")
+    for node in ctx.deps.state.nodes:
+        if node.node_type != "document":
+            continue
+        node_doc_id = node.id.removeprefix("__doc_")
+        if normalized_document_id == node_doc_id or normalized_document_id == node.filename:
+            normalized_document_id = node_doc_id
+            break
+    to_id = f"__doc_{normalized_document_id}"
     existing = next(
         (rel for rel in ctx.deps.state.relations
          if rel.from_id == from_id and rel.to_id == to_id and rel.page == page),
@@ -276,7 +342,7 @@ def _ensure_evidence_relation(
             from_id=from_id,
             to_id=to_id,
             label=label,
-            document_id=document_id,
+            document_id=normalized_document_id,
             page=page,
             bbox=bbox or [],
             highlights=highlights or [],

@@ -97,25 +97,40 @@ def _gold_page_regions(filename: str, page_no: int) -> list[dict] | None:
 # ── Document reference resolution ───────────────────────────────────────────
 
 async def _resolve_document_reference(
+    ctx: RunContext[AgentDeps],
     document_id: str | None = None,
     filename: str | None = None,
 ) -> tuple[str | None, str | None]:
-    from src.knowledge_base.service import get_document_service
-
-    service = await get_document_service()
+    if filename and _silver_dir(filename):
+        return document_id, filename
 
     if document_id:
-        doc = await service.get_document(document_id)
-        if doc:
-            return doc.get("document_id"), doc.get("filename")
+        for node in ctx.deps.state.nodes:
+            if node.node_type != "document":
+                continue
+            node_doc_id = node.id.removeprefix("__doc_")
+            if node.id == document_id or node_doc_id == document_id:
+                return node_doc_id, node.filename or filename
 
-    if filename:
-        docs = await service.list_documents()
-        match = next((d for d in docs if d.get("filename") == filename), None)
-        if match:
-            return match.get("document_id"), match.get("filename")
+    try:
+        from src.knowledge_base.service import get_document_service
 
-    return None, None
+        service = await get_document_service()
+
+        if document_id:
+            doc = await service.get_document(document_id)
+            if doc:
+                return doc.get("document_id"), doc.get("filename")
+
+        if filename:
+            docs = await service.list_documents()
+            match = next((d for d in docs if d.get("filename") == filename), None)
+            if match:
+                return match.get("document_id"), match.get("filename")
+    except Exception:
+        pass
+
+    return document_id, filename
 
 
 # ── Agent tools ─────────────────────────────────────────────────────────────
@@ -134,7 +149,7 @@ async def get_document_tree(
     document_id: the KB document ID (preferred).
     filename: alternatively, resolve by filename.
     """
-    document_id, resolved_filename = await _resolve_document_reference(document_id, filename)
+    document_id, resolved_filename = await _resolve_document_reference(ctx, document_id, filename)
     filename = filename or resolved_filename
 
     if not document_id and not filename:
@@ -208,7 +223,7 @@ async def read_document_page(
     page_no: 1-indexed page number.
     include_image: when true, also return the rendered page image.
     """
-    document_id, resolved_filename = await _resolve_document_reference(document_id, filename)
+    document_id, resolved_filename = await _resolve_document_reference(ctx, document_id, filename)
     filename = filename or resolved_filename
 
     if not filename:
@@ -296,14 +311,14 @@ async def get_document_full_text(
     include_pages: optional list of 1-indexed page numbers to also return as images.
                    Capped at 6 pages.
     """
-    document_id, resolved_filename = await _resolve_document_reference(document_id, filename)
+    document_id, resolved_filename = await _resolve_document_reference(ctx, document_id, filename)
     filename = filename or resolved_filename
 
     if not document_id and not filename:
         return ["Document not found — provide a valid document_id or filename."]
 
     if not filename:
-        _, filename = await _resolve_document_reference(document_id=document_id)
+        _, filename = await _resolve_document_reference(ctx, document_id=document_id)
 
     sd = _silver_dir(filename) if filename else None
     if not sd:
@@ -362,7 +377,7 @@ async def get_document_page_count(
     document_id: the KB document ID (preferred).
     filename: alternatively, resolve by filename.
     """
-    document_id, resolved_filename = await _resolve_document_reference(document_id, filename)
+    document_id, resolved_filename = await _resolve_document_reference(ctx, document_id, filename)
     filename = filename or resolved_filename
 
     if not filename:

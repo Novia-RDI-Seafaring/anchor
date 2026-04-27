@@ -267,6 +267,7 @@ interface CanvasGraphProps {
   canvas: CanvasState | null | undefined;
   initialPositions?: Record<string, { x: number; y: number }>;
   onPositionsChange?: (positions: Record<string, { x: number; y: number }>) => void;
+  showInternalToolbar?: boolean;
   onFmuUploaded?: (payload: FmuUploadedPayload, position?: FlowPosition) => void;
   onSimulateComplete?: (fmuNodeId: string, jobId: string, filename: string, signalNames: string[], paramValues: Record<string, string>, stopTime: number) => void;
   onDeleteNode?: (nodeId: string) => void;
@@ -288,6 +289,36 @@ interface CanvasGraphProps {
   onUpdateNode?: (nodeId: string, updates: Record<string, unknown>) => void;
   onSaveSelection?: (selectedNodeIds: string[], name?: string) => Promise<void>;
   onParameterLookup?: (documentFilename: string, modelNodeId: string, params: Array<{ fmuNodeId: string; paramName: string; unit?: string }>) => void;
+}
+
+function compactText(value: string, limit = 220): string {
+  const flattened = value.replace(/[#*_`>-]/g, " ").replace(/\s+/g, " ").trim();
+  if (!flattened) return "";
+  return flattened.length > limit ? `${flattened.slice(0, limit - 1)}…` : flattened;
+}
+
+function summarizeNodeForChat(node: CanvasItem): string {
+  if (node.semanticType === "fact") {
+    return compactText(node.text || "");
+  }
+  if (node.semanticType === "spec") {
+    const sections = node.parameter_sections ?? [];
+    if (sections.length > 0) {
+      return sections
+        .flatMap((section) => section.rows.slice(0, 2).map((row) => `${section.name}: ${row.parameter} = ${row.value}${row.unit ? ` ${row.unit}` : ""}`))
+        .slice(0, 3)
+        .join("; ");
+    }
+    const props = node.properties ?? [];
+    return props
+      .slice(0, 3)
+      .map((property) => `${property.key}: ${property.value}`)
+      .join("; ");
+  }
+  if (node.semanticType === "image") {
+    return compactText(node.image_caption || node.text || node.title || "Selected visual region");
+  }
+  return compactText(node.text || node.title || "");
 }
 
 async function uploadCanvasFile(
@@ -320,11 +351,11 @@ async function uploadCanvasFile(
   return data?.document?.document_id ?? null;
 }
 
-function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, onFmuUploaded, onSimulateComplete, onDeleteNode, onAddNode, onAddEdge, onDeleteEdge, onSetNodeColor, workspaceDocIds, onAddDocToWorkspace, onRemoveDocFromWorkspace, onSetParent, onFmuFromLibrary, onAddSnippet, onUpdateNode, onSaveSelection, onParameterLookup }: CanvasGraphProps) {
+function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, showInternalToolbar = true, onFmuUploaded, onSimulateComplete, onDeleteNode, onAddNode, onAddEdge, onDeleteEdge, onSetNodeColor, workspaceDocIds, onAddDocToWorkspace, onRemoveDocFromWorkspace, onSetParent, onFmuFromLibrary, onAddSnippet, onUpdateNode, onSaveSelection, onParameterLookup }: CanvasGraphProps) {
   const { screenToFlowPosition } = useReactFlow();
   const rfContainerRef = useRef<HTMLDivElement>(null);
   const connectStartRef = useRef<{ nodeId: string; handleId: string; handleType: 'source' | 'target' } | null>(null);
-  const { documents, refreshDocuments, activeDocumentId, setActiveDocumentId } = useApp();
+  const { documents, refreshDocuments, activeDocumentId, setActiveDocumentId, addFocusedChatNode } = useApp();
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [pdfModal, setPdfModal] = useState<PDFModalState | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -417,6 +448,18 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     await onSaveSelection(selectedNodeIds);
     setIsSavingSnippet(false);
   }, [onSaveSelection, selectedNodeIds]);
+
+  const focusNodeForChat = useCallback((node: CanvasItem, evidence?: { filename?: string; page?: number; bbox?: number[] }) => {
+    addFocusedChatNode({
+      nodeId: node.id,
+      nodeType: node.semanticType,
+      title: node.title || node.spec_title || node.image_caption || "Canvas node",
+      summary: summarizeNodeForChat(node),
+      filename: evidence?.filename || node.image_filename || node.filename || "",
+      page: evidence?.page || node.image_page || node.page || 0,
+      bbox: evidence?.bbox || node.image_bbox || node.bbox || [],
+    });
+  }, [addFocusedChatNode]);
 
 
   // --- Drag-from-handle: create model node on empty canvas, auto-connect ---
@@ -906,23 +949,36 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         ), n.semanticType === "entity" ? NODE_SIZE.entityNode! : n.semanticType === "topic" ? NODE_SIZE.topicNode! : n.semanticType === "category" ? NODE_SIZE.categoryNode! : NODE_SIZE.conceptNode!);
       }
       if (n.semanticType === "fact") {
+        const evidence = getEvidenceData(n.id, relations, documentsRef.current);
         return applyExplicitNodeSize(n, buildFlowNode(n.id, "factNode", n.color, hidden, {
           node: n,
           onOpenPDF: handleOpenPDF,
+          onUseInChat: () => focusNodeForChat(n, {
+            filename: evidence.evidenceFilename,
+            page: evidence.evidencePage,
+            bbox: evidence.evidenceHighlights?.[0]?.bbox ?? [],
+          }),
           onPreviewSource: (filename: string | null, page?: number | null) => setPreviewedSource(filename && page ? { filename, page } : null),
           onDelete: onDeleteNode,
           onSetColor: onSetNodeColor,
-          ...getEvidenceData(n.id, relations, documentsRef.current),
+          onUpdateText: (nodeId: string, text: string) => onUpdateNode?.(nodeId, { text, title: "Explanation" }),
+          ...evidence,
         }), NODE_SIZE.factNode!);
       }
       if (n.semanticType === "spec") {
+        const evidence = getEvidenceData(n.id, relations, documentsRef.current);
         const specFlowNode = buildFlowNode(n.id, "specNode", n.color, hidden, {
           node: n,
           onOpenPDF: handleOpenPDF,
+          onUseInChat: () => focusNodeForChat(n, {
+            filename: evidence.evidenceFilename,
+            page: evidence.evidencePage,
+            bbox: evidence.evidenceHighlights?.[0]?.bbox ?? [],
+          }),
           onPreviewSource: (filename: string | null, page?: number | null) => setPreviewedSource(filename && page ? { filename, page } : null),
           onDelete: onDeleteNode,
           onSetColor: onSetNodeColor,
-          ...getEvidenceData(n.id, relations, documentsRef.current),
+          ...evidence,
         });
         // Let spec nodes auto-size to fit content (handles + source buttons)
         return { ...specFlowNode, width: undefined, height: undefined, style: { ...specFlowNode.style, width: "auto", height: "auto" } };
@@ -945,6 +1001,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         return applyExplicitNodeSize(n, buildFlowNode(n.id, "imageNode", n.color, hidden, {
           node: n,
           onOpenPDF: handleOpenPDF,
+          onUseInChat: () => focusNodeForChat(n),
           onDelete: onDeleteNode,
           onSetColor: onSetNodeColor,
         }), NODE_SIZE.imageNode!);
@@ -1154,16 +1211,23 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
           };
         }
         if (n.semanticType === "fact" || n.semanticType === "spec") {
+          const evidence = getEvidenceData(n.id, relations, documentsRef.current);
           return {
             ...rfNode,
             data: {
               ...rfNode.data,
               node: n,
               onOpenPDF: handleOpenPDF,
+              onUseInChat: () => focusNodeForChat(n, {
+                filename: evidence.evidenceFilename,
+                page: evidence.evidencePage,
+                bbox: evidence.evidenceHighlights?.[0]?.bbox ?? [],
+              }),
               onPreviewSource: (filename: string | null, page?: number | null) => setPreviewedSource(filename && page ? { filename, page } : null),
               onDelete: onDeleteNode,
               onSetColor: onSetNodeColor,
-              ...getEvidenceData(n.id, relations, documentsRef.current),
+              onUpdateText: n.semanticType === "fact" ? (nodeId: string, text: string) => onUpdateNode?.(nodeId, { text, title: "Explanation" }) : undefined,
+              ...evidence,
             },
           };
         }
@@ -1191,7 +1255,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
           return { ...rfNode, data: { ...rfNode.data, node: n } };
         }
         if (n.semanticType === "image") {
-          return { ...rfNode, data: { ...rfNode.data, node: n, onOpenPDF: handleOpenPDF, onDelete: onDeleteNode, onSetColor: onSetNodeColor } };
+          return { ...rfNode, data: { ...rfNode.data, node: n, onOpenPDF: handleOpenPDF, onUseInChat: () => focusNodeForChat(n), onDelete: onDeleteNode, onSetColor: onSetNodeColor } };
         }
         return { ...rfNode, data: { ...rfNode.data, node: n, onSetColor: onSetNodeColor, onDelete: onDeleteNode, onUpdateText: (nodeId: string, text: string) => onUpdateNode?.(nodeId, { text, title: text }) } };
       })
@@ -1206,9 +1270,10 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     const hasLibItem = t.includes("application/anchor-doc") || t.includes("application/anchor-fmu") || t.includes("application/anchor-snippet");
     const hasNodeType = t.includes("application/anchor-nodetype");
     const hasRegion = t.includes("application/anchor-region");
-    if (!hasFiles && !hasLibItem && !hasNodeType && !hasRegion) return;
+    const hasChatMessage = t.includes("application/anchor-chat-message");
+    if (!hasFiles && !hasLibItem && !hasNodeType && !hasRegion && !hasChatMessage) return;
     e.preventDefault();
-    setIsDraggingOver(hasFiles || hasLibItem);
+    setIsDraggingOver(hasFiles || hasLibItem || hasChatMessage);
     const absolutePosition = screenToFlowPosition({ x: e.clientX, y: e.clientY });
     const nodeType = e.dataTransfer.getData("application/anchor-nodetype") as NewNodeType | '';
     const fmuFilename = e.dataTransfer.getData("application/anchor-fmu");
@@ -1221,6 +1286,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
       : docId ? DOCUMENT_NODE_SIZE
       : snippetPayload ? { w: 220, h: 84 }
       : hasRegion ? NODE_SIZE.imageNode
+      : hasChatMessage ? { w: 340, h: 180 }
       : hasFiles ? DOCUMENT_NODE_SIZE
       : null;
     if (size) {
@@ -1269,6 +1335,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
     const docId = e.dataTransfer.getData("application/anchor-doc");
     const fmuFilename = e.dataTransfer.getData("application/anchor-fmu");
     const snippetPayload = e.dataTransfer.getData("application/anchor-snippet");
+    const chatMessagePayload = e.dataTransfer.getData("application/anchor-chat-message");
     if (docId) {
       const docPos = anchorAtCenter(dropPos, DOCUMENT_NODE_SIZE);
       commitPositionOverrides({ [`__doc_${docId}`]: docPos }, true);
@@ -1330,6 +1397,63 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         onAddSnippet?.(parsed.nodes ?? [], parsed.relations ?? [], dropPos, placements);
       } catch {
         // ignore malformed snippet payload
+      }
+      return;
+    }
+    if (chatMessagePayload) {
+      try {
+        const parsed = JSON.parse(chatMessagePayload);
+        const content = String(parsed?.content ?? "").trim();
+        if (!content) return;
+        const source = parsed?.source && typeof parsed.source === "object" ? parsed.source : {};
+        const sourceFilename = typeof source.filename === "string" ? source.filename : "";
+        const sourcePage = Number(source.page ?? 0);
+        const sourceBbox = Array.isArray(source.bbox) && source.bbox.length === 4
+          ? source.bbox.map((item: any) => Number(item)).filter((item: number) => Number.isFinite(item))
+          : [];
+        const sourceHighlights = Array.isArray(source.highlights) ? source.highlights : [];
+        const id = `chat_fact_${Date.now()}`;
+        const nodeSize = {
+          w: 340,
+          h: Math.min(260, Math.max(130, 82 + Math.ceil(content.length / 82) * 20)),
+        };
+        const absolutePos = anchorAtCenter(dropPos, nodeSize);
+        const areaParent = findBestAreaParent(absolutePos, nodeSize, nodesRef.current);
+        const finalPos = areaParent?.position ?? absolutePos;
+        const node: any = {
+          id,
+          node_type: "fact",
+          status: "found",
+          title: parsed?.title || "Explanation",
+          text: content,
+          spec_title: "",
+          properties: [],
+          last_updated_run_id: "",
+          filename: sourceFilename,
+          page: Number.isFinite(sourcePage) && sourcePage > 0 ? sourcePage : 0,
+          bbox: sourceBbox.length === 4 ? sourceBbox : [],
+          highlights: sourceHighlights,
+          fmu_filename: "",
+          fmu_model_name: "",
+          fmu_variables: [],
+          fmu_param_values: {},
+          plot_job_id: "",
+          plot_fmu_filename: "",
+          plot_signal_names: [],
+          plot_stop_time: 10,
+          funnel_label: "",
+          area_label: "",
+          area_width: 0,
+          area_height: 0,
+          model_label: "",
+          width: nodeSize.w,
+          height: nodeSize.h,
+          parent_id: areaParent?.id ?? "",
+        };
+        commitPositionOverrides({ [id]: finalPos }, true);
+        onAddNode?.(node, null);
+      } catch {
+        // ignore malformed chat payload
       }
       return;
     }
@@ -1451,17 +1575,19 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
         onMouseDown={handleCanvasMouseDown}
         onContextMenu={(e) => e.preventDefault()}
       >
-        <LeftToolRail
-          activeTool={activeTool}
-          onChange={setActiveTool}
-          onArrange={handleArrangeCanvas}
-          openPalette={openPalette}
-          onTogglePalette={(tab, anchorY) => {
-            setOpenPalette(prev => prev === tab ? null : tab);
-            setPaletteAnchorY(anchorY);
-          }}
-        />
-        {openPalette && (
+        {showInternalToolbar && (
+          <LeftToolRail
+            activeTool={activeTool}
+            onChange={setActiveTool}
+            onArrange={handleArrangeCanvas}
+            openPalette={openPalette}
+            onTogglePalette={(tab, anchorY) => {
+              setOpenPalette(prev => prev === tab ? null : tab);
+              setPaletteAnchorY(anchorY);
+            }}
+          />
+        )}
+        {showInternalToolbar && openPalette && (
           <ResourcePalette
             tab={openPalette}
             anchorY={paletteAnchorY}
@@ -1472,12 +1598,12 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, on
             onClose={() => setOpenPalette(null)}
           />
         )}
-        {activeTool === "connect" && (
+        {showInternalToolbar && activeTool === "connect" && (
           <div className="absolute left-1/2 top-16 z-20 -translate-x-1/2 rounded-full border border-neutral-200/80 bg-white/90 px-3 py-1 text-[11px] text-neutral-500 shadow-sm backdrop-blur-md dark:border-neutral-700/80 dark:bg-neutral-900/90 dark:text-neutral-400">
             Drag from node handles to connect items
           </div>
         )}
-        {isInsertTool(activeTool) && (
+        {showInternalToolbar && isInsertTool(activeTool) && (
           <div className="absolute left-1/2 top-16 z-20 -translate-x-1/2 rounded-full border border-neutral-200/80 bg-white/90 px-3 py-1 text-[11px] text-neutral-500 shadow-sm backdrop-blur-md dark:border-neutral-700/80 dark:bg-neutral-900/90 dark:text-neutral-400">
             Click and drag on the canvas to create a {activeTool}
           </div>

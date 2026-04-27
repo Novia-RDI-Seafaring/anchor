@@ -5,13 +5,21 @@ load_dotenv(override=True)
 
 import os
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, ModelRetry
+from pydantic_ai._run_context import RunContext
 from pydantic_ai.models.instrumented import InstrumentationSettings
 
 from .capabilities import CAPABILITIES
 from .deps import AgentDeps
+from .helpers import (
+    _has_materialized_canvas_content,
+    _has_materialized_spec,
+    _requires_canvas_materialization,
+    _requires_spec_materialization,
+)
 from .prompts import AGENT_PREAMBLE
 from .state import Canvas
+
 
 agent = Agent(
     name="Knowledge Base Agent",
@@ -21,5 +29,22 @@ agent = Agent(
     instrument=InstrumentationSettings(include_content=True),
     capabilities=CAPABILITIES,
 )
+
+
+@agent.output_validator
+async def _require_canvas_for_document_facts(ctx: RunContext[AgentDeps], output: str) -> str:
+    if _requires_spec_materialization(ctx.prompt, ctx.deps.state, output) and not _has_materialized_spec(ctx):
+        raise ModelRetry(
+            "This request asks for multiple related document values. A fact card is not sufficient. "
+            "Create or update one add_spec_node table with row-level filename/page/bbox sources, then answer briefly."
+        )
+    if _requires_canvas_materialization(ctx.prompt, ctx.deps.state, output) and not _has_materialized_canvas_content(ctx):
+        raise ModelRetry(
+            "This document-backed engineering value/spec request must update the canvas before the final answer. "
+            "Call check_canvas, then add_fact with filename/doc_id + page/bbox evidence for one scalar value, "
+            "or add_spec_node with row-level sources for multiple values. Then answer briefly."
+        )
+    return output
+
 
 AppState = Canvas

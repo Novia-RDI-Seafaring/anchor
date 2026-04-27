@@ -1,9 +1,9 @@
 "use client";
 
 import { use } from 'react';
-import { HomeApp } from '@/components/HomeApp';
+import { WorkspaceV2App } from '@/components/workspace-v2/WorkspaceV2App';
 
 export default function ThreadPage({ params }: { params: Promise<{ threadId: string }> }) {
     const { threadId } = use(params);
-    return <HomeApp initialThreadId={threadId} />;
+    return <WorkspaceV2App initialThreadId={threadId} />;
 }

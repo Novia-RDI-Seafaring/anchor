@@ -39,6 +39,10 @@ def _canvas_context(ctx: RunContext[AgentDeps]) -> str | None:
             entry["title"] = n.title
         if n.text:
             entry["text"] = n.text[:120]
+        if n.filename:
+            entry["filename"] = n.filename
+        if n.page:
+            entry["page"] = n.page
         if n.spec_title:
             entry["spec_title"] = n.spec_title
         if n.properties:
@@ -64,15 +68,45 @@ def _canvas_context(ctx: RunContext[AgentDeps]) -> str | None:
     return f"CANVAS STATE (current nodes and relations):\n```json\n{canvas_json}\n```"
 
 
-async def _documents_context(ctx: RunContext[AgentDeps]) -> str | None:
-    """List available documents with metadata and pipeline status."""
-    from src.knowledge_base.service import get_document_service, get_pipeline_status
-    from src.agent.tools.product_data import (
-        find_product_data_by_filename,
-        find_product_index_by_filename,
+def _focused_chat_node_context(ctx: RunContext[AgentDeps]) -> str | None:
+    """Expose the user-selected canvas nodes as preferred chat context."""
+    focus_nodes = ctx.deps.state.focused_chat_nodes
+    if not focus_nodes:
+        return None
+
+    focus_json = json.dumps(
+        [
+            {
+                "node_id": focus.node_id,
+                "node_type": focus.node_type,
+                "title": focus.title,
+                "summary": focus.summary,
+                "filename": focus.filename,
+                "page": focus.page,
+                "bbox": focus.bbox,
+            }
+            for focus in focus_nodes
+        ],
+        indent=2,
+        default=str,
+    )
+    return (
+        "USER-FOCUSED CANVAS NODES:\n"
+        "The user explicitly selected these nodes as the preferred context for the current chat.\n"
+        "Use them as the primary starting points, then verify or enrich from the loaded document context if needed.\n"
+        f"```json\n{focus_json}\n```"
     )
 
+
+async def _documents_context(ctx: RunContext[AgentDeps]) -> str | None:
+    """List available documents with metadata and pipeline status."""
     try:
+        from src.knowledge_base.service import get_document_service, get_pipeline_status
+        from src.agent.tools.product_data import (
+            find_product_data_by_filename,
+            find_product_index_by_filename,
+        )
+
         service = await get_document_service()
         documents = await service.list_documents()
     except Exception:
@@ -164,9 +198,16 @@ You have full visibility of the canvas state and available documents above.
 ## Strategy
 
 - Gold data is authoritative — use it first when available, don't read pages.
+- Gold and silver entries include source page/bbox metadata. When answering a scalar
+  engineering value from these entries, use that metadata to create or update the
+  canvas fact in the same turn.
 - Index present? Jump directly to the relevant table/section page.
 - Nothing loaded? Short docs (≤6 pages): use get_document_full_text. Longer: start
   with get_document_tree, then read specific pages.
+- Answer-only is correct only when the user asks for an explanation/summary/meta help
+  or when you cannot identify source provenance. For sourced scalar document facts
+  such as pressures, temperatures, dimensions, material values, limits, or ranges,
+  update the canvas before the final answer.
 
 ## FMU wiring
 
@@ -187,4 +228,4 @@ class ContextCapability(AbstractCapability[Any]):
         return _toolset
 
     def get_instructions(self) -> list:
-        return [_INSTRUCTIONS, _canvas_context, _documents_context, _loaded_documents_context]
+        return [_INSTRUCTIONS, _canvas_context, _focused_chat_node_context, _documents_context, _loaded_documents_context]
