@@ -5,6 +5,22 @@ export type PersistableChatMessage = {
   type: "text";
 };
 
+export function collapseAssistantRepliesByTurn<T extends { role: string }>(
+  messages: T[],
+  mergeAssistant?: (previous: T, current: T) => T,
+): T[] {
+  return messages.reduce<T[]>((collapsed, message) => {
+    const lastIndex = collapsed.length - 1;
+    const previous = collapsed[lastIndex];
+    if (message.role === "assistant" && previous?.role === "assistant") {
+      collapsed[lastIndex] = mergeAssistant ? mergeAssistant(previous, message) : message;
+    } else {
+      collapsed.push(message);
+    }
+    return collapsed;
+  }, []);
+}
+
 function normalizeMessageContent(content: unknown): string {
   if (typeof content === "string") return content.trim();
   if (!Array.isArray(content)) return "";
@@ -22,7 +38,7 @@ function normalizeMessageContent(content: unknown): string {
 }
 
 export function toPersistableChatMessages(messages: any[] = []): PersistableChatMessage[] {
-  return messages.flatMap((message, index) => {
+  const normalized = messages.flatMap((message, index) => {
     const role = message?.role;
     if (role !== "user" && role !== "assistant") return [];
 
@@ -36,5 +52,6 @@ export function toPersistableChatMessages(messages: any[] = []): PersistableChat
       type: "text" as const,
     }];
   });
-}
 
+  return collapseAssistantRepliesByTurn(normalized);
+}

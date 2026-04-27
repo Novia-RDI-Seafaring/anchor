@@ -37,7 +37,7 @@ import { ResourcePalette, type PaletteTab } from "@/components/canvas/ResourcePa
 import { AgSelect } from "@/components/ui/AgComponents";
 import { useApp } from "@/contexts/AppContext";
 import { API_URL } from "@/lib/api-config";
-import { toPersistableChatMessages } from "@/lib/chat-history";
+import { collapseAssistantRepliesByTurn, toPersistableChatMessages } from "@/lib/chat-history";
 import { normalizeModelOptions } from "@/lib/models";
 import type { ModelOption } from "@/types";
 import {
@@ -996,7 +996,10 @@ function useReadableChatMessages() {
       });
     });
 
-    return readable;
+    return collapseAssistantRepliesByTurn(
+      readable,
+      (previous, current) => ({ ...current, source: current.source ?? previous.source }),
+    );
   }, [documentsById, messages]);
 
   const updateMessageContent = useCallback(
