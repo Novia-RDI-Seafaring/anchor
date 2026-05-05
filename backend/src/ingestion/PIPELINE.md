@@ -348,9 +348,10 @@ section doesn't touch the rest of the gold tree.
 
 ## Where we are today (2026-04-08)
 
-- ✅ **Silver `docling.json`** — produced at upload by `kb_engine/ingest.py`
+- ✅ **Silver `docling.json`** — produced at upload by `ingestion/bronze.py`
+  through `ingestion/pipeline.py`
 - ✅ **Silver `index.json`** — deterministic builder + rebuild script
-  (`src/ingestion/build_index.py`, `scripts/rebuild_indexes.py`)
+  (`src/ingestion/silver.py`, `scripts/rebuild_indexes.py`)
 - ✅ **Agent reads index** — `capabilities/context.py` auto-loads index for
   every document on the canvas when gold is unavailable
 - ⏳ **Silver `pages/N.md`** — not yet built

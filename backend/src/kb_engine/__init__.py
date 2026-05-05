@@ -1,3 +1,7 @@
-from .rag_engine import RagEngine, get_rag_engine
+"""Compatibility package for active PDF rendering helpers.
 
-__all__ = ["RagEngine", "get_rag_engine"]
+The old Ketju/LlamaIndex RAG engine was removed from this package. Active
+callers import `src.kb_engine.utils.pdf_rendering` directly.
+"""
+
+__all__: list[str] = []

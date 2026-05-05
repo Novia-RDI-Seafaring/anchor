@@ -94,7 +94,8 @@ Those files are present, but they are not currently registered in the live `CAPA
 - `active_document_id`
 - `workspace_doc_ids`
 
-`deps.py` defines `AgentDeps`, which gives tools access to the live canvas state and the `RagEngine`.
+`deps.py` defines `AgentDeps`, which gives tools access to the live canvas state and
+run-scoped caches such as recent search results.
 
 ## Maintainability rule for this branch
 
