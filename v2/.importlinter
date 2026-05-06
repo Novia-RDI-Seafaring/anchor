@@ -1,0 +1,59 @@
+[importlinter]
+root_package = anchor
+include_external_packages = True
+
+[importlinter:contract:layered]
+name = Hexagonal layering — adapters → infra → core
+type = layers
+layers =
+    anchor.adapters
+    anchor.infra
+    anchor.core
+
+[importlinter:contract:core_purity]
+name = Core has no I/O / framework dependencies
+type = forbidden
+source_modules =
+    anchor.core
+forbidden_modules =
+    httpx
+    fastapi
+    openai
+    mcp
+    pymupdf
+    docling
+    uvicorn
+    starlette
+    typer
+    aiofiles
+    sse_starlette
+
+[importlinter:contract:infra_no_transport]
+name = Infra implements ports, not transport
+type = forbidden
+source_modules =
+    anchor.infra
+forbidden_modules =
+    fastapi
+    mcp
+    uvicorn
+    starlette
+    typer
+    sse_starlette
+
+[importlinter:contract:canvas_no_extensions]
+name = Canvas primitive does not depend on extensions
+type = forbidden
+source_modules =
+    anchor.core
+    anchor.infra
+forbidden_modules =
+    anchor.extensions
+
+[importlinter:contract:extension_layered]
+name = Extensions follow the same layering as the canvas
+type = layers
+layers =
+    anchor.extensions.anchor_pdfs.adapters
+    anchor.extensions.anchor_pdfs.infra
+    anchor.extensions.anchor_pdfs.core

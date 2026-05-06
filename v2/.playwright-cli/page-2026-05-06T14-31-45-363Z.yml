@@ -1,0 +1,22 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - link "← All canvases" [ref=e5] [cursor=pointer]:
+      - /url: /
+    - generic [ref=e6]: demo
+    - generic [ref=e7]: drop a PDF anywhere · double-click a document to view
+  - main [ref=e8]:
+    - application [ref=e10]:
+      - img
+      - generic "Control Panel" [ref=e13]:
+        - button "Zoom In" [disabled]:
+          - img
+        - button "Zoom Out" [ref=e14] [cursor=pointer]:
+          - img [ref=e15]
+        - button "Fit View" [ref=e17] [cursor=pointer]:
+          - img [ref=e18]
+        - button "Toggle Interactivity" [ref=e20] [cursor=pointer]:
+          - img [ref=e21]
+      - img "Mini Map" [ref=e24]
+      - link "React Flow attribution" [ref=e26] [cursor=pointer]:
+        - /url: https://reactflow.dev
+        - text: React Flow

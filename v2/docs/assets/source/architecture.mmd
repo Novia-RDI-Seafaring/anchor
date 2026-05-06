@@ -1,0 +1,103 @@
+%%{init: {
+  'theme': 'base',
+  'themeVariables': {
+    'primaryColor': '#FAF6EE',
+    'primaryTextColor': '#1F2937',
+    'primaryBorderColor': '#1F2937',
+    'lineColor': '#1F2937',
+    'fontFamily': 'Inter, system-ui, sans-serif',
+    'fontSize': '15px'
+  }
+}}%%
+flowchart LR
+
+  %% --- Source files (left edge) ---
+  subgraph sources["SOURCE FILES"]
+    direction TB
+    SRC_PDF["PDF<br/><i>datasheet, leaflet</i>"]
+    SRC_FMU["FMU<br/><i>simulation model</i>"]
+    SRC_CAD["CAD<br/><i>STEP, future</i>"]
+    SRC_PID["P&amp;ID<br/><i>schematic, future</i>"]
+  end
+
+  %% --- Producers (between sources and DOCS) ---
+  subgraph producers["PRODUCERS"]
+    direction TB
+    PDF["anchor_pdfs<br/><i>OIP producer</i>"]
+    FMU["anchor_fmus<br/><i>OIP producer</i>"]
+    CAD["anchor_cad<br/><i>future producer</i>"]
+    PID["anchor_pids<br/><i>future producer</i>"]
+  end
+
+  %% --- Durable substrate ---
+  subgraph durable["DURABLE on disk"]
+    direction TB
+    DOCS["DOCUMENTS<br/><i>per producer</i><br/>data/&lt;producer&gt;/..."]
+    CAN["CANVASES<br/><i>per workspace</i><br/>data/canvases/&lt;slug&gt;/"]
+  end
+
+  %% --- Anchor hexagon (BUS lives inside) ---
+  subgraph anchor["ANCHOR core"]
+    direction TB
+    ADAPT["ADAPTERS<br/>HTTP · MCP · CLI · SSE"]
+    BUS["EVENT BUS<br/><i>in-memory pub/sub</i>"]
+    INFRA["INFRA<br/>FsStores · MemoryBus"]
+    CORE["CORE<br/>WorkspaceService<br/>DomainEvent · Reducer"]
+  end
+
+  %% --- Consumers ---
+  %% MONITOR is the minimal common denominator — every other consumer is MONITOR plus extra capability.
+  subgraph consumers["CONSUMERS — many siblings"]
+    direction TB
+    MON["Headless monitor<br/><i>SSE subscriber · today</i>"]
+    UI["Visual canvas<br/><i>MONITOR + render + input · today</i>"]
+    AG["External agents<br/><i>MONITOR + LLM + tools · today</i>"]
+    VOICE["Voice interface<br/><i>MONITOR + audio + STT · future</i>"]
+    XR["XR / Omniverse<br/><i>MONITOR + 3D + spatial · future</i>"]
+  end
+
+  %% --- Producer pipeline: SOURCE -> PRODUCER -> DOCUMENTS (via OIP) ---
+  SRC_PDF --> PDF
+  SRC_FMU --> FMU
+  SRC_CAD -.-> CAD
+  SRC_PID -.-> PID
+  PDF -- "OIP" --> DOCS
+  FMU -- "OIP" --> DOCS
+  CAD -. "OIP" .-> DOCS
+  PID -. "OIP" .-> DOCS
+
+  %% --- Durable <-> Core (event sourcing) ---
+  DOCS --> CORE
+  CAN -- "events.jsonl" --> CORE
+  CORE -- "snapshot.json" --> CAN
+
+  %% --- Internal hexagon flow ---
+  CORE -- "publish" --> BUS
+  BUS -- "subscribe" --> ADAPT
+  ADAPT --> INFRA
+  INFRA --> CORE
+
+  %% --- Consumers <-> ADAPTERS (single double-headed link each) ---
+  MON <-- "SSE" --> ADAPT
+  UI <-- "HTTP · SSE" --> ADAPT
+  AG <-- "MCP" --> ADAPT
+  VOICE <-. "MCP" .-> ADAPT
+  XR <-. "MCP" .-> ADAPT
+
+  classDef sourceStyle fill:#FBF8F2,stroke:#1F2937,stroke-width:1.5px
+  classDef durableStyle fill:#E8F0E5,stroke:#1F2937,stroke-width:1.5px
+  classDef sessionStyle fill:#FFF4DB,stroke:#1F2937,stroke-width:1.5px
+  classDef coreStyle fill:#FAF6EE,stroke:#1F2937,stroke-width:1.5px
+  classDef extStyle fill:#F2E1D6,stroke:#1F2937,stroke-width:1.5px
+  classDef futureExtStyle fill:#F2E1D6,stroke:#1F2937,stroke-width:1.5px,stroke-dasharray: 6 4
+  classDef consumerStyle fill:#DCE6EE,stroke:#1F2937,stroke-width:1.5px
+  classDef futureConsumerStyle fill:#DCE6EE,stroke:#1F2937,stroke-width:1.5px,stroke-dasharray: 6 4
+
+  class SRC_PDF,SRC_FMU,SRC_CAD,SRC_PID sourceStyle
+  class DOCS,CAN durableStyle
+  class BUS sessionStyle
+  class CORE,INFRA,ADAPT coreStyle
+  class PDF,FMU extStyle
+  class CAD,PID futureExtStyle
+  class MON,UI,AG consumerStyle
+  class VOICE,XR futureConsumerStyle
