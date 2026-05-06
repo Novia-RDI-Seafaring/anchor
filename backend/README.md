@@ -1,6 +1,7 @@
 ## Backend (FastAPI)
 
-This folder contains the Python backend that powers ingestion, retrieval (pgvector), and the AG-UI agent endpoint.
+This folder contains the Python backend that powers file-backed document
+ingestion, medallion artifacts, and the AG-UI agent endpoint.
 
 ### Duplicate-ingest protection (optional)
 

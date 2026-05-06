@@ -5,7 +5,6 @@
 
 import os
 from pathlib import Path
-import warnings
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 from functools import lru_cache
@@ -22,22 +21,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8001
     reload: bool = True
-    
-    # ===== pgvector/Supabase Settings =====
-    # SECURITY: Critical fields with validation
-    pgvector_host: str = Field(default="localhost", description="PostgreSQL host")
-    pgvector_port: int = Field(default=6543, ge=1, le=65535, description="PostgreSQL port")
-    pgvector_db: str = Field(default="postgres", min_length=1, description="Database name")
-    pgvector_user: str = Field(default="postgres", min_length=1, description="Database user")
-    pgvector_password: str = Field(default="", description="Database password (required in production)")
-    pgsslmode: str = Field(default="disable", description="SSL mode: disable, allow, prefer, require, verify-ca, verify-full")
-    db_schema: str = "anchor"  # app-owned document registry schema
-    
-    # ===== KETJU / LlamaIndex Storage =====
-    ketju_schema_name: str = "anchor"
-    ketju_table_name: str = "ketju_vectors"
-    embedding_dimension: int = 3072  # text-embedding-3-large dimension
-    
+
     # ===== Model / Context Configuration =====
     default_model: str = Field(default="openai:gpt-4o-mini", description="PydanticAI model string")
     # full_context_mode: "auto" | "true" | "false"
@@ -65,27 +49,7 @@ class Settings(BaseSettings):
     
     # ===== Document Storage =====
     uploads_dir: str = "../uploads"  # legacy, unused — bronze dir is under data_dir
-    
-    @field_validator('pgvector_password')
-    @classmethod
-    def validate_password(cls, v: str) -> str:
-        """Ensure password is not empty in production."""
-        env = os.getenv('ENVIRONMENT', 'development').lower()
-        
-        if env == 'production':
-            if not v or len(v) < 8:
-                raise ValueError(
-                    "Production database password must be at least 8 characters. "
-                    "Set PGVECTOR_PASSWORD environment variable."
-                )
-        elif not v:
-            warnings.warn(
-                "Database password is empty! This is acceptable for local development only.",
-                UserWarning
-            )
-        
-        return v
-    
+
     @field_validator('chunk_overlap')
     @classmethod
     def validate_chunk_overlap(cls, v: int, info) -> int:
@@ -96,15 +60,6 @@ class Settings(BaseSettings):
                 f"Chunk overlap ({v}) must be less than chunk size ({chunk_size})"
             )
         return v
-    
-    @property
-    def database_url(self) -> str:
-        """Build PostgreSQL connection URL from components."""
-        return (
-            f"postgresql://{self.pgvector_user}:{self.pgvector_password}"
-            f"@{self.pgvector_host}:{self.pgvector_port}/{self.pgvector_db}"
-            f"?sslmode={self.pgsslmode}"
-        )
 
     @property
     def backend_dir(self) -> Path:
