@@ -26,6 +26,9 @@ backend/.env
 .next/
 out/
 build/
+paper/
+mydata/
+paperx/
 
 # Editor directories and files
 .vscode/*

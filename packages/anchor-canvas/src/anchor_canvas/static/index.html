@@ -6,14 +6,14 @@
 <title>Anchor Canvas</title>
 <style>
   :root {
-    --bg: #0f0f1a;
-    --surface: #1a1a2e;
-    --surface-hover: #222240;
-    --border: #2a2a4a;
-    --text: #e0e0f0;
-    --text-dim: #8888aa;
-    --accent: #4a9eff;
-    --grid-dot: #252545;
+    --bg: #f5f5f7;
+    --surface: #ffffff;
+    --surface-hover: #f0f0f3;
+    --border: #d8d8e0;
+    --text: #1a1a2e;
+    --text-dim: #6b6b80;
+    --accent: #2563eb;
+    --grid-dot: #dddde4;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; height: 100vh; }
@@ -22,7 +22,7 @@
   #toolbar {
     position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 100;
     display: flex; gap: 4px; padding: 4px; background: var(--surface); border: 1px solid var(--border);
-    border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.1);
   }
   .tool-btn {
     padding: 6px 12px; border: 1px solid transparent; border-radius: 7px; background: transparent;
@@ -57,22 +57,37 @@
 
   /* --- Edges --- */
   #edges-svg { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; }
-  .edge-line { stroke: #4a4a6a; stroke-width: 1.5; fill: none; }
+  .edge-line { stroke: #94a3b8; stroke-width: 1.5; fill: none; }
   .edge-label-bg { fill: var(--bg); }
   .edge-label { fill: var(--text-dim); font-size: 11px; text-anchor: middle; dominant-baseline: central; }
 
   /* --- Nodes --- */
   .canvas-node {
     position: absolute; border-radius: 8px; background: var(--surface); border: 1.5px solid var(--border);
-    padding: 10px 14px; cursor: move; user-select: none; min-width: 80px; max-width: 280px;
-    transition: box-shadow 0.15s; font-size: 13px; line-height: 1.4;
+    padding: 0; cursor: move; user-select: none; min-width: 80px; max-width: 280px;
+    transition: box-shadow 0.15s; font-size: 13px; line-height: 1.4; overflow: hidden;
   }
-  .canvas-node:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.3); }
-  .canvas-node.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(74,158,255,0.25); }
-  .node-type-badge { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.5; margin-bottom: 4px; }
-  .node-label { font-weight: 500; word-wrap: break-word; }
-  .node-data { font-size: 11px; color: var(--text-dim); margin-top: 6px; }
-  .node-thumb { width: 100%; max-height: 140px; object-fit: cover; border-radius: 4px; margin-top: 6px; }
+  .canvas-node:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+  .canvas-node.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.2); }
+
+  /* Node header bar */
+  .node-header {
+    display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+    border-bottom: 1px solid var(--border); font-size: 12px;
+  }
+  .node-header .node-icon { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.7; }
+  .node-header .node-title { flex: 1; font-weight: 600; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .node-header .node-source-ref {
+    display: flex; align-items: center; gap: 3px; font-size: 10px; color: inherit; opacity: 0.6;
+    text-decoration: none; flex-shrink: 0;
+  }
+  .node-header .node-source-ref:hover { opacity: 1; }
+
+  .node-body { padding: 8px 10px; }
+  .node-label { font-weight: 500; word-wrap: break-word; font-size: 13px; }
+  .node-data { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+  .node-desc { font-size: 11px; color: var(--text-dim); margin-top: 4px; line-height: 1.4; }
+  .node-thumb { width: 100%; max-height: 140px; object-fit: cover; border-radius: 0; margin: 0; display: block; }
 
   /* --- Region map overlay on document nodes --- */
   .region-map-wrap { position: relative; margin-top: 6px; border-radius: 4px; overflow: hidden; }
@@ -92,7 +107,7 @@
   .region-overlay .region-tooltip {
     display: none; position: absolute; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%);
     background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px;
-    font-size: 10px; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.4); z-index: 10; pointer-events: none;
+    font-size: 10px; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.1); z-index: 10; pointer-events: none;
   }
   .region-overlay:hover .region-tooltip { display: block; }
   .region-tooltip .tt-kind { text-transform: uppercase; font-size: 8px; letter-spacing: 0.5px; opacity: 0.6; }
@@ -105,21 +120,40 @@
   }
   .page-nav button:hover { background: var(--surface-hover); color: var(--text); }
 
+  /* Document node — green */
   .canvas-node[data-type="document"] { border-color: #4caf50; min-width: 200px; }
-  .canvas-node[data-type="document"] .node-type-badge { color: #4caf50; }
+  .canvas-node[data-type="document"] .node-header { background: #f0fdf4; color: #166534; border-color: #bbf7d0; }
+
+  /* Entity node — red circle */
   .canvas-node[data-type="entity"] { border-color: #ff6b6b; border-radius: 50%; min-width: 100px; min-height: 100px;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-  .canvas-node[data-type="entity"] .node-type-badge { color: #ff6b6b; }
-  .canvas-node[data-type="fact"] { border-color: #ffd93d; }
-  .canvas-node[data-type="fact"] .node-type-badge { color: #ffd93d; }
-  .canvas-node[data-type="spec"] { border-color: #4a9eff; }
-  .canvas-node[data-type="spec"] .node-type-badge { color: #4a9eff; }
-  .canvas-node[data-type="image"] { border-color: #a66cff; padding: 4px; }
-  .canvas-node[data-type="image"] .node-type-badge { color: #a66cff; padding: 6px 10px 0; }
-  .canvas-node[data-type="image"] .node-thumb { margin-top: 2px; max-height: 200px; background: #fff; padding: 4px; border-radius: 4px; }
+    display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; overflow: visible; }
+  .canvas-node[data-type="entity"] .node-header { background: #fef2f2; color: #991b1b; border-color: #fecaca; border-radius: 50% 50% 0 0; }
+
+  /* Fact node — amber */
+  .canvas-node[data-type="fact"] { border-color: #f59e0b; max-width: 360px; }
+  .canvas-node[data-type="fact"] .node-header { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+  .canvas-node[data-type="fact"] .node-desc { font-size: 11px; line-height: 1.5; }
+  .canvas-node[data-type="fact"] .node-desc strong { color: var(--text); font-weight: 600; }
+
+  /* Spec node — violet */
+  .canvas-node[data-type="spec"] { border-color: #8b5cf6; border-left: 4px solid #8b5cf6; }
+  .canvas-node[data-type="spec"] .node-header { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
+
+  /* Image node — sky/cyan */
+  .canvas-node[data-type="image"] { border-color: #0ea5e9; }
+  .canvas-node[data-type="image"] .node-header { background: #f0f9ff; color: #0c4a6e; border-color: #bae6fd; }
+  .canvas-node[data-type="image"] .node-thumb { max-height: 200px; background: #fff; padding: 6px; }
+
+  /* Concept node — blue dashed */
   .canvas-node[data-type="concept"] { border-color: #4a9eff; border-style: dashed; }
+  .canvas-node[data-type="concept"] .node-header { background: #eff6ff; color: #1e40af; border-color: #bfdbfe; }
+
+  /* Model node — orange */
   .canvas-node[data-type="model"] { border-color: #ff9f43; border-radius: 12px; }
-  .canvas-node[data-type="area"] { border-color: #666; border-style: dashed; border-radius: 12px; background: rgba(26,26,46,0.5); }
+  .canvas-node[data-type="model"] .node-header { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
+
+  /* Area node — dashed container */
+  .canvas-node[data-type="area"] { border-color: #94a3b8; border-style: dashed; border-radius: 12px; background: rgba(241,245,249,0.7); }
 
   /* Handles */
   .canvas-node .handle {
@@ -135,7 +169,7 @@
   /* --- Context menu --- */
   #context-menu {
     display: none; position: fixed; z-index: 200; background: var(--surface); border: 1px solid var(--border);
-    border-radius: 8px; padding: 4px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); min-width: 160px;
+    border-radius: 8px; padding: 4px; box-shadow: 0 8px 30px rgba(0,0,0,0.12); min-width: 160px;
   }
   .menu-item { padding: 6px 12px; border-radius: 5px; cursor: pointer; font-size: 12px; }
   .menu-item:hover { background: var(--surface-hover); }
@@ -156,7 +190,7 @@
   #sidepanel {
     position: fixed; top: 0; right: 0; width: 360px; height: 100vh; z-index: 150;
     background: var(--surface); border-left: 1px solid var(--border);
-    box-shadow: -4px 0 20px rgba(0,0,0,0.4);
+    box-shadow: -4px 0 20px rgba(0,0,0,0.08);
     transform: translateX(100%); transition: transform 0.25s ease;
     display: flex; flex-direction: column; overflow: hidden;
   }
@@ -189,8 +223,8 @@
   .doc-card .doc-title { font-weight: 500; font-size: 13px; }
   .doc-card .doc-meta { font-size: 11px; color: var(--text-dim); margin-top: 4px; display: flex; gap: 8px; }
   .doc-card .badge { padding: 1px 6px; border-radius: 4px; font-size: 10px; }
-  .badge.silver { background: #333; color: #aaa; }
-  .badge.gold { background: #3d3200; color: #ffd93d; }
+  .badge.silver { background: #e2e8f0; color: #64748b; }
+  .badge.gold { background: #fef3c7; color: #b45309; }
 
   /* Page list */
   .page-row {
@@ -199,7 +233,7 @@
     cursor: pointer; transition: all 0.15s;
   }
   .page-row:hover { border-color: var(--accent); background: var(--surface-hover); }
-  .page-thumb { width: 48px; height: 64px; object-fit: cover; border-radius: 4px; background: #111; flex-shrink: 0; }
+  .page-thumb { width: 48px; height: 64px; object-fit: cover; border-radius: 4px; background: #f1f5f9; flex-shrink: 0; }
   .page-info { flex: 1; }
   .page-info .page-num { font-weight: 500; font-size: 13px; }
   .page-info .page-sections { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
@@ -378,13 +412,42 @@ function render() {
   renderMinimap();
 }
 
+// SVG icon paths for node types
+const NODE_ICONS = {
+  document: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+  image: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>',
+  spec: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>',
+  entity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/></svg>',
+  fact: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+  concept: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>',
+  model: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>',
+  area: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="4 2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>',
+};
+
+// Friendly display name for node kinds (from region data)
+const KIND_LABELS = { table: 'Table', spec_block: 'Specs', chart: 'Chart', diagram: 'Diagram', figure: 'Figure', text: 'Section' };
+
 function createNodeElement(n) {
   const el = document.createElement('div');
   el.className = 'canvas-node'; el.dataset.id = n.id;
   ['top','bottom','left','right'].forEach(pos => { const h = document.createElement('div'); h.className = `handle ${pos}`; el.appendChild(h); });
-  const badge = document.createElement('div'); badge.className = 'node-type-badge'; el.appendChild(badge);
-  const label = document.createElement('div'); label.className = 'node-label'; el.appendChild(label);
-  const data = document.createElement('div'); data.className = 'node-data'; el.appendChild(data);
+
+  // Header bar
+  const header = document.createElement('div'); header.className = 'node-header';
+  const icon = document.createElement('span'); icon.className = 'node-icon';
+  icon.innerHTML = NODE_ICONS[n.node_type] || NODE_ICONS.concept;
+  header.appendChild(icon);
+  const title = document.createElement('span'); title.className = 'node-title'; header.appendChild(title);
+  // Source ref placeholder
+  const srcRef = document.createElement('span'); srcRef.className = 'node-source-ref'; header.appendChild(srcRef);
+  el.appendChild(header);
+
+  // Body
+  const body = document.createElement('div'); body.className = 'node-body';
+  const desc = document.createElement('div'); desc.className = 'node-desc'; body.appendChild(desc);
+  const data = document.createElement('div'); data.className = 'node-data'; body.appendChild(data);
+  el.appendChild(body);
+
   el.addEventListener('mousedown', (e) => onNodeMouseDown(e, n.id));
   el.addEventListener('dblclick', (e) => onNodeDblClick(e, n.id));
   el.addEventListener('contextmenu', (e) => onNodeContextMenu(e, n.id));
@@ -392,10 +455,9 @@ function createNodeElement(n) {
   // For document nodes: add region map container
   if (n.node_type === 'document' && n.data?.slug) {
     const mapWrap = document.createElement('div'); mapWrap.className = 'region-map-wrap'; mapWrap.dataset.slug = n.data.slug;
-    el.appendChild(mapWrap);
+    body.appendChild(mapWrap);
     const pageNav = document.createElement('div'); pageNav.className = 'page-nav';
-    el.appendChild(pageNav);
-    // Load region map
+    body.appendChild(pageNav);
     initDocRegionMap(el, n);
   }
 
@@ -491,9 +553,9 @@ function renderDocMap(el, nodeId) {
   pageNav.innerHTML = '';
   if (state.pageCount > 1) {
     const nav = document.createElement('div');
-    nav.style.cssText = 'display:flex;align-items:center;gap:2px;background:rgba(0,0,0,0.5);border-radius:12px;padding:2px 6px';
+    nav.style.cssText = 'display:flex;align-items:center;gap:2px;background:var(--surface-hover);border:1px solid var(--border);border-radius:12px;padding:2px 6px';
 
-    const arrowStyle = 'width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:50%;font-size:11px;border:none;cursor:pointer;background:transparent;color:rgba(255,255,255,0.7);transition:all 0.15s;';
+    const arrowStyle = 'width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:50%;font-size:11px;border:none;cursor:pointer;background:transparent;color:var(--text-dim);transition:all 0.15s;';
 
     // Prev arrow
     const prev = document.createElement('button');
@@ -501,7 +563,7 @@ function renderDocMap(el, nodeId) {
     prev.style.cssText = arrowStyle + (state.page <= 1 ? 'opacity:0.3;cursor:default;' : '');
     prev.addEventListener('mousedown', (e) => e.stopPropagation());
     if (state.page > 1) {
-      prev.addEventListener('mouseover', () => prev.style.background = 'rgba(255,255,255,0.2)');
+      prev.addEventListener('mouseover', () => prev.style.background = 'var(--border)');
       prev.addEventListener('mouseout', () => prev.style.background = 'transparent');
       prev.addEventListener('click', (e) => { e.stopPropagation(); state.page--; renderDocMap(el, nodeId); });
     }
@@ -513,11 +575,11 @@ function renderDocMap(el, nodeId) {
       btn.textContent = pg;
       btn.style.cssText = `width:18px;height:18px;display:flex;align-items:center;justify-content:center;border-radius:50%;font-size:8px;font-weight:500;border:none;cursor:pointer;transition:all 0.15s;${
         pg === state.page
-          ? 'background:#fff;color:#222'
-          : 'background:transparent;color:rgba(255,255,255,0.7)'
+          ? 'background:var(--accent);color:#fff'
+          : 'background:transparent;color:var(--text-dim)'
       }`;
       btn.addEventListener('mousedown', (e) => e.stopPropagation());
-      btn.addEventListener('mouseover', () => { if (pg !== state.page) btn.style.background = 'rgba(255,255,255,0.2)'; });
+      btn.addEventListener('mouseover', () => { if (pg !== state.page) btn.style.background = 'var(--border)'; });
       btn.addEventListener('mouseout', () => { if (pg !== state.page) btn.style.background = 'transparent'; });
       const p = pg;
       btn.addEventListener('click', (e) => { e.stopPropagation(); state.page = p; renderDocMap(el, nodeId); });
@@ -530,7 +592,7 @@ function renderDocMap(el, nodeId) {
     next.style.cssText = arrowStyle + (state.page >= state.pageCount ? 'opacity:0.3;cursor:default;' : '');
     next.addEventListener('mousedown', (e) => e.stopPropagation());
     if (state.page < state.pageCount) {
-      next.addEventListener('mouseover', () => next.style.background = 'rgba(255,255,255,0.2)');
+      next.addEventListener('mouseover', () => next.style.background = 'var(--border)');
       next.addEventListener('mouseout', () => next.style.background = 'transparent');
       next.addEventListener('click', (e) => { e.stopPropagation(); state.page++; renderDocMap(el, nodeId); });
     }
@@ -545,26 +607,61 @@ function updateNodeElement(el, n) {
   if (n.width) el.style.width = n.width + 'px';
   el.setAttribute('data-type', n.node_type);
   el.classList.toggle('selected', n.id === selectedId);
-  el.querySelector('.node-type-badge').textContent = n.node_type;
-  el.querySelector('.node-label').textContent = n.label || '';
 
-  const dataEl = el.querySelector('.node-data');
   const d = n.data || {};
+  const titleEl = el.querySelector('.node-title');
+  const descEl = el.querySelector('.node-desc');
+  const dataEl = el.querySelector('.node-data');
+  const srcRefEl = el.querySelector('.node-source-ref');
+  const body = el.querySelector('.node-body');
 
-  // Non-document nodes: show thumbnail
-  if (n.node_type !== 'document') {
+  // Title — use label, or data.title, or data.spec_title, or fallback to type
+  const displayTitle = n.label || d.title || d.spec_title || n.node_type;
+  if (titleEl) titleEl.textContent = displayTitle;
+
+  // Source reference — show page and kind for image/spec nodes
+  if (srcRefEl) {
+    srcRefEl.innerHTML = '';
+    const pageRef = d.page || d.source_pages;
+    if (pageRef) {
+      const kindLabel = KIND_LABELS[d.kind] || d.kind || '';
+      const docIcon = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+      srcRefEl.innerHTML = `${docIcon} p.${pageRef}`;
+      if (kindLabel) srcRefEl.innerHTML = `<span style="font-size:9px;text-transform:uppercase;letter-spacing:0.3px;opacity:0.7">${kindLabel}</span> · ` + srcRefEl.innerHTML;
+    }
+  }
+
+  // Description — render simple markdown for fact nodes
+  if (descEl) {
+    const raw = d.description || '';
+    if (raw && (n.node_type === 'fact' || n.node_type === 'spec')) {
+      descEl.innerHTML = miniMarkdown(raw);
+    } else {
+      descEl.textContent = raw;
+    }
+    descEl.style.display = raw ? '' : 'none';
+  }
+
+  // Thumbnail for image/spec nodes
+  if (n.node_type !== 'document' && body) {
     let thumb = el.querySelector('.node-thumb');
     const imgUrl = d.image_url || d.crop_svg || d.crop_png;
     if (imgUrl && !thumb) {
-      thumb = document.createElement('img'); thumb.className = 'node-thumb'; el.appendChild(thumb);
+      thumb = document.createElement('img'); thumb.className = 'node-thumb';
+      // Insert before body (between header and body)
+      el.insertBefore(thumb, body);
     }
     if (thumb && imgUrl) { thumb.src = imgUrl; }
     else if (thumb && !imgUrl) { thumb.remove(); }
   }
 
-  const hideKeys = ['image_url','crop_svg','crop_png','slug','description'];
+  // Extra data — only show non-obvious keys
+  const hideKeys = ['image_url','crop_svg','crop_png','slug','description','kind','page','title','spec_title'];
   const keys = Object.keys(d).filter(k => typeof d[k] !== 'object' && !hideKeys.includes(k));
-  dataEl.textContent = keys.length ? keys.slice(0,3).map(k => `${k}: ${d[k]}`).join(' · ') : '';
+  if (dataEl) {
+    dataEl.textContent = keys.length ? keys.slice(0,3).map(k => `${k}: ${d[k]}`).join(' · ') : '';
+    dataEl.style.display = keys.length ? '' : 'none';
+  }
 }
 
 function renderEdges() {
@@ -601,9 +698,9 @@ function renderMinimap() {
   const minX = Math.min(...xs)-50, maxX = Math.max(...xs)+200, minY = Math.min(...ys)-50, maxY = Math.max(...ys)+150;
   const w = maxX-minX||1, h = maxY-minY||1, s = Math.min(150/w, 90/h);
   const ox = (160-w*s)/2, oy = (100-h*s)/2;
-  ctx.strokeStyle = '#4a4a6a'; ctx.lineWidth = 0.5;
+  ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 0.5;
   for (const e of Object.values(edges)) { const src=nodes[e.source], tgt=nodes[e.target]; if(!src||!tgt)continue; ctx.beginPath(); ctx.moveTo(ox+(src.x-minX)*s, oy+(src.y-minY)*s); ctx.lineTo(ox+(tgt.x-minX)*s, oy+(tgt.y-minY)*s); ctx.stroke(); }
-  const colors = {document:'#4caf50',entity:'#ff6b6b',fact:'#ffd93d',spec:'#4a9eff',concept:'#4a9eff',image:'#a66cff',model:'#ff9f43'};
+  const colors = {document:'#4caf50',entity:'#ff6b6b',fact:'#f59e0b',spec:'#8b5cf6',concept:'#4a9eff',image:'#0ea5e9',model:'#ff9f43'};
   nl.forEach(n => { ctx.fillStyle = colors[n.node_type]||'#4a9eff'; ctx.fillRect(ox+(n.x-minX)*s-2, oy+(n.y-minY)*s-2, 4, 4); });
 }
 
@@ -687,29 +784,31 @@ container.addEventListener('drop', (e) => {
   const cx = (e.clientX - transform.x) / transform.scale;
   const cy = (e.clientY - transform.y) / transform.scale;
 
-  // Region drop from sidepanel
+  // Region drop from sidepanel — center node on cursor
   const regionData = e.dataTransfer.getData('application/anchor-region');
   if (regionData) {
     const r = JSON.parse(regionData);
+    const nodeW = 240;
     const cropUrl = r.crops?.svg ? `/api/documents/${r._slug}/crops/${r.crops.svg}` : r.crops?.png ? `/api/documents/${r._slug}/crops/${r.crops.png}` : null;
     fetch('/api/nodes', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        node_type: 'image', label: r.title || r.kind, x: cx, y: cy, width: 240,
+        node_type: 'image', label: r.title || r.kind, x: cx - nodeW / 2, y: cy - 20, width: nodeW,
         data: { kind: r.kind, page: r.page, slug: r._slug, image_url: cropUrl, description: r.description }
       }),
     });
     return;
   }
 
-  // Document drop from sidepanel
+  // Document drop from sidepanel — center node on cursor
   const docData = e.dataTransfer.getData('application/anchor-document');
   if (docData) {
     const d = JSON.parse(docData);
+    const nodeW = 220;
     fetch('/api/nodes', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        node_type: 'document', label: d.title, x: cx, y: cy,
+        node_type: 'document', label: d.title, x: cx - nodeW / 2, y: cy - 20,
         data: { slug: d.slug, pages: d.pages, image_url: `/api/documents/${d.slug}/pages/1/image` }
       }),
     });
@@ -929,6 +1028,15 @@ function addRegionToCanvas(slug, page, region) {
 }
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// Lightweight markdown: **bold**, bullet lists, newlines
+function miniMarkdown(text) {
+  return esc(text)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/^• (.+)$/gm, '<div style="padding-left:10px;text-indent:-10px">• $1</div>')
+    .replace(/\n\n/g, '<div style="height:6px"></div>')
+    .replace(/\n/g, '<br>');
+}
 
 // ============================================================
 // Init

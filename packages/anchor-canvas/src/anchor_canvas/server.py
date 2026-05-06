@@ -13,11 +13,14 @@ from pathlib import Path
 from typing import Any
 
 import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
+from mcp.server.sse import SseServerTransport
 from pydantic import BaseModel
+from starlette.routing import Mount
 
+from .mcp_handlers import InProcessOps, SessionRegistry, build_server
 from .state import Canvas, CanvasNode, CanvasEdge
 
 logger = logging.getLogger(__name__)
@@ -34,6 +37,8 @@ app.add_middleware(
 _canvas: Canvas | None = None
 _data_dir: Path | None = None
 _ws_clients: set[WebSocket] = set()
+_mcp_server = None  # type: ignore[assignment]
+_mcp_registry: SessionRegistry | None = None
 
 
 def get_canvas() -> Canvas:
@@ -44,7 +49,7 @@ def get_canvas() -> Canvas:
 # --- WebSocket broadcast ---
 
 def _broadcast(msg: dict) -> None:
-    """Queue broadcast to all connected WebSocket clients."""
+    """Queue broadcast to all connected WebSocket clients + MCP sessions."""
     global _ws_clients
     text = json.dumps(msg)
     disconnected = set()
@@ -55,6 +60,16 @@ def _broadcast(msg: dict) -> None:
             disconnected.add(ws)
     if disconnected:
         _ws_clients -= disconnected
+
+    # Notify any subscribed MCP clients that canvas state has changed.
+    if _mcp_registry is not None:
+        try:
+            asyncio.get_event_loop().create_task(
+                _mcp_registry.broadcast_resource_updated("canvas://state")
+            )
+        except RuntimeError:
+            # No running event loop (e.g. during initial state load before uvicorn starts).
+            pass
 
 
 @app.websocket("/ws")
@@ -166,6 +181,22 @@ async def add_edge(req: AddEdgeRequest):
 async def remove_edge(edge_id: str):
     ok = get_canvas().remove_edge(edge_id)
     return {"removed": ok}
+
+
+@app.post("/api/nodes/bulk")
+async def add_nodes_bulk(reqs: list[AddNodeRequest]):
+    canvas = get_canvas()
+    return [canvas.add_node(**r.model_dump(exclude_none=True)).model_dump() for r in reqs]
+
+
+@app.post("/api/edges/bulk")
+async def add_edges_bulk(reqs: list[AddEdgeRequest]):
+    canvas = get_canvas()
+    out: list[dict | None] = []
+    for r in reqs:
+        edge = canvas.add_edge(**r.model_dump(exclude_none=True))
+        out.append(edge.model_dump() if edge else None)
+    return out
 
 
 @app.post("/api/clear")
@@ -326,6 +357,25 @@ async def get_crop(slug: str, path: str):
     return FileResponse(crop_path, media_type=media)
 
 
+# --- MCP server (HTTP+SSE, mounted in-process) ---
+
+_sse = SseServerTransport("/mcp/messages/")
+
+
+@app.get("/mcp/sse")
+async def mcp_sse(request: Request) -> Response:
+    """SSE endpoint for MCP clients. Pairs with POST /mcp/messages/."""
+    assert _mcp_server is not None and _mcp_registry is not None, "MCP not initialized"
+    async with _sse.connect_sse(request.scope, request.receive, request._send) as streams:
+        await _mcp_server.run(streams[0], streams[1], _mcp_server.create_initialization_options())
+    # SDK requires returning a Response explicitly to avoid client-disconnect TypeError.
+    return Response()
+
+
+# Mount the POST endpoint that SSE clients use to push messages back.
+app.router.routes.append(Mount("/mcp/messages/", app=_sse.handle_post_message))
+
+
 # --- Web UI ---
 
 _static_dir = Path(__file__).parent / "static"
@@ -348,14 +398,20 @@ def main():
     if args.verbose:
         logging.basicConfig(level=logging.INFO)
 
-    global _canvas, _data_dir
+    global _canvas, _data_dir, _mcp_server, _mcp_registry
     _canvas = Canvas(state_file=Path(args.state_file).resolve())
     _canvas.on_change(_broadcast)
     if args.data_dir:
         _data_dir = Path(args.data_dir).resolve()
         logger.info("Data directory: %s", _data_dir)
 
+    # Build the in-process MCP server. Tools/resources are sourced from
+    # mcp_handlers.py; the same definitions are reused by the stdio shim
+    # over HttpOps.
+    _mcp_server, _mcp_registry = build_server(InProcessOps(_canvas, _data_dir))
+
     logger.info("Canvas server at http://%s:%d (state: %s)", args.host, args.port, args.state_file)
+    logger.info("MCP HTTP+SSE at http://%s:%d/mcp/sse", args.host, args.port)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info" if args.verbose else "warning")
 
 

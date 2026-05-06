@@ -11,3 +11,6 @@
   ------------
 
   - "i found this doc, it seems relevant, do you want to add it to your workspace"
+
+
+  - fo something with https://rds.posccaesar.org/InformationAboutOBI.pdf in ingestion perhaps
