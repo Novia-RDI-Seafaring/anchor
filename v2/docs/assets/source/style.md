@@ -289,9 +289,9 @@ above DOCS — one canonical placement is enough.
    - `VOICE voice interface, future` (dashed) — label `MCP`
    - `XR XR Omniverse, future` (dashed) — label `MCP`
 
-   Single-line caption near the consumer column (italic humanist sans):
-   *"MONITOR is the minimal common denominator — every other consumer is
-   MONITOR + extra capability."*
+   The bottom-right corner under the consumer column is intentionally
+   **empty** — no MONITOR caption, no footnote, just whitespace for visual
+   breathing room.
 
 ---
 

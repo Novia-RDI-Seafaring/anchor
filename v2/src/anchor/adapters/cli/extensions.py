@@ -42,6 +42,7 @@ def _project_producers_dir(data_dir: Path) -> Path:
 def _bundled_producers() -> list[dict[str, Any]]:
     """Producers that ship in-tree with this Anchor build."""
     from anchor import __version__
+    from anchor.extensions.anchor_cad import extension as cad_ext
     from anchor.extensions.anchor_fmus import extension as fmu_ext
     return [
         {
@@ -79,6 +80,7 @@ def _bundled_producers() -> list[dict[str, Any]]:
             },
         },
         fmu_ext.manifest(),
+        cad_ext.manifest(),
     ]
 
 
