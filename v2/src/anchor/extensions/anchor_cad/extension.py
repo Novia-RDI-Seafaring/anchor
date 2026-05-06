@@ -112,7 +112,16 @@ def build_service(
     from anchor.extensions.anchor_cad.infra.naive_inspector import NaiveCadInspector
 
     if inspector is None:
-        inspector = NaiveCadInspector()
+        # Real geometry parser when trimesh is installed; the constructor
+        # internally falls back to NaiveCadInspector for formats trimesh
+        # can't read (STEP, JSCAD, OpenSCAD).
+        try:
+            from anchor.extensions.anchor_cad.infra.trimesh_inspector import (
+                TrimeshCadInspector,
+            )
+            inspector = TrimeshCadInspector()
+        except ImportError:
+            inspector = NaiveCadInspector()
 
     return CadService(
         store=FsCadStore(data_dir),

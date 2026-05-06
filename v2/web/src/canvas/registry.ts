@@ -30,6 +30,7 @@ import type { NodeProps, NodeTypes } from "@xyflow/react";
 
 // Primitives — generic OIP-aware renderers
 import { DocumentPrimitive } from "./primitives/DocumentPrimitive";
+import { Model3DPrimitive } from "./primitives/Model3DPrimitive";
 import { TablePrimitive } from "./primitives/TablePrimitive";
 
 // Shapes — canvas-internal structural node types
@@ -77,9 +78,10 @@ registerNodeRenderer("note", NoteNode);
 // Primitives — OIP-aware
 registerNodeRenderer("document", DocumentPrimitive);
 registerNodeRenderer("spec", TablePrimitive);
+registerNodeRenderer("model3d", Model3DPrimitive);
+registerNodeRenderer("cad:model", Model3DPrimitive);  // anchor_cad's manifest node_type
 // future primitives (when their renderers land):
 //   registerNodeRenderer("media", MediaPrimitive);
-//   registerNodeRenderer("model3d", Model3DPrimitive);
 //   registerNodeRenderer("code", CodePrimitive);
 //   registerNodeRenderer("plot", PlotPrimitive);
 //   registerNodeRenderer("image", ImagePrimitive);

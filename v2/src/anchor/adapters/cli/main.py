@@ -90,12 +90,19 @@ def serve(
     if not static_dir.is_dir():
         # development: walk up to v2/web/dist
         static_dir = Path(__file__).resolve().parents[4] / "web" / "dist"
+
+    # Wire the CAD extension service. Manifest already lives in
+    # _bundled_producers; the service handles ingestion and storage.
+    from anchor.extensions.anchor_cad import extension as cad_ext
+    cad_service = cad_ext.build_service(data_dir, bus)
+
     app_ = build_app(
         workspace_service=workspace,
         ingest_service=ingest,
         doc_store=doc_store,
         bus=bus,
         static_dir=static_dir if static_dir.is_dir() else None,
+        cad_service=cad_service,
     )
     typer.echo(f"[anchor serve] data_dir={data_dir} {host}:{port}")
     uvicorn.run(app_, host=host, port=port)
