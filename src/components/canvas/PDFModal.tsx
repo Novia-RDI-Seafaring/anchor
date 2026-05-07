@@ -28,6 +28,7 @@ function screenshotUrl(filename: string, page: number, highlight?: PDFHighlight 
     params.set("bbox_t", String(t));
     params.set("bbox_r", String(r));
     params.set("bbox_b", String(b));
+    params.set("draw_bbox", "true");
   }
   return `${API_URL}/api/documents/pdf/screenshot?${params.toString()}`;
 }

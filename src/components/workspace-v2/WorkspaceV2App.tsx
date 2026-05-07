@@ -1695,7 +1695,7 @@ function ActivityDrawer({ open, onClose }: { open: boolean; onClose: () => void 
   };
 
   return (
-    <div className="absolute bottom-[8.75rem] left-1/2 z-30 flex h-[min(360px,calc(100vh-13rem))] w-[min(760px,calc(100vw-2rem))] -translate-x-1/2 flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white/96 shadow-xl backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-950/94">
+    <div className="absolute bottom-[7.25rem] left-4 right-4 top-20 z-30 flex flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white/96 shadow-xl backdrop-blur-md dark:border-neutral-800 dark:bg-neutral-950/94 sm:left-20 sm:right-auto sm:w-[360px] xl:bottom-6">
       <div className="flex h-11 items-center justify-between border-b border-neutral-200 px-3 dark:border-neutral-800">
         <div className="flex items-center gap-2 text-sm font-medium text-neutral-800 dark:text-neutral-100">
           {isLoading ? <Loader2 size={15} className="animate-spin text-blue-500" /> : <MessageSquare size={15} />}
@@ -1742,7 +1742,7 @@ function ActivityDrawer({ open, onClose }: { open: boolean; onClose: () => void 
                 event.dataTransfer.setData("text/plain", content);
                 event.dataTransfer.effectAllowed = "copy";
               }}
-              className={`group max-w-[86%] rounded-lg px-3 py-2 text-sm leading-6 ${
+              className={`group max-w-[92%] rounded-lg px-3 py-2 text-sm leading-6 ${
                 message.role === "user"
                   ? "ml-auto bg-neutral-900 text-white dark:bg-neutral-100 dark:text-neutral-900"
                   : "mr-auto border border-neutral-200 bg-neutral-50 text-neutral-800 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-100"
@@ -2063,13 +2063,15 @@ function WorkspaceV2Content() {
       <WorkspaceAssetRail controller={controller} />
       <WorkspaceTabs controller={controller} />
 
-      <button
-        onClick={() => setActivityOpen((open) => !open)}
-        className="absolute bottom-[8.75rem] right-4 z-30 inline-flex h-10 items-center gap-2 rounded-lg border border-neutral-200 bg-white/92 px-3 text-xs font-medium text-neutral-700 shadow-sm backdrop-blur-md hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950/88 dark:text-neutral-200 dark:hover:bg-neutral-900 xl:right-[22rem]"
-      >
-        <Activity size={14} />
-        Activity
-      </button>
+      {!activityOpen && (
+        <button
+          onClick={() => setActivityOpen(true)}
+          className="absolute bottom-[7.25rem] left-4 z-30 inline-flex h-10 items-center gap-2 rounded-lg border border-neutral-200 bg-white/92 px-3 text-xs font-medium text-neutral-700 shadow-sm backdrop-blur-md hover:bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950/88 dark:text-neutral-200 dark:hover:bg-neutral-900 sm:left-20 xl:bottom-6"
+        >
+          <Activity size={14} />
+          Activity
+        </button>
+      )}
 
       <WorkspaceComposer onOpenActivity={() => setActivityOpen(true)} />
       <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
