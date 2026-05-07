@@ -21,7 +21,21 @@ import { CanvasSse } from "@/realtime/sseClient";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
-type Props = { slug: string };
+type Props = {
+  slug: string;
+  /**
+   * When true, the canvas becomes a pure projection of state — no drag,
+   * no drop, no dblclick handlers. Subscribes to SSE and renders. Used by
+   * the standalone monitor window at `/m/:id` and by any future read-only
+   * rendering target (XR overlays, headless screenshot service, ...).
+   *
+   * When false (default), the canvas accepts interactions: nodes are
+   * draggable, files dropped on the canvas trigger ingest, double-click
+   * opens the PDF viewer, and shell-driven payloads (Palette/Library
+   * drops) instantiate nodes via the HTTP API.
+   */
+  readOnly?: boolean;
+};
 
 type StoreNode = { id: string; node_type: string; label: string; x: number; y: number; data?: Record<string, unknown> };
 
@@ -38,15 +52,20 @@ function toRfNode(n: StoreNode): RfNode {
   };
 }
 
-export function CanvasGraph({ slug }: Props) {
-  return (
-    <ReactFlowProvider>
-      <CanvasGraphInner slug={slug} />
-    </ReactFlowProvider>
-  );
+export function CanvasGraph({ slug, readOnly = false }: Props) {
+  // ReactFlowProvider is mounted by CanvasShell when present. For bare uses
+  // (e.g. the monitor route at /m/:id), wrap in a provider here.
+  if (readOnly) {
+    return (
+      <ReactFlowProvider>
+        <CanvasGraphInner slug={slug} readOnly />
+      </ReactFlowProvider>
+    );
+  }
+  return <CanvasGraphInner slug={slug} readOnly={false} />;
 }
 
-function CanvasGraphInner({ slug }: Props) {
+function CanvasGraphInner({ slug, readOnly }: Props) {
   const setSnapshot = useCanvasStore((s) => s.setSnapshot);
   const applyEvent = useCanvasStore((s) => s.applyEvent);
   const reset = useCanvasStore((s) => s.reset);
@@ -54,6 +73,8 @@ function CanvasGraphInner({ slug }: Props) {
   const edges = useCanvasStore((s) => s.edges);
   const { screenToFlowPosition } = useReactFlow();
   const openPdf = useUiStore((s) => s.openPdf);
+  const setHoveredSourceRef = useUiStore((s) => s.setHoveredSourceRef);
+  const clearHoveredSourceRef = useUiStore((s) => s.clearHoveredSourceRef);
 
   // ReactFlow needs to own the per-frame drag position. We seed its internal
   // node list from the Zustand store and re-seed whenever the store changes
@@ -108,30 +129,65 @@ function CanvasGraphInner({ slug }: Props) {
   }, []);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
-    if (!event.dataTransfer.types.includes("Files")) return;
+    const types = event.dataTransfer.types;
+    // Accept either OS files (PDFs etc.) or our shell's structured payloads.
+    const accepted = types.includes("Files")
+      || types.includes("application/x-anchor-node");
+    if (!accepted) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
   }, []);
 
   const onDrop = useCallback(async (event: React.DragEvent) => {
-    if (!event.dataTransfer.files?.length) return;
-    event.preventDefault();
     const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-    for (const file of Array.from(event.dataTransfer.files)) {
-      if (!file.name.toLowerCase().endsWith(".pdf")) continue;
+
+    // Path 1 — shell payload: Palette or Library dragged a node spec onto the canvas.
+    const nodeSpecRaw = event.dataTransfer.getData("application/x-anchor-node");
+    if (nodeSpecRaw) {
+      event.preventDefault();
       try {
-        await canvases.uploadFile(slug, file, flowPos.x, flowPos.y);
-        // Placeholder document node arrives via SSE; status will update as
-        // the pipeline progresses (pending → ingesting → ready).
+        const spec = JSON.parse(nodeSpecRaw) as {
+          node_type: string;
+          label?: string;
+          width?: number;
+          height?: number;
+          data?: Record<string, unknown>;
+        };
+        await canvases.addNode(slug, {
+          ...spec,
+          x: flowPos.x,
+          y: flowPos.y,
+        });
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error("upload failed", err);
+        console.error("shell drop failed", err);
+      }
+      return;
+    }
+
+    // Path 2 — OS files: drop-to-ingest for PDFs.
+    if (event.dataTransfer.files?.length) {
+      event.preventDefault();
+      for (const file of Array.from(event.dataTransfer.files)) {
+        if (!file.name.toLowerCase().endsWith(".pdf")) continue;
+        try {
+          await canvases.uploadFile(slug, file, flowPos.x, flowPos.y);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error("upload failed", err);
+        }
       }
     }
   }, [slug, screenToFlowPosition]);
 
+  // In readOnly mode the canvas becomes a pure projection: no drags, no
+  // drops, no dblclick → viewer. It still subscribes to SSE so any state
+  // change emitted by the rest of the system shows up live.
   return (
-    <div className="h-full w-full" onDragOver={onDragOver} onDrop={onDrop}>
+    <div
+      className="h-full w-full"
+      {...(readOnly ? {} : { onDragOver, onDrop })}
+    >
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -139,40 +195,75 @@ function CanvasGraphInner({ slug }: Props) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         fitView
-        onNodeDoubleClick={(_event, node) => {
-          // Document nodes that are ready open the PDF viewer.
-          if (node.type === "document") {
-            const data = node.data as { slug?: string; status?: string } | undefined;
-            const status = data?.status ?? "ready";
-            if (data?.slug && (status === "ready" || status === "found")) {
-              openPdf(data.slug, {
-                workspaceSlug: slug,
-                documentNodeId: node.id,
-              });
-            }
+        nodesDraggable={!readOnly}
+        nodesConnectable={!readOnly}
+        elementsSelectable={!readOnly}
+        zoomOnScroll
+        panOnDrag
+        // Shift+click adds to selection. Shift+drag still does rubber-band
+        // selection — ReactFlow distinguishes the two gestures even when
+        // they share a modifier.
+        multiSelectionKeyCode="Shift"
+        selectionKeyCode="Shift"
+        // Edge hover broadcasts the edge's source_ref so the corresponding
+        // document node can highlight the region. Used by evidence edges
+        // (spec node → document node).
+        onEdgeMouseEnter={(_event, edge) => {
+          const data = edge.data as
+            | { source_ref?: { kind?: string; page?: number; bbox?: number[] } }
+            | undefined;
+          const ref = data?.source_ref;
+          if (!ref?.page) return;
+          // Resolve the target node to learn the document slug.
+          const tgt = useCanvasStore.getState().nodes[edge.target];
+          const tgtData = tgt?.data as { slug?: string } | undefined;
+          if (tgtData?.slug) {
+            setHoveredSourceRef({
+              slug: tgtData.slug,
+              page: ref.page,
+              bbox: ref.bbox,
+            });
           }
         }}
-        onNodeDragStop={(_event, node) => {
-          // Commit the post-drag position both locally (instant) and to the
-          // server (eventually consistent via SSE echo, idempotent by event id).
-          const id = node.id;
-          const x = node.position.x;
-          const y = node.position.y;
-          useCanvasStore.setState((state) => {
-            const existing = state.nodes[id];
-            if (!existing) return state;
-            return {
-              ...state,
-              nodes: { ...state.nodes, [id]: { ...existing, x, y } },
-            };
-          });
-          canvases.patchNode(slug, id, { x, y }).catch(() => {
-            // Network failure: the next snapshot/patch will reconcile.
-          });
-        }}
+        onEdgeMouseLeave={() => clearHoveredSourceRef()}
+        {...(readOnly
+          ? {}
+          : {
+              onNodeDoubleClick: (_event, node) => {
+                if (node.type === "document") {
+                  const data = node.data as { slug?: string; status?: string } | undefined;
+                  const status = data?.status ?? "ready";
+                  if (data?.slug && (status === "ready" || status === "found")) {
+                    openPdf(data.slug, {
+                      workspaceSlug: slug,
+                      documentNodeId: node.id,
+                    });
+                  }
+                }
+              },
+              onNodeDragStop: (_event, node) => {
+                // Commit the post-drag position both locally (instant) and to
+                // the server (eventually consistent via SSE echo, idempotent
+                // by event id).
+                const id = node.id;
+                const x = node.position.x;
+                const y = node.position.y;
+                useCanvasStore.setState((state) => {
+                  const existing = state.nodes[id];
+                  if (!existing) return state;
+                  return {
+                    ...state,
+                    nodes: { ...state.nodes, [id]: { ...existing, x, y } },
+                  };
+                });
+                canvases.patchNode(slug, id, { x, y }).catch(() => {
+                  // Network failure: the next snapshot/patch will reconcile.
+                });
+              },
+            })}
       >
         <Background />
-        <Controls />
+        <Controls showInteractive={!readOnly} />
         <MiniMap pannable zoomable />
       </ReactFlow>
     </div>

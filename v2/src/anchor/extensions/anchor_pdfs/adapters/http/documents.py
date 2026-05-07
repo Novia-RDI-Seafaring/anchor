@@ -58,3 +58,32 @@ async def crop(slug: str, rel_path: str, store: DocStore = Depends(get_doc_store
     if p is None:
         raise HTTPException(404)
     return FileResponse(p)
+
+
+@router.get("/{slug}/pdf")
+async def raw_pdf(slug: str, store: DocStore = Depends(get_doc_store)):
+    """Serve the original bronze PDF.
+
+    Architecturally: this is the producer's choice to expose the raw source
+    material it stashed. Consumers (Anchor's PDF viewer today, a future
+    PDF.js renderer, an agent that wants to feed the PDF to a vision model)
+    can read this endpoint directly. Same-origin so no CORS dance.
+    """
+    # The store doesn't currently expose a typed accessor; fall back to a
+    # filesystem probe through get_page_image_path's neighbouring layout.
+    # FsDocStore lays bronze out at <data_dir>/bronze/<filename> — but the
+    # filename isn't necessarily slug-derived. Walk index to recover it.
+    index = await store.get_index(slug)
+    if index is None:
+        raise HTTPException(404, f"unknown doc slug: {slug}")
+    filename = (index.get("document") or {}).get("filename")
+    if not filename:
+        raise HTTPException(404, "no filename in index")
+    # Hop through fs_doc_store internals if available, else 404.
+    bronze_dir = getattr(store, "bronze", None)
+    if bronze_dir is None:
+        raise HTTPException(501, "this store does not expose raw PDFs")
+    path = bronze_dir / filename
+    if not path.is_file():
+        raise HTTPException(404, f"PDF not found: {filename}")
+    return FileResponse(path, media_type="application/pdf", filename=filename)

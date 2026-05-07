@@ -45,7 +45,20 @@ class MemoryDocStore:
         return {"slug": slug, "pages": pages}
 
     async def get_gold_map(self, slug: str) -> dict[str, Any] | None:
-        return self._gold_maps.get(slug)
+        explicit = self._gold_maps.get(slug)
+        if explicit is not None:
+            return explicit
+        index = self._indexes.get(slug)
+        if index is None:
+            return None
+        regions = await self.get_regions(slug)
+        return {
+            "slug": slug,
+            "document": index.get("document", {}),
+            "outline": index.get("outline", []),
+            "pages": regions.get("pages", {}),
+            "pages_meta": self._pages_meta.get(slug, {}),
+        }
 
     async def get_crop_path(self, slug: str, rel_path: str) -> Path | None:
         return None

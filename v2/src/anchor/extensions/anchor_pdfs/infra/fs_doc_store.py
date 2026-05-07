@@ -102,6 +102,7 @@ class FsDocStore:
     async def get_gold_map(self, slug: str) -> dict[str, Any] | None:
         index = await self.get_index(slug)
         regions = await self.get_regions(slug)
+        pages_meta = await self.get_pages_meta(slug)
         if index is None:
             return None
         return {
@@ -109,6 +110,7 @@ class FsDocStore:
             "document": index.get("document", {}),
             "outline": index.get("outline", []),
             "pages": regions.get("pages", {}),
+            "pages_meta": pages_meta or {},
         }
 
     async def get_crop_path(self, slug: str, rel_path: str) -> Path | None:

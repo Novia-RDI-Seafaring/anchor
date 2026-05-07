@@ -287,6 +287,198 @@ future direction whose plumbing the architecture already supports.
 
 ---
 
+## Future direction — derivation chains
+
+A producer can be both a **consumer** (it reads another producer's
+artefacts) and a **producer** in its own right (it writes new artefacts
+that descend from what it consumed). This is how OIP scales to
+analytical work, not just ingestion.
+
+**Worked example:** a pump-curve interpreter reads a region from a PDF
+(produced by `anchor-pdfs`), traces the curve geometry into structured
+data (axes, fitted functions, operating points), and emits its own OIP
+artefacts. Those artefacts can then feed a parametric FMU model, which
+itself feeds a simulation run. Each step is its own producer with its
+own data dir:
+
+```
+anchor-pdfs            (raw PDF → spec_block regions)
+   ↓ derived_from
+anchor-chart-tracer    (region image → chart-axis, chart-curve, chart-fitted-function)
+   ↓ derived_from
+anchor-pump-curves     (chart-tracer artefact → pump operating points, NPSH curves)
+   ↓ derived_from
+anchor-fmus            (pump-curves → parametric simulation model)
+   ↓ derived_from
+anchor-simulations     (FMU + parameter sweep → time-series results)
+```
+
+The chain is honest, transparent, and traversable. A consumer chasing
+provenance back to first principles walks `derived_from` until it's
+null.
+
+### Two small fields make the chain explicit
+
+The OIP spec needs (or will, in v0.2) two additions, both on
+`document.json`:
+
+```json
+{
+  "derived_from": {
+    "producer": "anchor-pdfs",
+    "slug": "alfa-laval-lkh",
+    "region_id": "alfa-laval-lkh:r0042"
+  },
+  "status": "draft"
+}
+```
+
+- **`derived_from`** — pointer back at the parent artefact. Generic
+  across producers. `null` for raw ingestion (PDFs, FMUs, source
+  files).
+- **`status`** — lifecycle: `draft` (provisional) → `approved` (committed,
+  treated as ground truth) → optional `rejected` (kept for audit).
+  Most pure-ingest producers stay at `approved`; analytical / AI-traced
+  / collaboratively-authored producers benefit from the lifecycle.
+
+### Generic before specific — keep producers narrow
+
+The strongest scaling property is **per-layer specificity**. Resist
+making a producer too domain-specific too early:
+
+| Layer  | Generic                        | Domain-specific (follow-on)              |
+| ------ | ------------------------------ | ---------------------------------------- |
+| chart  | `anchor-chart-tracer`          | `anchor-pump-curves`, `anchor-material-curves`, `anchor-process-curves` |
+| image  | `anchor-image-vision`          | `anchor-pid-tracer`, `anchor-er-diagram` |
+| text   | `anchor-text-tracer`           | `anchor-sysml-extractor`, `anchor-spec-extractor` |
+| 3d     | `anchor-cad`                   | `anchor-fasteners`, `anchor-piping-fittings` |
+
+The hard work (geometry, vision, fitting) lives in the generic layer
+and serves every domain. Domain interpreters are small (often a few
+hundred LOC) and add tagging, validation, and unit awareness on top.
+
+**Rule of thumb:** if you're tempted to call a producer
+`anchor-<specific-thing>`, ask whether the underlying mechanism applies
+to a *family* of similar things. If yes, ship the generic family
+producer first; the domain interpreter is its first downstream
+consumer.
+
+### Architectural rules for the chain
+
+- **Producers don't write into other producers' data dirs.** Each
+  producer owns its own artefacts. Cross-producer references go
+  through `derived_from`, never through filesystem mutation.
+- **Drafts can derive from drafts.** A pump-curve draft can descend
+  from a chart-tracer draft that descends from a still-being-traced
+  PDF. The chain stays honest about confidence at each layer.
+- **Approval is per-artefact.** When a draft transitions to approved,
+  its parents stay at whatever status they had — promotion doesn't
+  cascade.
+
+---
+
+## Future direction — interactive producers
+
+Some producers — chart tracers, P&ID editors, SysML authors, anything
+with click-driven authoring — aren't one-shot. They need a stateful
+UI where humans (or agents in collaboration with humans) iteratively
+build up the artefact. OIP supports this without inventing new
+mechanism; the existing pieces compose.
+
+### What an interactive producer ships
+
+The same three OIP contracts as any producer, plus one lifecycle
+convention:
+
+1. **Manifest** — declares `source_kinds`, `region_kinds`,
+   `source_ref_kinds` as usual.
+2. **MCP tools** — at minimum: `start_session`, `commit`, `discard`.
+   Optionally also incremental editing tools (`add_axis_calibration`,
+   `add_curve_point`, `set_parameter`, ...).
+3. **On-disk artefacts** — written under `status: draft` while the
+   session is open; transitioned to `status: approved` on commit.
+4. **Bus events** — the producer emits progress events on its MCP
+   notifications channel as the session unfolds. Anchor (or any other
+   consumer) subscribes and watches the artefact materialise live.
+
+### The session lifecycle
+
+```
+agent / user calls   producer.start_session(source_region_id)
+                  → producer creates artefact with status: draft
+                  → producer emits SessionStarted on bus
+
+user works in the producer's UI (clicks, traces, fills in fields)
+                  → producer updates artefact incrementally
+                  → producer emits RegionAdded / RegionUpdated events
+
+user commits      → producer transitions status to: approved
+                  → producer emits SessionCommitted
+
+OR user discards  → producer deletes the draft (or marks rejected)
+                  → producer emits SessionDiscarded
+```
+
+Anchor's canvas displays draft artefacts visibly (dashed border,
+*draft* badge) so users know they're not yet ground truth. When the
+artefact transitions to approved, the badge disappears and other
+consumers (FMUs, simulators, agents reading provenance) can rely on
+it.
+
+### Where the producer's UI lives
+
+Interactive producers usually have substantial UI (the existing
+chart-tracer is a good example — click-on-axes, drag-along-curves,
+fit-and-export). **The architecture doesn't require porting that UI
+into Anchor.** Three options, in order of cost:
+
+1. **Standalone app, file-export to OIP folder.** Cheapest. User
+   opens the producer's app, does the work, hits export. Anchor
+   ingests the resulting folder when it appears in the data dir.
+2. **MCP-driven launch.** Anchor calls `start_session(...)`, the
+   producer opens its own window. User works there. On commit, the
+   producer writes the artefact and Anchor's library refreshes via
+   the bus event. No UI integration; full feedback loop.
+3. **Embedded UI inside Anchor's canvas.** The producer ships a Web
+   Component (Lit, Stencil, vanilla custom element). Anchor's
+   `cad:model`-style primitive renders the producer's element
+   in-canvas. Most polished UX; highest packaging cost.
+
+Most producers should start at level 1 or 2 and only embed when the
+context-switch friction earns the integration work.
+
+### Agents and humans as equal authors
+
+The session lifecycle doesn't distinguish who calls the tools.
+A human clicking through the producer's UI and an agent calling
+`producer.add_curve_point(...)` over MCP go through the same code
+path. **Agents authoring drafts and humans approving them is the
+common collaborative pattern**; the architecture supports it without
+special casing.
+
+For agent-authored drafts that affect downstream artefacts (e.g., a
+pump-curve trace that will feed an FMU parameter), the canvas should
+require explicit human approval before the draft promotes to
+approved. That's a UI policy on top of OIP's `status` field, not a
+protocol mandate — different consumers can choose different policies.
+
+### What's worth doing now vs deferring
+
+**Now (cheap):** document the pattern. This section. Lets future
+producer authors find the right shape without re-deriving it.
+
+**When the first interactive producer integrates** (chart-tracer is
+the candidate, in a separate repo today): walk it through the
+[`oip` skill](https://github.com/Novia-RDI-Seafaring/OIP) and add
+`start_session` / `commit` / `discard` to its existing CLI/UI.
+
+**Defer:** OIP-spec-level "session" first-class concept. The
+`status: draft` field plus partial-region updates already cover what
+sessions need. If experience proves it ergonomically lacking,
+v0.3 can grow a `session_id` field on regions.
+
+---
+
 ## Future delight — the anchor-and-chain motif
 
 A small visual idea worth keeping: every evidence edge in the canvas

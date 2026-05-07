@@ -18,6 +18,9 @@ import { useUiStore } from "@/stores/uiStore";
 
 type PageMeta = { width: number; height: number };
 
+const RENDER_DPI = 150;
+const POINTS_PER_INCH = 72;
+
 export function PageWithBboxViewer() {
   const viewer = useUiStore((s) => s.pdfViewer);
   const close = useUiStore((s) => s.closePdf);
@@ -134,8 +137,12 @@ export function PageWithBboxViewer() {
   if (!viewer) return null;
 
   const total = index?.document?.page_count ?? 0;
-  const pageW = pageMeta[viewer.page]?.width ?? 0;
-  const pageH = pageMeta[viewer.page]?.height ?? 0;
+  const explicitW = pageMeta[viewer.page]?.width ?? 0;
+  const explicitH = pageMeta[viewer.page]?.height ?? 0;
+  const derivedW = imgSize ? imgSize.w * POINTS_PER_INCH / RENDER_DPI : 0;
+  const derivedH = imgSize ? imgSize.h * POINTS_PER_INCH / RENDER_DPI : 0;
+  const pageW = explicitW > 0 ? explicitW : derivedW;
+  const pageH = explicitH > 0 ? explicitH : derivedH;
   const canScale = imgSize && pageW > 0 && pageH > 0;
 
   return (
@@ -217,9 +224,11 @@ export function PageWithBboxViewer() {
                       y={y}
                       width={w}
                       height={h}
-                      fill={isActive ? "rgba(56, 189, 248, 0.20)" : "rgba(56, 189, 248, 0.08)"}
-                      stroke={isActive ? "#0EA5E9" : "rgba(56, 189, 248, 0.6)"}
-                      strokeWidth={isActive ? 2 : 1}
+                      fill={isActive ? "rgba(14, 165, 233, 0.30)" : "rgba(14, 165, 233, 0.10)"}
+                      stroke={isActive ? "#0369A1" : "#0EA5E9"}
+                      strokeWidth={isActive ? 3 : 1.6}
+                      strokeDasharray={isActive ? "0" : "4 3"}
+                      vectorEffect="non-scaling-stroke"
                       style={{ cursor: "pointer" }}
                       onClick={() => setActiveRegion(rid)}
                     >

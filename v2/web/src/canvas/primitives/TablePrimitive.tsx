@@ -1,6 +1,7 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
 import { documents } from "@/api/documents";
+import { useUiStore } from "@/stores/uiStore";
 
 type Row = { key: string; value: string; source_ref?: { page: number; bbox?: number[] } };
 
@@ -13,19 +14,38 @@ export function TablePrimitive({ data }: NodeProps) {
     description?: string;
     tags?: string[];
     source_doc_slug?: string;
+    source_doc_node_id?: string;
     source_region_id?: string;
     source_ref?: SourceRef;
     dashed?: boolean;
   };
   const rows = d.rows ?? [];
   const borderStyle = d.dashed ? "border-dashed" : "border-solid";
+  const setHoveredSourceRef = useUiStore((s) => s.setHoveredSourceRef);
+  const clearHoveredSourceRef = useUiStore((s) => s.clearHoveredSourceRef);
+
+  const broadcastHover = () => {
+    if (d.source_doc_slug && d.source_ref?.page) {
+      setHoveredSourceRef({
+        slug: d.source_doc_slug,
+        page: d.source_ref.page,
+        region_id: d.source_region_id,
+        bbox: d.source_ref.bbox,
+      });
+    }
+  };
+
   const cropUrl =
     d.source_doc_slug && d.source_region_id && d.source_ref?.page
       ? `${(import.meta.env.VITE_BACKEND_URL as string | undefined) ?? ""}/api/documents/${d.source_doc_slug}/crops/${d.source_ref.page}/${d.source_region_id}.png`
       : null;
 
   return (
-    <div className={`w-72 rounded-lg border ${borderStyle} border-neutral-400 bg-white text-sm shadow-sm`}>
+    <div
+      className={`w-72 rounded-lg border ${borderStyle} border-neutral-400 bg-white text-sm shadow-sm`}
+      onMouseEnter={broadcastHover}
+      onMouseLeave={clearHoveredSourceRef}
+    >
       <Handle type="target" position={Position.Left} />
       <div className="flex items-center justify-between border-b border-neutral-200 px-3 py-2 gap-2">
         <div className="min-w-0">
