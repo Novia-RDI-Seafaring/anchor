@@ -109,15 +109,17 @@ export function PageWithBboxViewer() {
     if (!viewer) return;
     let cancel = false;
     setRegions([]);
-    setActiveRegion(null);
     setImgSize(null);
+    // Preserve activeRegion when openPdf supplied a highlightRegionId; that
+    // way the viewer opens already focused on the deep-link region.
+    setActiveRegion(viewer.highlightRegionId ?? null);
     documents.regions(viewer.slug, viewer.page).then((rs) => {
       if (!cancel) setRegions(rs);
     }).catch(() => setRegions([]));
     return () => {
       cancel = true;
     };
-  }, [viewer?.slug, viewer?.page]);
+  }, [viewer?.slug, viewer?.page, viewer?.highlightRegionId]);
 
   useEffect(() => {
     if (!viewer) return;
@@ -207,7 +209,9 @@ export function PageWithBboxViewer() {
                   if (!bbox || bbox.length < 4) return null;
                   // Docling: BOTTOMLEFT origin (left, bottom, right, top in points).
                   // Image: TOPLEFT origin (pixels). Convert.
-                  const [l, b, rt, t] = bbox;
+                  // Docling bbox = [left, top, right, bottom] in BOTTOM-LEFT
+                  // origin (top has larger y than bottom).
+                  const [l, t, rt, b] = bbox;
                   if (l === undefined || b === undefined || rt === undefined || t === undefined) return null;
                   const sx = imgSize.w / pageW;
                   const sy = imgSize.h / pageH;
@@ -236,6 +240,44 @@ export function PageWithBboxViewer() {
                     </rect>
                   );
                 })}
+                {/* Deep-zoom emphasis: when openPdf was called with a
+                    specific highlightBbox AND that bbox differs from the
+                    active region's bbox, draw an inner emphasis box on the
+                    sub-region (e.g. a row inside a spec_block table). */}
+                {(() => {
+                  const sub = viewer.highlightBbox;
+                  if (!sub || sub.length < 4) return null;
+                  const active = regions.find(
+                    (rr) => ((rr as { id?: string }).id ?? "") === activeRegion,
+                  );
+                  // If the highlight bbox matches the parent region bbox,
+                  // skip the inner emphasis (the parent rect already covers it).
+                  const parent = active?.bbox;
+                  if (parent && parent.length === 4 && parent.every((v, i) => v === sub[i])) return null;
+                  // sub = [left, top, right, bottom] BL origin (top > bottom).
+                  const [l, t, rt, b] = sub as [number, number, number, number];
+                  if (l === undefined || b === undefined || rt === undefined || t === undefined) return null;
+                  const sx = imgSize.w / pageW;
+                  const sy = imgSize.h / pageH;
+                  const x = l * sx;
+                  const y = (pageH - t) * sy;
+                  const w = (rt - l) * sx;
+                  const h = (t - b) * sy;
+                  return (
+                    <rect
+                      x={x}
+                      y={y}
+                      width={w}
+                      height={h}
+                      fill="rgba(244, 114, 22, 0.35)"
+                      stroke="#EA580C"
+                      strokeWidth={3.5}
+                      vectorEffect="non-scaling-stroke"
+                    >
+                      <title>highlight target</title>
+                    </rect>
+                  );
+                })()}
               </svg>
             ) : null}
           </div>

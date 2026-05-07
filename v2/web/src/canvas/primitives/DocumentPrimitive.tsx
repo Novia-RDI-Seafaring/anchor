@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
+import { BACKEND_URL } from "@/api/client";
 import { documents, type DocumentIndex, type Region } from "@/api/documents";
 import { useUiStore } from "@/stores/uiStore";
 
@@ -170,6 +171,50 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
               (e.currentTarget as HTMLImageElement).style.display = "none";
             }}
           />
+          {/* Per-region vector overlay — only visible for the actively
+              hovered region. Default state shows the page PNG cleanly; on
+              hover we flip a single region to its gold-extracted SVG so
+              the user sees crisp vector content WITHOUT the cross-platform
+              font fallback noise from showing every region's SVG at once.
+              When the producer-side font embedding lands (see task notes),
+              we can switch to always-on overlays. */}
+          {canScale && imgSize && slug && (hoveredLocal || externalHighlightId) ? (() => {
+            const target = hoveredLocal ?? externalHighlightId;
+            const r = regions.find((rr) => ((rr as { id?: string }).id ?? "") === target);
+            if (!r) return null;
+            const bbox = r.bbox;
+            if (!bbox || bbox.length < 4) return null;
+            const [l, t, rt, b] = bbox;
+            if (l === undefined || b === undefined || rt === undefined || t === undefined) return null;
+            const crops = (r as { crops?: { svg?: string | null } }).crops;
+            const svgRel = crops?.svg;
+            if (!svgRel) return null;
+            const sx = imgSize.w / pageW;
+            const sy = imgSize.h / pageH;
+            const xpc = (l * sx) / imgSize.w * 100;
+            const ypc = ((pageH - t) * sy) / imgSize.h * 100;
+            const wpc = ((rt - l) * sx) / imgSize.w * 100;
+            const hpc = ((t - b) * sy) / imgSize.h * 100;
+            const url = `${BACKEND_URL}/api/documents/${slug}/crops/${svgRel}`;
+            return (
+              <img
+                src={url}
+                alt=""
+                className="absolute select-none pointer-events-none"
+                style={{
+                  left: `${xpc}%`,
+                  top: `${ypc}%`,
+                  width: `${wpc}%`,
+                  height: `${hpc}%`,
+                }}
+                loading="lazy"
+                draggable={false}
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = "none";
+                }}
+              />
+            );
+          })() : null}
           {canScale && imgSize ? (
             <svg
               className="absolute inset-0 h-full w-full"
@@ -179,7 +224,9 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
               {regions.map((r, idx) => {
                 const bbox = r.bbox;
                 if (!bbox || bbox.length < 4) return null;
-                const [l, b, rt, t] = bbox;
+                // Docling bbox = [left, top, right, bottom] in BOTTOM-LEFT
+                // origin (top has larger y than bottom).
+                const [l, t, rt, b] = bbox;
                 if (l === undefined || b === undefined || rt === undefined || t === undefined) return null;
                 const sx = imgSize.w / pageW;
                 const sy = imgSize.h / pageH;
@@ -229,10 +276,9 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                       y={y}
                       width={w}
                       height={h}
-                      fill={active ? "rgba(14, 165, 233, 0.28)" : "rgba(14, 165, 233, 0.08)"}
-                      stroke={active ? "#0369A1" : "#0EA5E9"}
-                      strokeWidth={active ? 4 : 2}
-                      strokeDasharray={active ? "0" : "4 3"}
+                      fill={active ? "rgba(14, 165, 233, 0.18)" : "rgba(14, 165, 233, 0.04)"}
+                      stroke={active ? "#0369A1" : "rgba(14, 165, 233, 0.55)"}
+                      strokeWidth={active ? 2 : 1}
                       vectorEffect="non-scaling-stroke"
                     >
                       <title>{r.title ?? r.kind ?? rid}</title>
@@ -382,9 +428,13 @@ function RegionDragLayer({
         return (
           <div
             key={rid}
-            className="absolute pointer-events-auto cursor-grab active:cursor-grabbing"
+            // `nodrag` and `nopan` opt out of ReactFlow's node-level drag
+            // and viewport pan, so HTML5 drag fires here cleanly instead of
+            // panning the canvas.
+            className="nodrag nopan absolute pointer-events-auto cursor-grab active:cursor-grabbing"
             style={{ left: `${x}%`, top: `${y}%`, width: `${w}%`, height: `${h}%` }}
             draggable
+            onMouseDown={(e) => e.stopPropagation()}
             onDragStart={(e) => {
               e.stopPropagation();
               const payload = {
