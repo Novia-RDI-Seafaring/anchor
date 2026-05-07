@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 
 from src.api.file_service import get_file_service
-from src.kb_engine.utils.pdf_rendering import render_pdf_page_to_image_bytes
+from src.kb_engine.utils.pdf_rendering import get_pdf_page_info, render_pdf_page_to_image_bytes
 
 router = APIRouter(prefix="/api", tags=["files"])
 
@@ -88,17 +88,9 @@ def get_pdf_info(
     page_no: int = Query(1, description="1-indexed page number for dimensions"),
 ):
     """Return basic PDF metadata (page count and page dimensions in PDF points)."""
-    from src.kb_engine.utils.pdf_rendering import open_pdf_document
     path = get_file_service().get_file_path(filename)
     try:
-        doc = open_pdf_document(path)
-        try:
-            page_count = len(doc)
-            idx = max(0, min(page_no - 1, page_count - 1))
-            page = doc[idx]
-            page_w, page_h = page.get_size()
-        finally:
-            doc.close()
+        info = get_pdf_page_info(path, page_no=page_no)
     except Exception as exc:
         raise HTTPException(
             status_code=422,
@@ -106,7 +98,5 @@ def get_pdf_info(
         ) from exc
     return {
         "filename": filename,
-        "page_count": page_count,
-        "page_width_pt": page_w,
-        "page_height_pt": page_h,
+        **info,
     }

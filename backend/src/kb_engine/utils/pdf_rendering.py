@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import threading
 import time
 from logging import getLogger
 from pathlib import Path
@@ -12,6 +13,7 @@ from llama_index.core.base.response.schema import NodeWithScore
 import pypdfium2 as pdfium  # type: ignore[reportMissingTypeStubs]
 
 logger = getLogger(__name__)
+_PDFIUM_LOCK = threading.RLock()
 
 
 def open_pdf_document(pdf_path: Path) -> pdfium.PdfDocument:
@@ -212,23 +214,24 @@ def _render_page_with_provs(
     scale: int = 2,
 ) -> Image.Image:
     try:
-        pdf = open_pdf_document(pdf_path)
-        try:
-            page_count = len(pdf)
-            if page_count <= 0:
-                raise ValueError("PDF has no pages")
-            safe_page_index = max(0, min(page_nr - 1, page_count - 1))
-            page = pdf[safe_page_index]
-            bitmap: Any = page.render(scale=scale)
-            image: Image.Image = bitmap.to_pil()
-            merged_specs = list(box_specs)
-            if phrases:
-                merged_specs.extend(_phrase_box_specs(page=page, phrases=phrases))
-            _draw_boxes(image=image, page=page, box_specs=merged_specs)
-            page_w, page_h = page.get_size()
-            return _crop_image_by_bbox(image=image, page_w=page_w, page_h=page_h, crop_bbox=crop_bbox)
-        finally:
-            pdf.close()
+        with _PDFIUM_LOCK:
+            pdf = open_pdf_document(pdf_path)
+            try:
+                page_count = len(pdf)
+                if page_count <= 0:
+                    raise ValueError("PDF has no pages")
+                safe_page_index = max(0, min(page_nr - 1, page_count - 1))
+                page = pdf[safe_page_index]
+                bitmap: Any = page.render(scale=scale)
+                image: Image.Image = bitmap.to_pil()
+                merged_specs = list(box_specs)
+                if phrases:
+                    merged_specs.extend(_phrase_box_specs(page=page, phrases=phrases))
+                _draw_boxes(image=image, page=page, box_specs=merged_specs)
+                page_w, page_h = page.get_size()
+                return _crop_image_by_bbox(image=image, page_w=page_w, page_h=page_h, crop_bbox=crop_bbox)
+            finally:
+                pdf.close()
     except Exception as exc:
         fallback = pdf_path.with_suffix(".png")
         if fallback.exists():
@@ -245,6 +248,25 @@ def _render_page_with_provs(
             page_nr,
         )
         raise
+
+
+def get_pdf_page_info(pdf_path: Path | str, page_no: int = 1) -> dict[str, float | int]:
+    with _PDFIUM_LOCK:
+        doc = open_pdf_document(Path(pdf_path))
+        try:
+            page_count = len(doc)
+            if page_count <= 0:
+                raise ValueError("PDF has no pages")
+            idx = max(0, min(page_no - 1, page_count - 1))
+            page = doc[idx]
+            page_w, page_h = page.get_size()
+            return {
+                "page_count": page_count,
+                "page_width_pt": page_w,
+                "page_height_pt": page_h,
+            }
+        finally:
+            doc.close()
 
 
 def _node_score(node: NodeWithScore) -> float:
