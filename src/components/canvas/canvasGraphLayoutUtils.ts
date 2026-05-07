@@ -284,9 +284,15 @@ export function getEvidenceData(
   const relation = relations.find((item) => item.from_id === nodeId && item.to_id.startsWith("__doc_"));
   const documentId = relation?.document_id || relation?.to_id.replace(/^__doc_/, "");
   const document = documentId ? documents.find((item) => item.document_id === documentId) : undefined;
+  const evidenceHighlights =
+    relation?.highlights && relation.highlights.length > 0
+      ? relation.highlights
+      : relation?.page && relation.bbox?.length === 4
+        ? [{ page: relation.page, bbox: relation.bbox }]
+        : undefined;
   return {
     evidenceFilename: document?.filename,
     evidencePage: relation?.page,
-    evidenceHighlights: relation?.highlights,
+    evidenceHighlights,
   };
 }

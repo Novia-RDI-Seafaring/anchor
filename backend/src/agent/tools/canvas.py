@@ -146,6 +146,99 @@ def _normalize_for_match(text: str) -> str:
     return " ".join(re.findall(r"[a-z0-9./+-]+", text.lower()))
 
 
+def _valid_bbox(value: object) -> list[float]:
+    if not isinstance(value, list) or len(value) != 4:
+        return []
+    try:
+        bbox = [float(item) for item in value]
+    except (TypeError, ValueError):
+        return []
+    return bbox if any(item != 0.0 for item in bbox) else []
+
+
+def _score_source_candidate(fact_text: str, parts: list[str], priority: int = 0) -> int:
+    fact_tokens = _match_tokens(fact_text)
+    if not fact_tokens:
+        return -1
+    normalized_fact = _normalize_for_match(fact_text)
+    candidate_tokens: set[str] = set()
+    score = priority
+    for part in parts:
+        if not part:
+            continue
+        part_tokens = _match_tokens(part)
+        if not part_tokens:
+            continue
+        candidate_tokens |= part_tokens
+        normalized_part = _normalize_for_match(part.strip(":"))
+        if normalized_part and normalized_part in normalized_fact:
+            score += 12 + min(len(part_tokens), 4)
+    score += 2 * len(fact_tokens & candidate_tokens)
+    return score
+
+
+def _artifact_source_for_fact(text: str, filename: str | None) -> tuple[int, list[float]] | None:
+    if not filename:
+        return None
+
+    try:
+        from .document import _gold_page_regions
+        from .product_data import find_product_index_by_filename
+
+        index = find_product_index_by_filename(filename)
+    except Exception:
+        return None
+
+    candidates: list[tuple[int, int, list[float]]] = []
+    if index:
+        for table in index.get("tables", []) or []:
+            bbox = _valid_bbox(table.get("bbox"))
+            page = table.get("page")
+            if not isinstance(page, int) or not bbox:
+                continue
+            parts = [
+                str(table.get("caption") or ""),
+                *[str(item) for item in table.get("header_row", []) or []],
+                *[str(item) for item in table.get("first_column_values", []) or []],
+            ]
+            score = _score_source_candidate(text, parts, priority=2)
+            if score >= 14:
+                candidates.append((score, page, bbox))
+
+        for entry in index.get("outline", []) or []:
+            bbox = _valid_bbox(entry.get("bbox"))
+            page = entry.get("page")
+            if not isinstance(page, int) or not bbox:
+                continue
+            score = _score_source_candidate(text, [str(entry.get("title") or "")])
+            if score >= 14:
+                candidates.append((score, page, bbox))
+
+        page_count = int(index.get("document", {}).get("page_count") or 0)
+    else:
+        page_count = 0
+
+    for page_no in range(1, page_count + 1):
+        for region in _gold_page_regions(filename, page_no) or []:
+            bbox = _valid_bbox(region.get("bbox"))
+            if not bbox:
+                continue
+            parts = [
+                str(region.get("title") or ""),
+                str(region.get("description") or ""),
+                *[str(item) for item in region.get("tags", []) or []],
+                *[str(item) for item in region.get("entities", []) or []],
+            ]
+            score = _score_source_candidate(text, parts, priority=4)
+            if score >= 14:
+                candidates.append((score, page_no, bbox))
+
+    if not candidates:
+        return None
+    _, page, bbox = max(candidates, key=lambda item: item[0])
+    return page, bbox
+
+
 def _score_docling_item(item: dict, section_name: str, parameter: str, value: str, unit: str) -> tuple[int, list[float]]:
     bbox = item.get("bbox")
     if isinstance(bbox, dict):
@@ -341,7 +434,10 @@ async def add_fact(
             ctx.deps.state.nodes.append(topic)
         topic_id = topic.id
 
-    resolved_doc_id = doc_id or _document_id_from_filename(ctx, filename) or _get_cached_document_id(ctx, chunk_index)
+    use_cached_source = not (doc_id or filename or page or bbox or highlights)
+    resolved_doc_id = doc_id or _document_id_from_filename(ctx, filename) or (
+        _get_cached_document_id(ctx, chunk_index) if use_cached_source else None
+    )
     resolved_filename = filename or _filename_from_document_id(ctx, resolved_doc_id)
     resolved_page = page
     resolved_bbox = bbox or []
@@ -354,10 +450,15 @@ async def add_fact(
             page=page if page else None,
             bbox=bbox,
             highlights=highlights,
-            chunk_index=chunk_index,
+            chunk_index=chunk_index if use_cached_source else -1,
         )
         resolved_filename = resolved_filename or _filename_from_document_id(ctx, resolved_doc_id)
         resolved_page = resolved_page_value or page or 0
+
+    artifact_source = _artifact_source_for_fact(text, resolved_filename)
+    if artifact_source:
+        resolved_page, resolved_bbox = artifact_source
+        resolved_highlights = []
 
     enriched_text = _enrich_fact_text_from_source_row(text, resolved_filename, resolved_page)
     node = CanvasNode(node_type="fact", text=enriched_text, status=status)

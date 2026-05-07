@@ -247,7 +247,12 @@ export function buildDerivedEvidenceRelations(
 
     const page = typeof source.page === "number" ? source.page : 0;
     const bbox = Array.isArray(source.bbox) ? source.bbox : [];
-    const highlights = source.highlights ?? (page > 0 && bbox.length === 4 ? [{ page, bbox }] : []);
+    const highlights =
+      Array.isArray(source.highlights) && source.highlights.length > 0
+        ? source.highlights
+        : page > 0 && bbox.length === 4
+          ? [{ page, bbox }]
+          : [];
 
     derived.push({
       from_id: fromId,

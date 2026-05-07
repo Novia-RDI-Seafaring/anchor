@@ -111,6 +111,12 @@ export const useConversationHistory = () => {
     }, [ensureConversationExists]);
 
     const deleteConversation = useCallback((id: string) => {
+        const pending = pendingUpdates.current.get(id);
+        if (pending) {
+            clearTimeout(pending);
+            pendingUpdates.current.delete(id);
+        }
+
         setConversations(prev => {
             const next = prev.filter(c => c.id !== id);
             if (activeId === id) {

@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { usePathname, useRouter } from "next/navigation";
 import { CopilotKit } from "@copilotkit/react-core";
 import { useCoAgent, useCopilotChatInternal } from "@copilotkit/react-core";
-import { aguiToGQL } from "@copilotkit/runtime-client-gql";
 import { useSession } from "next-auth/react";
 import {
   Activity,
@@ -27,6 +26,7 @@ import {
   Plus,
   SquareDashedMousePointer,
   StopCircle,
+  Trash2,
   X,
 } from "lucide-react";
 
@@ -93,6 +93,16 @@ type ReadableChatMessage = {
   content: string;
   sourceIndex: number;
   source?: ChatMessageSource;
+};
+
+type NormalizedChatPart = {
+  kind: "text" | "action" | "result" | "agent_state" | "image";
+  id: string;
+  role?: string;
+  content?: any;
+  name?: string;
+  arguments?: any;
+  result?: any;
 };
 
 function useWorkspaceV2Controller() {
@@ -807,8 +817,85 @@ function parseMaybeJson(value: any): any {
 
 function plainMessageContent(rawContent: any): string {
   if (typeof rawContent === "string") return rawContent;
-  if (Array.isArray(rawContent)) return rawContent.map((part: any) => part?.text ?? "").join(" ");
+  if (Array.isArray(rawContent)) {
+    return rawContent
+      .map((part: any) => (typeof part === "string" ? part : part?.text ?? ""))
+      .join(" ");
+  }
   return String(rawContent ?? "");
+}
+
+function normalizeStreamedValue(value: any): any {
+  if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+    return value.join("");
+  }
+  return value;
+}
+
+function normalizeToolArguments(value: any): any {
+  return parseMaybeJson(normalizeStreamedValue(value ?? {}));
+}
+
+function normalizedChatParts(message: any, index: number): NormalizedChatPart[] {
+  const id = String(message?.id ?? `message-${index}`);
+  const type = message?.type ?? message?.__typename;
+
+  if (type === "AgentStateMessage" || type === "AgentStateMessageOutput") {
+    return [{ kind: "agent_state", id, role: message?.role }];
+  }
+  if (type === "ImageMessage" || type === "ImageMessageOutput" || message?.image) {
+    return [{ kind: "image", id, role: message?.role }];
+  }
+  if (type === "ResultMessage" || type === "ResultMessageOutput" || message?.role === "tool") {
+    return [{
+      kind: "result",
+      id,
+      name: message?.actionName ?? message?.toolName,
+      result: message?.result ?? message?.content,
+    }];
+  }
+  if (type === "ActionExecutionMessage" || type === "ActionExecutionMessageOutput") {
+    return [{
+      kind: "action",
+      id,
+      name: message?.name ?? message?.toolName ?? "tool",
+      arguments: normalizeToolArguments(message?.arguments ?? message?.args ?? message?.input),
+    }];
+  }
+
+  if (message?.role === "assistant" && Array.isArray(message?.toolCalls)) {
+    const parts: NormalizedChatPart[] = [];
+    if (plainMessageContent(message?.content).trim()) {
+      parts.push({ kind: "text", id, role: "assistant", content: message.content });
+    }
+    message.toolCalls.forEach((toolCall: any, toolIndex: number) => {
+      parts.push({
+        kind: "action",
+        id: String(toolCall?.id ?? `${id}-tool-${toolIndex}`),
+        name: toolCall?.function?.name ?? toolCall?.name ?? "tool",
+        arguments: normalizeToolArguments(toolCall?.function?.arguments ?? toolCall?.arguments),
+      });
+    });
+    return parts;
+  }
+
+  if (
+    message?.role === "developer" ||
+    message?.role === "system" ||
+    message?.role === "assistant" ||
+    message?.role === "user"
+  ) {
+    return [{ kind: "text", id, role: message.role, content: message?.content }];
+  }
+
+  return [];
+}
+
+function readableTextPartId(message: any, index: number): string {
+  return (
+    normalizedChatParts(message, index).find((part) => part.kind === "text")?.id ??
+    String(message?.id ?? `message-${index}`)
+  );
 }
 
 function validBbox(value: any): number[] | undefined {
@@ -919,11 +1006,9 @@ function findFirstChatSource(value: any, documentsById: Map<string, string>, dep
   return null;
 }
 
-function sourceFromActionMessage(legacyMessage: any, documentsById: Map<string, string>): ChatMessageSource | null {
-  const name = legacyMessage?.name ?? legacyMessage?.toolName ?? "";
-  const args = parseMaybeJson(
-    legacyMessage?.arguments ?? legacyMessage?.args ?? legacyMessage?.input ?? legacyMessage?.content ?? {},
-  );
+function sourceFromActionMessage(action: NormalizedChatPart, documentsById: Map<string, string>): ChatMessageSource | null {
+  const name = action.name ?? "";
+  const args = normalizeToolArguments(action.arguments);
 
   if (name === "read_document_page") {
     return normalizeChatSource(
@@ -962,37 +1047,32 @@ function useReadableChatMessages() {
     let pendingSource: ChatMessageSource | null = null;
 
     messages.forEach((message: any, index: number) => {
-      const legacyMessage: any = aguiToGQL(message)[0];
-      if (!legacyMessage) return;
+      normalizedChatParts(message, index).forEach((part) => {
+        if (part.kind === "action") {
+          pendingSource = sourceFromActionMessage(part, documentsById) ?? pendingSource;
+          return;
+        }
 
-      if (legacyMessage?.isActionExecutionMessage?.()) {
-        pendingSource = sourceFromActionMessage(legacyMessage, documentsById) ?? pendingSource;
-        return;
-      }
+        if (part.kind === "result") {
+          pendingSource = findFirstChatSource(part.result, documentsById) ?? pendingSource;
+          return;
+        }
 
-      if (legacyMessage?.isResultMessage?.()) {
-        pendingSource = findFirstChatSource(
-          legacyMessage?.result ?? legacyMessage?.content ?? message?.content,
-          documentsById,
-        ) ?? pendingSource;
-        return;
-      }
+        if (part.kind === "agent_state" || part.kind === "image") return;
 
-      if (legacyMessage?.isAgentStateMessage?.() || legacyMessage?.isImageMessage?.()) return;
+        const role = part.role ?? message.role;
+        if (role === "user") pendingSource = null;
 
-      const role = legacyMessage.role ?? message.role;
-      if (role === "user") pendingSource = null;
+        const content = plainMessageContent(part.content);
+        if (!content.trim()) return;
 
-      const rawContent = legacyMessage.content ?? message.content ?? "";
-      const content = plainMessageContent(rawContent);
-      if (!content.trim()) return;
-
-      readable.push({
-        id: legacyMessage.id ?? message.id ?? `${role}-${index}`,
-        role,
-        content,
-        sourceIndex: index,
-        source: role === "assistant" ? pendingSource ?? undefined : undefined,
+        readable.push({
+          id: part.id,
+          role,
+          content,
+          sourceIndex: index,
+          source: role === "assistant" ? pendingSource ?? undefined : undefined,
+        });
       });
     });
 
@@ -1005,8 +1085,7 @@ function useReadableChatMessages() {
   const updateMessageContent = useCallback(
     (messageId: string, sourceIndex: number, content: string) => {
       const next = messages.map((message: any, index: number) => {
-        const legacyMessage: any = aguiToGQL(message)[0];
-        const readableId = legacyMessage?.id ?? message?.id ?? `${legacyMessage?.role ?? message?.role}-${index}`;
+        const readableId = readableTextPartId(message, index);
         if (index !== sourceIndex && readableId !== messageId && message?.id !== messageId) {
           return message;
         }
@@ -1023,19 +1102,14 @@ function useReadableChatMessages() {
   const recentActions = useMemo(() => {
     const actions: string[] = [];
     for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const legacyMessage: any = aguiToGQL(messages[index] as any)[0];
-      if (!legacyMessage) continue;
-      if (legacyMessage?.role === "user") break;
-      if (legacyMessage.isActionExecutionMessage?.()) {
-        const name = legacyMessage.name || "tool";
-        const args = (() => {
-          if (typeof legacyMessage.arguments !== "string") return legacyMessage.arguments;
-          try {
-            return JSON.parse(legacyMessage.arguments);
-          } catch {
-            return {};
-          }
-        })();
+      const parts = normalizedChatParts(messages[index], index);
+      if (parts.some((part) => part.kind === "text" && part.role === "user")) break;
+
+      for (const part of [...parts].reverse()) {
+        if (part.kind !== "action") continue;
+
+        const name = part.name || "tool";
+        const args = normalizeToolArguments(part.arguments);
         const page = typeof args?.page_no === "number" ? ` page ${args.page_no}` : "";
         const filename = typeof args?.filename === "string" ? ` ${args.filename}` : "";
         const label =
@@ -1053,6 +1127,7 @@ function useReadableChatMessages() {
         if (!actions.includes(label)) actions.push(label);
         if (actions.length >= 4) break;
       }
+      if (actions.length >= 4) break;
     }
     return actions;
   }, [messages]);
@@ -1069,7 +1144,7 @@ function WorkspaceTopBar({
   onModelChange: (id: string) => void;
   models: ModelOption[];
 }) {
-  const { documents, conversations, activeConversationId, createNewConversation, setActiveConversationId, updateConversation } = useApp();
+  const { documents, conversations, activeConversationId, createNewConversation, deleteConversation, setActiveConversationId, updateConversation } = useApp();
   const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -1117,6 +1192,20 @@ function WorkspaceTopBar({
     updateConversation(activeConversationId, { title: nextTitle });
     setRenaming(false);
   }, [activeConversationId, draftTitle, updateConversation]);
+
+  const handleDeleteWorkspace = useCallback(
+    (event: React.MouseEvent, id: string, name?: string) => {
+      event.stopPropagation();
+      const title = name?.trim() || "New Conversation";
+      if (!window.confirm(`Delete "${title}"? This removes the thread and its saved canvas history.`)) return;
+      deleteConversation(id);
+      if (id === activeConversationId) {
+        setHistoryOpen(false);
+        setRenaming(false);
+      }
+    },
+    [activeConversationId, deleteConversation],
+  );
 
   return (
     <div className="absolute left-4 right-4 top-3 z-50 flex h-12 items-center justify-between gap-3 rounded-lg border border-neutral-200/80 bg-white/92 px-3 shadow-sm backdrop-blur-md dark:border-neutral-800/80 dark:bg-neutral-950/88">
@@ -1196,23 +1285,36 @@ function WorkspaceTopBar({
 
             <div className="max-h-72 overflow-y-auto border-t border-neutral-100 pt-1 dark:border-neutral-800">
               {historyConversations.map((conversation) => (
-                <button
+                <div
                   key={conversation.id}
-                  type="button"
-                  onClick={() => {
-                    setActiveConversationId(conversation.id);
-                    setHistoryOpen(false);
-                    setRenaming(false);
-                  }}
-                  className={`flex w-full flex-col rounded-lg px-3 py-2 text-left transition-colors ${
+                  className={`group flex w-full items-center gap-1 rounded-lg pr-1 transition-colors ${
                     conversation.id === activeConversationId
                       ? "bg-neutral-100 text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100"
                       : "text-neutral-700 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-900"
                   }`}
                 >
-                  <span className="truncate text-xs font-medium">{conversation.title || "New Conversation"}</span>
-                  <span className="truncate text-[10px] text-neutral-400">{conversation.preview || conversation.lastMessageAt}</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveConversationId(conversation.id);
+                      setHistoryOpen(false);
+                      setRenaming(false);
+                    }}
+                    className="min-w-0 flex-1 px-3 py-2 text-left"
+                  >
+                    <span className="block truncate text-xs font-medium">{conversation.title || "New Conversation"}</span>
+                    <span className="block truncate text-[10px] text-neutral-400">{conversation.preview || conversation.lastMessageAt}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(event) => handleDeleteWorkspace(event, conversation.id, conversation.title)}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600 focus:bg-red-50 focus:text-red-600 dark:hover:bg-red-950/30"
+                    title="Delete workspace"
+                    aria-label={`Delete ${conversation.title || "New Conversation"}`}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
               ))}
               {historyConversations.length === 0 && (
                 <div className="px-3 py-4 text-xs text-neutral-400">No previous workspaces yet.</div>
