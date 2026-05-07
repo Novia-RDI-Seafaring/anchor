@@ -151,10 +151,14 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
           contain), so the wrapper's dimensions exactly equal the rendered
           image's rectangle. The SVG overlay then aligns precisely with the
           image's pixel grid — bbox overlays land where they should.
-          The viewport is constrained by overflow hidden on a max-h wrapper
-          if the user wants a smaller node; today we let it scale freely. */}
+
+          `nodrag nopan` on the wrapper opts the whole page-image area out
+          of ReactFlow's node-drag and viewport-pan. That way clicks on
+          regions go to the region handlers (drag a region → spec node);
+          the user can still move the document node by grabbing its body
+          or footer below the image. */}
       {coverUrl ? (
-        <div className="relative overflow-hidden rounded-t-md bg-neutral-100">
+        <div className="nodrag nopan relative overflow-hidden rounded-t-md bg-neutral-100">
           <img
             ref={imgRef}
             src={coverUrl}
