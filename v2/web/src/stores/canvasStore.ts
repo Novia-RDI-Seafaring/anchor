@@ -3,7 +3,16 @@ import { create } from "zustand";
 import type { CanvasEvent } from "@/realtime/sseClient";
 
 type Node = { id: string; node_type: string; label: string; x: number; y: number; data?: Record<string, unknown> };
-type Edge = { id: string; source: string; target: string; label: string; edge_type: string };
+type Edge = {
+  id: string;
+  source: string;
+  target: string;
+  label: string;
+  edge_type: string;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+  data?: Record<string, unknown>;
+};
 
 // Snapshot mirrors the wire shape from `GET /api/workspaces/{slug}/state`.
 // Field types are loose dicts because the wire is JSON; the store narrows to
@@ -37,6 +46,13 @@ function asEdge(row: WireRow): Edge {
     target: row.target as string,
     label: (row.label as string) ?? "",
     edge_type: (row.edge_type as string) ?? "floating",
+    sourceHandle: (row.sourceHandle as string | null | undefined)
+      ?? (row.source_handle as string | null | undefined)
+      ?? null,
+    targetHandle: (row.targetHandle as string | null | undefined)
+      ?? (row.target_handle as string | null | undefined)
+      ?? null,
+    data: (row.data as Record<string, unknown>) ?? {},
   };
 }
 
@@ -115,6 +131,13 @@ export const useCanvasStore = create<State>((set) => ({
           target: p.target as string,
           label: (p.label as string) ?? "",
           edge_type: (p.edge_type as string) ?? "floating",
+          sourceHandle: (p.sourceHandle as string | null | undefined)
+            ?? (p.source_handle as string | null | undefined)
+            ?? null,
+          targetHandle: (p.targetHandle as string | null | undefined)
+            ?? (p.target_handle as string | null | undefined)
+            ?? null,
+          data: (p.data as Record<string, unknown>) ?? {},
         };
         break;
       case "EdgeRemoved":

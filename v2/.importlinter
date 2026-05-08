@@ -57,3 +57,11 @@ layers =
     anchor.extensions.anchor_pdfs.adapters
     anchor.extensions.anchor_pdfs.infra
     anchor.extensions.anchor_pdfs.core
+
+[importlinter:contract:anchor_sysml_layered]
+name = anchor_sysml: layered, anchor_sysml.adapters → anchor_sysml.infra → anchor_sysml.core
+type = layers
+layers =
+    anchor.extensions.anchor_sysml.adapters
+    anchor.extensions.anchor_sysml.infra
+    anchor.extensions.anchor_sysml.core

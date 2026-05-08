@@ -53,9 +53,13 @@ async def _run(data_dir: Path) -> None:
     except Exception:  # noqa: BLE001
         pass
 
+    # Wire SysML extension — pure-Python, no optional deps to fall over.
+    from anchor.extensions.anchor_sysml import extension as sysml_ext
+    sysml = sysml_ext.build_service(data_dir, bus, workspace=workspace)
+
     server = build_mcp_server(
         workspace=workspace, ingest=ingest, doc_store=doc_store,
-        fmu=fmu, cad=cad,
+        fmu=fmu, cad=cad, sysml=sysml,
     )
     async with stdio_server() as (read, write):
         await server.run(read, write, server.create_initialization_options())

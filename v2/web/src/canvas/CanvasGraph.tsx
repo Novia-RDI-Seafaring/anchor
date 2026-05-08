@@ -16,10 +16,20 @@ import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useState } from "react";
 
 import { canvases } from "@/api/canvases";
+import { AnchoredEdge } from "@/canvas/edges/AnchoredEdge";
+import { EdgeMarkerDefs } from "@/canvas/edges/EdgeMarkerDefs";
+import { FloatingEdge } from "@/canvas/edges/FloatingEdge";
 import { nodeTypes } from "@/canvas/registry";
 import { CanvasSse } from "@/realtime/sseClient";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
+
+// Custom edge renderers keyed by the `edge_type` string the backend emits.
+// `floating` = loose graph edge. `anchored` = handle-keyed (port → port,
+// evidence row → bbox). The dispatcher inside each component switches on
+// `data.marker` to pick arrowheads / dashing / labels — see
+// `canvas/edges/markers.ts`.
+const edgeTypes = { floating: FloatingEdge, anchored: AnchoredEdge };
 
 type Props = {
   slug: string;
@@ -111,13 +121,22 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   }, [nodes]);
 
   useEffect(() => {
-    setRfEdges(Object.values(edges).map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      label: e.label,
-      type: "default",
-    })));
+    setRfEdges(Object.values(edges).map((e) => {
+      // Map backend edge_type → ReactFlow type. Unknown edge_type values
+      // fall back to "floating" so they still render with the marker
+      // dispatcher rather than the (undefined) default edge.
+      const type = e.edge_type === "anchored" ? "anchored" : "floating";
+      return {
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        sourceHandle: e.sourceHandle ?? undefined,
+        targetHandle: e.targetHandle ?? undefined,
+        label: e.label,
+        type,
+        data: { ...(e.data ?? {}), label: e.label || undefined },
+      } satisfies RfEdge;
+    }));
   }, [edges]);
 
   const onNodesChange = useCallback((changes: NodeChange<RfNode>[]) => {
@@ -153,11 +172,32 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
           height?: number;
           data?: Record<string, unknown>;
         };
-        await canvases.addNode(slug, {
+        const res = (await canvases.addNode(slug, {
           ...spec,
           x: flowPos.x,
           y: flowPos.y,
-        });
+        })) as { event?: { payload?: { id?: string } } } | null;
+        const newId = res?.event?.payload?.id;
+
+        // Evidence edge: if the dropped payload carries a source_doc_node_id
+        // (e.g. dragging a region out of a document node), connect the new
+        // node back to its source. The edge keeps the source_ref so it can
+        // drive the cross-component hover-flip behavior.
+        const data = spec.data ?? {};
+        const sourceNodeId = (data.source_doc_node_id as string | undefined) ?? null;
+        const sourceRef = data.source_ref as Record<string, unknown> | undefined;
+        if (newId && sourceNodeId) {
+          await canvases.addEdge(slug, {
+            source: newId,
+            target: sourceNodeId,
+            edge_type: "anchored",
+            data: {
+              kind: "evidence",
+              ...(sourceRef ? { source_ref: sourceRef } : {}),
+              ...(data.source_region_id ? { source_region_id: data.source_region_id } : {}),
+            },
+          });
+        }
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error("shell drop failed", err);
@@ -185,13 +225,18 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   // change emitted by the rest of the system shows up live.
   return (
     <div
-      className="h-full w-full"
+      className="relative h-full w-full"
       {...(readOnly ? {} : { onDragOver, onDrop })}
     >
+      {/* Mount custom <marker> defs once per canvas. Edge components
+          reference them by URL fragment (`url(#anchor-mk-...)`); SVG
+          marker IDs resolve document-wide so a sibling defs SVG works. */}
+      <EdgeMarkerDefs />
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         fitView

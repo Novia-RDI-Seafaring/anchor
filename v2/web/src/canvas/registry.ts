@@ -31,6 +31,9 @@ import type { NodeProps, NodeTypes } from "@xyflow/react";
 // Primitives — generic OIP-aware renderers
 import { DocumentPrimitive } from "./primitives/DocumentPrimitive";
 import { Model3DPrimitive } from "./primitives/Model3DPrimitive";
+import { SysmlBlockPrimitive } from "./primitives/SysmlBlockPrimitive";
+import { SysmlPackagePrimitive } from "./primitives/SysmlPackagePrimitive";
+import { SysmlRequirementPrimitive } from "./primitives/SysmlRequirementPrimitive";
 import { TablePrimitive } from "./primitives/TablePrimitive";
 
 // Shapes — canvas-internal structural node types
@@ -80,6 +83,11 @@ registerNodeRenderer("document", DocumentPrimitive);
 registerNodeRenderer("spec", TablePrimitive);
 registerNodeRenderer("model3d", Model3DPrimitive);
 registerNodeRenderer("cad:model", Model3DPrimitive);  // anchor_cad's manifest node_type
+
+// SysML v2 primitives — anchor_sysml extension's manifest node_types
+registerNodeRenderer("sysml:block", SysmlBlockPrimitive);
+registerNodeRenderer("sysml:requirement", SysmlRequirementPrimitive);
+registerNodeRenderer("sysml:package", SysmlPackagePrimitive);
 // future primitives (when their renderers land):
 //   registerNodeRenderer("media", MediaPrimitive);
 //   registerNodeRenderer("code", CodePrimitive);

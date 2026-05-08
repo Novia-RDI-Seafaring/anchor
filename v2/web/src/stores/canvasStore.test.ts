@@ -75,7 +75,14 @@ describe("canvasStore.applyEvent", () => {
       payload: { id: "e1", source: "a", target: "b", label: "rel", edge_type: "floating" },
     }));
     expect(useCanvasStore.getState().edges["e1"]).toEqual({
-      id: "e1", source: "a", target: "b", label: "rel", edge_type: "floating",
+      id: "e1",
+      source: "a",
+      target: "b",
+      label: "rel",
+      edge_type: "floating",
+      sourceHandle: null,
+      targetHandle: null,
+      data: {},
     });
   });
 

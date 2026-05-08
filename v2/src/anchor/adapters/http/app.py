@@ -16,6 +16,8 @@ from anchor.extensions.anchor_cad.core.services import CadService
 from anchor.extensions.anchor_pdfs.adapters.http import documents, upload
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.services import IngestService
+from anchor.extensions.anchor_sysml.adapters.http import sysml_routes
+from anchor.extensions.anchor_sysml.core.services import SysmlService
 
 
 def build_app(
@@ -26,6 +28,7 @@ def build_app(
     bus: EventBus,
     static_dir: Path | None = None,
     cad_service: CadService | None = None,
+    sysml_service: SysmlService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Anchor v2", version="0.2.0")
     app.state.workspace_service = workspace_service
@@ -33,6 +36,7 @@ def build_app(
     app.state.doc_store = doc_store
     app.state.bus = bus
     app.state.cad_service = cad_service
+    app.state.sysml_service = sysml_service
 
     app.add_middleware(
         CORSMiddleware,
@@ -50,6 +54,9 @@ def build_app(
     if cad_service is not None:
         app.dependency_overrides[cad_routes.get_cad_service] = lambda: cad_service
         app.include_router(cad_routes.router)
+    if sysml_service is not None:
+        app.dependency_overrides[sysml_routes.get_sysml_service] = lambda: sysml_service
+        app.include_router(sysml_routes.router)
 
     if static_dir is not None and static_dir.is_dir():
         index = static_dir / "index.html"

@@ -26,6 +26,8 @@ from anchor.extensions.anchor_fmus.core.services import FmuService
 from anchor.extensions.anchor_pdfs import mcp_handlers as pdf_handlers
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.services import IngestService
+from anchor.extensions.anchor_sysml import mcp_handlers as sysml_handlers
+from anchor.extensions.anchor_sysml.core.services import SysmlService
 
 
 def build_mcp_server(
@@ -35,6 +37,7 @@ def build_mcp_server(
     doc_store: DocStore,
     fmu: FmuService | None = None,
     cad: CadService | None = None,
+    sysml: SysmlService | None = None,
     name: str = "anchor",
 ) -> Server:
     app = Server(name)
@@ -43,14 +46,16 @@ def build_mcp_server(
     pdf_defs = pdf_handlers.tool_definitions()
     fmu_defs = fmu_handlers.tool_definitions() if fmu is not None else []
     cad_defs = cad_handlers.TOOL_DEFINITIONS if cad is not None else []
+    sysml_defs = sysml_handlers.tool_definitions() if sysml is not None else []
 
     @app.list_tools()
     async def list_tools() -> list[Tool]:
-        return [Tool(**d) for d in [*canvas_defs, *pdf_defs, *fmu_defs, *cad_defs]]
+        return [Tool(**d) for d in [*canvas_defs, *pdf_defs, *fmu_defs, *cad_defs, *sysml_defs]]
 
     canvas_names = {d["name"] for d in canvas_defs}
     fmu_names = {d["name"] for d in fmu_defs}
     cad_names = {d["name"] for d in cad_defs}
+    sysml_names = {d["name"] for d in sysml_defs}
 
     @app.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
@@ -61,6 +66,8 @@ def build_mcp_server(
                 text = await fmu_handlers.call_tool(fmu, name, dict(arguments))
             elif name in cad_names and cad is not None:
                 text = await cad_handlers.call_tool(name, dict(arguments), service=cad)
+            elif name in sysml_names and sysml is not None:
+                text = await sysml_handlers.call_tool(sysml, name, dict(arguments))
             else:
                 text = await pdf_handlers.call_tool(ingest, doc_store, name, dict(arguments))
         except Exception as exc:  # noqa: BLE001  - surface to caller as JSON

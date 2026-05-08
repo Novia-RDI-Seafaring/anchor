@@ -12,7 +12,9 @@ from anchor.adapters.cli.install import install_app
 
 app = typer.Typer(help="Anchor — agent-first knowledge canvas.")
 canvas_app = typer.Typer(help="Manage workspaces (canvases).")
+sysml_app = typer.Typer(help="Render and export SysML v2 diagrams.")
 app.add_typer(canvas_app, name="canvas")
+app.add_typer(sysml_app, name="sysml")
 app.add_typer(install_app, name="install")
 app.add_typer(extensions_app, name="extensions")
 
@@ -96,6 +98,10 @@ def serve(
     from anchor.extensions.anchor_cad import extension as cad_ext
     cad_service = cad_ext.build_service(data_dir, bus)
 
+    # Wire the SysML extension — pure-Python, always available.
+    from anchor.extensions.anchor_sysml import extension as sysml_ext
+    sysml_service = sysml_ext.build_service(data_dir, bus, workspace=workspace)
+
     app_ = build_app(
         workspace_service=workspace,
         ingest_service=ingest,
@@ -103,6 +109,7 @@ def serve(
         bus=bus,
         static_dir=static_dir if static_dir.is_dir() else None,
         cad_service=cad_service,
+        sysml_service=sysml_service,
     )
     typer.echo(f"[anchor serve] data_dir={data_dir} {host}:{port}")
     uvicorn.run(app_, host=host, port=port)
@@ -200,6 +207,50 @@ def canvas_create(
     """Create a new workspace folder."""
     _, _, ws, _, _ = _build_real_services(data_dir)
     typer.echo(json.dumps(asyncio.run(ws.create_workspace(slug, title=title)), indent=2))
+
+
+@sysml_app.command("render")
+def sysml_render(
+    sysml_path: Path = typer.Argument(...),
+    workspace_slug: str = typer.Option(..., "--workspace", "-w"),
+    x_offset: float = typer.Option(0.0, "--x-offset"),
+    y_offset: float = typer.Option(0.0, "--y-offset"),
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Render a .sysml file's contents onto the named workspace."""
+    if not sysml_path.exists():
+        typer.echo(f"SysML file not found: {sysml_path}", err=True)
+        raise typer.Exit(code=1)
+    _, bus, workspace, _, _ = _build_real_services(data_dir)
+    from anchor.extensions.anchor_sysml import extension as sysml_ext
+    svc = sysml_ext.build_service(data_dir, bus, workspace=workspace)
+
+    async def run():
+        return await svc.render(
+            workspace_slug=workspace_slug,
+            text=sysml_path.read_text(),
+            x_offset=x_offset,
+            y_offset=y_offset,
+            filename=sysml_path.name,
+        )
+
+    typer.echo(json.dumps(asyncio.run(run()).model_dump(), indent=2))
+
+
+@sysml_app.command("export")
+def sysml_export(
+    workspace_slug: str = typer.Argument(...),
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Export the workspace's SysML elements back to text (Phase 1 stub)."""
+    _, bus, workspace, _, _ = _build_real_services(data_dir)
+    from anchor.extensions.anchor_sysml import extension as sysml_ext
+    svc = sysml_ext.build_service(data_dir, bus, workspace=workspace)
+
+    async def run():
+        return await svc.export(workspace_slug=workspace_slug)
+
+    typer.echo(asyncio.run(run()))
 
 
 @app.command()
