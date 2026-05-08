@@ -175,57 +175,14 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
               (e.currentTarget as HTMLImageElement).style.display = "none";
             }}
           />
-          {/* Per-region vector overlay — only visible for the actively
-              hovered region. Default state shows the page PNG cleanly; on
-              hover we flip a single region to its gold-extracted SVG so
-              the user sees crisp vector content WITHOUT the cross-platform
-              font fallback noise from showing every region's SVG at once.
-              When the producer-side font embedding lands (see task notes),
-              we can switch to always-on overlays. */}
-          {canScale && imgSize && slug && (hoveredLocal || externalHighlightId) ? (() => {
-            const target = hoveredLocal ?? externalHighlightId;
-            const r = regions.find((rr) => ((rr as { id?: string }).id ?? "") === target);
-            if (!r) return null;
-            const bbox = r.bbox;
-            if (!bbox || bbox.length < 4) return null;
-            const [l, t, rt, b] = bbox;
-            if (l === undefined || b === undefined || rt === undefined || t === undefined) return null;
-            const crops = (r as { crops?: { svg?: string | null } }).crops;
-            const svgRel = crops?.svg;
-            if (!svgRel) return null;
-            const sx = imgSize.w / pageW;
-            const sy = imgSize.h / pageH;
-            const xpc = (l * sx) / imgSize.w * 100;
-            const ypc = ((pageH - t) * sy) / imgSize.h * 100;
-            const wpc = ((rt - l) * sx) / imgSize.w * 100;
-            const hpc = ((t - b) * sy) / imgSize.h * 100;
-            const url = `${BACKEND_URL}/api/documents/${slug}/crops/${svgRel}`;
-            return (
-              <img
-                src={url}
-                alt=""
-                className="absolute select-none pointer-events-none"
-                style={{
-                  left: `${xpc}%`,
-                  top: `${ypc}%`,
-                  width: `${wpc}%`,
-                  height: `${hpc}%`,
-                }}
-                loading="lazy"
-                draggable={false}
-                onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).style.display = "none";
-                }}
-              />
-            );
-          })() : null}
-          {canScale && imgSize ? (
-            <svg
-              className="absolute inset-0 h-full w-full"
-              viewBox={`0 0 ${imgSize.w} ${imgSize.h}`}
-              preserveAspectRatio="none"
-            >
-              {regions.map((r, idx) => {
+          {/* Single-layer region overlay: each region is one absolutely-
+              positioned div that handles styling, hover, click AND drag.
+              Collapses what used to be three stacked layers (SVG hover,
+              vector overlay, transparent drag layer) — those overlapped
+              imperfectly and made HTML5 drag flaky. One element per region
+              means no hit-test ambiguity. */}
+          {canScale && imgSize && slug
+            ? regions.map((r, idx) => {
                 const bbox = r.bbox;
                 if (!bbox || bbox.length < 4) return null;
                 // Docling bbox = [left, top, right, bottom] in BOTTOM-LEFT
@@ -234,77 +191,96 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                 if (l === undefined || b === undefined || rt === undefined || t === undefined) return null;
                 const sx = imgSize.w / pageW;
                 const sy = imgSize.h / pageH;
-                const x = l * sx;
-                const y = (pageH - t) * sy;
-                const w = (rt - l) * sx;
-                const h = (t - b) * sy;
+                const xpc = (l * sx) / imgSize.w * 100;
+                const ypc = ((pageH - t) * sy) / imgSize.h * 100;
+                const wpc = ((rt - l) * sx) / imgSize.w * 100;
+                const hpc = ((t - b) * sy) / imgSize.h * 100;
                 const rid = (r as { id?: string }).id ?? `r${idx}`;
                 const isLocal = hoveredLocal === rid;
                 const isExternal = externalHighlightId === rid;
                 const active = isLocal || isExternal;
+                const crops = (r as { crops?: { svg?: string | null } }).crops;
+                const svgRel = crops?.svg;
+                const overlayUrl = active && svgRel
+                  ? `${BACKEND_URL}/api/documents/${slug}/crops/${svgRel}`
+                  : null;
                 return (
-                  <g
+                  <div
                     key={rid}
-                    style={{ cursor: "grab" }}
+                    // `nodrag nopan` opts each region out of ReactFlow node-
+                    // drag and viewport-pan, so HTML5 drag fires cleanly.
+                    className="nodrag nopan absolute cursor-grab active:cursor-grabbing"
+                    style={{
+                      left: `${xpc}%`,
+                      top: `${ypc}%`,
+                      width: `${wpc}%`,
+                      height: `${hpc}%`,
+                      background: active
+                        ? "rgba(14, 165, 233, 0.18)"
+                        : "rgba(14, 165, 233, 0.04)",
+                      outline: active
+                        ? "2px solid #0369A1"
+                        : "1px solid rgba(14, 165, 233, 0.55)",
+                      outlineOffset: "-1px",
+                    }}
+                    title={r.title ?? r.kind ?? rid}
+                    draggable
+                    onMouseDown={(e) => e.stopPropagation()}
                     onMouseEnter={() => {
                       setHoveredLocal(rid);
-                      // broadcast outwards too — spec nodes tied to this region
-                      // get a reciprocal highlight.
-                      if (slug) {
-                        setHoveredSourceRef({
-                          slug,
-                          page,
-                          region_id: rid,
-                          bbox,
-                        });
-                      }
+                      setHoveredSourceRef({ slug, page, region_id: rid, bbox });
                     }}
                     onMouseLeave={() => {
                       setHoveredLocal(null);
                       clearHoveredSourceRef();
                     }}
-                    onClick={() => {
-                      if (slug) {
-                        openPdf(slug, {
-                          workspaceSlug: workspaceSlug ?? d.workspace_slug,
-                          documentNodeId: id,
-                          page,
-                          highlightRegionId: rid,
-                          highlightBbox: bbox,
-                        });
-                      }
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openPdf(slug, {
+                        workspaceSlug: workspaceSlug ?? d.workspace_slug,
+                        documentNodeId: id,
+                        page,
+                        highlightRegionId: rid,
+                        highlightBbox: bbox,
+                      });
+                    }}
+                    onDragStart={(e) => {
+                      e.stopPropagation();
+                      const payload = {
+                        node_type: "spec",
+                        label: r.title ?? r.kind ?? rid,
+                        data: {
+                          source_doc_slug: slug,
+                          source_doc_node_id: id,
+                          source_region_id: rid,
+                          description: (r as { description?: string }).description,
+                          tags: (r as { tags?: string[] }).tags ?? [],
+                          source_ref: { kind: "pdf-page-bbox", page, bbox },
+                        },
+                      };
+                      e.dataTransfer.effectAllowed = "copy";
+                      e.dataTransfer.setData(
+                        "application/x-anchor-node",
+                        JSON.stringify(payload),
+                      );
                     }}
                   >
-                    <rect
-                      x={x}
-                      y={y}
-                      width={w}
-                      height={h}
-                      fill={active ? "rgba(14, 165, 233, 0.18)" : "rgba(14, 165, 233, 0.04)"}
-                      stroke={active ? "#0369A1" : "rgba(14, 165, 233, 0.55)"}
-                      strokeWidth={active ? 2 : 1}
-                      vectorEffect="non-scaling-stroke"
-                    >
-                      <title>{r.title ?? r.kind ?? rid}</title>
-                    </rect>
-                  </g>
+                    {overlayUrl ? (
+                      <img
+                        src={overlayUrl}
+                        alt=""
+                        className="pointer-events-none absolute inset-0 h-full w-full select-none"
+                        loading="lazy"
+                        draggable={false}
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    ) : null}
+                  </div>
                 );
-              })}
-            </svg>
-          ) : null}
-          {/* draggable layer — when the user grabs a region's bbox it picks
-              up that region's payload as `application/x-anchor-node` */}
-          {canScale && imgSize ? (
-            <RegionDragLayer
-              regions={regions}
-              imgSize={imgSize}
-              pageW={pageW}
-              pageH={pageH}
-              page={page}
-              docSlug={slug ?? ""}
-              docNodeId={id}
-            />
-          ) : null}
+              })
+            : null}
         </div>
       ) : (
         <div className="flex h-24 w-full items-center justify-center rounded-t-md bg-neutral-100 text-3xl text-neutral-400">
@@ -391,81 +367,3 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   );
 }
 
-/**
- * Transparent layer on top of the page image+SVG that initiates HTML5
- * native drag for whichever region the cursor is over. Separate from the
- * SVG (which can't easily host the dragstart payload that ReactFlow's
- * own onDrop expects) so the SVG handles hover/click and this layer
- * handles drag.
- */
-function RegionDragLayer({
-  regions,
-  imgSize,
-  pageW,
-  pageH,
-  page,
-  docSlug,
-  docNodeId,
-}: {
-  regions: Region[];
-  imgSize: { w: number; h: number };
-  pageW: number;
-  pageH: number;
-  page: number;
-  docSlug: string;
-  docNodeId: string;
-}) {
-  return (
-    <div className="absolute inset-0 pointer-events-none">
-      {regions.map((r, idx) => {
-        const bbox = r.bbox;
-        if (!bbox || bbox.length < 4) return null;
-        const [l, b, rt, t] = bbox;
-        if (l === undefined || b === undefined || rt === undefined || t === undefined) return null;
-        const sx = imgSize.w / pageW;
-        const sy = imgSize.h / pageH;
-        const x = (l * sx) / imgSize.w * 100;
-        const y = ((pageH - t) * sy) / imgSize.h * 100;
-        const w = ((rt - l) * sx) / imgSize.w * 100;
-        const h = ((t - b) * sy) / imgSize.h * 100;
-        const rid = (r as { id?: string }).id ?? `r${idx}`;
-        return (
-          <div
-            key={rid}
-            // `nodrag` and `nopan` opt out of ReactFlow's node-level drag
-            // and viewport pan, so HTML5 drag fires here cleanly instead of
-            // panning the canvas.
-            className="nodrag nopan absolute pointer-events-auto cursor-grab active:cursor-grabbing"
-            style={{ left: `${x}%`, top: `${y}%`, width: `${w}%`, height: `${h}%` }}
-            draggable
-            onMouseDown={(e) => e.stopPropagation()}
-            onDragStart={(e) => {
-              e.stopPropagation();
-              const payload = {
-                node_type: "spec",
-                label: r.title ?? r.kind ?? rid,
-                data: {
-                  source_doc_slug: docSlug,
-                  source_doc_node_id: docNodeId,
-                  source_region_id: rid,
-                  description: (r as { description?: string }).description,
-                  tags: (r as { tags?: string[] }).tags ?? [],
-                  source_ref: {
-                    kind: "pdf-page-bbox",
-                    page,
-                    bbox,
-                  },
-                },
-              };
-              e.dataTransfer.effectAllowed = "copy";
-              e.dataTransfer.setData(
-                "application/x-anchor-node",
-                JSON.stringify(payload),
-              );
-            }}
-          />
-        );
-      })}
-    </div>
-  );
-}
