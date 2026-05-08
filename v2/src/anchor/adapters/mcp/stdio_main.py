@@ -39,7 +39,24 @@ async def _run(data_dir: Path) -> None:
         polisher=OpenAIPageMdPolisher(api_key=api_key) if has_openai else None,
         region_extractor=OpenAIRegionExtractor(api_key=api_key) if has_openai else None,
     )
-    server = build_mcp_server(workspace=workspace, ingest=ingest, doc_store=doc_store)
+
+    # Wire CAD extension service so anchor-mcp exposes cad.* tools too.
+    from anchor.extensions.anchor_cad import extension as cad_ext
+    cad = cad_ext.build_service(data_dir, bus)
+
+    # Wire FMU extension service if FmuService is importable. Falls back
+    # silently to no-FMU if FMPy or its deps aren't installed.
+    fmu = None
+    try:
+        from anchor.extensions.anchor_fmus import extension as fmu_ext
+        fmu = fmu_ext.build_service(data_dir, bus)
+    except Exception:  # noqa: BLE001
+        pass
+
+    server = build_mcp_server(
+        workspace=workspace, ingest=ingest, doc_store=doc_store,
+        fmu=fmu, cad=cad,
+    )
     async with stdio_server() as (read, write):
         await server.run(read, write, server.create_initialization_options())
 
