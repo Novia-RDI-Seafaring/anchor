@@ -35,7 +35,7 @@ export const NODE_SIZE: Record<string, { w: number; h: number }> = {
   categoryNode: { w: 220, h: 55 },
   topicNode: { w: 240, h: 60 },
   factNode: { w: 280, h: 100 },
-  documentNode: { w: 150, h: 64 },
+  documentNode: { w: 280, h: 470 },
   sourceNode: { w: 180, h: 40 },
   specNode: { w: 420, h: 200 },
   fmuNode: { w: 280, h: 200 },
@@ -52,7 +52,7 @@ export const NODE_SIZE: Record<string, { w: number; h: number }> = {
 };
 
 export const DEFAULT_SIZE = { w: 220, h: 80 };
-export const DOCUMENT_NODE_SIZE = { w: 150, h: 64 };
+export const DOCUMENT_NODE_SIZE = { w: 280, h: 470 };
 export const KNOWLEDGE_FILE_PATTERN = /\.(pdf|docx|txt|md|html)$/i;
 
 export function anchorAtCenter(position: FlowPosition, size: { w: number; h: number }): FlowPosition {

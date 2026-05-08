@@ -33,5 +33,5 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-ketju = { path = "../../mini_apps/ketju", editable = true }
+ketju = { path = "../../ketju", editable = true }
 

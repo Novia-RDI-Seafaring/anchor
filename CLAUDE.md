@@ -77,7 +77,8 @@ The model node has an inline-editable label (double-click to rename). Toolbar sh
 | `src/components/canvas/FloatingEdge.tsx` | Floating edge renderer |
 | `src/components/canvas/AnchoredEdge.tsx` | Handle-anchored edge renderer |
 | `src/components/canvas/PDFModal.tsx` | PDF viewer modal |
-| `src/components/layout/MainContent.tsx` | Canvas state management, event handlers (add/delete/update nodes) |
+| `src/components/workspace-v2/WorkspaceV2App.tsx` | Active workspace shell, chat composer, medallion panel, and canvas state management |
+| `src/components/layout/mainContentUtils.ts` | Shared canvas normalization and document screenshot helpers |
 
 ## Backend agent structure
 

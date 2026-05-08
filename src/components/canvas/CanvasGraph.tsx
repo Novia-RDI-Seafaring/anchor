@@ -986,7 +986,12 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, sh
       if (n.semanticType === "document") {
         const doc = documentsRef.current.find((item) => item.document_id === n.id.replace(/^__doc_/, ""));
         const evidenceCount = relations.filter(r => r.to_id === n.id).length;
-        return applyExplicitNodeSize(n, buildFlowNode(n.id, "documentNode", n.color, hidden, {
+        const readableDocNode = {
+          ...n,
+          width: Math.max(n.width || 0, DOCUMENT_NODE_SIZE.w),
+          height: Math.max(n.height || 0, DOCUMENT_NODE_SIZE.h),
+        };
+        return applyExplicitNodeSize(readableDocNode, buildFlowNode(n.id, "documentNode", n.color, hidden, {
           item: doc ? adaptDocumentToCanvasItem(doc) : n,
           doc,
           isActive: doc?.document_id === activeDocumentIdRef.current,
@@ -1233,8 +1238,15 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, sh
         }
         if (n.semanticType === "document") {
           const doc = documentsRef.current.find((item) => item.document_id === n.id.replace(/^__doc_/, ""));
+          const width = Math.max(n.width || 0, DOCUMENT_NODE_SIZE.w);
+          const height = Math.max(n.height || 0, DOCUMENT_NODE_SIZE.h);
           return {
             ...rfNode,
+            style: {
+              ...rfNode.style,
+              width,
+              height,
+            },
             data: {
               ...rfNode.data,
               item: doc ? adaptDocumentToCanvasItem(doc) : n,

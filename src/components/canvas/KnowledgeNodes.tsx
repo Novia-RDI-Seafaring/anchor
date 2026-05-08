@@ -1512,7 +1512,7 @@ function DocumentRegionMap({
   const [hoveredRegion, setHoveredRegion] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(152);
+  const [containerWidth, setContainerWidth] = useState(256);
 
   useEffect(() => {
     fetch(`${API_URL}/api/documents/gold-map/${encodeURIComponent(filename)}`)
@@ -1530,7 +1530,7 @@ function DocumentRegionMap({
       for (const e of entries) setContainerWidth(e.contentRect.width);
     });
     ro.observe(el);
-    setContainerWidth(el.clientWidth || 152);
+    setContainerWidth(el.clientWidth || 256);
     return () => ro.disconnect();
   }, [mapData]);
 
@@ -1627,6 +1627,9 @@ function DocumentRegionMap({
           </div>
         );
       })}
+      <div className="pointer-events-none absolute left-2 top-2 z-20 rounded-md bg-white/90 px-2 py-1 text-[10px] font-medium text-neutral-600 shadow-sm dark:bg-neutral-900/90 dark:text-neutral-300">
+        drag highlighted regions
+      </div>
       {/* Page navigation */}
       {page_count > 1 && (
         <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-0.5 bg-black/50 rounded-full px-1.5 py-0.5 z-20 nodrag nopan">
@@ -1889,7 +1892,7 @@ function ContentsSidecart({
                 return (
                   <div
                     key={r.id}
-                    className="group rounded-lg border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-850 overflow-hidden hover:border-indigo-300 dark:hover:border-indigo-600 hover:shadow-md transition-all cursor-grab active:cursor-grabbing"
+                    className="group rounded-lg border border-neutral-200 bg-white overflow-hidden transition-all hover:border-indigo-300 hover:shadow-md active:cursor-grabbing dark:border-neutral-700 dark:bg-neutral-850 dark:hover:border-indigo-600"
                     draggable
                     onDragStart={(e) => {
                       e.dataTransfer.setData("application/anchor-region", makeDragData(r));
@@ -1897,13 +1900,16 @@ function ContentsSidecart({
                     }}
                   >
                     {/* Region header */}
-                    <div className="flex items-center gap-2 px-3 py-2">
-                      <GripVertical size={12} className="text-neutral-300 dark:text-neutral-600 shrink-0 group-hover:text-indigo-400 transition-colors" />
+                    <div className="flex cursor-grab items-center gap-2 px-3 py-2">
+                      <GripVertical size={13} className="text-neutral-300 dark:text-neutral-600 shrink-0 group-hover:text-indigo-400 transition-colors" />
                       <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${kindBadge(r.kind)}`}>
                         {r.kind}
                       </span>
-                      <span className="text-xs font-medium text-neutral-800 dark:text-neutral-200 truncate">
+                      <span className="min-w-0 flex-1 truncate text-xs font-medium text-neutral-800 dark:text-neutral-200">
                         {r.title}
+                      </span>
+                      <span className="rounded-md border border-indigo-200 px-1.5 py-0.5 text-[9px] font-medium text-indigo-600 opacity-75 dark:border-indigo-800 dark:text-indigo-300">
+                        drag
                       </span>
                     </div>
                     {/* SVG/PNG preview */}
@@ -1922,9 +1928,9 @@ function ContentsSidecart({
                       </div>
                     )}
                     {/* Entities */}
-                    {r.entities.length > 0 && (
+                    {(r.entities ?? []).length > 0 && (
                       <div className="flex flex-wrap gap-1 px-3 pb-2">
-                        {r.entities.map((e) => (
+                        {(r.entities ?? []).map((e) => (
                           <span key={e} className="text-[8px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400">{e}</span>
                         ))}
                       </div>
@@ -1948,15 +1954,17 @@ function ContentsSidecart({
     : level.kind === "page"
     ? `Page ${level.page}`
     : "Region";
+  const viewportWidth = typeof window === "undefined" ? 1200 : window.innerWidth;
+  const viewportHeight = typeof window === "undefined" ? 800 : window.innerHeight;
 
   return createPortal(
     <div
       className="fixed z-[9999] flex flex-col bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-2xl shadow-2xl overflow-hidden"
       style={{
-        top: pos.top,
-        left: pos.left,
-        width: 340,
-        maxHeight: "min(600px, calc(100vh - 80px))",
+        top: Math.max(72, Math.min(pos.top, viewportHeight - 620)),
+        left: Math.max(16, Math.min(pos.left, viewportWidth - 560)),
+        width: 520,
+        maxHeight: "min(640px, calc(100vh - 80px))",
       }}
       onClick={(e) => e.stopPropagation()}
     >
@@ -2111,25 +2119,25 @@ export function DocumentNode({ data }: NodeProps) {
           setCtxMenu({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY });
         }}
         title={docData.filename}
-        className={`group relative flex flex-col overflow-hidden rounded-[20px] border transition-all shadow-[0_14px_30px_rgba(15,23,42,0.16)] text-left w-full ${
+        className={`group relative flex h-full w-full flex-col overflow-hidden rounded-[20px] border transition-all shadow-[0_14px_30px_rgba(15,23,42,0.16)] text-left ${
           isActive
             ? "border-indigo-400 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-950/50"
             : "border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-indigo-300 dark:hover:border-indigo-600"
         }`}
         style={{
-          width: 176,
+          height: "calc(100% - 32px)",
           boxShadow: isPreviewing
             ? "0 18px 42px rgba(99, 102, 241, 0.24), 0 0 0 2px rgba(99, 102, 241, 0.16)"
             : undefined,
           transform: isPreviewing ? "translateY(-2px)" : undefined,
         }}
       >
-        <div className="relative px-3 pt-3">
+        <div className="relative min-h-0 flex-1 px-3 pt-3">
           <div className={`relative overflow-hidden rounded-[14px] border shadow-sm ${
             isActive
               ? "border-indigo-200 dark:border-indigo-700"
               : "border-neutral-200 dark:border-neutral-700"
-          }`} style={{ aspectRatio: "0.707 / 1" }}>
+          }`} style={{ height: "100%" }}>
             <div className={`absolute inset-0 z-10 transition-all duration-200 pointer-events-none ${
               isPreviewing
                 ? "bg-gradient-to-b from-indigo-400/10 via-transparent to-indigo-950/16"
@@ -2211,14 +2219,14 @@ export function DocumentNode({ data }: NodeProps) {
           )}
         </div>
         <div
-          className="flex flex-col gap-2 px-3 pb-3 pt-2 cursor-pointer"
+          className="flex shrink-0 cursor-pointer flex-col gap-2 px-3 pb-3 pt-2"
           onClick={() => {
             onActivate(isActive ? "" : docData.document_id);
             onOpenPDF(docData.filename, 1, []);
           }}
         >
           <div className="min-w-0">
-            <div className={`text-[11px] font-semibold leading-tight truncate ${
+            <div className={`truncate text-[13px] font-semibold leading-tight ${
               isActive ? "text-indigo-700 dark:text-indigo-300" : "text-neutral-800 dark:text-neutral-200"
             }`}>
               {stem}
@@ -2263,10 +2271,10 @@ export function DocumentNode({ data }: NodeProps) {
       {/* Contents button */}
       <button
         onClick={(e) => { e.stopPropagation(); setContentsOpen(!contentsOpen); }}
-        className="w-full flex items-center justify-center gap-1 py-1 text-[10px] text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors"
+        className="mt-1 flex w-full items-center justify-center gap-1 rounded-lg border border-neutral-200 bg-white/90 py-1.5 text-[11px] font-medium text-neutral-600 shadow-sm transition-colors hover:border-indigo-200 hover:text-indigo-700 dark:border-neutral-800 dark:bg-neutral-900/90 dark:text-neutral-300 dark:hover:border-indigo-800 dark:hover:text-indigo-300"
       >
         <Layers size={10} />
-        <span>{contentsOpen ? "hide" : "contents"}</span>
+        <span>{contentsOpen ? "hide contents" : "contents / regions"}</span>
         {contentsOpen ? <ChevronUp size={10} /> : <ChevronRight size={10} />}
       </button>
 

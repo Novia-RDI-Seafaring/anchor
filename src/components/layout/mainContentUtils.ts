@@ -110,8 +110,8 @@ export function makeDocumentCanvasNode(doc: DocumentSummary) {
     area_label: "",
     area_width: 0,
     area_height: 0,
-    width: 150,
-    height: 64,
+    width: 280,
+    height: 470,
     parent_id: "",
     last_updated_run_id: "",
   };

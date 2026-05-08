@@ -143,8 +143,8 @@ export function ResourcePalette({
                     setCustomDragPreview(e, {
                       label: doc.filename,
                       caption: `${doc.node_count} chunks`,
-                      width: 150,
-                      height: 64,
+                      width: 280,
+                      height: 120,
                       className: inWs
                         ? "bg-emerald-50 border-emerald-200 text-emerald-900"
                         : "bg-white border-neutral-200 text-neutral-900",
