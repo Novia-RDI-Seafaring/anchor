@@ -131,11 +131,25 @@ class SysmlService:
                 diagnostics=diagnostics,
             )
         except Exception as exc:
+            # Surface lex/parse failures as a diagnostic rather than a 500.
+            # The caller still gets `node_ids=[]` and `edge_ids=[]` so they
+            # can detect "nothing landed" without hitting a transport-layer
+            # error. The line/col, when present, helps the user fix the
+            # source file and retry.
             await self._publish(
                 workspace_slug,
                 SysmlRenderFailed(workspace_slug=workspace_slug, error=str(exc)),
             )
-            raise
+            return SysmlRenderResult(
+                node_ids=[],
+                edge_ids=[],
+                diagnostics=[
+                    Diagnostic(
+                        level="error",
+                        message=f"{type(exc).__name__}: {exc}",
+                    )
+                ],
+            )
 
     async def export(self, *, workspace_slug: str) -> str:
         """Phase 1: return a stub. Real round-trip lands with the renderer

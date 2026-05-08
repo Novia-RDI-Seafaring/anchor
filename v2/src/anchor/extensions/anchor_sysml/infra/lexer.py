@@ -151,6 +151,20 @@ def _iter_tokens(text: str) -> Iterator[Token]:
             line, col = _advance(m.group(0), line, col)
             pos = m.end()
             continue
+        # SysML quoted identifier — names starting with a digit, containing
+        # special characters, or matching a unit literal are wrapped in
+        # single quotes (e.g. `'01_Definitions'`, `'kg⋅s⁻¹'`,
+        # `'J/(kg⋅K)'`). Treated as a regular IDENT so qualified-name and
+        # type contexts accept them transparently.
+        if ch == "'":
+            end_q = text.find("'", pos + 1)
+            if end_q == -1:
+                raise LexError(f"unterminated quoted identifier at line {line}")
+            value = text[pos:end_q + 1]
+            yield Token("IDENT", value, line, col)
+            line, col = _advance(value, line, col)
+            pos = end_q + 1
+            continue
         # identifiers / keywords (with annotation-name extension)
         m = IDENT.match(text, pos)
         if m is not None:
