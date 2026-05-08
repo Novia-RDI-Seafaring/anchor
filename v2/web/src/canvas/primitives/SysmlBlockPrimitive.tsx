@@ -198,12 +198,25 @@ export function SysmlBlockPrimitive({ data }: NodeProps) {
         </div>
       ) : null}
 
-      {/* Generic body-level handles for non-port edges (inheritance,
-          composition, satisfy targets, etc.). Ports get their own keyed
-          handles above; these unkeyed ones remain available for whole-block
-          relationships. */}
-      <Handle id="block-in" type="target" position={Position.Top} />
-      <Handle id="block-out" type="source" position={Position.Bottom} />
+      {/* Whole-block edges (inheritance, composition, satisfy, …) attach
+          via FloatingEdge's geometry helper, which computes endpoints
+          from node bounding boxes — handle position is ignored. We still
+          register one invisible source + target handle so ReactFlow's
+          edge bookkeeping has a slot to attach to (per-port handles
+          above are explicit, named, and used by `interface-connection`
+          edges via `port-{name}`). */}
+      <Handle
+        id="block-in"
+        type="target"
+        position={Position.Left}
+        style={{ opacity: 0, pointerEvents: "none" }}
+      />
+      <Handle
+        id="block-out"
+        type="source"
+        position={Position.Right}
+        style={{ opacity: 0, pointerEvents: "none" }}
+      />
     </div>
   );
 }

@@ -1,23 +1,25 @@
 import {
   BaseEdge,
   EdgeText,
-  Position,
   getBezierPath,
+  useInternalNode,
   type EdgeProps,
 } from "@xyflow/react";
 
 import { arrowheadFor, markerUrls, type EdgeMarker } from "./markers";
+import { getFloatingEdgeParams } from "./floatingGeometry";
 
 /**
- * FloatingEdge — generic edge that picks arrowhead/style from `data.marker`.
+ * FloatingEdge — generic edge that picks arrowhead/style from `data.marker`
+ * and computes its endpoints from the *closest perimeter points* of the
+ * source and target node boxes (rather than fixed top/bottom handles).
  *
- * Used for "loose" graph edges that are not anchored to a specific handle
- * on the source/target nodes. The geometry is a bezier; the visual
- * variation comes entirely from `arrowheadFor(data.marker)`.
+ * That means: wherever you place the nodes, the edge enters from the
+ * side that faces the other node — left-of becomes a right-side exit,
+ * above becomes a bottom exit, and so on. Standard SysML/UML look.
  *
- * `EdgeMarkerDefs` must be mounted somewhere in the same SVG tree (the
- * canvas root mounts it once) for the marker IDs referenced here to
- * resolve.
+ * `EdgeMarkerDefs` must be mounted in the same SVG tree (the canvas root
+ * mounts it once) for the marker IDs referenced here to resolve.
  */
 
 type FloatingEdgeData = {
@@ -27,46 +29,44 @@ type FloatingEdgeData = {
 };
 
 export function FloatingEdge(props: EdgeProps) {
-  const {
-    id,
-    sourceX,
-    sourceY,
-    targetX,
-    targetY,
-    sourcePosition = Position.Bottom,
-    targetPosition = Position.Top,
-    data,
-    style,
-    selected,
-  } = props;
+  const { id, source, target, data, style, selected } = props;
+  const sourceNode = useInternalNode(source);
+  const targetNode = useInternalNode(target);
+
+  if (!sourceNode || !targetNode) return null;
+
+  const { sx, sy, tx, ty, sourcePos, targetPos } = getFloatingEdgeParams(
+    sourceNode,
+    targetNode,
+  );
 
   const d = (data ?? {}) as FloatingEdgeData;
-  const style_ = arrowheadFor(d.marker);
-  const { markerStart, markerEnd } = markerUrls(style_);
+  const styleSpec = arrowheadFor(d.marker);
+  const { markerStart, markerEnd } = markerUrls(styleSpec);
   const userLabel = d.label ?? undefined;
-  const labelText = style_.labelOverride
+  const labelText = styleSpec.labelOverride
     ? userLabel
-      ? `${style_.labelOverride} ${userLabel}`
-      : style_.labelOverride
+      ? `${styleSpec.labelOverride} ${userLabel}`
+      : styleSpec.labelOverride
     : userLabel;
 
   const [path, labelX, labelY] = getBezierPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
+    sourceX: sx,
+    sourceY: sy,
+    sourcePosition: sourcePos,
+    targetX: tx,
+    targetY: ty,
+    targetPosition: targetPos,
   });
 
-  // Compose stroke from caller `style` + dispatched dasharray. Keep the
-  // dispatcher's value as the source of truth for dashing; callers can
-  // still override colour/width via `style`.
+  // Compose stroke from caller `style` + dispatched dasharray. Dispatcher
+  // is the source of truth for dashing; callers can still override
+  // colour/width via `style`.
   const composedStyle: React.CSSProperties = {
     stroke: "#404040",
     strokeWidth: 1.5,
     ...(style ?? {}),
-    strokeDasharray: style_.strokeDasharray || undefined,
+    strokeDasharray: styleSpec.strokeDasharray || undefined,
   };
   if (selected) {
     composedStyle.stroke = "#0284c7";

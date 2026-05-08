@@ -26,6 +26,7 @@ from anchor.extensions.anchor_sysml.core.schemas import (
     IrRequirement,
     SourceRef,
 )
+from anchor.extensions.anchor_sysml.infra.canvas_layout import apply_layout
 from anchor.extensions.anchor_sysml.infra.canvas_resolver import (
     index_register,
     join_qname,
@@ -69,7 +70,9 @@ class SysmlCanvasMapper:
         edges: list[CanvasEdgeSpec] = []
         diagnostics: list[Diagnostic] = list(ir.diagnostics)
         index: dict[str, str] = {}
-        cursor = _Cursor(x_offset, y_offset)
+        # Emission writes placeholder (0, 0) coords; ``apply_layout`` below
+        # repositions every node based on the resolved relationship graph.
+        cursor = _Cursor(0, 0)
         for pkg in ir.packages:
             _emit_package(pkg, nodes, edges, diagnostics, index, cursor, parent_qname=None)
         # Resolve relationship edges in a second pass so forward references
@@ -78,7 +81,11 @@ class SysmlCanvasMapper:
         resolve_inheritance_edges(ir, index, edges)
         resolve_satisfy_edges(ir, index, edges, diagnostics)
         resolve_subject_edges(ir, index, edges, diagnostics)
-        return CanvasBatch(nodes=nodes, edges=edges, diagnostics=diagnostics)
+        batch = CanvasBatch(nodes=nodes, edges=edges, diagnostics=diagnostics)
+        # Hierarchy-aware positions: superclass above subclasses, requirements
+        # alongside their subject, packages sized to fit their members.
+        apply_layout(batch, x_offset=x_offset, y_offset=y_offset)
+        return batch
 
 
 # ── Layout cursor ────────────────────────────────────────────────────────
