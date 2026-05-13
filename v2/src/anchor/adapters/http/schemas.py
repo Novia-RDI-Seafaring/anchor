@@ -46,3 +46,9 @@ class IngestUploadResponse(BaseModel):
     slug: str
     job_id: str
     status: str = "started"
+
+
+class SnapshotRequest(BaseModel):
+    format: str = "png"
+    viewport: tuple[int, int] | None = None
+    full_page: bool = True
