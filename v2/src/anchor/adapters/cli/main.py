@@ -13,8 +13,10 @@ from anchor.adapters.cli.install import install_app
 app = typer.Typer(help="Anchor — agent-first knowledge canvas.")
 canvas_app = typer.Typer(help="Manage workspaces (canvases).")
 sysml_app = typer.Typer(help="Render and export SysML v2 diagrams.")
+fmu_app = typer.Typer(help="Inspect and simulate FMU models.")
 app.add_typer(canvas_app, name="canvas")
 app.add_typer(sysml_app, name="sysml")
+app.add_typer(fmu_app, name="fmu")
 app.add_typer(install_app, name="install")
 app.add_typer(extensions_app, name="extensions")
 
@@ -127,6 +129,15 @@ def serve(
         md_renderer=MarpSynopsisRenderer(),
     )
 
+    # Wire the FMU extension — optional (requires FMPy). Fall back silently
+    # so `anchor serve` still boots on machines without simulation deps.
+    fmu_service = None
+    try:
+        from anchor.extensions.anchor_fmus import extension as fmu_ext
+        fmu_service = fmu_ext.build_service(data_dir, bus)
+    except Exception:  # noqa: BLE001
+        pass
+
     app_ = build_app(
         workspace_service=workspace,
         ingest_service=ingest,
@@ -136,6 +147,7 @@ def serve(
         cad_service=cad_service,
         sysml_service=sysml_service,
         synopsis_service=synopsis_service,
+        fmu_service=fmu_service,
     )
     typer.echo(f"[anchor serve] data_dir={data_dir} {host}:{port}")
     uvicorn.run(app_, host=host, port=port)
@@ -656,6 +668,128 @@ def sysml_export(
         return await svc.export(workspace_slug=workspace_slug)
 
     typer.echo(asyncio.run(run()))
+
+
+# ── FMU subcommands ─────────────────────────────────────────────────────────
+#
+# Peer to the `fmu.*` MCP tools. Each delegates to the same FmuService
+# methods; the architecture's parity rule (see SKILL.md, feedback memory
+# `feedback_adapter_parity.md`) demands every op reaches all three
+# adapters in the same PR.
+
+
+def _build_fmu_service(data_dir: Path):
+    """Best-effort FMU service for one-shot CLI commands.
+    Raises a clean error if FMPy isn't importable."""
+    try:
+        from anchor.extensions.anchor_fmus import extension as fmu_ext
+        from anchor.infra.bus.memory_bus import MemoryEventBus
+    except ImportError as e:  # pragma: no cover
+        typer.echo(f"FMU extension not available: {e}", err=True)
+        raise typer.Exit(code=1)
+    bus = MemoryEventBus()
+    return fmu_ext.build_service(data_dir, bus)
+
+
+@fmu_app.command("inspect")
+def fmu_inspect(
+    fmu_path: Path = typer.Argument(...),
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Upload an .fmu and print its parsed model description."""
+    if not fmu_path.exists():
+        typer.echo(f"FMU not found: {fmu_path}", err=True)
+        raise typer.Exit(code=1)
+    svc = _build_fmu_service(data_dir)
+
+    async def run():
+        return await svc.upload_and_inspect(fmu_path.read_bytes(), fmu_path.name)
+    typer.echo(asyncio.run(run()).model_dump_json(indent=2))
+
+
+@fmu_app.command("list")
+def fmu_list(
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """List every FMU known to this Anchor install."""
+    svc = _build_fmu_service(data_dir)
+
+    async def run():
+        return [m.model_dump() for m in await svc.list_models()]
+    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+
+
+@fmu_app.command("get")
+def fmu_get(
+    slug: str,
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Get one FMU's model description by slug."""
+    svc = _build_fmu_service(data_dir)
+
+    async def run():
+        return await svc.get_model(slug)
+    model = asyncio.run(run())
+    if model is None:
+        typer.echo(f"unknown FMU: {slug}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(model.model_dump_json(indent=2))
+
+
+@fmu_app.command("simulate")
+def fmu_simulate(
+    slug: str,
+    parameters: str | None = typer.Option(None, "--params", help="JSON object of parameter overrides."),
+    stop_time: float = typer.Option(1.0, "--stop-time"),
+    output_interval: float = typer.Option(0.01, "--output-interval"),
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Run a simulation. Prints the SimulationRun JSON (includes simulation_id)."""
+    overrides: dict | None = None
+    if parameters is not None:
+        try:
+            overrides = json.loads(parameters)
+        except json.JSONDecodeError as e:
+            typer.echo(f"--params must be a JSON object: {e}", err=True)
+            raise typer.Exit(code=2)
+    svc = _build_fmu_service(data_dir)
+
+    async def run():
+        return await svc.simulate(
+            slug, parameter_overrides=overrides,
+            stop_time=stop_time, output_interval=output_interval,
+        )
+    typer.echo(asyncio.run(run()).model_dump_json(indent=2))
+
+
+@fmu_app.command("results")
+def fmu_results(
+    simulation_id: str,
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Print the time series for a completed simulation."""
+    svc = _build_fmu_service(data_dir)
+
+    async def run():
+        return await svc.get_series(simulation_id)
+    series = asyncio.run(run())
+    if series is None:
+        typer.echo(f"unknown simulation: {simulation_id}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(series.model_dump_json(indent=2))
+
+
+@fmu_app.command("simulations")
+def fmu_simulations(
+    fmu_slug: str | None = typer.Option(None, "--fmu", help="Filter to one FMU."),
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """List simulation runs, optionally scoped to one FMU."""
+    svc = _build_fmu_service(data_dir)
+
+    async def run():
+        return [r.model_dump() for r in await svc.list_simulations(fmu_slug)]
+    typer.echo(json.dumps(asyncio.run(run()), indent=2))
 
 
 @app.command()
