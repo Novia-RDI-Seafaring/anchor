@@ -82,7 +82,25 @@ class HeadlessChromiumSnapshotter:
             try:
                 ctx = await browser.new_context(viewport={"width": w, "height": h})
                 page = await ctx.new_page()
-                await page.goto(url, timeout=self.nav_timeout_ms, wait_until="networkidle")
+                # `wait_until="networkidle"` is WRONG for our app: the canvas
+                # opens a long-lived SSE connection (`/api/workspaces/{slug}/events`)
+                # that keeps the network busy forever, so navigation times
+                # out at 30 s. `domcontentloaded` is enough — React Flow
+                # then needs a settle delay to finish layout, which the
+                # `settle_ms` knob already handles.
+                await page.goto(url, timeout=self.nav_timeout_ms, wait_until="domcontentloaded")
+                # Wait specifically for the React Flow root to appear in
+                # the DOM — covers the case where the bundle is still
+                # parsing JS when DOMContentLoaded fires.
+                try:
+                    await page.wait_for_selector(
+                        ".react-flow", timeout=self.nav_timeout_ms,
+                    )
+                except Exception:  # noqa: BLE001
+                    # Read-only monitor route or a non-canvas page — fall
+                    # through to the settle delay and screenshot whatever
+                    # rendered.
+                    pass
                 # Give React Flow a beat to finish its initial layout +
                 # fitView animation. Cheaper than waiting on a custom
                 # ready-flag the frontend would have to publish.
