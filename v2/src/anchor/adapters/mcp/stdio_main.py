@@ -19,17 +19,23 @@ from anchor.extensions.anchor_pdfs.infra.llm.openai_region_extractor import Open
 from anchor.extensions.anchor_pdfs.infra.pdf.docling_extractor import DoclingPdfExtractor
 from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
 from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
+from anchor.infra.snapshot.headless_chromium_snapshotter import HeadlessChromiumSnapshotter
 from anchor.infra.stores.fs_workspace_store import FsWorkspaceStore
 
 
-async def _run(data_dir: Path) -> None:
+async def _run(data_dir: Path, base_url: str = "http://localhost:8002") -> None:
     import os
 
     config = AnchorConfig(data_dir=data_dir)
     bus = MemoryEventBus()
     workspace_store = FsWorkspaceStore(config.canvases_dir)
     doc_store = FsDocStore(config.data_dir)
-    workspace = WorkspaceService(workspace_store, bus)
+    # The MCP server doesn't host the canvas itself — it loops through a
+    # running `anchor serve` reachable at `base_url` for snapshot rendering.
+    snapshotter = HeadlessChromiumSnapshotter(
+        base_url=base_url, output_dir=config.data_dir / "snapshots",
+    )
+    workspace = WorkspaceService(workspace_store, bus, snapshotter=snapshotter)
     api_key = config.openai_api_key.get_secret_value() if config.openai_api_key else None
     has_openai = bool(api_key) or bool(os.environ.get("OPENAI_API_KEY"))
     ingest = IngestService(
@@ -79,11 +85,16 @@ async def _run(data_dir: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Anchor v2 MCP (stdio)")
     parser.add_argument("--data-dir", "-d", default="./data")
+    parser.add_argument(
+        "--base-url",
+        default="http://localhost:8002",
+        help="URL of the running `anchor serve` the snapshotter loops through.",
+    )
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
     if args.verbose:
         logging.basicConfig(level=logging.INFO)
-    asyncio.run(_run(Path(args.data_dir)))
+    asyncio.run(_run(Path(args.data_dir), base_url=args.base_url))
 
 
 if __name__ == "__main__":

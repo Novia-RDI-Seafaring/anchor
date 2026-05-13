@@ -550,6 +550,70 @@ def canvas_clear(
     typer.echo(json.dumps(asyncio.run(run()), indent=2))
 
 
+@canvas_app.command("snapshot")
+def canvas_snapshot(
+    slug: str,
+    out: Path | None = typer.Option(None, "--out", "-o", help="Where to write the snapshot. Default: data_dir/snapshots/<slug>/<ts>.png."),
+    image_format: str = typer.Option("png", "--format", "-f", help="png (default) or svg."),
+    viewport: str | None = typer.Option(None, "--viewport", help="WxH in CSS pixels, e.g. '1920x1080'."),
+    full_page: bool = typer.Option(True, "--full-page/--viewport-only", help="Capture the whole document (default) or just the viewport."),
+    base_url: str = typer.Option("http://localhost:8002", "--base-url", help="URL of a running `anchor serve`."),
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Render the named workspace canvas to an image.
+
+    Requires a running `anchor serve` reachable at --base-url. The headless
+    chromium navigates to {base_url}/c/{slug} so the same React Flow code
+    the user sees in the browser does the rendering.
+    """
+    vp: tuple[int, int] | None = None
+    if viewport is not None:
+        try:
+            w, h = viewport.lower().split("x")
+            vp = (int(w), int(h))
+        except (ValueError, IndexError):
+            typer.echo(f"--viewport: expected WxH (e.g. 1920x1080), got {viewport!r}", err=True)
+            raise typer.Exit(code=2)
+
+    _, _, ws, _, _ = _build_real_services(data_dir, base_url=base_url)
+
+    async def run():
+        return await ws.snapshot(slug, format=image_format, viewport=vp, full_page=full_page)
+
+    try:
+        result = asyncio.run(run())
+    except RuntimeError as e:
+        typer.echo(f"snapshot failed: {e}", err=True)
+        typer.echo("Hint: ensure `anchor serve --port <p>` is running and pass --base-url http://localhost:<p>.", err=True)
+        raise typer.Exit(code=1)
+    except (ValueError, NotImplementedError) as e:
+        typer.echo(f"snapshot failed: {e}", err=True)
+        raise typer.Exit(code=2)
+
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if result.path is not None:
+            out.write_bytes(result.path.read_bytes())
+        else:
+            assert result.bytes_ is not None
+            out.write_bytes(result.bytes_)
+        typer.echo(str(out))
+        return
+
+    # No --out: print the snapshotter's own path (the timeline file under
+    # data_dir/snapshots/<slug>/<ts>.png). For inline-bytes snapshotters
+    # there's nothing to print — write a tmp file and surface it.
+    if result.path is not None:
+        typer.echo(str(result.path))
+    else:
+        import tempfile
+        ext = f".{result.format}"
+        tmp = Path(tempfile.NamedTemporaryFile(suffix=ext, delete=False).name)
+        assert result.bytes_ is not None
+        tmp.write_bytes(result.bytes_)
+        typer.echo(str(tmp))
+
+
 @sysml_app.command("render")
 def sysml_render(
     sysml_path: Path = typer.Argument(...),
