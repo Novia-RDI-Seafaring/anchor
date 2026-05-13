@@ -1,11 +1,15 @@
 """HTTP routes for the CAD extension.
 
-Read-only API for the canvas frontend's Model3DPrimitive: list models,
-get a CadModel summary, fetch the raw model bytes for the 3D viewport.
+Mirrors every `cad.*` MCP tool so a non-MCP client (the React Flow
+Model3DPrimitive, curl scripts, custom voice/XR clients) can inspect,
+list, fetch, and parameter-tweak CAD models. Same `CadService`
+methods that MCP calls — adapter is a thin translation layer.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Any
+
+from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
 from anchor.extensions.anchor_cad.core.services import CadService
@@ -53,3 +57,43 @@ async def get_cad_file(slug: str, service: CadService = Depends(get_cad_service)
     ext = path.suffix.lower()
     mime = _MIME_BY_EXT.get(ext, "application/octet-stream")
     return FileResponse(str(path), media_type=mime, filename=path.name)
+
+
+@router.post("")
+async def inspect(
+    file: UploadFile,
+    service: CadService = Depends(get_cad_service),
+) -> JSONResponse:
+    """Upload a CAD file (multipart) and parse its summary.
+
+    Returns the CadModel JSON: parameters, parts, features, dimensions.
+    """
+    if not file.filename:
+        raise HTTPException(400, "uploaded file has no filename")
+    body = await file.read()
+    try:
+        model = await service.upload_and_inspect(body, file.filename)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, str(exc))
+    return JSONResponse(model.model_dump())
+
+
+@router.patch("/{slug}/parameters/{parameter_name}")
+async def set_parameter(
+    slug: str,
+    parameter_name: str,
+    body: dict[str, Any] = Body(...),
+    service: CadService = Depends(get_cad_service),
+) -> JSONResponse:
+    """Tweak a named parameter on a parametric CAD model.
+
+    Body: `{"value": <new value>}`. Emits CadParameterChanged on the bus
+    so any 3D viewport subscribed to the canvas re-renders.
+    """
+    if "value" not in body:
+        raise HTTPException(400, "body must include `value`")
+    try:
+        model = await service.set_parameter(slug, parameter_name, body["value"])
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, str(exc))
+    return JSONResponse(model.model_dump())
