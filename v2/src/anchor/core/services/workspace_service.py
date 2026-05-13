@@ -26,6 +26,7 @@ from anchor.core.events.canvas import (
 from anchor.core.events.envelope import DomainEvent
 from anchor.core.ids import new_event_id, new_id
 from anchor.core.ports.event_bus import EventBus
+from anchor.core.ports.snapshot import SnapshotPort, SnapshotResult
 from anchor.core.ports.workspace_store import WorkspaceStore
 from anchor.core.workspace.node_types import NodeTypeRegistry
 from anchor.core.workspace.reducer import apply, cascade_events_for_remove
@@ -56,12 +57,14 @@ class WorkspaceService:
         clock: Clock | None = None,
         locks: _LocksProto | None = None,
         node_types: NodeTypeRegistry | None = None,
+        snapshotter: SnapshotPort | None = None,
     ) -> None:
         self.store = store
         self.bus = bus
         self.clock: Clock = clock or SystemClock()
         self.locks: _LocksProto = locks or _NoLocks()
         self.node_types = node_types
+        self.snapshotter = snapshotter
 
     async def list_workspaces(self) -> list[dict[str, Any]]:
         return [m.model_dump() for m in await self.store.list_workspaces()]
@@ -124,6 +127,36 @@ class WorkspaceService:
 
     async def clear(self, slug: str) -> tuple[Workspace, DomainEvent]:
         return await self._dispatch(slug, CanvasCleared())
+
+    async def snapshot(
+        self,
+        slug: str,
+        *,
+        format: str = "png",
+        viewport: tuple[int, int] | None = None,
+        full_page: bool = True,
+    ) -> SnapshotResult:
+        """Render the workspace canvas to an image via the wired SnapshotPort.
+
+        Service-level guard: verifies the workspace exists (raising
+        `CommandError` / `KeyError` early if not) so the snapshotter doesn't
+        burn a Chromium navigation on a 404. Then delegates rendering to
+        the port — core never imports playwright itself.
+        """
+        if self.snapshotter is None:
+            raise RuntimeError(
+                "WorkspaceService.snapshot called but no snapshotter was wired. "
+                "Pass snapshotter=... to the constructor (see "
+                "anchor.infra.snapshot.headless_chromium_snapshotter).",
+            )
+        # Touch the store to surface 404s as the same error type other
+        # ops raise. This is cheap (snapshot read).
+        await self.store.load(slug)
+        if format not in {"png", "svg"}:
+            raise ValueError(f"unsupported snapshot format: {format!r} (use 'png' or 'svg')")
+        return await self.snapshotter.snapshot(
+            slug, format=format, viewport=viewport, full_page=full_page,
+        )
 
     async def _dispatch(self, slug: str, cmd: BaseModel) -> tuple[Workspace, DomainEvent]:
         async with self.locks.lock(slug):

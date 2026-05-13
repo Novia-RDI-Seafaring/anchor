@@ -68,3 +68,54 @@ class FakeRegionExtractor:
 class FakeEmbedder:
     async def embed(self, texts: list[str]) -> list[list[float]]:
         return [[float(len(t)), float(t.count(" "))] for t in texts]
+
+
+# A 1x1 transparent PNG — enough bytes for content-type tests without
+# pulling Pillow at import time.
+TINY_PNG_BYTES = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cc\xfc\xcf"
+    b"\xc0\x00\x00\x00\x05\x00\x01\x0d\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+class FakeSnapshotter:
+    """SnapshotPort fake — returns either an on-disk path or inline bytes.
+
+    Tests pick the mode they want via `mode="path"` (writes a tiny PNG
+    under `out_dir`) or `mode="bytes"` (returns inline).
+    """
+
+    def __init__(
+        self,
+        *,
+        mode: str = "bytes",
+        out_dir: Path | None = None,
+        payload: bytes | None = None,
+    ) -> None:
+        self.mode = mode
+        self.out_dir = out_dir
+        self.payload = payload if payload is not None else TINY_PNG_BYTES
+        self.calls: list[dict[str, Any]] = []
+
+    async def snapshot(
+        self,
+        slug: str,
+        *,
+        format: str = "png",
+        viewport: tuple[int, int] | None = None,
+        full_page: bool = True,
+    ):
+        from anchor.core.ports.snapshot import SnapshotResult
+
+        self.calls.append({
+            "slug": slug, "format": format, "viewport": viewport, "full_page": full_page,
+        })
+        ctype = "image/svg+xml" if format == "svg" else "image/png"
+        if self.mode == "path":
+            assert self.out_dir is not None, "FakeSnapshotter(mode='path') needs out_dir="
+            self.out_dir.mkdir(parents=True, exist_ok=True)
+            target = self.out_dir / f"{slug}.{format}"
+            target.write_bytes(self.payload)
+            return SnapshotResult(format=format, content_type=ctype, path=target)
+        return SnapshotResult(format=format, content_type=ctype, bytes_=self.payload)
