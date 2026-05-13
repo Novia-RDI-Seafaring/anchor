@@ -209,6 +209,182 @@ def canvas_create(
     typer.echo(json.dumps(asyncio.run(ws.create_workspace(slug, title=title)), indent=2))
 
 
+# ── Canvas mutations ────────────────────────────────────────────────────────
+#
+# Every command below is a thin wrapper around the same `WorkspaceService`
+# method that the HTTP router and MCP handler call. The work happens in
+# CORE; this file only translates flags into kwargs. Keeping all three
+# adapters in lockstep is the architecture's standing rule
+# (see `v2/docs/06-many-interfaces.md`).
+#
+# `--data` accepts a JSON string. Shells are awkward at JSON quoting; for
+# multi-field nodes use a here-doc or pipe through a file:
+#   anchor canvas add-node my-canvas concept Foo --x 0 --y 0 \
+#     --data "$(cat <<'JSON'
+#   {"subtitle": "hello", "metadata": {"tag": "demo"}}
+#   JSON
+#   )"
+
+
+def _parse_data(raw: str | None) -> dict:
+    if raw is None or raw == "":
+        return {}
+    try:
+        out = json.loads(raw)
+    except json.JSONDecodeError as e:
+        typer.echo(f"--data is not valid JSON: {e}", err=True)
+        raise typer.Exit(code=2)
+    if not isinstance(out, dict):
+        typer.echo("--data must be a JSON object", err=True)
+        raise typer.Exit(code=2)
+    return out
+
+
+@canvas_app.command("state")
+def canvas_state(
+    slug: str,
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Print the full workspace state (nodes + edges + metadata)."""
+    _, _, ws, _, _ = _build_real_services(data_dir)
+    typer.echo(json.dumps(asyncio.run(ws.get_state(slug)), indent=2))
+
+
+@canvas_app.command("add-node")
+def canvas_add_node(
+    slug: str,
+    node_type: str,
+    label: str = typer.Option("", "--label", "-l"),
+    x: float = typer.Option(0.0, "--x"),
+    y: float = typer.Option(0.0, "--y"),
+    width: float | None = typer.Option(None, "--width"),
+    height: float | None = typer.Option(None, "--height"),
+    parent: str | None = typer.Option(None, "--parent"),
+    data: str | None = typer.Option(None, "--data", help="JSON object passed as the node's `data` field"),
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Add a node to a workspace. Prints the resulting `{event, state}`."""
+    _, _, ws, _, _ = _build_real_services(data_dir)
+    kwargs: dict = {"node_type": node_type, "label": label, "x": x, "y": y, "data": _parse_data(data)}
+    if width is not None: kwargs["width"] = width
+    if height is not None: kwargs["height"] = height
+    if parent is not None: kwargs["parent"] = parent
+
+    async def run():
+        state, env = await ws.add_node(slug, **kwargs)
+        return {"event": env.model_dump(), "state": state.get_state()}
+    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+
+
+@canvas_app.command("update-node")
+def canvas_update_node(
+    slug: str,
+    node_id: str,
+    label: str | None = typer.Option(None, "--label", "-l"),
+    x: float | None = typer.Option(None, "--x"),
+    y: float | None = typer.Option(None, "--y"),
+    width: float | None = typer.Option(None, "--width"),
+    height: float | None = typer.Option(None, "--height"),
+    data: str | None = typer.Option(None, "--data"),
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Update fields on an existing node. Move-only when only --x and --y given."""
+    _, _, ws, _, _ = _build_real_services(data_dir)
+    fields: dict = {}
+    if label is not None:  fields["label"] = label
+    if x is not None:      fields["x"] = x
+    if y is not None:      fields["y"] = y
+    if width is not None:  fields["width"] = width
+    if height is not None: fields["height"] = height
+    if data is not None:   fields["data"] = _parse_data(data)
+    if not fields:
+        typer.echo("nothing to update — pass at least one field", err=True)
+        raise typer.Exit(code=2)
+
+    async def run():
+        # Same heuristic as the HTTP PATCH route: a pure move is dispatched
+        # through `move_node` for the event-type clarity.
+        if set(fields.keys()) == {"x", "y"}:
+            state, env = await ws.move_node(slug, node_id, fields["x"], fields["y"])
+        else:
+            state, env = await ws.update_node(slug, node_id, fields)
+        return {"event": env.model_dump(), "state": state.get_state()}
+    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+
+
+@canvas_app.command("remove-node")
+def canvas_remove_node(
+    slug: str,
+    node_id: str,
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Remove a node and any edges that touched it (cascade is in CORE)."""
+    _, _, ws, _, _ = _build_real_services(data_dir)
+
+    async def run():
+        state, envelopes = await ws.remove_node(slug, node_id)
+        return {"events": [e.model_dump() for e in envelopes], "state": state.get_state()}
+    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+
+
+@canvas_app.command("add-edge")
+def canvas_add_edge(
+    slug: str,
+    source: str,
+    target: str,
+    edge_type: str = typer.Option("floating", "--type", "-t", help="`floating` or `anchored`"),
+    label: str = typer.Option("", "--label", "-l"),
+    source_handle: str | None = typer.Option(None, "--source-handle"),
+    target_handle: str | None = typer.Option(None, "--target-handle"),
+    data: str | None = typer.Option(None, "--data"),
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Add an edge between two nodes."""
+    _, _, ws, _, _ = _build_real_services(data_dir)
+    payload = _parse_data(data)
+    kwargs: dict = {"source": source, "target": target, "edge_type": edge_type, "label": label, "data": payload}
+    if source_handle: kwargs["source_handle"] = source_handle
+    if target_handle: kwargs["target_handle"] = target_handle
+
+    async def run():
+        state, env = await ws.add_edge(slug, **kwargs)
+        return {"event": env.model_dump(), "state": state.get_state()}
+    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+
+
+@canvas_app.command("remove-edge")
+def canvas_remove_edge(
+    slug: str,
+    edge_id: str,
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Remove a single edge by id."""
+    _, _, ws, _, _ = _build_real_services(data_dir)
+
+    async def run():
+        state, env = await ws.remove_edge(slug, edge_id)
+        return {"event": env.model_dump(), "state": state.get_state()}
+    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+
+
+@canvas_app.command("clear")
+def canvas_clear(
+    slug: str,
+    yes: bool = typer.Option(False, "--yes", "-y", help="Confirm — clear removes EVERY node and edge on the workspace."),
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Remove every node and edge from a workspace (workspace itself stays)."""
+    if not yes:
+        typer.echo("Refusing to clear without --yes; pass -y to confirm.", err=True)
+        raise typer.Exit(code=2)
+    _, _, ws, _, _ = _build_real_services(data_dir)
+
+    async def run():
+        state, env = await ws.clear(slug)
+        return {"event": env.model_dump(), "state": state.get_state()}
+    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+
+
 @sysml_app.command("render")
 def sysml_render(
     sysml_path: Path = typer.Argument(...),
