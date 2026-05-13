@@ -22,6 +22,14 @@ class DocStore(Protocol):
 
     async def get_crop_path(self, slug: str, rel_path: str) -> Path | None: ...
 
+    async def get_raw_pdf_path(self, slug: str) -> Path | None:
+        """Return the bronze-layer raw PDF for a document, if available.
+        Stores that don't keep the raw bytes addressable (in-memory test
+        doubles, S3-backed stores without a local mirror, ...) may return
+        ``None``; callers must handle that case rather than reach into
+        store internals."""
+        ...
+
     async def stash_bronze(self, pdf_bytes: bytes, filename: str) -> Path:
         """Write a raw PDF into bronze/. Returns path."""
         ...

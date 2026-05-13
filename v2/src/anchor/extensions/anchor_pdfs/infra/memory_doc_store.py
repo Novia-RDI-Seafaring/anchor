@@ -63,6 +63,16 @@ class MemoryDocStore:
     async def get_crop_path(self, slug: str, rel_path: str) -> Path | None:
         return None
 
+    async def get_raw_pdf_path(self, slug: str) -> Path | None:
+        idx = self._indexes.get(slug)
+        filename = ((idx or {}).get("document") or {}).get("filename")
+        if filename and filename in self._bronze:
+            # Memory store has no real filesystem path; surface a `memory://`
+            # URI so callers can detect this case and fall back to a
+            # base64 transport.
+            return Path(f"memory://bronze/{filename}")
+        return None
+
     async def stash_bronze(self, pdf_bytes: bytes, filename: str) -> Path:
         async with self._lock:
             self._bronze[filename] = pdf_bytes

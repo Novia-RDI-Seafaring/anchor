@@ -69,21 +69,14 @@ async def raw_pdf(slug: str, store: DocStore = Depends(get_doc_store)):
     PDF.js renderer, an agent that wants to feed the PDF to a vision model)
     can read this endpoint directly. Same-origin so no CORS dance.
     """
-    # The store doesn't currently expose a typed accessor; fall back to a
-    # filesystem probe through get_page_image_path's neighbouring layout.
-    # FsDocStore lays bronze out at <data_dir>/bronze/<filename> — but the
-    # filename isn't necessarily slug-derived. Walk index to recover it.
-    index = await store.get_index(slug)
-    if index is None:
-        raise HTTPException(404, f"unknown doc slug: {slug}")
-    filename = (index.get("document") or {}).get("filename")
-    if not filename:
-        raise HTTPException(404, "no filename in index")
-    # Hop through fs_doc_store internals if available, else 404.
-    bronze_dir = getattr(store, "bronze", None)
-    if bronze_dir is None:
-        raise HTTPException(501, "this store does not expose raw PDFs")
-    path = bronze_dir / filename
-    if not path.is_file():
-        raise HTTPException(404, f"PDF not found: {filename}")
+    path = await store.get_raw_pdf_path(slug)
+    if path is None:
+        raise HTTPException(404, f"raw PDF not available for slug: {slug}")
+    # An in-memory store may return a `memory://...` pseudo-path. The HTTP
+    # route can only serve a real file, so reject that explicitly — agents
+    # against an in-memory backend should use the MCP `get_pdf` tool with
+    # `format=base64` instead.
+    if str(path).startswith("memory://"):
+        raise HTTPException(501, "in-memory store cannot serve raw PDF over HTTP; use MCP get_pdf with format=base64")
+    filename = path.name
     return FileResponse(path, media_type="application/pdf", filename=filename)

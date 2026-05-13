@@ -118,6 +118,18 @@ class FsDocStore:
         p = self.gold / slug / "pages" / cleaned
         return p if p.exists() else None
 
+    async def get_raw_pdf_path(self, slug: str) -> Path | None:
+        # bronze/ uses the original filename, not the slug — recover from
+        # the silver index which carries `document.filename`.
+        index = await self.get_index(slug)
+        if not index:
+            return None
+        filename = (index.get("document") or {}).get("filename")
+        if not filename:
+            return None
+        p = self.bronze / filename
+        return p if p.is_file() else None
+
     async def stash_bronze(self, pdf_bytes: bytes, filename: str) -> Path:
         async with self._lock:
             target = self.bronze / filename

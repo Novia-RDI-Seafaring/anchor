@@ -189,6 +189,88 @@ def page_text(
     typer.echo(text)
 
 
+# ── Read-byte commands (parity with MCP get_page_image / get_crop / get_pdf) ─
+#
+# Default `path` prints the on-disk path — agents on the same machine read
+# it directly. `--copy-to <dest>` resolves the path and copies bytes.
+# `--out -` writes the raw bytes to stdout (for piping into imagemagick,
+# pdftotext, etc.).
+
+@app.command("gold-map")
+def gold_map(
+    slug: str,
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Print the full gold extraction JSON (document + outline + regions + page meta)."""
+    _, _, _, _, doc_store = _build_real_services(data_dir)
+    out = asyncio.run(doc_store.get_gold_map(slug))
+    if out is None:
+        typer.echo(f"no gold map for {slug!r}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps(out, indent=2))
+
+
+def _emit_bytes(path: Path | None, *, copy_to: Path | None, out: str | None, label: str) -> None:
+    if path is None:
+        typer.echo(f"{label}: not found", err=True)
+        raise typer.Exit(code=1)
+    if str(path).startswith("memory://"):
+        typer.echo(f"{label}: in-memory store has no real path", err=True)
+        raise typer.Exit(code=1)
+    if out == "-":
+        # Binary safe — write raw bytes through the underlying stdout buffer.
+        import sys
+        sys.stdout.buffer.write(path.read_bytes())
+        return
+    if copy_to is not None:
+        copy_to.parent.mkdir(parents=True, exist_ok=True)
+        copy_to.write_bytes(path.read_bytes())
+        typer.echo(str(copy_to))
+        return
+    typer.echo(str(path))
+
+
+@app.command("page-image")
+def page_image(
+    slug: str,
+    page: int,
+    copy_to: Path | None = typer.Option(None, "--copy-to"),
+    out: str | None = typer.Option(None, "--out", help="Pass '-' to stream the bytes to stdout."),
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Page screenshot. Prints the path by default; --copy-to or --out - for the bytes."""
+    _, _, _, _, doc_store = _build_real_services(data_dir)
+    path = asyncio.run(doc_store.get_page_image_path(slug, page))
+    _emit_bytes(path, copy_to=copy_to, out=out, label=f"{slug} page {page}")
+
+
+@app.command("crop")
+def crop(
+    slug: str,
+    rel_path: str,
+    copy_to: Path | None = typer.Option(None, "--copy-to"),
+    out: str | None = typer.Option(None, "--out"),
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Gold-extracted region crop (e.g. '4/r1.png') by its rel_path."""
+    _, _, _, _, doc_store = _build_real_services(data_dir)
+    path = asyncio.run(doc_store.get_crop_path(slug, rel_path))
+    _emit_bytes(path, copy_to=copy_to, out=out, label=f"{slug} crop {rel_path}")
+
+
+@app.command("pdf")
+def pdf(
+    slug: str,
+    copy_to: Path | None = typer.Option(None, "--copy-to"),
+    out: str | None = typer.Option(None, "--out"),
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """The original bronze-layer PDF for a document."""
+    _, _, _, _, doc_store = _build_real_services(data_dir)
+    path = asyncio.run(doc_store.get_raw_pdf_path(slug))
+    _emit_bytes(path, copy_to=copy_to, out=out, label=f"{slug} pdf")
+
+
 @canvas_app.command("list")
 def canvas_list(
     data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
