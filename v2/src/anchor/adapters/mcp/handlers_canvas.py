@@ -5,11 +5,44 @@ to work; every tool now takes `workspace_slug` as its first arg.
 """
 from __future__ import annotations
 
+import base64
 import json
+import mimetypes
+from pathlib import Path
 from typing import Any
 
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.core.workspace.workspace import CommandError
+
+
+# ── Byte-fetch envelope ─────────────────────────────────────────────────────
+#
+# Mirrors the contract used by anchor_pdfs.mcp_handlers._byte_envelope.
+# Duplicated rather than imported because adapters/mcp/handlers_canvas
+# is in core-adjacent code that shouldn't depend on an extension. The
+# contract is *the* shared piece — keep these two implementations in sync.
+def _byte_envelope_from_result(*, path: Path | None, bytes_: bytes | None, content_type: str, fmt: str) -> str:
+    if fmt == "path":
+        if path is None:
+            return json.dumps({"error": "snapshot returned inline bytes; request format='base64'"})
+        return json.dumps({
+            "format": "path", "value": str(path), "content_type": content_type,
+            "size_bytes": path.stat().st_size if path.exists() else None,
+        })
+    if fmt == "base64":
+        raw = bytes_ if bytes_ is not None else (path.read_bytes() if path else b"")
+        return json.dumps({
+            "format": "base64",
+            "value": base64.b64encode(raw).decode("ascii"),
+            "content_type": content_type,
+            "size_bytes": len(raw),
+        })
+    return json.dumps({"error": f"unknown format: {fmt!r} (use 'path' or 'base64')"})
+
+
+def _ctype_for(name: str) -> str:
+    guess, _ = mimetypes.guess_type(name)
+    return guess or "application/octet-stream"
 
 
 def tool_definitions() -> list[dict[str, Any]]:
@@ -123,6 +156,31 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": "List all workspaces.",
             "inputSchema": {"type": "object", "properties": {}},
         },
+        {
+            "name": "canvas_snapshot",
+            "description": (
+                "Render a workspace canvas to PNG and return the bytes "
+                "(as a path or base64). Use format='base64' from off-machine "
+                "agents; same envelope as get_page_image / get_crop."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "format": {"type": "string", "enum": ["path", "base64"], "default": "path"},
+                    "image_format": {"type": "string", "enum": ["png", "svg"], "default": "png"},
+                    "viewport": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "description": "[width, height] in CSS pixels.",
+                    },
+                    "full_page": {"type": "boolean", "default": True},
+                },
+                "required": ["workspace_slug"],
+            },
+        },
     ]
 
 
@@ -160,6 +218,30 @@ async def call_tool(svc: WorkspaceService, name: str, args: dict[str, Any]) -> s
         if name == "canvas_clear":
             state, env = await svc.clear(args["workspace_slug"])
             return json.dumps({"event": env.model_dump(), "state": state.get_state()})
+        if name == "canvas_snapshot":
+            envelope_fmt = args.get("format", "path")
+            image_fmt = args.get("image_format", "png")
+            viewport = args.get("viewport")
+            if viewport is not None:
+                viewport = (int(viewport[0]), int(viewport[1]))
+            full_page = bool(args.get("full_page", True))
+            try:
+                result = await svc.snapshot(
+                    args["workspace_slug"],
+                    format=image_fmt,
+                    viewport=viewport,
+                    full_page=full_page,
+                )
+            except RuntimeError as e:
+                return json.dumps({"error": str(e)})
+            except ValueError as e:
+                return json.dumps({"error": str(e)})
+            except NotImplementedError as e:
+                return json.dumps({"error": str(e)})
+            return _byte_envelope_from_result(
+                path=result.path, bytes_=result.bytes_,
+                content_type=result.content_type, fmt=envelope_fmt,
+            )
     except CommandError as e:
         return json.dumps({"error": str(e)})
     return json.dumps({"error": f"unknown tool: {name}"})
