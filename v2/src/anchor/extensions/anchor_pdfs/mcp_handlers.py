@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
-from anchor.extensions.anchor_pdfs.core.services import IngestService
+from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
 
 
 # ── Byte-fetch envelope ────────────────────────────────────────────────────
@@ -151,11 +151,38 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "required": ["slug"],
             },
         },
+        {
+            "name": "compose_synopsis",
+            "description": (
+                "Compose an entity-scoped synopsis from a document's gold-layer data. "
+                "Returns the structured SynopsisData (JSON) by default; pass "
+                "output='pdf' or output='md' for a rendered artefact (base64 PDF or "
+                "raw Marp markdown text)."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {"type": "string"},
+                    "entity": {"type": "string", "description": "e.g. 'LKH-5'"},
+                    "output": {
+                        "type": "string",
+                        "enum": ["json", "pdf", "md"],
+                        "default": "json",
+                    },
+                    "crop_url_base": {
+                        "type": "string",
+                        "description": "(md only) URL prefix for crop references in the markdown.",
+                    },
+                },
+                "required": ["slug", "entity"],
+            },
+        },
     ]
 
 
 async def call_tool(
     ingest: IngestService, store: DocStore, name: str, args: dict[str, Any],
+    *, synopsis: SynopsisService | None = None,
 ) -> str:
     if name == "ingest_pdf":
         from pathlib import Path
@@ -195,4 +222,32 @@ async def call_tool(
     if name == "get_pdf":
         path = await store.get_raw_pdf_path(args["slug"])
         return _byte_envelope(path, fmt=args.get("format", "path"), fallback_ext=".pdf")
+    if name == "compose_synopsis":
+        if synopsis is None:
+            return json.dumps({"error": "synopsis service not wired (renderer/store missing)"})
+        slug = args["slug"]
+        entity = args["entity"]
+        output = args.get("output", "json")
+        try:
+            if output == "json":
+                from dataclasses import asdict
+                data = await synopsis.compose(slug=slug, entity=entity)
+                return json.dumps(asdict(data))
+            if output == "pdf":
+                pdf_bytes = await synopsis.render_pdf(slug=slug, entity=entity)
+                return json.dumps({
+                    "format": "base64",
+                    "value": base64.b64encode(pdf_bytes).decode("ascii"),
+                    "content_type": "application/pdf",
+                    "size_bytes": len(pdf_bytes),
+                })
+            if output == "md":
+                md = await synopsis.render_markdown(
+                    slug=slug, entity=entity,
+                    crop_url_base=args.get("crop_url_base"),
+                )
+                return json.dumps({"format": "text", "value": md, "content_type": "text/markdown"})
+            return json.dumps({"error": f"unknown output: {output}"})
+        except Exception as e:  # noqa: BLE001
+            return json.dumps({"error": str(e)})
     return json.dumps({"error": f"unknown tool: {name}"})

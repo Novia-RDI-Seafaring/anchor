@@ -19,11 +19,15 @@ app.add_typer(install_app, name="install")
 app.add_typer(extensions_app, name="extensions")
 
 
-def _build_real_services(data_dir: Path):
+def _build_real_services(data_dir: Path, *, base_url: str = "http://localhost:8002"):
     """Wire concrete adapters. Polish/region-extract are OpenAI-only and become
     no-ops if the user hasn't provided ANCHOR_OPENAI_API_KEY — silver still
     builds, gold simply skips. Embeddings default to a local sentence-
-    transformer model; OpenAI is opt-in via ANCHOR_OPENAI_API_KEY."""
+    transformer model; OpenAI is opt-in via ANCHOR_OPENAI_API_KEY.
+
+    `base_url` is where the wired SnapshotPort points headless chromium.
+    Default matches `anchor serve --port 8002`; override when serving on a
+    non-default port."""
     from anchor.extensions.anchor_pdfs.core.services import IngestService
     from anchor.core.services.workspace_service import WorkspaceService
     from anchor.infra.bus.memory_bus import MemoryEventBus
@@ -33,6 +37,9 @@ def _build_real_services(data_dir: Path):
     from anchor.extensions.anchor_pdfs.infra.pdf.docling_extractor import DoclingPdfExtractor
     from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
     from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
+    from anchor.infra.snapshot.headless_chromium_snapshotter import (
+        HeadlessChromiumSnapshotter,
+    )
     from anchor.infra.stores.fs_workspace_store import FsWorkspaceStore
 
     import os
@@ -41,7 +48,11 @@ def _build_real_services(data_dir: Path):
     bus = MemoryEventBus()
     workspace_store = FsWorkspaceStore(config.canvases_dir)
     doc_store = FsDocStore(config.data_dir)
-    workspace = WorkspaceService(workspace_store, bus)
+    snapshotter = HeadlessChromiumSnapshotter(
+        base_url=base_url,
+        output_dir=config.data_dir / "snapshots",
+    )
+    workspace = WorkspaceService(workspace_store, bus, snapshotter=snapshotter)
     api_key = config.openai_api_key.get_secret_value() if config.openai_api_key else None
     # OpenAI SDK reads OPENAI_API_KEY from env by default; instantiate if either path
     # has a key so polish/region steps don't silently no-op.
@@ -87,7 +98,10 @@ def serve(
 
     from anchor.adapters.http.app import build_app
 
-    _, bus, workspace, ingest, doc_store = _build_real_services(data_dir)
+    # The snapshotter points at the same server we're about to start so
+    # snapshots taken via CLI / MCP loop back to this process.
+    base_url = f"http://localhost:{port}"
+    _, bus, workspace, ingest, doc_store = _build_real_services(data_dir, base_url=base_url)
     static_dir = Path(__file__).resolve().parents[2] / "_web_dist"
     if not static_dir.is_dir():
         # development: walk up to v2/web/dist
@@ -102,6 +116,17 @@ def serve(
     from anchor.extensions.anchor_sysml import extension as sysml_ext
     sysml_service = sysml_ext.build_service(data_dir, bus, workspace=workspace)
 
+    # Wire the synopsis service — pdf + marp renderers are first-party.
+    from anchor.extensions.anchor_pdfs.core.services import SynopsisService
+    from anchor.extensions.anchor_pdfs.infra.synopsis_renderers import (
+        MarpSynopsisRenderer, PymupdfSynopsisRenderer,
+    )
+    synopsis_service = SynopsisService(
+        doc_store,
+        pdf_renderer=PymupdfSynopsisRenderer(),
+        md_renderer=MarpSynopsisRenderer(),
+    )
+
     app_ = build_app(
         workspace_service=workspace,
         ingest_service=ingest,
@@ -110,6 +135,7 @@ def serve(
         static_dir=static_dir if static_dir.is_dir() else None,
         cad_service=cad_service,
         sysml_service=sysml_service,
+        synopsis_service=synopsis_service,
     )
     typer.echo(f"[anchor serve] data_dir={data_dir} {host}:{port}")
     uvicorn.run(app_, host=host, port=port)
@@ -269,6 +295,63 @@ def pdf(
     _, _, _, _, doc_store = _build_real_services(data_dir)
     path = asyncio.run(doc_store.get_raw_pdf_path(slug))
     _emit_bytes(path, copy_to=copy_to, out=out, label=f"{slug} pdf")
+
+
+@app.command("synopsis")
+def synopsis(
+    slug: str,
+    entity: str = typer.Option(..., "--entity", "-e", help="e.g. 'LKH-5'"),
+    format: str = typer.Option("json", "--format", "-f", help="json | pdf | md"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write artefact to this path (for pdf/md)."),
+    crop_url_base: str | None = typer.Option(None, "--crop-url-base", help="(md only) URL prefix for crop references."),
+    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+) -> None:
+    """Compose an entity-scoped synopsis from gold data.
+
+    `--format json` (default): prints SynopsisData as JSON to stdout.
+    `--format pdf`: writes a multi-page PDF synopsis (cover + specs + charts).
+    `--format md`: writes a Marp-compatible markdown slide deck.
+    """
+    _, _, _, _, doc_store = _build_real_services(data_dir)
+    from anchor.extensions.anchor_pdfs.core.services import SynopsisService
+    from anchor.extensions.anchor_pdfs.infra.synopsis_renderers import (
+        MarpSynopsisRenderer, PymupdfSynopsisRenderer,
+    )
+    svc = SynopsisService(
+        doc_store,
+        pdf_renderer=PymupdfSynopsisRenderer(),
+        md_renderer=MarpSynopsisRenderer(),
+    )
+
+    if format == "json":
+        from dataclasses import asdict
+        async def run():
+            return asdict(await svc.compose(slug=slug, entity=entity))
+        typer.echo(json.dumps(asyncio.run(run()), indent=2))
+        return
+    if format == "pdf":
+        async def run():
+            return await svc.render_pdf(slug=slug, entity=entity)
+        pdf_bytes = asyncio.run(run())
+        if output is None:
+            output = Path(f"{slug}-{entity}.pdf")
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(pdf_bytes)
+        typer.echo(str(output))
+        return
+    if format == "md":
+        async def run():
+            return await svc.render_markdown(slug=slug, entity=entity, crop_url_base=crop_url_base)
+        md = asyncio.run(run())
+        if output is None:
+            typer.echo(md)
+        else:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(md)
+            typer.echo(str(output))
+        return
+    typer.echo(f"unknown --format {format!r} (use json | pdf | md)", err=True)
+    raise typer.Exit(code=2)
 
 
 @canvas_app.command("list")

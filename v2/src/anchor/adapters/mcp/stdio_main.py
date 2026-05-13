@@ -57,9 +57,20 @@ async def _run(data_dir: Path) -> None:
     from anchor.extensions.anchor_sysml import extension as sysml_ext
     sysml = sysml_ext.build_service(data_dir, bus, workspace=workspace)
 
+    # Wire synopsis service so MCP clients can compose entity-scoped PDFs/decks.
+    from anchor.extensions.anchor_pdfs.core.services import SynopsisService
+    from anchor.extensions.anchor_pdfs.infra.synopsis_renderers import (
+        MarpSynopsisRenderer, PymupdfSynopsisRenderer,
+    )
+    synopsis = SynopsisService(
+        doc_store,
+        pdf_renderer=PymupdfSynopsisRenderer(),
+        md_renderer=MarpSynopsisRenderer(),
+    )
+
     server = build_mcp_server(
         workspace=workspace, ingest=ingest, doc_store=doc_store,
-        fmu=fmu, cad=cad, sysml=sysml,
+        fmu=fmu, cad=cad, sysml=sysml, synopsis=synopsis,
     )
     async with stdio_server() as (read, write):
         await server.run(read, write, server.create_initialization_options())

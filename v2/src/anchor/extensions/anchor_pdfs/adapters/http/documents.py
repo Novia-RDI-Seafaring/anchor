@@ -1,13 +1,22 @@
 """Documents — shared substrate, not per-workspace."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 from anchor.adapters.http.deps import get_doc_store
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
+from anchor.extensions.anchor_pdfs.core.services import SynopsisService
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+
+
+def _synopsis_svc(request: Request) -> SynopsisService:
+    """Pulled off app.state by the http app factory."""
+    svc = getattr(request.app.state, "synopsis_service", None)
+    if svc is None:
+        raise HTTPException(503, "synopsis service not configured")
+    return svc
 
 
 @router.get("")
@@ -80,3 +89,61 @@ async def raw_pdf(slug: str, store: DocStore = Depends(get_doc_store)):
         raise HTTPException(501, "in-memory store cannot serve raw PDF over HTTP; use MCP get_pdf with format=base64")
     filename = path.name
     return FileResponse(path, media_type="application/pdf", filename=filename)
+
+
+@router.get("/{slug}/synopsis")
+async def synopsis_data(
+    slug: str,
+    entity: str = Query(..., description="Entity to scope the synopsis to, e.g. 'LKH-5'."),
+    request: Request = None,  # type: ignore[assignment]
+):
+    """Return the structured SynopsisData JSON for an entity.
+
+    Agents who want to render their own output (Marp, Notion, HTML, ...)
+    consume this. For ready-made artefacts use /synopsis.pdf or
+    /synopsis.md.
+    """
+    svc = _synopsis_svc(request)
+    from dataclasses import asdict
+    try:
+        data = await svc.compose(slug=slug, entity=entity)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(404, str(e))
+    return asdict(data)
+
+
+@router.get("/{slug}/synopsis.pdf")
+async def synopsis_pdf(
+    slug: str,
+    entity: str = Query(...),
+    request: Request = None,  # type: ignore[assignment]
+):
+    """Return a multi-page PDF synopsis for the entity."""
+    svc = _synopsis_svc(request)
+    try:
+        pdf_bytes = await svc.render_pdf(slug=slug, entity=entity)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(404, str(e))
+    return Response(
+        pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{slug}-{entity}.pdf"'},
+    )
+
+
+@router.get("/{slug}/synopsis.md")
+async def synopsis_md(
+    slug: str,
+    entity: str = Query(...),
+    crop_url_base: str | None = Query(
+        None, description="If set, crop images are referenced via this URL base.",
+    ),
+    request: Request = None,  # type: ignore[assignment]
+):
+    """Return a Marp-compatible markdown slide deck for the entity."""
+    svc = _synopsis_svc(request)
+    try:
+        md = await svc.render_markdown(slug=slug, entity=entity, crop_url_base=crop_url_base)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(404, str(e))
+    return PlainTextResponse(md, media_type="text/markdown")

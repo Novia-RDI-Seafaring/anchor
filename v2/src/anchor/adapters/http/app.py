@@ -29,6 +29,7 @@ def build_app(
     static_dir: Path | None = None,
     cad_service: CadService | None = None,
     sysml_service: SysmlService | None = None,
+    synopsis_service: object | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Anchor v2", version="0.2.0")
     app.state.workspace_service = workspace_service
@@ -37,6 +38,7 @@ def build_app(
     app.state.bus = bus
     app.state.cad_service = cad_service
     app.state.sysml_service = sysml_service
+    app.state.synopsis_service = synopsis_service
 
     app.add_middleware(
         CORSMiddleware,

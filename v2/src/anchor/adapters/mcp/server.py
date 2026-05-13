@@ -28,6 +28,7 @@ from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.services import IngestService
 from anchor.extensions.anchor_sysml import mcp_handlers as sysml_handlers
 from anchor.extensions.anchor_sysml.core.services import SysmlService
+from anchor.extensions.anchor_pdfs.core.services import SynopsisService as SynopsisServiceT
 
 
 def build_mcp_server(
@@ -38,6 +39,7 @@ def build_mcp_server(
     fmu: FmuService | None = None,
     cad: CadService | None = None,
     sysml: SysmlService | None = None,
+    synopsis: "SynopsisServiceT | None" = None,
     name: str = "anchor",
 ) -> Server:
     app = Server(name)
@@ -69,7 +71,10 @@ def build_mcp_server(
             elif name in sysml_names and sysml is not None:
                 text = await sysml_handlers.call_tool(sysml, name, dict(arguments))
             else:
-                text = await pdf_handlers.call_tool(ingest, doc_store, name, dict(arguments))
+                text = await pdf_handlers.call_tool(
+                    ingest, doc_store, name, dict(arguments),
+                    synopsis=synopsis,
+                )
         except Exception as exc:  # noqa: BLE001  - surface to caller as JSON
             text = f'{{"error": {exc!s}}}'
         return [TextContent(type="text", text=text)]
