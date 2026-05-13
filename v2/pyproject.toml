@@ -25,6 +25,7 @@ dependencies = [
     "sse-starlette>=2.1.0",
     "trimesh>=4.0",
     "numpy>=1.26",
+    "playwright>=1.59.0",
 ]
 
 [project.optional-dependencies]
@@ -79,6 +80,11 @@ exclude = [
 testpaths = ["tests"]
 python_files = "test_*.py"
 asyncio_mode = "auto"
+# `-m slow` opt-in for integration tests that need real chromium / network.
+addopts = "-m 'not slow'"
+markers = [
+    "slow: integration tests that require external resources (chromium, running server, etc.).",
+]
 
 [tool.ruff]
 line-length = 100
