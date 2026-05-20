@@ -159,34 +159,47 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
 
   const onNodesChange = useCallback((changes: NodeChange<RfNode>[]) => {
     setRfNodes((curr) => applyNodeChanges(changes, curr));
-    // Persist resize end events. `NodeResizer` emits dimension changes
-    // continuously during the drag with `resizing: true`; the final change
-    // arrives with `resizing: false`. We only patch on the final change to
-    // avoid hammering the API.
     if (readOnly) return;
     for (const change of changes) {
       if (change.type !== "dimensions") continue;
-      if (change.resizing) continue;
+      // ReactFlow emits `dimensions` changes in three flavours:
+      //   - `resizing: true`  → mid-drag; ignore (would hammer the API)
+      //   - `resizing: false` → end-of-drag; persist
+      //   - `resizing: undefined` → DOM measurement on mount or content
+      //     change; NOT a user resize. We must skip these or we get an
+      //     infinite loop: measurement → patch → SSE echo → store update
+      //     → remount → measurement.
+      if (change.resizing !== false) continue;
       const dim = change.dimensions;
       if (!dim) continue;
+      // Skip the patch if the dimensions match the existing store value
+      // (defensive — covers any non-user-initiated dimension events that
+      // slipped through and any SSE reconciliation re-firing).
+      const existing = useCanvasStore.getState().nodes[change.id];
+      if (!existing) continue;
+      const prevW = (existing.data?.width as number | undefined) ?? null;
+      const prevH = (existing.data?.height as number | undefined) ?? null;
+      if (prevW === dim.width && prevH === dim.height) continue;
       // Mirror locally so the store-driven re-render keeps the new size.
       useCanvasStore.setState((state) => {
-        const existing = state.nodes[change.id];
-        if (!existing) return state;
+        const cur = state.nodes[change.id];
+        if (!cur) return state;
         return {
           ...state,
           nodes: {
             ...state.nodes,
             [change.id]: {
-              ...existing,
-              data: { ...existing.data, width: dim.width, height: dim.height },
+              ...cur,
+              data: { ...cur.data, width: dim.width, height: dim.height },
             },
           },
         };
       });
+      // Merge with existing data so the server's whole-data replace
+      // doesn't wipe label-adjacent fields (body, tags, source_ref, …).
       canvases
         .patchNode(slug, change.id, {
-          data: { width: dim.width, height: dim.height },
+          data: { ...(existing.data ?? {}), width: dim.width, height: dim.height },
         })
         .catch(() => {
           // SSE will reconcile.
