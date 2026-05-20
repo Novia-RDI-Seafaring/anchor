@@ -21,9 +21,16 @@
  * The Python core uses an open `NodeTypeRegistry` (see
  * `core/workspace/node_types.py`); this is its UI-side counterpart.
  *
- * Built-in shapes (`concept`, `entity`, `fact`, `area`, `note`) are
- * structural, not OIP primitives — they're canvas-internal node types
+ * Built-in shapes (`concept`, `entity`, `fact`, `area`, `note`, `funnel`)
+ * are structural, not OIP primitives — they're canvas-internal node types
  * registered by name and rendered by their own component.
+ *
+ * Each registered renderer can carry optional palette metadata describing
+ * how the floating top toolbar should advertise the node type (group,
+ * display label, drag-out defaults). The metadata is the registry's own
+ * concern; node renderers never read it themselves. This is what lets the
+ * toolbar "loaded dynamically from the registry — don't hardcode" instead
+ * of maintaining a parallel list of producers.
  */
 import type { ComponentType } from "react";
 import type { NodeProps, NodeTypes } from "@xyflow/react";
@@ -41,13 +48,48 @@ import { AreaNode } from "./shapes/AreaNode";
 import { ConceptNode } from "./shapes/ConceptNode";
 import { EntityNode } from "./shapes/EntityNode";
 import { FactNode } from "./shapes/FactNode";
+import { FunnelNode } from "./shapes/FunnelNode";
 import { NoteNode } from "./shapes/NoteNode";
 
+/** Optional toolbar/palette metadata for a registered node type. */
+export type PaletteMeta = {
+  /** Section in the toolbar. */
+  group: "shapes" | "cards" | "producers";
+  /** Human-readable label (tooltip + accessibility). */
+  label: string;
+  /** Single-line description used in the tooltip subtitle. */
+  hint?: string;
+  /** Initial node width if the drag-out should seed one (e.g. area). */
+  width?: number;
+  /** Initial node height (e.g. area). */
+  height?: number;
+  /** Extra `data` to merge into the dropped node. */
+  data?: Record<string, unknown>;
+  /**
+   * If true, the toolbar drops the node with `label: ""` so the user can
+   * immediately rename inline. Pure shapes opt in; cards keep their label.
+   */
+  noDefaultLabel?: boolean;
+  /** Glyph identifier for the toolbar icon (matches the tile's SVG). */
+  glyph: "rect" | "circle" | "diamond" | "dashed-rect" | "note" | "fact" | "page" | "table" | "cube" | "block" | "requirement" | "package" | "fmu";
+  /** Ordering hint within a section (lower first). */
+  order?: number;
+  /**
+   * When false the toolbar suppresses the entry. Producers that only ever
+   * land via the Library drawer (`document`, `cad:model`, ...) opt out
+   * here so the toolbar advertises the *concept* without trying to drop a
+   * stub node that has no source content yet.
+   */
+  toolbar?: boolean;
+};
+
 const registry = new Map<string, ComponentType<NodeProps>>();
+const paletteMeta = new Map<string, PaletteMeta>();
 
 export function registerNodeRenderer(
   name: string,
   component: ComponentType<NodeProps>,
+  meta?: PaletteMeta,
 ): void {
   if (registry.has(name)) {
     // Last-writer-wins so plugins can override defaults; warn for visibility.
@@ -55,10 +97,12 @@ export function registerNodeRenderer(
     console.warn(`registerNodeRenderer: overriding existing renderer for '${name}'`);
   }
   registry.set(name, component);
+  if (meta) paletteMeta.set(name, meta);
 }
 
 export function unregisterNodeRenderer(name: string): void {
   registry.delete(name);
+  paletteMeta.delete(name);
 }
 
 export function getNodeRenderer(name: string): ComponentType<NodeProps> | undefined {
@@ -69,30 +113,146 @@ export function nodeTypeNames(): string[] {
   return [...registry.keys()].sort();
 }
 
+/** All registered palette entries, grouped and ordered for toolbar consumption. */
+export function paletteEntries(group: PaletteMeta["group"]): Array<{ name: string; meta: PaletteMeta }> {
+  const entries: Array<{ name: string; meta: PaletteMeta }> = [];
+  for (const [name, meta] of paletteMeta) {
+    if (meta.group !== group) continue;
+    if (meta.toolbar === false) continue;
+    entries.push({ name, meta });
+  }
+  entries.sort((a, b) => (a.meta.order ?? 100) - (b.meta.order ?? 100));
+  return entries;
+}
+
+/**
+ * True when a node type can usefully be dragged out of the toolbar to
+ * create a node from scratch — i.e. shapes and cards. Producers carry
+ * external content references and must be added via the Library drawer.
+ */
+export function canDragFromToolbar(name: string): boolean {
+  const meta = paletteMeta.get(name);
+  if (!meta) return false;
+  return meta.group === "shapes" || meta.group === "cards";
+}
+
 // Built-in defaults — registered against canonical node_type strings.
 // Producers that map their region kinds to one of these primitives via
 // `ui_hints.node_types[].renders = "primitive:<name>"` get rendering for free.
-registerNodeRenderer("concept", ConceptNode);
-registerNodeRenderer("entity", EntityNode);
-registerNodeRenderer("fact", FactNode);
-registerNodeRenderer("area", AreaNode);
-registerNodeRenderer("note", NoteNode);
+registerNodeRenderer("concept", ConceptNode, {
+  group: "shapes",
+  label: "Rectangle",
+  hint: "rounded rectangle",
+  glyph: "rect",
+  noDefaultLabel: true,
+  order: 10,
+});
+registerNodeRenderer("entity", EntityNode, {
+  group: "shapes",
+  label: "Circle",
+  hint: "circular shape",
+  glyph: "circle",
+  noDefaultLabel: true,
+  order: 20,
+});
+registerNodeRenderer("funnel", FunnelNode, {
+  group: "shapes",
+  label: "Diamond",
+  hint: "diamond shape",
+  glyph: "diamond",
+  noDefaultLabel: true,
+  order: 30,
+});
+registerNodeRenderer("area", AreaNode, {
+  group: "shapes",
+  label: "Container",
+  hint: "dashed container",
+  glyph: "dashed-rect",
+  noDefaultLabel: true,
+  width: 360,
+  height: 220,
+  order: 40,
+});
 
-// Primitives — OIP-aware
-registerNodeRenderer("document", DocumentPrimitive);
-registerNodeRenderer("spec", TablePrimitive);
-registerNodeRenderer("model3d", Model3DPrimitive);
-registerNodeRenderer("cad:model", Model3DPrimitive);  // anchor_cad's manifest node_type
+registerNodeRenderer("fact", FactNode, {
+  group: "cards",
+  label: "Fact",
+  hint: "single assertion",
+  glyph: "fact",
+  order: 10,
+});
+registerNodeRenderer("note", NoteNode, {
+  group: "cards",
+  label: "Note",
+  hint: "free-form sticky note",
+  glyph: "note",
+  order: 20,
+});
+
+// Primitives — OIP-aware. Producers register against canonical node_type
+// strings; the registry's palette metadata is what surfaces them to the
+// toolbar's Producers section. These entries are *informational* — every
+// producer requires real content (a document slug, a CAD slug, a SysML
+// model) to make a useful node, so the toolbar shows them as icons with
+// a tooltip and routes clicks to the Library drawer instead of dropping
+// stub nodes.
+registerNodeRenderer("document", DocumentPrimitive, {
+  group: "producers",
+  label: "Document",
+  hint: "ingested PDFs · open Library",
+  glyph: "page",
+  order: 10,
+});
+registerNodeRenderer("spec", TablePrimitive, {
+  group: "producers",
+  label: "Spec table",
+  hint: "drag rows out of a document",
+  glyph: "table",
+  order: 20,
+});
+registerNodeRenderer("model3d", Model3DPrimitive, {
+  group: "producers",
+  label: "Model3D",
+  hint: "3D model viewport",
+  glyph: "cube",
+  order: 30,
+});
+registerNodeRenderer("cad:model", Model3DPrimitive, {
+  group: "producers",
+  label: "CAD model",
+  hint: "anchor_cad · open Library",
+  glyph: "cube",
+  order: 40,
+});
 
 // SysML v2 primitives — anchor_sysml extension's manifest node_types
-registerNodeRenderer("sysml:block", SysmlBlockPrimitive);
-registerNodeRenderer("sysml:requirement", SysmlRequirementPrimitive);
-registerNodeRenderer("sysml:package", SysmlPackagePrimitive);
+registerNodeRenderer("sysml:block", SysmlBlockPrimitive, {
+  group: "producers",
+  label: "SysML block",
+  hint: "block definition / usage",
+  glyph: "block",
+  order: 50,
+});
+registerNodeRenderer("sysml:requirement", SysmlRequirementPrimitive, {
+  group: "producers",
+  label: "SysML requirement",
+  hint: "requirement",
+  glyph: "requirement",
+  order: 60,
+});
+registerNodeRenderer("sysml:package", SysmlPackagePrimitive, {
+  group: "producers",
+  label: "SysML package",
+  hint: "package container",
+  glyph: "package",
+  order: 70,
+});
 // future primitives (when their renderers land):
 //   registerNodeRenderer("media", MediaPrimitive);
 //   registerNodeRenderer("code", CodePrimitive);
 //   registerNodeRenderer("plot", PlotPrimitive);
 //   registerNodeRenderer("image", ImagePrimitive);
+//   registerNodeRenderer("fmu", FmuPrimitive);
 
 /**
  * Lazy-load a Web Component module and register the resulting custom

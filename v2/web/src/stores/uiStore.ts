@@ -23,36 +23,16 @@ type HoveredSourceRef = {
   bbox?: number[];       // raw bbox in PDF user-space
 } | null;
 
-// localStorage key for the persisted shell preferences.
-const LEFT_RAIL_STORAGE_KEY = "anchor.ui.leftRailCollapsed";
-
-function readLeftRailCollapsed(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return window.localStorage.getItem(LEFT_RAIL_STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function writeLeftRailCollapsed(value: boolean): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(LEFT_RAIL_STORAGE_KEY, value ? "1" : "0");
-  } catch {
-    /* localStorage unavailable — preference becomes session-local */
-  }
-}
-
 type UiState = {
   pdfViewer: PdfViewerState | null;
   hoveredSourceRef: HoveredSourceRef;
   /**
-   * True when the left rail is in its narrow "icon-only" mode. Persisted
-   * across reloads via localStorage. Toggled by the chevron button in the
-   * rail header and the `[` keyboard shortcut.
+   * True when the right-side Library drawer (shadcn Sheet) is open.
+   * Session-only — the drawer is a transient launcher, not a layout
+   * preference, so we don't persist it. Toggled by the Library button on
+   * the floating top toolbar and the `]` keyboard shortcut.
    */
-  leftRailCollapsed: boolean;
+  libraryDrawerOpen: boolean;
   openPdf: (
     slug: string,
     options?: {
@@ -67,14 +47,14 @@ type UiState = {
   setPdfPage: (page: number) => void;
   setHoveredSourceRef: (ref: HoveredSourceRef) => void;
   clearHoveredSourceRef: () => void;
-  toggleLeftRail: () => void;
-  setLeftRailCollapsed: (collapsed: boolean) => void;
+  setLibraryDrawerOpen: (open: boolean) => void;
+  toggleLibraryDrawer: () => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
   pdfViewer: null,
   hoveredSourceRef: null,
-  leftRailCollapsed: readLeftRailCollapsed(),
+  libraryDrawerOpen: false,
   openPdf: (slug, options) =>
     set({
       pdfViewer: {
@@ -93,14 +73,7 @@ export const useUiStore = create<UiState>((set) => ({
     ),
   setHoveredSourceRef: (ref) => set({ hoveredSourceRef: ref }),
   clearHoveredSourceRef: () => set({ hoveredSourceRef: null }),
-  toggleLeftRail: () =>
-    set((state) => {
-      const next = !state.leftRailCollapsed;
-      writeLeftRailCollapsed(next);
-      return { leftRailCollapsed: next };
-    }),
-  setLeftRailCollapsed: (collapsed) => {
-    writeLeftRailCollapsed(collapsed);
-    set({ leftRailCollapsed: collapsed });
-  },
+  setLibraryDrawerOpen: (open) => set({ libraryDrawerOpen: open }),
+  toggleLibraryDrawer: () =>
+    set((state) => ({ libraryDrawerOpen: !state.libraryDrawerOpen })),
 }));

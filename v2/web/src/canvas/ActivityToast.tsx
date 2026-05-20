@@ -18,7 +18,7 @@ export function ActivityToast() {
   if (fresh.length === 0) return null;
 
   return (
-    <div className="pointer-events-none absolute right-4 top-4 z-30 flex flex-col gap-1.5">
+    <div className="pointer-events-none absolute right-4 bottom-4 z-30 flex flex-col gap-1.5">
       {fresh.map((a) => {
         const age = now - a.at;
         const opacity = age < VISIBLE_MS - 600 ? 1 : Math.max(0, (VISIBLE_MS - age) / 600);
