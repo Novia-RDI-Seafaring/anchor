@@ -85,6 +85,8 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   const openPdf = useUiStore((s) => s.openPdf);
   const setHoveredSourceRef = useUiStore((s) => s.setHoveredSourceRef);
   const clearHoveredSourceRef = useUiStore((s) => s.clearHoveredSourceRef);
+  const setSelectedNodeId = useUiStore((s) => s.setSelectedNodeId);
+  const setPropertiesOpen = useUiStore((s) => s.setPropertiesOpen);
 
   // ReactFlow needs to own the per-frame drag position. We seed its internal
   // node list from the Zustand store and re-seed whenever the store changes
@@ -274,6 +276,8 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         {...(readOnly
           ? {}
           : {
+              onNodeClick: (_event, node) => { setSelectedNodeId(node.id); setPropertiesOpen(true); },
+              onPaneClick: () => { setSelectedNodeId(null); setPropertiesOpen(false); },
               onNodeDoubleClick: (_event, node) => {
                 if (node.type === "document") {
                   const data = node.data as { slug?: string; status?: string } | undefined;

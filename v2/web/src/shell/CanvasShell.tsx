@@ -25,6 +25,7 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { ActivityToast } from "@/canvas/ActivityToast";
 
 import { LibraryDrawer } from "./LibraryDrawer";
+import { PropertiesPanel } from "./PropertiesPanel";
 import { Toolbar } from "./Toolbar";
 
 type Props = {
@@ -48,6 +49,7 @@ export function CanvasShell({ workspaceSlug, children }: Props) {
           <ActivityToast />
         </div>
         <LibraryDrawer workspaceSlug={workspaceSlug} />
+        <PropertiesPanel />
       </div>
     </ReactFlowProvider>
   );

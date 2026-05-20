@@ -49,12 +49,31 @@ type UiState = {
   clearHoveredSourceRef: () => void;
   setLibraryDrawerOpen: (open: boolean) => void;
   toggleLibraryDrawer: () => void;
+  // --- Properties panel (added by node-content-editing agent) -----------
+  /**
+   * Id of the currently selected canvas node, or null. Set by ReactFlow's
+   * `onNodeClick` handler. The Properties panel reads from this id and
+   * pulls the node from `useCanvasStore` so the panel re-renders when
+   * the canonical node changes (SSE echoes, label edits, etc.).
+   */
+  selectedNodeId: string | null;
+  /**
+   * True when the right-side Properties panel (shadcn Sheet) is open.
+   * Mutually exclusive with `libraryDrawerOpen` — opening Properties
+   * closes Library, and vice-versa. Documented in PropertiesPanel.tsx.
+   */
+  propertiesOpen: boolean;
+  setSelectedNodeId: (id: string | null) => void;
+  setPropertiesOpen: (open: boolean) => void;
+  toggleProperties: () => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
   pdfViewer: null,
   hoveredSourceRef: null,
   libraryDrawerOpen: false,
+  selectedNodeId: null,
+  propertiesOpen: false,
   openPdf: (slug, options) =>
     set({
       pdfViewer: {
@@ -76,4 +95,18 @@ export const useUiStore = create<UiState>((set) => ({
   setLibraryDrawerOpen: (open) => set({ libraryDrawerOpen: open }),
   toggleLibraryDrawer: () =>
     set((state) => ({ libraryDrawerOpen: !state.libraryDrawerOpen })),
+  // --- Properties panel actions (appended) ------------------------------
+  setSelectedNodeId: (id) => set({ selectedNodeId: id }),
+  setPropertiesOpen: (open) =>
+    set((state) =>
+      open
+        ? { propertiesOpen: true, libraryDrawerOpen: false }
+        : { ...state, propertiesOpen: false },
+    ),
+  toggleProperties: () =>
+    set((state) =>
+      state.propertiesOpen
+        ? { propertiesOpen: false }
+        : { propertiesOpen: true, libraryDrawerOpen: false },
+    ),
 }));
