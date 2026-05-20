@@ -1,24 +1,51 @@
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
 import { Pictogram } from "@/canvas/icons";
-import { useInlineLabel } from "@/canvas/useInlineLabel";
+import { useInlineField } from "@/canvas/useInlineField";
 
-export function ConceptNode({ id, data }: NodeProps) {
-  const d = data as { label?: string; pictogram?: string; dashed?: boolean; subtitle?: string };
+/**
+ * ConceptNode — rounded rectangle shape.
+ *
+ * Selection-gated editing: `data.label` becomes editable only when the
+ * node is `selected` (draw.io style). 8-handle resize via NodeResizer
+ * appears on selection too.
+ */
+export function ConceptNode({ id, data, selected }: NodeProps) {
+  const d = data as {
+    label?: string;
+    pictogram?: string;
+    dashed?: boolean;
+    subtitle?: string;
+    width?: number;
+    height?: number;
+  };
   const label = d.label ?? "";
   const borderStyle = d.dashed ? "border-dashed" : "border-solid";
   const opacityClass = d.dashed ? "opacity-70" : "";
   const { id: workspaceSlug } = useParams<{ id: string }>();
-  const rename = useInlineLabel({
+  const rename = useInlineField({
     workspaceSlug: workspaceSlug ?? "",
     nodeId: id,
-    label,
+    value: label,
+    field: "label",
+    canEdit: selected ?? false,
   });
+  // Cursor: text when selected (hint at edit), move when selected (drag),
+  // pointer when unselected. Move wins on the wrapper; the label area gets
+  // text via `cursor-text` below.
+  const wrapCursor = selected ? "cursor-move" : "cursor-pointer";
   return (
     <div
-      className={`rounded-lg border ${borderStyle} border-neutral-400 bg-white px-3 py-2 text-sm shadow-sm ${opacityClass}`}
+      className={`relative rounded-lg border ${borderStyle} border-neutral-400 bg-white px-3 py-2 text-sm shadow-sm ${opacityClass} ${wrapCursor}`}
+      style={d.width && d.height ? { width: d.width, height: d.height } : undefined}
     >
+      <NodeResizer
+        isVisible={selected ?? false}
+        minWidth={80}
+        minHeight={32}
+        color="#0ea5e9"
+      />
       <Handle type="target" position={Position.Left} />
       <div className="flex items-center gap-2 text-neutral-900">
         {d.pictogram ? <Pictogram name={d.pictogram} className="text-neutral-700 shrink-0" /> : null}
@@ -31,12 +58,12 @@ export function ConceptNode({ id, data }: NodeProps) {
             />
           ) : (
             <div
-              className="cursor-text truncate font-medium leading-tight"
+              className={`truncate font-medium leading-tight ${selected ? "cursor-text" : "cursor-pointer"}`}
               onDoubleClick={(e) => {
                 e.stopPropagation();
                 rename.beginEdit();
               }}
-              title="double-click to rename"
+              title={selected ? "double-click to rename" : undefined}
             >
               {label || <span className="text-neutral-400">untitled</span>}
             </div>

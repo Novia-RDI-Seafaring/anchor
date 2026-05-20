@@ -13,13 +13,13 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { canvases } from "@/api/canvases";
 import { AnchoredEdge } from "@/canvas/edges/AnchoredEdge";
 import { EdgeMarkerDefs } from "@/canvas/edges/EdgeMarkerDefs";
 import { FloatingEdge } from "@/canvas/edges/FloatingEdge";
-import { nodeTypes } from "@/canvas/registry";
+import { nodeTypes, paletteEntries } from "@/canvas/registry";
 import { CanvasSse } from "@/realtime/sseClient";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -87,6 +87,14 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   const clearHoveredSourceRef = useUiStore((s) => s.clearHoveredSourceRef);
   const setSelectedNodeId = useUiStore((s) => s.setSelectedNodeId);
   const setPropertiesOpen = useUiStore((s) => s.setPropertiesOpen);
+  const armedTool = useUiStore((s) => s.armedTool);
+  const disarmTool = useUiStore((s) => s.disarmTool);
+  const selectedNodeId = useUiStore((s) => s.selectedNodeId);
+  // Pointer-down origin for armed-tool drag-to-size. Lives in a ref so
+  // pointermove/up handlers don't trigger re-renders on every pixel.
+  const armDownRef = useRef<{ x: number; y: number; clientX: number; clientY: number } | null>(
+    null,
+  );
 
   // ReactFlow needs to own the per-frame drag position. We seed its internal
   // node list from the Zustand store and re-seed whenever the store changes
@@ -117,10 +125,18 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
 
   // Reflect store → ReactFlow. Only updates when the store reference changes;
   // ReactFlow's internal drag state isn't disturbed unless a relevant node
-  // actually changed on the store side.
+  // actually changed on the store side. The `selected` prop is stamped here
+  // from `uiStore.selectedNodeId` so an external "deselect" (Esc, pane
+  // click handler, properties-panel close) instantly clears the selection
+  // ring + collapses the inline edit affordances.
   useEffect(() => {
-    setRfNodes(Object.values(nodes).map(toRfNode));
-  }, [nodes]);
+    setRfNodes(
+      Object.values(nodes).map((n) => ({
+        ...toRfNode(n),
+        selected: selectedNodeId === n.id,
+      })),
+    );
+  }, [nodes, selectedNodeId]);
 
   useEffect(() => {
     setRfEdges(Object.values(edges).map((e) => {
@@ -143,7 +159,40 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
 
   const onNodesChange = useCallback((changes: NodeChange<RfNode>[]) => {
     setRfNodes((curr) => applyNodeChanges(changes, curr));
-  }, []);
+    // Persist resize end events. `NodeResizer` emits dimension changes
+    // continuously during the drag with `resizing: true`; the final change
+    // arrives with `resizing: false`. We only patch on the final change to
+    // avoid hammering the API.
+    if (readOnly) return;
+    for (const change of changes) {
+      if (change.type !== "dimensions") continue;
+      if (change.resizing) continue;
+      const dim = change.dimensions;
+      if (!dim) continue;
+      // Mirror locally so the store-driven re-render keeps the new size.
+      useCanvasStore.setState((state) => {
+        const existing = state.nodes[change.id];
+        if (!existing) return state;
+        return {
+          ...state,
+          nodes: {
+            ...state.nodes,
+            [change.id]: {
+              ...existing,
+              data: { ...existing.data, width: dim.width, height: dim.height },
+            },
+          },
+        };
+      });
+      canvases
+        .patchNode(slug, change.id, {
+          data: { width: dim.width, height: dim.height },
+        })
+        .catch(() => {
+          // SSE will reconcile.
+        });
+    }
+  }, [readOnly, slug]);
 
   const onEdgesChange = useCallback((changes: EdgeChange<RfEdge>[]) => {
     setRfEdges((curr) => applyEdgeChanges(changes, curr));
@@ -222,13 +271,112 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
     }
   }, [slug, screenToFlowPosition]);
 
+  // Armed-tool placement gesture. When `armedTool` is set, a click on the
+  // pane places the shape at default size; a click-and-drag places it with
+  // the dragged rect as its position+size.
+  //
+  // We listen on the wrapper div rather than ReactFlow's `onPaneClick` so
+  // we can distinguish click from drag by comparing pointerdown→pointerup
+  // displacement. The threshold (4 px) matches a typical "wobble" — under
+  // that we treat it as a click.
+  const PLACE_DRAG_THRESHOLD_PX = 4;
+
+  // Cards don't drag-to-size (their layout is content-driven beyond a
+  // sensible default). Shapes (concept/entity/funnel/area) can grow.
+  const CAN_SIZE: Record<string, boolean> = {
+    concept: true,
+    entity: true,
+    funnel: true,
+    area: true,
+  };
+
+  const placeArmedNode = async (
+    flowX: number,
+    flowY: number,
+    sizeOverride?: { width: number; height: number },
+  ) => {
+    if (!armedTool) return;
+    // Pull the palette meta for default size + payload shape.
+    const all = [...paletteEntries("shapes"), ...paletteEntries("cards")];
+    const meta = all.find((e) => e.name === armedTool)?.meta;
+    const label = meta?.noDefaultLabel ? "" : meta?.label ?? "";
+    const width = sizeOverride?.width ?? meta?.width;
+    const height = sizeOverride?.height ?? meta?.height;
+    try {
+      await canvases.addNode(slug, {
+        node_type: armedTool,
+        label,
+        x: flowX,
+        y: flowY,
+        ...(width !== undefined ? { width } : {}),
+        ...(height !== undefined ? { height } : {}),
+        data: { ...(meta?.data ?? {}), ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) },
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("armed-tool placement failed", err);
+    } finally {
+      // Always disarm after placement; user can re-arm by clicking the
+      // rail icon again.
+      disarmTool();
+    }
+  };
+
+  const onPointerDown = (event: React.PointerEvent) => {
+    if (!armedTool) return;
+    // Ignore clicks on existing nodes — the user might be trying to select
+    // a node mid-arm. ReactFlow tags nodes with `.react-flow__node` so we
+    // can sniff the event target.
+    const target = event.target as HTMLElement;
+    if (target.closest(".react-flow__node")) return;
+    armDownRef.current = {
+      clientX: event.clientX,
+      clientY: event.clientY,
+      ...screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+    };
+  };
+
+  const onPointerUp = (event: React.PointerEvent) => {
+    if (!armedTool) return;
+    const down = armDownRef.current;
+    armDownRef.current = null;
+    if (!down) return;
+    const dx = event.clientX - down.clientX;
+    const dy = event.clientY - down.clientY;
+    const dist = Math.hypot(dx, dy);
+    if (dist < PLACE_DRAG_THRESHOLD_PX) {
+      // Single-click placement: default size at the click point.
+      void placeArmedNode(down.x, down.y);
+      return;
+    }
+    // Drag-to-size — only honoured for sizeable shapes. Cards fall back to
+    // single-click placement at the start point.
+    if (!CAN_SIZE[armedTool]) {
+      void placeArmedNode(down.x, down.y);
+      return;
+    }
+    const upFlow = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    const minX = Math.min(down.x, upFlow.x);
+    const minY = Math.min(down.y, upFlow.y);
+    const width = Math.max(40, Math.abs(upFlow.x - down.x));
+    const height = Math.max(24, Math.abs(upFlow.y - down.y));
+    void placeArmedNode(minX, minY, { width, height });
+  };
+
   // In readOnly mode the canvas becomes a pure projection: no drags, no
   // drops, no dblclick → viewer. It still subscribes to SSE so any state
   // change emitted by the rest of the system shows up live.
   return (
     <div
-      className="relative h-full w-full"
-      {...(readOnly ? {} : { onDragOver, onDrop })}
+      className={`relative h-full w-full ${armedTool ? "cursor-crosshair" : ""}`}
+      {...(readOnly
+        ? {}
+        : {
+            onDragOver,
+            onDrop,
+            onPointerDown,
+            onPointerUp,
+          })}
     >
       {/* Mount custom <marker> defs once per canvas. Edge components
           reference them by URL fragment (`url(#anchor-mk-...)`); SVG

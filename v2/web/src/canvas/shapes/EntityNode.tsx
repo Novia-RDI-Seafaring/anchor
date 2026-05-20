@@ -1,24 +1,48 @@
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
 import { Pictogram } from "@/canvas/icons";
-import { useInlineLabel } from "@/canvas/useInlineLabel";
+import { useInlineField } from "@/canvas/useInlineField";
 
-export function EntityNode({ id, data }: NodeProps) {
-  const d = data as { label?: string; pictogram?: string; dashed?: boolean };
+/**
+ * EntityNode — circular shape.
+ *
+ * Resize is square-only (`keepAspectRatio`) so the shape stays a circle no
+ * matter which handle the user drags. Inline rename is selection-gated.
+ */
+export function EntityNode({ id, data, selected }: NodeProps) {
+  const d = data as {
+    label?: string;
+    pictogram?: string;
+    dashed?: boolean;
+    width?: number;
+    height?: number;
+  };
   const label = d.label ?? "";
   const borderStyle = d.dashed ? "border-dashed" : "border-solid";
   const opacityClass = d.dashed ? "opacity-70" : "";
   const { id: workspaceSlug } = useParams<{ id: string }>();
-  const rename = useInlineLabel({
+  const rename = useInlineField({
     workspaceSlug: workspaceSlug ?? "",
     nodeId: id,
-    label,
+    value: label,
+    field: "label",
+    canEdit: selected ?? false,
   });
+  const size = d.width ?? d.height ?? 96; // 24*4 → h-24 default
+  const wrapCursor = selected ? "cursor-move" : "cursor-pointer";
   return (
     <div
-      className={`flex h-24 w-24 flex-col items-center justify-center gap-1 rounded-full border-2 ${borderStyle} border-neutral-500 bg-white text-xs font-medium ${opacityClass}`}
+      className={`relative flex flex-col items-center justify-center gap-1 rounded-full border-2 ${borderStyle} border-neutral-500 bg-white text-xs font-medium ${opacityClass} ${wrapCursor}`}
+      style={{ width: size, height: size }}
     >
+      <NodeResizer
+        isVisible={selected ?? false}
+        minWidth={48}
+        minHeight={48}
+        keepAspectRatio
+        color="#0ea5e9"
+      />
       <Handle type="target" position={Position.Left} />
       {d.pictogram ? <Pictogram name={d.pictogram} className="text-neutral-700" /> : null}
       {rename.editing ? (
@@ -29,12 +53,12 @@ export function EntityNode({ id, data }: NodeProps) {
         />
       ) : (
         <span
-          className="cursor-text px-2 text-center leading-tight"
+          className={`px-2 text-center leading-tight ${selected ? "cursor-text" : "cursor-pointer"}`}
           onDoubleClick={(e) => {
             e.stopPropagation();
             rename.beginEdit();
           }}
-          title="double-click to rename"
+          title={selected ? "double-click to rename" : undefined}
         >
           {label || <span className="text-neutral-400">untitled</span>}
         </span>

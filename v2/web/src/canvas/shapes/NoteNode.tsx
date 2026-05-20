@@ -1,29 +1,55 @@
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
-import { useInlineLabel } from "@/canvas/useInlineLabel";
+import { useInlineField } from "@/canvas/useInlineField";
 
 /**
  * NoteNode — a sticky-note style text card. Renders `data.label` (one-line
- * heading) and `data.text` (body). No fancy markdown — paragraphs and line
- * breaks. Use these to annotate architecture diagrams, leave TODOs, or pin
- * descriptive prose alongside structural nodes.
+ * heading) and `data.text` (multi-line body). The body is a free-form text
+ * area: paragraphs and line breaks. Use these to annotate architecture
+ * diagrams, leave TODOs, or pin descriptive prose alongside structural
+ * nodes.
  *
- * Inline rename covers the label today; editing the body is a follow-up
- * (left to a later PR — the existing TablePrimitive/spec flow already has
- * a richer text editor pattern we'll reuse).
+ * Two independent inline editors (both selection-gated):
+ *   - Label  (single-line) — double-click the title strip. Enter commits.
+ *   - Body   (multi-line)  — double-click the body region. Enter commits,
+ *     Shift+Enter inserts a newline, Esc cancels, blur commits. Empty body
+ *     is fine; an explicit hint nudges the user to start typing.
+ *
+ * 8-handle NodeResizer appears on selection.
  */
-export function NoteNode({ id, data }: NodeProps) {
-  const d = data as { label?: string; text?: string };
+export function NoteNode({ id, data, selected }: NodeProps) {
+  const d = data as { label?: string; text?: string; width?: number; height?: number };
   const label = d.label ?? "";
+  const text = d.text ?? "";
   const { id: workspaceSlug } = useParams<{ id: string }>();
-  const rename = useInlineLabel({
+  const rename = useInlineField({
     workspaceSlug: workspaceSlug ?? "",
     nodeId: id,
-    label,
+    value: label,
+    field: "label",
+    canEdit: selected ?? false,
   });
+  const body = useInlineField({
+    workspaceSlug: workspaceSlug ?? "",
+    nodeId: id,
+    value: text,
+    field: "text",
+    multiline: true,
+    canEdit: selected ?? false,
+  });
+  const wrapCursor = selected ? "cursor-move" : "cursor-pointer";
   return (
-    <div className="max-w-sm rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-neutral-900 shadow-sm">
+    <div
+      className={`relative max-w-sm rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-neutral-900 shadow-sm ${wrapCursor}`}
+      style={d.width && d.height ? { width: d.width, height: d.height, maxWidth: "none" } : undefined}
+    >
+      <NodeResizer
+        isVisible={selected ?? false}
+        minWidth={120}
+        minHeight={48}
+        color="#0ea5e9"
+      />
       <Handle type="target" position={Position.Left} />
       {rename.editing ? (
         <input
@@ -33,19 +59,45 @@ export function NoteNode({ id, data }: NodeProps) {
         />
       ) : (
         <div
-          className="cursor-text text-[11px] font-semibold uppercase tracking-wide text-amber-700"
+          className={`text-[11px] font-semibold uppercase tracking-wide text-amber-700 ${selected ? "cursor-text" : "cursor-pointer"}`}
           onDoubleClick={(e) => {
             e.stopPropagation();
             rename.beginEdit();
           }}
-          title="double-click to rename"
+          title={selected ? "double-click to rename" : undefined}
         >
           {label || <span className="font-normal italic tracking-normal text-amber-500/70">untitled</span>}
         </div>
       )}
-      {d.text ? (
-        <div className="mt-1 whitespace-pre-wrap leading-snug">{d.text}</div>
-      ) : null}
+      {body.editing ? (
+        <textarea
+          {...body.inputProps}
+          className={`${body.inputProps.className} mt-1 w-full min-h-[3rem] resize-y rounded border border-amber-300 bg-yellow-50/80 px-1 py-0.5 leading-snug text-neutral-900 outline-none focus:border-amber-500`}
+          placeholder="note body — Shift+Enter for newline, Enter to commit"
+        />
+      ) : text ? (
+        <div
+          className={`mt-1 whitespace-pre-wrap leading-snug ${selected ? "cursor-text" : "cursor-pointer"}`}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            body.beginEdit();
+          }}
+          title={selected ? "double-click to edit" : undefined}
+        >
+          {text}
+        </div>
+      ) : (
+        <div
+          className={`mt-1 italic text-amber-500/70 leading-snug ${selected ? "cursor-text" : "cursor-pointer"}`}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            body.beginEdit();
+          }}
+          title={selected ? "double-click to edit" : undefined}
+        >
+          {selected ? "double-click to add body" : "(empty note)"}
+        </div>
+      )}
       <Handle type="source" position={Position.Right} />
     </div>
   );

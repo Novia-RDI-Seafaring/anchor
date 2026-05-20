@@ -1,6 +1,8 @@
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
+import { canvases } from "@/api/canvases";
 import { documents } from "@/api/documents";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -9,7 +11,27 @@ type Row = { key: string; value: string; source_ref?: { page: number; bbox?: num
 
 type SourceRef = { kind?: string; page?: number; bbox?: number[] };
 
-export function TablePrimitive({ data }: NodeProps) {
+/**
+ * TablePrimitive — `spec` node renderer.
+ *
+ * Rows are minimally editable inline (per-cell `key` / `value`). Source refs
+ * (page + bbox) are not editable here; those are owned by the Properties
+ * panel and the future row-handle wiring (task #46).
+ *
+ * Keyboard map per cell:
+ *   - Plain Enter  → commit cell, jump focus to the next cell (key → value
+ *                    → next row's key). At the very last cell, plain Enter
+ *                    commits and blurs (no row append).
+ *   - Shift+Enter  → at the last row's value cell, append a new empty row
+ *                    and focus its `key`. Elsewhere it commits like Enter.
+ *   - Esc          → cancel the pending edit and exit.
+ *   - Click "+ row" → explicit append.
+ *
+ * Persistence: every commit issues a `canvases.patchNode(slug, id, { data:
+ * { rows: [...] } })`. The store-driven `data.rows` re-renders via SSE so
+ * the local state stays in sync with the canonical canvas.
+ */
+export function TablePrimitive({ id, data, selected }: NodeProps) {
   const d = data as {
     label?: string;
     rows?: Row[];
@@ -21,12 +43,56 @@ export function TablePrimitive({ data }: NodeProps) {
     source_ref?: SourceRef;
     dashed?: boolean;
   };
-  const rows = d.rows ?? [];
+  const canonicalRows = useMemo<Row[]>(() => d.rows ?? [], [d.rows]);
   const borderStyle = d.dashed ? "border-dashed" : "border-solid";
   const setHoveredSourceRef = useUiStore((s) => s.setHoveredSourceRef);
   const clearHoveredSourceRef = useUiStore((s) => s.clearHoveredSourceRef);
   const openPdf = useUiStore((s) => s.openPdf);
   const { id: workspaceSlug } = useParams<{ id: string }>();
+
+  // Local working copy of rows so cell edits feel snappy. Replaced when
+  // the canonical rows change from outside (SSE echo, remote agent edit).
+  const [rows, setRows] = useState<Row[]>(canonicalRows);
+  // Track which row index is "pending focus" so the cell can grab focus
+  // after the new row mounts. -1 means no pending focus.
+  const [pendingFocus, setPendingFocus] = useState<{ row: number; col: "key" | "value" } | null>(
+    null,
+  );
+  useEffect(() => {
+    setRows(canonicalRows);
+  }, [canonicalRows]);
+
+  const persistRows = (next: Row[]) => {
+    if (!workspaceSlug) return;
+    canvases
+      .patchNode(workspaceSlug, id, { data: { ...(d ?? {}), rows: next } })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error("row edit failed", err);
+      });
+  };
+
+  const commitRow = (index: number, col: "key" | "value", next: string) => {
+    setRows((prev) => {
+      const trimmed = next.replace(/\s+$/g, "");
+      const existing = prev[index];
+      if (!existing) return prev;
+      if (existing[col] === trimmed) return prev;
+      const draft = [...prev];
+      draft[index] = { ...existing, [col]: trimmed };
+      persistRows(draft);
+      return draft;
+    });
+  };
+
+  const appendRow = (focusCol: "key" | "value" = "key") => {
+    setRows((prev) => {
+      const draft = [...prev, { key: "", value: "" }];
+      persistRows(draft);
+      setPendingFocus({ row: draft.length - 1, col: focusCol });
+      return draft;
+    });
+  };
 
   const broadcastHover = () => {
     if (d.source_doc_slug && d.source_ref?.page) {
@@ -74,12 +140,19 @@ export function TablePrimitive({ data }: NodeProps) {
 
   const canOpen = Boolean(d.source_doc_slug && d.source_ref?.page);
 
+  const canEdit = selected ?? false;
   return (
     <div
-      className={`w-72 rounded-lg border ${borderStyle} border-neutral-400 bg-white text-sm shadow-sm`}
+      className={`relative w-72 rounded-lg border ${borderStyle} border-neutral-400 bg-white text-sm shadow-sm ${selected ? "cursor-move" : "cursor-pointer"}`}
       onMouseEnter={broadcastHover}
       onMouseLeave={clearHoveredSourceRef}
     >
+      <NodeResizer
+        isVisible={selected ?? false}
+        minWidth={200}
+        minHeight={64}
+        color="#0ea5e9"
+      />
       <Handle type="target" position={Position.Left} />
       <div
         className={`flex items-center justify-between border-b border-neutral-200 px-3 py-2 gap-2 ${
@@ -143,13 +216,37 @@ export function TablePrimitive({ data }: NodeProps) {
         </div>
       ) : null}
 
-      {rows.length > 0 ? (
+      {rows.length > 0 || !d.description ? (
         <table className="w-full">
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.key} className="border-b border-neutral-100 last:border-0">
-                <td className="px-3 py-1 text-neutral-600">{r.key}</td>
-                <td className="px-3 py-1 text-neutral-900">{r.value}</td>
+            {rows.map((r, i) => (
+              <tr key={`row-${i}`} className="border-b border-neutral-100 last:border-0">
+                <td className="px-3 py-1 text-neutral-600">
+                  <RowCell
+                    rowIndex={i}
+                    col="key"
+                    value={r.key}
+                    rowsLen={rows.length}
+                    canEdit={canEdit}
+                    pendingFocus={pendingFocus}
+                    setPendingFocus={setPendingFocus}
+                    onCommit={(v) => commitRow(i, "key", v)}
+                    onAppendRow={() => appendRow("key")}
+                  />
+                </td>
+                <td className="px-3 py-1 text-neutral-900">
+                  <RowCell
+                    rowIndex={i}
+                    col="value"
+                    value={r.value}
+                    rowsLen={rows.length}
+                    canEdit={canEdit}
+                    pendingFocus={pendingFocus}
+                    setPendingFocus={setPendingFocus}
+                    onCommit={(v) => commitRow(i, "value", v)}
+                    onAppendRow={() => appendRow("key")}
+                  />
+                </td>
                 <td className="px-2 text-xs text-neutral-400">
                   {r.source_ref?.page ? `p${r.source_ref.page}` : ""}
                 </td>
@@ -157,9 +254,26 @@ export function TablePrimitive({ data }: NodeProps) {
             ))}
           </tbody>
         </table>
-      ) : d.description ? (
+      ) : (
         <div className="px-3 py-2 text-[12px] text-neutral-700 leading-snug">
           {d.description}
+        </div>
+      )}
+
+      {canEdit ? (
+        <div className="flex items-center justify-end border-t border-neutral-100 px-2 py-1">
+          <button
+            type="button"
+            className="nodrag nopan rounded px-1.5 py-0.5 text-[10px] font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              appendRow("key");
+            }}
+            title="add row"
+          >
+            + row
+          </button>
         </div>
       ) : null}
 
@@ -178,5 +292,151 @@ export function TablePrimitive({ data }: NodeProps) {
 
       <Handle type="source" position={Position.Right} />
     </div>
+  );
+}
+
+/**
+ * One inline-editable table cell. Double-click (or focus) to edit; Enter
+ * commits and tabs to the next cell; Shift+Enter at the last row's value
+ * appends a new row and focuses its key.
+ */
+function RowCell({
+  rowIndex,
+  col,
+  value,
+  rowsLen,
+  canEdit,
+  pendingFocus,
+  setPendingFocus,
+  onCommit,
+  onAppendRow,
+}: {
+  rowIndex: number;
+  col: "key" | "value";
+  value: string;
+  rowsLen: number;
+  canEdit: boolean;
+  pendingFocus: { row: number; col: "key" | "value" } | null;
+  setPendingFocus: (next: { row: number; col: "key" | "value" } | null) => void;
+  onCommit: (next: string) => void;
+  onAppendRow: () => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [editing, setEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Reset the draft when the canonical value changes from outside.
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [value, editing]);
+
+  // External focus requests (e.g. "Shift+Enter appended a new row; focus
+  // the new row's key cell"). The parent sets `pendingFocus`; we pick it up
+  // here and trigger edit mode. Only the selected node's cells respond.
+  useEffect(() => {
+    if (!pendingFocus) return;
+    if (pendingFocus.row !== rowIndex || pendingFocus.col !== col) return;
+    if (!canEdit) return;
+    setDraft(value);
+    setEditing(true);
+    // Clear the pending focus so it doesn't re-fire after blur.
+    setPendingFocus(null);
+  }, [pendingFocus, rowIndex, col, value, setPendingFocus, canEdit]);
+
+  // Commit any in-flight edit when the node becomes deselected. Draw.io
+  // rule: click-outside both deselects and commits.
+  useEffect(() => {
+    if (canEdit) return;
+    if (!editing) return;
+    setEditing(false);
+    if (draft !== value) onCommit(draft);
+  }, [canEdit, editing, draft, value, onCommit]);
+
+  // Focus the input when we enter edit mode.
+  useEffect(() => {
+    if (!editing) return;
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, [editing]);
+
+  const commit = () => {
+    setEditing(false);
+    if (draft !== value) onCommit(draft);
+  };
+  const cancel = () => {
+    setDraft(value);
+    setEditing(false);
+  };
+
+  const isLastRow = rowIndex === rowsLen - 1;
+
+  const handleKey = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      // Persist before requesting focus so the parent's `rows` is in sync.
+      if (draft !== value) onCommit(draft);
+      setEditing(false);
+      if (event.shiftKey && isLastRow && col === "value") {
+        // Shift+Enter at last row's value → append a new row.
+        onAppendRow();
+        return;
+      }
+      // Plain Enter → tab to next cell: key → value → next row's key.
+      if (col === "key") {
+        setPendingFocus({ row: rowIndex, col: "value" });
+      } else if (col === "value" && !isLastRow) {
+        setPendingFocus({ row: rowIndex + 1, col: "key" });
+      }
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      cancel();
+      return;
+    }
+    // Stop ReactFlow from hijacking keystrokes (Backspace delete-node etc.).
+    event.stopPropagation();
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={handleKey}
+        onBlur={commit}
+        onMouseDown={(e) => e.stopPropagation()}
+        className="nodrag w-full rounded border border-neutral-300 bg-white px-1 py-0 text-[12px] outline-none focus:border-neutral-500"
+        placeholder={col === "key" ? "name" : "value"}
+      />
+    );
+  }
+  return (
+    <span
+      className={`nodrag block truncate ${canEdit ? "cursor-text" : "cursor-pointer"}`}
+      onDoubleClick={(e) => {
+        if (!canEdit) return;
+        e.stopPropagation();
+        setDraft(value);
+        setEditing(true);
+      }}
+      onClick={(e) => {
+        // Selection-gated: a click only enters edit mode after the node is
+        // selected. The first click selects (handled by ReactFlow → the
+        // outer node), and the second click on the same cell edits.
+        if (!canEdit) return;
+        e.stopPropagation();
+        setDraft(value);
+        setEditing(true);
+      }}
+      title={canEdit ? "click to edit" : undefined}
+    >
+      {value || <span className="italic text-neutral-300">{col === "key" ? "name" : "value"}</span>}
+    </span>
   );
 }

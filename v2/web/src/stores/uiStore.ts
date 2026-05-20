@@ -30,9 +30,26 @@ type UiState = {
    * True when the right-side Library drawer (shadcn Sheet) is open.
    * Session-only — the drawer is a transient launcher, not a layout
    * preference, so we don't persist it. Toggled by the Library button on
-   * the floating top toolbar and the `]` keyboard shortcut.
+   * the left tool rail and the `]` keyboard shortcut.
    */
   libraryDrawerOpen: boolean;
+  /**
+   * draw.io-style "armed tool" state — when set to a node_type string the
+   * canvas treats the next click (or click+drag) as a placement gesture
+   * for that shape. `null` means no tool is armed and the canvas behaves
+   * normally (pan/select).
+   *
+   * Lifecycle:
+   *   - Set by clicking a shape/card icon on the left tool rail.
+   *   - Cleared by:
+   *       · placing a node on the canvas (click or drag-to-size),
+   *       · pressing Escape,
+   *       · clicking the same icon a second time (toggle),
+   *       · clicking another icon (replaces the value).
+   *   - Producer entries (`document`, `cad:model`, ...) do NOT arm; the
+   *     `+` menu opens a Dialog instead. Arming is for shapes/cards only.
+   */
+  armedTool: string | null;
   openPdf: (
     slug: string,
     options?: {
@@ -49,6 +66,10 @@ type UiState = {
   clearHoveredSourceRef: () => void;
   setLibraryDrawerOpen: (open: boolean) => void;
   toggleLibraryDrawer: () => void;
+  /** Arm `type` (or toggle off if already armed for the same type). */
+  armTool: (type: string) => void;
+  /** Force-disarm whatever tool is currently armed. */
+  disarmTool: () => void;
   // --- Properties panel (added by node-content-editing agent) -----------
   /**
    * Id of the currently selected canvas node, or null. Set by ReactFlow's
@@ -72,6 +93,7 @@ export const useUiStore = create<UiState>((set) => ({
   pdfViewer: null,
   hoveredSourceRef: null,
   libraryDrawerOpen: false,
+  armedTool: null,
   selectedNodeId: null,
   propertiesOpen: false,
   openPdf: (slug, options) =>
@@ -95,6 +117,12 @@ export const useUiStore = create<UiState>((set) => ({
   setLibraryDrawerOpen: (open) => set({ libraryDrawerOpen: open }),
   toggleLibraryDrawer: () =>
     set((state) => ({ libraryDrawerOpen: !state.libraryDrawerOpen })),
+  armTool: (type) =>
+    set((state) => ({
+      // Clicking the same icon a second time toggles the tool off.
+      armedTool: state.armedTool === type ? null : type,
+    })),
+  disarmTool: () => set({ armedTool: null }),
   // --- Properties panel actions (appended) ------------------------------
   setSelectedNodeId: (id) => set({ selectedNodeId: id }),
   setPropertiesOpen: (open) =>

@@ -32,4 +32,14 @@ export const cad = {
   list: () => api.get<CadModel[]>("/api/cad"),
   get: (slug: string) => api.get<CadModel>(`/api/cad/${slug}`),
   modelUrl: (slug: string) => `${BACKEND_URL}/api/cad/${slug}/model`,
+  /**
+   * Upload a CAD file (STL/STEP/OBJ/glTF/...) and have the backend parse
+   * its parameter and parts summary. Mirrors `POST /api/cad` — see
+   * anchor_cad/adapters/http/cad_routes.py.
+   */
+  upload: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api.upload<CadModel>("/api/cad", fd);
+  },
 };

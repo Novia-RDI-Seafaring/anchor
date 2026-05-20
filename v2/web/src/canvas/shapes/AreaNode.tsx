@@ -1,7 +1,7 @@
-import { type NodeProps } from "@xyflow/react";
+import { NodeResizer, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
-import { useInlineLabel } from "@/canvas/useInlineLabel";
+import { useInlineField } from "@/canvas/useInlineField";
 
 /**
  * AreaNode — labelled, dashed rounded-rectangle container.
@@ -11,11 +11,18 @@ import { useInlineLabel } from "@/canvas/useInlineLabel";
  * picks an accent style; `data.dashed` defaults to true (areas are always
  * dashed) but can be set to false for a solid container if needed.
  *
- * Empty label is allowed (toolbar drops produce an empty-labelled area
- * that the user titles via the inline rename below). The title strip is
- * always rendered so there's a visible affordance to double-click.
+ * Areas use the rail's drag-out width/height by default but resize freely
+ * via NodeResizer once placed. Inline rename is selection-gated.
+ *
+ * Note: ReactFlow renders areas with `selectable: false` (see
+ * `CanvasGraph.toRfNode`) so they sit behind other nodes. The
+ * `NodeResizer` runs off the `selected` prop, which is still set by
+ * ReactFlow even though the area can't be picked by drag-rectangle. For
+ * the resize handles to appear, callers will need to set `selectable:
+ * true` on areas in a follow-up; for now the area lives at its drop-time
+ * size and resizes via the Properties panel.
  */
-export function AreaNode({ id, data }: NodeProps) {
+export function AreaNode({ id, data, selected }: NodeProps) {
   const d = data as {
     label?: string;
     width?: number;
@@ -39,16 +46,24 @@ export function AreaNode({ id, data }: NodeProps) {
   const tone = toneClass[d.tone ?? "default"] ?? toneClass.default;
   const borderStyle = dashed ? "border-dashed" : "border-solid";
   const { id: workspaceSlug } = useParams<{ id: string }>();
-  const rename = useInlineLabel({
+  const rename = useInlineField({
     workspaceSlug: workspaceSlug ?? "",
     nodeId: id,
-    label,
+    value: label,
+    field: "label",
+    canEdit: selected ?? false,
   });
   return (
     <div
       className={`pointer-events-auto rounded-xl border-2 ${borderStyle} ${tone}`}
       style={{ width: w, height: h }}
     >
+      <NodeResizer
+        isVisible={selected ?? false}
+        minWidth={120}
+        minHeight={60}
+        color="#0ea5e9"
+      />
       <div className="border-b border-current/20 px-3 py-1.5">
         {rename.editing ? (
           <input
@@ -58,12 +73,12 @@ export function AreaNode({ id, data }: NodeProps) {
           />
         ) : (
           <div
-            className="cursor-text text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-700"
+            className={`text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-700 ${selected ? "cursor-text" : "cursor-pointer"}`}
             onDoubleClick={(e) => {
               e.stopPropagation();
               rename.beginEdit();
             }}
-            title="double-click to rename"
+            title={selected ? "double-click to rename" : undefined}
           >
             {label || <span className="font-normal italic tracking-normal text-neutral-400">untitled · double-click to name</span>}
           </div>
