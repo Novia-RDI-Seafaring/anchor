@@ -98,3 +98,90 @@ def test_organize_subtree_unknown_root_400():
         json={"root_id": "ghost"},
     )
     assert rsp.status_code == 400
+
+
+def test_align_returns_moves():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.post("/api/workspaces/w1/nodes", json={"id": "a", "x": 0,  "y": 0,  "width": 100, "height": 100})
+    client.post("/api/workspaces/w1/nodes", json={"id": "b", "x": 50, "y": 30, "width": 100, "height": 100})
+    rsp = client.post(
+        "/api/workspaces/w1/align",
+        json={"ids": ["a", "b"], "anchor": "top"},
+    )
+    assert rsp.status_code == 200
+    body = rsp.json()
+    moved = {m["id"] for m in body["moves"]}
+    assert moved == {"b"}
+    assert body["event_count"] == 1
+
+
+def test_align_unknown_node_400():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.post("/api/workspaces/w1/nodes", json={"id": "a"})
+    rsp = client.post(
+        "/api/workspaces/w1/align",
+        json={"ids": ["a", "ghost"], "anchor": "top"},
+    )
+    assert rsp.status_code == 400
+
+
+def test_distribute_returns_moves():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.post("/api/workspaces/w1/nodes", json={"id": "a", "x": 0,   "width": 100, "height": 100})
+    client.post("/api/workspaces/w1/nodes", json={"id": "b", "x": 120, "width": 100, "height": 100})
+    client.post("/api/workspaces/w1/nodes", json={"id": "c", "x": 300, "width": 100, "height": 100})
+    rsp = client.post(
+        "/api/workspaces/w1/distribute",
+        json={"ids": ["a", "b", "c"], "axis": "horizontal"},
+    )
+    assert rsp.status_code == 200
+    body = rsp.json()
+    moved = {m["id"] for m in body["moves"]}
+    assert moved == {"b"}
+
+
+def test_distribute_too_few_400():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.post("/api/workspaces/w1/nodes", json={"id": "a"})
+    client.post("/api/workspaces/w1/nodes", json={"id": "b"})
+    rsp = client.post(
+        "/api/workspaces/w1/distribute",
+        json={"ids": ["a", "b"], "axis": "horizontal"},
+    )
+    assert rsp.status_code == 400
+
+
+def test_create_sub_canvas_happy_path():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "plant"})
+    rsp = client.post(
+        "/api/workspaces/plant/sub-canvas",
+        json={"slug": "pump-loop", "title": "Pump Loop", "x": 10, "y": 20},
+    )
+    assert rsp.status_code == 201
+    body = rsp.json()
+    assert body["child"]["slug"] == "pump-loop"
+    assert body["node"]["node_type"] == "canvas"
+    assert body["node"]["data"]["canvas_slug"] == "pump-loop"
+    assert body["event"]["type"] == "NodeAdded"
+    # Child workspace shows up in /api/workspaces.
+    listed = {w["slug"] for w in client.get("/api/workspaces").json()}
+    assert {"plant", "pump-loop"} <= listed
+    # Linking node lives on the parent.
+    parent_state = client.get("/api/workspaces/plant/state").json()
+    canvas_nodes = [n for n in parent_state["nodes"] if n["node_type"] == "canvas"]
+    assert len(canvas_nodes) == 1
+    assert canvas_nodes[0]["data"]["canvas_slug"] == "pump-loop"
+
+
+def test_create_sub_canvas_rejects_self_link():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "plant"})
+    rsp = client.post(
+        "/api/workspaces/plant/sub-canvas", json={"slug": "plant"},
+    )
+    assert rsp.status_code == 400

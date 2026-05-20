@@ -200,6 +200,78 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "canvas_align",
+            "description": (
+                "Align the listed nodes' positions to a shared edge or midline. "
+                "anchor = 'top' | 'bottom' | 'left' | 'right' | 'center-h' | "
+                "'center-v'. Emits one NodeMoved per node that genuinely moves; "
+                "all share a single causation_id so the SSE feed groups them."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 2,
+                    },
+                    "anchor": {
+                        "type": "string",
+                        "enum": ["top", "bottom", "left", "right", "center-h", "center-v"],
+                        "default": "top",
+                    },
+                },
+                "required": ["workspace_slug", "ids", "anchor"],
+            },
+        },
+        {
+            "name": "canvas_distribute",
+            "description": (
+                "Distribute the listed nodes' centres evenly along an axis. "
+                "axis = 'horizontal' | 'vertical'. End nodes stay anchored; "
+                "intermediate nodes get equally-spaced centres. Needs at "
+                "least three ids."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "minItems": 3,
+                    },
+                    "axis": {
+                        "type": "string",
+                        "enum": ["horizontal", "vertical"],
+                        "default": "horizontal",
+                    },
+                },
+                "required": ["workspace_slug", "ids", "axis"],
+            },
+        },
+        {
+            "name": "canvas_create_sub_canvas",
+            "description": (
+                "Create a child workspace and drop a 'canvas'-typed linking node "
+                "onto the parent in one atomic step. Returns {child, node, event, "
+                "state}. Use for hierarchical canvases — e.g. a top-level Plant "
+                "canvas with sub-canvases for Pump loop / Heat exchanger."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "parent_slug": {"type": "string"},
+                    "slug": {"type": "string", "description": "Slug for the new child canvas."},
+                    "title": {"type": "string"},
+                    "x": {"type": "number", "default": 0},
+                    "y": {"type": "number", "default": 0},
+                },
+                "required": ["parent_slug", "slug"],
+            },
+        },
+        {
             "name": "canvas_snapshot",
             "description": (
                 "Render a workspace canvas to PNG and return the bytes "
@@ -284,6 +356,45 @@ async def call_tool(svc: WorkspaceService, name: str, args: dict[str, Any]) -> s
                 "event_count": len(envelopes),
                 "state": state.get_state(),
             })
+        if name == "canvas_align":
+            try:
+                state, envelopes = await svc.align_nodes(
+                    args["workspace_slug"], list(args["ids"]), args["anchor"],
+                )
+            except ValueError as e:
+                return json.dumps({"error": str(e)})
+            moves = [
+                {"id": env.payload["id"], "x": env.payload["x"], "y": env.payload["y"]}
+                for env in envelopes
+            ]
+            return json.dumps({
+                "moves": moves,
+                "event_count": len(envelopes),
+                "state": state.get_state(),
+            })
+        if name == "canvas_distribute":
+            try:
+                state, envelopes = await svc.distribute_nodes(
+                    args["workspace_slug"], list(args["ids"]), args["axis"],
+                )
+            except ValueError as e:
+                return json.dumps({"error": str(e)})
+            moves = [
+                {"id": env.payload["id"], "x": env.payload["x"], "y": env.payload["y"]}
+                for env in envelopes
+            ]
+            return json.dumps({
+                "moves": moves,
+                "event_count": len(envelopes),
+                "state": state.get_state(),
+            })
+        if name == "canvas_create_sub_canvas":
+            return json.dumps(await svc.create_sub_canvas(
+                args["parent_slug"], args["slug"],
+                title=args.get("title", ""),
+                x=float(args.get("x", 0.0)),
+                y=float(args.get("y", 0.0)),
+            ))
         if name == "canvas_snapshot":
             envelope_fmt = args.get("format", "path")
             image_fmt = args.get("image_format", "png")

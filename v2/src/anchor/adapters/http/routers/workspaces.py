@@ -6,7 +6,10 @@ from fastapi.responses import FileResponse, Response
 
 from anchor.adapters.http.deps import get_workspace_service
 from anchor.adapters.http.schemas import (
+    AlignNodesRequest,
+    CreateSubCanvasRequest,
     CreateWorkspaceRequest,
+    DistributeNodesRequest,
     OrganizeSubtreeRequest,
     SnapshotRequest,
 )
@@ -92,6 +95,84 @@ async def organize_subtree(
         state, envelopes = await svc.organize_subtree(
             slug, req.root_id, orientation=req.orientation, algo=req.algo,
         )
+    except CommandError as e:
+        raise HTTPException(400, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    moves = [
+        {"id": env.payload["id"], "x": env.payload["x"], "y": env.payload["y"]}
+        for env in envelopes
+    ]
+    return {
+        "moves": moves,
+        "event_count": len(envelopes),
+        "state": state.get_state(),
+    }
+
+
+@router.post("/{slug}/align")
+async def align_nodes(
+    slug: str,
+    req: AlignNodesRequest,
+    svc: WorkspaceService = Depends(get_workspace_service),
+):
+    """Align the selected nodes' positions to a shared edge / midline.
+
+    Body: ``{ids, anchor}`` where ``anchor`` is one of ``top`` / ``bottom``
+    / ``left`` / ``right`` / ``center-h`` / ``center-v``. Emits one
+    ``NodeMoved`` per node that genuinely moves, sharing one ``causation_id``
+    so the SSE feed can group them as a single "align" gesture."""
+    try:
+        state, envelopes = await svc.align_nodes(slug, req.ids, req.anchor)  # type: ignore[arg-type]
+    except CommandError as e:
+        raise HTTPException(400, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    moves = [
+        {"id": env.payload["id"], "x": env.payload["x"], "y": env.payload["y"]}
+        for env in envelopes
+    ]
+    return {
+        "moves": moves,
+        "event_count": len(envelopes),
+        "state": state.get_state(),
+    }
+
+
+@router.post("/{parent_slug}/sub-canvas", status_code=201)
+async def create_sub_canvas(
+    parent_slug: str,
+    req: CreateSubCanvasRequest,
+    svc: WorkspaceService = Depends(get_workspace_service),
+):
+    """Provision a child canvas and link it from the parent in one call.
+
+    Body: ``{slug, title?, x?, y?}``. The server creates the child
+    workspace (idempotent on ``slug``), then drops a ``canvas``-typed
+    linking node onto ``parent_slug`` at ``(x, y)``. Returns the new
+    child meta, the linking node, and the ``NodeAdded`` envelope so
+    SSE consumers can reconcile.
+    """
+    try:
+        return await svc.create_sub_canvas(
+            parent_slug, req.slug, title=req.title, x=req.x, y=req.y,
+        )
+    except CommandError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/{slug}/distribute")
+async def distribute_nodes(
+    slug: str,
+    req: DistributeNodesRequest,
+    svc: WorkspaceService = Depends(get_workspace_service),
+):
+    """Distribute the selected nodes' centres evenly along ``axis``.
+
+    Body: ``{ids, axis}`` where ``axis`` is ``horizontal`` or ``vertical``.
+    Requires at least three ids; the end nodes stay put."""
+    try:
+        state, envelopes = await svc.distribute_nodes(slug, req.ids, req.axis)  # type: ignore[arg-type]
     except CommandError as e:
         raise HTTPException(400, str(e))
     except ValueError as e:

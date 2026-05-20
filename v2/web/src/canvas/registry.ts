@@ -38,6 +38,7 @@ import type { NodeProps, NodeTypes } from "@xyflow/react";
 // Primitives — generic OIP-aware renderers
 import { DocumentPrimitive } from "./primitives/DocumentPrimitive";
 import { Model3DPrimitive } from "./primitives/Model3DPrimitive";
+import { SubCanvasPrimitive } from "./primitives/SubCanvasPrimitive";
 import { SysmlBlockPrimitive } from "./primitives/SysmlBlockPrimitive";
 import { SysmlPackagePrimitive } from "./primitives/SysmlPackagePrimitive";
 import { SysmlRequirementPrimitive } from "./primitives/SysmlRequirementPrimitive";
@@ -71,7 +72,7 @@ export type PaletteMeta = {
    */
   noDefaultLabel?: boolean;
   /** Glyph identifier for the toolbar icon (matches the tile's SVG). */
-  glyph: "rect" | "circle" | "diamond" | "dashed-rect" | "note" | "fact" | "page" | "table" | "cube" | "block" | "requirement" | "package" | "fmu";
+  glyph: "rect" | "circle" | "diamond" | "dashed-rect" | "note" | "fact" | "page" | "table" | "cube" | "block" | "requirement" | "package" | "fmu" | "sub-canvas";
   /** Ordering hint within a section (lower first). */
   order?: number;
   /**
@@ -129,11 +130,17 @@ export function paletteEntries(group: PaletteMeta["group"]): Array<{ name: strin
  * True when a node type can usefully be dragged out of the toolbar to
  * create a node from scratch — i.e. shapes and cards. Producers carry
  * external content references and must be added via the Library drawer.
+ *
+ * Exception: `canvas` (sub-canvas link) is a producer but is dragged out
+ * directly because its "content" is just another workspace we provision
+ * server-side on drop. See `LeftToolRail`'s producer-section + the
+ * `__create_sub_canvas` payload flag handled in `CanvasGraph.onDrop`.
  */
 export function canDragFromToolbar(name: string): boolean {
   const meta = paletteMeta.get(name);
   if (!meta) return false;
-  return meta.group === "shapes" || meta.group === "cards";
+  if (meta.group === "shapes" || meta.group === "cards") return true;
+  return name === "canvas";
 }
 
 // Built-in defaults — registered against canonical node_type strings.
@@ -209,6 +216,17 @@ registerNodeRenderer("spec", TablePrimitive, {
   hint: "drag rows out of a document",
   glyph: "table",
   order: 20,
+});
+// Sub-canvas — link to another workspace. Drop-creates a sibling canvas
+// behind the scenes (see LeftToolRail) so the linking node is always
+// pointing at an extant child. Double-clicking drills in.
+registerNodeRenderer("canvas", SubCanvasPrimitive, {
+  group: "producers",
+  label: "Sub-canvas",
+  hint: "link to another canvas · drill in by double-click",
+  glyph: "sub-canvas",
+  order: 5,
+  noDefaultLabel: false,
 });
 registerNodeRenderer("model3d", Model3DPrimitive, {
   group: "producers",

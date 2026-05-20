@@ -110,6 +110,12 @@ export function LeftToolRail({ workspaceSlug }: Props) {
 
   const shapes = paletteEntries("shapes");
   const cards = paletteEntries("cards");
+  // Sub-canvas is rendered as a dedicated rail tile (not via the `+` upload
+  // menu — there's nothing to upload, the child workspace is created server-
+  // side on drop). We pull just that one producer entry by name; the rest of
+  // the producers (document, cad:model, ...) still live behind the `+`
+  // popover because they need a file upload first.
+  const subCanvasEntry = paletteEntries("producers").find((e) => e.name === "canvas");
 
   const dropPayload = (name: string, meta: PaletteMeta) => {
     const label = meta.noDefaultLabel ? "" : meta.label;
@@ -118,7 +124,14 @@ export function LeftToolRail({ workspaceSlug }: Props) {
       label,
       ...(meta.width !== undefined ? { width: meta.width } : {}),
       ...(meta.height !== undefined ? { height: meta.height } : {}),
-      data: meta.data ?? {},
+      // For the sub-canvas tile we mark the payload as
+      // "create-sub-canvas-on-drop" — CanvasGraph's drop handler will
+      // generate a fresh slug, call createSubCanvas, and skip the default
+      // addNode call.
+      data: {
+        ...(meta.data ?? {}),
+        ...(name === "canvas" ? { __create_sub_canvas: true } : {}),
+      },
     };
   };
 
@@ -165,6 +178,21 @@ export function LeftToolRail({ workspaceSlug }: Props) {
             />
           ))}
         </RailGroup>
+
+        {subCanvasEntry ? (
+          <>
+            <RailDivider />
+            <RailGroup label="Producers">
+              <RailTile
+                name={subCanvasEntry.name}
+                meta={subCanvasEntry.meta}
+                armed={armedTool === subCanvasEntry.name}
+                onClick={() => armTool(subCanvasEntry.name)}
+                dropPayload={dropPayload}
+              />
+            </RailGroup>
+          </>
+        ) : null}
 
         <RailDivider />
 
@@ -257,7 +285,11 @@ export function LeftToolRail({ workspaceSlug }: Props) {
 }
 
 function labelFor(nodeType: string): string {
-  const all = [...paletteEntries("shapes"), ...paletteEntries("cards")];
+  const all = [
+    ...paletteEntries("shapes"),
+    ...paletteEntries("cards"),
+    ...paletteEntries("producers"),
+  ];
   return all.find((e) => e.name === nodeType)?.meta.label ?? nodeType;
 }
 
@@ -416,6 +448,16 @@ function Glyph({ glyph }: { glyph: PaletteMeta["glyph"] }) {
           <rect x="4" y="6" width="16" height="12" rx="1" />
           <path d="M4 10h2M4 14h2M18 10h2M18 14h2" />
           <path d="M9 12h6" />
+        </svg>
+      );
+    case "sub-canvas":
+      // Two stacked-card icon with a small arrow: signals "link into another
+      // canvas". Mirrors the SubCanvasPrimitive's right-pointing chevron.
+      return (
+        <svg viewBox="0 0 24 24" className={cls} fill="none" strokeWidth={1.5}>
+          <rect x="3" y="7" width="12" height="10" rx="1.5" />
+          <rect x="9" y="3" width="12" height="10" rx="1.5" />
+          <path d="M16 17l2-2-2-2" />
         </svg>
       );
   }

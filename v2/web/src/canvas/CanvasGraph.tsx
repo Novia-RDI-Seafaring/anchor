@@ -14,11 +14,15 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { canvases } from "@/api/canvases";
+import { breadcrumb } from "@/canvas/breadcrumb";
 import { AnchoredEdge } from "@/canvas/edges/AnchoredEdge";
 import { EdgeMarkerDefs } from "@/canvas/edges/EdgeMarkerDefs";
 import { FloatingEdge } from "@/canvas/edges/FloatingEdge";
+import { NodeContextMenu, type ContextMenuTarget } from "@/canvas/NodeContextMenu";
+import { NodeContextToolbar } from "@/canvas/NodeContextToolbar";
 import { nodeTypes, paletteEntries } from "@/canvas/registry";
 import { CanvasSse } from "@/realtime/sseClient";
 import { useCanvasStore } from "@/stores/canvasStore";
@@ -48,6 +52,15 @@ type Props = {
 };
 
 type StoreNode = { id: string; node_type: string; label: string; x: number; y: number; data?: Record<string, unknown> };
+
+/**
+ * Tiny 8-char base36 id — used to seed unique child-canvas slugs when a
+ * user drops a sub-canvas tile. Collision-safe enough for human-driven
+ * canvas creation (the server's `create` is idempotent on slug anyway).
+ */
+function shortId(): string {
+  return Math.random().toString(36).slice(2, 10);
+}
 
 function toRfNode(n: StoreNode): RfNode {
   // Areas render behind other nodes and don't trap pointer events on their
@@ -89,7 +102,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   const setPropertiesOpen = useUiStore((s) => s.setPropertiesOpen);
   const armedTool = useUiStore((s) => s.armedTool);
   const disarmTool = useUiStore((s) => s.disarmTool);
-  const selectedNodeId = useUiStore((s) => s.selectedNodeId);
+  const navigate = useNavigate();
   // Pointer-down origin for armed-tool drag-to-size. Lives in a ref so
   // pointermove/up handlers don't trigger re-renders on every pixel.
   const armDownRef = useRef<{ x: number; y: number; clientX: number; clientY: number } | null>(
@@ -102,6 +115,9 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   // own state during drag/select/etc.
   const [rfNodes, setRfNodes] = useState<RfNode[]>([]);
   const [rfEdges, setRfEdges] = useState<RfEdge[]>([]);
+  // Right-click menu target. Null when no context menu is open. Set by
+  // `onNodeContextMenu` and cleared by selection / outside-click / Esc.
+  const [contextMenuTarget, setContextMenuTarget] = useState<ContextMenuTarget | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,18 +141,21 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
 
   // Reflect store → ReactFlow. Only updates when the store reference changes;
   // ReactFlow's internal drag state isn't disturbed unless a relevant node
-  // actually changed on the store side. The `selected` prop is stamped here
-  // from `uiStore.selectedNodeId` so an external "deselect" (Esc, pane
-  // click handler, properties-panel close) instantly clears the selection
-  // ring + collapses the inline edit affordances.
+  // actually changed on the store side. Multi-selection (Shift+click) is
+  // owned by ReactFlow itself — we preserve the prior `selected` flag on
+  // each node when rebuilding from the store so the per-node selection
+  // ring sticks across SSE patches. `selectedNodeId` is only used to scope
+  // single-node ops like the right-side Properties Panel; it no longer
+  // overrides the per-node selected flag (which would clobber multi-select).
   useEffect(() => {
-    setRfNodes(
-      Object.values(nodes).map((n) => ({
+    setRfNodes((prev) => {
+      const wasSelected = new Set(prev.filter((n) => n.selected).map((n) => n.id));
+      return Object.values(nodes).map((n) => ({
         ...toRfNode(n),
-        selected: selectedNodeId === n.id,
-      })),
-    );
-  }, [nodes, selectedNodeId]);
+        selected: wasSelected.has(n.id),
+      }));
+    });
+  }, [nodes]);
 
   useEffect(() => {
     setRfEdges(Object.values(edges).map((e) => {
@@ -236,6 +255,28 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
           height?: number;
           data?: Record<string, unknown>;
         };
+
+        // Special path for sub-canvas tiles: the LeftToolRail tags the
+        // payload with `__create_sub_canvas`. We provision a fresh child
+        // workspace + drop the linking node atomically via the composite
+        // `createSubCanvas` endpoint instead of the regular addNode path.
+        if (spec.data?.__create_sub_canvas) {
+          const subSlug = `${slug}-sub-${shortId()}`;
+          const title = (spec.data?.title as string | undefined) ?? spec.label ?? "Sub-canvas";
+          try {
+            await canvases.createSubCanvas(slug, {
+              slug: subSlug,
+              title,
+              x: flowPos.x,
+              y: flowPos.y,
+            });
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.error("sub-canvas creation failed", err);
+          }
+          return;
+        }
+
         const res = (await canvases.addNode(slug, {
           ...spec,
           x: flowPos.x,
@@ -309,6 +350,27 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
     sizeOverride?: { width: number; height: number },
   ) => {
     if (!armedTool) return;
+    // Special path: sub-canvas placement goes through the composite
+    // `createSubCanvas` endpoint so the child workspace + linking node
+    // land atomically. The slug is generated client-side; the backend
+    // returns the linking node id via SSE.
+    if (armedTool === "canvas") {
+      const subSlug = `${slug}-sub-${shortId()}`;
+      try {
+        await canvases.createSubCanvas(slug, {
+          slug: subSlug,
+          title: "Sub-canvas",
+          x: flowX,
+          y: flowY,
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("armed sub-canvas placement failed", err);
+      } finally {
+        disarmTool();
+      }
+      return;
+    }
     // Pull the palette meta for default size + payload shape.
     const all = [...paletteEntries("shapes"), ...paletteEntries("cards")];
     const meta = all.find((e) => e.name === armedTool)?.meta;
@@ -437,8 +499,37 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         {...(readOnly
           ? {}
           : {
-              onNodeClick: (_event, node) => { setSelectedNodeId(node.id); setPropertiesOpen(true); },
-              onPaneClick: () => { setSelectedNodeId(null); setPropertiesOpen(false); },
+              // Selection no longer auto-opens the right Properties Panel
+              // (Miro-style mini-toolbar is the default affordance; the
+              // panel is reachable via the toolbar's ⋮ More or the
+              // context menu's "Edit properties…").
+              onNodeClick: (_event, node) => { setSelectedNodeId(node.id); },
+              onPaneClick: () => {
+                setSelectedNodeId(null);
+                setPropertiesOpen(false);
+                setContextMenuTarget(null);
+              },
+              onNodeContextMenu: (event, node) => {
+                event.preventDefault();
+                // ReactFlow promotes the right-clicked node into the
+                // selection if it wasn't already there. Read the current
+                // rfNodes state to capture the full multi-select.
+                const selectedIds = rfNodes.filter((n) => n.selected).map((n) => n.id);
+                if (!selectedIds.includes(node.id)) selectedIds.push(node.id);
+                const hasEdges = Object.values(useCanvasStore.getState().edges).some(
+                  (e) => e.source === node.id || e.target === node.id,
+                );
+                setContextMenuTarget({
+                  x: event.clientX,
+                  y: event.clientY,
+                  nodeId: node.id,
+                  selectedIds,
+                  hasEdges,
+                });
+                // Stamp the most-recently-clicked id so "Edit properties…"
+                // from the menu scopes the panel correctly.
+                setSelectedNodeId(node.id);
+              },
               onNodeDoubleClick: (_event, node) => {
                 if (node.type === "document") {
                   const data = node.data as { slug?: string; status?: string } | undefined;
@@ -449,6 +540,20 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
                       documentNodeId: node.id,
                     });
                   }
+                  return;
+                }
+                // Sub-canvas drill-down. The breadcrumb chain is updated by
+                // CanvasPage on mount of the destination route; we just
+                // navigate. Cycle prevention: if the target slug is already
+                // in the chain, refuse to drill — the SubCanvasPrimitive
+                // shows an "↩ already visiting" badge for visual feedback.
+                if (node.type === "canvas") {
+                  const data = node.data as { canvas_slug?: string } | undefined;
+                  const target = data?.canvas_slug;
+                  if (!target) return;
+                  if (breadcrumb.includes(target)) return;
+                  breadcrumb.enter(target);
+                  navigate(`/c/${target}`);
                 }
               },
               onNodeDragStop: (_event, node) => {
@@ -476,6 +581,20 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         <Controls showInteractive={!readOnly} />
         <MiniMap pannable zoomable />
       </ReactFlow>
+      {/* Mini-toolbar above the selection and the right-click context menu.
+          Hidden in readOnly canvases (snapshotter, monitor route). Both
+          read selection from ReactFlow's per-node `selected` flag via
+          xyflow's useStore. */}
+      {readOnly ? null : (
+        <>
+          <NodeContextToolbar workspaceSlug={slug} />
+          <NodeContextMenu
+            workspaceSlug={slug}
+            target={contextMenuTarget}
+            onClose={() => setContextMenuTarget(null)}
+          />
+        </>
+      )}
     </div>
   );
 }

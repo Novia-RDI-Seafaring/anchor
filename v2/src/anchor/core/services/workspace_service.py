@@ -28,6 +28,13 @@ from anchor.core.ids import new_event_id, new_id
 from anchor.core.ports.event_bus import EventBus
 from anchor.core.ports.snapshot import SnapshotPort, SnapshotResult
 from anchor.core.ports.workspace_store import WorkspaceStore
+from anchor.core.workspace.align import (
+    Anchor,
+    Axis,
+    SelectedNode,
+    align_nodes as _align_nodes_pure,
+    distribute_nodes as _distribute_nodes_pure,
+)
 from anchor.core.workspace.layout import EdgeLike, NodeLike, organize_subtree
 from anchor.core.workspace.node_types import NodeTypeRegistry
 from anchor.core.workspace.reducer import apply, cascade_events_for_remove
@@ -81,6 +88,67 @@ class WorkspaceService:
     async def add_node(self, slug: str, **kwargs: Any) -> tuple[Workspace, DomainEvent]:
         cmd = NodeAdded(id=kwargs.pop("id", None) or new_id(), **kwargs)
         return await self._dispatch(slug, cmd)
+
+    async def create_sub_canvas(
+        self,
+        parent_slug: str,
+        sub_slug: str,
+        *,
+        title: str = "",
+        x: float = 0.0,
+        y: float = 0.0,
+    ) -> dict[str, Any]:
+        """Create a child workspace and drop a linking ``canvas`` node onto the parent.
+
+        Composite over ``create_workspace`` + ``add_node`` so agents and UI
+        can drill in with a single call. Both steps run under the parent's
+        lock so the linking node is guaranteed to reference an extant
+        child workspace by the time the ``NodeAdded`` event lands on the bus.
+
+        The linking node carries ``data.canvas_slug`` (the link target) and
+        ``data.title`` (display name). The UI's ``SubCanvasPrimitive``
+        reads both and double-click navigates to ``/c/<canvas_slug>``.
+        """
+        if not sub_slug or sub_slug == parent_slug:
+            raise CommandError(
+                "sub-canvas slug must be non-empty and different from parent "
+                f"({parent_slug!r})",
+            )
+        async with self.locks.lock(parent_slug):
+            # Touch the parent first so a 404 surfaces before we provision a child.
+            await self.store.load(parent_slug)
+            child_meta = await self.store.create(sub_slug, title=title or sub_slug)
+            cmd = NodeAdded(
+                id=new_id(),
+                node_type="canvas",
+                label=title or sub_slug,
+                x=x,
+                y=y,
+                data={"canvas_slug": sub_slug, "title": title or sub_slug},
+            )
+            state = await self.store.load(parent_slug)
+            validate_command(state, cmd, node_types=self.node_types)
+            env = self._envelope(parent_slug, cmd)
+            version = await self.store.append_event(parent_slug, env)
+            env.version = version
+            new_state = apply(state, cmd)
+            new_state.version = version
+            new_state.last_event_id = env.id
+            await self.store.snapshot(parent_slug, new_state)
+            await self.bus.publish(env)
+            return {
+                "child": child_meta.model_dump(),
+                "node": {
+                    "id": cmd.id,
+                    "node_type": cmd.node_type,
+                    "label": cmd.label,
+                    "x": cmd.x,
+                    "y": cmd.y,
+                    "data": cmd.data,
+                },
+                "event": env.model_dump(),
+                "state": new_state.get_state(),
+            }
 
     async def remove_node(self, slug: str, node_id: str) -> tuple[Workspace, list[DomainEvent]]:
         async with self.locks.lock(slug):
@@ -194,6 +262,103 @@ class WorkspaceService:
             new_state = state
             cause = new_event_id()
             for nid, nx, ny in moves:
+                ev = NodeMoved(id=nid, x=nx, y=ny)
+                env = self._envelope(slug, ev, causation_id=cause)
+                version = await self.store.append_event(slug, env)
+                env.version = version
+                new_state = apply(new_state, ev)
+                new_state.version = version
+                new_state.last_event_id = env.id
+                envelopes.append(env)
+            await self.store.snapshot(slug, new_state)
+            for env in envelopes:
+                await self.bus.publish(env)
+            return new_state, envelopes
+
+    async def align_nodes(
+        self,
+        slug: str,
+        ids: list[str],
+        anchor: Anchor,
+    ) -> tuple[Workspace, list[DomainEvent]]:
+        """Align the listed nodes' positions to a shared edge or midline.
+
+        Emits one ``NodeMoved`` per node that actually moves, all sharing a
+        single ``causation_id`` so the SSE consumer can group the burst as a
+        single logical "align" operation. Raises ``CommandError`` for unknown
+        ids; raises ``ValueError`` for an unsupported anchor value (the pure
+        math owns that error)."""
+        return await self._geom_op(
+            slug, ids,
+            lambda items: _align_nodes_pure(items, anchor),
+            op_label=f"align {anchor!r}",
+            min_count=2,
+        )
+
+    async def distribute_nodes(
+        self,
+        slug: str,
+        ids: list[str],
+        axis: Axis,
+    ) -> tuple[Workspace, list[DomainEvent]]:
+        """Distribute centres of the listed nodes evenly along ``axis``.
+
+        End nodes stay anchored; the in-between centres get equally-spaced
+        slots. Requires at least three nodes (the pure math returns no moves
+        for fewer)."""
+        return await self._geom_op(
+            slug, ids,
+            lambda items: _distribute_nodes_pure(items, axis),
+            op_label=f"distribute {axis!r}",
+            min_count=3,
+        )
+
+    async def _geom_op(
+        self,
+        slug: str,
+        ids: list[str],
+        compute: "callable[[list[SelectedNode]], dict[str, tuple[float, float]]]",  # noqa: F821
+        *,
+        op_label: str,
+        min_count: int,
+    ) -> tuple[Workspace, list[DomainEvent]]:
+        """Shared engine for align / distribute.
+
+        Loads state, looks each id up, asks the pure-math callable for new
+        positions, then emits one NodeMoved per genuine change inside a
+        single causation envelope. Keeps both ops on the exact same code
+        path as ``organize_subtree`` — appended events go through the same
+        validate → append → publish dance."""
+        if len(ids) < min_count:
+            raise CommandError(
+                f"{op_label} needs at least {min_count} nodes; got {len(ids)}",
+            )
+        async with self.locks.lock(slug):
+            state = await self.store.load(slug)
+            missing = [nid for nid in ids if nid not in state.nodes]
+            if missing:
+                raise CommandError(
+                    f"{op_label}: nodes do not exist: {sorted(missing)!r}",
+                )
+
+            selected = [
+                SelectedNode(
+                    id=nid,
+                    x=state.nodes[nid].x,
+                    y=state.nodes[nid].y,
+                    width=state.nodes[nid].width,
+                    height=state.nodes[nid].height,
+                )
+                for nid in ids
+            ]
+            placements = compute(selected)
+            if not placements:
+                return state, []
+
+            envelopes: list[DomainEvent] = []
+            new_state = state
+            cause = new_event_id()
+            for nid, (nx, ny) in placements.items():
                 ev = NodeMoved(id=nid, x=nx, y=ny)
                 env = self._envelope(slug, ev, causation_id=cause)
                 version = await self.store.append_event(slug, env)

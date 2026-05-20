@@ -678,6 +678,116 @@ def canvas_organize(
         raise typer.Exit(code=2)
 
 
+@canvas_app.command("align")
+def canvas_align(
+    slug: str,
+    node_ids: list[str] = typer.Argument(..., help="Node ids to align (≥2)."),
+    anchor: str = typer.Option(
+        "top", "--anchor", "-a",
+        help="`top` | `bottom` | `left` | `right` | `center-h` | `center-v`.",
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Align the listed nodes to a shared edge or midline.
+
+    Same backend as the HTTP `POST /align` route and the `canvas_align`
+    MCP tool — the parity rule means the move list a UI would emit for
+    this selection is byte-equal to what we print here.
+    """
+    _, _, ws, _, _ = _build_real_services(data_dir)
+
+    async def run():
+        state, envelopes = await ws.align_nodes(slug, list(node_ids), anchor)  # type: ignore[arg-type]
+        moves = [
+            {"id": env.payload["id"], "x": env.payload["x"], "y": env.payload["y"]}
+            for env in envelopes
+        ]
+        return {
+            "moves": moves, "event_count": len(envelopes),
+            "state": state.get_state(),
+        }
+
+    from anchor.core.workspace.workspace import CommandError as _CmdErr
+    try:
+        typer.echo(json.dumps(asyncio.run(run()), indent=2))
+    except _CmdErr as e:
+        typer.echo(f"align failed: {e}", err=True)
+        raise typer.Exit(code=2)
+    except ValueError as e:
+        typer.echo(f"align failed: {e}", err=True)
+        raise typer.Exit(code=2)
+
+
+@canvas_app.command("distribute")
+def canvas_distribute(
+    slug: str,
+    node_ids: list[str] = typer.Argument(..., help="Node ids to distribute (≥3)."),
+    axis: str = typer.Option(
+        "horizontal", "--axis", "-x",
+        help="`horizontal` (default) or `vertical`.",
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Distribute the listed nodes' centres evenly along an axis.
+
+    Endpoints stay put; intermediate nodes get equally-spaced centres.
+    Same backend as the HTTP `POST /distribute` route and the
+    `canvas_distribute` MCP tool.
+    """
+    _, _, ws, _, _ = _build_real_services(data_dir)
+
+    async def run():
+        state, envelopes = await ws.distribute_nodes(slug, list(node_ids), axis)  # type: ignore[arg-type]
+        moves = [
+            {"id": env.payload["id"], "x": env.payload["x"], "y": env.payload["y"]}
+            for env in envelopes
+        ]
+        return {
+            "moves": moves, "event_count": len(envelopes),
+            "state": state.get_state(),
+        }
+
+    from anchor.core.workspace.workspace import CommandError as _CmdErr
+    try:
+        typer.echo(json.dumps(asyncio.run(run()), indent=2))
+    except _CmdErr as e:
+        typer.echo(f"distribute failed: {e}", err=True)
+        raise typer.Exit(code=2)
+    except ValueError as e:
+        typer.echo(f"distribute failed: {e}", err=True)
+        raise typer.Exit(code=2)
+
+
+@canvas_app.command("create-sub")
+def canvas_create_sub(
+    parent_slug: str,
+    sub_slug: str,
+    title: str = typer.Option("", "--title", "-t"),
+    x: float = typer.Option(0.0, "--x"),
+    y: float = typer.Option(0.0, "--y"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Create a child canvas <sub_slug> and link it from <parent_slug>.
+
+    Composite of `canvas create` + a `node_type=canvas` linking node so
+    the child workspace and the breadcrumb-able link land in one go.
+    Same WorkspaceService.create_sub_canvas backing as the
+    `POST /sub-canvas` HTTP route and the `canvas_create_sub_canvas`
+    MCP tool — adapter parity rule.
+    """
+    _, _, ws, _, _ = _build_real_services(data_dir)
+
+    async def run():
+        return await ws.create_sub_canvas(
+            parent_slug, sub_slug, title=title, x=x, y=y,
+        )
+    try:
+        typer.echo(json.dumps(asyncio.run(run()), indent=2))
+    except Exception as e:  # noqa: BLE001
+        typer.echo(f"create-sub failed: {e}", err=True)
+        raise typer.Exit(code=2)
+
+
 @canvas_app.command("snapshot")
 def canvas_snapshot(
     slug: str,

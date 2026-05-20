@@ -58,3 +58,28 @@ class OrganizeSubtreeRequest(BaseModel):
     root_id: str
     orientation: str = "vertical"
     algo: str = "dagre"
+
+
+class AlignNodesRequest(BaseModel):
+    """Body of POST /api/workspaces/{slug}/align — match `align_nodes` core args."""
+    ids: list[str]
+    anchor: str = "top"
+
+
+class DistributeNodesRequest(BaseModel):
+    """Body of POST /api/workspaces/{slug}/distribute."""
+    ids: list[str]
+    axis: str = "horizontal"
+
+
+class CreateSubCanvasRequest(BaseModel):
+    """Body for ``POST /api/workspaces/{parent_slug}/sub-canvas``.
+
+    Convenience composite: provisions a child workspace and drops a
+    ``canvas``-typed linking node onto the parent in one server-side step.
+    """
+
+    slug: str
+    title: str = ""
+    x: float = 0.0
+    y: float = 0.0
