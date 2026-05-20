@@ -4,9 +4,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 
-from anchor.adapters.http.deps import get_doc_store
+from anchor.adapters.http.deps import get_doc_store, get_ingest_service
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
-from anchor.extensions.anchor_pdfs.core.services import SynopsisService
+from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -147,3 +147,63 @@ async def synopsis_md(
     except Exception as e:  # noqa: BLE001
         raise HTTPException(404, str(e))
     return PlainTextResponse(md, media_type="text/markdown")
+
+
+@router.post("/{slug}/embed")
+async def embed_document(
+    slug: str,
+    ingest: IngestService = Depends(get_ingest_service),
+    store: DocStore = Depends(get_doc_store),
+    overwrite: bool = Query(False, description="Re-embed even if embeddings.json already exists."),
+):
+    """Embed gold regions of a document and persist embeddings.json.
+
+    Auto-runs at the end of `POST /workspaces/.../upload`; this endpoint
+    backfills already-ingested docs without re-running the full pipeline.
+    """
+    if ingest.embedder is None:
+        raise HTTPException(503, "no embedder wired — install sentence-transformers")
+    existing = await store.get_embeddings(slug)
+    if existing and not overwrite:
+        return {"slug": slug, "skipped": True, "reason": "already embedded", "embed_model": existing.get("embed_model")}
+    n = await ingest.embed_document(slug)
+    return {"slug": slug, "embedded": n, "embed_model": ingest.embed_model_id}
+
+
+@router.get("/_search")
+async def search_documents(
+    q: str = Query(..., min_length=1),
+    k: int = Query(10, ge=1, le=100),
+    ingest: IngestService = Depends(get_ingest_service),
+):
+    """Semantic search across every embedded document.
+
+    Returns `{query, embed_model, k, doc_count, hits: [...]}` so callers
+    can verify the model before consuming hits. `embed_model` lets the
+    browser pick the matching WASM bundle.
+    """
+    if ingest.embedder is None:
+        raise HTTPException(503, "no embedder wired")
+    try:
+        return await ingest.search(q, k=k)
+    except RuntimeError as e:
+        raise HTTPException(500, str(e))
+
+
+@router.get("/{slug}/embeddings/meta")
+async def embeddings_meta(slug: str, store: DocStore = Depends(get_doc_store)):
+    """Return embeddings.json metadata (without the vector payload).
+
+    Useful for the browser to check which embed_model was used so it can
+    load the matching WASM bundle before issuing semantic queries.
+    """
+    data = await store.get_embeddings(slug)
+    if data is None:
+        raise HTTPException(404, f"no embeddings for {slug}")
+    return {
+        "slug": slug,
+        "embed_model": data.get("embed_model"),
+        "dim": data.get("dim"),
+        "embedded_at": data.get("embedded_at"),
+        "vector_count": len(data.get("vectors", [])),
+    }

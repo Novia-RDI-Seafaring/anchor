@@ -10,6 +10,12 @@ import typer
 from anchor.adapters.cli.extensions import extensions_app
 from anchor.adapters.cli.install import install_app
 
+# Canonical data dir. Per project memory the standard location is
+# `~/anchor-data` so a fresh `anchor serve` / `anchor ingest` from any
+# cwd lands at the same place. Override with `--data-dir` or env
+# `ANCHOR_DATA_DIR`.
+DEFAULT_DATA_DIR = Path.home() / "anchor-data"
+
 app = typer.Typer(help="Anchor — agent-first knowledge canvas.")
 canvas_app = typer.Typer(help="Manage workspaces (canvases).")
 sysml_app = typer.Typer(help="Render and export SysML v2 diagrams.")
@@ -61,12 +67,20 @@ def _build_real_services(data_dir: Path, *, base_url: str = "http://localhost:80
     # OpenAI SDK reads OPENAI_API_KEY from env by default; instantiate if either path
     # has a key so polish/region steps don't silently no-op.
     has_openai = bool(api_key) or bool(os.environ.get("OPENAI_API_KEY"))
+    # base_url lets users point polish/region at an OpenAI-compatible
+    # backend (Azure OpenAI, Ollama, vLLM, LM Studio). Empty string is
+    # treated the same as None so a stray env var doesn't break stock
+    # OpenAI usage.
+    openai_base_url = (config.openai_base_url or "").strip() or None
+    embedder = _build_embedder(api_key if has_openai else None)
     ingest = IngestService(
         doc_store, bus,
         extractor=DoclingPdfExtractor(),
         renderer=PymupdfPdfRenderer(),
-        polisher=OpenAIPageMdPolisher(api_key=api_key) if has_openai else None,
-        region_extractor=OpenAIRegionExtractor(api_key=api_key) if has_openai else None,
+        polisher=OpenAIPageMdPolisher(api_key=api_key, base_url=openai_base_url) if has_openai else None,
+        region_extractor=OpenAIRegionExtractor(api_key=api_key, base_url=openai_base_url) if has_openai else None,
+        embedder=embedder,
+        embed_model_id=getattr(embedder, "model_id", None),
     )
     return config, bus, workspace, ingest, doc_store
 
@@ -93,7 +107,7 @@ def _build_embedder(api_key: str | None):
 
 @app.command()
 def serve(
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
     host: str = typer.Option("0.0.0.0", "--host"),
     port: int = typer.Option(8002, "--port", "-p"),
 ) -> None:
@@ -159,7 +173,7 @@ def serve(
 @app.command()
 def ingest(
     pdf_path: Path = typer.Argument(...),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
     skip_polish: bool = typer.Option(False, "--skip-polish"),
     skip_regions: bool = typer.Option(False, "--skip-regions"),
 ) -> None:
@@ -183,7 +197,7 @@ def ingest(
 
 @app.command("list")
 def list_documents(
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """List all ingested documents."""
     _, _, _, _, doc_store = _build_real_services(data_dir)
@@ -191,9 +205,65 @@ def list_documents(
 
 
 @app.command()
+def search(
+    query: str = typer.Argument(..., help="Free-text query."),
+    k: int = typer.Option(10, "--k", "-k", help="Top-k hits to return."),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Semantic search across every gold-extracted, embedded document.
+
+    Returns top-k grounded hits with (slug, page, region_id, text, score).
+    Requires that documents have been embedded first via `anchor embed`.
+    """
+    _, _, _, ingest_svc, _ = _build_real_services(data_dir)
+    if ingest_svc.embedder is None:
+        typer.echo("no embedder wired — install sentence-transformers (uv add sentence-transformers)", err=True)
+        raise typer.Exit(code=1)
+    out = asyncio.run(ingest_svc.search(query, k=k))
+    typer.echo(json.dumps(out, indent=2))
+
+
+@app.command()
+def embed(
+    slug: str | None = typer.Argument(None, help="Single doc slug; omit to embed all gold-extracted docs that don't have embeddings yet."),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Re-embed even if embeddings.json already exists."),
+) -> None:
+    """Embed gold regions of a document and persist to embeddings.json.
+
+    Uses the local sentence-transformer embedder (BAAI/bge-small-en-v1.5
+    by default). Auto-runs at the end of `anchor ingest`; this command
+    backfills already-ingested docs without re-running the full pipeline.
+    """
+    _, _, _, ingest_svc, doc_store = _build_real_services(data_dir)
+    if ingest_svc.embedder is None:
+        typer.echo("no embedder wired — install sentence-transformers (uv add sentence-transformers)", err=True)
+        raise typer.Exit(code=1)
+
+    async def run_all() -> list[dict]:
+        slugs: list[str]
+        if slug is not None:
+            slugs = [slug]
+        else:
+            docs = await doc_store.list_documents()
+            slugs = [d["slug"] for d in docs if d.get("has_gold")]
+        out: list[dict] = []
+        for s in slugs:
+            existing = await doc_store.get_embeddings(s)
+            if existing and not overwrite:
+                out.append({"slug": s, "skipped": True, "reason": "already embedded", "embed_model": existing.get("embed_model")})
+                continue
+            n = await ingest_svc.embed_document(s)
+            out.append({"slug": s, "embedded": n, "embed_model": ingest_svc.embed_model_id})
+        return out
+
+    typer.echo(json.dumps(asyncio.run(run_all()), indent=2))
+
+
+@app.command()
 def index(
     slug: str,
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Print the silver index for a document."""
     _, _, _, _, doc_store = _build_real_services(data_dir)
@@ -208,7 +278,7 @@ def index(
 def regions(
     slug: str,
     page: int | None = typer.Option(None, "--page", "-p"),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Print gold regions for a document, optionally filtered to a page."""
     _, _, _, _, doc_store = _build_real_services(data_dir)
@@ -219,7 +289,7 @@ def regions(
 def page_text(
     slug: str,
     page: int,
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Print polished or raw markdown for a page."""
     _, _, _, _, doc_store = _build_real_services(data_dir)
@@ -240,7 +310,7 @@ def page_text(
 @app.command("gold-map")
 def gold_map(
     slug: str,
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Print the full gold extraction JSON (document + outline + regions + page meta)."""
     _, _, _, _, doc_store = _build_real_services(data_dir)
@@ -277,7 +347,7 @@ def page_image(
     page: int,
     copy_to: Path | None = typer.Option(None, "--copy-to"),
     out: str | None = typer.Option(None, "--out", help="Pass '-' to stream the bytes to stdout."),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Page screenshot. Prints the path by default; --copy-to or --out - for the bytes."""
     _, _, _, _, doc_store = _build_real_services(data_dir)
@@ -291,7 +361,7 @@ def crop(
     rel_path: str,
     copy_to: Path | None = typer.Option(None, "--copy-to"),
     out: str | None = typer.Option(None, "--out"),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Gold-extracted region crop (e.g. '4/r1.png') by its rel_path."""
     _, _, _, _, doc_store = _build_real_services(data_dir)
@@ -304,7 +374,7 @@ def pdf(
     slug: str,
     copy_to: Path | None = typer.Option(None, "--copy-to"),
     out: str | None = typer.Option(None, "--out"),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """The original bronze-layer PDF for a document."""
     _, _, _, _, doc_store = _build_real_services(data_dir)
@@ -319,7 +389,7 @@ def synopsis(
     format: str = typer.Option("json", "--format", "-f", help="json | pdf | md"),
     output: Path | None = typer.Option(None, "--output", "-o", help="Write artefact to this path (for pdf/md)."),
     crop_url_base: str | None = typer.Option(None, "--crop-url-base", help="(md only) URL prefix for crop references."),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Compose an entity-scoped synopsis from gold data.
 
@@ -371,7 +441,7 @@ def synopsis(
 
 @canvas_app.command("list")
 def canvas_list(
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """List all workspaces."""
     _, _, ws, _, _ = _build_real_services(data_dir)
@@ -382,7 +452,7 @@ def canvas_list(
 def canvas_create(
     slug: str,
     title: str = typer.Option("", "--title"),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Create a new workspace folder."""
     _, _, ws, _, _ = _build_real_services(data_dir)
@@ -423,7 +493,7 @@ def _parse_data(raw: str | None) -> dict:
 @canvas_app.command("state")
 def canvas_state(
     slug: str,
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Print the full workspace state (nodes + edges + metadata)."""
     _, _, ws, _, _ = _build_real_services(data_dir)
@@ -441,7 +511,7 @@ def canvas_add_node(
     height: float | None = typer.Option(None, "--height"),
     parent: str | None = typer.Option(None, "--parent"),
     data: str | None = typer.Option(None, "--data", help="JSON object passed as the node's `data` field"),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Add a node to a workspace. Prints the resulting `{event, state}`."""
     _, _, ws, _, _ = _build_real_services(data_dir)
@@ -466,7 +536,7 @@ def canvas_update_node(
     width: float | None = typer.Option(None, "--width"),
     height: float | None = typer.Option(None, "--height"),
     data: str | None = typer.Option(None, "--data"),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Update fields on an existing node. Move-only when only --x and --y given."""
     _, _, ws, _, _ = _build_real_services(data_dir)
@@ -496,7 +566,7 @@ def canvas_update_node(
 def canvas_remove_node(
     slug: str,
     node_id: str,
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Remove a node and any edges that touched it (cascade is in CORE)."""
     _, _, ws, _, _ = _build_real_services(data_dir)
@@ -517,7 +587,7 @@ def canvas_add_edge(
     source_handle: str | None = typer.Option(None, "--source-handle"),
     target_handle: str | None = typer.Option(None, "--target-handle"),
     data: str | None = typer.Option(None, "--data"),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Add an edge between two nodes."""
     _, _, ws, _, _ = _build_real_services(data_dir)
@@ -536,7 +606,7 @@ def canvas_add_edge(
 def canvas_remove_edge(
     slug: str,
     edge_id: str,
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Remove a single edge by id."""
     _, _, ws, _, _ = _build_real_services(data_dir)
@@ -551,7 +621,7 @@ def canvas_remove_edge(
 def canvas_clear(
     slug: str,
     yes: bool = typer.Option(False, "--yes", "-y", help="Confirm — clear removes EVERY node and edge on the workspace."),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Remove every node and edge from a workspace (workspace itself stays)."""
     if not yes:
@@ -573,7 +643,7 @@ def canvas_snapshot(
     viewport: str | None = typer.Option(None, "--viewport", help="WxH in CSS pixels, e.g. '1920x1080'."),
     full_page: bool = typer.Option(True, "--full-page/--viewport-only", help="Capture the whole document (default) or just the viewport."),
     base_url: str = typer.Option("http://localhost:8002", "--base-url", help="URL of a running `anchor serve`."),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Render the named workspace canvas to an image.
 
@@ -635,7 +705,7 @@ def sysml_render(
     workspace_slug: str = typer.Option(..., "--workspace", "-w"),
     x_offset: float = typer.Option(0.0, "--x-offset"),
     y_offset: float = typer.Option(0.0, "--y-offset"),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Render a .sysml file's contents onto the named workspace."""
     if not sysml_path.exists():
@@ -660,7 +730,7 @@ def sysml_render(
 @sysml_app.command("export")
 def sysml_export(
     workspace_slug: str = typer.Argument(...),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Export the workspace's SysML elements back to text (Phase 1 stub)."""
     _, bus, workspace, _, _ = _build_real_services(data_dir)
@@ -697,7 +767,7 @@ def _build_fmu_service(data_dir: Path):
 @fmu_app.command("inspect")
 def fmu_inspect(
     fmu_path: Path = typer.Argument(...),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Upload an .fmu and print its parsed model description."""
     if not fmu_path.exists():
@@ -712,7 +782,7 @@ def fmu_inspect(
 
 @fmu_app.command("list")
 def fmu_list(
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """List every FMU known to this Anchor install."""
     svc = _build_fmu_service(data_dir)
@@ -725,7 +795,7 @@ def fmu_list(
 @fmu_app.command("get")
 def fmu_get(
     slug: str,
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Get one FMU's model description by slug."""
     svc = _build_fmu_service(data_dir)
@@ -745,7 +815,7 @@ def fmu_simulate(
     parameters: str | None = typer.Option(None, "--params", help="JSON object of parameter overrides."),
     stop_time: float = typer.Option(1.0, "--stop-time"),
     output_interval: float = typer.Option(0.01, "--output-interval"),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Run a simulation. Prints the SimulationRun JSON (includes simulation_id)."""
     overrides: dict | None = None
@@ -768,7 +838,7 @@ def fmu_simulate(
 @fmu_app.command("results")
 def fmu_results(
     simulation_id: str,
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Print the time series for a completed simulation."""
     svc = _build_fmu_service(data_dir)
@@ -785,7 +855,7 @@ def fmu_results(
 @fmu_app.command("simulations")
 def fmu_simulations(
     fmu_slug: str | None = typer.Option(None, "--fmu", help="Filter to one FMU."),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """List simulation runs, optionally scoped to one FMU."""
     svc = _build_fmu_service(data_dir)
@@ -811,7 +881,7 @@ def _build_cad_service(data_dir: Path):
 @cad_app.command("inspect")
 def cad_inspect(
     cad_path: Path = typer.Argument(...),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Upload a CAD file (STL/OBJ/STEP/glTF/JSCAD/OpenSCAD) and parse its summary."""
     if not cad_path.exists():
@@ -826,7 +896,7 @@ def cad_inspect(
 
 @cad_app.command("list")
 def cad_list(
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """List every CAD model known to this Anchor install."""
     svc = _build_cad_service(data_dir)
@@ -839,7 +909,7 @@ def cad_list(
 @cad_app.command("get")
 def cad_get(
     slug: str,
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Get one CAD model's summary by slug."""
     svc = _build_cad_service(data_dir)
@@ -858,7 +928,7 @@ def cad_fetch(
     slug: str,
     copy_to: Path | None = typer.Option(None, "--copy-to"),
     out: str | None = typer.Option(None, "--out", help="Pass '-' to stream the bytes to stdout."),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Print the on-disk path of the raw CAD file (or stream it with --out -)."""
     svc = _build_cad_service(data_dir)
@@ -874,7 +944,7 @@ def cad_set_parameter(
     slug: str,
     parameter_name: str,
     value: str = typer.Argument(..., help="Plain string; JSON-parsed if it looks like a number/object."),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Tweak a named parameter on a parametric CAD model.
 

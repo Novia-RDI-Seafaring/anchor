@@ -154,3 +154,38 @@ class FsDocStore:
         async with aiofiles.open(target, "w") as f:
             await f.write(json.dumps({"page": page, "regions": list(regions)}, indent=2))
         return target
+
+    async def write_embeddings(self, slug: str, payload: dict[str, Any]) -> Path:
+        target = self.gold / slug / "embeddings.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        async with aiofiles.open(target, "w") as f:
+            await f.write(json.dumps(payload))
+        return target
+
+    async def get_embeddings(self, slug: str) -> dict[str, Any] | None:
+        target = self.gold / slug / "embeddings.json"
+        if not target.is_file():
+            return None
+        async with aiofiles.open(target) as f:
+            return json.loads(await f.read())
+
+    async def list_embeddings(self) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        if not self.gold.is_dir():
+            return out
+        for d in sorted(self.gold.iterdir()):
+            p = d / "embeddings.json"
+            if not p.is_file():
+                continue
+            try:
+                async with aiofiles.open(p) as f:
+                    data = json.loads(await f.read())
+                out.append({
+                    "slug": d.name,
+                    "embed_model": data.get("embed_model", ""),
+                    "dim": int(data.get("dim", 0)),
+                    "vector_count": len(data.get("vectors", [])),
+                })
+            except (ValueError, OSError):
+                continue
+        return out

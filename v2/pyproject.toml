@@ -26,6 +26,7 @@ dependencies = [
     "trimesh>=4.0",
     "numpy>=1.26",
     "playwright>=1.59.0",
+    "sentence-transformers>=5.4.1",
 ]
 
 [project.optional-dependencies]
@@ -38,6 +39,9 @@ dev = [
 ]
 local-embed = [
     "sentence-transformers>=3.0",
+]
+fmus = [
+    "fmpy>=0.3",
 ]
 
 [project.scripts]

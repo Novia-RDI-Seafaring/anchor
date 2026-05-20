@@ -152,6 +152,39 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "embed_document",
+            "description": (
+                "Embed gold regions of a document and persist embeddings.json. "
+                "Auto-runs after ingest_pdf; this tool backfills already-ingested docs "
+                "without re-running the full pipeline. Set overwrite=true to re-embed."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {"type": "string"},
+                    "overwrite": {"type": "boolean", "default": False},
+                },
+                "required": ["slug"],
+            },
+        },
+        {
+            "name": "search_documents",
+            "description": (
+                "Semantic search across every gold-extracted, embedded document. "
+                "Returns top-k {slug, page, region_id, text, score} grounded hits. "
+                "Use the returned (slug, page, region_id) with get_crop or "
+                "canvas.add_node to surface evidence on the canvas."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "k": {"type": "integer", "default": 10},
+                },
+                "required": ["query"],
+            },
+        },
+        {
             "name": "compose_synopsis",
             "description": (
                 "Compose an entity-scoped synopsis from a document's gold-layer data. "
@@ -222,6 +255,23 @@ async def call_tool(
     if name == "get_pdf":
         path = await store.get_raw_pdf_path(args["slug"])
         return _byte_envelope(path, fmt=args.get("format", "path"), fallback_ext=".pdf")
+    if name == "embed_document":
+        if ingest.embedder is None:
+            return json.dumps({"error": "no embedder wired"})
+        slug = args["slug"]
+        existing = await store.get_embeddings(slug)
+        if existing and not args.get("overwrite", False):
+            return json.dumps({
+                "slug": slug, "skipped": True, "reason": "already embedded",
+                "embed_model": existing.get("embed_model"),
+            })
+        n = await ingest.embed_document(slug)
+        return json.dumps({"slug": slug, "embedded": n, "embed_model": ingest.embed_model_id})
+    if name == "search_documents":
+        try:
+            return json.dumps(await ingest.search(args["query"], k=int(args.get("k", 10))))
+        except RuntimeError as e:
+            return json.dumps({"error": str(e)})
     if name == "compose_synopsis":
         if synopsis is None:
             return json.dumps({"error": "synopsis service not wired (renderer/store missing)"})

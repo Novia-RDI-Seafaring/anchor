@@ -15,12 +15,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class AnchorConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ANCHOR_", env_file=".env", extra="ignore")
 
-    data_dir: Path = Field(default=Path("./data"))
+    data_dir: Path = Field(default_factory=lambda: Path.home() / "anchor-data")
     http_host: str = "0.0.0.0"
     http_port: int = 8002
 
     openai_api_key: SecretStr | None = None
-    embed_model: str = "text-embedding-3-large"
+    # Override `openai_base_url` to point at any OpenAI-compatible
+    # endpoint: Azure OpenAI, Ollama (`http://localhost:11434/v1`), vLLM,
+    # LM Studio, etc. Leave None for stock OpenAI. Used by both the
+    # vision-LLM polish and region extraction infra impls.
+    openai_base_url: str | None = None
+    embed_model: str = "BAAI/bge-small-en-v1.5"
     polish_model: str = "gpt-5.4"
     region_model: str = "gpt-5.4"
     dpi: int = 150

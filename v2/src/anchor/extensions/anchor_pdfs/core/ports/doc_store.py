@@ -37,3 +37,22 @@ class DocStore(Protocol):
     async def write_silver_artifact(self, slug: str, name: str, payload: bytes | str) -> Path: ...
 
     async def write_gold_region_file(self, slug: str, page: int, regions: list[dict[str, Any]]) -> Path: ...
+
+    async def write_embeddings(self, slug: str, payload: dict[str, Any]) -> Path:
+        """Write gold/<slug>/embeddings.json with the per-region vector payload.
+
+        Expected shape:
+            { "embed_model": str, "dim": int, "embedded_at": float,
+              "vectors": [{"page": int, "region_id": str, "text": str, "vector": [float]}, ...] }
+        """
+        ...
+
+    async def get_embeddings(self, slug: str) -> dict[str, Any] | None:
+        """Read gold/<slug>/embeddings.json. Returns None if not embedded yet."""
+        ...
+
+    async def list_embeddings(self) -> list[dict[str, Any]]:
+        """List embeddings.json files across the gold layer. Each entry:
+            {"slug": str, "embed_model": str, "dim": int, "vector_count": int}
+        """
+        ...
