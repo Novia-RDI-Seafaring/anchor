@@ -5,8 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, Response
 
 from anchor.adapters.http.deps import get_workspace_service
-from anchor.adapters.http.schemas import CreateWorkspaceRequest, SnapshotRequest
+from anchor.adapters.http.schemas import (
+    CreateWorkspaceRequest,
+    OrganizeSubtreeRequest,
+    SnapshotRequest,
+)
 from anchor.core.services.workspace_service import WorkspaceService
+from anchor.core.workspace.workspace import CommandError
 
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
@@ -69,3 +74,34 @@ async def snapshot(
         return FileResponse(result.path, media_type=result.content_type)
     assert result.bytes_ is not None
     return Response(content=result.bytes_, media_type=result.content_type)
+
+
+@router.post("/{slug}/layout")
+async def organize_subtree(
+    slug: str,
+    req: OrganizeSubtreeRequest,
+    svc: WorkspaceService = Depends(get_workspace_service),
+):
+    """Recompute positions for the subtree under ``root_id``.
+
+    Body: ``{root_id, orientation, algo}``. Emits one ``NodeMoved`` per
+    descendant whose position changes (the root itself is anchored).
+    Response carries the resulting move list and the count of events
+    appended so the client can reconcile against its own SSE feed."""
+    try:
+        state, envelopes = await svc.organize_subtree(
+            slug, req.root_id, orientation=req.orientation, algo=req.algo,
+        )
+    except CommandError as e:
+        raise HTTPException(400, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    moves = [
+        {"id": env.payload["id"], "x": env.payload["x"], "y": env.payload["y"]}
+        for env in envelopes
+    ]
+    return {
+        "moves": moves,
+        "event_count": len(envelopes),
+        "state": state.get_state(),
+    }

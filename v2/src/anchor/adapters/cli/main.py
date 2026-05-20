@@ -635,6 +635,49 @@ def canvas_clear(
     typer.echo(json.dumps(asyncio.run(run()), indent=2))
 
 
+@canvas_app.command("organize")
+def canvas_organize(
+    slug: str,
+    root_id: str,
+    orientation: str = typer.Option(
+        "vertical", "--orientation", "-o",
+        help="`vertical` (default) or `horizontal`.",
+    ),
+    algo: str = typer.Option(
+        "dagre", "--algo", "-a",
+        help="Layout algorithm. Only `dagre` ships today.",
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Re-lay-out the subtree under <root_id> into a tidy tree.
+
+    Emits one NodeMoved per descendant whose position changes; the root
+    itself stays put. Same backend code as the HTTP `POST /layout` route
+    and the `canvas_organize_subtree` MCP tool — the adapter parity rule
+    means the move list you get here is byte-equal to what the UI would
+    produce for the same canvas.
+    """
+    _, _, ws, _, _ = _build_real_services(data_dir)
+
+    async def run():
+        state, envelopes = await ws.organize_subtree(
+            slug, root_id, orientation=orientation, algo=algo,
+        )
+        moves = [
+            {"id": env.payload["id"], "x": env.payload["x"], "y": env.payload["y"]}
+            for env in envelopes
+        ]
+        return {
+            "moves": moves, "event_count": len(envelopes),
+            "state": state.get_state(),
+        }
+    try:
+        typer.echo(json.dumps(asyncio.run(run()), indent=2))
+    except ValueError as e:
+        typer.echo(f"organize failed: {e}", err=True)
+        raise typer.Exit(code=2)
+
+
 @canvas_app.command("snapshot")
 def canvas_snapshot(
     slug: str,

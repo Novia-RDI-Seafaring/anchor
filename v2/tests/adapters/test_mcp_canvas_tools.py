@@ -78,3 +78,25 @@ def test_tool_definitions_have_required_fields():
     assert all("name" in d and "description" in d and "inputSchema" in d for d in defs)
     names = {d["name"] for d in defs}
     assert "canvas_get_state" in names and "canvas_add_node" in names
+    # New: organize-subtree tool ships in this PR.
+    assert "canvas_organize_subtree" in names
+
+
+def test_canvas_organize_subtree_returns_moves():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await s.workspace.add_node("w1", id="r")
+        await s.workspace.add_node("w1", id="a", x=-99, y=-99)
+        await s.workspace.add_node("w1", id="b", x=99, y=99)
+        await s.workspace.add_edge("w1", source="a", target="r")
+        await s.workspace.add_edge("w1", source="b", target="r")
+        body = await handlers_canvas.call_tool(
+            s.workspace, "canvas_organize_subtree",
+            {"workspace_slug": "w1", "root_id": "r"},
+        )
+        out = json.loads(body)
+        assert out["event_count"] == 2
+        assert {m["id"] for m in out["moves"]} == {"a", "b"}
+
+    asyncio.run(run())

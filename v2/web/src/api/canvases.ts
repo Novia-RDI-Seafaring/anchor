@@ -31,6 +31,21 @@ export const canvases = {
     api.post(`/api/workspaces/${slug}/edges`, body),
   removeEdge: (slug: string, id: string) =>
     api.del(`/api/workspaces/${slug}/edges/${id}`),
+  organizeSubtree: (
+    slug: string,
+    rootId: string,
+    orientation: "vertical" | "horizontal" = "vertical",
+    algo = "dagre",
+  ) =>
+    api.post<{
+      moves: Array<{ id: string; x: number; y: number }>;
+      event_count: number;
+      state: CanvasState;
+    }>(`/api/workspaces/${slug}/layout`, {
+      root_id: rootId,
+      orientation,
+      algo,
+    }),
   uploadFile: (slug: string, file: File, x: number, y: number) => {
     const fd = new FormData();
     fd.append("file", file);

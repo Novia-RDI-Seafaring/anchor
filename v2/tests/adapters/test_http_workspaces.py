@@ -68,3 +68,33 @@ def test_move_node_via_patch():
     rsp = client.patch("/api/workspaces/w1/nodes/a", json={"x": 100, "y": 200})
     assert rsp.status_code == 200
     assert rsp.json()["event"]["type"] == "NodeMoved"
+
+
+def test_organize_subtree_returns_moves():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    # Tiny tree: r → {a, b}.
+    client.post("/api/workspaces/w1/nodes", json={"id": "r"})
+    client.post("/api/workspaces/w1/nodes", json={"id": "a", "x": -99, "y": -99})
+    client.post("/api/workspaces/w1/nodes", json={"id": "b", "x": 99, "y": 99})
+    client.post("/api/workspaces/w1/edges", json={"source": "a", "target": "r"})
+    client.post("/api/workspaces/w1/edges", json={"source": "b", "target": "r"})
+    rsp = client.post(
+        "/api/workspaces/w1/layout",
+        json={"root_id": "r", "orientation": "vertical"},
+    )
+    assert rsp.status_code == 200
+    body = rsp.json()
+    moved = {m["id"] for m in body["moves"]}
+    assert moved == {"a", "b"}
+    assert body["event_count"] == 2
+
+
+def test_organize_subtree_unknown_root_400():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    rsp = client.post(
+        "/api/workspaces/w1/layout",
+        json={"root_id": "ghost"},
+    )
+    assert rsp.status_code == 400

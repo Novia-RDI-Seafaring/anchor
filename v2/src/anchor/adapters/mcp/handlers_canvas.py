@@ -174,6 +174,32 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {"type": "object", "properties": {}},
         },
         {
+            "name": "canvas_organize_subtree",
+            "description": (
+                "Re-lay-out the subtree under root_id into a tidy tree. Emits one "
+                "NodeMoved per descendant whose position changes; the root stays put. "
+                "orientation = 'vertical' (default) or 'horizontal'."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "root_id": {"type": "string"},
+                    "orientation": {
+                        "type": "string",
+                        "enum": ["vertical", "horizontal"],
+                        "default": "vertical",
+                    },
+                    "algo": {
+                        "type": "string",
+                        "enum": ["dagre"],
+                        "default": "dagre",
+                    },
+                },
+                "required": ["workspace_slug", "root_id"],
+            },
+        },
+        {
             "name": "canvas_snapshot",
             "description": (
                 "Render a workspace canvas to PNG and return the bytes "
@@ -240,6 +266,24 @@ async def call_tool(svc: WorkspaceService, name: str, args: dict[str, Any]) -> s
         if name == "canvas_clear":
             state, env = await svc.clear(args["workspace_slug"])
             return json.dumps({"event": env.model_dump(), "state": state.get_state()})
+        if name == "canvas_organize_subtree":
+            try:
+                state, envelopes = await svc.organize_subtree(
+                    args["workspace_slug"], args["root_id"],
+                    orientation=args.get("orientation", "vertical"),
+                    algo=args.get("algo", "dagre"),
+                )
+            except ValueError as e:
+                return json.dumps({"error": str(e)})
+            moves = [
+                {"id": env.payload["id"], "x": env.payload["x"], "y": env.payload["y"]}
+                for env in envelopes
+            ]
+            return json.dumps({
+                "moves": moves,
+                "event_count": len(envelopes),
+                "state": state.get_state(),
+            })
         if name == "canvas_snapshot":
             envelope_fmt = args.get("format", "path")
             image_fmt = args.get("image_format", "png")

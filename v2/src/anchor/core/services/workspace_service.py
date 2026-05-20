@@ -6,7 +6,7 @@ against current state, applies events, persists, and publishes.
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel
 
@@ -28,9 +28,10 @@ from anchor.core.ids import new_event_id, new_id
 from anchor.core.ports.event_bus import EventBus
 from anchor.core.ports.snapshot import SnapshotPort, SnapshotResult
 from anchor.core.ports.workspace_store import WorkspaceStore
+from anchor.core.workspace.layout import EdgeLike, NodeLike, organize_subtree
 from anchor.core.workspace.node_types import NodeTypeRegistry
 from anchor.core.workspace.reducer import apply, cascade_events_for_remove
-from anchor.core.workspace.workspace import Workspace, validate_command
+from anchor.core.workspace.workspace import CommandError, Workspace, validate_command
 
 
 class _LocksProto(Protocol):
@@ -127,6 +128,84 @@ class WorkspaceService:
 
     async def clear(self, slug: str) -> tuple[Workspace, DomainEvent]:
         return await self._dispatch(slug, CanvasCleared())
+
+    async def organize_subtree(
+        self,
+        slug: str,
+        root_id: str,
+        *,
+        orientation: Literal["vertical", "horizontal"] = "vertical",
+        algo: Literal["dagre"] = "dagre",
+    ) -> tuple[Workspace, list[DomainEvent]]:
+        """Re-lay-out the subtree rooted at ``root_id`` in one atomic block.
+
+        Walks the (undirected) edge graph from the root, computes a tidy
+        position per descendant, and emits one ``NodeMoved`` per node whose
+        position actually changes. The root itself never moves. Cycles are
+        allowed but each node is visited at most once.
+
+        Even though the public knob is called ``algo="dagre"``, the layout
+        math is a hand-rolled Python tree placement (see
+        ``anchor.core.workspace.layout``) — we deliberately do not pull in
+        a JS or Python dagre dependency. The "dagre" label is kept on the
+        API because that's what the UI ships and what the user thinks of
+        when they say "tree-organize this".
+
+        Raises ``CommandError`` if the root node does not exist. Returns an
+        empty event list (and the unchanged workspace) when the root has no
+        descendants — there's nothing to move."""
+        if algo != "dagre":
+            raise ValueError(
+                f"unsupported organize algo: {algo!r} (only 'dagre' is shipped)",
+            )
+        if orientation not in {"vertical", "horizontal"}:
+            raise ValueError(
+                f"unsupported orientation: {orientation!r} "
+                "(use 'vertical' or 'horizontal')",
+            )
+
+        async with self.locks.lock(slug):
+            state = await self.store.load(slug)
+            if root_id not in state.nodes:
+                raise CommandError(f"node {root_id!r} does not exist")
+
+            node_likes = [NodeLike(id=n.id, x=n.x, y=n.y) for n in state.nodes.values()]
+            edge_likes = [EdgeLike(source=e.source, target=e.target) for e in state.edges.values()]
+            placements = organize_subtree(
+                node_likes, edge_likes, root_id, orientation=orientation,
+            )
+
+            # Filter: only emit a move if the position actually shifts.
+            # Saves a flurry of no-op SSE events when the user re-organizes
+            # an already-tidy tree.
+            moves: list[tuple[str, float, float]] = []
+            for nid, (nx, ny) in placements.items():
+                n = state.nodes.get(nid)
+                if n is None:
+                    continue
+                if n.x == nx and n.y == ny:
+                    continue
+                moves.append((nid, nx, ny))
+
+            if not moves:
+                return state, []
+
+            envelopes: list[DomainEvent] = []
+            new_state = state
+            cause = new_event_id()
+            for nid, nx, ny in moves:
+                ev = NodeMoved(id=nid, x=nx, y=ny)
+                env = self._envelope(slug, ev, causation_id=cause)
+                version = await self.store.append_event(slug, env)
+                env.version = version
+                new_state = apply(new_state, ev)
+                new_state.version = version
+                new_state.last_event_id = env.id
+                envelopes.append(env)
+            await self.store.snapshot(slug, new_state)
+            for env in envelopes:
+                await self.bus.publish(env)
+            return new_state, envelopes
 
     async def snapshot(
         self,

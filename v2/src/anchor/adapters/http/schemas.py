@@ -52,3 +52,9 @@ class SnapshotRequest(BaseModel):
     format: str = "png"
     viewport: tuple[int, int] | None = None
     full_page: bool = True
+
+
+class OrganizeSubtreeRequest(BaseModel):
+    root_id: str
+    orientation: str = "vertical"
+    algo: str = "dagre"

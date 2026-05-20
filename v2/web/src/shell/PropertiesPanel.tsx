@@ -37,6 +37,7 @@ import {
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
+import { OrganizeEditor } from "./editors/OrganizeEditor";
 import { dispatchEditor } from "./PropertiesPanel.dispatch";
 
 export function PropertiesPanel() {
@@ -46,6 +47,17 @@ export function PropertiesPanel() {
   const setSelectedNodeId = useUiStore((s) => s.setSelectedNodeId);
   const node = useCanvasStore((s) =>
     selectedNodeId ? s.nodes[selectedNodeId] ?? null : null,
+  );
+  // Whether the selected node touches any edge — the Organize section
+  // is hidden entirely when not, so the panel doesn't show a buttons
+  // strip with nothing to act on. The server-side organizer treats edges
+  // as undirected, so any touching edge counts.
+  const hasChildren = useCanvasStore((s) =>
+    selectedNodeId
+      ? Object.values(s.edges).some(
+          (e) => e.source === selectedNodeId || e.target === selectedNodeId,
+        )
+      : false,
   );
   const { id: workspaceSlugFromUrl } = useParams<{ id: string }>();
   const workspaceSlug = workspaceSlugFromUrl ?? "";
@@ -80,7 +92,14 @@ export function PropertiesPanel() {
         </SheetHeader>
         <div className="flex-1 overflow-y-auto p-3">
           {node && Editor ? (
-            <Editor workspaceSlug={workspaceSlug} node={node} />
+            <>
+              <Editor workspaceSlug={workspaceSlug} node={node} />
+              <OrganizeEditor
+                workspaceSlug={workspaceSlug}
+                nodeId={node.id}
+                hasChildren={hasChildren}
+              />
+            </>
           ) : (
             <div className="rounded border border-dashed border-neutral-300 px-3 py-4 text-center text-[12px] text-neutral-500">
               Nothing selected.
