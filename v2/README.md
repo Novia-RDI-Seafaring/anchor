@@ -37,10 +37,19 @@ uv sync
 pnpm --filter @anchor/web install
 
 # dev mode: two processes
-uv run anchor serve --data-dir ~/anchor-data &
+uv run anchor serve &
 pnpm --filter @anchor/web dev
-# → backend on :8002, Vite HMR on :5183
+# → backend on :8002, Vite HMR on :5173
 ```
+
+Default `--data-dir` is `~/anchor-data`; override per-command or via
+`ANCHOR_DATA_DIR`.
+
+Optional extras:
+
+| Extra | Install | Adds |
+|---|---|---|
+| `fmus` | `uv sync --extra fmus` | FMU simulation runtime (`fmpy`). Without it, FMU tools fail at call time. |
 
 ---
 
@@ -123,16 +132,20 @@ Anchor reads its config from environment variables prefixed `ANCHOR_`:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ANCHOR_DATA_DIR` | `./data` | Where canvases + documents live |
+| `ANCHOR_DATA_DIR` | `~/anchor-data` | Where canvases + documents live |
 | `ANCHOR_HTTP_PORT` | `8002` | Backend HTTP/SSE port |
 | `ANCHOR_HTTP_HOST` | `0.0.0.0` | Backend listen host |
 | `ANCHOR_OPENAI_API_KEY` | (unset) | Optional — enables LLM polish + region extraction in the gold layer |
+| `ANCHOR_OPENAI_BASE_URL` | (unset) | Override the OpenAI endpoint. Point at Azure OpenAI, Ollama (`http://localhost:11434/v1`), vLLM, LM Studio, ... |
 | `ANCHOR_POLISH_MODEL` | `gpt-5.4` | Model name for page-MD polishing |
 | `ANCHOR_REGION_MODEL` | `gpt-5.4` | Model name for region extraction |
+| `ANCHOR_EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | Local sentence-transformer model used for semantic search. Recorded in every `embeddings.json` so cross-model search refuses to mix vectors. |
 | `ANCHOR_DPI` | `150` | Render DPI for page images |
 | `ANCHOR_LOG_LEVEL` | `INFO` | Logging |
 
 If you don't set `ANCHOR_OPENAI_API_KEY`, ingest still produces silver (deterministic Docling extraction + per-page markdown). Gold extraction (LLM-driven structured regions) is skipped. The system stays useful without an API key — silver is the workable substrate; gold is the polish.
+
+For Azure / Ollama / local-LLM recipes, see [`docs/ADOPTION.md`](./docs/ADOPTION.md).
 
 ---
 
@@ -145,6 +158,8 @@ anchor list      [--data-dir DIR]
 anchor index     SLUG [--data-dir DIR]
 anchor regions   SLUG [--page N] [--data-dir DIR]
 anchor page-text SLUG PAGE [--data-dir DIR]
+anchor embed     [SLUG] [--overwrite] [--data-dir DIR]
+anchor search    "<query>" [--k N] [--data-dir DIR]
 anchor canvas    list   [--data-dir DIR]
 anchor canvas    create SLUG [--title TITLE] [--data-dir DIR]
 anchor install     claude-code [--data-dir DIR] [--dry-run]

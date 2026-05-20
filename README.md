@@ -1,94 +1,41 @@
-## Run Locally
+# Anchor — knowledge-grounded engineering canvas
 
-### Backend
+A canvas your AI agent can drive. Drop a PDF datasheet onto a workspace,
+ask the agent for the operating limits, get a grounded spec table where
+every value points back to its source page+bbox. Wire those values into
+a simulation. **No managed cloud, no vendor lock-in, your data stays on
+your laptop.**
 
-1. **Prerequisites**
-   - Python 3.12+
-   - PostgreSQL
-   - LLM Provider (OpenAI, Anthropic, etc.)
+> Active development lives in [`v2/`](./v2/). The v2 codebase is a
+> hexagonal modular monolith: pure Python core, swappable infra,
+> per-protocol adapters (HTTP, MCP, CLI), and a React + Vite frontend.
+> It is the supported entry point.
+>
+> The older code at the repo root (`src/`, `backend/`, `packages/`)
+> is the v1 Next.js + Postgres+pgvector stack. It still runs but is
+> being retired and should not be the starting point for new work.
 
+## Get started
 
-2. Start PostgreSQL with pgvector (Docker)
+```bash
+cd v2
+uv sync
+pnpm --filter @anchor/web install
+pnpm --filter @anchor/web build
 
-We use the official pgvector image so no manual extension installation is required.
-
-Option A — Quick Start (Single Command)
-
-### Mac / Linux:
-```
-docker run -d \
-  --name pgvector-db \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=admin123 \
-  -e POSTGRES_DB=anchor \
-  -p 5432:5432 \
-  pgvector/pgvector:pg16
-```
-
-### Windows (PowerShell):
-
-```
-docker run -d --name pgvector-db -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=admin123 -e POSTGRES_DB=anchor -p 5432:5432 pgvector/pgvector:pg16
+# in two terminals:
+uv run anchor serve
+pnpm --filter @anchor/web dev
 ```
 
-Enable the pgvector extension:
+Open `http://localhost:5173` (Vite, with HMR) or `http://localhost:8002`
+(FastAPI serving the built bundle). Full install + adoption recipes:
 
-```
-docker exec -it pgvector-db psql -U postgres -d anchor
-```
+- [v2/README.md](./v2/README.md) — install, quick start, CLI reference
+- [v2/docs/README.md](./v2/docs/README.md) — six short documents covering architecture, on-disk substrate, OIP, canvas, and the multi-interface story
+- [v2/docs/ADOPTION.md](./v2/docs/ADOPTION.md) — harness recipes (Claude Code, Cursor, opencode), Azure / Ollama / vLLM, air-gap notes
 
-Inside psql:
+## License
 
-```
-CREATE EXTENSION IF NOT EXISTS vector;
-```
-
-Exit:
-
-```
-\q
-```
-
-
-2. **Configuration**
-   Create a `.env` file in the `backend/` directory:
-   ```env
-   PGVECTOR_HOST=localhost
-   PGVECTOR_PORT=5432
-   PGVECTOR_DB=anchor
-   PGVECTOR_USER=postgres
-   PGVECTOR_PASSWORD=admin123
-   LLM_API_KEY=...
-   LLM_MODEL=...
-   ```
-
-3. **Setup & Install**
-   ```bash
-   # Create virtual environment
-   uv venv  # or: python -m venv venv
-
-   # Activate
-   # Windows:
-   venv\Scripts\activate
-   # Mac/Linux:
-   # source venv/bin/activate
-
-   # Install dependencies
-   uv sync
-   # OR for standard pip:
-   pip install -e .
-   ```
-
-### Frontend
-
-1. **Prerequisites**
-   - Node.js
-
-2. **Setup & Run**
-   ```bash
-   # Install dependencies
-   npm install
-
-   # Start development server
-   npm run dev
-   ```
+Research code. Pending an open-source license commit (Apache-2.0 or MIT).
+Ask before redistributing.
