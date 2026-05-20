@@ -33,7 +33,12 @@ async def events(
                 return
             yield {"event": "patch", "data": evt.model_dump_json()}
 
-    return EventSourceResponse(stream())
+    # ping=15 keeps the EventSource warm during idle: without it, Chromium/
+    # macOS can silently drop the connection on tab background or system
+    # sleep, and the browser doesn't always fire `onerror` so the client
+    # reconnect path doesn't trigger. With 15-second comment pings the
+    # connection stays alive and idle browsers stay subscribed.
+    return EventSourceResponse(stream(), ping=15)
 
 
 def _json(obj) -> str:
