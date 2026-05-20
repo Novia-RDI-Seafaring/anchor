@@ -37,7 +37,24 @@ def _byte_envelope_from_result(*, path: Path | None, bytes_: bytes | None, conte
             "content_type": content_type,
             "size_bytes": len(raw),
         })
-    return json.dumps({"error": f"unknown format: {fmt!r} (use 'path' or 'base64')"})
+    if fmt == "inline":
+        # Hand the raw bytes back via the special _mcp_image_b64 marker so
+        # the MCP server wrapper can promote the result to an MCP
+        # ImageContent block and have the host harness display it inline.
+        # SVG is not an image content type in MCP today; emit it as text.
+        raw = bytes_ if bytes_ is not None else (path.read_bytes() if path else b"")
+        if content_type.startswith("image/") and content_type != "image/svg+xml":
+            return json.dumps({
+                "_mcp_image_b64": base64.b64encode(raw).decode("ascii"),
+                "_mcp_mime": content_type,
+            })
+        return json.dumps({
+            "format": "base64",
+            "value": base64.b64encode(raw).decode("ascii"),
+            "content_type": content_type,
+            "size_bytes": len(raw),
+        })
+    return json.dumps({"error": f"unknown format: {fmt!r} (use 'path', 'base64', or 'inline')"})
 
 
 def _ctype_for(name: str) -> str:
@@ -167,7 +184,12 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "type": "object",
                 "properties": {
                     "workspace_slug": {"type": "string"},
-                    "format": {"type": "string", "enum": ["path", "base64"], "default": "path"},
+                    "format": {
+                        "type": "string",
+                        "enum": ["path", "base64", "inline"],
+                        "default": "inline",
+                        "description": "'inline' renders the snapshot as an MCP ImageContent block so the host harness (Claude Code, Cursor, ...) displays it inline. 'path' returns the file path; 'base64' returns raw base64 inside the JSON envelope.",
+                    },
                     "image_format": {"type": "string", "enum": ["png", "svg"], "default": "png"},
                     "viewport": {
                         "type": "array",

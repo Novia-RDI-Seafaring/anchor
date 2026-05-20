@@ -14,8 +14,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import json as _json
+
 from mcp.server import Server
-from mcp.types import TextContent, Tool
+from mcp.types import ImageContent, TextContent, Tool
 
 from anchor.adapters.mcp import handlers_canvas
 from anchor.core.services.workspace_service import WorkspaceService
@@ -60,7 +62,7 @@ def build_mcp_server(
     sysml_names = {d["name"] for d in sysml_defs}
 
     @app.call_tool()
-    async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+    async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
         try:
             if name in canvas_names:
                 text = await handlers_canvas.call_tool(workspace, name, dict(arguments))
@@ -77,6 +79,19 @@ def build_mcp_server(
                 )
         except Exception as exc:  # noqa: BLE001  - surface to caller as JSON
             text = f'{{"error": {exc!s}}}'
+        # Promote inline-image envelopes (`{"_mcp_image_b64": ..., "_mcp_mime": ...}`)
+        # to MCP ImageContent so the host harness renders the bytes inline.
+        # Any other return shape stays TextContent.
+        try:
+            decoded = _json.loads(text)
+        except (ValueError, TypeError):
+            decoded = None
+        if isinstance(decoded, dict) and "_mcp_image_b64" in decoded:
+            return [ImageContent(
+                type="image",
+                data=decoded["_mcp_image_b64"],
+                mimeType=decoded.get("_mcp_mime", "image/png"),
+            )]
         return [TextContent(type="text", text=text)]
 
     return app
