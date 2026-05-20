@@ -33,6 +33,7 @@ def build_app(
     sysml_service: SysmlService | None = None,
     synopsis_service: object | None = None,
     fmu_service: FmuService | None = None,
+    canvases_dir: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Anchor v2", version="0.2.0")
     app.state.workspace_service = workspace_service
@@ -42,6 +43,15 @@ def build_app(
     app.state.cad_service = cad_service
     app.state.sysml_service = sysml_service
     app.state.synopsis_service = synopsis_service
+
+    # Bridge cross-process writes (CLI / MCP-stdio in another process) into
+    # this app's bus by tailing each workspace's events.jsonl. SSE router
+    # calls registry.ensure(slug) lazily on the first subscriber.
+    if canvases_dir is not None:
+        from anchor.infra.bus.event_tailer import TailerRegistry
+        app.state.tailer_registry = TailerRegistry(canvases_root=canvases_dir, bus=bus)
+    else:
+        app.state.tailer_registry = None
 
     app.add_middleware(
         CORSMiddleware,

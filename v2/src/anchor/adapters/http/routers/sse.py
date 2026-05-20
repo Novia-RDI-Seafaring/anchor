@@ -18,6 +18,12 @@ async def events(
     bus: EventBus = Depends(get_event_bus),
     svc: WorkspaceService = Depends(get_workspace_service),
 ):
+    # Make sure any writes from other processes (CLI, MCP-stdio, ...) get
+    # bridged onto our in-process bus while this client is subscribed.
+    registry = getattr(request.app.state, "tailer_registry", None)
+    if registry is not None:
+        await registry.ensure(slug)
+
     async def stream():
         # Initial snapshot
         snapshot = await svc.get_state(slug)

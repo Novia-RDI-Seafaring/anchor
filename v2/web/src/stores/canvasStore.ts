@@ -56,11 +56,61 @@ function asEdge(row: WireRow): Edge {
   };
 }
 
+export type Activity = {
+  id: string;
+  type: string;
+  text: string;
+  at: number;
+};
+
+function describeEvent(
+  evt: CanvasEvent,
+  prevNodes: Record<string, Node>,
+  prevEdges: Record<string, Edge>,
+): string {
+  const p = evt.payload as Record<string, unknown>;
+  const id = p.id as string | undefined;
+  switch (evt.type) {
+    case "NodeAdded": {
+      const kind = (p.node_type as string) ?? "node";
+      const label = (p.label as string) || (id ?? "");
+      return `+ ${kind} "${label}"`;
+    }
+    case "NodeRemoved": {
+      const n = id ? prevNodes[id] : undefined;
+      return `− ${n?.node_type ?? "node"} "${n?.label ?? id ?? ""}"`;
+    }
+    case "NodeMoved": {
+      const n = id ? prevNodes[id] : undefined;
+      return `· moved ${n?.label ?? id ?? ""}`;
+    }
+    case "NodeResized":
+      return `· resized ${id ?? ""}`;
+    case "NodeReparented":
+      return `· reparented ${id ?? ""}`;
+    case "NodeUpdated": {
+      const n = id ? prevNodes[id] : undefined;
+      return `~ ${n?.label ?? id ?? ""}`;
+    }
+    case "EdgeAdded":
+      return `+ edge ${(p.source as string) ?? "?"} → ${(p.target as string) ?? "?"}`;
+    case "EdgeRemoved": {
+      const e = id ? prevEdges[id] : undefined;
+      return `− edge ${e?.source ?? "?"} → ${e?.target ?? "?"}`;
+    }
+    case "CanvasCleared":
+      return "cleared canvas";
+    default:
+      return evt.type;
+  }
+}
+
 type State = {
   slug: string | null;
   version: number;
   nodes: Record<string, Node>;
   edges: Record<string, Edge>;
+  activity: Activity[];
   setSnapshot: (snap: Snapshot) => void;
   applyEvent: (evt: CanvasEvent) => void;
   reset: () => void;
@@ -71,6 +121,7 @@ export const useCanvasStore = create<State>((set) => ({
   version: 0,
   nodes: {},
   edges: {},
+  activity: [],
   setSnapshot: (snap) => set({
     slug: snap.slug,
     version: snap.version,
@@ -82,9 +133,11 @@ export const useCanvasStore = create<State>((set) => ({
       const e = asEdge(row);
       return [e.id, e];
     })),
+    activity: [],
   }),
   applyEvent: (evt) => set((state) => {
     if (state.version >= evt.version) return state;
+    const text = describeEvent(evt, state.nodes, state.edges);
     const nodes = { ...state.nodes };
     const edges = { ...state.edges };
     const p = evt.payload as Record<string, unknown>;
@@ -144,9 +197,27 @@ export const useCanvasStore = create<State>((set) => ({
         delete edges[p.id as string];
         break;
       case "CanvasCleared":
-        return { ...state, nodes: {}, edges: {}, version: evt.version };
+        return {
+          ...state,
+          nodes: {},
+          edges: {},
+          version: evt.version,
+          activity: [
+            { id: evt.id, type: evt.type, text, at: Date.now() },
+            ...state.activity,
+          ].slice(0, 8),
+        };
     }
-    return { ...state, nodes, edges, version: evt.version };
+    return {
+      ...state,
+      nodes,
+      edges,
+      version: evt.version,
+      activity: [
+        { id: evt.id, type: evt.type, text, at: Date.now() },
+        ...state.activity,
+      ].slice(0, 8),
+    };
   }),
-  reset: () => set({ slug: null, version: 0, nodes: {}, edges: {} }),
+  reset: () => set({ slug: null, version: 0, nodes: {}, edges: {}, activity: [] }),
 }));

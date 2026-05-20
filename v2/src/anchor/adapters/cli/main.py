@@ -150,6 +150,7 @@ def serve(
         sysml_service=sysml_service,
         synopsis_service=synopsis_service,
         fmu_service=fmu_service,
+        canvases_dir=data_dir / "canvases",
     )
     typer.echo(f"[anchor serve] data_dir={data_dir} {host}:{port}")
     uvicorn.run(app_, host=host, port=port)

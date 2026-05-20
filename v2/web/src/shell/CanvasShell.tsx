@@ -13,6 +13,8 @@
  */
 import { ReactFlowProvider } from "@xyflow/react";
 
+import { ActivityToast } from "@/canvas/ActivityToast";
+
 import { LeftRail } from "./LeftRail";
 
 type Props = {
@@ -27,6 +29,7 @@ export function CanvasShell({ workspaceSlug, children }: Props) {
         <LeftRail workspaceSlug={workspaceSlug} />
         <div className="relative flex-1">
           {children}
+          <ActivityToast />
         </div>
       </div>
     </ReactFlowProvider>
