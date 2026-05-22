@@ -160,9 +160,30 @@ export function QuickAddPopover({
       onPointerDown={(e) => e.stopPropagation()}
       className="rounded-lg border border-neutral-200 bg-white p-2 shadow-lg"
     >
-      <div className="mb-1 flex items-center justify-between px-1 text-[11px] text-neutral-600">
-        <span className="font-medium text-neutral-800">Add the same object</span>
-        <kbd className="rounded border border-neutral-300 bg-neutral-50 px-1 font-mono text-[10px]">⏎</kbd>
+      {/* Same-type primary action — a full-width button at the top so
+          the obvious "make another of the same" path is one click, not
+          a hunt through the grid. The button shows the source's
+          friendly label so the user sees what they're about to make.
+          Enter has the same effect. */}
+      {(() => {
+        const same = entries.find((e) => e.name === sourceType);
+        const label = same?.meta.label ?? sourceType;
+        return (
+          <button
+            type="button"
+            onClick={() => void createWithType(same?.name ?? sourceType)}
+            className="mb-2 flex w-full items-center justify-between gap-2 rounded-md border border-sky-300 bg-sky-50 px-2 py-1.5 text-left text-[12px] font-medium text-sky-900 transition hover:bg-sky-100"
+          >
+            <span className="flex items-center gap-2">
+              {same?.meta.glyph ? <TileGlyph glyph={same.meta.glyph} /> : null}
+              <span>Add another {label.toLowerCase()}</span>
+            </span>
+            <kbd className="rounded border border-sky-300 bg-white px-1 font-mono text-[10px] text-sky-700">⏎</kbd>
+          </button>
+        );
+      })()}
+      <div className="mb-1 px-1 text-[10px] uppercase tracking-wide text-neutral-500">
+        or pick a different shape
       </div>
       <div className="grid grid-cols-3 gap-1">
         {entries.map((e) => (

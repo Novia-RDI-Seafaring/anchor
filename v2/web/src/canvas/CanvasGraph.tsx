@@ -201,10 +201,6 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   // re-rendering ReactFlow on every pixel — only the ghost state below
   // does that, and only when the rect actually changes.
   const armDownRef = useRef<{ clientX: number; clientY: number } | null>(null);
-  // Deferred-clear timer for node hover state. Lets the cursor cross from
-  // the node body to a connector dot (which sits 22 flow units outside
-  // the edge) without dropping the hover state in the dead-space gap.
-  const hoverClearTimerRef = useRef<number | null>(null);
   // Screen-space rect for the WYSIWYG ghost preview while drag-to-size is
   // in progress. `null` when not painting. The ghost outline mirrors the
   // armed tool's silhouette via `PaintGhost` so the user sees exactly the
@@ -956,30 +952,15 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
               // panel is reachable via the toolbar's ⋮ More or the
               // context menu's "Edit properties…").
               onNodeClick: (_event, node) => { setSelectedNodeId(node.id); },
-              // Hover broadcast for DirectionalConnectors — any hovered node
-              // surfaces quick-add dots without requiring selection first.
-              // The dots sit ~22 flow units OUTSIDE the node edge, so a
-              // naive immediate-clear on `mouseleave` flickers the dots
-              // off the moment the cursor crosses into the gap between
-              // the node body and the dot. We defer the clear by a short
-              // grace period so the dot's own `mouseenter` cancels the
-              // pending clear (the dot dispatches its own
-              // `setHoveredNodeId` in DirectionalConnectors).
+              // Hover state is no longer consumed by DirectionalConnectors
+              // (the dots are selection-only now), but other UI may still
+              // want to know which node the cursor is over. Plain
+              // immediate set/clear, no deferred-clear gymnastics.
               onNodeMouseEnter: (_event, node) => {
-                if (hoverClearTimerRef.current != null) {
-                  window.clearTimeout(hoverClearTimerRef.current);
-                  hoverClearTimerRef.current = null;
-                }
                 useUiStore.getState().setHoveredNodeId(node.id);
               },
               onNodeMouseLeave: () => {
-                if (hoverClearTimerRef.current != null) {
-                  window.clearTimeout(hoverClearTimerRef.current);
-                }
-                hoverClearTimerRef.current = window.setTimeout(() => {
-                  useUiStore.getState().setHoveredNodeId(null);
-                  hoverClearTimerRef.current = null;
-                }, 200);
+                useUiStore.getState().setHoveredNodeId(null);
               },
               onEdgeClick: (_event, edge) => { setSelectedEdgeId(edge.id); },
               onEdgeContextMenu: (event, edge) => {
