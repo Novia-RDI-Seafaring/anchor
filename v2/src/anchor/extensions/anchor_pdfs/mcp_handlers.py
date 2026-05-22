@@ -185,6 +185,21 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "get_embeddings_meta",
+            "description": (
+                "Return metadata about a document's embeddings (model id, "
+                "dimension, vector count, embedded_at timestamp). Useful for "
+                "verifying which embed_model a doc was indexed with before "
+                "issuing a semantic search — the client should load the "
+                "matching WASM bundle on its side."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {"slug": {"type": "string"}},
+                "required": ["slug"],
+            },
+        },
+        {
             "name": "compose_synopsis",
             "description": (
                 "Compose an entity-scoped synopsis from a document's gold-layer data. "
@@ -272,6 +287,18 @@ async def call_tool(
             return json.dumps(await ingest.search(args["query"], k=int(args.get("k", 10))))
         except RuntimeError as e:
             return json.dumps({"error": str(e)})
+    if name == "get_embeddings_meta":
+        slug = args["slug"]
+        data = await store.get_embeddings(slug)
+        if data is None:
+            return json.dumps({"error": f"no embeddings for {slug}"})
+        return json.dumps({
+            "slug": slug,
+            "embed_model": data.get("embed_model"),
+            "dim": data.get("dim"),
+            "embedded_at": data.get("embedded_at"),
+            "vector_count": len(data.get("vectors", [])),
+        })
     if name == "compose_synopsis":
         if synopsis is None:
             return json.dumps({"error": "synopsis service not wired (renderer/store missing)"})

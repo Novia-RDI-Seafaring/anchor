@@ -42,6 +42,18 @@ class AddEdgeRequest(BaseModel):
     data: dict[str, Any] = {}
 
 
+class UpdateEdgeRequest(BaseModel):
+    """Partial edge update. Any field omitted (= None) is left unchanged.
+
+    Mirrors UpdateNodeRequest's shape so HTTP/MCP/CLI clients have a
+    consistent patch contract."""
+    label: str | None = None
+    edge_type: str | None = None
+    sourceHandle: str | None = None
+    targetHandle: str | None = None
+    data: dict[str, Any] | None = None
+
+
 class IngestUploadResponse(BaseModel):
     slug: str
     job_id: str

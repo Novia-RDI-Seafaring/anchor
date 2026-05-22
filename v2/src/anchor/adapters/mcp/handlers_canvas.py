@@ -148,6 +148,23 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "canvas_update_edge",
+            "description": "Patch an edge's fields (label, edge_type, source/target handle, data).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "id": {"type": "string"},
+                    "label": {"type": "string"},
+                    "edge_type": {"type": "string", "enum": ["floating", "anchored"]},
+                    "sourceHandle": {"type": "string"},
+                    "targetHandle": {"type": "string"},
+                    "data": {"type": "object"},
+                },
+                "required": ["workspace_slug", "id"],
+            },
+        },
+        {
             "name": "canvas_clear",
             "description": "Wipe the canvas (cards + edges).",
             "inputSchema": {
@@ -170,7 +187,14 @@ def tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "canvas_list_workspaces",
-            "description": "List all workspaces.",
+            "description": (
+                "List all workspaces with node/edge counts and the canvas "
+                "reference graph. Each entry: {slug, title, created_at, "
+                "node_count, edge_count, references, referenced_by} where "
+                "references are the slugs this canvas's `canvas`-typed nodes "
+                "point at, and referenced_by is the reverse map. Use this to "
+                "render a folder tree of nested canvases."
+            ),
             "inputSchema": {"type": "object", "properties": {}},
         },
         {
@@ -334,6 +358,12 @@ async def call_tool(svc: WorkspaceService, name: str, args: dict[str, Any]) -> s
             return json.dumps({"event": env.model_dump(), "state": state.get_state()})
         if name == "canvas_remove_edge":
             state, env = await svc.remove_edge(args["workspace_slug"], args["id"])
+            return json.dumps({"event": env.model_dump(), "state": state.get_state()})
+        if name == "canvas_update_edge":
+            slug = args.pop("workspace_slug")
+            edge_id = args.pop("id")
+            fields = {k: v for k, v in args.items() if v is not None}
+            state, env = await svc.update_edge(slug, edge_id, fields)
             return json.dumps({"event": env.model_dump(), "state": state.get_state()})
         if name == "canvas_clear":
             state, env = await svc.clear(args["workspace_slug"])

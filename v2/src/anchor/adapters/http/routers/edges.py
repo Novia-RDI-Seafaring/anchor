@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from anchor.adapters.http.deps import get_workspace_service
-from anchor.adapters.http.schemas import AddEdgeRequest
+from anchor.adapters.http.schemas import AddEdgeRequest, UpdateEdgeRequest
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.core.workspace.workspace import CommandError
 
@@ -16,6 +16,21 @@ async def add_edge(slug: str, req: AddEdgeRequest, svc: WorkspaceService = Depen
     try:
         kwargs = req.model_dump(exclude_none=True)
         state, env = await svc.add_edge(slug, **kwargs)
+    except CommandError as e:
+        raise HTTPException(400, str(e))
+    return {"event": env.model_dump(), "state": state.get_state()}
+
+
+@router.patch("/{slug}/edges/{edge_id}")
+async def update_edge(
+    slug: str,
+    edge_id: str,
+    req: UpdateEdgeRequest,
+    svc: WorkspaceService = Depends(get_workspace_service),
+):
+    fields = req.model_dump(exclude_none=True)
+    try:
+        state, env = await svc.update_edge(slug, edge_id, fields)
     except CommandError as e:
         raise HTTPException(400, str(e))
     return {"event": env.model_dump(), "state": state.get_state()}
