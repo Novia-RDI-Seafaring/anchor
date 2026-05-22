@@ -25,12 +25,19 @@
 }
 
 /* When a tool is armed (canvas wrapper has `cursor-crosshair`), force the
-   crosshair cursor through ReactFlow's internal pane / node / viewport
-   surfaces too. ReactFlow sets its own `cursor: grab` on the pane which
-   otherwise wins over the wrapper's cursor. */
+   crosshair cursor through every ReactFlow surface — pane, viewport,
+   renderer, nodes, edges, handles. The wildcard `*` covers any descendant
+   we might have missed; without it, hovering over a node or its handle
+   flips the cursor to pointer/grab and produces a flicker.
+   `* !important` is heavy but it's scoped to .cursor-crosshair only
+   (which is only on while a tool is armed). */
+.cursor-crosshair,
+.cursor-crosshair *,
 .cursor-crosshair .react-flow__pane,
 .cursor-crosshair .react-flow__node,
 .cursor-crosshair .react-flow__renderer,
-.cursor-crosshair .react-flow__viewport {
+.cursor-crosshair .react-flow__viewport,
+.cursor-crosshair .react-flow__edge,
+.cursor-crosshair .react-flow__handle {
   cursor: crosshair !important;
 }

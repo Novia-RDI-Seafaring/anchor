@@ -735,7 +735,11 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         nodesConnectable={!readOnly}
         elementsSelectable={!readOnly}
         zoomOnScroll
-        panOnDrag
+        // When a paint tool is armed, disable pan-on-drag so the user's
+        // drag draws the shape instead of moving the viewport. We still
+        // permit middle-click pan (`[1]`) and right-click pan (`[2]`) so
+        // the user can reposition the canvas without disarming the tool.
+        panOnDrag={armedTool ? [1, 2] : true}
         // Shift+click adds to selection. Shift+drag still does rubber-band
         // selection — ReactFlow distinguishes the two gestures even when
         // they share a modifier.
