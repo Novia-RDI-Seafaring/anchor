@@ -374,9 +374,12 @@ function Glyph({ glyph }: { glyph: PaletteMeta["glyph"] }) {
         </svg>
       );
     case "diamond":
+      // Polygon (not a rotated rect) so the icon matches the FunnelNode's
+      // clipped silhouette — the rail and the dropped shape share one
+      // visual identity.
       return (
         <svg viewBox="0 0 24 24" className={cls} fill="none" strokeWidth={1.5}>
-          <rect x="6" y="6" width="12" height="12" rx="1" transform="rotate(45 12 12)" />
+          <polygon points="12,3 21,12 12,21 3,12" />
         </svg>
       );
     case "dashed-rect":

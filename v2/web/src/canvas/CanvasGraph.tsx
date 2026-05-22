@@ -23,6 +23,14 @@ import { EdgeMarkerDefs } from "@/canvas/edges/EdgeMarkerDefs";
 import { FloatingEdge } from "@/canvas/edges/FloatingEdge";
 import { NodeContextMenu, type ContextMenuTarget } from "@/canvas/NodeContextMenu";
 import { NodeContextToolbar } from "@/canvas/NodeContextToolbar";
+import {
+  PAINT_DRAG_THRESHOLD_PX,
+  PaintGhost,
+  type PaintRect,
+  ghostIsSquare,
+  maybeSquareRect,
+  paintRectFrom,
+} from "@/canvas/PaintGhost";
 import { nodeTypes, paletteEntries } from "@/canvas/registry";
 import { CanvasSse } from "@/realtime/sseClient";
 import { useCanvasStore } from "@/stores/canvasStore";
@@ -104,10 +112,15 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   const disarmTool = useUiStore((s) => s.disarmTool);
   const navigate = useNavigate();
   // Pointer-down origin for armed-tool drag-to-size. Lives in a ref so
-  // pointermove/up handlers don't trigger re-renders on every pixel.
-  const armDownRef = useRef<{ x: number; y: number; clientX: number; clientY: number } | null>(
-    null,
-  );
+  // pointermove handlers can update the in-flight ghost rect without
+  // re-rendering ReactFlow on every pixel — only the ghost state below
+  // does that, and only when the rect actually changes.
+  const armDownRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  // Screen-space rect for the WYSIWYG ghost preview while drag-to-size is
+  // in progress. `null` when not painting. The ghost outline mirrors the
+  // armed tool's silhouette via `PaintGhost` so the user sees exactly the
+  // shape they're about to drop.
+  const [paintRect, setPaintRect] = useState<PaintRect | null>(null);
 
   // ReactFlow needs to own the per-frame drag position. We seed its internal
   // node list from the Zustand store and re-seed whenever the store changes
@@ -331,9 +344,8 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   //
   // We listen on the wrapper div rather than ReactFlow's `onPaneClick` so
   // we can distinguish click from drag by comparing pointerdown→pointerup
-  // displacement. The threshold (4 px) matches a typical "wobble" — under
-  // that we treat it as a click.
-  const PLACE_DRAG_THRESHOLD_PX = 4;
+  // displacement. The 4-px threshold lives in `PaintGhost` (shared with
+  // the ghost-rect math) so the click-vs-drag boundary stays in lock-step.
 
   // Cards don't drag-to-size (their layout is content-driven beyond a
   // sensible default). Shapes (concept/entity/funnel/area) can grow.
@@ -404,38 +416,84 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
     // can sniff the event target.
     const target = event.target as HTMLElement;
     if (target.closest(".react-flow__node")) return;
+    // Record screen-space origin only. Flow-space conversion happens at
+    // pointer-up using the SAME endpoints the ghost rect uses, so the
+    // WYSIWYG contract (ghost rect == dropped node rect) holds.
     armDownRef.current = {
       clientX: event.clientX,
       clientY: event.clientY,
-      ...screenToFlowPosition({ x: event.clientX, y: event.clientY }),
     };
+    setPaintRect(null);
+  };
+
+  const onPointerMove = (event: React.PointerEvent) => {
+    const down = armDownRef.current;
+    if (!down || !armedTool) return;
+    // Only sizeable shapes render the ghost — cards drop at default size
+    // even when the user drags, so a ghost would be misleading.
+    if (!CAN_SIZE[armedTool]) return;
+    const raw = paintRectFrom(
+      { x: down.clientX, y: down.clientY },
+      { x: event.clientX, y: event.clientY },
+    );
+    const constrained = maybeSquareRect(
+      raw,
+      { x: down.clientX, y: down.clientY },
+      ghostIsSquare(armedTool),
+    );
+    setPaintRect(constrained);
   };
 
   const onPointerUp = (event: React.PointerEvent) => {
     if (!armedTool) return;
     const down = armDownRef.current;
     armDownRef.current = null;
+    setPaintRect(null);
     if (!down) return;
     const dx = event.clientX - down.clientX;
     const dy = event.clientY - down.clientY;
     const dist = Math.hypot(dx, dy);
-    if (dist < PLACE_DRAG_THRESHOLD_PX) {
-      // Single-click placement: default size at the click point.
-      void placeArmedNode(down.x, down.y);
+    if (dist < PAINT_DRAG_THRESHOLD_PX) {
+      // Single-click placement: default size at the click point. Convert
+      // here (not at pointer-down) so we use exactly the same call site
+      // every drop goes through — keeps the math consistent.
+      const downFlow = screenToFlowPosition({ x: down.clientX, y: down.clientY });
+      void placeArmedNode(downFlow.x, downFlow.y);
       return;
     }
     // Drag-to-size — only honoured for sizeable shapes. Cards fall back to
     // single-click placement at the start point.
     if (!CAN_SIZE[armedTool]) {
-      void placeArmedNode(down.x, down.y);
+      const downFlow = screenToFlowPosition({ x: down.clientX, y: down.clientY });
+      void placeArmedNode(downFlow.x, downFlow.y);
       return;
     }
-    const upFlow = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-    const minX = Math.min(down.x, upFlow.x);
-    const minY = Math.min(down.y, upFlow.y);
-    const width = Math.max(40, Math.abs(upFlow.x - down.x));
-    const height = Math.max(24, Math.abs(upFlow.y - down.y));
-    void placeArmedNode(minX, minY, { width, height });
+    // WYSIWYG fix: compute the screen-space rect (same maths the ghost
+    // showed), then convert THAT rect's two diagonal corners to flow space.
+    // Sourcing both corners from the same `screenToFlowPosition` ensures
+    // the drop lands at the ghost-shown rect for any zoom/pan/transform.
+    // Square-locked (entity / circle) tools snap the rect to a square
+    // anchored at the down corner — same constraint the ghost applies.
+    const raw = paintRectFrom(
+      { x: down.clientX, y: down.clientY },
+      { x: event.clientX, y: event.clientY },
+    );
+    const screen = maybeSquareRect(
+      raw,
+      { x: down.clientX, y: down.clientY },
+      ghostIsSquare(armedTool),
+    );
+    const topLeftFlow = screenToFlowPosition({ x: screen.left, y: screen.top });
+    const bottomRightFlow = screenToFlowPosition({
+      x: screen.left + screen.width,
+      y: screen.top + screen.height,
+    });
+    const flowWidth = Math.max(40, Math.abs(bottomRightFlow.x - topLeftFlow.x));
+    const flowHeight = Math.max(24, Math.abs(bottomRightFlow.y - topLeftFlow.y));
+    void placeArmedNode(topLeftFlow.x, topLeftFlow.y, {
+      width: flowWidth,
+      height: flowHeight,
+    });
   };
 
   // In readOnly mode the canvas becomes a pure projection: no drags, no
@@ -450,6 +508,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
             onDragOver,
             onDrop,
             onPointerDown,
+            onPointerMove,
             onPointerUp,
           })}
     >
@@ -593,6 +652,10 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
             target={contextMenuTarget}
             onClose={() => setContextMenuTarget(null)}
           />
+          {/* WYSIWYG paint preview. Only renders while the user is
+              actively drag-sizing an armed shape; `pointer-events-none`
+              so the gesture's pointer-up still reaches our wrapper. */}
+          <PaintGhost rect={paintRect} nodeType={armedTool} />
         </>
       )}
     </div>
