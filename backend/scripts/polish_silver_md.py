@@ -44,7 +44,7 @@ def _parse_pages(arg: str | None) -> list[int] | None:
 
 def main() -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("slug", help="silver dir name (e.g. alfa-laval-lkh-centrifugal-pump)")
+    p.add_argument("slug", help="silver dir name (e.g. sample-pump-datasheet)")
     p.add_argument("--model", default="gpt-5.4")
     p.add_argument("--pdf", help="bronze PDF path (used to render page PNGs if missing)")
     p.add_argument("--pages", help="comma-separated 1-indexed pages to force-polish")

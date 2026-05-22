@@ -10,11 +10,11 @@ Shape of the index:
             "query": "What is the max inlet pressure?",
             "topic": "operating_data",
             "region_id": "p2-r5",
-            "doc_slug": "alfa-laval-lkh-centrifugal-pump",
+            "doc_slug": "sample-pump-datasheet",
             "page": 2,
             "answers": {
-                "LKH-5": "600 kPa (6 bar)",
-                "LKH-10 - 70": "1000 kPa (10 bar)",
+                "SP-5": "600 kPa (6 bar)",
+                "SP-10 - 70": "1000 kPa (10 bar)",
                 ...
             },
             "global_answer": null,          // for non-entity-specific questions
@@ -55,7 +55,7 @@ Rules:
   Examples: "max inlet pressure", "motor speed range", "pump dimensions",
   "product wetted materials", "shaft seal water consumption".
 - For questions where the answer varies by entity (model/variant), list the
-  per-entity answers in `answers: { "LKH-5": "...", "LKH-10": "..." }`.
+  per-entity answers in `answers: { "SP-5": "...", "SP-10": "..." }`.
   Leave `global_answer` as null.
 - For questions with a single answer (same for all models), put the answer
   in `global_answer` and leave `answers` as {}.

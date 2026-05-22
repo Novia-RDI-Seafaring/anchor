@@ -1,6 +1,6 @@
 # Agent
 
-This branch runs a small [PydanticAI](https://docs.pydantic.ai) agent. Canvas
+The current runtime uses a small [PydanticAI](https://docs.pydantic.ai) agent. Canvas
 state is streamed to the frontend through CopilotKit coagent state.
 
 ## Live flow
@@ -76,9 +76,9 @@ Behavioral rule:
 - It should not auto-add nodes for explanations, summaries, greetings, UI/meta questions, or
   ungrounded answers.
 
-## Important branch note
+## Dormant modules
 
-This branch also contains additional capability modules such as:
+This folder also contains additional capability modules such as:
 
 - `knowledge.py`
 - `document_vision.py`
@@ -100,7 +100,7 @@ Those files are present, but they are not currently registered in the live `CAPA
 `deps.py` defines `AgentDeps`, which gives tools access to the live canvas state and
 run-scoped caches such as recent search results.
 
-## Maintainability rule for this branch
+## Maintainability rule
 
 When editing this agent, prefer:
 

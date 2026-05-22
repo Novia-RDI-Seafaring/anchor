@@ -25,9 +25,6 @@ PostgreSQL is not required for the current file-backed runtime.
 git clone <repo-url> anchor_ui
 cd anchor_ui
 npm install
-```
-
-```bash
 cd backend
 uv python pin 3.12
 uv sync
@@ -35,7 +32,12 @@ copy .env.example .env
 cd ..
 ```
 
-Edit `backend/.env` with the model/API key values you need.
+Edit `backend/.env` with one LLM provider configuration. For Azure OpenAI,
+set `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`,
+`AZURE_OPENAI_DEPLOYMENT`, and `DEFAULT_MODEL`.
+
+No PostgreSQL setup is needed for the current file-backed runtime. No write API
+key is needed for normal localhost use.
 
 ### Run
 
@@ -57,3 +59,7 @@ Useful separate commands:
 npm run dev:ui      # frontend only
 npm run dev:agent   # backend only on http://localhost:8001
 ```
+
+For a shared machine or public deployment, set `ANCHOR_WRITE_API_KEY` in
+`backend/.env`, set `ALLOW_UNSAFE_LOCAL_WRITES=false`, and serve the backend
+behind HTTPS/auth.

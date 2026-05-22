@@ -15,23 +15,23 @@ from src.ingestion.gold import (
 )
 
 TESTS_DIR = Path(__file__).resolve().parent
-PDF = TESTS_DIR / "alfa-laval-lkh-centrifugal-pump.pdf"
-
-pytestmark = pytest.mark.skipif(not PDF.exists(), reason="alfa-laval pdf missing from tests/")
+PDF = TESTS_DIR / "sample.pdf"
 
 
 # ── Cropping (deterministic, no LLM) ─────────────────────────────────────────
 
 
+@pytest.mark.skipif(not PDF.exists(), reason="real PDF fixture missing from tests/")
 def test_crop_region_png_writes_file(tmp_path: Path):
     out = tmp_path / "crop.png"
-    bbox = [56.7, 723.4, 187.7, 698.3]  # "Alfa Laval LKH" header on p1
+    bbox = [56.7, 723.4, 187.7, 698.3]
     written = crop_region_png(PDF, page=1, bbox=bbox, out_path=out, dpi=72)
     assert written == out
     assert out.exists()
     assert out.stat().st_size > 0
 
 
+@pytest.mark.skipif(not PDF.exists(), reason="real PDF fixture missing from tests/")
 def test_crop_region_svg_writes_file(tmp_path: Path):
     out = tmp_path / "crop.svg"
     written = crop_region_svg(PDF, page=1, bbox=[56.7, 723.4, 187.7, 698.3], out_path=out)
@@ -40,6 +40,7 @@ def test_crop_region_svg_writes_file(tmp_path: Path):
     assert content.startswith("<") and "svg" in content[:200]
 
 
+@pytest.mark.skipif(not PDF.exists(), reason="real PDF fixture missing from tests/")
 def test_crop_region_pdf_writes_single_page(tmp_path: Path):
     out = tmp_path / "crop.pdf"
     crop_region_pdf(PDF, page=2, bbox=[55.3, 762.3, 553.0, 687.7], out_path=out)
@@ -190,7 +191,7 @@ def test_region_serializes_round_trip():
         kind="chart",
         title="t",
         description="d",
-        tags=["chart", "performance_curve", "mentions:lkh-5"],
+        tags=["chart", "performance_curve", "mentions:pump-5"],
         crops=RegionCrop(png="p1-r1.png", svg="p1-r1.svg"),
     )
     dumped = r.model_dump()

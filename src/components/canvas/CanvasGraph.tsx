@@ -94,7 +94,7 @@ import {
 import { PDFModal, type PDFHighlight } from "./PDFModal";
 import { ResourcePalette, type PaletteTab } from "./ResourcePalette";
 import { useApp, type KBDocument } from "@/contexts/AppContext";
-import { API_URL } from "@/lib/api-config";
+import { API_URL, writeApiHeaders } from "@/lib/api-config";
 
 // --- Types ---
 interface CanvasState {
@@ -329,7 +329,7 @@ async function uploadCanvasFile(
   if (file.name.endsWith(".fmu")) {
     const formData = new FormData();
     formData.append("file", file);
-    const res = await fetch(`${API_URL}/api/fmu/upload`, { method: "POST", body: formData });
+    const res = await fetch(`${API_URL}/api/fmu/upload`, { method: "POST", headers: writeApiHeaders(), body: formData });
     if (res.ok) {
       const data = await res.json();
       onFmuUploaded?.({ filename: data.filename, model_name: data.model_name, variables: data.variables ?? [] }, position);
@@ -343,7 +343,7 @@ async function uploadCanvasFile(
 
   const formData = new FormData();
   formData.append("file", file);
-  const res = await fetch(`${API_URL}/api/documents/upload`, { method: "POST", body: formData });
+  const res = await fetch(`${API_URL}/api/documents/upload`, { method: "POST", headers: writeApiHeaders(), body: formData });
   if (!res.ok) {
     throw new Error(`Upload failed: ${res.statusText}`);
   }
@@ -856,7 +856,7 @@ function CanvasGraphInner({ canvas, initialPositions = {}, onPositionsChange, sh
     try {
       const res = await fetch(`${API_URL}/api/fmu/simulate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: writeApiHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ filename, param_overrides: overrides, stop_time: stopTime }),
       });
       if (!res.ok) {

@@ -42,7 +42,7 @@ class ParameterSource(BaseModel):
 
 class ParameterRow(BaseModel):
     """One row in a parameter table."""
-    parameter: str       # e.g. "LKH-5", "Temperature range"
+    parameter: str       # e.g. "SP-5", "Temperature range"
     value: str           # e.g. "600", "-10 to +140"
     unit: str = ""       # e.g. "kPa", "°C"
     source: ParameterSource = Field(default_factory=ParameterSource)

@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     port: int = 8001
     reload: bool = True
     allowed_origins: str = Field(default="http://localhost:3000", description="Comma-separated allowed CORS origins")
+    anchor_write_api_key: str = Field(default="", description="Optional API key required for write/destructive routes")
+    allow_unsafe_local_writes: bool = Field(
+        default=True,
+        description="Allow write routes without an API key for loopback development only",
+    )
 
     # ===== Model / Context Configuration =====
     default_model: str = Field(default="openai:gpt-4o-mini", description="PydanticAI model string")

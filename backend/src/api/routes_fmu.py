@@ -1,13 +1,14 @@
 """FMU upload, simulate, and result retrieval routes."""
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from ..fmu.service import FMU_DIR, inspect_fmu, run_simulation, get_result
+from .security import require_write_access
 
 router = APIRouter(prefix="/api/fmu", tags=["fmu"])
 
 
-@router.post("/upload")
+@router.post("/upload", dependencies=[Depends(require_write_access)])
 async def upload_fmu(file: UploadFile = File(...)):
     if not file.filename or not file.filename.endswith(".fmu"):
         raise HTTPException(400, "Only .fmu files accepted")
@@ -32,7 +33,7 @@ class SimulateRequest(BaseModel):
     stop_time: float = 10.0
 
 
-@router.post("/simulate")
+@router.post("/simulate", dependencies=[Depends(require_write_access)])
 async def simulate(req: SimulateRequest):
     try:
         job_id = run_simulation(req.filename, req.param_overrides, req.stop_time)

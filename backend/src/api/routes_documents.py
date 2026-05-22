@@ -1,16 +1,17 @@
 """Document management API routes."""
 import os
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Depends
 from typing import Optional
 
 from src.core.config import get_settings
 from src.knowledge_base.service import get_document_service
 from .schemas import URLRequest
+from .security import require_write_access
 
 router = APIRouter(prefix="/api", tags=["documents"])
 
 
-@router.post("/documents/upload")
+@router.post("/documents/upload", dependencies=[Depends(require_write_access)])
 async def upload_document(
     file: UploadFile = File(...),
     preserve_images: Optional[str] = Form("true"),
@@ -47,7 +48,7 @@ async def upload_document(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/documents/url")
+@router.post("/documents/url", dependencies=[Depends(require_write_access)])
 async def add_url(request: URLRequest):
     """Add a URL to the knowledge base via DocumentService."""
     try:
@@ -65,7 +66,7 @@ async def list_documents():
     docs = await service.list_documents()
     return {"success": True, "documents": docs}
 
-@router.post("/documents/reingest")
+@router.post("/documents/reingest", dependencies=[Depends(require_write_access)])
 async def reingest_documents():
     """Re-process all documents in the knowledge base."""
     try:
@@ -76,7 +77,7 @@ async def reingest_documents():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/documents/reset")
+@router.delete("/documents/reset", dependencies=[Depends(require_write_access)])
 async def reset_knowledge_base():
     """Reset (clear) the entire knowledge base."""
     try:
@@ -87,7 +88,7 @@ async def reset_knowledge_base():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/documents/{document_id}")
+@router.delete("/documents/{document_id}", dependencies=[Depends(require_write_access)])
 async def delete_document(document_id: str):
     """Delete a specific document."""
     try:
@@ -297,7 +298,7 @@ async def get_gold_page_regions(filename: str, page: int):
     return data
 
 
-@router.post("/documents/{document_id}/pipeline")
+@router.post("/documents/{document_id}/pipeline", dependencies=[Depends(require_write_access)])
 async def run_document_pipeline(
     document_id: str,
     polish: bool = True,
@@ -322,7 +323,7 @@ async def run_document_pipeline(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/documents/pipeline/all")
+@router.post("/documents/pipeline/all", dependencies=[Depends(require_write_access)])
 async def run_pipeline_all(
     polish: bool = True,
     regions: bool = True,
@@ -384,7 +385,7 @@ async def get_document_index(filename: str):
 async def get_region_asset(slug: str, asset: str):
     """Serve a gold region crop file (SVG or PNG).
 
-    ``slug`` is the document slug (e.g. ``alfa-laval-lkh-centrifugal-pump``).
+    ``slug`` is the document slug (e.g. ``sample-pump-datasheet``).
     ``asset`` is the page-relative path (e.g. ``1/r5.svg``).
     """
     from fastapi.responses import FileResponse

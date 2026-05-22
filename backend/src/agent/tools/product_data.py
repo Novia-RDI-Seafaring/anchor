@@ -211,7 +211,7 @@ async def get_product_data(
     and more complete than reading individual pages.
 
     Args:
-        filename: The document filename (e.g. "alfa-laval-lkh-centrifugal-pump---product-leaflet---ese00263.pdf").
+        filename: The document filename (e.g. "sample-pump-datasheet.pdf").
                   This is the filename shown in the document list.
     """
     data = _find_by_filename(filename)

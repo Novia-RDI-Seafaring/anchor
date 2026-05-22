@@ -1,10 +1,11 @@
 """Conversation persistence API."""
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel
 
 from ..knowledge_base.conversation_store import get_conversation_store
+from .security import require_write_access
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
@@ -26,7 +27,7 @@ async def list_conversations(x_user_id: str = Header(default="")):
     return await store.list_conversations(user_id=x_user_id)
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_write_access)])
 async def create_conversation(req: CreateConversationRequest, x_user_id: str = Header(default="")):
     store = await get_conversation_store()
     return await store.create_conversation(req.id, req.title, user_id=x_user_id)
@@ -41,7 +42,7 @@ async def get_conversation(conversation_id: str, x_user_id: str = Header(default
     return conv
 
 
-@router.put("/{conversation_id}")
+@router.put("/{conversation_id}", dependencies=[Depends(require_write_access)])
 async def update_conversation(conversation_id: str, req: UpdateConversationRequest, x_user_id: str = Header(default="")):
     store = await get_conversation_store()
     result = await store.update_conversation(
@@ -56,7 +57,7 @@ async def update_conversation(conversation_id: str, req: UpdateConversationReque
     return result
 
 
-@router.delete("/{conversation_id}")
+@router.delete("/{conversation_id}", dependencies=[Depends(require_write_access)])
 async def delete_conversation(conversation_id: str, x_user_id: str = Header(default="")):
     store = await get_conversation_store()
     deleted = await store.delete_conversation(conversation_id, user_id=x_user_id)

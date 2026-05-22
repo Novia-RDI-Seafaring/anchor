@@ -25,10 +25,10 @@ def test_find_items_by_text_case_insensitive():
 
 def test_find_items_by_text_page_scoped():
     docling: dict[str, Any] = {"items": [
-        {"label": "text", "page": 1, "bbox": [0, 0, 1, 1], "text": "LKH-5"},
-        {"label": "text", "page": 2, "bbox": [0, 0, 1, 1], "text": "LKH-5"},
+        {"label": "text", "page": 1, "bbox": [0, 0, 1, 1], "text": "PUMP-5"},
+        {"label": "text", "page": 2, "bbox": [0, 0, 1, 1], "text": "PUMP-5"},
     ]}
-    out = find_items_by_text(docling, "LKH-5", page=2)
+    out = find_items_by_text(docling, "PUMP-5", page=2)
     assert len(out) == 1
     assert out[0]["page"] == 2
 

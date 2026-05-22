@@ -27,7 +27,7 @@ from src.agent.deps import AgentDeps
 from src.agent.state import Canvas, CanvasNode
 
 
-DEFAULT_SUITE = ROOT / "evals" / "fixtures" / "lkh_canvas_facts.json"
+DEFAULT_SUITE = ROOT / "evals" / "fixtures" / "sample_canvas_facts.json"
 
 
 @dataclass(frozen=True)

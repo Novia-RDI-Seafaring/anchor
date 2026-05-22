@@ -5,10 +5,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, List
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel
 
 from ..core.config import get_settings
+from .security import require_write_access
 
 router = APIRouter(prefix="/api/snippets", tags=["snippets"])
 
@@ -53,7 +54,7 @@ async def list_snippets(x_user_id: str = Header(default="")):
     return [s for s in snippets if s.get("user_id", "") == x_user_id]
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(require_write_access)])
 async def create_snippet(req: CreateSnippetRequest, x_user_id: str = Header(default="")):
     now = datetime.now(timezone.utc).isoformat()
     entry = {
@@ -72,7 +73,7 @@ async def create_snippet(req: CreateSnippetRequest, x_user_id: str = Header(defa
     return {"id": entry["id"], "name": entry["name"], "created_at": entry["created_at"]}
 
 
-@router.delete("/{snippet_id}")
+@router.delete("/{snippet_id}", dependencies=[Depends(require_write_access)])
 async def delete_snippet(snippet_id: str, x_user_id: str = Header(default="")):
     with _lock:
         snippets = _load()

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { FileText, Cpu, Layers, CheckCircle2, Trash2, X } from "lucide-react";
 import { useApp, type KBDocument } from "@/contexts/AppContext";
 import { useSession } from "next-auth/react";
-import { API_URL } from "@/lib/api-config";
+import { API_URL, writeApiHeaders } from "@/lib/api-config";
 
 export type PaletteTab = "docs" | "fmus" | "snippets";
 
@@ -84,7 +84,7 @@ export function ResourcePalette({
   const deleteSnippet = useCallback(
     async (id: string, e: React.MouseEvent) => {
       e.stopPropagation();
-      await fetch(`${API_URL}/api/snippets/${id}`, { method: "DELETE", headers: userHeaders }).catch(() => {});
+      await fetch(`${API_URL}/api/snippets/${id}`, { method: "DELETE", headers: writeApiHeaders(userHeaders) }).catch(() => {});
       setSnippets((prev) => prev.filter((s) => s.id !== id));
     },
     [userHeaders],

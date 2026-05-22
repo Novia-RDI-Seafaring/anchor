@@ -36,7 +36,7 @@ import { PDFModal, type PDFHighlight } from "@/components/canvas/PDFModal";
 import { ResourcePalette, type PaletteTab } from "@/components/canvas/ResourcePalette";
 import { AgSelect } from "@/components/ui/AgComponents";
 import { useApp } from "@/contexts/AppContext";
-import { API_URL } from "@/lib/api-config";
+import { API_URL, writeApiHeaders } from "@/lib/api-config";
 import { collapseAssistantRepliesByTurn, toPersistableChatMessages } from "@/lib/chat-history";
 import { normalizeModelOptions } from "@/lib/models";
 import type { ModelOption } from "@/types";
@@ -343,7 +343,7 @@ function useWorkspaceV2Controller() {
       const snippetName = name || (nodes[0]?.title || nodes[0]?.text || "Snippet").slice(0, 40);
       const res = await fetch(`${API_URL}/api/snippets`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...userHeaders },
+        headers: writeApiHeaders({ "Content-Type": "application/json", ...userHeaders }),
         body: JSON.stringify({ id: crypto.randomUUID(), name: snippetName, nodes, relations }),
       }).catch(() => null);
       if (!res?.ok) console.error("[snippets] Save failed:", res?.status, res?.statusText);
@@ -1484,6 +1484,7 @@ function WorkspaceComposer({ onOpenActivity }: { onOpenActivity: () => void }) {
           formData.append("file", file);
           const res = await fetch(`${API_URL}/api/documents/upload`, {
             method: "POST",
+            headers: writeApiHeaders(),
             body: formData,
           });
           if (!res.ok) throw new Error("Upload failed");

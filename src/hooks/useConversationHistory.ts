@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { Conversation } from '@/types';
-import { API_URL } from '@/lib/api-config';
+import { API_URL, writeApiHeaders } from '@/lib/api-config';
 
 const CONVERSATIONS_URL = `${API_URL}/api/conversations`;
 
@@ -66,7 +66,7 @@ export const useConversationHistory = () => {
         try {
             const r = await fetch(CONVERSATIONS_URL, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', ...userHeaders },
+                headers: writeApiHeaders({ 'Content-Type': 'application/json', ...userHeaders }),
                 body: JSON.stringify({ id, title }),
             });
             if (!r.ok) return null;
@@ -133,7 +133,7 @@ export const useConversationHistory = () => {
             }
             return next;
         });
-        fetch(`${CONVERSATIONS_URL}/${id}`, { method: 'DELETE', headers: userHeaders }).catch(() => {});
+        fetch(`${CONVERSATIONS_URL}/${id}`, { method: 'DELETE', headers: writeApiHeaders(userHeaders) }).catch(() => {});
     }, [activeId]);
 
     const updateConversation = useCallback((id: string, updates: Partial<Conversation>) => {
@@ -153,7 +153,7 @@ export const useConversationHistory = () => {
             try {
                 let response = await fetch(`${CONVERSATIONS_URL}/${id}`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json', ...userHeaders },
+                    headers: writeApiHeaders({ 'Content-Type': 'application/json', ...userHeaders }),
                     body: JSON.stringify(body),
                 });
 
@@ -165,7 +165,7 @@ export const useConversationHistory = () => {
 
                     response = await fetch(`${CONVERSATIONS_URL}/${id}`, {
                         method: 'PUT',
-                        headers: { 'Content-Type': 'application/json', ...userHeaders },
+                        headers: writeApiHeaders({ 'Content-Type': 'application/json', ...userHeaders }),
                         body: JSON.stringify(body),
                     });
                 }

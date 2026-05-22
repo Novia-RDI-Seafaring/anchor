@@ -38,7 +38,7 @@ Rules:
 - Tables: use GitHub-flavored markdown tables. Group related columns logically;
   if the page has a 4-column block that is really two 2-column spec cards
   side-by-side (e.g. 50 Hz | 60 Hz), render them as TWO separate tables with
-  `### LKH-X, 50 Hz` / `### LKH-X, 60 Hz` headings, NOT one wide table.
+  `### SP-X, 50 Hz` / `### SP-X, 60 Hz` headings, NOT one wide table.
 - Charts and figures: do NOT try to transcribe axis ticks. Instead emit a
   short structured block:
       ### Figure: <what it is>
@@ -140,7 +140,7 @@ For each region return an object with:
               items that make up the region — do NOT guess pixels.
   - tags:     zero or more short lowercase keywords
   - entities: zero or more product/model identifiers present in the region
-              (e.g. ["LKH-5", "LKH-10"]) — empty list if none.
+              (e.g. ["SP-5", "SP-10"]) — empty list if none.
 
 Return ONLY a JSON object of the form:
   { "regions": [ {...}, {...} ] }

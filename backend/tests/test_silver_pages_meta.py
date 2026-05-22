@@ -1,12 +1,7 @@
 """Tests for silver.build_pages_meta."""
-import json
-from pathlib import Path
 from typing import Any
 
 from src.ingestion.silver import build_pages_meta
-
-SILVER = Path(__file__).resolve().parents[1] / "data" / "silver"
-
 
 def test_empty():
     out = build_pages_meta({"items": []})
@@ -41,13 +36,3 @@ def test_bbox_union_bottomleft_orientation():
     union = out["pages"]["1"]["bbox_union"]
     # left=min, top=max (BOTTOMLEFT), right=max, bottom=min
     assert union == [5, 200, 80, 100]
-
-
-def test_alfa_laval_real_doc():
-    docling = json.loads((SILVER / "alfa-laval-lkh-centrifugal-pump" / "docling.json").read_text())
-    meta = build_pages_meta(docling)
-    assert meta["page_count"] == 4
-    for p in ["1", "2", "3", "4"]:
-        assert p in meta["pages"]
-        assert meta["pages"][p]["item_count"] > 0
-        assert len(meta["pages"][p]["bbox_union"]) == 4

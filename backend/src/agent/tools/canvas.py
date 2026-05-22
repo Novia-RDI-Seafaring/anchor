@@ -487,11 +487,11 @@ async def add_spec_node(
 ) -> ToolReturn:
     """Add a parameter table node to the canvas.
 
-    spec_title: title shown at the top (e.g. "LKH-5 Operating Data").
+    spec_title: title shown at the top (e.g. "SP-5 Operating Data").
     sections: list of parameter groups. Each section has:
       - name: section header (e.g. "Max inlet pressure", "Temperature")
       - rows: list of parameter rows, each with:
-          - parameter: label (e.g. "LKH-5", "Temperature range")
+          - parameter: label (e.g. "SP-5", "Temperature range")
           - value: the value (e.g. "600", "-10 to +140")
           - unit: optional unit (e.g. "kPa", "°C")
           - source: { doc_id, filename, page } — where this value was found

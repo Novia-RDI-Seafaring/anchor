@@ -54,6 +54,12 @@ const getApiUrl = (): string => {
 // Validate and export URL (throws if invalid)
 export const API_URL = getApiUrl();
 
+export const writeApiHeaders = (headers: Record<string, string> = {}): Record<string, string> => {
+    const writeKey = process.env.NEXT_PUBLIC_ANCHOR_WRITE_KEY;
+    if (!writeKey) return headers;
+    return { ...headers, 'X-Anchor-Write-Key': writeKey };
+};
+
 // Log configuration in development
 if (process.env.NODE_ENV === 'development') {
     console.log(`API URL: ${API_URL}`);

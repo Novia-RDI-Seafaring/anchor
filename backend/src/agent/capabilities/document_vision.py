@@ -69,23 +69,23 @@ Document vision tools:
       For pump performance charts or NPSH curves, you can use get_pump_curve_reference()
       first if you need help interpreting curve elements.
       bbox: optional [left, top, right, bottom] crop in PDF coordinates (BOTTOMLEFT).
-      highlights: text phrases to underline on the rendered image (e.g. ["LKH-5", "600 kPa"]).
+      highlights: text phrases to underline on the rendered image (e.g. ["SP-5", "600 kPa"]).
       Call this before add_page_image_to_canvas when you want to understand the content first.
       You can call it for multiple pages in sequence.
 
   add_page_image_to_canvas(filename, page_no, title, bbox, highlights, parent_node_id)
       Place a PDF page screenshot as an image node on the canvas.
       Always use for: performance charts, flow curves, dimension drawings, visual data tables.
-      highlights: list of text phrases to underline on the image (e.g. ["LKH-5", "L = LKH-5"]).
+      highlights: list of text phrases to underline on the image (e.g. ["SP-5", "L = SP-5"]).
                   Always pass the relevant variant code and key values so the engineer sees what matters.
       parent_node_id: ALWAYS connect to the relevant topic node.
 
-Variant/model-specific queries (e.g. "facts about LKH-5", "specs for model X"):
+Variant/model-specific queries (e.g. "facts about SP-5", "specs for model X"):
   When the query targets a specific product variant or model code:
   1. Call get_document_full_text with include_pages covering all data table and chart pages.
      Read the full text and all page images to extract every relevant value for that variant.
   2. Build a complete knowledge graph:
-     - One concept node for the variant (e.g. "Alfa Laval LKH-5")
+     - One concept node for the variant (e.g. "Sample Pump SP-5")
      - Topic nodes: Overview, Operating Limits, Dimensions, Motor, Connections, Performance
      - Spec nodes under each topic with the variant's actual values extracted from tables
      - Image nodes for every chart/diagram/table page — with highlights pointing to the variant's row/curve

@@ -107,17 +107,17 @@ structural:  introduction, benefits, application, ordering, warranty, options
 content:     narrative, property_group, table_2d, figure, cross_ref
 semantic:    per_model_specs, operating_limits, materials, dimensions,
              connections, motor_specs, performance_curve, safety
-entity:      mentions:lkh-5, mentions:lkh-10, …, mentions:iec80, …
+entity:      mentions:pump-5, mentions:pump-10, …, mentions:iec80, …
 ```
 
 `entity:` tags make cross-doc queries trivial ("every section tagged
-`mentions:lkh-25`"). Closed vocab is enforced in the Pydantic schema —
+`mentions:pump-25`"). Closed vocab is enforced in the Pydantic schema —
 if the LLM emits a new tag, validation fails and we review.
 
 ## Two representations per page
 
 Doing the exercise of "produce markdown and JSON for this page" on pages 2
-and 3 of the Alfa Laval LKH leaflet exposed a sharp split:
+and 3 of a sample pump leaflet exposed a sharp split:
 
 - **Page 2** (all property groups) — markdown is clean and more useful than
   JSON. `Materials`, `Motor sizes`, `Max inlet pressure` etc. are all
@@ -155,7 +155,7 @@ class Table(BaseModel):
     title: str
     description: str | None = None
     row_header: str
-    columns: list[str | TableColumn]  # list[str] simple, list[TableColumn] grouped
+    columns: list[str | TableColumn]  # list[str] scalar, list[TableColumn] grouped
     rows: list[TableRow]
     notes: dict[str, str] = {}        # footnote index -> text
 
@@ -179,15 +179,15 @@ class PageContent(BaseModel):
   pairs styled as tables. Keep `properties` and `tables` as separate first-class
   block types, not one reduced to the other.
 - **Grouped columns expand.** The Connections table groups models
-  (`LKH-10 / 20 / 35`) into shared columns. Gold expands `row.values` to key on
+  (`SP-10 / 20 / 35`) into shared columns. Gold expands `row.values` to key on
   individual models so lookup is direct, and preserves the group in `columns`
-  so the grouping is still legible. Some redundancy, much simpler queries.
+  so the grouping is still legible. The duplicated keys make queries direct.
 - **Composite row keys flattened.** `Clamp ISO 2037 — M1` rather than
   `{Clamp ISO 2037: {M1: ...}}`. Rows become independently addressable with no
   traversal logic.
 - **Transpose freely.** The PDF lays out "Motor overview" as 13 cols × 1 row;
   gold transposes to 13 rows × 1 col because queries are keyed on pump model.
-  The extractor is allowed to choose the orientation that makes lookup easy.
+  The extractor can choose the orientation that gives direct lookup keys.
 - **Figures can be load-bearing.** Without the diagram caption on p3, all the
   dimension-letter keys are meaningless. VLM-generated descriptions are not
   decoration — they're content.
@@ -208,7 +208,7 @@ labelled diagram. Each region has:
   understand the region without seeing it)
 - optional `markdown` (when the content is renderable as text)
 - optional `data` (structured payload — chart series, spec props, table)
-- closed-vocab `tags` and `entities` (`mentions:lkh-5`, `50hz`, `h-q-curve`)
+- closed-vocab `tags` and `entities` (`mentions:pump-5`, `50hz`, `h-q-curve`)
 - one or more crops: PNG always, SVG/mini-PDF when the source is vector
 - a back-link to silver page + bbox
 
@@ -224,7 +224,7 @@ gold/<slug>/
 ├── pages/
 │   ├── 1.regions.json           # list[Region]
 │   ├── 1/                       # cropped assets, region id = filename stem
-│   │   ├── r1-spec-lkh5-50hz.png
+│   │   ├── r1-spec-pump5-50hz.png
 │   │   ├── r2-curve-h-q-50hz.svg
 │   │   └── …
 │   └── 2.regions.json
@@ -249,7 +249,7 @@ class Region(BaseModel):
     markdown: str | None = None
     data: dict | None = None
     tags: list[str] = []              # closed vocab
-    entities: list[str] = []          # ["mentions:lkh-5", ...]
+    entities: list[str] = []          # ["mentions:pump-5", ...]
     crops: RegionCrop
     source_refs: list[SourceRef] = [] # docling items the region absorbed
 ```
@@ -266,7 +266,7 @@ class Region(BaseModel):
    - convert pixel bbox → PDF coords using the page render scale
    - **snap** the box to docling items: any docling item whose bbox center
      falls inside the VLM box is absorbed; the final region bbox is the
-     union of those items. Robust to VLM coordinate noise — the model only
+     union of those items. This tolerates VLM coordinate noise; the model only
      has to point at the right neighborhood.
    - **crop**:
      - PNG: PyMuPDF `page.get_pixmap(clip=rect, dpi=200)`
@@ -294,7 +294,7 @@ fuzzy text match, copying the bbox across.
 
 Why: frontier models are unreliable at coordinates, and we already have all
 the bboxes. Splitting the task cleanly — *LLM does semantics, docling does
-coordinates, we glue them* — is much more robust than asking the model to do
+coordinates, we join them* — is less error-prone than asking the model to do
 both.
 
 ## Relation to docling's hierarchical chunker
@@ -356,7 +356,7 @@ section doesn't touch the rest of the gold tree.
   every document on the canvas when gold is unavailable
 - ⏳ **Silver `pages/N.md`** — not yet built
 - ⏳ **Silver `pages.meta.json`** — not yet built
-- ⏳ **Gold `sections/*.md` + `document.json`** — alfa-laval hand-crafted today;
+- ⏳ **Gold `sections/*.md` + `document.json`** — sample document hand-crafted today;
   extractor not written
 - ⏳ **Closed-vocab tag system** — not yet defined in code
 - ⏳ **Bbox backfill pass** — source refs exist per table row in curated gold

@@ -3,11 +3,11 @@
 Built deterministically from gold region files. No LLM needed.
 
 The graph connects:
-    - Entities (product models like LKH-5, LKH-10) → regions that mention them
+    - Entities (product models like SP-5, SP-10) -> regions that mention them
     - Topics (inferred from region kind + title) → regions about that topic
     - Documents → their regions
 
-This enables queries like "everything about LKH-5" or "all performance curves"
+This enables queries like "everything about SP-5" or "all performance curves"
 across all documents.
 """
 from __future__ import annotations

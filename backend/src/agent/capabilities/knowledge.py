@@ -137,7 +137,7 @@ High-level tools (prefer these):
         decompose it into several separate facts or subtopics unless the user asked for analysis.
 
       Multi-variant data (e.g. motor options, model variants):
-        When the source lists multiple distinct variants (IEC80/IEC90, LKH-5/LKH-10, etc.),
+        When the source lists multiple distinct variants (IEC80/IEC90, SP-5/SP-10, etc.),
         call resolve_technical_query ONCE PER VARIANT with the same concept_id and a
         variant-specific root_title (e.g. "Motor — IEC80", "Motor — IEC90").
         Each call produces a separate spec node, making variants easy to compare.

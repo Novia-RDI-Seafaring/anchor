@@ -800,7 +800,7 @@ async def resolve_simple_query(
     per product that grows with each simple question. When the user has asked 5+ properties,
     the response signals it's time to reorganize.
 
-    product_name: the product/subject being asked about (e.g. "Alfa Laval LKH 10")
+    product_name: the product/subject being asked about (e.g. "Sample Pump SP-10")
     property_key: the specific property being requested (e.g. "Max Inlet Pressure")
     """
     from src.knowledge_base.service import get_document_service

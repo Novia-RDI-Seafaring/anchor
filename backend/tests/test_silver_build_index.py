@@ -32,13 +32,13 @@ def test_missing_items_key_is_safe():
 
 def test_outline_picks_up_section_headers_and_titles():
     docling = {"items": [
-        _item("title", 1, "LKH Pump"),
+        _item("title", 1, "Sample Pump"),
         _item("section_header", 2, "Technical data"),
         _item("section_header", 2, "Max inlet pressure"),
     ]}
     out = build_index(docling, filename="x.pdf")
     titles = [o["title"] for o in out["outline"]]
-    assert titles == ["LKH Pump", "Technical data", "Max inlet pressure"]
+    assert titles == ["Sample Pump", "Technical data", "Max inlet pressure"]
     assert out["outline"][0]["level"] == 1
 
 
@@ -66,9 +66,9 @@ def test_table_summarized_with_header_and_first_column():
     cells = [
         {"row": 0, "col": 0, "text": "Model"},
         {"row": 0, "col": 1, "text": "kPa"},
-        {"row": 1, "col": 0, "text": "LKH-5"},
+        {"row": 1, "col": 0, "text": "PUMP-5"},
         {"row": 1, "col": 1, "text": "400"},
-        {"row": 2, "col": 0, "text": "LKH-10"},
+        {"row": 2, "col": 0, "text": "PUMP-10"},
         {"row": 2, "col": 1, "text": "500"},
     ]
     docling = {"items": [
@@ -82,7 +82,7 @@ def test_table_summarized_with_header_and_first_column():
     assert t["page"] == 2
     assert t["caption"] == "Max inlet pressure"
     assert t["header_row"] == ["Model", "kPa"]
-    assert t["first_column_values"] == ["LKH-5", "LKH-10"]
+    assert t["first_column_values"] == ["PUMP-5", "PUMP-10"]
     assert t["shape"] == {"rows": 3, "cols": 2}
 
 

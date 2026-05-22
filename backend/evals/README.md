@@ -16,7 +16,7 @@ Run with another fixture:
 uv run python evals/eval_agent_canvas_scalar.py --suite evals/fixtures/my_document.json
 ```
 
-The default fixture is `evals/fixtures/lkh_canvas_facts.json`.
+The default fixture is `evals/fixtures/sample_canvas_facts.json`.
 
 ## Checks
 

@@ -122,7 +122,7 @@ def _summarize_table_cells(cells: Any) -> tuple[list[str], list[str], dict[str, 
 
     - header_row: text of row-0 cells in column order (deduped of blanks).
     - first_column_values: text of col-0 cells in row order, excluding row 0
-      (the header). Useful so the agent sees 'this table lists LKH-5, LKH-10, ...'
+      (the header). Useful so the agent sees 'this table lists SP-5, SP-10, ...'
       without having to open the table.
     - shape: {"rows": int, "cols": int}
     """

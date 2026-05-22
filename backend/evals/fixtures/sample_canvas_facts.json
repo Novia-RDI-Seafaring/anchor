@@ -1,0 +1,15 @@
+{
+  "document": {
+    "id": "eval-sample",
+    "filename": "Sample Pump Datasheet.pdf"
+  },
+  "cases": [
+    {
+      "name": "max inlet pressure",
+      "prompt": "what is the max inlet pressure for SP 10?",
+      "expected_node_type": "fact",
+      "expected_terms": ["10", "bar"],
+      "expected_page": 1
+    }
+  ]
+}

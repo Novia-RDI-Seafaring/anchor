@@ -30,7 +30,7 @@ def test_unknown_tag_rejected():
 
 
 def test_entity_tag_accepted_with_payload():
-    assert is_known_tag("mentions:lkh-5")
+    assert is_known_tag("mentions:pump-5")
     assert is_known_tag("mentions:iec80")
 
 
@@ -39,16 +39,16 @@ def test_bare_entity_prefix_rejected():
 
 
 def test_validate_tags_returns_offending():
-    bad = validate_tags(["introduction", "made-up", "mentions:lkh-5", "also-bad"])
+    bad = validate_tags(["introduction", "made-up", "mentions:pump-5", "also-bad"])
     assert bad == ["made-up", "also-bad"]
 
 
 def test_validate_tags_all_valid():
-    assert validate_tags(["introduction", "chart", "mentions:lkh-90"]) == []
+    assert validate_tags(["introduction", "chart", "mentions:pump-90"]) == []
 
 
 def test_entity_tag_helper():
-    assert entity_tag("LKH-5") == "mentions:lkh-5"
+    assert entity_tag("PUMP-5") == "mentions:pump-5"
     assert entity_tag("  IEC80  ") == "mentions:iec80"
 
 
@@ -75,7 +75,7 @@ def test_pydantic_region_accepts_known_tags():
     r = Region(
         id="x", page=1, bbox=[0, 0, 1, 1], kind="chart",
         title="t", description="d",
-        tags=["chart", "performance_curve", "mentions:lkh-5"],
+        tags=["chart", "performance_curve", "mentions:pump-5"],
         crops=RegionCrop(png="x.png"),
     )
     assert "chart" in r.tags
