@@ -1,6 +1,7 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
+import { resolveColors } from "@/canvas/colors";
 import { Pictogram } from "@/canvas/icons";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
@@ -34,9 +35,12 @@ export function FunnelNode({ id, data, selected }: NodeProps) {
     dashed?: boolean;
     width?: number;
     height?: number;
+    bg_color?: string;
+    stroke_color?: string;
   };
   const label = d.label ?? "";
   const opacityClass = d.dashed ? "opacity-70" : "";
+  const { bg, stroke } = resolveColors(d);
   const { id: workspaceSlug } = useParams<{ id: string }>();
   const rename = useInlineField({
     workspaceSlug: workspaceSlug ?? "",
@@ -69,12 +73,14 @@ export function FunnelNode({ id, data, selected }: NodeProps) {
         {...resizeHandlers}
       />
       <Handle type="target" position={Position.Left} />
-      {/* Fill: a clipped div carries the white background + any flat fill
-          tweaks future iterations want. */}
+      {/* Fill: a clipped div carries the background (default white). The
+          inline `background` is what the Style picker tints; the class is
+          intentionally bare-of-color so the inline value wins. */}
       <div
-        className="absolute inset-0 bg-white"
+        className="absolute inset-0"
         style={{
           clipPath: "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)",
+          background: bg === "transparent" ? "#ffffff" : bg,
         }}
         aria-hidden
       />
@@ -91,7 +97,10 @@ export function FunnelNode({ id, data, selected }: NodeProps) {
         <polygon
           points="50,0 100,50 50,100 0,50"
           fill="none"
-          stroke="rgb(115 115 115)"
+          // Stroke colour is threaded from resolveColors so the Style picker
+          // can tint the diamond's outline. Defaults to neutral-500 via
+          // DEFAULT_STROKE.
+          stroke={stroke}
           strokeWidth="2"
           strokeDasharray={strokeDash}
           vectorEffect="non-scaling-stroke"
@@ -103,9 +112,11 @@ export function FunnelNode({ id, data, selected }: NodeProps) {
           width keeps wrapped text clear of the clipped corners. */}
       <div
         className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-center text-xs font-medium leading-tight"
-        style={{ padding: "0 15%" }}
+        style={{ padding: "0 15%", color: stroke }}
       >
-        {d.pictogram ? <Pictogram name={d.pictogram} className="text-neutral-700" /> : null}
+        {/* Pictogram inherits `color` from this container so the Style
+            picker's stroke colour drives the glyph too. */}
+        {d.pictogram ? <Pictogram name={d.pictogram} /> : null}
         {rename.editing ? (
           <input
             {...rename.inputProps}

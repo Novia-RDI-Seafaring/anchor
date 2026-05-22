@@ -1,6 +1,7 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
+import { resolveColors } from "@/canvas/colors";
 import { Pictogram } from "@/canvas/icons";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
@@ -19,10 +20,13 @@ export function FactNode({ id, data, selected }: NodeProps) {
     dashed?: boolean;
     width?: number;
     height?: number;
+    bg_color?: string;
+    stroke_color?: string;
   };
   const label = d.label ?? "";
   const borderStyle = d.dashed ? "border-dashed" : "border-solid";
   const opacityClass = d.dashed ? "opacity-70" : "";
+  const { bg, stroke } = resolveColors(d);
   const { id: workspaceSlug } = useParams<{ id: string }>();
   const rename = useInlineField({
     workspaceSlug: workspaceSlug ?? "",
@@ -39,8 +43,13 @@ export function FactNode({ id, data, selected }: NodeProps) {
   const wrapCursor = selected ? "cursor-move" : "cursor-pointer";
   return (
     <div
-      className={`relative rounded-lg border ${borderStyle} border-neutral-400 bg-white px-3 py-2 text-sm shadow-sm ${opacityClass} ${wrapCursor}`}
-      style={liveW && liveH ? { width: liveW, height: liveH } : { maxWidth: "20rem" }}
+      className={`relative rounded-lg border ${borderStyle} px-3 py-2 text-sm shadow-sm ${opacityClass} ${wrapCursor}`}
+      style={{
+        ...(liveW && liveH ? { width: liveW, height: liveH } : { maxWidth: "20rem" }),
+        background: bg,
+        borderColor: stroke,
+        color: stroke,
+      }}
     >
       <NodeResizer
         isVisible={selected ?? false}
@@ -50,8 +59,12 @@ export function FactNode({ id, data, selected }: NodeProps) {
         {...resizeHandlers}
       />
       <Handle type="target" position={Position.Left} />
+      {/* Display label / body / pictogram inherit `color` from the wrapper
+          (resolveColors → stroke). The edit-mode <input> keeps the
+          original styling — recolouring an active text editor would be
+          jarring. */}
       <div className="flex items-start gap-2">
-        {d.pictogram ? <Pictogram name={d.pictogram} className="text-neutral-700 shrink-0 mt-0.5" /> : null}
+        {d.pictogram ? <Pictogram name={d.pictogram} className="shrink-0 mt-0.5" /> : null}
         <div className="min-w-0">
           {rename.editing ? (
             <input
@@ -61,17 +74,17 @@ export function FactNode({ id, data, selected }: NodeProps) {
             />
           ) : (
             <div
-              className={`text-[11px] font-semibold uppercase tracking-wide text-neutral-600 ${selected ? "cursor-text" : "cursor-pointer"}`}
+              className={`text-[11px] font-semibold uppercase tracking-wide ${selected ? "cursor-text" : "cursor-pointer"}`}
               onDoubleClick={(e) => {
                 e.stopPropagation();
                 rename.beginEdit();
               }}
               title={selected ? "double-click to rename" : undefined}
             >
-              {label || <span className="font-normal italic tracking-normal text-neutral-400">untitled</span>}
+              {label || <span className="font-normal italic tracking-normal opacity-50">untitled</span>}
             </div>
           )}
-          {d.text ? <div className="mt-1 text-neutral-800">{d.text}</div> : null}
+          {d.text ? <div className="mt-1">{d.text}</div> : null}
         </div>
       </div>
       <Handle type="source" position={Position.Right} />

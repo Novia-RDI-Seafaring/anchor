@@ -35,6 +35,7 @@ import {
   Eye,
   MoreVertical,
   Move3d,
+  Palette,
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -51,6 +52,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
+
+import { StylePicker } from "./StylePicker";
 
 type Props = {
   workspaceSlug: string;
@@ -74,6 +77,12 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
   // the bounding box matches the actual rendered geometry.
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
+
+  // Style picker overlay — opened from ⋮ More → Style…
+  const [styleOpen, setStyleOpen] = useState(false);
+  // Close the picker any time the selection changes — otherwise it would
+  // float over a stale set of node ids.
+  useEffect(() => { setStyleOpen(false); }, [selectedNodeIds.join(",")]);
 
   // For "Organize ▾": only show when at least one selected node has an
   // edge touching it (mirrors OrganizeEditor's `hasChildren`). The
@@ -390,6 +399,20 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
             }}>
               Edit properties…
             </DropdownMenuItem>
+            {/* Style picker — opens a small floating panel anchored at the
+                toolbar (single source of truth across the right-click menu
+                and the toolbar's overflow). */}
+            <DropdownMenuItem
+              onSelect={(e) => {
+                // Don't close the dropdown via Radix's default — we want the
+                // dropdown to dismiss but our local picker to open underneath.
+                e.preventDefault();
+                setStyleOpen(true);
+              }}
+            >
+              <Palette className="mr-1.5 size-3.5" />
+              Style…
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem disabled>
               Bring to front (coming soon)
@@ -406,6 +429,23 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
           className="mt-1 select-none rounded bg-neutral-900/80 px-1.5 py-0.5 text-center text-[10px] text-white shadow"
         >
           right-click for more
+        </div>
+      ) : null}
+      {styleOpen ? (
+        <div
+          className="absolute right-0 top-full mt-1"
+          // Same stopPropagation rationale as the parent toolbar — without
+          // it the click that picks a swatch lands on the canvas pane and
+          // deselects everything, killing the picker mid-action.
+          onMouseDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <StylePicker
+            workspaceSlug={workspaceSlug}
+            nodeIds={selectedNodeIds}
+            getNodeData={(nid) => nodes[nid]?.data}
+            onClose={() => setStyleOpen(false)}
+          />
         </div>
       ) : null}
     </div>

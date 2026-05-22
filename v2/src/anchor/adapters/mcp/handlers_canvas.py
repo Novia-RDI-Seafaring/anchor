@@ -93,7 +93,16 @@ def tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "canvas_update_node",
-            "description": "Patch a node's fields.",
+            "description": (
+                "Patch a node's fields. The `data` field REPLACES the whole "
+                "data dict — to add or change a single key (e.g. colour), read "
+                "the current node first and pass the merged dict back. Shape / "
+                "card primitives honour `data.bg_color` and `data.stroke_color` "
+                "(CSS colour strings, e.g. `#fef3c7`, `rgb(...)`); these tint "
+                "the background and the border + label colour respectively. "
+                "Producer primitives (spec / document / model3d / cad / sysml / "
+                "fmu) ignore these fields — they ship their own style language."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {

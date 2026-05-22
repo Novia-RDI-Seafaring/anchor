@@ -35,13 +35,17 @@ import {
   AlignStartHorizontal,
   AlignStartVertical,
   ChevronRight,
+  Palette,
   Trash2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { canvases } from "@/api/canvases";
 import { cn } from "@/lib/cn";
+import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
+
+import { StylePicker } from "./StylePicker";
 
 export type ContextMenuTarget = {
   /** Screen coordinates of the click. */
@@ -66,6 +70,11 @@ type Props = {
 export function NodeContextMenu({ workspaceSlug, target, onClose }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [organizeOpen, setOrganizeOpen] = useState(false);
+  const [styleOpen, setStyleOpen] = useState(false);
+  // Read canvas store for the StylePicker's `getNodeData` lookup. Hooks
+  // can't live conditionally, so we always subscribe even when the menu
+  // is closed.
+  const storeNodes = useCanvasStore((s) => s.nodes);
 
   useEffect(() => {
     if (!target) return;
@@ -190,6 +199,33 @@ export function NodeContextMenu({ workspaceSlug, target, onClose }: Props) {
           </div>
         ) : null}
       </div>
+      {/* Style submenu — fill + stroke pickers. Same picker is reused on the
+          mini-toolbar's ⋮ More overflow. Always enabled; on producer
+          primitives the colour fields are just ignored. */}
+      <div
+        className="relative"
+        onMouseEnter={() => setStyleOpen(true)}
+        onMouseLeave={() => setStyleOpen(false)}
+      >
+        <MenuItem
+          icon={<Palette className="size-3.5" />}
+          onClick={() => setStyleOpen((o) => !o)}
+          rightAdornment={<ChevronRight className="size-3" />}
+        >
+          Style
+        </MenuItem>
+        {styleOpen ? (
+          <div className="absolute left-full top-0 ml-1">
+            <StylePicker
+              workspaceSlug={workspaceSlug}
+              nodeIds={ids}
+              getNodeData={(nid) => storeNodes[nid]?.data}
+              onClose={onClose}
+            />
+          </div>
+        ) : null}
+      </div>
+      <Separator />
       <MenuItem
         icon={<Trash2 className="size-3.5" />}
         onClick={() => void remove()}

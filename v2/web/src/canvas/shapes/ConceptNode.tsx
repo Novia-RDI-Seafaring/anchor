@@ -1,6 +1,7 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
+import { resolveColors } from "@/canvas/colors";
 import { Pictogram } from "@/canvas/icons";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
@@ -20,10 +21,13 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
     subtitle?: string;
     width?: number;
     height?: number;
+    bg_color?: string;
+    stroke_color?: string;
   };
   const label = d.label ?? "";
   const borderStyle = d.dashed ? "border-dashed" : "border-solid";
   const opacityClass = d.dashed ? "opacity-70" : "";
+  const { bg, stroke } = resolveColors(d);
   const { id: workspaceSlug } = useParams<{ id: string }>();
   const rename = useInlineField({
     workspaceSlug: workspaceSlug ?? "",
@@ -45,8 +49,13 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
   const wrapCursor = selected ? "cursor-move" : "cursor-pointer";
   return (
     <div
-      className={`relative rounded-lg border ${borderStyle} border-neutral-400 bg-white px-3 py-2 text-sm shadow-sm ${opacityClass} ${wrapCursor}`}
-      style={liveW && liveH ? { width: liveW, height: liveH } : undefined}
+      className={`relative rounded-lg border ${borderStyle} px-3 py-2 text-sm shadow-sm ${opacityClass} ${wrapCursor}`}
+      style={{
+        ...(liveW && liveH ? { width: liveW, height: liveH } : {}),
+        background: bg,
+        borderColor: stroke,
+        color: stroke,
+      }}
     >
       <NodeResizer
         isVisible={selected ?? false}
@@ -56,8 +65,11 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
         {...resizeHandlers}
       />
       <Handle type="target" position={Position.Left} />
-      <div className="flex items-center gap-2 text-neutral-900">
-        {d.pictogram ? <Pictogram name={d.pictogram} className="text-neutral-700 shrink-0" /> : null}
+      {/* Label / pictogram inherit `color` from the wrapper above (resolveColors
+          → stroke). Removing the hardcoded `text-neutral-*` classes lets the
+          Style picker's stroke colour drive the text. */}
+      <div className="flex items-center gap-2">
+        {d.pictogram ? <Pictogram name={d.pictogram} className="shrink-0" /> : null}
         <div className="min-w-0">
           {rename.editing ? (
             <input

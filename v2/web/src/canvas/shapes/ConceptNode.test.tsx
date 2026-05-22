@@ -90,3 +90,56 @@ describe("ConceptNode selection gating", () => {
     expect(input).not.toBeNull();
   });
 });
+
+/**
+ * Style picker smoke — proves `data.bg_color` and `data.stroke_color`
+ * actually reach the rendered inline style. Catches the case where the
+ * resolveColors() call is dropped or the inline style override is removed
+ * by mistake.
+ */
+describe("ConceptNode Style picker", () => {
+  function renderWithColors(bg?: string, stroke?: string) {
+    return render(
+      <MemoryRouter initialEntries={["/canvas/w1"]}>
+        <Routes>
+          <Route
+            path="/canvas/:id"
+            element={
+              <ReactFlowProvider>
+                <ConceptNode
+                  {...({
+                    id: "n1",
+                    data: { label: "tint", bg_color: bg, stroke_color: stroke },
+                    selected: false,
+                    dragging: false,
+                    isConnectable: false,
+                    positionAbsoluteX: 0,
+                    positionAbsoluteY: 0,
+                    type: "concept",
+                    zIndex: 0,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  } as any)}
+                />
+              </ReactFlowProvider>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it("applies data.bg_color to the wrapper background", () => {
+    const { container } = renderWithColors("#fef3c7");
+    const wrapper = container.firstChild as HTMLElement;
+    // jsdom normalises hex to rgb when setting via inline style — assert
+    // the normalised form. #fef3c7 == rgb(254, 243, 199).
+    expect(wrapper.style.background).toBe("rgb(254, 243, 199)");
+  });
+
+  it("applies data.stroke_color to borderColor and color", () => {
+    const { container } = renderWithColors(undefined, "rgb(202, 138, 4)");
+    const wrapper = container.firstChild as HTMLElement;
+    expect(wrapper.style.borderColor).toBe("rgb(202, 138, 4)");
+    expect(wrapper.style.color).toBe("rgb(202, 138, 4)");
+  });
+});

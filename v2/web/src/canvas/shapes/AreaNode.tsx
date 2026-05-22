@@ -1,6 +1,7 @@
 import { NodeResizer, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
+import { DEFAULT_BG, DEFAULT_STROKE, resolveColors } from "@/canvas/colors";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
 
@@ -31,6 +32,8 @@ export function AreaNode({ id, data, selected }: NodeProps) {
     tone?: string;
     dashed?: boolean;
     subtitle?: string;
+    bg_color?: string;
+    stroke_color?: string;
   };
   const label = d.label ?? "";
   // Live-resize mirror — see ConceptNode for the rationale.
@@ -59,10 +62,24 @@ export function AreaNode({ id, data, selected }: NodeProps) {
     field: "label",
     canEdit: selected ?? false,
   });
+  // Style picker overrides: inline `style` always wins over the `tone`
+  // Tailwind classes. When the user hasn't picked anything we leave the
+  // tone classes to draw the colour (DEFAULT_BG / DEFAULT_STROKE are
+  // sentinel-only, applied via `inherit` to keep the original look).
+  const { bg, stroke } = resolveColors(d);
+  const styleOverride: React.CSSProperties = {
+    width: w,
+    height: h,
+  };
+  if (bg !== DEFAULT_BG) styleOverride.background = bg;
+  if (stroke !== DEFAULT_STROKE) {
+    styleOverride.borderColor = stroke;
+    styleOverride.color = stroke;
+  }
   return (
     <div
       className={`pointer-events-auto rounded-xl border-2 ${borderStyle} ${tone}`}
-      style={{ width: w, height: h }}
+      style={styleOverride}
     >
       <NodeResizer
         isVisible={selected ?? false}

@@ -1,6 +1,7 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
+import { resolveColors } from "@/canvas/colors";
 import { Pictogram } from "@/canvas/icons";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
@@ -18,10 +19,13 @@ export function EntityNode({ id, data, selected }: NodeProps) {
     dashed?: boolean;
     width?: number;
     height?: number;
+    bg_color?: string;
+    stroke_color?: string;
   };
   const label = d.label ?? "";
   const borderStyle = d.dashed ? "border-dashed" : "border-solid";
   const opacityClass = d.dashed ? "opacity-70" : "";
+  const { bg, stroke } = resolveColors(d);
   const { id: workspaceSlug } = useParams<{ id: string }>();
   const rename = useInlineField({
     workspaceSlug: workspaceSlug ?? "",
@@ -40,8 +44,14 @@ export function EntityNode({ id, data, selected }: NodeProps) {
   const wrapCursor = selected ? "cursor-move" : "cursor-pointer";
   return (
     <div
-      className={`relative flex flex-col items-center justify-center gap-1 rounded-full border-2 ${borderStyle} border-neutral-500 bg-white text-xs font-medium ${opacityClass} ${wrapCursor}`}
-      style={{ width: size, height: size }}
+      className={`relative flex flex-col items-center justify-center gap-1 rounded-full border-2 ${borderStyle} text-xs font-medium ${opacityClass} ${wrapCursor}`}
+      style={{
+        width: size,
+        height: size,
+        background: bg,
+        borderColor: stroke,
+        color: stroke,
+      }}
     >
       <NodeResizer
         isVisible={selected ?? false}
@@ -52,7 +62,9 @@ export function EntityNode({ id, data, selected }: NodeProps) {
         {...resizeHandlers}
       />
       <Handle type="target" position={Position.Left} />
-      {d.pictogram ? <Pictogram name={d.pictogram} className="text-neutral-700" /> : null}
+      {/* Pictogram inherits `color` from the wrapper — see ConceptNode for
+          the rationale. */}
+      {d.pictogram ? <Pictogram name={d.pictogram} /> : null}
       {rename.editing ? (
         <input
           {...rename.inputProps}

@@ -1,6 +1,7 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
+import { DEFAULT_BG, DEFAULT_STROKE, resolveColors } from "@/canvas/colors";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
 
@@ -20,7 +21,14 @@ import { useLiveResize } from "@/canvas/useLiveResize";
  * 8-handle NodeResizer appears on selection.
  */
 export function NoteNode({ id, data, selected }: NodeProps) {
-  const d = data as { label?: string; text?: string; width?: number; height?: number };
+  const d = data as {
+    label?: string;
+    text?: string;
+    width?: number;
+    height?: number;
+    bg_color?: string;
+    stroke_color?: string;
+  };
   const label = d.label ?? "";
   const text = d.text ?? "";
   const { id: workspaceSlug } = useParams<{ id: string }>();
@@ -45,10 +53,22 @@ export function NoteNode({ id, data, selected }: NodeProps) {
     d.height,
   );
   const wrapCursor = selected ? "cursor-move" : "cursor-pointer";
+  // Style picker overrides: leave the yellow defaults intact when the user
+  // hasn't picked anything, so existing sticky notes keep their familiar
+  // look. A Reset on a recoloured note also flips back to yellow.
+  const { bg, stroke } = resolveColors(d);
+  const wrapStyle: React.CSSProperties = liveW && liveH
+    ? { width: liveW, height: liveH, maxWidth: "none" }
+    : {};
+  if (bg !== DEFAULT_BG) wrapStyle.background = bg;
+  if (stroke !== DEFAULT_STROKE) {
+    wrapStyle.borderColor = stroke;
+    wrapStyle.color = stroke;
+  }
   return (
     <div
       className={`relative max-w-sm rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-neutral-900 shadow-sm ${wrapCursor}`}
-      style={liveW && liveH ? { width: liveW, height: liveH, maxWidth: "none" } : undefined}
+      style={wrapStyle}
     >
       <NodeResizer
         isVisible={selected ?? false}
