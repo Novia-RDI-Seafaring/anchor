@@ -193,6 +193,24 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
     setRfNodes((curr) => applyNodeChanges(changes, curr));
     if (readOnly) return;
     for (const change of changes) {
+      // Backspace / Delete fires `remove` changes. Without persisting,
+      // the optimistic-only delete gets undone the moment the store →
+      // rfNodes effect re-runs (because the store still has the node).
+      if (change.type === "remove") {
+        // Drop locally first so the UI doesn't flicker, then ask the
+        // server. SSE will deliver the canonical NodeRemoved (+ cascade
+        // EdgeRemoved); the store's version-monotonic applyEvent makes
+        // the echo a no-op.
+        useCanvasStore.setState((state) => {
+          if (!state.nodes[change.id]) return state;
+          const { [change.id]: _gone, ...rest } = state.nodes;
+          return { ...state, nodes: rest };
+        });
+        canvases.removeNode(slug, change.id).catch(() => {
+          // SSE will reconcile if the server rejected the delete.
+        });
+        continue;
+      }
       if (change.type !== "dimensions") continue;
       // ReactFlow emits `dimensions` changes in three flavours:
       //   - `resizing: true`  → mid-drag; ignore (would hammer the API)
@@ -241,7 +259,21 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
 
   const onEdgesChange = useCallback((changes: EdgeChange<RfEdge>[]) => {
     setRfEdges((curr) => applyEdgeChanges(changes, curr));
-  }, []);
+    if (readOnly) return;
+    for (const change of changes) {
+      // Same fix as nodes: Backspace/Delete fires `remove`; persist it
+      // or SSE re-syncs the edge back onto the canvas seconds later.
+      if (change.type !== "remove") continue;
+      useCanvasStore.setState((state) => {
+        if (!state.edges[change.id]) return state;
+        const { [change.id]: _gone, ...rest } = state.edges;
+        return { ...state, edges: rest };
+      });
+      canvases.removeEdge(slug, change.id).catch(() => {
+        // SSE will reconcile if the server rejected.
+      });
+    }
+  }, [readOnly, slug]);
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     const types = event.dataTransfer.types;
