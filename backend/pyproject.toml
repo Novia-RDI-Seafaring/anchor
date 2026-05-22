@@ -25,13 +25,9 @@ dependencies = [
     "nbformat>=5.10.4",
     "llama-index-llms-azure-openai>=0.3.0",
     "llama-index-embeddings-azure-openai>=0.3.0",
-    "ketju[rag,docling,pgvector,agent,agui]",
     "fmpy>=0.3.22",
     "kaleido>=1.2.0",
     "pymupdf>=1.27.2.2",
     "mcp>=1.27.0",
 ]
-
-[tool.uv.sources]
-ketju = { path = "../../ketju", editable = true }
 

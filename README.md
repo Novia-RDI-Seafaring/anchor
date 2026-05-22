@@ -1,3 +1,12 @@
+# Anchor UI
+
+Anchor UI is a local document-grounded engineering canvas. It ingests technical
+PDFs, builds bronze/silver/gold document artifacts, and lets users place
+source-backed facts, tables, images, and model nodes on a React Flow canvas.
+
+The app has a Next.js frontend and a Python FastAPI backend. Chat and canvas
+updates are routed through CopilotKit, AG-UI, and a PydanticAI agent.
+
 ## Run Locally
 
 ### Prerequisites

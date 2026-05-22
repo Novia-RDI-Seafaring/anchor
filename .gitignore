@@ -100,6 +100,7 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+tmp/
 .cache/
 
 # Docling processing artifacts (if any temp files created)

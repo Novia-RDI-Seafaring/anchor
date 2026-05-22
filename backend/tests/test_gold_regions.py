@@ -82,20 +82,22 @@ def test_extract_page_regions_invokes_client_and_snaps(tmp_path: Path):
         }
     ])
 
-    # Extractor crops PNG by default. Patch crop_region_png to a no-op so we
-    # don't need a real PDF for the snap test.
+    # Extractor crops PNG by default. Patch crop_region_png and crop_region_svg
+    # to a no-op so we don't need a real PDF for the snap test.
     import src.ingestion.gold as gold
 
     monkeypatched = []
 
-    def fake_crop_png(pdf_path, page, bbox, out_path, **kw):
+    def fake_crop(pdf_path, page, bbox, out_path, **kw):
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_bytes(b"fake")
         monkeypatched.append((page, tuple(bbox)))
         return out_path
 
-    original = gold.crop_region_png
-    gold.crop_region_png = fake_crop_png  # type: ignore[assignment]
+    original_png = gold.crop_region_png
+    original_svg = gold.crop_region_svg
+    gold.crop_region_png = fake_crop  # type: ignore[assignment]
+    gold.crop_region_svg = fake_crop  # type: ignore[assignment]
     try:
         result = extract_page_regions(
             docling,
@@ -106,7 +108,8 @@ def test_extract_page_regions_invokes_client_and_snaps(tmp_path: Path):
             client=client,
         )
     finally:
-        gold.crop_region_png = original  # type: ignore[assignment]
+        gold.crop_region_png = original_png  # type: ignore[assignment]
+        gold.crop_region_svg = original_svg  # type: ignore[assignment]
 
     assert client.calls == 1
     assert isinstance(result, PageRegions)

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8001
     reload: bool = True
+    allowed_origins: str = Field(default="http://localhost:3000", description="Comma-separated allowed CORS origins")
 
     # ===== Model / Context Configuration =====
     default_model: str = Field(default="openai:gpt-4o-mini", description="PydanticAI model string")

@@ -1,6 +1,7 @@
 # Agent
 
-This branch currently runs a small [PydanticAI](https://docs.pydantic.ai) agent streamed to the frontend through CopilotKit coagent state.
+This branch runs a small [PydanticAI](https://docs.pydantic.ai) agent. Canvas
+state is streamed to the frontend through CopilotKit coagent state.
 
 ## Live flow
 
@@ -22,7 +23,8 @@ Tool calls update shared canvas state
 Canvas state streamed to the frontend
 ```
 
-The key point on `feat/skills` is that the runtime is smaller than the broader architecture present in the folder.
+The live runtime is smaller than the broader architecture present in this
+folder.
 
 ## Active capabilities
 
@@ -40,7 +42,8 @@ Responsibilities:
 - auto-load gold-layer product data for document nodes already on the canvas
 - expose `read_document_page(...)`
 
-This capability currently mixes context assembly and document-reading support.
+This capability currently handles both context assembly and document-reading
+support.
 
 ### CanvasCapability
 

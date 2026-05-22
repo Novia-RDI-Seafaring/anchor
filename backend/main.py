@@ -15,11 +15,15 @@ from src.api.routes_snippets import router as snippets_router
 app = FastAPI(title="Knowledge Base API")
 
 
+settings = get_settings()
+origins = [o.strip() for o in settings.allowed_origins.split(",") if o.strip()]
+allow_credentials = "*" not in origins
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=origins,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )

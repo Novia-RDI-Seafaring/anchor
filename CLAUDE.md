@@ -145,7 +145,7 @@ Three-layer medallion architecture for transforming PDFs into structured, querya
 
 ## FMU library
 
-External FMU files are in `/Users/toffe/dev/ai/novia/fmu-library` (branch `refactor/engine-cooling-fmus`). Engine cooling system components:
+External FMU files are in `path/to/fmu-library` (branch `refactor/engine-cooling-fmus`). Engine cooling system components:
 - `pump_FMI2.fmu` — inputs: temp_in [degC], mass_in [kg/s], pump_value [kg/s]; outputs: temp_out, mass_out
 - `control_valve_FMI2.fmu`, `engine_heat_load_FMI2.fmu`, `heat_exchanger_FMI2.fmu`, `mixer_FMI2.fmu`
 - System-level: `LOC_31032026_FMI2.fmu`, `LOC_System_31032026_FMI2.fmu`, `LOC_Control_31032026_FMI2.fmu`
