@@ -1,36 +1,35 @@
 /**
- * SubCanvasPrimitive — a link from one canvas to another.
+ * SubCanvasPrimitive — a representational link from one canvas to another.
  *
- * The user's design for hierarchical systems: a top-level "Plant" canvas
- * holds canvas-nodes for "Pump loop", "Heat exchanger", etc. Each of
- * those is a fully editable child canvas, drilled into by double-clicking
- * the tile.
+ * The tile shows an abstract glyph + the child canvas's title + a
+ * "N nodes · M edges" line. We deliberately do NOT load the child's PNG
+ * snapshot inline: the parent canvas may hold a dozen sub-canvas tiles
+ * and pulling on a Chromium snapshotter for each of them was both slow
+ * and visually noisy. The user drills in by double-clicking — that's
+ * where the full canvas lives.
+ *
+ * Counts come from the shared `useWorkspacesList()` cache (one GET
+ * /api/workspaces per page rather than one per tile). If the cache hasn't
+ * landed yet the tile shows a soft "…" placeholder.
  *
  * Renderer responsibilities:
- *   - Show a 240x160 tile with the child's title (or slug) + a "→" hint.
- *   - Lazily fetch a PNG snapshot of the child canvas as a live thumbnail.
- *     Snapshots cache in-memory for the session; on remount we refetch so
- *     stale-after-mutation thumbnails self-heal over time. Heavier
- *     invalidation (refetch on `canvas:*` events that touch the child)
- *     is a follow-up.
+ *   - Show a 240x160 tile with the child's title (or slug), the graph
+ *     glyph, and the node/edge counts.
  *   - Surface a "↩ already visiting" badge when the child slug is already
  *     in the user's breadcrumb chain — cycle prevention, see breadcrumb.ts.
  *     Double-click is disabled in that case.
+ *   - Inline-rename edits `data.title` only — the `canvas_slug` is the
+ *     link key and must stay stable.
  *
  * Navigation lives in CanvasGraph.tsx's `onNodeDoubleClick` (see there).
  * This primitive only renders.
- *
- * Inline rename edits `data.title` only — the `canvas_slug` is the link
- * key and must stay stable. The `useInlineField` hook patches the
- * `data.title` field; the SSE echo updates the canonical store.
  */
-import { useEffect, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
-import { canvases } from "@/api/canvases";
 import { breadcrumb } from "@/canvas/breadcrumb";
 import { useInlineField } from "@/canvas/useInlineField";
+import { useWorkspacesList } from "@/canvas/useWorkspacesList";
 
 type SubCanvasData = {
   canvas_slug?: string;
@@ -38,26 +37,24 @@ type SubCanvasData = {
   label?: string;
 };
 
-/** Process-wide thumbnail cache — keyed by canvas_slug → object URL. */
-const THUMB_CACHE = new Map<string, string>();
-
-async function fetchThumb(slug: string): Promise<string | null> {
-  const cached = THUMB_CACHE.get(slug);
-  if (cached) return cached;
-  try {
-    const rsp = await fetch(canvases.snapshotUrl(slug), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ format: "png", full_page: true }),
-    });
-    if (!rsp.ok) return null;
-    const blob = await rsp.blob();
-    const url = URL.createObjectURL(blob);
-    THUMB_CACHE.set(slug, url);
-    return url;
-  } catch {
-    return null;
-  }
+/** Tiny self-contained graph glyph — three nodes joined by two edges. */
+function GraphGlyph({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.4}
+      aria-hidden
+    >
+      <line x1="5" y1="5" x2="14" y2="10" />
+      <line x1="14" y1="10" x2="6" y2="15" />
+      <circle cx="5" cy="5" r="2" fill="white" />
+      <circle cx="14" cy="10" r="2" fill="white" />
+      <circle cx="6" cy="15" r="2" fill="white" />
+    </svg>
+  );
 }
 
 export function SubCanvasPrimitive({ id, data, selected }: NodeProps) {
@@ -65,8 +62,8 @@ export function SubCanvasPrimitive({ id, data, selected }: NodeProps) {
   const subSlug = d.canvas_slug ?? "";
   const title = d.title ?? d.label ?? subSlug;
   const { id: workspaceSlug } = useParams<{ id: string }>();
-  const [thumbUrl, setThumbUrl] = useState<string | null>(null);
-  const [thumbState, setThumbState] = useState<"idle" | "loading" | "ready" | "failed">("idle");
+  const snap = useWorkspacesList();
+  const child = subSlug ? snap?.bySlug.get(subSlug) : undefined;
 
   // Whether this link points to a canvas already in the breadcrumb chain.
   // If so, double-click is disabled (cycle prevention) and we show a
@@ -82,24 +79,6 @@ export function SubCanvasPrimitive({ id, data, selected }: NodeProps) {
     field: "title",
     canEdit: selected ?? false,
   });
-
-  useEffect(() => {
-    if (!subSlug) return;
-    let cancelled = false;
-    setThumbState("loading");
-    fetchThumb(subSlug).then((url) => {
-      if (cancelled) return;
-      if (url) {
-        setThumbUrl(url);
-        setThumbState("ready");
-      } else {
-        setThumbState("failed");
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [subSlug]);
 
   return (
     <div
@@ -143,35 +122,23 @@ export function SubCanvasPrimitive({ id, data, selected }: NodeProps) {
         </span>
       </div>
 
-      {/* Body — thumbnail or placeholder. */}
-      <div className="nodrag nopan relative h-[112px] w-full bg-neutral-100">
-        {thumbState === "ready" && thumbUrl ? (
-          // Live snapshot of the child canvas. `object-cover` so the tile
-          // shows the canvas centre even if the child's full-page snapshot
-          // is much wider/taller.
-          <img
-            src={thumbUrl}
-            alt={`snapshot of ${subSlug}`}
-            className="block h-full w-full select-none object-cover"
-            draggable={false}
-            onError={() => setThumbState("failed")}
-          />
-        ) : thumbState === "loading" ? (
-          <div className="flex h-full w-full items-center justify-center text-[11px] italic text-neutral-400">
-            loading…
-          </div>
-        ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-neutral-400">
-            <svg viewBox="0 0 24 24" className="size-6" fill="none" strokeWidth={1.4} stroke="currentColor">
-              <rect x="3" y="5" width="18" height="14" rx="2" />
-              <path d="M3 9h18" />
-              <path d="M9 13l2 2 4-4" />
-            </svg>
-            <div className="text-[10px]">
-              {thumbState === "failed" ? "no snapshot yet" : "empty canvas"}
-            </div>
-          </div>
-        )}
+      {/* Body — abstract representation: glyph + stats. */}
+      <div className="nodrag nopan relative flex h-[112px] w-full flex-col items-center justify-center gap-1.5 bg-gradient-to-br from-neutral-50 to-neutral-100">
+        <GraphGlyph className="size-9 text-neutral-400" />
+        <div className="text-[11px] text-neutral-600">
+          {child ? (
+            <>
+              <span className="font-medium text-neutral-800">{child.node_count}</span>{" "}
+              <span className="text-neutral-500">node{child.node_count === 1 ? "" : "s"}</span>
+              <span className="px-1 text-neutral-400">·</span>
+              <span className="font-medium text-neutral-800">{child.edge_count}</span>{" "}
+              <span className="text-neutral-500">edge{child.edge_count === 1 ? "" : "s"}</span>
+            </>
+          ) : (
+            <span className="text-neutral-400">…</span>
+          )}
+        </div>
+        <div className="text-[10px] text-neutral-400">{subSlug || "unlinked"}</div>
 
         {/* Cycle-prevention badge. */}
         {inChain ? (

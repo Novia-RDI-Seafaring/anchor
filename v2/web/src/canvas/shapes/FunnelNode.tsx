@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 
 import { Pictogram } from "@/canvas/icons";
 import { useInlineField } from "@/canvas/useInlineField";
+import { useLiveResize } from "@/canvas/useLiveResize";
 
 /**
  * FunnelNode — diamond shape.
@@ -44,8 +45,14 @@ export function FunnelNode({ id, data, selected }: NodeProps) {
     field: "label",
     canEdit: selected ?? false,
   });
-  const w = d.width ?? 96;
-  const h = d.height ?? 96;
+  // Live-resize mirror — see ConceptNode for the rationale. Free aspect:
+  // the rhombus can stretch to any width/height.
+  const { width: liveW, height: liveH, handlers: resizeHandlers } = useLiveResize(
+    d.width,
+    d.height,
+  );
+  const w = liveW ?? 96;
+  const h = liveH ?? 96;
   const wrapCursor = selected ? "cursor-move" : "cursor-pointer";
   // Use a solid clipped polygon for the silhouette + an SVG polygon overlay
   // for the stroke so the dashed/solid border distinction stays crisp.
@@ -59,6 +66,7 @@ export function FunnelNode({ id, data, selected }: NodeProps) {
         minWidth={48}
         minHeight={32}
         color="#0ea5e9"
+        {...resizeHandlers}
       />
       <Handle type="target" position={Position.Left} />
       {/* Fill: a clipped div carries the white background + any flat fill

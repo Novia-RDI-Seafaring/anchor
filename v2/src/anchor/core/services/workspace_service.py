@@ -75,7 +75,74 @@ class WorkspaceService:
         self.snapshotter = snapshotter
 
     async def list_workspaces(self) -> list[dict[str, Any]]:
-        return [m.model_dump() for m in await self.store.list_workspaces()]
+        """Return the meta of every workspace plus per-canvas counts + ref graph.
+
+        The envelope each entry carries beyond ``WorkspaceMeta``:
+
+          - ``node_count`` / ``edge_count`` — current snapshot sizes.
+          - ``references`` — slugs this canvas's ``node_type == "canvas"``
+            nodes point at via ``data.canvas_slug``. Self-links and unset
+            targets are filtered.
+          - ``referenced_by`` — reverse map. Built in a second pass after
+            every canvas's outgoing refs are collected. A canvas with an
+            empty ``referenced_by`` is a tree root (or part of a cycle
+            with no outside parent).
+
+        The frontend's landing page renders this as a folder tree; the
+        MCP `canvas_list_workspaces` tool and the `anchor canvas list` CLI
+        return the same envelope. The store is loaded once per slug —
+        cheap for the in-memory store, a state.json read for the fs store.
+        Cycles are tolerated: A → B → A round-trips through both
+        ``references`` and ``referenced_by`` and the UI shows a "↩ cycle"
+        marker rather than recursing forever.
+        """
+        metas = await self.store.list_workspaces()
+        out: list[dict[str, Any]] = []
+        # Pass 1: collect outgoing references per slug.
+        for m in metas:
+            try:
+                ws = await self.store.load(m.slug)
+            except Exception:
+                # A meta whose state can't be loaded shouldn't crash the
+                # whole list — surface zero counts and skip the ref scan.
+                d = m.model_dump()
+                d.update(node_count=0, edge_count=0, references=[], referenced_by=[])
+                out.append(d)
+                continue
+            refs: list[str] = []
+            seen_refs: set[str] = set()
+            for n in ws.nodes.values():
+                if n.node_type != "canvas":
+                    continue
+                target = (n.data or {}).get("canvas_slug")
+                if not isinstance(target, str) or not target:
+                    continue
+                if target == m.slug:
+                    continue  # self-link is meaningless
+                if target in seen_refs:
+                    continue
+                seen_refs.add(target)
+                refs.append(target)
+            d = m.model_dump()
+            d.update(
+                node_count=len(ws.nodes),
+                edge_count=len(ws.edges),
+                references=refs,
+                referenced_by=[],  # filled in pass 2
+            )
+            out.append(d)
+        # Pass 2: invert into referenced_by. Index by slug so we don't
+        # quadratic-scan when graphs grow.
+        index: dict[str, dict[str, Any]] = {e["slug"]: e for e in out}
+        for entry in out:
+            for target in entry["references"]:
+                bucket = index.get(target)
+                if bucket is None:
+                    continue
+                if entry["slug"] in bucket["referenced_by"]:
+                    continue
+                bucket["referenced_by"].append(entry["slug"])
+        return out
 
     async def create_workspace(self, slug: str, title: str = "") -> dict[str, Any]:
         meta = await self.store.create(slug, title=title)

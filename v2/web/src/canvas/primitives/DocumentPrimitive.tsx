@@ -223,6 +223,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                         : "1px solid rgba(14, 165, 233, 0.55)",
                       outlineOffset: "-1px",
                     }}
+                    data-region-handle-id={`region:${rid}`}
                     title={r.title ?? r.kind ?? rid}
                     draggable
                     onMouseDown={(e) => e.stopPropagation()}
@@ -277,6 +278,24 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                         }}
                       />
                     ) : null}
+                    {/* Per-region target handle. The handle sits on the
+                        region's left edge so an evidence edge from a spec
+                        row (whose source handle lives on the spec card's
+                        right edge) lands here when the row+region match.
+                        Default appearance is a 2px white dot with grey
+                        border; hover/active pulls it up to a 6px sky-blue
+                        chip via :hover state inherited from the parent. */}
+                    <Handle
+                      type="target"
+                      position={Position.Left}
+                      id={`region:${rid}`}
+                      className={`!min-w-0 !min-h-0 !border ${
+                        active
+                          ? "!h-2.5 !w-2.5 !border-sky-700 !bg-sky-400 opacity-100"
+                          : "!h-2 !w-2 !border-neutral-400 !bg-white opacity-30"
+                      }`}
+                      style={{ left: -4, top: "50%" }}
+                    />
                   </div>
                 );
               })

@@ -26,7 +26,31 @@ def test_create_and_list_workspaces():
     assert rsp.json()["slug"] == "w1"
     rsp2 = client.get("/api/workspaces")
     assert rsp2.status_code == 200
-    assert any(w["slug"] == "w1" for w in rsp2.json())
+    body = rsp2.json()
+    assert any(w["slug"] == "w1" for w in body)
+    # Envelope now carries counts + ref graph so the landing-page folder
+    # tree and the canvas_list_workspaces MCP tool see the same shape.
+    entry = next(w for w in body if w["slug"] == "w1")
+    assert entry["node_count"] == 0
+    assert entry["edge_count"] == 0
+    assert entry["references"] == []
+    assert entry["referenced_by"] == []
+
+
+def test_list_workspaces_envelope_reflects_sub_canvas_link():
+    """After create_sub_canvas, parent.references and child.referenced_by line up."""
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "plant"})
+    client.post(
+        "/api/workspaces/plant/sub-canvas",
+        json={"slug": "pump", "title": "Pump"},
+    )
+    items = {w["slug"]: w for w in client.get("/api/workspaces").json()}
+    assert items["plant"]["references"] == ["pump"]
+    assert items["pump"]["referenced_by"] == ["plant"]
+    # The linking canvas-node lifts plant's node_count to 1.
+    assert items["plant"]["node_count"] == 1
+    assert items["pump"]["node_count"] == 0
 
 
 def test_add_node_and_get_state():

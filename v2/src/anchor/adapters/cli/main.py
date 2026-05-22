@@ -285,6 +285,31 @@ def regions(
     typer.echo(json.dumps(asyncio.run(doc_store.get_regions(slug, page=page)), indent=2))
 
 
+@app.command("embeddings-meta")
+def embeddings_meta(
+    slug: str,
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Print embeddings.json metadata (model id, dim, vector count, ts).
+
+    Useful for verifying which embed_model a doc was indexed with
+    before issuing a semantic query — clients need to load the matching
+    bundle on their side.
+    """
+    _, _, _, _, doc_store = _build_real_services(data_dir)
+    data = asyncio.run(doc_store.get_embeddings(slug))
+    if data is None:
+        typer.echo(f"no embeddings for {slug!r}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps({
+        "slug": slug,
+        "embed_model": data.get("embed_model"),
+        "dim": data.get("dim"),
+        "embedded_at": data.get("embedded_at"),
+        "vector_count": len(data.get("vectors", [])),
+    }, indent=2))
+
+
 @app.command("page-text")
 def page_text(
     slug: str,
@@ -442,10 +467,36 @@ def synopsis(
 @canvas_app.command("list")
 def canvas_list(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+    format: str = typer.Option(
+        "text", "--format", "-f",
+        help="'text' for one-per-line summary, 'json' for the full envelope.",
+    ),
 ) -> None:
-    """List all workspaces."""
+    """List all workspaces with counts + reference edges.
+
+    ``--format text`` (default) prints one canvas per line as
+    ``slug — N nodes · M edges · refs N · refd-by M``. ``--format json``
+    prints the full envelope including the ``references`` /
+    ``referenced_by`` slug lists — same shape returned by the HTTP
+    ``GET /api/workspaces`` and the ``canvas_list_workspaces`` MCP tool.
+    """
     _, _, ws, _, _ = _build_real_services(data_dir)
-    typer.echo(json.dumps(asyncio.run(ws.list_workspaces()), indent=2))
+    items = asyncio.run(ws.list_workspaces())
+    if format == "json":
+        typer.echo(json.dumps(items, indent=2))
+        return
+    if format != "text":
+        typer.echo(f"unknown --format {format!r} (use 'text' or 'json')", err=True)
+        raise typer.Exit(code=2)
+    if not items:
+        typer.echo("(no canvases)")
+        return
+    for it in items:
+        typer.echo(
+            f"{it['slug']} — {it['node_count']} nodes · "
+            f"{it['edge_count']} edges · refs {len(it['references'])} · "
+            f"refd-by {len(it['referenced_by'])}",
+        )
 
 
 @canvas_app.command("create")
@@ -613,6 +664,35 @@ def canvas_remove_edge(
 
     async def run():
         state, env = await ws.remove_edge(slug, edge_id)
+        return {"event": env.model_dump(), "state": state.get_state()}
+    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+
+
+@canvas_app.command("update-edge")
+def canvas_update_edge(
+    slug: str,
+    edge_id: str,
+    label: str | None = typer.Option(None, "--label", "-l"),
+    edge_type: str | None = typer.Option(None, "--type", "-t", help="`floating` or `anchored`"),
+    source_handle: str | None = typer.Option(None, "--source-handle"),
+    target_handle: str | None = typer.Option(None, "--target-handle"),
+    data: str | None = typer.Option(None, "--data", help="JSON object replacing the edge's `data` field"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Patch an edge's fields (label, type, handles, data)."""
+    _, _, ws, _, _ = _build_real_services(data_dir)
+    fields: dict = {}
+    if label is not None: fields["label"] = label
+    if edge_type is not None: fields["edge_type"] = edge_type
+    if source_handle is not None: fields["sourceHandle"] = source_handle
+    if target_handle is not None: fields["targetHandle"] = target_handle
+    if data is not None: fields["data"] = _parse_data(data)
+    if not fields:
+        typer.echo("nothing to update — pass at least one of --label / --type / --source-handle / --target-handle / --data", err=True)
+        raise typer.Exit(code=1)
+
+    async def run():
+        state, env = await ws.update_edge(slug, edge_id, fields)
         return {"event": env.model_dump(), "state": state.get_state()}
     typer.echo(json.dumps(asyncio.run(run()), indent=2))
 

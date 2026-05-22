@@ -1,10 +1,24 @@
+/**
+ * CanvasListPage — landing page rendered as a folder tree.
+ *
+ * The tree is derived from the canvas-reference graph: when canvas A
+ * contains a `node_type === "canvas"` node whose `data.canvas_slug = "b"`,
+ * B appears nested under A. The backend pre-computes the references and
+ * the reverse map (see `WorkspaceService.list_workspaces`), so this page
+ * does a single GET and renders.
+ *
+ * Cycles + DAGs are honoured. See `CanvasTree.tsx` for the rendering
+ * rules.
+ */
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
-import { canvases, type WorkspaceMeta } from "@/api/canvases";
+import { canvases, type WorkspaceListEntry } from "@/api/canvases";
+
+import { CanvasTree } from "./CanvasTree";
 
 export function CanvasListPage() {
-  const [items, setItems] = useState<WorkspaceMeta[]>([]);
+  const [items, setItems] = useState<WorkspaceListEntry[]>([]);
   const [slug, setSlug] = useState("");
   const [busy, setBusy] = useState(false);
   const navigate = useNavigate();
@@ -30,7 +44,9 @@ export function CanvasListPage() {
     <main className="mx-auto max-w-3xl px-6 py-12">
       <h1 className="text-3xl font-bold">Anchor canvases</h1>
       <p className="mt-2 text-neutral-600">
-        Each canvas is a folder. Pick one to open; create a new one below.
+        Each canvas is a folder. Nested canvases come from{" "}
+        <code className="rounded bg-neutral-100 px-1 text-[12px]">canvas</code>
+        {" "}nodes — drop one onto a parent to grow the tree.
       </p>
 
       <div className="mt-8 flex gap-2">
@@ -52,28 +68,13 @@ export function CanvasListPage() {
             void create();
           }}
         >
-          Create
+          + New canvas
         </button>
       </div>
 
-      <ul className="mt-10 space-y-2">
-        {items.length === 0 ? (
-          <li className="rounded border border-dashed border-neutral-300 p-6 text-center text-neutral-500">
-            No canvases yet. Create one above.
-          </li>
-        ) : null}
-        {items.map((m) => (
-          <li key={m.slug}>
-            <Link
-              to={`/c/${m.slug}`}
-              className="block rounded border border-neutral-200 bg-white px-4 py-3 hover:border-neutral-400"
-            >
-              <div className="font-medium">{m.title || m.slug}</div>
-              <div className="text-xs text-neutral-500">{m.slug}</div>
-            </Link>
-          </li>
-        ))}
-      </ul>
+      <div className="mt-10">
+        <CanvasTree items={items} />
+      </div>
     </main>
   );
 }

@@ -39,6 +39,10 @@ class AddEdgeRequest(BaseModel):
     target: str
     label: str = ""
     edge_type: str = "floating"
+    # Optional ReactFlow handle ids. When set, pin the edge to that specific
+    # handle on the source/target node (e.g. spec-row → document-region).
+    sourceHandle: str | None = None
+    targetHandle: str | None = None
     data: dict[str, Any] = {}
 
 

@@ -7,6 +7,7 @@ import {
   applyEdgeChanges,
   applyNodeChanges,
   useReactFlow,
+  type Connection,
   type Edge as RfEdge,
   type EdgeChange,
   type Node as RfNode,
@@ -21,6 +22,7 @@ import { breadcrumb } from "@/canvas/breadcrumb";
 import { AnchoredEdge } from "@/canvas/edges/AnchoredEdge";
 import { EdgeMarkerDefs } from "@/canvas/edges/EdgeMarkerDefs";
 import { FloatingEdge } from "@/canvas/edges/FloatingEdge";
+import { pickEdgeMode } from "@/canvas/edges/edge-mode";
 import { NodeContextMenu, type ContextMenuTarget } from "@/canvas/NodeContextMenu";
 import { NodeContextToolbar } from "@/canvas/NodeContextToolbar";
 import {
@@ -106,6 +108,11 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   const openPdf = useUiStore((s) => s.openPdf);
   const setHoveredSourceRef = useUiStore((s) => s.setHoveredSourceRef);
   const clearHoveredSourceRef = useUiStore((s) => s.clearHoveredSourceRef);
+  // Drives the floating↔anchored swap on evidence edges. When something
+  // broadcasts a hovered source_ref (spec-row hover, region hover, an edge
+  // hover that reflects back) the matching evidence edge flips from
+  // node-to-node float to row-handle→region-handle anchored.
+  const hoveredSourceRef = useUiStore((s) => s.hoveredSourceRef);
   const setSelectedNodeId = useUiStore((s) => s.setSelectedNodeId);
   const setPropertiesOpen = useUiStore((s) => s.setPropertiesOpen);
   const armedTool = useUiStore((s) => s.armedTool);
@@ -171,11 +178,56 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   }, [nodes]);
 
   useEffect(() => {
+    // For evidence edges we pick the renderer per-hover: anchored when the
+    // hovered source_ref matches the edge's stored source_ref (slug + page,
+    // region_id when both sides know it), else floating. Non-evidence edges
+    // keep their declared edge_type as before.
+    //
+    // A second pass dims the OTHER evidence edges of the same target doc
+    // so the active row→region link visually pops. Only the matched edge
+    // stays at full opacity; matching siblings drop to ~0.3.
+    const evidencePicks: Record<string, "anchored" | "floating"> = {};
+    const evidenceForDoc: Record<string, string[]> = {};
+    let activeEdgeId: string | null = null;
+
+    for (const e of Object.values(edges)) {
+      if (e.data?.kind === "evidence") {
+        const tgt = nodes[e.target];
+        const tgtSlug = (tgt?.data as { slug?: string } | undefined)?.slug;
+        const mode = pickEdgeMode(
+          {
+            edge_type: e.edge_type,
+            data: e.data as { kind?: string; source_ref?: Record<string, unknown> } | undefined,
+            targetDocSlug: tgtSlug,
+          },
+          hoveredSourceRef,
+        );
+        evidencePicks[e.id] = mode;
+        if (tgtSlug) {
+          (evidenceForDoc[tgtSlug] ??= []).push(e.id);
+        }
+        if (mode === "anchored") activeEdgeId = e.id;
+      }
+    }
+    // Sibling-fade: when ANY evidence edge is active, dim the others
+    // pointing at the same document. The active edge stays bright.
+    const dimmedEvidence = new Set<string>();
+    if (activeEdgeId && hoveredSourceRef?.slug) {
+      for (const eid of evidenceForDoc[hoveredSourceRef.slug] ?? []) {
+        if (eid !== activeEdgeId) dimmedEvidence.add(eid);
+      }
+    }
+
     setRfEdges(Object.values(edges).map((e) => {
-      // Map backend edge_type → ReactFlow type. Unknown edge_type values
-      // fall back to "floating" so they still render with the marker
-      // dispatcher rather than the (undefined) default edge.
-      const type = e.edge_type === "anchored" ? "anchored" : "floating";
+      // Map backend edge_type → ReactFlow type. Evidence edges may swap on
+      // hover (see above). Unknown edge_type values fall back to "floating"
+      // so they still render with the marker dispatcher rather than the
+      // (undefined) default edge.
+      const isEvidence = e.data?.kind === "evidence";
+      const type = isEvidence
+        ? evidencePicks[e.id]
+        : (e.edge_type === "anchored" ? "anchored" : "floating");
+      const dimmed = dimmedEvidence.has(e.id);
       return {
         id: e.id,
         source: e.source,
@@ -185,9 +237,10 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         label: e.label,
         type,
         data: { ...(e.data ?? {}), label: e.label || undefined },
+        style: dimmed ? { opacity: 0.3 } : undefined,
       } satisfies RfEdge;
     }));
-  }, [edges]);
+  }, [edges, nodes, hoveredSourceRef]);
 
   const onNodesChange = useCallback((changes: NodeChange<RfNode>[]) => {
     setRfNodes((curr) => applyNodeChanges(changes, curr));
@@ -275,11 +328,105 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
     }
   }, [readOnly, slug]);
 
+  /**
+   * ReactFlow fires `onConnect` when the user finishes a connect drag — for
+   * us, dragging from a spec-row handle (id="row:i:key") onto a document-
+   * region handle (id="region:rid"). When both ends carry the row/region
+   * naming convention, we materialise an anchored evidence edge AND patch
+   * the spec row's source_ref to embed the region_id, so the row+edge stay
+   * in sync (the row already knows the page+bbox; we just attach the
+   * region).
+   */
+  const onConnect = useCallback((conn: Connection) => {
+    if (readOnly) return;
+    const { source, target, sourceHandle, targetHandle } = conn;
+    if (!source || !target) return;
+    const isRow = sourceHandle?.startsWith("row:");
+    const isRegion = targetHandle?.startsWith("region:");
+    const state = useCanvasStore.getState();
+    const sourceNode = state.nodes[source];
+    const targetNode = state.nodes[target];
+    if (!sourceNode || !targetNode) return;
+
+    if (isRow && isRegion && targetNode.node_type === "document") {
+      // Row → region: build the full evidence-edge payload from the row's
+      // existing source_ref, falling back to the spec's node-level ref.
+      const regionId = targetHandle!.slice("region:".length);
+      const rowData = sourceNode.data as {
+        source_doc_slug?: string;
+        source_ref?: { page?: number; bbox?: number[] };
+        rows?: Array<{ key?: string; source_ref?: { page?: number; bbox?: number[] } }>;
+      } | undefined;
+      // Parse "row:<i>:<key>"  — index is authoritative since keys can repeat.
+      const parts = sourceHandle!.split(":");
+      const rowIndex = Number(parts[1] ?? "-1");
+      const row = rowData?.rows?.[rowIndex];
+      const page = row?.source_ref?.page ?? rowData?.source_ref?.page;
+      const bbox = row?.source_ref?.bbox ?? rowData?.source_ref?.bbox;
+      const targetData = targetNode.data as { slug?: string } | undefined;
+      void canvases
+        .addEdge(slug, {
+          source,
+          target,
+          edge_type: "anchored",
+          sourceHandle,
+          targetHandle,
+          data: {
+            kind: "evidence",
+            ...(targetData?.slug ? { source_doc_slug: targetData.slug } : {}),
+            source_region_id: regionId,
+            ...(page !== undefined ? {
+              source_ref: { kind: "pdf-page-bbox", page, region_id: regionId, bbox },
+            } : {}),
+          },
+        })
+        .catch((err) => {
+          // eslint-disable-next-line no-console
+          console.error("row→region wire failed", err);
+        });
+      // Patch the row in the spec so its source_ref carries the region_id
+      // — the data and the edge stay in lock-step (without this, the row
+      // is wired visually but its provenance dict still says "no region").
+      if (row && rowData?.rows && page !== undefined) {
+        const draftRows = rowData.rows.map((r, i) => {
+          if (i !== rowIndex) return r;
+          return {
+            ...r,
+            source_ref: { page, region_id: regionId, bbox },
+          };
+        });
+        void canvases
+          .patchNode(slug, source, { data: { ...rowData, rows: draftRows } })
+          .catch((err) => {
+            // eslint-disable-next-line no-console
+            console.error("row source_ref backfill failed", err);
+          });
+      }
+      return;
+    }
+
+    // Generic floating edge for any other manual connect drag (e.g. two
+    // plain nodes). Keep parity with the existing UX — drag = connect.
+    void canvases
+      .addEdge(slug, {
+        source,
+        target,
+        ...(sourceHandle ? { sourceHandle } : {}),
+        ...(targetHandle ? { targetHandle } : {}),
+        edge_type: sourceHandle || targetHandle ? "anchored" : "floating",
+      })
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error("generic connect failed", err);
+      });
+  }, [readOnly, slug]);
+
   const onDragOver = useCallback((event: React.DragEvent) => {
     const types = event.dataTransfer.types;
     // Accept either OS files (PDFs etc.) or our shell's structured payloads.
     const accepted = types.includes("Files")
-      || types.includes("application/x-anchor-node");
+      || types.includes("application/x-anchor-node")
+      || types.includes("application/x-anchor-canvas-link");
     if (!accepted) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
@@ -287,6 +434,33 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
 
   const onDrop = useCallback(async (event: React.DragEvent) => {
     const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+
+    // Path 0 — existing-canvas link: the Canvases tab in the Library
+    // drawer emits this. Attach the dragged workspace as a sub-canvas
+    // tile (no child workspace is created — this is a pure link).
+    const linkRaw = event.dataTransfer.getData("application/x-anchor-canvas-link");
+    if (linkRaw) {
+      event.preventDefault();
+      try {
+        const { slug: linkedSlug, title } = JSON.parse(linkRaw) as {
+          slug: string;
+          title: string;
+        };
+        if (linkedSlug && linkedSlug !== slug) {
+          await canvases.addNode(slug, {
+            node_type: "canvas",
+            label: title || linkedSlug,
+            x: flowPos.x,
+            y: flowPos.y,
+            data: { canvas_slug: linkedSlug, title: title || linkedSlug },
+          });
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("canvas-link drop failed", err);
+      }
+      return;
+    }
 
     // Path 1 — shell payload: Palette or Library dragged a node spec onto the canvas.
     const nodeSpecRaw = event.dataTransfer.getData("application/x-anchor-node");
@@ -555,6 +729,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
         fitView
         nodesDraggable={!readOnly}
         nodesConnectable={!readOnly}

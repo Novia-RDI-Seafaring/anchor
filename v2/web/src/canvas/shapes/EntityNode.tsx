@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 
 import { Pictogram } from "@/canvas/icons";
 import { useInlineField } from "@/canvas/useInlineField";
+import { useLiveResize } from "@/canvas/useLiveResize";
 
 /**
  * EntityNode — circular shape.
@@ -29,7 +30,13 @@ export function EntityNode({ id, data, selected }: NodeProps) {
     field: "label",
     canEdit: selected ?? false,
   });
-  const size = d.width ?? d.height ?? 96; // 24*4 → h-24 default
+  // Live-resize mirror — see ConceptNode for the rationale. Circle stays
+  // 1:1 thanks to NodeResizer's `keepAspectRatio`, so width === height.
+  const { width: liveW, height: liveH, handlers: resizeHandlers } = useLiveResize(
+    d.width,
+    d.height,
+  );
+  const size = liveW ?? liveH ?? 96; // 24*4 → h-24 default
   const wrapCursor = selected ? "cursor-move" : "cursor-pointer";
   return (
     <div
@@ -42,6 +49,7 @@ export function EntityNode({ id, data, selected }: NodeProps) {
         minHeight={48}
         keepAspectRatio
         color="#0ea5e9"
+        {...resizeHandlers}
       />
       <Handle type="target" position={Position.Left} />
       {d.pictogram ? <Pictogram name={d.pictogram} className="text-neutral-700" /> : null}

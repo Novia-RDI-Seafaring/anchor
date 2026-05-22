@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 
 import { Pictogram } from "@/canvas/icons";
 import { useInlineField } from "@/canvas/useInlineField";
+import { useLiveResize } from "@/canvas/useLiveResize";
 
 /**
  * ConceptNode — rounded rectangle shape.
@@ -31,6 +32,13 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
     field: "label",
     canEdit: selected ?? false,
   });
+  // Live-resize mirror: while NodeResizer drags, `width`/`height` track the
+  // pointer in real time; `data.*` is only written on resize-end. Without
+  // this the inner div stays at its persisted size mid-drag (bug).
+  const { width: liveW, height: liveH, handlers: resizeHandlers } = useLiveResize(
+    d.width,
+    d.height,
+  );
   // Cursor: text when selected (hint at edit), move when selected (drag),
   // pointer when unselected. Move wins on the wrapper; the label area gets
   // text via `cursor-text` below.
@@ -38,13 +46,14 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
   return (
     <div
       className={`relative rounded-lg border ${borderStyle} border-neutral-400 bg-white px-3 py-2 text-sm shadow-sm ${opacityClass} ${wrapCursor}`}
-      style={d.width && d.height ? { width: d.width, height: d.height } : undefined}
+      style={liveW && liveH ? { width: liveW, height: liveH } : undefined}
     >
       <NodeResizer
         isVisible={selected ?? false}
         minWidth={80}
         minHeight={32}
         color="#0ea5e9"
+        {...resizeHandlers}
       />
       <Handle type="target" position={Position.Left} />
       <div className="flex items-center gap-2 text-neutral-900">

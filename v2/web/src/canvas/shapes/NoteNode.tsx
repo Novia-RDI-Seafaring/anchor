@@ -2,6 +2,7 @@ import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
 import { useInlineField } from "@/canvas/useInlineField";
+import { useLiveResize } from "@/canvas/useLiveResize";
 
 /**
  * NoteNode — a sticky-note style text card. Renders `data.label` (one-line
@@ -38,17 +39,23 @@ export function NoteNode({ id, data, selected }: NodeProps) {
     multiline: true,
     canEdit: selected ?? false,
   });
+  // Live-resize mirror — see ConceptNode for the rationale.
+  const { width: liveW, height: liveH, handlers: resizeHandlers } = useLiveResize(
+    d.width,
+    d.height,
+  );
   const wrapCursor = selected ? "cursor-move" : "cursor-pointer";
   return (
     <div
       className={`relative max-w-sm rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-neutral-900 shadow-sm ${wrapCursor}`}
-      style={d.width && d.height ? { width: d.width, height: d.height, maxWidth: "none" } : undefined}
+      style={liveW && liveH ? { width: liveW, height: liveH, maxWidth: "none" } : undefined}
     >
       <NodeResizer
         isVisible={selected ?? false}
         minWidth={120}
         minHeight={48}
         color="#0ea5e9"
+        {...resizeHandlers}
       />
       <Handle type="target" position={Position.Left} />
       {rename.editing ? (

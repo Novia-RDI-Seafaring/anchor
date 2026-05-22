@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 
 import { Pictogram } from "@/canvas/icons";
 import { useInlineField } from "@/canvas/useInlineField";
+import { useLiveResize } from "@/canvas/useLiveResize";
 
 /**
  * FactNode — single-assertion card. Label + optional body text. Inline
@@ -30,17 +31,23 @@ export function FactNode({ id, data, selected }: NodeProps) {
     field: "label",
     canEdit: selected ?? false,
   });
+  // Live-resize mirror — see ConceptNode for the rationale.
+  const { width: liveW, height: liveH, handlers: resizeHandlers } = useLiveResize(
+    d.width,
+    d.height,
+  );
   const wrapCursor = selected ? "cursor-move" : "cursor-pointer";
   return (
     <div
       className={`relative rounded-lg border ${borderStyle} border-neutral-400 bg-white px-3 py-2 text-sm shadow-sm ${opacityClass} ${wrapCursor}`}
-      style={d.width && d.height ? { width: d.width, height: d.height } : { maxWidth: "20rem" }}
+      style={liveW && liveH ? { width: liveW, height: liveH } : { maxWidth: "20rem" }}
     >
       <NodeResizer
         isVisible={selected ?? false}
         minWidth={120}
         minHeight={48}
         color="#0ea5e9"
+        {...resizeHandlers}
       />
       <Handle type="target" position={Position.Left} />
       <div className="flex items-start gap-2">

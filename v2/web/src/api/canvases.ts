@@ -6,6 +6,25 @@ export type WorkspaceMeta = {
   created_at: number;
 };
 
+/**
+ * The shape returned by `GET /api/workspaces` and the
+ * `canvas_list_workspaces` MCP tool. Extends the base meta with per-canvas
+ * counts and the canvas-reference graph so the landing page can render a
+ * folder tree without a second round-trip per canvas.
+ *
+ * - `references` are the slugs this canvas's `canvas`-typed nodes
+ *   (`data.canvas_slug`) point at. Self-links + unset targets are
+ *   filtered server-side. Duplicates are de-duplicated.
+ * - `referenced_by` is the reverse map. Empty → tree root. Mutual entry
+ *   (A.references=[B], B.references=[A]) marks a cycle.
+ */
+export type WorkspaceListEntry = WorkspaceMeta & {
+  node_count: number;
+  edge_count: number;
+  references: string[];
+  referenced_by: string[];
+};
+
 export type CanvasState = {
   slug: string;
   title: string;
@@ -16,7 +35,7 @@ export type CanvasState = {
 };
 
 export const canvases = {
-  list: () => api.get<WorkspaceMeta[]>("/api/workspaces"),
+  list: () => api.get<WorkspaceListEntry[]>("/api/workspaces"),
   create: (slug: string, title = "") =>
     api.post<WorkspaceMeta>("/api/workspaces", { slug, title }),
   state: (slug: string) => api.get<CanvasState>(`/api/workspaces/${slug}/state`),

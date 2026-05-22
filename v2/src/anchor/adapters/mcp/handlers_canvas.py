@@ -121,7 +121,7 @@ def tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "canvas_add_edge",
-            "description": "Connect two nodes (source, target, label, edge_type, data).",
+            "description": "Connect two nodes (source, target, label, edge_type, sourceHandle, targetHandle, data).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -130,6 +130,8 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "target": {"type": "string"},
                     "label": {"type": "string"},
                     "edge_type": {"type": "string", "enum": ["floating", "anchored"]},
+                    "sourceHandle": {"type": "string"},
+                    "targetHandle": {"type": "string"},
                     "data": {"type": "object"},
                 },
                 "required": ["workspace_slug", "source", "target"],

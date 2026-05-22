@@ -2,6 +2,7 @@ import { NodeResizer, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
 import { useInlineField } from "@/canvas/useInlineField";
+import { useLiveResize } from "@/canvas/useLiveResize";
 
 /**
  * AreaNode — labelled, dashed rounded-rectangle container.
@@ -32,8 +33,13 @@ export function AreaNode({ id, data, selected }: NodeProps) {
     subtitle?: string;
   };
   const label = d.label ?? "";
-  const w = d.width ?? 320;
-  const h = d.height ?? 200;
+  // Live-resize mirror — see ConceptNode for the rationale.
+  const { width: liveW, height: liveH, handlers: resizeHandlers } = useLiveResize(
+    d.width,
+    d.height,
+  );
+  const w = liveW ?? 320;
+  const h = liveH ?? 200;
   const dashed = d.dashed !== false;
   const toneClass: Record<string, string> = {
     sources: "border-neutral-500/70 bg-neutral-50",
@@ -63,6 +69,7 @@ export function AreaNode({ id, data, selected }: NodeProps) {
         minWidth={120}
         minHeight={60}
         color="#0ea5e9"
+        {...resizeHandlers}
       />
       <div className="border-b border-current/20 px-3 py-1.5">
         {rename.editing ? (

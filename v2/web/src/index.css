@@ -23,3 +23,14 @@
     border-color: var(--color-border);
   }
 }
+
+/* When a tool is armed (canvas wrapper has `cursor-crosshair`), force the
+   crosshair cursor through ReactFlow's internal pane / node / viewport
+   surfaces too. ReactFlow sets its own `cursor: grab` on the pane which
+   otherwise wins over the wrapper's cursor. */
+.cursor-crosshair .react-flow__pane,
+.cursor-crosshair .react-flow__node,
+.cursor-crosshair .react-flow__renderer,
+.cursor-crosshair .react-flow__viewport {
+  cursor: crosshair !important;
+}

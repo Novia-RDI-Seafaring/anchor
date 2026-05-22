@@ -74,7 +74,9 @@ def apply(state: Workspace, evt: BaseModel) -> Workspace:
     elif isinstance(evt, EdgeAdded):
         new.edges[evt.id] = Edge(
             id=evt.id, source=evt.source, target=evt.target,
-            label=evt.label, edge_type=evt.edge_type, data=dict(evt.data),
+            label=evt.label, edge_type=evt.edge_type,
+            sourceHandle=evt.sourceHandle, targetHandle=evt.targetHandle,
+            data=dict(evt.data),
         )
     elif isinstance(evt, EdgeRemoved):
         new.edges.pop(evt.id, None)

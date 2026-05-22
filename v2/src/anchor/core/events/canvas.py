@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 CanvasEventType = Literal[
     "NodeAdded",
@@ -79,7 +79,15 @@ class EdgeAdded(BaseModel):
     target: str
     label: str = ""
     edge_type: str = "floating"
+    # Optional handle ids on the source/target nodes (ReactFlow handle ids).
+    # When present the edge pins to that specific handle instead of routing
+    # node-to-node; row-level evidence edges live here. Snake-case aliases
+    # are accepted so adapters that prefer that shape (CLI flags) work.
+    sourceHandle: str | None = Field(default=None, alias="source_handle")
+    targetHandle: str | None = Field(default=None, alias="target_handle")
     data: dict[str, Any] = {}
+
+    model_config = {"populate_by_name": True}
 
 
 class EdgeRemoved(BaseModel):

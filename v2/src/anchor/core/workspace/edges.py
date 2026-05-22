@@ -21,4 +21,11 @@ class Edge(BaseModel):
     target: str
     label: str = ""
     edge_type: str = "floating"
+    # Optional ReactFlow handle ids on the source/target nodes. When present
+    # they pin the edge endpoints to specific handles (e.g. spec-row →
+    # document-region) rather than free-floating to node centroids. Camel-
+    # case names match ReactFlow's wire shape; the JSON in/out keeps them
+    # camelCase end-to-end so frontend code can pass them through.
+    sourceHandle: str | None = None
+    targetHandle: str | None = None
     data: dict[str, Any] = Field(default_factory=dict)

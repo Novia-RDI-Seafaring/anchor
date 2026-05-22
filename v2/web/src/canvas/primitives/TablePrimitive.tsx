@@ -4,10 +4,21 @@ import { useParams } from "react-router-dom";
 
 import { canvases } from "@/api/canvases";
 import { documents } from "@/api/documents";
+import { useLiveResize } from "@/canvas/useLiveResize";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
-type Row = { key: string; value: string; source_ref?: { page: number; bbox?: number[] } };
+type Row = {
+  key: string;
+  value: string;
+  // Per-row provenance back to the source document. `region_id` is the link
+  // the row-handle wiring relies on: when the user hovers a row, the spec
+  // broadcasts hoveredSourceRef{slug, page, region_id, bbox}, the document
+  // node flips to that page and highlights the matching region, and any
+  // evidence edge whose data.source_ref matches snaps from node-to-node
+  // floating to row-handle↔region-handle anchored mode.
+  source_ref?: { page: number; region_id?: string; bbox?: number[] };
+};
 
 type SourceRef = { kind?: string; page?: number; bbox?: number[] };
 
@@ -42,6 +53,8 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
     source_region_id?: string;
     source_ref?: SourceRef;
     dashed?: boolean;
+    width?: number;
+    height?: number;
   };
   const canonicalRows = useMemo<Row[]>(() => d.rows ?? [], [d.rows]);
   const borderStyle = d.dashed ? "border-dashed" : "border-solid";
@@ -105,6 +118,28 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
     }
   };
 
+  /** Per-row hover broadcasts the row's own source_ref, falling back to the
+   *  spec's node-level source_ref when the row hasn't been wired yet. This
+   *  is what drives the document node's page-flip + region-highlight, and
+   *  via pickEdgeMode the evidence edge's floating→anchored swap. */
+  const broadcastRowHover = (row: Row) => {
+    if (!d.source_doc_slug) return;
+    const ref = row.source_ref ?? d.source_ref;
+    if (!ref?.page) return;
+    setHoveredSourceRef({
+      slug: d.source_doc_slug,
+      page: ref.page,
+      region_id: row.source_ref?.region_id ?? d.source_region_id,
+      bbox: ref.bbox,
+    });
+  };
+
+  /** Stable ReactFlow handle id for a row. Keyed on (index, key) so the id
+   *  stays unique even when two rows happen to share a key string. The
+   *  index keeps it stable across re-renders for the same logical row. */
+  const rowHandleId = (i: number, row: Row): string =>
+    `row:${i}:${(row.key || "").trim()}`;
+
   // Click → open the PDF viewer at this spec's source page with the bbox
   // highlighted. The viewer also wants a documentNodeId so its "send region
   // to canvas" sidebar can wire evidence edges back to the same source
@@ -141,9 +176,18 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   const canOpen = Boolean(d.source_doc_slug && d.source_ref?.page);
 
   const canEdit = selected ?? false;
+  // Live-resize mirror — see useLiveResize for the rationale. When the user
+  // hasn't resized yet, fall back to the Tailwind `w-72` default; once a
+  // dimension is in flight or persisted, the explicit style override wins.
+  const { width: liveW, height: liveH, handlers: resizeHandlers } = useLiveResize(
+    d.width,
+    d.height,
+  );
+  const sized = liveW !== undefined || liveH !== undefined;
   return (
     <div
-      className={`relative w-72 rounded-lg border ${borderStyle} border-neutral-400 bg-white text-sm shadow-sm ${selected ? "cursor-move" : "cursor-pointer"}`}
+      className={`relative rounded-lg border ${borderStyle} border-neutral-400 bg-white text-sm shadow-sm ${sized ? "" : "w-72"} ${selected ? "cursor-move" : "cursor-pointer"}`}
+      style={sized ? { width: liveW, height: liveH } : undefined}
       onMouseEnter={broadcastHover}
       onMouseLeave={clearHoveredSourceRef}
     >
@@ -152,6 +196,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         minWidth={200}
         minHeight={64}
         color="#0ea5e9"
+        {...resizeHandlers}
       />
       <Handle type="target" position={Position.Left} />
       <div
@@ -219,39 +264,65 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       {rows.length > 0 || !d.description ? (
         <table className="w-full">
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={`row-${i}`} className="border-b border-neutral-100 last:border-0">
-                <td className="px-3 py-1 text-neutral-600">
-                  <RowCell
-                    rowIndex={i}
-                    col="key"
-                    value={r.key}
-                    rowsLen={rows.length}
-                    canEdit={canEdit}
-                    pendingFocus={pendingFocus}
-                    setPendingFocus={setPendingFocus}
-                    onCommit={(v) => commitRow(i, "key", v)}
-                    onAppendRow={() => appendRow("key")}
-                  />
-                </td>
-                <td className="px-3 py-1 text-neutral-900">
-                  <RowCell
-                    rowIndex={i}
-                    col="value"
-                    value={r.value}
-                    rowsLen={rows.length}
-                    canEdit={canEdit}
-                    pendingFocus={pendingFocus}
-                    setPendingFocus={setPendingFocus}
-                    onCommit={(v) => commitRow(i, "value", v)}
-                    onAppendRow={() => appendRow("key")}
-                  />
-                </td>
-                <td className="px-2 text-xs text-neutral-400">
-                  {r.source_ref?.page ? `p${r.source_ref.page}` : ""}
-                </td>
-              </tr>
-            ))}
+            {rows.map((r, i) => {
+              const hid = rowHandleId(i, r);
+              return (
+                <tr
+                  key={`row-${i}`}
+                  data-row-handle-id={hid}
+                  className="group/tr relative border-b border-neutral-100 last:border-0 hover:bg-sky-50/40"
+                  // Only broadcast on row-enter; the parent <div>'s
+                  // mouseLeave clears the global hover state when the
+                  // cursor leaves the whole card. Clearing on row-leave
+                  // would flicker when sliding between adjacent rows.
+                  onMouseEnter={() => broadcastRowHover(r)}
+                >
+                  <td className="px-3 py-1 text-neutral-600">
+                    <RowCell
+                      rowIndex={i}
+                      col="key"
+                      value={r.key}
+                      rowsLen={rows.length}
+                      canEdit={canEdit}
+                      pendingFocus={pendingFocus}
+                      setPendingFocus={setPendingFocus}
+                      onCommit={(v) => commitRow(i, "key", v)}
+                      onAppendRow={() => appendRow("key")}
+                    />
+                  </td>
+                  <td className="px-3 py-1 text-neutral-900">
+                    <RowCell
+                      rowIndex={i}
+                      col="value"
+                      value={r.value}
+                      rowsLen={rows.length}
+                      canEdit={canEdit}
+                      pendingFocus={pendingFocus}
+                      setPendingFocus={setPendingFocus}
+                      onCommit={(v) => commitRow(i, "value", v)}
+                      onAppendRow={() => appendRow("key")}
+                    />
+                  </td>
+                  <td className="relative px-2 text-xs text-neutral-400">
+                    {r.source_ref?.page ? `p${r.source_ref.page}` : ""}
+                    {/* Per-row source handle. Default state is a 2px grey
+                        dot tucked against the row's right edge — visible
+                        on hover, hit-target stays clickable for drag-to-
+                        connect via ReactFlow's onConnect.
+                        We pin the handle inside the row's last <td> so the
+                        top offset comes from layout flow (no absolute Y
+                        math) and the X is right at the table's right edge. */}
+                    <Handle
+                      type="source"
+                      position={Position.Right}
+                      id={hid}
+                      className="!h-2 !w-2 !min-w-0 !min-h-0 !border !border-neutral-400 !bg-white opacity-30 transition group-hover/tr:opacity-100 hover:!opacity-100 hover:!border-sky-500 hover:!bg-sky-400"
+                      style={{ right: -4 }}
+                    />
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       ) : (
