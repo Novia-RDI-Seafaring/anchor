@@ -193,3 +193,59 @@ describe("ConceptNode Text picker", () => {
     expect(label.style.fontSize).toBe("1rem");
   });
 });
+
+/**
+ * Placeholder affordance smoke — `data.placeholder: true` renders the
+ * dashed sky outline + the empty chip with the hint. Clearing the flag
+ * reverts to the user's normal styling. This is the visible half of the
+ * `canvas_list_placeholders` MCP contract.
+ */
+describe("ConceptNode placeholder", () => {
+  function renderWith(data: Record<string, unknown>) {
+    return render(
+      <MemoryRouter initialEntries={["/canvas/w1"]}>
+        <Routes>
+          <Route
+            path="/canvas/:id"
+            element={
+              <ReactFlowProvider>
+                <ConceptNode
+                  {...({
+                    id: "n1",
+                    data,
+                    selected: false,
+                    dragging: false,
+                    isConnectable: false,
+                    positionAbsoluteX: 0,
+                    positionAbsoluteY: 0,
+                    type: "concept",
+                    zIndex: 0,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  } as any)}
+                />
+              </ReactFlowProvider>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it("renders the chip and the dashed sky outline when placeholder is true", () => {
+    const { container, queryByTestId } = renderWith({
+      label: "Max inlet pressure",
+      placeholder: true,
+      placeholder_hint: "Max inlet pressure",
+    });
+    expect(queryByTestId("placeholder-chip")).not.toBeNull();
+    const wrapper = container.firstChild as HTMLElement;
+    expect(wrapper.className).toContain("border-dashed");
+    // Sky-500 stroke colour wins over the default.
+    expect(wrapper.style.borderColor).toBe("rgb(14, 165, 233)");
+  });
+
+  it("does NOT render the chip when placeholder is missing or false", () => {
+    const { queryByTestId } = renderWith({ label: "filled" });
+    expect(queryByTestId("placeholder-chip")).toBeNull();
+  });
+});

@@ -85,6 +85,34 @@ def test_delete_node_cascades_edges():
     assert types == ["EdgeRemoved", "NodeRemoved"]
 
 
+def test_list_placeholders_returns_flagged_nodes():
+    """Mirrors canvas_list_placeholders MCP tool. Adapter parity rule."""
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.post("/api/workspaces/w1/nodes", json={
+        "id": "ph", "node_type": "spec", "label": "Max pressure",
+        "data": {"placeholder": True, "placeholder_hint": "Max inlet pressure"},
+    })
+    client.post("/api/workspaces/w1/nodes", json={
+        "id": "filled", "node_type": "spec", "label": "Temp",
+        "data": {"rows": [{"key": "k", "value": "v"}]},
+    })
+    rsp = client.get("/api/workspaces/w1/placeholders")
+    assert rsp.status_code == 200
+    body = rsp.json()
+    assert {it["id"] for it in body} == {"ph"}
+    assert body[0]["hint"] == "Max inlet pressure"
+    assert body[0]["node_type"] == "spec"
+
+
+def test_list_placeholders_empty():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    rsp = client.get("/api/workspaces/w1/placeholders")
+    assert rsp.status_code == 200
+    assert rsp.json() == []
+
+
 def test_move_node_via_patch():
     client, _ = _client()
     client.post("/api/workspaces", json={"slug": "w1"})

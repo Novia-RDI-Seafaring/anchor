@@ -3,6 +3,8 @@ import { useParams } from "react-router-dom";
 
 import { resolveColors, resolveText } from "@/canvas/colors";
 import { Pictogram } from "@/canvas/icons";
+import { PlaceholderChip } from "@/canvas/PlaceholderChip";
+import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
 
@@ -24,9 +26,12 @@ export function FactNode({ id, data, selected }: NodeProps) {
     stroke_color?: string;
   };
   const label = d.label ?? "";
-  const borderStyle = d.dashed ? "border-dashed" : "border-solid";
-  const opacityClass = d.dashed ? "opacity-70" : "";
-  const { bg, stroke } = resolveColors(d);
+  const ph = placeholderState(d);
+  const borderStyle = ph.active || d.dashed ? "border-dashed" : "border-solid";
+  const opacityClass = d.dashed && !ph.active ? "opacity-70" : "";
+  const baseColors = resolveColors(d);
+  const bg = ph.active ? PLACEHOLDER_BG : baseColors.bg;
+  const stroke = ph.active ? PLACEHOLDER_STROKE : baseColors.stroke;
   const t = resolveText(d);
   const { id: workspaceSlug } = useParams<{ id: string }>();
   const rename = useInlineField({
@@ -59,6 +64,7 @@ export function FactNode({ id, data, selected }: NodeProps) {
         color="#0ea5e9"
         {...resizeHandlers}
       />
+      {ph.active ? <PlaceholderChip hint={ph.hint} /> : null}
       <Handle type="target" position={Position.Left} />
       {/* Display label / body / pictogram inherit `color` from the wrapper
           (resolveColors → stroke). The edit-mode <input> keeps the

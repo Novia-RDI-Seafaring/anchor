@@ -4,6 +4,8 @@ import { useParams } from "react-router-dom";
 
 import { canvases } from "@/api/canvases";
 import { documents } from "@/api/documents";
+import { PlaceholderChip } from "@/canvas/PlaceholderChip";
+import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
 import { useLiveResize } from "@/canvas/useLiveResize";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -57,7 +59,11 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
     height?: number;
   };
   const canonicalRows = useMemo<Row[]>(() => d.rows ?? [], [d.rows]);
-  const borderStyle = d.dashed ? "border-dashed" : "border-solid";
+  const ph = placeholderState(d as Record<string, unknown> | undefined);
+  // Placeholder mode forces dashed sky outline even if the user didn't pick
+  // `data.dashed`. Filling the slot via `canvas_update_node` (placeholder:
+  // false, rows: [...]) flips it back to the solid border + white bg.
+  const borderStyle = ph.active || d.dashed ? "border-dashed" : "border-solid";
   const setHoveredSourceRef = useUiStore((s) => s.setHoveredSourceRef);
   const clearHoveredSourceRef = useUiStore((s) => s.clearHoveredSourceRef);
   const openPdf = useUiStore((s) => s.openPdf);
@@ -191,10 +197,17 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   // room, but doesn't go smaller than the user-chosen size. Width still
   // gets honoured explicitly because the user typically resizes spec
   // tables horizontally to control column widths.
+  const wrapperStyle: React.CSSProperties = sized
+    ? { width: liveW, minHeight: liveH }
+    : {};
+  if (ph.active) {
+    wrapperStyle.background = PLACEHOLDER_BG;
+    wrapperStyle.borderColor = PLACEHOLDER_STROKE;
+  }
   return (
     <div
-      className={`relative rounded-lg border ${borderStyle} border-neutral-400 bg-white text-sm shadow-sm ${sized ? "" : "w-72"} ${selected ? "cursor-move" : "cursor-pointer"}`}
-      style={sized ? { width: liveW, minHeight: liveH } : undefined}
+      className={`relative rounded-lg border ${borderStyle} ${ph.active ? "" : "border-neutral-400 bg-white"} text-sm shadow-sm ${sized ? "" : "w-72"} ${selected ? "cursor-move" : "cursor-pointer"}`}
+      style={wrapperStyle}
       onMouseEnter={broadcastHover}
       onMouseLeave={clearHoveredSourceRef}
     >
@@ -205,6 +218,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         color="#0ea5e9"
         {...resizeHandlers}
       />
+      {ph.active ? <PlaceholderChip hint={ph.hint} /> : null}
       <Handle type="target" position={Position.Left} />
       <div
         className="flex items-center justify-between border-b border-neutral-200 px-3 py-2 gap-2"

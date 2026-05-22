@@ -38,6 +38,7 @@ import {
   ChevronRight,
   Palette,
   PaintBucket,
+  Sparkles,
   Type,
   Trash2,
 } from "lucide-react";
@@ -126,6 +127,25 @@ export function NodeContextMenu({ workspaceSlug, target, onClose }: Props) {
   const remove = () =>
     runAndClose(async () => {
       for (const id of ids) await canvases.removeNode(workspaceSlug, id);
+    });
+
+  // Toggle placeholder mode across the selection. If *any* node in the
+  // selection is already a placeholder we clear them all; otherwise we
+  // mark them all. Idempotent + obvious.
+  const anyPlaceholder = ids.some(
+    (nid) => (storeNodes[nid]?.data as { placeholder?: unknown } | undefined)?.placeholder === true,
+  );
+  const togglePlaceholder = () =>
+    runAndClose(async () => {
+      for (const nid of ids) {
+        const existing = (storeNodes[nid]?.data ?? {}) as Record<string, unknown>;
+        const nextData = { ...existing, placeholder: !anyPlaceholder };
+        if (anyPlaceholder) {
+          // Clearing — drop the hint too so the node returns to a clean state.
+          delete (nextData as { placeholder_hint?: unknown }).placeholder_hint;
+        }
+        await canvases.patchNode(workspaceSlug, nid, { data: nextData });
+      }
     });
   const openProperties = () => {
     useUiStore.getState().setSelectedNodeId(target.nodeId);
@@ -280,6 +300,13 @@ export function NodeContextMenu({ workspaceSlug, target, onClose }: Props) {
           ) : null
         }
       />
+      <Separator />
+      <MenuItem
+        icon={<Sparkles className="size-3.5" />}
+        onClick={() => void togglePlaceholder()}
+      >
+        {anyPlaceholder ? "Clear placeholder" : "Mark as placeholder"}
+      </MenuItem>
       <Separator />
       <MenuItem
         icon={<Trash2 className="size-3.5" />}

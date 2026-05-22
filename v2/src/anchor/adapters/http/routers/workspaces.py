@@ -37,6 +37,22 @@ async def get_state(slug: str, svc: WorkspaceService = Depends(get_workspace_ser
     return state
 
 
+@router.get("/{slug}/placeholders")
+async def list_placeholders(slug: str, svc: WorkspaceService = Depends(get_workspace_service)):
+    """List every node on ``slug`` flagged ``data.placeholder == true``.
+
+    Same envelope as the ``canvas_list_placeholders`` MCP tool and the
+    ``anchor canvas placeholders <slug>`` CLI. The web UI calls this to
+    render the "placeholders to fill" badge; an MCP-driven agent calls
+    the MCP tool variant. Per the v2 adapter parity rule, all three reach
+    ``WorkspaceService.list_placeholders``.
+    """
+    try:
+        return await svc.list_placeholders(slug)
+    except (KeyError, FileNotFoundError):
+        raise HTTPException(404, f"workspace {slug!r} not found")
+
+
 @router.post("/{slug}/clear")
 async def clear(slug: str, svc: WorkspaceService = Depends(get_workspace_service)):
     state, env = await svc.clear(slug)

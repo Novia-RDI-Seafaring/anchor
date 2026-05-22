@@ -2,6 +2,8 @@ import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
 import { DEFAULT_BG, DEFAULT_STROKE, resolveColors, resolveText } from "@/canvas/colors";
+import { PlaceholderChip } from "@/canvas/PlaceholderChip";
+import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
 
@@ -69,11 +71,21 @@ export function NoteNode({ id, data, selected }: NodeProps) {
     wrapStyle.borderColor = stroke;
     wrapStyle.color = stroke;
   }
+  // Placeholder mode wins over user styling — render the dashed sky look
+  // so the "needs filling" signal is uniform across primitives.
+  const ph = placeholderState(d);
+  if (ph.active) {
+    wrapStyle.background = PLACEHOLDER_BG;
+    wrapStyle.borderColor = PLACEHOLDER_STROKE;
+    wrapStyle.color = PLACEHOLDER_STROKE;
+    wrapStyle.borderStyle = "dashed";
+  }
   return (
     <div
       className={`relative max-w-sm rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-neutral-900 shadow-sm ${wrapCursor}`}
       style={wrapStyle}
     >
+      {ph.active ? <PlaceholderChip hint={ph.hint} /> : null}
       <NodeResizer
         isVisible={selected ?? false}
         minWidth={120}

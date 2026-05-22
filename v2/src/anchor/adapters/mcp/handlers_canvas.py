@@ -327,6 +327,25 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "canvas_list_placeholders",
+            "description": (
+                "List every node on the workspace flagged "
+                "`data.placeholder == true`. Each entry: "
+                "{id, node_type, label, hint, x, y, data}. `hint` mirrors "
+                "`data.placeholder_hint` so you can pick the right doc "
+                "lookup for each slot. Pair with `search_documents` / "
+                "`get_gold_regions` and finish by calling "
+                "`canvas_update_node` with the resolved value + a "
+                "`source_ref` and `placeholder: false` in the data dict "
+                "to clear the flag."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {"workspace_slug": {"type": "string"}},
+                "required": ["workspace_slug"],
+            },
+        },
+        {
             "name": "canvas_snapshot",
             "description": (
                 "Render a workspace canvas to PNG and return the bytes "
@@ -469,6 +488,8 @@ async def call_tool(svc: WorkspaceService, name: str, args: dict[str, Any]) -> s
                 x=float(args.get("x", 0.0)),
                 y=float(args.get("y", 0.0)),
             ))
+        if name == "canvas_list_placeholders":
+            return json.dumps(await svc.list_placeholders(args["workspace_slug"]))
         if name == "canvas_snapshot":
             envelope_fmt = args.get("format", "path")
             image_fmt = args.get("image_format", "png")

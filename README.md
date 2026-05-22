@@ -17,6 +17,22 @@ your laptop.**
 
 ## Get started
 
+The fastest path: install Anchor and run `anchor demo` to ingest the
+bundled LKH-5 PDF, seed a demo canvas with six placeholder spec slots,
+and boot the server in one command. Then register MCP with your AI
+harness and ask it to fill the placeholders. See
+[`v2/docs/TUTORIAL.md`](./v2/docs/TUTORIAL.md) for the five-minute
+walk-through.
+
+```bash
+# Install + demo in two commands
+uv tool install \
+  git+https://github.com/Novia-RDI-Seafaring/anchor-kb-ui-RAG@feat/architecture#subdirectory=v2
+anchor demo
+```
+
+For development from source:
+
 ```bash
 cd v2
 uv sync
@@ -31,6 +47,7 @@ pnpm --filter @anchor/web dev
 Open `http://localhost:5173` (Vite, with HMR) or `http://localhost:8002`
 (FastAPI serving the built bundle). Full install + adoption recipes:
 
+- [v2/docs/TUTORIAL.md](./v2/docs/TUTORIAL.md) — five-minute first-day tour
 - [v2/README.md](./v2/README.md) — install, quick start, CLI reference
 - [v2/docs/README.md](./v2/docs/README.md) — six short documents covering architecture, on-disk substrate, OIP, canvas, and the multi-interface story
 - [v2/docs/ADOPTION.md](./v2/docs/ADOPTION.md) — harness recipes (Claude Code, Cursor, opencode), Azure / Ollama / vLLM, air-gap notes

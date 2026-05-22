@@ -73,6 +73,9 @@ Two MCP tool sets, all under one server:
 **Canvas tools** (act on a per-canvas WORKSPACES substrate):
 - `canvas_create_workspace(slug, title?)` and `canvas_list_workspaces()`
 - `canvas_get_state(workspace_slug)` — full canvas state
+- `canvas_list_placeholders(workspace_slug)` — every node flagged
+  `data.placeholder == true`, with its `placeholder_hint`. Your "what
+  to fill" entrypoint when the user says "fill in the specs I marked".
 - `canvas_add_node(workspace_slug, node_type, label, x, y, data?)`
 - `canvas_update_node(workspace_slug, id, ...)` and `canvas_remove_node(...)`
 - `canvas_add_edge(workspace_slug, source, target, edge_type?, data?)`

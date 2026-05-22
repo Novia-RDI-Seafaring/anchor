@@ -533,6 +533,30 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
             }}>
               Edit properties…
             </DropdownMenuItem>
+            {/* Toggle placeholder mode across the selection. Same one-line
+                heuristic as NodeContextMenu: any-placeholder → clear all,
+                else mark all. The chip + dashed sky outline becomes the
+                "agent please fill this" signal that
+                `canvas_list_placeholders` enumerates. */}
+            <DropdownMenuItem onSelect={() => {
+              const anyPh = selectedNodeIds.some(
+                (id) => (nodes[id]?.data as { placeholder?: unknown } | undefined)?.placeholder === true,
+              );
+              void (async () => {
+                for (const id of selectedNodeIds) {
+                  const existing = (nodes[id]?.data ?? {}) as Record<string, unknown>;
+                  const next = { ...existing, placeholder: !anyPh };
+                  if (anyPh) delete (next as { placeholder_hint?: unknown }).placeholder_hint;
+                  await canvases.patchNode(workspaceSlug, id, { data: next });
+                }
+              })();
+            }}>
+              {selectedNodeIds.some(
+                (id) => (nodes[id]?.data as { placeholder?: unknown } | undefined)?.placeholder === true,
+              )
+                ? "Clear placeholder"
+                : "Mark as placeholder"}
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem disabled>
               Bring to front (coming soon)

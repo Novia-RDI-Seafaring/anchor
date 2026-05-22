@@ -4,7 +4,11 @@ This folder is the source of truth for what Anchor *is* after the v2
 refactor. It's the brief you'd hand a designer who's never seen the
 project, or use to redo a poster from scratch.
 
-The six documents are small on purpose. Read them in order:
+**Want a hands-on first-day?** Start with [`TUTORIAL.md`](./TUTORIAL.md) — it
+walks you from `uv tool install` to "agent fills placeholders" in about
+five minutes against the bundled LKH-5 sample.
+
+The six conceptual documents are small on purpose. Read them in order:
 
 1. **[01-architecture.md](./01-architecture.md)** — the thesis, the
    three substrates, the hexagonal layers. The shape of the system in

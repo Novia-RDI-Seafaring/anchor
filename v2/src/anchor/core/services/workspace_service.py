@@ -152,6 +152,37 @@ class WorkspaceService:
         ws = await self.store.load(slug)
         return ws.get_state()
 
+    async def list_placeholders(self, slug: str) -> list[dict[str, Any]]:
+        """Return every node on ``slug`` flagged ``data.placeholder == true``.
+
+        Placeholders are the agent-visible "fill these in" affordance. The
+        web UI renders them with a dashed sky-blue outline + hint chip; this
+        method is what the agent calls to find them. Same envelope is
+        exposed via HTTP ``GET /api/workspaces/{slug}/placeholders``, the
+        ``canvas_list_placeholders`` MCP tool, and ``anchor canvas
+        placeholders <slug>`` (per the v2 adapter-parity rule).
+
+        Each entry: ``{id, node_type, label, hint, x, y, data}`` where
+        ``hint`` is the optional ``data.placeholder_hint`` (or empty string).
+        """
+        ws = await self.store.load(slug)
+        out: list[dict[str, Any]] = []
+        for n in ws.nodes.values():
+            data = n.data or {}
+            if data.get("placeholder") is not True:
+                continue
+            hint = data.get("placeholder_hint")
+            out.append({
+                "id": n.id,
+                "node_type": n.node_type,
+                "label": n.label,
+                "hint": hint if isinstance(hint, str) else "",
+                "x": n.x,
+                "y": n.y,
+                "data": dict(data),
+            })
+        return out
+
     async def add_node(self, slug: str, **kwargs: Any) -> tuple[Workspace, DomainEvent]:
         cmd = NodeAdded(id=kwargs.pop("id", None) or new_id(), **kwargs)
         return await self._dispatch(slug, cmd)

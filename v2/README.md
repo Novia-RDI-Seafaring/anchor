@@ -4,6 +4,8 @@
 
 Anchor is two things: a **generic canvas primitive** (workspace, nodes, edges, real-time multi-client sync over MCP/HTTP/SSE) and a **PDF-ingestion extension** (medallion bronze→silver→gold pipeline producing structured, page-and-bbox-anchored regions). Today PDFs are the canonical use case; the canvas itself is domain-agnostic and other extensions (transcription, code, web pages) will land alongside.
 
+**New here?** Walk through [`docs/TUTORIAL.md`](./docs/TUTORIAL.md) — five minutes from `uv tool install` to "agent fills my engineering specs while I watch".
+
 ---
 
 ## Install
@@ -56,6 +58,12 @@ Optional extras:
 ## Quick start
 
 ```bash
+# 0. One-shot: ingest the bundled LKH-5 sample, seed a `demo` workspace
+#    with six placeholder spec slots, and start the server.
+anchor demo
+
+# Or step by step:
+
 # 1. Pick a folder for your data; create your first canvas
 anchor canvas create my-first-canvas --data-dir ~/anchor-data
 
@@ -67,6 +75,8 @@ anchor ingest /path/to/datasheet.pdf --data-dir ~/anchor-data
 
 # 4. Open http://localhost:8002/c/my-first-canvas in your browser
 ```
+
+See [`docs/TUTORIAL.md`](./docs/TUTORIAL.md) for a walked-through `anchor demo` → "agent fills the placeholders" tour.
 
 That's the whole loop. Every PDF you ingest becomes a structured set of regions on disk; every canvas you create is a folder you can zip and email.
 

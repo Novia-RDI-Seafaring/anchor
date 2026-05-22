@@ -268,6 +268,90 @@ def test_canvas_update_node_with_parent_dispatches_reparent():
     asyncio.run(run())
 
 
+def test_canvas_list_placeholders_tool_is_registered():
+    names = {d["name"] for d in handlers_canvas.tool_definitions()}
+    assert "canvas_list_placeholders" in names
+
+
+def test_canvas_list_placeholders_returns_flagged_nodes():
+    """Only nodes with `data.placeholder == true` come back, with hint."""
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await s.workspace.add_node(
+            "w1", id="a", node_type="spec", label="Max pressure",
+            data={"placeholder": True, "placeholder_hint": "Max inlet pressure"},
+        )
+        await s.workspace.add_node(
+            "w1", id="b", node_type="spec", label="Filled",
+            data={"rows": [{"key": "k", "value": "v"}]},
+        )
+        await s.workspace.add_node(
+            "w1", id="c", node_type="concept", label="Empty box",
+            data={"placeholder": True},
+        )
+        body = await handlers_canvas.call_tool(
+            s.workspace, "canvas_list_placeholders",
+            {"workspace_slug": "w1"},
+        )
+        items = json.loads(body)
+        assert {it["id"] for it in items} == {"a", "c"}
+        by_id = {it["id"]: it for it in items}
+        assert by_id["a"]["hint"] == "Max inlet pressure"
+        assert by_id["a"]["node_type"] == "spec"
+        assert by_id["c"]["hint"] == ""
+    asyncio.run(run())
+
+
+def test_canvas_list_placeholders_empty_when_no_flags():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await s.workspace.add_node("w1", id="a", label="plain")
+        body = await handlers_canvas.call_tool(
+            s.workspace, "canvas_list_placeholders",
+            {"workspace_slug": "w1"},
+        )
+        assert json.loads(body) == []
+    asyncio.run(run())
+
+
+def test_canvas_update_node_clears_placeholder_round_trip():
+    """Agent flow: list placeholders → update with real data + flag false."""
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await s.workspace.add_node(
+            "w1", id="a", node_type="spec", label="Temp range",
+            data={"placeholder": True, "placeholder_hint": "Temperature range"},
+        )
+        # Agent finds the slot
+        listing = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_list_placeholders",
+            {"workspace_slug": "w1"},
+        ))
+        assert len(listing) == 1
+        # Agent fills it in
+        await handlers_canvas.call_tool(
+            s.workspace, "canvas_update_node",
+            {
+                "workspace_slug": "w1", "id": "a",
+                "data": {
+                    "placeholder": False,
+                    "placeholder_hint": "Temperature range",
+                    "rows": [{"key": "min", "value": "-20°C"}],
+                    "source_ref": {"page": 2, "bbox": [10, 20, 30, 40]},
+                },
+            },
+        )
+        listing2 = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_list_placeholders",
+            {"workspace_slug": "w1"},
+        ))
+        assert listing2 == []
+    asyncio.run(run())
+
+
 def test_canvas_update_node_rejects_self_parent():
     async def run():
         s = make_in_memory_services()
