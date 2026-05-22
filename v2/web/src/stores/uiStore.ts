@@ -111,6 +111,16 @@ type UiState = {
   isDraggingNode: boolean;
   setIsDraggingNode: (dragging: boolean) => void;
   /**
+   * Last node id the pointer entered. Drives the
+   * DirectionalConnectors overlay's hover-mode: any hovered node
+   * shows quick-add dots even without prior selection. Cleared when
+   * the pointer leaves the node OR when the node is selected (the
+   * selection path takes priority so a selected node's dots stay put
+   * if the user moves the cursor off the node briefly).
+   */
+  hoveredNodeId: string | null;
+  setHoveredNodeId: (id: string | null) => void;
+  /**
    * When a node is created via a "quick add" path (DirectionalConnectors
    * click, QuickAddPopover pick), this slot carries the new node's id so
    * the shape primitive's `useInlineField` hook can auto-enter rename
@@ -143,6 +153,7 @@ export const useUiStore = create<UiState>((set) => ({
   propertiesOpen: false,
   dropTargetAreaId: null,
   isDraggingNode: false,
+  hoveredNodeId: null,
   pendingInlineRenameNodeId: null,
   selectedEdgeId: null,
   openPdf: (slug, options) =>
@@ -199,6 +210,7 @@ export const useUiStore = create<UiState>((set) => ({
     ),
   setDropTargetAreaId: (id) => set({ dropTargetAreaId: id }),
   setIsDraggingNode: (dragging) => set({ isDraggingNode: dragging }),
+  setHoveredNodeId: (id) => set({ hoveredNodeId: id }),
   requestInlineRename: (id) => set({ pendingInlineRenameNodeId: id }),
   // Consume returns true iff the requested id matches the pending one;
   // either way the slot is cleared so a re-render doesn't keep re-firing

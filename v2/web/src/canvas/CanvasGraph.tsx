@@ -923,6 +923,14 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
               // panel is reachable via the toolbar's ⋮ More or the
               // context menu's "Edit properties…").
               onNodeClick: (_event, node) => { setSelectedNodeId(node.id); },
+              // Hover broadcast for DirectionalConnectors — any hovered node
+              // surfaces quick-add dots without requiring selection first.
+              onNodeMouseEnter: (_event, node) => {
+                useUiStore.getState().setHoveredNodeId(node.id);
+              },
+              onNodeMouseLeave: () => {
+                useUiStore.getState().setHoveredNodeId(null);
+              },
               onEdgeClick: (_event, edge) => { setSelectedEdgeId(edge.id); },
               onEdgeContextMenu: (event, edge) => {
                 event.preventDefault();

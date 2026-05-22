@@ -166,7 +166,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
             ref={imgRef}
             src={coverUrl}
             alt={d.filename ?? "document"}
-            className="nodrag block w-full select-none"
+            className="block w-full select-none"
             style={{ display: "block", height: "auto" }}
             loading="lazy"
             draggable={false}

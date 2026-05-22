@@ -104,7 +104,14 @@ export function DirectionalConnectors({ workspaceSlug }: Props) {
   // Exactly-one-selected — multi-select hides the dots so we don't fight
   // the alignment / group-drag flow on NodeContextToolbar.
   const singleSelectedId = selectedIds.length === 1 ? selectedIds[0] : null;
-  const sourceNode = singleSelectedId ? nodes[singleSelectedId] : null;
+  // Hover-mode: any hovered node also surfaces the dots (Miro-style). The
+  // selection path takes priority — when one node is explicitly selected,
+  // we anchor dots there even if the cursor wanders briefly. Otherwise we
+  // follow the hover. Multi-select still suppresses the dots.
+  const hoveredId = useUiStore((s) => s.hoveredNodeId);
+  const effectiveId = singleSelectedId
+    ?? (selectedIds.length === 0 && hoveredId ? hoveredId : null);
+  const sourceNode = effectiveId ? nodes[effectiveId] : null;
 
   // Pointer-drag state lives in a ref so move handlers don't trigger
   // React re-renders on every pixel — only the arrow preview re-renders
