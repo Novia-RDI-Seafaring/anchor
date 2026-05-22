@@ -253,20 +253,19 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
       const wasSelected = new Set(prev.filter((n) => n.selected).map((n) => n.id));
       // Quick-add hand-off: when DirectionalConnectors or QuickAddPopover
       // mint a fresh node, they stamp its id into uiStore's
-      // `pendingInlineRenameNodeId`. The node arrives via SSE, lands in
-      // `nodes`, and this effect rebuilds rfNodes. Mark the pending id as
-      // selected so the shape primitive mounts with `selected={true}`,
-      // which gates the inline-edit input. Without this the user is
-      // expected to type into a label but the editable input never mounts
-      // (the primitive renders the static label div).
-      // `useInlineField` then consumes the pending id and opens edit mode.
+      // `pendingInlineRenameNodeId`. We want focus to TRANSFER to that
+      // node — not keep the source selected too — so the user can
+      // immediately type into the new node's label. Replace `wasSelected`
+      // with the pending id alone when one is set. The pending id is
+      // cleared the moment `useInlineField` consumes it, so subsequent
+      // SSE patches don't keep re-asserting selection.
       const pendingId = useUiStore.getState().pendingInlineRenameNodeId;
-      if (pendingId) wasSelected.add(pendingId);
+      const selectedSet = pendingId ? new Set([pendingId]) : wasSelected;
       // Pass the full node map so `toRfNode` can resolve `parent` → `parentId`
       // only when the parent actually exists in this snapshot.
       return Object.values(nodes).map((n) => ({
         ...toRfNode(n, nodes),
-        selected: wasSelected.has(n.id),
+        selected: selectedSet.has(n.id),
       }));
     });
   }, [nodes]);
