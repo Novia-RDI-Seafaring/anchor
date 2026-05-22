@@ -346,53 +346,41 @@ section. The section atom is the logical unit, not the page-bounded fragment.
 Each section is re-extractable independently. Re-running step 2 for a single
 section doesn't touch the rest of the gold tree.
 
-## Where we are today (2026-04-08)
+## Current implementation
 
-- ✅ **Silver `docling.json`** — produced at upload by `ingestion/bronze.py`
-  through `ingestion/pipeline.py`
-- ✅ **Silver `index.json`** — deterministic builder + rebuild script
-  (`src/ingestion/silver.py`, `scripts/rebuild_indexes.py`)
-- ✅ **Agent reads index** — `capabilities/context.py` auto-loads index for
-  every document on the canvas when gold is unavailable
-- ⏳ **Silver `pages/N.md`** — not yet built
-- ⏳ **Silver `pages.meta.json`** — not yet built
-- ⏳ **Gold `sections/*.md` + `document.json`** — sample document hand-crafted today;
-  extractor not written
-- ⏳ **Closed-vocab tag system** — not yet defined in code
-- ⏳ **Bbox backfill pass** — source refs exist per table row in curated gold
-  but no deterministic fuzzy-match utility yet
+`pipeline.py` has two entry points:
 
-## Next narrow slice
+- `run_silver_pipeline(...)` creates `docling.json`, `index.json`,
+  `pages.meta.json`, `pages/N.png`, `pages/N.raw.md`, and `pages/N.md` under
+  `backend/data/silver/<slug>/`.
+- `run_full_pipeline(...)` reruns silver as needed, optionally polishes page
+  markdown, and writes gold page regions under
+  `backend/data/gold/<slug>/pages/`.
 
-1. **Deterministic silver per-page md renderer** (`silver.py::render_pages_md`)
-   - walks docling items in reading order, emits `pages/N.md` grouped by heading
-   - no LLM
-   - `rebuild_indexes.py` also emits page md alongside `index.json`
-2. **Deterministic silver per-page image renderer** (`silver.py::render_pages_png`)
-   - PyMuPDF `page.get_pixmap(dpi=150)` over the bronze PDF, writes `pages/N.png`
-   - default 150 DPI, overridable per-doc; regenerable any time
-   - feeds the gold VLM pass and the canvas page-preview UI
-3. **Context loader fallback** — if gold is missing but silver md exists,
-   inject the relevant silver page md into the agent's context
-4. **Then** start on gold extraction (LLM pass over silver pages → section
-   tree with tags + source refs)
+Implemented pieces:
 
-This gives a clean markdown reading experience for any doc on the canvas
-without requiring any LLM work, and sets up the gold extractor to read from
-silver pages rather than raw docling items.
+- Docling extraction to `docling.json`.
+- Deterministic document index generation.
+- Per-page metadata generation.
+- Per-page markdown rendering.
+- Per-page PNG rendering.
+- Optional LLM-polished page markdown.
+- Gold page-region extraction with crops and source refs.
+- Closed-vocabulary tag validation in `tags.py`.
+- Bbox snapping helpers in `silver.py` and `gold.py`.
 
-## Open questions
+Still design-level or partial:
 
-- ~~Deterministic silver-md vs LLM-polished silver-md~~ — **decided**: silver
-  page md is LLM-polished. The deterministic walk is the seed input to a
-  vision LLM call (`silver.polish_pages_md`), which gets the page PNG, the
-  raw md, and the docling items, and emits clean markdown. Pages with few
-  items and no tables/pictures skip the polish (`needs_polish` heuristic) so
-  pure narrative pages stay free. Real client plugged at call site,
-  injectable for tests.
-- Where do FMU files live in the pipeline? Bronze for the `.fmu`, silver for
-  `modelDescription.xml` + extracted variable list, no gold. Likely a parallel
-  asset type rather than part of the doc pipeline. Out of scope for this doc.
-- Per-section vs per-page gold re-extraction cost. Section is the logical unit
-  but a single section can be long — worth timing an LLM call on the biggest
-  section in the corpus before committing to per-section as the atom.
+- Section-level gold output such as `document.json` and `sections/*.md`.
+- Automatic query-index and knowledge-graph generation as part of the default
+  pipeline run.
+- FMU ingestion as a parallel asset flow rather than part of the PDF medallion
+  pipeline.
+
+## Remaining decisions
+
+- Whether section-level gold is still needed now that page regions are the
+  active visual atom.
+- When query-index and knowledge-graph artifacts should be rebuilt
+  automatically.
+- How much FMU metadata should be stored beside the document medallion data.
