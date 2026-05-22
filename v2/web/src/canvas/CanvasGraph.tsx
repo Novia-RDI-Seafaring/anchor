@@ -73,15 +73,18 @@ function shortId(): string {
 }
 
 function toRfNode(n: StoreNode): RfNode {
-  // Areas render behind other nodes and don't trap pointer events on their
-  // empty body — clicks pass through to whatever sits on top.
+  // Areas render behind other nodes (zIndex: -1) so the empty interior
+  // doesn't trap clicks meant for whatever sits on top. `selectable: true`
+  // still lets the user click the dashed border or header to select the
+  // area itself (and resize it via NodeResizer); clicks on the transparent
+  // interior fall through to the nodes inside.
   const isArea = n.node_type === "area";
   return {
     id: n.id,
     position: { x: n.x, y: n.y },
     data: { label: n.label, ...(n.data ?? {}) },
     type: n.node_type,
-    ...(isArea ? { zIndex: -1, draggable: true, selectable: false } : {}),
+    ...(isArea ? { zIndex: -1, draggable: true } : {}),
   };
 }
 
