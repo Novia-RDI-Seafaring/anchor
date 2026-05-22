@@ -223,7 +223,12 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": (
                 "Re-lay-out the subtree under root_id into a tidy tree. Emits one "
                 "NodeMoved per descendant whose position changes; the root stays put. "
-                "orientation = 'vertical' (default) or 'horizontal'."
+                "orientation = 'vertical' (default) or 'horizontal'. "
+                "direction controls how the BFS walks edges: 'outgoing' "
+                "(parent→child, follow arrows forward), 'incoming' (reports-to, "
+                "follow arrows backward), or 'any' (undirected — default, "
+                "preserves v1 behaviour). Pick 'incoming' on a reports-to org "
+                "chart to scope strictly to subordinates."
             ),
             "inputSchema": {
                 "type": "object",
@@ -239,6 +244,11 @@ def tool_definitions() -> list[dict[str, Any]]:
                         "type": "string",
                         "enum": ["dagre"],
                         "default": "dagre",
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["outgoing", "incoming", "any"],
+                        "default": "any",
                     },
                 },
                 "required": ["workspace_slug", "root_id"],
@@ -407,6 +417,7 @@ async def call_tool(svc: WorkspaceService, name: str, args: dict[str, Any]) -> s
                     args["workspace_slug"], args["root_id"],
                     orientation=args.get("orientation", "vertical"),
                     algo=args.get("algo", "dagre"),
+                    direction=args.get("direction", "any"),
                 )
             except ValueError as e:
                 return json.dumps({"error": str(e)})

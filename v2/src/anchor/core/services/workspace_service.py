@@ -271,24 +271,38 @@ class WorkspaceService:
         *,
         orientation: Literal["vertical", "horizontal"] = "vertical",
         algo: Literal["dagre"] = "dagre",
+        direction: Literal["outgoing", "incoming", "any"] = "any",
     ) -> tuple[Workspace, list[DomainEvent]]:
         """Re-lay-out the subtree rooted at ``root_id`` in one atomic block.
 
-        Walks the (undirected) edge graph from the root, computes a tidy
-        position per descendant, and emits one ``NodeMoved`` per node whose
-        position actually changes. The root itself never moves. Cycles are
-        allowed but each node is visited at most once.
+        Walks the edge graph from the root, computes a tidy position per
+        descendant, and emits one ``NodeMoved`` per node whose position
+        actually changes. The root itself never moves. Cycles are allowed
+        but each node is visited at most once.
+
+        ``direction`` controls how the BFS walks edges (see
+        ``anchor.core.workspace.layout``):
+
+          - ``"outgoing"`` — only follow ``edge.source == current`` (parent → child).
+          - ``"incoming"`` — only follow ``edge.target == current`` (reports-to).
+          - ``"any"`` (default) — undirected projection, the v1 behaviour.
+
+        Default ``"any"`` keeps existing callers / UI flows working; the
+        UI / CLI / MCP / HTTP adapters all pass through whatever the user
+        picked. The user-visible bug this fixes is that an undirected walk
+        from a mid-tree node (e.g. ``CFO`` on the ``acme-org`` canvas) drags
+        the parent in too; picking ``"incoming"`` gives strict-descendant
+        scoping for the reports-to convention.
 
         Even though the public knob is called ``algo="dagre"``, the layout
-        math is a hand-rolled Python tree placement (see
-        ``anchor.core.workspace.layout``) — we deliberately do not pull in
-        a JS or Python dagre dependency. The "dagre" label is kept on the
-        API because that's what the UI ships and what the user thinks of
-        when they say "tree-organize this".
+        math is a hand-rolled Python tree placement — we deliberately do
+        not pull in a JS or Python dagre dependency. The "dagre" label is
+        kept on the API because that's what the UI ships and what the user
+        thinks of when they say "tree-organize this".
 
         Raises ``CommandError`` if the root node does not exist. Returns an
         empty event list (and the unchanged workspace) when the root has no
-        descendants — there's nothing to move."""
+        descendants in the chosen ``direction`` — there's nothing to move."""
         if algo != "dagre":
             raise ValueError(
                 f"unsupported organize algo: {algo!r} (only 'dagre' is shipped)",
@@ -297,6 +311,11 @@ class WorkspaceService:
             raise ValueError(
                 f"unsupported orientation: {orientation!r} "
                 "(use 'vertical' or 'horizontal')",
+            )
+        if direction not in {"outgoing", "incoming", "any"}:
+            raise ValueError(
+                f"unsupported direction: {direction!r} "
+                "(use 'outgoing', 'incoming', or 'any')",
             )
 
         async with self.locks.lock(slug):
@@ -307,7 +326,8 @@ class WorkspaceService:
             node_likes = [NodeLike(id=n.id, x=n.x, y=n.y) for n in state.nodes.values()]
             edge_likes = [EdgeLike(source=e.source, target=e.target) for e in state.edges.values()]
             placements = organize_subtree(
-                node_likes, edge_likes, root_id, orientation=orientation,
+                node_likes, edge_likes, root_id,
+                orientation=orientation, direction=direction,
             )
 
             # Filter: only emit a move if the position actually shifts.

@@ -759,6 +759,15 @@ def canvas_organize(
         "dagre", "--algo", "-a",
         help="Layout algorithm. Only `dagre` ships today.",
     ),
+    direction: str = typer.Option(
+        "any", "--direction",
+        help=(
+            "Edge-walk policy. `outgoing` (parent→child arrows), `incoming` "
+            "(reports-to: subordinate→boss arrows), or `any` (undirected, "
+            "the default — v1 behaviour). Pick `incoming` on a reports-to "
+            "chart to scope strictly to subordinates of <root_id>."
+        ),
+    ),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Re-lay-out the subtree under <root_id> into a tidy tree.
@@ -773,7 +782,8 @@ def canvas_organize(
 
     async def run():
         state, envelopes = await ws.organize_subtree(
-            slug, root_id, orientation=orientation, algo=algo,
+            slug, root_id,
+            orientation=orientation, algo=algo, direction=direction,
         )
         moves = [
             {"id": env.payload["id"], "x": env.payload["x"], "y": env.payload["y"]}

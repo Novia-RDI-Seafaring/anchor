@@ -97,6 +97,26 @@ function shortId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
+/** Walk up the parent chain summing positions so we can convert between
+ *  the store's absolute flow coords and ReactFlow's parent-relative
+ *  expectation when a node is nested. Returns (0, 0) when there's no
+ *  ancestry or the chain is broken. Safe against cycles via a visited set. */
+function ancestorOffset(nodeId: string, allNodes: Record<string, StoreNode>): { x: number; y: number } {
+  let acc = { x: 0, y: 0 };
+  let visited = new Set<string>();
+  let cur = allNodes[nodeId]?.parent ?? null;
+  while (cur != null) {
+    if (visited.has(cur)) break;
+    visited.add(cur);
+    const p = allNodes[cur];
+    if (!p) break;
+    acc.x += p.x;
+    acc.y += p.y;
+    cur = p.parent ?? null;
+  }
+  return acc;
+}
+
 function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
   // Areas render behind other nodes (zIndex: -1) so the empty interior
   // doesn't trap clicks meant for whatever sits on top. `selectable: true`
@@ -116,6 +136,15 @@ function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
   const parentProps = parentExists
     ? ({ parentId: n.parent as string, extent: "parent" as const })
     : {};
+  // Convention: the store stores positions in ABSOLUTE flow coords (no
+  // notion of nesting). ReactFlow, however, interprets `position` as
+  // PARENT-RELATIVE when `parentId` is set. Subtract the parent chain's
+  // accumulated offset so the rendered position matches the absolute
+  // coords. `onNodeDragStop` does the inverse: adds the offset back
+  // before persisting so the store stays purely absolute.
+  const off = parentExists ? ancestorOffset(n.id, allNodes) : { x: 0, y: 0 };
+  const relX = n.x - off.x;
+  const relY = n.y - off.y;
   // Lock support: `data.locked === true` freezes the node in place
   // (ReactFlow's `draggable: false`) and the shape primitives skip
   // mounting NodeResizer when the prop is read at render time. The flag
@@ -123,7 +152,7 @@ function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
   const locked = (n.data as { locked?: boolean } | undefined)?.locked === true;
   return {
     id: n.id,
-    position: { x: n.x, y: n.y },
+    position: { x: relX, y: relY },
     data: { label: n.label, ...(n.data ?? {}) },
     type: n.node_type,
     ...parentProps,
@@ -172,6 +201,10 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   // re-rendering ReactFlow on every pixel — only the ghost state below
   // does that, and only when the rect actually changes.
   const armDownRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  // Deferred-clear timer for node hover state. Lets the cursor cross from
+  // the node body to a connector dot (which sits 22 flow units outside
+  // the edge) without dropping the hover state in the dead-space gap.
+  const hoverClearTimerRef = useRef<number | null>(null);
   // Screen-space rect for the WYSIWYG ghost preview while drag-to-size is
   // in progress. `null` when not painting. The ghost outline mirrors the
   // armed tool's silhouette via `PaintGhost` so the user sees exactly the
@@ -925,11 +958,28 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
               onNodeClick: (_event, node) => { setSelectedNodeId(node.id); },
               // Hover broadcast for DirectionalConnectors — any hovered node
               // surfaces quick-add dots without requiring selection first.
+              // The dots sit ~22 flow units OUTSIDE the node edge, so a
+              // naive immediate-clear on `mouseleave` flickers the dots
+              // off the moment the cursor crosses into the gap between
+              // the node body and the dot. We defer the clear by a short
+              // grace period so the dot's own `mouseenter` cancels the
+              // pending clear (the dot dispatches its own
+              // `setHoveredNodeId` in DirectionalConnectors).
               onNodeMouseEnter: (_event, node) => {
+                if (hoverClearTimerRef.current != null) {
+                  window.clearTimeout(hoverClearTimerRef.current);
+                  hoverClearTimerRef.current = null;
+                }
                 useUiStore.getState().setHoveredNodeId(node.id);
               },
               onNodeMouseLeave: () => {
-                useUiStore.getState().setHoveredNodeId(null);
+                if (hoverClearTimerRef.current != null) {
+                  window.clearTimeout(hoverClearTimerRef.current);
+                }
+                hoverClearTimerRef.current = window.setTimeout(() => {
+                  useUiStore.getState().setHoveredNodeId(null);
+                  hoverClearTimerRef.current = null;
+                }, 200);
               },
               onEdgeClick: (_event, edge) => { setSelectedEdgeId(edge.id); },
               onEdgeContextMenu: (event, edge) => {
@@ -1003,10 +1053,14 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
                 useUiStore.getState().setIsDraggingNode(false);
                 // Commit the post-drag position both locally (instant) and to
                 // the server (eventually consistent via SSE echo, idempotent
-                // by event id).
+                // by event id). Convert ReactFlow's parent-relative
+                // `node.position` back to absolute flow coords before saving:
+                // store is always absolute, ReactFlow is parent-relative when
+                // `parentId` is set.
                 const id = node.id;
-                const x = node.position.x;
-                const y = node.position.y;
+                const off = ancestorOffset(id, useCanvasStore.getState().nodes);
+                const x = node.position.x + off.x;
+                const y = node.position.y + off.y;
                 useCanvasStore.setState((state) => {
                   const existing = state.nodes[id];
                   if (!existing) return state;
@@ -1066,22 +1120,23 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
                 useUiStore.getState().setIsDraggingNode(false);
                 // Multi-select drag: ReactFlow moves every selected node
                 // visually during the gesture, but `onNodeDragStop` only
-                // fires for the primary. Without persisting each one, the
-                // rfNodes effect rebuilds from the store and the
-                // non-primary nodes snap back to their pre-drag positions
-                // — that's the "subtree rearranges after release" bug.
+                // fires for the primary. Persist each. Convert each one's
+                // parent-relative `node.position` back to absolute before
+                // saving (mirrors single-drag).
                 useCanvasStore.setState((state) => {
                   const next = { ...state.nodes };
                   for (const n of draggedNodes) {
                     const cur = next[n.id];
                     if (!cur) continue;
-                    next[n.id] = { ...cur, x: n.position.x, y: n.position.y };
+                    const off = ancestorOffset(n.id, next);
+                    next[n.id] = { ...cur, x: n.position.x + off.x, y: n.position.y + off.y };
                   }
                   return { ...state, nodes: next };
                 });
                 for (const n of draggedNodes) {
+                  const off = ancestorOffset(n.id, useCanvasStore.getState().nodes);
                   canvases
-                    .patchNode(slug, n.id, { x: n.position.x, y: n.position.y })
+                    .patchNode(slug, n.id, { x: n.position.x + off.x, y: n.position.y + off.y })
                     .catch(() => {
                       // SSE reconciles next snapshot.
                     });

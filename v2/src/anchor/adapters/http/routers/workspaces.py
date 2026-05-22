@@ -87,13 +87,16 @@ async def organize_subtree(
 ):
     """Recompute positions for the subtree under ``root_id``.
 
-    Body: ``{root_id, orientation, algo}``. Emits one ``NodeMoved`` per
-    descendant whose position changes (the root itself is anchored).
-    Response carries the resulting move list and the count of events
-    appended so the client can reconcile against its own SSE feed."""
+    Body: ``{root_id, orientation, algo, direction}``. Emits one
+    ``NodeMoved`` per descendant whose position changes (the root itself
+    is anchored). ``direction`` is ``"outgoing"`` / ``"incoming"`` / ``"any"``
+    (default ``"any"`` — undirected, v1 behaviour). Response carries the
+    resulting move list and the count of events appended so the client can
+    reconcile against its own SSE feed."""
     try:
         state, envelopes = await svc.organize_subtree(
-            slug, req.root_id, orientation=req.orientation, algo=req.algo,
+            slug, req.root_id,
+            orientation=req.orientation, algo=req.algo, direction=req.direction,
         )
     except CommandError as e:
         raise HTTPException(400, str(e))

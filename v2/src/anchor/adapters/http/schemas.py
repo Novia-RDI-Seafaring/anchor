@@ -74,6 +74,11 @@ class OrganizeSubtreeRequest(BaseModel):
     root_id: str
     orientation: str = "vertical"
     algo: str = "dagre"
+    # Edge-walk policy: "outgoing" (parent → child), "incoming" (reports-to,
+    # subordinate → boss), or "any" (undirected — v1 default). Default "any"
+    # preserves the original UX; callers that want strict descendant scoping
+    # pick "incoming" or "outgoing" depending on the canvas convention.
+    direction: str = "any"
 
 
 class AlignNodesRequest(BaseModel):

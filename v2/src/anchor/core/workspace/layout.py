@@ -1,17 +1,25 @@
 """Pure subtree-layout math — no I/O, no async.
 
-`organize_subtree(nodes, edges, root_id, orientation)` walks the edge graph
-descending from `root_id` and returns the new (x, y) for every descendant.
-The root itself is anchored at its current position; everything beneath is
-arranged into a tidy tree.
+`organize_subtree(nodes, edges, root_id, orientation, direction)` walks the
+edge graph from `root_id` and returns the new (x, y) for every reachable
+node. The root itself is anchored at its current position; everything
+beneath is arranged into a tidy tree.
 
-Edge direction follows what's already on the canvas. We walk edges where
-`source == current` (forward) *and* `target == current` (backward). That
-mirrors the way the Anchor canvas tends to use floating edges — sometimes
-"parent → child" (org chart with a `directs` label), sometimes
-"child → parent" (the same chart drawn as `reports to` arrows). In both
-cases the user thinks of "descendants of R", so we widen the BFS to either
-endpoint and break cycles by visiting each node at most once.
+Edge direction is controlled by the `direction` argument:
+
+  - ``"outgoing"``: only follow edges where ``edge.source == current`` —
+    children are nodes the current node points TO. The right mode when the
+    canvas convention is ``parent → child`` (flow charts, cause → effect).
+  - ``"incoming"``: only follow edges where ``edge.target == current`` —
+    children are nodes that point TO the current node. The right mode for
+    ``reports to`` org charts where subordinates point at their boss
+    (this is the acme-org convention).
+  - ``"any"`` (default): undirected projection — follow edges either way.
+    Preserves the original v1 behaviour and is the right fallback when the
+    canvas mixes conventions or the user doesn't want to think about it.
+
+Cycles are tolerated in every mode: each node is visited at most once and
+first encounter wins.
 
 Algorithm (vertical orientation):
 
@@ -37,6 +45,7 @@ from dataclasses import dataclass
 from typing import Iterable, Literal, Mapping
 
 Orientation = Literal["vertical", "horizontal"]
+Direction = Literal["outgoing", "incoming", "any"]
 
 # Visual spacing constants. Tweak by feel — these match what looks tidy on
 # the acme-org canvas (~200px wide entity cards).
@@ -64,18 +73,29 @@ class EdgeLike:
     target: str
 
 
-def _build_adjacency(edges: Iterable[EdgeLike]) -> dict[str, set[str]]:
-    """Undirected adjacency map.
+def _build_adjacency(
+    edges: Iterable[EdgeLike], direction: Direction = "any",
+) -> dict[str, set[str]]:
+    """Adjacency map honouring ``direction``.
 
-    Why undirected: see module docstring. Edge orientation on the canvas
-    is inconsistent (some users draw `parent → child`, others
-    `reports to → parent`); a robust "descendants of R" walk has to handle
-    both. The BFS that consumes this map breaks cycles by visiting nodes
-    at most once, so first-encounter wins."""
+    - ``"outgoing"``: ``adj[source]`` adds ``target`` only. Walk follows
+      arrows in their natural direction (parent → child convention).
+    - ``"incoming"``: ``adj[target]`` adds ``source`` only. Walk follows
+      arrows in reverse (subordinate → boss convention, e.g. ``reports to``).
+    - ``"any"``: undirected projection — both endpoints are neighbours.
+      Preserves the original v1 behaviour.
+
+    The BFS that consumes this map breaks cycles by visiting nodes at most
+    once, so first-encounter wins regardless of direction mode."""
     adj: dict[str, set[str]] = {}
     for e in edges:
-        adj.setdefault(e.source, set()).add(e.target)
-        adj.setdefault(e.target, set()).add(e.source)
+        if direction == "outgoing":
+            adj.setdefault(e.source, set()).add(e.target)
+        elif direction == "incoming":
+            adj.setdefault(e.target, set()).add(e.source)
+        else:  # "any"
+            adj.setdefault(e.source, set()).add(e.target)
+            adj.setdefault(e.target, set()).add(e.source)
     return adj
 
 
@@ -164,16 +184,25 @@ def _place_horizontal(
 def organize_subtree(
     nodes: Iterable[NodeLike], edges: Iterable[EdgeLike],
     root_id: str, *, orientation: Orientation = "vertical",
+    direction: Direction = "any",
 ) -> dict[str, tuple[float, float]]:
     """Compute new positions for every descendant of `root_id`.
 
+    ``direction`` controls how the BFS walks the edge set — see the module
+    docstring. Default ``"any"`` keeps v1 behaviour (undirected projection).
+
     Returns a {node_id: (x, y)} dict that EXCLUDES the root (its position
     is unchanged). Returns an empty dict if the root has no descendants
-    or doesn't appear in the node set."""
+    in the chosen ``direction`` or doesn't appear in the node set."""
+    if direction not in ("outgoing", "incoming", "any"):
+        raise ValueError(
+            f"unsupported direction: {direction!r} "
+            "(use 'outgoing', 'incoming', or 'any')",
+        )
     nodes_by_id = {n.id: n for n in nodes}
     if root_id not in nodes_by_id:
         return {}
-    adj = _build_adjacency(edges)
+    adj = _build_adjacency(edges, direction)
     _, children = _bfs_tree(root_id, adj)
     if not children.get(root_id):
         return {}

@@ -62,11 +62,24 @@ export const canvases = {
     api.patch(`/api/workspaces/${slug}/edges/${id}`, body),
   removeEdge: (slug: string, id: string) =>
     api.del(`/api/workspaces/${slug}/edges/${id}`),
+  /**
+   * Re-lay-out the subtree under `rootId`.
+   *
+   * `direction` chooses how the BFS walks edges:
+   *   - `"outgoing"` — follow arrows forward (parent → child convention).
+   *   - `"incoming"` — follow arrows backward (`reports to` org chart).
+   *   - `"any"` — undirected projection. Default — preserves v1 behaviour.
+   *
+   * Picking the wrong direction yields zero descendants (e.g. `"outgoing"`
+   * from a leaf node in a reports-to chart); the OrganizeEditor surfaces
+   * that to the user via the "no moves" empty response.
+   */
   organizeSubtree: (
     slug: string,
     rootId: string,
     orientation: "vertical" | "horizontal" = "vertical",
     algo = "dagre",
+    direction: "outgoing" | "incoming" | "any" = "any",
   ) =>
     api.post<{
       moves: Array<{ id: string; x: number; y: number }>;
@@ -76,6 +89,7 @@ export const canvases = {
       root_id: rootId,
       orientation,
       algo,
+      direction,
     }),
   /**
    * Align the listed nodes to a shared edge or midline (Miro-style).

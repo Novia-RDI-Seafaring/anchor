@@ -157,6 +157,54 @@ def test_canvas_organize_subtree_returns_moves():
     asyncio.run(run())
 
 
+def test_canvas_organize_subtree_inputschema_advertises_direction():
+    # The MCP tool's inputSchema must surface the `direction` enum so agent
+    # callers can discover it. Don't let the schema drift from the handler.
+    defs = {d["name"]: d for d in handlers_canvas.tool_definitions()}
+    schema = defs["canvas_organize_subtree"]["inputSchema"]
+    direction = schema["properties"]["direction"]
+    assert direction["enum"] == ["outgoing", "incoming", "any"]
+    assert direction["default"] == "any"
+
+
+def test_canvas_organize_subtree_direction_incoming_excludes_parent():
+    """MCP-level parity test: organising from a mid-tree manager with
+    direction='incoming' must NOT drag the CEO in."""
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await s.workspace.add_node("w1", id="ceo")
+        await s.workspace.add_node("w1", id="m1")
+        await s.workspace.add_node("w1", id="r1", x=-99, y=-99)
+        await s.workspace.add_node("w1", id="r2", x=99, y=99)
+        await s.workspace.add_edge("w1", source="m1", target="ceo")
+        await s.workspace.add_edge("w1", source="r1", target="m1")
+        await s.workspace.add_edge("w1", source="r2", target="m1")
+        body = await handlers_canvas.call_tool(
+            s.workspace, "canvas_organize_subtree",
+            {"workspace_slug": "w1", "root_id": "m1", "direction": "incoming"},
+        )
+        out = json.loads(body)
+        moved = {m["id"] for m in out["moves"]}
+        assert moved == {"r1", "r2"}
+
+    asyncio.run(run())
+
+
+def test_canvas_organize_subtree_unknown_direction_returns_error():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await s.workspace.add_node("w1", id="r")
+        body = await handlers_canvas.call_tool(
+            s.workspace, "canvas_organize_subtree",
+            {"workspace_slug": "w1", "root_id": "r", "direction": "sideways"},
+        )
+        assert "error" in json.loads(body)
+
+    asyncio.run(run())
+
+
 def test_canvas_create_sub_canvas_tool_is_registered():
     names = {d["name"] for d in handlers_canvas.tool_definitions()}
     assert "canvas_create_sub_canvas" in names

@@ -4,17 +4,24 @@
  * Renders inside `PropertiesPanel` underneath whatever editor matches the
  * node's `node_type`. Available whenever the selected node has at least
  * one connected edge — we treat connected nodes as a tree rooted at the
- * selection, the same way the server-side organizer does (undirected BFS
- * over the edge set; root stays put; descendants get tidy positions).
+ * selection, the same way the server-side organizer does.
  *
- * The three orientations match the spec:
- *   - Vertical / Horizontal: hit `POST /api/workspaces/<slug>/layout`,
- *     which streams back a flurry of `NodeMoved` events via SSE. The
- *     canvas store's version-monotonic `applyEvent` accumulates them and
- *     ReactFlow re-renders the new positions with its built-in transition.
- *   - Radial: stubbed. d3-hierarchy isn't a dep today; if/when we add
- *     polar projection the same button calls the same endpoint with
- *     `algo='radial'`. Disabled with a tooltip-on-title so users see why.
+ * Two knobs:
+ *   - **Orientation**: vertical / horizontal / radial(stub). Vertical and
+ *     horizontal hit `POST /api/workspaces/<slug>/layout`, which streams
+ *     back a flurry of `NodeMoved` events via SSE.
+ *   - **Direction** (new — 2026-05): controls the BFS edge-walk. The bug
+ *     this fixes is that an undirected walk from a mid-tree node (CFO on
+ *     the `acme-org` canvas) drags the parent (CEO) in too because the
+ *     edge connects them either way. Three modes:
+ *       ↓ `outgoing` — follow arrows forward (parent → child).
+ *       ↑ `incoming` — follow arrows backward (reports-to convention).
+ *       ↔ `any`     — undirected, the v1 default. Use this when the
+ *                     canvas convention is mixed.
+ *
+ *     The default stays `any` so existing UX doesn't shift under users.
+ *     Per-component state, not persisted server-side — the user can re-pick
+ *     per organise gesture.
  *
  * Why a separate "Layout" section instead of a new dispatched editor:
  * organize is orthogonal to node_type — it makes equal sense for entities,
@@ -36,9 +43,40 @@ type Props = {
 };
 
 type Orientation = "vertical" | "horizontal";
+type Direction = "outgoing" | "incoming" | "any";
+
+const DIRECTION_OPTIONS: ReadonlyArray<{
+  value: Direction;
+  glyph: string;
+  label: string;
+  title: string;
+}> = [
+  {
+    value: "outgoing",
+    glyph: "↓",
+    label: "Outgoing",
+    title:
+      "Outgoing — follow arrows forward (parent → child). Use when the canvas convention is cause → effect or container → contained.",
+  },
+  {
+    value: "incoming",
+    glyph: "↑",
+    label: "Incoming",
+    title:
+      "Incoming — follow arrows backward (subordinate → boss). Use on a reports-to org chart so the BFS doesn't drag the parent in.",
+  },
+  {
+    value: "any",
+    glyph: "↔",
+    label: "Any",
+    title:
+      "Any direction — undirected walk. The original behaviour; use it when the canvas convention is mixed and you want every connected node.",
+  },
+];
 
 export function OrganizeEditor({ workspaceSlug, nodeId, hasChildren }: Props) {
   const [busy, setBusy] = useState<Orientation | null>(null);
+  const [direction, setDirection] = useState<Direction>("any");
   const [error, setError] = useState<string | null>(null);
 
   if (!hasChildren) return null;
@@ -49,7 +87,13 @@ export function OrganizeEditor({ workspaceSlug, nodeId, hasChildren }: Props) {
     try {
       // The SSE feed echoes each NodeMoved back into the canvas store;
       // no need to wire the response.moves array through ourselves.
-      await canvases.organizeSubtree(workspaceSlug, nodeId, orientation);
+      await canvases.organizeSubtree(
+        workspaceSlug,
+        nodeId,
+        orientation,
+        "dagre",
+        direction,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -65,6 +109,40 @@ export function OrganizeEditor({ workspaceSlug, nodeId, hasChildren }: Props) {
       <p className="mb-2 text-[11px] text-neutral-500">
         Re-arrange the subtree under this node. The selected node stays put.
       </p>
+      <div className="mb-2">
+        <div className="mb-1 text-[10px] uppercase tracking-wide text-neutral-400">
+          Direction
+        </div>
+        <div
+          role="radiogroup"
+          aria-label="Edge-walk direction"
+          className="flex gap-1"
+        >
+          {DIRECTION_OPTIONS.map((opt) => {
+            const selected = opt.value === direction;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                aria-label={`${opt.label} — ${opt.title}`}
+                title={opt.title}
+                onClick={() => setDirection(opt.value)}
+                disabled={busy !== null}
+                className={
+                  "inline-flex h-7 min-w-[2rem] items-center justify-center rounded border px-2 text-[12px] " +
+                  (selected
+                    ? "border-neutral-800 bg-neutral-900 text-white"
+                    : "border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100")
+                }
+              >
+                {opt.glyph}
+              </button>
+            );
+          })}
+        </div>
+      </div>
       <div className="flex flex-wrap gap-1.5">
         <Button
           variant="outline"

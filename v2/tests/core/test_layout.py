@@ -1,6 +1,8 @@
 """Pure-core layout — synthetic node/edge fixtures only."""
 from __future__ import annotations
 
+import pytest
+
 from anchor.core.workspace.layout import (
     EdgeLike,
     NodeLike,
@@ -13,7 +15,9 @@ def _node(nid: str, x: float = 0.0, y: float = 0.0) -> NodeLike:
 
 
 def _edge(a: str, b: str) -> EdgeLike:
-    # Direction-agnostic on purpose — layout treats edges as undirected.
+    # Direction-agnostic on purpose — layout treats edges as undirected
+    # under the default ``direction="any"``. The direction-aware tests
+    # below assert the source/target choice explicitly.
     return EdgeLike(source=a, target=b)
 
 
@@ -110,3 +114,60 @@ def test_unreachable_nodes_are_not_moved():
     out = organize_subtree(nodes, edges, "r")
     assert "c" not in out
     assert {"a", "b"}.issubset(out.keys())
+
+
+# ── direction-aware BFS ────────────────────────────────────────────────
+#
+# A → B → C → D (a straight chain of edges, source → target).
+# Organising from B:
+#   - "outgoing": B follows arrows forward → {C, D}.
+#   - "incoming": B follows arrows backward → {A}.
+#   - "any": original undirected walk → {A, C, D}.
+
+def _chain_abcd():
+    nodes = [_node(n) for n in ("a", "b", "c", "d")]
+    edges = [_edge("a", "b"), _edge("b", "c"), _edge("c", "d")]
+    return nodes, edges
+
+
+def test_direction_outgoing_only_walks_forward():
+    nodes, edges = _chain_abcd()
+    out = organize_subtree(nodes, edges, "b", direction="outgoing")
+    assert set(out.keys()) == {"c", "d"}
+
+
+def test_direction_incoming_only_walks_backward():
+    nodes, edges = _chain_abcd()
+    out = organize_subtree(nodes, edges, "b", direction="incoming")
+    assert set(out.keys()) == {"a"}
+
+
+def test_direction_any_preserves_undirected_behaviour():
+    nodes, edges = _chain_abcd()
+    out = organize_subtree(nodes, edges, "b", direction="any")
+    # Same as the default — both endpoints reachable.
+    assert set(out.keys()) == {"a", "c", "d"}
+
+
+def test_default_direction_is_any():
+    # Explicit guard: callers that omit `direction` get the v1 behaviour
+    # (undirected). Don't silently regress this.
+    nodes, edges = _chain_abcd()
+    out = organize_subtree(nodes, edges, "b")
+    assert set(out.keys()) == {"a", "c", "d"}
+
+
+def test_outgoing_from_leaf_returns_empty():
+    # Reports-to chain: a → b → c, organising "c" with outgoing has no
+    # descendants. Sanity-check the "user picked the wrong direction" case.
+    nodes = [_node(n) for n in ("a", "b", "c")]
+    edges = [_edge("a", "b"), _edge("b", "c")]
+    out = organize_subtree(nodes, edges, "c", direction="outgoing")
+    assert out == {}
+
+
+def test_unsupported_direction_raises():
+    with pytest.raises(ValueError):
+        organize_subtree(
+            [_node("r")], [], "r", direction="sideways",  # type: ignore[arg-type]
+        )

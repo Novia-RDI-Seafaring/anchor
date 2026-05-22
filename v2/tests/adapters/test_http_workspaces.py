@@ -124,6 +124,64 @@ def test_organize_subtree_unknown_root_400():
     assert rsp.status_code == 400
 
 
+def test_organize_subtree_direction_incoming_scopes_to_reports_to():
+    """Reports-to convention: child → parent edge. Organising from m1
+    with direction="incoming" walks arrows backward, so the m1 reports
+    move but the CEO above does NOT."""
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.post("/api/workspaces/w1/nodes", json={"id": "ceo", "x": 0, "y": 0})
+    client.post("/api/workspaces/w1/nodes", json={"id": "m1", "x": 0, "y": 0})
+    client.post("/api/workspaces/w1/nodes", json={"id": "r1", "x": -99, "y": -99})
+    client.post("/api/workspaces/w1/nodes", json={"id": "r2", "x": 99, "y": 99})
+    # reports-to: subordinate points at boss.
+    client.post("/api/workspaces/w1/edges", json={"source": "m1", "target": "ceo"})
+    client.post("/api/workspaces/w1/edges", json={"source": "r1", "target": "m1"})
+    client.post("/api/workspaces/w1/edges", json={"source": "r2", "target": "m1"})
+
+    rsp = client.post(
+        "/api/workspaces/w1/layout",
+        json={"root_id": "m1", "direction": "incoming"},
+    )
+    assert rsp.status_code == 200
+    moved = {m["id"] for m in rsp.json()["moves"]}
+    # CEO is NOT in the move set; only m1's reports.
+    assert moved == {"r1", "r2"}
+
+
+def test_organize_subtree_direction_default_is_any():
+    """Omitting `direction` reproduces the v1 undirected walk — both
+    directions of arrows are followed."""
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.post("/api/workspaces/w1/nodes", json={"id": "ceo", "x": 0, "y": 0})
+    client.post("/api/workspaces/w1/nodes", json={"id": "m1", "x": 0, "y": 0})
+    client.post("/api/workspaces/w1/nodes", json={"id": "r1", "x": -99, "y": -99})
+    client.post("/api/workspaces/w1/edges", json={"source": "m1", "target": "ceo"})
+    client.post("/api/workspaces/w1/edges", json={"source": "r1", "target": "m1"})
+
+    rsp = client.post(
+        "/api/workspaces/w1/layout",
+        json={"root_id": "m1"},
+    )
+    assert rsp.status_code == 200
+    moved = {m["id"] for m in rsp.json()["moves"]}
+    # CEO IS in the set under "any" — the historical (buggy-for-org-charts)
+    # but no-surprise default behaviour.
+    assert moved == {"ceo", "r1"}
+
+
+def test_organize_subtree_bad_direction_400():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.post("/api/workspaces/w1/nodes", json={"id": "r"})
+    rsp = client.post(
+        "/api/workspaces/w1/layout",
+        json={"root_id": "r", "direction": "sideways"},
+    )
+    assert rsp.status_code == 400
+
+
 def test_align_returns_moves():
     client, _ = _client()
     client.post("/api/workspaces", json={"slug": "w1"})

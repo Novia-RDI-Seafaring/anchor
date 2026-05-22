@@ -6,6 +6,10 @@
  *   - `hasChildren=true`  → renders Vertical / Horizontal / Radial buttons.
  *   - Radial is always disabled until d3-hierarchy lands.
  *
+ * Also covers the direction selector (↓ outgoing / ↑ incoming / ↔ any) — the
+ * fix for the acme-org "CFO drags CEO in" bug. Default direction is "any" so
+ * existing UX is preserved.
+ *
  * The click handlers hit `canvases.organizeSubtree`, which is mocked here so
  * the test stays offline. We assert the API was called with the right args
  * but stop short of asserting SSE — that's covered by the canvasStore tests
@@ -49,23 +53,69 @@ describe("OrganizeEditor", () => {
     expect(radial.disabled).toBe(true);
   });
 
-  it("clicking Vertical calls the API with orientation='vertical'", async () => {
+  it("clicking Vertical calls the API with orientation='vertical' and default direction='any'", async () => {
     render(
       <OrganizeEditor workspaceSlug="w1" nodeId="n1" hasChildren />,
     );
     fireEvent.click(screen.getByRole("button", { name: /vertically/i }));
     await waitFor(() => {
-      expect(canvases.organizeSubtree).toHaveBeenCalledWith("w1", "n1", "vertical");
+      // Default direction is "any" — preserves v1 undirected behaviour.
+      expect(canvases.organizeSubtree).toHaveBeenCalledWith(
+        "w1", "n1", "vertical", "dagre", "any",
+      );
     });
   });
 
-  it("clicking Horizontal calls the API with orientation='horizontal'", async () => {
+  it("clicking Horizontal calls the API with orientation='horizontal' and default direction='any'", async () => {
     render(
       <OrganizeEditor workspaceSlug="w1" nodeId="n1" hasChildren />,
     );
     fireEvent.click(screen.getByRole("button", { name: /horizontally/i }));
     await waitFor(() => {
-      expect(canvases.organizeSubtree).toHaveBeenCalledWith("w1", "n1", "horizontal");
+      expect(canvases.organizeSubtree).toHaveBeenCalledWith(
+        "w1", "n1", "horizontal", "dagre", "any",
+      );
     });
+  });
+
+  it("picking direction='incoming' is forwarded to the API", async () => {
+    // The acme-org case: user picks ↑ then clicks Vertical, expecting strict
+    // descendant scoping (reports-to convention).
+    render(
+      <OrganizeEditor workspaceSlug="w1" nodeId="cfo" hasChildren />,
+    );
+    fireEvent.click(screen.getByRole("radio", { name: /Incoming/i }));
+    fireEvent.click(screen.getByRole("button", { name: /vertically/i }));
+    await waitFor(() => {
+      expect(canvases.organizeSubtree).toHaveBeenCalledWith(
+        "w1", "cfo", "vertical", "dagre", "incoming",
+      );
+    });
+  });
+
+  it("picking direction='outgoing' is forwarded to the API", async () => {
+    render(
+      <OrganizeEditor workspaceSlug="w1" nodeId="root" hasChildren />,
+    );
+    fireEvent.click(screen.getByRole("radio", { name: /Outgoing/i }));
+    fireEvent.click(screen.getByRole("button", { name: /vertically/i }));
+    await waitFor(() => {
+      expect(canvases.organizeSubtree).toHaveBeenCalledWith(
+        "w1", "root", "vertical", "dagre", "outgoing",
+      );
+    });
+  });
+
+  it("direction radio group shows three options with the ↓ ↑ ↔ glyphs", () => {
+    render(
+      <OrganizeEditor workspaceSlug="w1" nodeId="n1" hasChildren />,
+    );
+    const radios = screen.getAllByRole("radio");
+    expect(radios).toHaveLength(3);
+    const glyphs = radios.map((r) => r.textContent);
+    expect(glyphs).toEqual(["↓", "↑", "↔"]);
+    // "Any" is selected by default.
+    const any = screen.getByRole("radio", { name: /Any/i });
+    expect(any.getAttribute("aria-checked")).toBe("true");
   });
 });
