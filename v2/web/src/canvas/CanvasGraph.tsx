@@ -222,6 +222,17 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   useEffect(() => {
     setRfNodes((prev) => {
       const wasSelected = new Set(prev.filter((n) => n.selected).map((n) => n.id));
+      // Quick-add hand-off: when DirectionalConnectors or QuickAddPopover
+      // mint a fresh node, they stamp its id into uiStore's
+      // `pendingInlineRenameNodeId`. The node arrives via SSE, lands in
+      // `nodes`, and this effect rebuilds rfNodes. Mark the pending id as
+      // selected so the shape primitive mounts with `selected={true}`,
+      // which gates the inline-edit input. Without this the user is
+      // expected to type into a label but the editable input never mounts
+      // (the primitive renders the static label div).
+      // `useInlineField` then consumes the pending id and opens edit mode.
+      const pendingId = useUiStore.getState().pendingInlineRenameNodeId;
+      if (pendingId) wasSelected.add(pendingId);
       // Pass the full node map so `toRfNode` can resolve `parent` → `parentId`
       // only when the parent actually exists in this snapshot.
       return Object.values(nodes).map((n) => ({

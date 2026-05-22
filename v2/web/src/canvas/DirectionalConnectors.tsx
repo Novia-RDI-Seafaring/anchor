@@ -114,6 +114,10 @@ export function DirectionalConnectors({ workspaceSlug }: Props) {
   const [popover, setPopover] = useState<PopoverState | null>(null);
 
   // Recompute screen-space dot positions on selection / pan / zoom / resize.
+  // Dots sit ~16 px (≈4 mm at 96 dpi) OUTSIDE the node's bounding rect on
+  // each side so they don't visually fight with the NodeResizer corner/
+  // edge handles that occupy the actual edge. The offset is in flow
+  // coordinates and zooms naturally with the viewport.
   const dotPositions = useMemo(() => {
     if (!sourceNode) return null;
     const data = sourceNode.data as { width?: number; height?: number } | undefined;
@@ -121,10 +125,11 @@ export function DirectionalConnectors({ workspaceSlug }: Props) {
     const w = data?.width ?? defaultSize.width;
     const h = data?.height ?? defaultSize.height;
     const { x, y } = sourceNode;
-    const n = flowToScreenPosition({ x: x + w / 2, y });
-    const e = flowToScreenPosition({ x: x + w, y: y + h / 2 });
-    const s = flowToScreenPosition({ x: x + w / 2, y: y + h });
-    const wl = flowToScreenPosition({ x, y: y + h / 2 });
+    const OUTSET = 16; // flow-units offset away from the node edge
+    const n = flowToScreenPosition({ x: x + w / 2, y: y - OUTSET });
+    const e = flowToScreenPosition({ x: x + w + OUTSET, y: y + h / 2 });
+    const s = flowToScreenPosition({ x: x + w / 2, y: y + h + OUTSET });
+    const wl = flowToScreenPosition({ x: x - OUTSET, y: y + h / 2 });
     return { N: n, E: e, S: s, W: wl, w, h };
     // `transform` is the trigger that re-runs this when ReactFlow pans/zooms.
     // eslint-disable-next-line react-hooks/exhaustive-deps
