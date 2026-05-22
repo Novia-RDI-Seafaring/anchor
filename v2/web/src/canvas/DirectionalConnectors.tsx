@@ -229,6 +229,16 @@ export function DirectionalConnectors({ workspaceSlug }: Props) {
       dragRef.current = null;
       setDragArrow(null);
       if (!drag || !sourceNode) return;
+      // Click-vs-drag threshold: if the pointer barely moved between
+      // pointer-down and pointer-up, treat it as a click — defer to the
+      // dot's onClick handler (which calls `createPeer` for a same-type
+      // peer). Without this check every click would also fall through to
+      // the popover path below.
+      const dx = event.clientX - drag.startScreen.x;
+      const dy = event.clientY - drag.startScreen.y;
+      if (dx * dx + dy * dy < 16) {  // < 4 px in any direction
+        return;
+      }
       // Test what's under the release point. ReactFlow tags every node
       // wrapper with `.react-flow__node` and `data-id` — we filter on the
       // class to avoid matching edges (`.react-flow__edge`) which also
