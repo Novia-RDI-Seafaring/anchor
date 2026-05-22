@@ -184,10 +184,17 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
     d.height,
   );
   const sized = liveW !== undefined || liveH !== undefined;
+  // Spec content is row-driven: an explicit `height` from a previous
+  // resize forces empty space below the last row and visually disconnects
+  // the resize box from the visible card. Use `minHeight` instead so the
+  // wrapper auto-grows past the stored height when content needs more
+  // room, but doesn't go smaller than the user-chosen size. Width still
+  // gets honoured explicitly because the user typically resizes spec
+  // tables horizontally to control column widths.
   return (
     <div
       className={`relative rounded-lg border ${borderStyle} border-neutral-400 bg-white text-sm shadow-sm ${sized ? "" : "w-72"} ${selected ? "cursor-move" : "cursor-pointer"}`}
-      style={sized ? { width: liveW, height: liveH } : undefined}
+      style={sized ? { width: liveW, minHeight: liveH } : undefined}
       onMouseEnter={broadcastHover}
       onMouseLeave={clearHoveredSourceRef}
     >

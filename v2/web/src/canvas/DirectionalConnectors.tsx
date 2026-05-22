@@ -132,7 +132,10 @@ export function DirectionalConnectors({ workspaceSlug }: Props) {
     const w = data?.width ?? defaultSize.width;
     const h = data?.height ?? defaultSize.height;
     const { x, y } = sourceNode;
-    const OUTSET = 16; // flow-units offset away from the node edge
+    // Flow-units offset away from the node edge. Picked so the dots sit
+    // clear of NodeResizer's 10 px corner squares (±5 px around the edge)
+    // and the floating mini-toolbar (lifted 40 px above the top edge).
+    const OUTSET = 22;
     const n = flowToScreenPosition({ x: x + w / 2, y: y - OUTSET });
     const e = flowToScreenPosition({ x: x + w + OUTSET, y: y + h / 2 });
     const s = flowToScreenPosition({ x: x + w / 2, y: y + h + OUTSET });

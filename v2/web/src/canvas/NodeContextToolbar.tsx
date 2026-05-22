@@ -233,7 +233,11 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
   const getNodeData = (nid: string) => nodes[nid]?.data;
 
   // Anchor toolbar above the box, with a small breathing gap.
-  const TOOLBAR_OFFSET = 12;
+  // Lifted off the node's top edge enough to clear:
+  //   - NodeResizer's 10 px corner handles (sit at ±5 px around the edge)
+  //   - DirectionalConnectors' top dot at OUTSET=28 (just below)
+  // 40 px sits comfortably above all three.
+  const TOOLBAR_OFFSET = 40;
   const style: React.CSSProperties = {
     position: "fixed",
     left: (screenBox.left + screenBox.right) / 2,
