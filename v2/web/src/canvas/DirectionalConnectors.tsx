@@ -130,10 +130,19 @@ export function DirectionalConnectors({ workspaceSlug }: Props) {
   // coordinates and zooms naturally with the viewport.
   const dotPositions = useMemo(() => {
     if (!sourceNode) return null;
+    // Prefer ReactFlow's MEASURED size for the source node (its actual
+    // DOM bounding rect) over the stored `data.width`/`data.height`.
+    // For shapes the two match. For spec tables (and any
+    // `minHeight`-driven primitive) the stored height can exceed the
+    // visible content, so dots placed via `data.height` end up below
+    // the visible card. `measured` always matches what the user sees.
+    const rf = rfNodes.find((r) => r.id === sourceNode.id);
+    const measuredW = (rf as { measured?: { width?: number } } | undefined)?.measured?.width;
+    const measuredH = (rf as { measured?: { height?: number } } | undefined)?.measured?.height;
     const data = sourceNode.data as { width?: number; height?: number } | undefined;
     const defaultSize = DEFAULT_SIZE[sourceNode.node_type] ?? FALLBACK_SIZE;
-    const w = data?.width ?? defaultSize.width;
-    const h = data?.height ?? defaultSize.height;
+    const w = measuredW ?? data?.width ?? defaultSize.width;
+    const h = measuredH ?? data?.height ?? defaultSize.height;
     const { x, y } = sourceNode;
     // Flow-units offset away from the node edge. Picked so the dots sit
     // clear of NodeResizer's 10 px corner squares (±5 px around the edge)
@@ -146,7 +155,7 @@ export function DirectionalConnectors({ workspaceSlug }: Props) {
     return { N: n, E: e, S: s, W: wl, w, h };
     // `transform` is the trigger that re-runs this when ReactFlow pans/zooms.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceNode, transform]);
+  }, [sourceNode, transform, rfNodes]);
 
   /** Same-type peer creation. The new node gets focused for inline rename. */
   const createPeer = useCallback(
