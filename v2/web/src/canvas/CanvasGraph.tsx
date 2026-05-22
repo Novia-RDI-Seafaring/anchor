@@ -61,7 +61,17 @@ type Props = {
   readOnly?: boolean;
 };
 
-type StoreNode = { id: string; node_type: string; label: string; x: number; y: number; data?: Record<string, unknown> };
+type StoreNode = {
+  id: string;
+  node_type: string;
+  label: string;
+  x: number;
+  y: number;
+  /** Backend `Node.parent` — id of the container node (e.g. an Area) this
+   *  node is nested inside, or null/undefined when free-floating. */
+  parent?: string | null;
+  data?: Record<string, unknown>;
+};
 
 /**
  * Tiny 8-char base36 id — used to seed unique child-canvas slugs when a
@@ -72,18 +82,31 @@ function shortId(): string {
   return Math.random().toString(36).slice(2, 10);
 }
 
-function toRfNode(n: StoreNode): RfNode {
+function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
   // Areas render behind other nodes (zIndex: -1) so the empty interior
   // doesn't trap clicks meant for whatever sits on top. `selectable: true`
   // still lets the user click the dashed border or header to select the
   // area itself (and resize it via NodeResizer); clicks on the transparent
   // interior fall through to the nodes inside.
   const isArea = n.node_type === "area";
+  // Parent/child wiring — when this node has a `parent` AND that parent
+  // node currently exists, hand ReactFlow the standard `parentId` +
+  // `extent: "parent"` pair. ReactFlow then:
+  //   - moves the child along when the parent (Area) is dragged,
+  //   - clamps the child's position inside the parent's bounds,
+  //   - converts the position to parent-relative coordinates internally.
+  // Defensive: a `parent` that points at a missing node is silently
+  // ignored (otherwise ReactFlow logs a warning every render).
+  const parentExists = n.parent != null && allNodes[n.parent] != null;
+  const parentProps = parentExists
+    ? ({ parentId: n.parent as string, extent: "parent" as const })
+    : {};
   return {
     id: n.id,
     position: { x: n.x, y: n.y },
     data: { label: n.label, ...(n.data ?? {}) },
     type: n.node_type,
+    ...parentProps,
     ...(isArea ? { zIndex: -1, draggable: true } : {}),
   };
 }
@@ -173,8 +196,10 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   useEffect(() => {
     setRfNodes((prev) => {
       const wasSelected = new Set(prev.filter((n) => n.selected).map((n) => n.id));
+      // Pass the full node map so `toRfNode` can resolve `parent` → `parentId`
+      // only when the parent actually exists in this snapshot.
       return Object.values(nodes).map((n) => ({
-        ...toRfNode(n),
+        ...toRfNode(n, nodes),
         selected: wasSelected.has(n.id),
       }));
     });
@@ -423,6 +448,96 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         console.error("generic connect failed", err);
       });
   }, [readOnly, slug]);
+
+  /**
+   * Find the topmost Area whose body contains the given canvas point.
+   *
+   * Used by `onNodeDrag` to telegraph "drop here to nest" via the Area's
+   * highlight state and by `onNodeDragStop` to commit the reparent.
+   *
+   * Reads rect from `useCanvasStore` (x, y, width, height) rather than the
+   * live ReactFlow rfNode positions — Areas don't move during a child's
+   * drag, so the store position is authoritative. Skips the dragged node
+   * itself (a node can't be its own ancestor) and any descendants of the
+   * dragged node (would create a cycle).
+   *
+   * When the cursor sits inside multiple nested Areas, returns the
+   * innermost one (smallest area), giving the natural drop semantics.
+   */
+  const findAreaAtPoint = useCallback(
+    (point: { x: number; y: number }, draggedId: string): string | null => {
+      const storeState = useCanvasStore.getState();
+      // Build the set of descendants of the dragged node so we never
+      // suggest reparenting onto one of our own children.
+      const descendants = new Set<string>();
+      const stack = [draggedId];
+      while (stack.length) {
+        const cur = stack.pop()!;
+        for (const n of Object.values(storeState.nodes)) {
+          if (n.parent === cur && !descendants.has(n.id)) {
+            descendants.add(n.id);
+            stack.push(n.id);
+          }
+        }
+      }
+      let best: { id: string; area: number } | null = null;
+      for (const n of Object.values(storeState.nodes)) {
+        if (n.node_type !== "area") continue;
+        if (n.id === draggedId) continue;
+        if (descendants.has(n.id)) continue;
+        const w = (n.data?.width as number | undefined) ?? 320;
+        const h = (n.data?.height as number | undefined) ?? 200;
+        // Area position in flow coords is its own (x, y) when it has no
+        // parent; when nested, ReactFlow stores parent-relative — but the
+        // canvas store mirrors the wire `x`, `y` which the backend keeps
+        // in flow coords too. The acme-org canvas (the verification case)
+        // uses top-level Areas; nested-Area drop targeting is a known
+        // follow-up.
+        if (
+          point.x >= n.x
+          && point.x <= n.x + w
+          && point.y >= n.y
+          && point.y <= n.y + h
+        ) {
+          const a = w * h;
+          if (!best || a < best.area) best = { id: n.id, area: a };
+        }
+      }
+      return best?.id ?? null;
+    },
+    [],
+  );
+
+  /**
+   * onNodeDrag — fires continuously while the user drags ANY node.
+   *
+   * We compute the dragged node's centre in flow coordinates, find the
+   * (innermost) Area whose body contains that point, and stash the id on
+   * uiStore. The Area's renderer subscribes to that id and renders the
+   * "drop here" highlight while it matches.
+   *
+   * Areas themselves don't trigger highlights when dragged — we don't
+   * want a moved Area to highlight the Area it happens to pass over.
+   */
+  const onNodeDrag = useCallback(
+    (_event: React.MouseEvent, draggedNode: RfNode) => {
+      if (readOnly) return;
+      if (draggedNode.type === "area") return;
+      // Use the node's own bounding box centre. ReactFlow gives us
+      // `position` (top-left in flow coords) and the measured `width` /
+      // `height` once the node has been rendered.
+      const w = draggedNode.width ?? 0;
+      const h = draggedNode.height ?? 0;
+      const centre = {
+        x: draggedNode.position.x + w / 2,
+        y: draggedNode.position.y + h / 2,
+      };
+      const target = findAreaAtPoint(centre, draggedNode.id);
+      const current = useUiStore.getState().dropTargetAreaId;
+      if (current !== target) useUiStore.getState().setDropTargetAreaId(target);
+    },
+    [readOnly, findAreaAtPoint],
+  );
 
   const onDragOver = useCallback((event: React.DragEvent) => {
     const types = event.dataTransfer.types;
@@ -829,6 +944,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
                   navigate(`/c/${target}`);
                 }
               },
+              onNodeDrag,
               onNodeDragStop: (_event, node) => {
                 // Commit the post-drag position both locally (instant) and to
                 // the server (eventually consistent via SSE echo, idempotent
@@ -847,6 +963,70 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
                 canvases.patchNode(slug, id, { x, y }).catch(() => {
                   // Network failure: the next snapshot/patch will reconcile.
                 });
+                // Area drop-target handling — consume + clear the in-flight
+                // hover id, then persist the reparent if it actually changes.
+                // The backend HTTP/MCP/CLI patch route detects a `parent`
+                // field and dispatches `reparent_node`, which emits a
+                // `NodeReparented` event; SSE echoes update the canonical
+                // canvas state on every connected client.
+                if (node.type !== "area") {
+                  const target = useUiStore.getState().dropTargetAreaId;
+                  useUiStore.getState().setDropTargetAreaId(null);
+                  const existing = useCanvasStore.getState().nodes[id];
+                  const currentParent = existing?.parent ?? null;
+                  if (target && target !== currentParent && target !== id) {
+                    // Optimistic local mirror so the nesting renders before
+                    // the SSE echo arrives.
+                    useCanvasStore.setState((state) => {
+                      const cur = state.nodes[id];
+                      if (!cur) return state;
+                      return {
+                        ...state,
+                        nodes: { ...state.nodes, [id]: { ...cur, parent: target } },
+                      };
+                    });
+                    canvases.patchNode(slug, id, { parent: target }).catch(() => {
+                      // SSE reconciles.
+                    });
+                  } else if (!target && currentParent) {
+                    // Dragged out of the parent. Unparent.
+                    useCanvasStore.setState((state) => {
+                      const cur = state.nodes[id];
+                      if (!cur) return state;
+                      return {
+                        ...state,
+                        nodes: { ...state.nodes, [id]: { ...cur, parent: null } },
+                      };
+                    });
+                    canvases.patchNode(slug, id, { parent: null }).catch(() => {
+                      // SSE reconciles.
+                    });
+                  }
+                }
+              },
+              onSelectionDragStop: (_event, draggedNodes) => {
+                // Multi-select drag: ReactFlow moves every selected node
+                // visually during the gesture, but `onNodeDragStop` only
+                // fires for the primary. Without persisting each one, the
+                // rfNodes effect rebuilds from the store and the
+                // non-primary nodes snap back to their pre-drag positions
+                // — that's the "subtree rearranges after release" bug.
+                useCanvasStore.setState((state) => {
+                  const next = { ...state.nodes };
+                  for (const n of draggedNodes) {
+                    const cur = next[n.id];
+                    if (!cur) continue;
+                    next[n.id] = { ...cur, x: n.position.x, y: n.position.y };
+                  }
+                  return { ...state, nodes: next };
+                });
+                for (const n of draggedNodes) {
+                  canvases
+                    .patchNode(slug, n.id, { x: n.position.x, y: n.position.y })
+                    .catch(() => {
+                      // SSE reconciles next snapshot.
+                    });
+                }
               },
             })}
       >

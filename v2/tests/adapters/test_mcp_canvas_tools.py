@@ -199,3 +199,37 @@ def test_canvas_create_sub_canvas_rejects_self_link():
         assert "error" in json.loads(body)
 
     asyncio.run(run())
+
+
+def test_canvas_update_node_with_parent_dispatches_reparent():
+    """`canvas_update_node {parent: <id>}` emits `NodeReparented`, mirroring HTTP."""
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await s.workspace.add_node("w1", id="area", node_type="area")
+        await s.workspace.add_node("w1", id="child", node_type="concept")
+        body = await handlers_canvas.call_tool(
+            s.workspace,
+            "canvas_update_node",
+            {"workspace_slug": "w1", "id": "child", "parent": "area"},
+        )
+        out = json.loads(body)
+        assert out["event"]["type"] == "NodeReparented"
+        assert out["event"]["payload"]["parent"] == "area"
+
+    asyncio.run(run())
+
+
+def test_canvas_update_node_rejects_self_parent():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await s.workspace.add_node("w1", id="a")
+        body = await handlers_canvas.call_tool(
+            s.workspace,
+            "canvas_update_node",
+            {"workspace_slug": "w1", "id": "a", "parent": "a"},
+        )
+        assert "error" in json.loads(body)
+
+    asyncio.run(run())

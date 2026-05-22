@@ -2,7 +2,21 @@ import { create } from "zustand";
 
 import type { CanvasEvent } from "@/realtime/sseClient";
 
-type Node = { id: string; node_type: string; label: string; x: number; y: number; data?: Record<string, unknown> };
+type Node = {
+  id: string;
+  node_type: string;
+  label: string;
+  x: number;
+  y: number;
+  /**
+   * Parent node id (for area/container nesting). When set, ReactFlow
+   * treats this node as a child of `parent` — moving the parent moves
+   * the child, and the child's position becomes parent-relative.
+   * Mirrors the backend `Node.parent` top-level field.
+   */
+  parent?: string | null;
+  data?: Record<string, unknown>;
+};
 type Edge = {
   id: string;
   source: string;
@@ -35,6 +49,7 @@ function asNode(row: WireRow): Node {
     label: (row.label as string) ?? "",
     x: (row.x as number) ?? 0,
     y: (row.y as number) ?? 0,
+    parent: (row.parent as string | null | undefined) ?? null,
     data: (row.data as Record<string, unknown>) ?? {},
   };
 }
@@ -149,6 +164,7 @@ export const useCanvasStore = create<State>((set) => ({
           label: (p.label as string) ?? "",
           x: (p.x as number) ?? 0,
           y: (p.y as number) ?? 0,
+          parent: (p.parent as string | null | undefined) ?? null,
           data: (p.data as Record<string, unknown>) ?? {},
         };
         break;
@@ -167,7 +183,10 @@ export const useCanvasStore = create<State>((set) => ({
       }
       case "NodeReparented": {
         const id = p.id as string;
-        if (nodes[id]) nodes[id] = { ...nodes[id], data: { ...nodes[id].data, parent: p.parent } };
+        // `parent` is a top-level field on the canonical Node model
+        // (mirrors backend reducer). Storing it on `data.parent` would
+        // hide it from `toRfNode`'s `parent → parentId` mapping.
+        if (nodes[id]) nodes[id] = { ...nodes[id], parent: (p.parent as string | null | undefined) ?? null };
         break;
       }
       case "NodeUpdated": {

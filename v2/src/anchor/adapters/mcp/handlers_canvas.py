@@ -111,6 +111,16 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "label": {"type": "string"},
                     "x": {"type": "number"},
                     "y": {"type": "number"},
+                    "parent": {
+                        "type": ["string", "null"],
+                        "description": (
+                            "Reparent the node onto another node (typically an "
+                            "Area container). Pass `null` to detach. A pure-"
+                            "parent patch emits `NodeReparented`; mixed with "
+                            "other fields, the reparent still flows through the "
+                            "dedicated command for invariant checking."
+                        ),
+                    },
                     "data": {"type": "object"},
                 },
                 "required": ["workspace_slug", "id"],
@@ -354,11 +364,23 @@ async def call_tool(svc: WorkspaceService, name: str, args: dict[str, Any]) -> s
         if name == "canvas_update_node":
             slug = args.pop("workspace_slug")
             node_id = args.pop("id")
+            # `parent` is allowed to be explicitly None (means "unparent");
+            # only strip the OTHER fields if they're None. The dispatcher
+            # mirrors the HTTP route so HTTP / MCP / CLI behave identically.
+            parent_present = "parent" in args
+            parent_val = args.pop("parent", None)
+            if parent_present and parent_val == node_id:
+                return json.dumps({"error": "node cannot be its own parent"})
             fields = {k: v for k, v in args.items() if v is not None}
-            if {"x", "y"} <= fields.keys() and len(fields) == 2:
+            if {"x", "y"} <= fields.keys() and len(fields) == 2 and not parent_present:
                 state, env = await svc.move_node(slug, node_id, fields["x"], fields["y"])
+            elif parent_present and not fields:
+                state, env = await svc.reparent_node(slug, node_id, parent_val)
             else:
-                state, env = await svc.update_node(slug, node_id, fields)
+                if fields:
+                    state, env = await svc.update_node(slug, node_id, fields)
+                if parent_present:
+                    state, env = await svc.reparent_node(slug, node_id, parent_val)
             return json.dumps({"event": env.model_dump(), "state": state.get_state()})
         if name == "canvas_remove_node":
             state, envelopes = await svc.remove_node(args["workspace_slug"], args["id"])

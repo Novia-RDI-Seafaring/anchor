@@ -256,3 +256,45 @@ def test_list_workspaces_dedupes_repeated_canvas_links():
         assert items["child"]["referenced_by"] == ["parent"]
 
     asyncio.run(run())
+
+
+def test_reparent_node_emits_reparented_event_and_persists():
+    """`reparent_node` updates the top-level `Node.parent` field, emits
+    `NodeReparented`, and the change survives a store reload + replay."""
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await s.workspace.add_node("w1", id="area", node_type="area", label="Group")
+        await s.workspace.add_node("w1", id="child", node_type="concept", label="C")
+        state, env = await s.workspace.reparent_node("w1", "child", "area")
+        assert env.type == "NodeReparented"
+        assert env.payload["id"] == "child"
+        assert env.payload["parent"] == "area"
+        assert state.nodes["child"].parent == "area"
+        # Wire shape exposes `parent` as a top-level field — frontend's
+        # asNode() reads it from there into the canvasStore.
+        wire = state.get_state()
+        wire_child = next(n for n in wire["nodes"] if n["id"] == "child")
+        assert wire_child["parent"] == "area"
+        # Reload from store → parent survives the snapshot path.
+        reloaded = await s.workspace_store.load("w1")
+        assert reloaded.nodes["child"].parent == "area"
+        # Unparent.
+        state, env = await s.workspace.reparent_node("w1", "child", None)
+        assert env.type == "NodeReparented"
+        assert env.payload["parent"] is None
+        assert state.nodes["child"].parent is None
+
+    asyncio.run(run())
+
+
+def test_reparent_rejects_missing_parent():
+    """Validator rejects reparent to a non-existent parent id."""
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await s.workspace.add_node("w1", id="a", node_type="concept")
+        with pytest.raises(CommandError):
+            await s.workspace.reparent_node("w1", "a", "ghost")
+
+    asyncio.run(run())

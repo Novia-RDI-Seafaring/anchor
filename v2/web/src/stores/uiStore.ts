@@ -87,6 +87,19 @@ type UiState = {
   setSelectedNodeId: (id: string | null) => void;
   setPropertiesOpen: (open: boolean) => void;
   toggleProperties: () => void;
+  // --- Drop-target tracking for Area (container) nodes -------------------
+  /**
+   * Id of the Area node the user is currently hovering a dragged node over,
+   * or null when no Area is being targeted.
+   *
+   * Lives on uiStore (not on the per-node `data` dict on canvasStore) so
+   * per-frame mouse updates during a drag don't pollute the canonical
+   * canvas state or echo through SSE. Read by `AreaNode` to render the
+   * "drop here" highlight; written by `CanvasGraph.onNodeDrag` /
+   * `onNodeDragStop`.
+   */
+  dropTargetAreaId: string | null;
+  setDropTargetAreaId: (id: string | null) => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -96,6 +109,7 @@ export const useUiStore = create<UiState>((set) => ({
   armedTool: null,
   selectedNodeId: null,
   propertiesOpen: false,
+  dropTargetAreaId: null,
   openPdf: (slug, options) =>
     set({
       pdfViewer: {
@@ -137,4 +151,5 @@ export const useUiStore = create<UiState>((set) => ({
         ? { propertiesOpen: false }
         : { propertiesOpen: true, libraryDrawerOpen: false },
     ),
+  setDropTargetAreaId: (id) => set({ dropTargetAreaId: id }),
 }));

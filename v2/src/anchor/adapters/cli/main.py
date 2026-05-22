@@ -586,10 +586,32 @@ def canvas_update_node(
     y: float | None = typer.Option(None, "--y"),
     width: float | None = typer.Option(None, "--width"),
     height: float | None = typer.Option(None, "--height"),
+    parent: str | None = typer.Option(
+        None,
+        "--parent",
+        help=(
+            "Reparent the node onto another node (typically an Area "
+            "container's id). Triggers a `NodeReparented` event."
+        ),
+    ),
+    unparent: bool = typer.Option(
+        False,
+        "--unparent",
+        help=(
+            "Detach the node from its current parent. "
+            "Mutually exclusive with --parent."
+        ),
+    ),
     data: str | None = typer.Option(None, "--data"),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Update fields on an existing node. Move-only when only --x and --y given."""
+    if parent is not None and unparent:
+        typer.echo("--parent and --unparent are mutually exclusive", err=True)
+        raise typer.Exit(code=2)
+    if parent is not None and parent == node_id:
+        typer.echo("node cannot be its own parent", err=True)
+        raise typer.Exit(code=2)
     _, _, ws, _, _ = _build_real_services(data_dir)
     fields: dict = {}
     if label is not None:  fields["label"] = label
@@ -598,17 +620,27 @@ def canvas_update_node(
     if width is not None:  fields["width"] = width
     if height is not None: fields["height"] = height
     if data is not None:   fields["data"] = _parse_data(data)
-    if not fields:
+    parent_op = parent is not None or unparent
+    parent_val = parent if parent is not None else (None if unparent else None)
+    if not fields and not parent_op:
         typer.echo("nothing to update — pass at least one field", err=True)
         raise typer.Exit(code=2)
 
     async def run():
-        # Same heuristic as the HTTP PATCH route: a pure move is dispatched
-        # through `move_node` for the event-type clarity.
-        if set(fields.keys()) == {"x", "y"}:
+        # Same dispatch rules as the HTTP PATCH route — keeps HTTP / MCP /
+        # CLI behaviour identical (per the v2 adapter-parity rule).
+        env = None
+        state = None
+        if set(fields.keys()) == {"x", "y"} and not parent_op:
             state, env = await ws.move_node(slug, node_id, fields["x"], fields["y"])
+        elif parent_op and not fields:
+            state, env = await ws.reparent_node(slug, node_id, parent_val)
         else:
-            state, env = await ws.update_node(slug, node_id, fields)
+            if fields:
+                state, env = await ws.update_node(slug, node_id, fields)
+            if parent_op:
+                state, env = await ws.reparent_node(slug, node_id, parent_val)
+        assert env is not None and state is not None  # for type narrowing
         return {"event": env.model_dump(), "state": state.get_state()}
     typer.echo(json.dumps(asyncio.run(run()), indent=2))
 

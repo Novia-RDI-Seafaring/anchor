@@ -21,6 +21,7 @@ beforeEach(() => {
     armedTool: null,
     selectedNodeId: null,
     propertiesOpen: false,
+    dropTargetAreaId: null,
   });
 });
 
@@ -53,6 +54,23 @@ describe("uiStore.armTool", () => {
   it("disarmTool is a no-op when nothing is armed", () => {
     useUiStore.getState().disarmTool();
     expect(useUiStore.getState().armedTool).toBeNull();
+  });
+});
+
+describe("uiStore.dropTargetAreaId", () => {
+  it("defaults to null", () => {
+    expect(useUiStore.getState().dropTargetAreaId).toBeNull();
+  });
+
+  it("setDropTargetAreaId stores the id", () => {
+    useUiStore.getState().setDropTargetAreaId("area-1");
+    expect(useUiStore.getState().dropTargetAreaId).toBe("area-1");
+  });
+
+  it("setDropTargetAreaId(null) clears the target", () => {
+    useUiStore.setState({ dropTargetAreaId: "area-1" });
+    useUiStore.getState().setDropTargetAreaId(null);
+    expect(useUiStore.getState().dropTargetAreaId).toBeNull();
   });
 });
 

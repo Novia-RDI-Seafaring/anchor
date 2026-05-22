@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom";
 import { DEFAULT_BG, DEFAULT_STROKE, resolveColors } from "@/canvas/colors";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
+import { useUiStore } from "@/stores/uiStore";
 
 /**
  * AreaNode — labelled, dashed rounded-rectangle container.
@@ -55,6 +56,11 @@ export function AreaNode({ id, data, selected }: NodeProps) {
   const tone = toneClass[d.tone ?? "default"] ?? toneClass.default;
   const borderStyle = dashed ? "border-dashed" : "border-solid";
   const { id: workspaceSlug } = useParams<{ id: string }>();
+  // Drop-target highlight — CanvasGraph's onNodeDrag stashes the Area id
+  // the cursor is hovering inside on uiStore.dropTargetAreaId. When it
+  // matches THIS area, we render a brighter dashed border + a soft sky
+  // tint so the user knows "release here = nest into this container".
+  const isDropTarget = useUiStore((s) => s.dropTargetAreaId === id);
   const rename = useInlineField({
     workspaceSlug: workspaceSlug ?? "",
     nodeId: id,
@@ -76,10 +82,25 @@ export function AreaNode({ id, data, selected }: NodeProps) {
     styleOverride.borderColor = stroke;
     styleOverride.color = stroke;
   }
+  // Drop-target visual: brighter sky border + soft sky fill + inner glow.
+  // The transition smooths the highlight on/off so a fast hover doesn't
+  // strobe. We OVERRIDE borderColor/background here so the highlight wins
+  // even when the user has picked a custom stroke/bg via the style picker
+  // — the highlight is a transient UX state, not a persisted choice.
+  const dropStyle: React.CSSProperties = isDropTarget
+    ? {
+        borderColor: "#0ea5e9",
+        background: "rgba(186, 230, 253, 0.35)",
+        boxShadow: "inset 0 0 0 2px rgba(14, 165, 233, 0.25)",
+        transition: "border-color 150ms ease, background 150ms ease, box-shadow 150ms ease",
+      }
+    : {
+        transition: "border-color 150ms ease, background 150ms ease, box-shadow 150ms ease",
+      };
   return (
     <div
       className={`pointer-events-auto rounded-xl border-2 ${borderStyle} ${tone}`}
-      style={styleOverride}
+      style={{ ...styleOverride, ...dropStyle }}
     >
       <NodeResizer
         isVisible={selected ?? false}

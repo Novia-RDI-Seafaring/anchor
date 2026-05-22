@@ -209,3 +209,45 @@ def test_create_sub_canvas_rejects_self_link():
         "/api/workspaces/plant/sub-canvas", json={"slug": "plant"},
     )
     assert rsp.status_code == 400
+
+
+def test_patch_node_pure_parent_emits_reparented_event():
+    """`PATCH /nodes/{id}` with only `{parent: <id>}` dispatches `reparent_node`
+    and emits a `NodeReparented` event (not a generic `NodeUpdated`)."""
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.post("/api/workspaces/w1/nodes", json={"id": "area", "node_type": "area"})
+    client.post("/api/workspaces/w1/nodes", json={"id": "child", "node_type": "concept"})
+    rsp = client.patch("/api/workspaces/w1/nodes/child", json={"parent": "area"})
+    assert rsp.status_code == 200
+    assert rsp.json()["event"]["type"] == "NodeReparented"
+    state = client.get("/api/workspaces/w1/state").json()
+    child = next(n for n in state["nodes"] if n["id"] == "child")
+    assert child["parent"] == "area"
+
+
+def test_patch_node_explicit_null_parent_unparents():
+    """`PATCH /nodes/{id}` with `{parent: null}` detaches the node — the wire
+    distinguishes "field omitted" (no-op) from "field set to null" (unparent)."""
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.post("/api/workspaces/w1/nodes", json={"id": "area", "node_type": "area"})
+    client.post(
+        "/api/workspaces/w1/nodes",
+        json={"id": "child", "node_type": "concept", "parent": "area"},
+    )
+    rsp = client.patch("/api/workspaces/w1/nodes/child", json={"parent": None})
+    assert rsp.status_code == 200
+    assert rsp.json()["event"]["type"] == "NodeReparented"
+    state = client.get("/api/workspaces/w1/state").json()
+    child = next(n for n in state["nodes"] if n["id"] == "child")
+    assert child["parent"] is None
+
+
+def test_patch_node_rejects_self_parent():
+    """A node can't be its own parent — the route guards before dispatch."""
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.post("/api/workspaces/w1/nodes", json={"id": "a"})
+    rsp = client.patch("/api/workspaces/w1/nodes/a", json={"parent": "a"})
+    assert rsp.status_code == 400
