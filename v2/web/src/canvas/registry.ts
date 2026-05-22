@@ -140,7 +140,13 @@ export function canDragFromToolbar(name: string): boolean {
   const meta = paletteMeta.get(name);
   if (!meta) return false;
   if (meta.group === "shapes" || meta.group === "cards") return true;
-  return name === "canvas";
+  // Producer exceptions — these are draggable as empty scaffolds the
+  // user fills in manually (instead of needing a region-drag from a doc):
+  //   - `canvas` provisions a sibling workspace on drop.
+  //   - `spec` drops an empty table with no source_ref; the user adds
+  //     rows + a title; later they may wire it to a doc by dragging a
+  //     region onto the table or via Properties Panel.
+  return name === "canvas" || name === "spec";
 }
 
 // Built-in defaults — registered against canonical node_type strings.
@@ -213,9 +219,10 @@ registerNodeRenderer("document", DocumentPrimitive, {
 registerNodeRenderer("spec", TablePrimitive, {
   group: "producers",
   label: "Spec table",
-  hint: "drag rows out of a document",
+  hint: "drop an empty spec table · also created by dragging a row out of a document",
   glyph: "table",
   order: 20,
+  noDefaultLabel: true,
 });
 // Sub-canvas — link to another workspace. Drop-creates a sibling canvas
 // behind the scenes (see LeftToolRail) so the linking node is always
