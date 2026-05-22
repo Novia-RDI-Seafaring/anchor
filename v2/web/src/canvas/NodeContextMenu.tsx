@@ -17,13 +17,14 @@
  * the trigger without re-implementing the right-click ourselves. A
  * tiny hand-rolled menu is simpler than fighting the abstraction. The
  * Radix primitive in `ui/context-menu.tsx` is kept for any future
- * non-canvas use (e.g. a right-click on a card in the LibraryDrawer).
+ * non-canvas use.
  *
- * Item enablement rules (mirror the spec):
+ * Item enablement rules:
+ *   - Fill / Stroke / Text — always (top-level submenus; producer
+ *     primitives ignore the colour fields).
  *   - Align top/bottom/left/right/center-h/center-v — only when ≥ 2 selected
  *   - Distribute horizontal/vertical — only when ≥ 3 selected
- *   - Bring to front / Send to back — single or multi (disabled today,
- *     pending a z-order field on Node — TODO note inline)
+ *   - Bring to front / Send to back — disabled today (pending a z-order field)
  *   - Organize subtree — single node OR multi if any selected has edges
  *   - Delete / Edit properties — always
  */
@@ -36,6 +37,8 @@ import {
   AlignStartVertical,
   ChevronRight,
   Palette,
+  PaintBucket,
+  Type,
   Trash2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -45,7 +48,9 @@ import { cn } from "@/lib/cn";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
-import { StylePicker } from "./StylePicker";
+import { FillPicker } from "./FillPicker";
+import { StrokePicker } from "./StrokePicker";
+import { TextPicker } from "./TextPicker";
 
 export type ContextMenuTarget = {
   /** Screen coordinates of the click. */
@@ -67,11 +72,12 @@ type Props = {
   onClose: () => void;
 };
 
+type OpenSub = null | "organize" | "fill" | "stroke" | "text";
+
 export function NodeContextMenu({ workspaceSlug, target, onClose }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const [organizeOpen, setOrganizeOpen] = useState(false);
-  const [styleOpen, setStyleOpen] = useState(false);
-  // Read canvas store for the StylePicker's `getNodeData` lookup. Hooks
+  const [openSub, setOpenSub] = useState<OpenSub>(null);
+  // Read canvas store for the picker's `getNodeData` lookup. Hooks
   // can't live conditionally, so we always subscribe even when the menu
   // is closed.
   const storeNodes = useCanvasStore((s) => s.nodes);
@@ -97,8 +103,8 @@ export function NodeContextMenu({ workspaceSlug, target, onClose }: Props) {
 
   // Effective selection — if the user right-clicked a node that *isn't*
   // already in the multi-select, ReactFlow has already promoted that
-  // single node to the selection in onNodeContextMenu (by emitting a
-  // dimensions/select change). We still defensively include nodeId.
+  // single node to the selection in onNodeContextMenu. We still
+  // defensively include nodeId.
   const ids = target.selectedIds.length > 0 ? target.selectedIds : [target.nodeId];
   const multi = ids.length >= 2;
   const triPlus = ids.length >= 3;
@@ -132,8 +138,6 @@ export function NodeContextMenu({ workspaceSlug, target, onClose }: Props) {
       ref={ref}
       role="menu"
       data-testid="node-context-menu"
-      // Anchor at the click point; the menu uses a fixed-position float
-      // because the canvas is full-bleed.
       style={{
         position: "fixed",
         left: target.x,
@@ -142,6 +146,82 @@ export function NodeContextMenu({ workspaceSlug, target, onClose }: Props) {
       }}
       className="min-w-[12rem] overflow-visible rounded-md border border-neutral-200 bg-white p-1 text-neutral-700 shadow-lg"
     >
+      {/* ────── Top-level style submenus (Fill / Stroke / Text) ──────
+          These used to live under a single "Style ▸" submenu. Flattening
+          them to the top level matches the toolbar's chip vocabulary and
+          avoids the two-level nesting that caused popover-stacking bugs. */}
+      <SubmenuRow
+        open={openSub === "fill"}
+        onEnter={() => setOpenSub("fill")}
+        onLeave={(e, container) => {
+          // Only collapse when the cursor leaves the row AND its open panel.
+          if (!container.contains(e.relatedTarget as Node | null)) setOpenSub(null);
+        }}
+        renderTrigger={() => (
+          <MenuItem
+            icon={<PaintBucket className="size-3.5" />}
+            rightAdornment={<ChevronRight className="size-3" />}
+          >
+            Fill
+          </MenuItem>
+        )}
+        renderPanel={() => (
+          <FillPicker
+            workspaceSlug={workspaceSlug}
+            nodeIds={ids}
+            getNodeData={(nid) => storeNodes[nid]?.data}
+            onClose={onClose}
+          />
+        )}
+      />
+      <SubmenuRow
+        open={openSub === "stroke"}
+        onEnter={() => setOpenSub("stroke")}
+        onLeave={(e, container) => {
+          if (!container.contains(e.relatedTarget as Node | null)) setOpenSub(null);
+        }}
+        renderTrigger={() => (
+          <MenuItem
+            icon={<Palette className="size-3.5" />}
+            rightAdornment={<ChevronRight className="size-3" />}
+          >
+            Stroke
+          </MenuItem>
+        )}
+        renderPanel={() => (
+          <StrokePicker
+            workspaceSlug={workspaceSlug}
+            nodeIds={ids}
+            getNodeData={(nid) => storeNodes[nid]?.data}
+            onClose={onClose}
+          />
+        )}
+      />
+      <SubmenuRow
+        open={openSub === "text"}
+        onEnter={() => setOpenSub("text")}
+        onLeave={(e, container) => {
+          if (!container.contains(e.relatedTarget as Node | null)) setOpenSub(null);
+        }}
+        renderTrigger={() => (
+          <MenuItem
+            icon={<Type className="size-3.5" />}
+            rightAdornment={<ChevronRight className="size-3" />}
+          >
+            Text
+          </MenuItem>
+        )}
+        renderPanel={() => (
+          <TextPicker
+            workspaceSlug={workspaceSlug}
+            nodeIds={ids}
+            getNodeData={(nid) => storeNodes[nid]?.data}
+            onClose={onClose}
+          />
+        )}
+      />
+      <Separator />
+
       <MenuLabel>Align</MenuLabel>
       <MenuItem disabled={!multi} icon={<AlignStartHorizontal className="size-3.5" />} onClick={() => void align("top")}>
         Top
@@ -173,58 +253,33 @@ export function NodeContextMenu({ workspaceSlug, target, onClose }: Props) {
       {/* Bring to front / Send to back — TODO: needs a z-order field on
           Node; deferred until that lands. Items rendered disabled so the
           eventual feature has a discoverable home. */}
-      <MenuItem disabled>Bring to front</MenuItem>
-      <MenuItem disabled>Send to back</MenuItem>
+      <MenuItem disabled>Bring to front (coming soon)</MenuItem>
+      <MenuItem disabled>Send to back (coming soon)</MenuItem>
       <Separator />
-      <div
-        className="relative"
-        onMouseEnter={() => setOrganizeOpen(true)}
-        onMouseLeave={() => setOrganizeOpen(false)}
-      >
-        <MenuItem
-          disabled={!target.hasEdges}
-          onClick={() => setOrganizeOpen((o) => !o)}
-          rightAdornment={<ChevronRight className="size-3" />}
-        >
-          Organize subtree
-        </MenuItem>
-        {organizeOpen && target.hasEdges ? (
-          <div
-            className="absolute left-full top-0 ml-1 min-w-[8rem] rounded-md border border-neutral-200 bg-white p-1 shadow-md"
-            role="menu"
+      <SubmenuRow
+        open={openSub === "organize"}
+        onEnter={() => target.hasEdges && setOpenSub("organize")}
+        onLeave={(e, container) => {
+          if (!container.contains(e.relatedTarget as Node | null)) setOpenSub(null);
+        }}
+        renderTrigger={() => (
+          <MenuItem
+            disabled={!target.hasEdges}
+            rightAdornment={<ChevronRight className="size-3" />}
           >
-            <MenuItem onClick={() => void organize("vertical")}>Vertical</MenuItem>
-            <MenuItem onClick={() => void organize("horizontal")}>Horizontal</MenuItem>
-            <MenuItem disabled>Radial (coming soon)</MenuItem>
-          </div>
-        ) : null}
-      </div>
-      {/* Style submenu — fill + stroke pickers. Same picker is reused on the
-          mini-toolbar's ⋮ More overflow. Always enabled; on producer
-          primitives the colour fields are just ignored. */}
-      <div
-        className="relative"
-        onMouseEnter={() => setStyleOpen(true)}
-        onMouseLeave={() => setStyleOpen(false)}
-      >
-        <MenuItem
-          icon={<Palette className="size-3.5" />}
-          onClick={() => setStyleOpen((o) => !o)}
-          rightAdornment={<ChevronRight className="size-3" />}
-        >
-          Style
-        </MenuItem>
-        {styleOpen ? (
-          <div className="absolute left-full top-0 ml-1">
-            <StylePicker
-              workspaceSlug={workspaceSlug}
-              nodeIds={ids}
-              getNodeData={(nid) => storeNodes[nid]?.data}
-              onClose={onClose}
-            />
-          </div>
-        ) : null}
-      </div>
+            Organize subtree
+          </MenuItem>
+        )}
+        renderPanel={() =>
+          target.hasEdges ? (
+            <div className="min-w-[8rem]">
+              <MenuItem onClick={() => void organize("vertical")}>Vertical</MenuItem>
+              <MenuItem onClick={() => void organize("horizontal")}>Horizontal</MenuItem>
+              <MenuItem disabled>Radial (coming soon)</MenuItem>
+            </div>
+          ) : null
+        }
+      />
       <Separator />
       <MenuItem
         icon={<Trash2 className="size-3.5" />}
@@ -240,6 +295,46 @@ export function NodeContextMenu({ workspaceSlug, target, onClose }: Props) {
 }
 
 // ─── small primitives ─────────────────────────────────────────────────────
+
+/**
+ * SubmenuRow — generic mouse-driven submenu container. Used for the four
+ * top-level "▸" entries (Fill / Stroke / Text / Organize). Owns the
+ * `relative` positioning and the absolute-anchored panel; the caller
+ * supplies the trigger and the panel contents.
+ *
+ * The previous Style submenu shared a `relative` wrapper with both the
+ * Fill picker and the Stroke picker, which made Radix layer the two
+ * Content surfaces at the same anchor + z-index. Flattening to top level
+ * AND giving each submenu its own wrapper restores per-panel anchoring.
+ */
+function SubmenuRow({
+  open, onEnter, onLeave, renderTrigger, renderPanel,
+}: {
+  open: boolean;
+  onEnter: () => void;
+  onLeave: (e: React.MouseEvent, container: HTMLDivElement) => void;
+  renderTrigger: () => React.ReactNode;
+  renderPanel: () => React.ReactNode;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  return (
+    <div
+      ref={containerRef}
+      className="relative"
+      onMouseEnter={onEnter}
+      onMouseLeave={(e) => {
+        if (containerRef.current) onLeave(e, containerRef.current);
+      }}
+    >
+      {renderTrigger()}
+      {open ? (
+        <div className="absolute left-full top-0 ml-1 rounded-md border border-neutral-200 bg-white p-2 shadow-md">
+          {renderPanel()}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 function MenuItem({
   children, icon, disabled, onClick, rightAdornment, className,

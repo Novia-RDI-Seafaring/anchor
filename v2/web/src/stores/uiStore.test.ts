@@ -20,8 +20,11 @@ beforeEach(() => {
     libraryDrawerOpen: false,
     armedTool: null,
     selectedNodeId: null,
+    selectedEdgeId: null,
     propertiesOpen: false,
     dropTargetAreaId: null,
+    isDraggingNode: false,
+    pendingInlineRenameNodeId: null,
   });
 });
 
@@ -71,6 +74,88 @@ describe("uiStore.dropTargetAreaId", () => {
     useUiStore.setState({ dropTargetAreaId: "area-1" });
     useUiStore.getState().setDropTargetAreaId(null);
     expect(useUiStore.getState().dropTargetAreaId).toBeNull();
+  });
+});
+
+describe("uiStore.isDraggingNode", () => {
+  it("defaults to false", () => {
+    expect(useUiStore.getState().isDraggingNode).toBe(false);
+  });
+
+  it("setIsDraggingNode toggles the flag", () => {
+    useUiStore.getState().setIsDraggingNode(true);
+    expect(useUiStore.getState().isDraggingNode).toBe(true);
+    useUiStore.getState().setIsDraggingNode(false);
+    expect(useUiStore.getState().isDraggingNode).toBe(false);
+  });
+});
+
+describe("uiStore.pendingInlineRenameNodeId", () => {
+  it("defaults to null", () => {
+    expect(useUiStore.getState().pendingInlineRenameNodeId).toBeNull();
+  });
+
+  it("requestInlineRename stores the id", () => {
+    useUiStore.getState().requestInlineRename("node-7");
+    expect(useUiStore.getState().pendingInlineRenameNodeId).toBe("node-7");
+  });
+
+  it("consumeInlineRename returns true and clears when ids match", () => {
+    useUiStore.getState().requestInlineRename("node-7");
+    const ok = useUiStore.getState().consumeInlineRename("node-7");
+    expect(ok).toBe(true);
+    expect(useUiStore.getState().pendingInlineRenameNodeId).toBeNull();
+  });
+
+  it("consumeInlineRename returns false and does not clear when ids differ", () => {
+    useUiStore.getState().requestInlineRename("node-7");
+    const ok = useUiStore.getState().consumeInlineRename("node-8");
+    expect(ok).toBe(false);
+    expect(useUiStore.getState().pendingInlineRenameNodeId).toBe("node-7");
+  });
+
+  it("consumeInlineRename returns false when nothing is pending", () => {
+    const ok = useUiStore.getState().consumeInlineRename("node-7");
+    expect(ok).toBe(false);
+  });
+});
+
+describe("uiStore.selectedEdgeId — Miro-style edge editor selection", () => {
+  it("defaults to null", () => {
+    expect(useUiStore.getState().selectedEdgeId).toBeNull();
+  });
+
+  it("setSelectedEdgeId stores the id", () => {
+    useUiStore.getState().setSelectedEdgeId("e1");
+    expect(useUiStore.getState().selectedEdgeId).toBe("e1");
+  });
+
+  it("selecting an edge clears any selected node (mutual exclusion)", () => {
+    useUiStore.setState({ selectedNodeId: "n1" });
+    useUiStore.getState().setSelectedEdgeId("e1");
+    const s = useUiStore.getState();
+    expect(s.selectedEdgeId).toBe("e1");
+    expect(s.selectedNodeId).toBeNull();
+  });
+
+  it("selecting a node clears any selected edge", () => {
+    useUiStore.setState({ selectedEdgeId: "e1" });
+    useUiStore.getState().setSelectedNodeId("n1");
+    const s = useUiStore.getState();
+    expect(s.selectedNodeId).toBe("n1");
+    expect(s.selectedEdgeId).toBeNull();
+  });
+
+  it("setSelectedNodeId(null) does not clobber the edge selection", () => {
+    useUiStore.setState({ selectedEdgeId: "e1", selectedNodeId: null });
+    useUiStore.getState().setSelectedNodeId(null);
+    expect(useUiStore.getState().selectedEdgeId).toBe("e1");
+  });
+
+  it("setSelectedEdgeId(null) does not clobber the node selection", () => {
+    useUiStore.setState({ selectedEdgeId: null, selectedNodeId: "n1" });
+    useUiStore.getState().setSelectedEdgeId(null);
+    expect(useUiStore.getState().selectedNodeId).toBe("n1");
   });
 });
 

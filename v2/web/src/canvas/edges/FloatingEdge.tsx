@@ -7,6 +7,12 @@ import {
 } from "@xyflow/react";
 
 import { arrowheadFor, markerUrls, type EdgeMarker } from "./markers";
+import {
+  DEFAULT_EDGE_STROKE,
+  SELECTED_EDGE_STROKE,
+  resolveEdgeUserStyle,
+  userMarkerUrls,
+} from "./edge-style";
 import { getFloatingEdgeParams } from "./floatingGeometry";
 
 /**
@@ -20,13 +26,24 @@ import { getFloatingEdgeParams } from "./floatingGeometry";
  *
  * `EdgeMarkerDefs` must be mounted in the same SVG tree (the canvas root
  * mounts it once) for the marker IDs referenced here to resolve.
+ *
+ * Two parallel styling sources coexist:
+ *
+ *   1. SysML markers via `data.marker` → `arrowheadFor()` (legacy).
+ *   2. User-pickable caps + stroke colour/style via `data.start_marker`,
+ *      `data.end_marker`, `data.stroke_color`, `data.stroke_style` from
+ *      the Miro-style edge editor (see `edge-style.ts`).
+ *
+ * When the user picks an explicit cap/style/colour, that wins; otherwise
+ * the SysML dispatch still drives the look so existing diagrams render
+ * untouched.
  */
 
 type FloatingEdgeData = {
   marker?: EdgeMarker | null;
   label?: string | null;
   source_ref?: Record<string, unknown>;
-};
+} & Record<string, unknown>;
 
 export function FloatingEdge(props: EdgeProps) {
   const { id, source, target, data, style, selected } = props;
@@ -41,13 +58,38 @@ export function FloatingEdge(props: EdgeProps) {
   );
 
   const d = (data ?? {}) as FloatingEdgeData;
-  const styleSpec = arrowheadFor(d.marker);
-  const { markerStart, markerEnd } = markerUrls(styleSpec);
-  const userLabel = d.label ?? undefined;
-  const labelText = styleSpec.labelOverride
+  const sysml = arrowheadFor(d.marker);
+  const user = resolveEdgeUserStyle(d);
+
+  // A user pick is "explicit" iff the corresponding `data.*` field exists
+  // (not just the default fallback). Resolved values always have a non-
+  // empty default; we re-check the raw data to know if the user touched
+  // the field.
+  const hasUserCaps = "start_marker" in d || "end_marker" in d;
+  const hasUserStrokeStyle = "stroke_style" in d;
+  const hasUserStrokeColor = "stroke_color" in d;
+
+  let markerStart: string | undefined;
+  let markerEnd: string | undefined;
+  if (hasUserCaps) {
+    const urls = userMarkerUrls({
+      start: user.startMarker,
+      end: user.endMarker,
+      selected: !!selected,
+    });
+    markerStart = urls.markerStart;
+    markerEnd = urls.markerEnd;
+  } else {
+    const urls = markerUrls(sysml);
+    markerStart = urls.markerStart;
+    markerEnd = urls.markerEnd;
+  }
+
+  const userLabel = (d.label as string | null | undefined) ?? undefined;
+  const labelText = sysml.labelOverride
     ? userLabel
-      ? `${styleSpec.labelOverride} ${userLabel}`
-      : styleSpec.labelOverride
+      ? `${sysml.labelOverride} ${userLabel}`
+      : sysml.labelOverride
     : userLabel;
 
   const [path, labelX, labelY] = getBezierPath({
@@ -59,17 +101,28 @@ export function FloatingEdge(props: EdgeProps) {
     targetPosition: targetPos,
   });
 
-  // Compose stroke from caller `style` + dispatched dasharray. Dispatcher
-  // is the source of truth for dashing; callers can still override
-  // colour/width via `style`.
+  // Compose stroke. Precedence:
+  //   - `selected` → sky blue (always wins, but `color` keeps the marker
+  //      paint matching).
+  //   - user-picked `stroke_color` → that colour.
+  //   - else → caller-provided style.stroke or the default.
+  // For dasharray, user pick beats SysML dispatch (user pick is explicit).
+  const baseStroke = hasUserStrokeColor ? user.strokeColor : DEFAULT_EDGE_STROKE;
+  const baseDasharray = hasUserStrokeStyle ? user.strokeDasharray : (sysml.strokeDasharray || undefined);
   const composedStyle: React.CSSProperties = {
-    stroke: "#404040",
+    stroke: baseStroke,
     strokeWidth: 1.5,
     ...(style ?? {}),
-    strokeDasharray: styleSpec.strokeDasharray || undefined,
+    strokeDasharray: baseDasharray,
+    // `color` is what the `currentColor`-based user markers pick up. We
+    // multiply with the user's stroke colour so changing the colour
+    // repaints the arrowhead/dot to match.
+    color: baseStroke,
   };
   if (selected) {
-    composedStyle.stroke = "#0284c7";
+    composedStyle.stroke = SELECTED_EDGE_STROKE;
+    composedStyle.color = SELECTED_EDGE_STROKE;
+    composedStyle.strokeWidth = Number(composedStyle.strokeWidth ?? 1.5) + 0.5;
   }
 
   return (

@@ -44,10 +44,18 @@ export type MarkerStyle = {
 
 // IDs of the SVG <marker> defs in `EdgeMarkerDefs.tsx`. Strings are kept in
 // sync with that file; if you rename one there, rename it here.
+//
+// `user*` ids belong to the Miro-style edge editor — they're the start/end
+// cap glyphs the user can pick from the EdgeContextToolbar. The `*-sel`
+// variants are slightly larger and used when the edge is selected.
 export const MARKER_IDS = {
   hollowTriangle: "anchor-mk-hollow-triangle",
   filledDiamond: "anchor-mk-filled-diamond",
   openArrow: "anchor-mk-open-arrow",
+  userArrow: "anchor-mk-user-arrow",
+  userArrowSel: "anchor-mk-user-arrow-sel",
+  userCircle: "anchor-mk-user-circle",
+  userCircleSel: "anchor-mk-user-circle-sel",
 } as const;
 
 const SOLID = "";

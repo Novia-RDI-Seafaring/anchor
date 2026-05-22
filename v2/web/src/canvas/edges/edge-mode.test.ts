@@ -76,4 +76,53 @@ describe("pickEdgeMode", () => {
     };
     expect(pickEdgeMode(edge, { slug: "lkh", page: 2 })).toBe("floating");
   });
+
+  // The Miro-style edge editor introduces three new routing modes
+  // (smooth / step / straight). pickEdgeMode must preserve them for
+  // non-evidence edges and treat them as the "rest state" for evidence
+  // edges — hover still flips to anchored, but the user's chosen routing
+  // survives when not hovered.
+  it("preserves smooth/step/straight for non-evidence edges", () => {
+    expect(pickEdgeMode({ edge_type: "smooth", data: {} }, null)).toBe("smooth");
+    expect(pickEdgeMode({ edge_type: "step", data: {} }, null)).toBe("step");
+    expect(pickEdgeMode({ edge_type: "straight", data: {} }, null)).toBe("straight");
+  });
+
+  it("preserves smooth routing for an evidence edge when nothing is hovered", () => {
+    const edge: EdgeForMode = {
+      edge_type: "smooth",
+      data: { kind: "evidence", source_ref: { page: 2, region_id: "r4" } },
+      targetDocSlug: "lkh",
+    };
+    expect(pickEdgeMode(edge, null)).toBe("smooth");
+  });
+
+  it("still flips a user-routed (smooth) evidence edge to anchored on hover match", () => {
+    // Critical row-handle UX: even if the user picked smooth for routing,
+    // hovering the matching row swaps to anchored so the row→region wire
+    // becomes visible. Otherwise the cross-component highlight would
+    // break for any edge a user customised the routing on.
+    const edge: EdgeForMode = {
+      edge_type: "smooth",
+      data: { kind: "evidence", source_ref: { page: 2, region_id: "r4" } },
+      targetDocSlug: "lkh",
+    };
+    const hovered: HoveredSourceRef = { slug: "lkh", page: 2, region_id: "r4" };
+    expect(pickEdgeMode(edge, hovered)).toBe("anchored");
+  });
+
+  it("returns 'smooth' (user pick) when an evidence edge's hover doesn't match", () => {
+    const edge: EdgeForMode = {
+      edge_type: "step",
+      data: { kind: "evidence", source_ref: { page: 2, region_id: "r4" } },
+      targetDocSlug: "lkh",
+    };
+    // Page mismatch — rest state of `step` survives.
+    expect(pickEdgeMode(edge, { slug: "lkh", page: 9 })).toBe("step");
+  });
+
+  it("normalises unknown edge_type strings to 'floating' (defensive)", () => {
+    const edge: EdgeForMode = { edge_type: "wibble", data: {} };
+    expect(pickEdgeMode(edge, null)).toBe("floating");
+  });
 });

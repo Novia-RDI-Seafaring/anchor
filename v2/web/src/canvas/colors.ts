@@ -1,26 +1,26 @@
 /**
- * colors — shared helper for the per-node colour controls.
+ * colors — shared helpers for the per-node colour & text controls.
  *
- * Two `data` fields drive the "Style" submenu (right-click and the
- * mini-toolbar ⋮ More overflow):
+ * Three families of `data.*` fields drive the toolbar chips:
  *
  *   - `data.bg_color`     — CSS colour string (`#fef3c7`, `rgb(...)`, `hsl(...)`,
  *                           `transparent`, any named colour). Applied as the
  *                           shape/card background and the AreaNode fill.
- *   - `data.stroke_color` — CSS colour string. Drives the border colour and
- *                           the label text colour in one knob (the way
- *                           draw.io / Figma tint a shape-and-its-label
- *                           together: pastel fill + saturated stroke + matching
- *                           label reads as a single semantic recolour).
+ *   - `data.stroke_color` — CSS colour string. Drives the border colour. Also
+ *                           feeds the label colour as a fallback when
+ *                           `text_color` is unset (preserves the historical
+ *                           "tinted shape + tinted label" pairing).
+ *   - `data.text_*`       — Optional text overrides. Each is independently
+ *                           settable; missing fields fall through to sensible
+ *                           defaults. See `resolveText` below.
  *
- * Defaults are deliberately neutral so the colour controls are purely
+ * Defaults are deliberately neutral so the chip controls are purely
  * additive — a node with neither field set looks identical to a node that
  * pre-dates the feature.
  *
- * Invalid input (non-string, empty string) falls through to the defaults
- * silently. We don't validate the CSS syntax itself: the browser is the
- * final arbiter, and an unknown colour just renders as transparent /
- * inherited, which is benign.
+ * Invalid input (non-string, empty string) falls through to defaults
+ * silently. We don't validate CSS syntax: the browser is the final arbiter,
+ * and an unknown colour just renders as transparent / inherited.
  */
 
 /** Default background — `transparent` so each primitive's own bg shows. */
@@ -51,6 +51,90 @@ export function resolveColors(data: MaybeData): { bg: string; stroke: string } {
   return {
     bg: asColor((d as Record<string, unknown>).bg_color, DEFAULT_BG),
     stroke: asColor((d as Record<string, unknown>).stroke_color, DEFAULT_STROKE),
+  };
+}
+
+/** Allowed text alignment values. */
+export type TextAlign = "left" | "center" | "right";
+/** Allowed text size buckets — mapped to rem sizes by `resolveText`. */
+export type TextSize = "sm" | "md" | "lg";
+/** Allowed font-family slugs — mapped to CSS stacks by `resolveText`. */
+export type TextFamily = "default" | "sans" | "serif" | "mono";
+
+/** Resolved text style payload. */
+export type ResolvedText = {
+  color: string;
+  fontWeight: number;
+  textAlign: TextAlign;
+  fontFamily: string;
+  fontSize: string;
+};
+
+const FONT_STACKS: Record<TextFamily, string> = {
+  // `default` means "let the surrounding stylesheet decide" — emit
+  // `inherit` so the primitive's existing cascade is unaffected when the
+  // user hasn't picked a family explicitly.
+  default: "inherit",
+  sans: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+  serif: 'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif',
+  mono: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+};
+
+const SIZE_REMS: Record<TextSize, string> = {
+  sm: "0.75rem", // ~12px
+  md: "0.875rem", // ~14px
+  lg: "1rem", // ~16px
+};
+
+const TEXT_ALIGNS: ReadonlySet<TextAlign> = new Set(["left", "center", "right"] as const);
+
+function asAlign(value: unknown, fallback: TextAlign): TextAlign {
+  return typeof value === "string" && TEXT_ALIGNS.has(value as TextAlign)
+    ? (value as TextAlign)
+    : fallback;
+}
+
+function asSize(value: unknown, fallback: TextSize): TextSize {
+  if (value === "sm" || value === "md" || value === "lg") return value;
+  return fallback;
+}
+
+function asFamily(value: unknown, fallback: TextFamily): TextFamily {
+  if (value === "default" || value === "sans" || value === "serif" || value === "mono") return value;
+  return fallback;
+}
+
+/**
+ * Resolve the effective text styling from a node's `data` payload.
+ *
+ * - `text_color` falls back to `stroke_color`, then `DEFAULT_STROKE`, so
+ *   the historical "label tinted by stroke" behaviour is preserved when
+ *   the user hasn't picked an explicit text colour.
+ * - `text_bold` is a boolean toggle → 700 vs 400 font-weight.
+ * - `text_align` defaults to `"left"` (the natural reading direction;
+ *   primitives that historically centred their label can pass their own
+ *   default to override).
+ * - `text_family` defaults to `"default"` (CSS `inherit`) so existing
+ *   styling cascades untouched until the user opts in.
+ * - `text_size` defaults to `"md"` (~14px).
+ *
+ * Callers spread the returned object into the label element's inline style.
+ */
+export function resolveText(data: MaybeData): ResolvedText {
+  const d = (data ?? {}) as Record<string, unknown>;
+  const explicit = asColor(d.text_color, "");
+  const fallbackStroke = asColor(d.stroke_color, DEFAULT_STROKE);
+  const color = explicit || fallbackStroke;
+  const fontWeight = d.text_bold === true ? 700 : 400;
+  const textAlign = asAlign(d.text_align, "left");
+  const family = asFamily(d.text_family, "default");
+  const size = asSize(d.text_size, "md");
+  return {
+    color,
+    fontWeight,
+    textAlign,
+    fontFamily: FONT_STACKS[family],
+    fontSize: SIZE_REMS[size],
   };
 }
 
@@ -86,3 +170,10 @@ export const STROKE_SWATCHES: Swatch[] = [
   { bg: "#ffe4e6", stroke: "rgb(225, 29, 72)", label: "Rose" },
   { bg: "#ede9fe", stroke: "rgb(124, 58, 237)", label: "Violet" },
 ];
+
+/**
+ * Text colour palette — same eight tones as the stroke palette, since
+ * Anchor's Style picker pairs label and stroke colours by default. Users
+ * can still break the pair via the Text chip.
+ */
+export const TEXT_SWATCHES: Swatch[] = STROKE_SWATCHES;

@@ -1,7 +1,7 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
-import { resolveColors } from "@/canvas/colors";
+import { resolveColors, resolveText } from "@/canvas/colors";
 import { Pictogram } from "@/canvas/icons";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
@@ -41,6 +41,9 @@ export function FunnelNode({ id, data, selected }: NodeProps) {
   const label = d.label ?? "";
   const opacityClass = d.dashed ? "opacity-70" : "";
   const { bg, stroke } = resolveColors(d);
+  // Funnel labels are centred by default — preserve that as the picker's
+  // baseline default; explicit user choice still wins.
+  const t = resolveText({ text_align: "center", ...d });
   const { id: workspaceSlug } = useParams<{ id: string }>();
   const rename = useInlineField({
     workspaceSlug: workspaceSlug ?? "",
@@ -111,8 +114,15 @@ export function FunnelNode({ id, data, selected }: NodeProps) {
           rotated-rect trick where the label had to counter-rotate. ~70%
           width keeps wrapped text clear of the clipped corners. */}
       <div
-        className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-center text-xs font-medium leading-tight"
-        style={{ padding: "0 15%", color: stroke }}
+        className="absolute inset-0 flex flex-col items-center justify-center gap-1 leading-tight"
+        style={{
+          padding: "0 15%",
+          color: t.color,
+          fontWeight: t.fontWeight,
+          textAlign: t.textAlign,
+          fontFamily: t.fontFamily,
+          fontSize: t.fontSize,
+        }}
       >
         {/* Pictogram inherits `color` from this container so the Style
             picker's stroke colour drives the glyph too. */}

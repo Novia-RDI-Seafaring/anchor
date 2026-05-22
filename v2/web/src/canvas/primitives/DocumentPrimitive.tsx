@@ -152,18 +152,21 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
           image's rectangle. The SVG overlay then aligns precisely with the
           image's pixel grid — bbox overlays land where they should.
 
-          `nodrag nopan` on the wrapper opts the whole page-image area out
-          of ReactFlow's node-drag and viewport-pan. That way clicks on
-          regions go to the region handlers (drag a region → spec node);
-          the user can still move the document node by grabbing its body
-          or footer below the image. */}
+          The wrapper itself does NOT opt out of node-drag — that way the
+          user can grab the empty space between regions (or the image
+          background) to move the whole document node. Each region
+          rendered inside this wrapper has its own `nodrag` so the
+          drag-out-to-spec gesture still wins on a region. The <img>
+          element is `nodrag` so pointer events on the cover image don't
+          fire region drags, but they still propagate to the wrapper for
+          node move. */}
       {coverUrl ? (
-        <div className="nodrag nopan relative overflow-hidden rounded-t-md bg-neutral-100">
+        <div className="relative overflow-hidden rounded-t-md bg-neutral-100 cursor-move">
           <img
             ref={imgRef}
             src={coverUrl}
             alt={d.filename ?? "document"}
-            className="block w-full select-none"
+            className="nodrag block w-full select-none"
             style={{ display: "block", height: "auto" }}
             loading="lazy"
             draggable={false}

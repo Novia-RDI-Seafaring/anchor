@@ -100,6 +100,38 @@ type UiState = {
    */
   dropTargetAreaId: string | null;
   setDropTargetAreaId: (id: string | null) => void;
+  // --- Connector overlay coordination ----------------------------------
+  /**
+   * True while ReactFlow is actively dragging at least one node. Set by
+   * `onNodeDragStart` and cleared by `onNodeDragStop` /
+   * `onSelectionDragStop`. Read by `DirectionalConnectors` to hide its
+   * 4 N/E/S/W dots — otherwise the dots fight the node-drag gesture and
+   * the cursor flicks between move and crosshair.
+   */
+  isDraggingNode: boolean;
+  setIsDraggingNode: (dragging: boolean) => void;
+  /**
+   * When a node is created via a "quick add" path (DirectionalConnectors
+   * click, QuickAddPopover pick), this slot carries the new node's id so
+   * the shape primitive's `useInlineField` hook can auto-enter rename
+   * mode the moment the node lands. Cleared by `useInlineField` after
+   * consumption so the same id doesn't keep re-arming the input.
+   *
+   * Empty string never matches a real node id — used as a no-op sentinel
+   * when chaining clears via setter rather than null because zustand
+   * shallow-equality treats null/undefined as identical here.
+   */
+  pendingInlineRenameNodeId: string | null;
+  requestInlineRename: (id: string) => void;
+  consumeInlineRename: (id: string) => boolean;
+  // --- Edge selection ----------------------------------------------------
+  /**
+   * Id of the currently selected canvas edge, or null. Mutually exclusive
+   * with `selectedNodeId`: setting one clears the other. Drives the
+   * Miro-style `EdgeContextToolbar` and the `WaypointEditor` overlay.
+   */
+  selectedEdgeId: string | null;
+  setSelectedEdgeId: (id: string | null) => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -110,6 +142,9 @@ export const useUiStore = create<UiState>((set) => ({
   selectedNodeId: null,
   propertiesOpen: false,
   dropTargetAreaId: null,
+  isDraggingNode: false,
+  pendingInlineRenameNodeId: null,
+  selectedEdgeId: null,
   openPdf: (slug, options) =>
     set({
       pdfViewer: {
@@ -138,7 +173,18 @@ export const useUiStore = create<UiState>((set) => ({
     })),
   disarmTool: () => set({ armedTool: null }),
   // --- Properties panel actions (appended) ------------------------------
-  setSelectedNodeId: (id) => set({ selectedNodeId: id }),
+  // Mutual exclusion with selectedEdgeId — selecting a node deselects any
+  // currently-selected edge so the EdgeContextToolbar never shows up at
+  // the same time as the NodeContextToolbar. Setting `null` only clears
+  // the node selection; edge selection is independently cleared.
+  setSelectedNodeId: (id) =>
+    set((state) => (id !== null
+      ? { selectedNodeId: id, selectedEdgeId: null }
+      : { ...state, selectedNodeId: null })),
+  setSelectedEdgeId: (id) =>
+    set((state) => (id !== null
+      ? { selectedEdgeId: id, selectedNodeId: null }
+      : { ...state, selectedEdgeId: null })),
   setPropertiesOpen: (open) =>
     set((state) =>
       open
@@ -152,4 +198,17 @@ export const useUiStore = create<UiState>((set) => ({
         : { propertiesOpen: true, libraryDrawerOpen: false },
     ),
   setDropTargetAreaId: (id) => set({ dropTargetAreaId: id }),
+  setIsDraggingNode: (dragging) => set({ isDraggingNode: dragging }),
+  requestInlineRename: (id) => set({ pendingInlineRenameNodeId: id }),
+  // Consume returns true iff the requested id matches the pending one;
+  // either way the slot is cleared so a re-render doesn't keep re-firing
+  // the rename. Tests can stub this out via `useUiStore.setState`.
+  consumeInlineRename: (id) => {
+    const pending = useUiStore.getState().pendingInlineRenameNodeId;
+    if (pending && pending === id) {
+      useUiStore.setState({ pendingInlineRenameNodeId: null });
+      return true;
+    }
+    return false;
+  },
 }));

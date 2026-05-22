@@ -113,6 +113,10 @@ function describeEvent(
       const e = id ? prevEdges[id] : undefined;
       return `− edge ${e?.source ?? "?"} → ${e?.target ?? "?"}`;
     }
+    case "EdgeUpdated": {
+      const e = id ? prevEdges[id] : undefined;
+      return `~ edge ${e?.source ?? "?"} → ${e?.target ?? "?"}`;
+    }
     case "CanvasCleared":
       return "cleared canvas";
     default:
@@ -215,6 +219,35 @@ export const useCanvasStore = create<State>((set) => ({
       case "EdgeRemoved":
         delete edges[p.id as string];
         break;
+      case "EdgeUpdated": {
+        // Mirror the backend reducer: top-level known fields are
+        // overwritten directly; unknown keys merge into `data`. The
+        // server sends the fields dict it received from the HTTP/MCP
+        // patch — passing `data` as a whole dict replaces it, just like
+        // the canonical reducer's `setattr(e, k, v)` path.
+        const id = p.id as string;
+        const fields = (p.fields as Record<string, unknown>) ?? {};
+        if (edges[id]) {
+          const cur = edges[id];
+          const known = new Set(["label", "edge_type", "sourceHandle", "targetHandle", "data"]);
+          const next: Edge = { ...cur };
+          const data: Record<string, unknown> = { ...(cur.data ?? {}) };
+          for (const [k, v] of Object.entries(fields)) {
+            if (k === "data" && v && typeof v === "object") {
+              // Replace whole data dict — matches `setattr(e, "data", v)`.
+              Object.assign(next, { data: { ...(v as Record<string, unknown>) } });
+            } else if (known.has(k)) {
+              Object.assign(next, { [k]: v });
+            } else {
+              data[k] = v;
+            }
+          }
+          // If nothing set `data` explicitly, the merged stray-keys map is what we keep.
+          if (!("data" in fields)) next.data = data;
+          edges[id] = next;
+        }
+        break;
+      }
       case "CanvasCleared":
         return {
           ...state,

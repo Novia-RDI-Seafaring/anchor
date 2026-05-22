@@ -86,6 +86,32 @@ describe("canvasStore.applyEvent", () => {
     });
   });
 
+  it("EdgeUpdated overwrites top-level fields and merges data", () => {
+    const apply = useCanvasStore.getState().applyEvent;
+    apply(evt({ type: "NodeAdded", version: 1, payload: { id: "a" } }));
+    apply(evt({ type: "NodeAdded", version: 2, payload: { id: "b" } }));
+    apply(evt({
+      type: "EdgeAdded", version: 3,
+      payload: { id: "e1", source: "a", target: "b", edge_type: "floating", data: { stroke_color: "#abc" } },
+    }));
+    // Pure top-level update: edge_type → smooth, leave data alone.
+    apply(evt({
+      type: "EdgeUpdated", version: 4,
+      payload: { id: "e1", fields: { edge_type: "smooth" } },
+    }));
+    expect(useCanvasStore.getState().edges["e1"]!.edge_type).toBe("smooth");
+    expect(useCanvasStore.getState().edges["e1"]!.data).toEqual({ stroke_color: "#abc" });
+    // Replace the whole data dict.
+    apply(evt({
+      type: "EdgeUpdated", version: 5,
+      payload: { id: "e1", fields: { data: { stroke_color: "#def", end_marker: "none" } } },
+    }));
+    expect(useCanvasStore.getState().edges["e1"]!.data).toEqual({
+      stroke_color: "#def",
+      end_marker: "none",
+    });
+  });
+
   it("EdgeRemoved drops the edge", () => {
     const apply = useCanvasStore.getState().applyEvent;
     apply(evt({ type: "NodeAdded", version: 1, payload: { id: "a" } }));

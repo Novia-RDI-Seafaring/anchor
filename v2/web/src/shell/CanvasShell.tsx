@@ -23,6 +23,7 @@
 import { ReactFlowProvider } from "@xyflow/react";
 
 import { ActivityToast } from "@/canvas/ActivityToast";
+import { DirectionalConnectors } from "@/canvas/DirectionalConnectors";
 
 import { LeftToolRail } from "./LeftToolRail";
 import { LibraryDrawer } from "./LibraryDrawer";
@@ -40,6 +41,12 @@ export function CanvasShell({ workspaceSlug, children }: Props) {
         <div className="relative flex-1">
           {children}
           <LeftToolRail workspaceSlug={workspaceSlug} />
+          {/* Miro-style 4-dot quick-connect overlay. Sits above the
+              ReactFlow viewport (CSS position: fixed) but is mounted
+              inside the provider so it can read selection state +
+              transform via useStore. Renders nothing when not in single-
+              select mode. */}
+          <DirectionalConnectors workspaceSlug={workspaceSlug} />
           <ActivityToast />
         </div>
         <LibraryDrawer workspaceSlug={workspaceSlug} />

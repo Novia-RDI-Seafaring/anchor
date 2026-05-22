@@ -22,9 +22,13 @@ import { breadcrumb } from "@/canvas/breadcrumb";
 import { AnchoredEdge } from "@/canvas/edges/AnchoredEdge";
 import { EdgeMarkerDefs } from "@/canvas/edges/EdgeMarkerDefs";
 import { FloatingEdge } from "@/canvas/edges/FloatingEdge";
+import { SmoothEdge, StepEdge, StraightEdge } from "@/canvas/edges/RoutedEdge";
 import { pickEdgeMode } from "@/canvas/edges/edge-mode";
+import { EdgeContextMenu, type EdgeContextMenuTarget } from "@/canvas/EdgeContextMenu";
+import { EdgeContextToolbar } from "@/canvas/EdgeContextToolbar";
 import { NodeContextMenu, type ContextMenuTarget } from "@/canvas/NodeContextMenu";
 import { NodeContextToolbar } from "@/canvas/NodeContextToolbar";
+import { WaypointEditor } from "@/canvas/WaypointEditor";
 import {
   PAINT_DRAG_THRESHOLD_PX,
   PaintGhost,
@@ -40,10 +44,21 @@ import { useUiStore } from "@/stores/uiStore";
 
 // Custom edge renderers keyed by the `edge_type` string the backend emits.
 // `floating` = loose graph edge. `anchored` = handle-keyed (port → port,
-// evidence row → bbox). The dispatcher inside each component switches on
-// `data.marker` to pick arrowheads / dashing / labels — see
-// `canvas/edges/markers.ts`.
-const edgeTypes = { floating: FloatingEdge, anchored: AnchoredEdge };
+// evidence row → bbox). `smooth` / `step` / `straight` are the Miro-style
+// user-pickable routing modes; the user picks them from EdgeContextToolbar
+// and we serialise via `update_edge` → `edge_type=<mode>`.
+//
+// The dispatcher inside each component switches on the user-pickable cap /
+// stroke / colour fields (see `canvas/edges/edge-style.ts`), with the
+// legacy SysML `data.marker` system layered underneath for backwards
+// compatibility.
+const edgeTypes = {
+  floating: FloatingEdge,
+  anchored: AnchoredEdge,
+  smooth: SmoothEdge,
+  step: StepEdge,
+  straight: StraightEdge,
+};
 
 type Props = {
   slug: string;
@@ -101,6 +116,11 @@ function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
   const parentProps = parentExists
     ? ({ parentId: n.parent as string, extent: "parent" as const })
     : {};
+  // Lock support: `data.locked === true` freezes the node in place
+  // (ReactFlow's `draggable: false`) and the shape primitives skip
+  // mounting NodeResizer when the prop is read at render time. The flag
+  // is forward-compatible: producers / consumers can ignore it today.
+  const locked = (n.data as { locked?: boolean } | undefined)?.locked === true;
   return {
     id: n.id,
     position: { x: n.x, y: n.y },
@@ -108,6 +128,7 @@ function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
     type: n.node_type,
     ...parentProps,
     ...(isArea ? { zIndex: -1, draggable: true } : {}),
+    ...(locked ? { draggable: false } : {}),
   };
 }
 
@@ -140,6 +161,8 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   // node-to-node float to row-handle→region-handle anchored.
   const hoveredSourceRef = useUiStore((s) => s.hoveredSourceRef);
   const setSelectedNodeId = useUiStore((s) => s.setSelectedNodeId);
+  const setSelectedEdgeId = useUiStore((s) => s.setSelectedEdgeId);
+  const selectedEdgeId = useUiStore((s) => s.selectedEdgeId);
   const setPropertiesOpen = useUiStore((s) => s.setPropertiesOpen);
   const armedTool = useUiStore((s) => s.armedTool);
   const disarmTool = useUiStore((s) => s.disarmTool);
@@ -164,6 +187,9 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   // Right-click menu target. Null when no context menu is open. Set by
   // `onNodeContextMenu` and cleared by selection / outside-click / Esc.
   const [contextMenuTarget, setContextMenuTarget] = useState<ContextMenuTarget | null>(null);
+  // Edge right-click menu target. Set by `onEdgeContextMenu`. Same
+  // dismissal contract as the node menu (Esc / outside / item-pick).
+  const [edgeContextTarget, setEdgeContextTarget] = useState<EdgeContextMenuTarget | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -206,34 +232,33 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   }, [nodes]);
 
   useEffect(() => {
-    // For evidence edges we pick the renderer per-hover: anchored when the
-    // hovered source_ref matches the edge's stored source_ref (slug + page,
-    // region_id when both sides know it), else floating. Non-evidence edges
-    // keep their declared edge_type as before.
+    // pickEdgeMode resolves every edge to its ReactFlow renderer type. For
+    // non-evidence edges that's just the stored `edge_type` (now one of
+    // floating / anchored / smooth / step / straight). For evidence edges
+    // it implements the row-hover swap: when the active source_ref matches
+    // the edge's stored ref, flip to `anchored` so the handle wiring shows
+    // — regardless of whether the user previously picked smooth/step/etc.
     //
     // A second pass dims the OTHER evidence edges of the same target doc
-    // so the active row→region link visually pops. Only the matched edge
-    // stays at full opacity; matching siblings drop to ~0.3.
-    const evidencePicks: Record<string, "anchored" | "floating"> = {};
+    // so the active row→region link visually pops.
+    const typePicks: Record<string, string> = {};
     const evidenceForDoc: Record<string, string[]> = {};
     let activeEdgeId: string | null = null;
 
     for (const e of Object.values(edges)) {
+      const tgt = nodes[e.target];
+      const tgtSlug = (tgt?.data as { slug?: string } | undefined)?.slug;
+      const mode = pickEdgeMode(
+        {
+          edge_type: e.edge_type,
+          data: e.data as { kind?: string; source_ref?: Record<string, unknown> } | undefined,
+          targetDocSlug: tgtSlug,
+        },
+        hoveredSourceRef,
+      );
+      typePicks[e.id] = mode;
       if (e.data?.kind === "evidence") {
-        const tgt = nodes[e.target];
-        const tgtSlug = (tgt?.data as { slug?: string } | undefined)?.slug;
-        const mode = pickEdgeMode(
-          {
-            edge_type: e.edge_type,
-            data: e.data as { kind?: string; source_ref?: Record<string, unknown> } | undefined,
-            targetDocSlug: tgtSlug,
-          },
-          hoveredSourceRef,
-        );
-        evidencePicks[e.id] = mode;
-        if (tgtSlug) {
-          (evidenceForDoc[tgtSlug] ??= []).push(e.id);
-        }
+        if (tgtSlug) (evidenceForDoc[tgtSlug] ??= []).push(e.id);
         if (mode === "anchored") activeEdgeId = e.id;
       }
     }
@@ -247,15 +272,9 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
     }
 
     setRfEdges(Object.values(edges).map((e) => {
-      // Map backend edge_type → ReactFlow type. Evidence edges may swap on
-      // hover (see above). Unknown edge_type values fall back to "floating"
-      // so they still render with the marker dispatcher rather than the
-      // (undefined) default edge.
-      const isEvidence = e.data?.kind === "evidence";
-      const type = isEvidence
-        ? evidencePicks[e.id]
-        : (e.edge_type === "anchored" ? "anchored" : "floating");
+      const type = typePicks[e.id] ?? "floating";
       const dimmed = dimmedEvidence.has(e.id);
+      const isSelected = selectedEdgeId === e.id;
       return {
         id: e.id,
         source: e.source,
@@ -266,9 +285,10 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         type,
         data: { ...(e.data ?? {}), label: e.label || undefined },
         style: dimmed ? { opacity: 0.3 } : undefined,
+        selected: isSelected,
       } satisfies RfEdge;
     }));
-  }, [edges, nodes, hoveredSourceRef]);
+  }, [edges, nodes, hoveredSourceRef, selectedEdgeId]);
 
   const onNodesChange = useCallback((changes: NodeChange<RfNode>[]) => {
     setRfNodes((curr) => applyNodeChanges(changes, curr));
@@ -892,10 +912,18 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
               // panel is reachable via the toolbar's ⋮ More or the
               // context menu's "Edit properties…").
               onNodeClick: (_event, node) => { setSelectedNodeId(node.id); },
+              onEdgeClick: (_event, edge) => { setSelectedEdgeId(edge.id); },
+              onEdgeContextMenu: (event, edge) => {
+                event.preventDefault();
+                setSelectedEdgeId(edge.id);
+                setEdgeContextTarget({ x: event.clientX, y: event.clientY, edgeId: edge.id });
+              },
               onPaneClick: () => {
                 setSelectedNodeId(null);
+                setSelectedEdgeId(null);
                 setPropertiesOpen(false);
                 setContextMenuTarget(null);
+                setEdgeContextTarget(null);
               },
               onNodeContextMenu: (event, node) => {
                 event.preventDefault();
@@ -944,8 +972,16 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
                   navigate(`/c/${target}`);
                 }
               },
+              onNodeDragStart: () => {
+                // Tell DirectionalConnectors to hide its dots — otherwise
+                // the 20px hit-boxes fight the node-drag gesture.
+                useUiStore.getState().setIsDraggingNode(true);
+              },
               onNodeDrag,
               onNodeDragStop: (_event, node) => {
+                // Clear the connector-overlay drag flag first thing so a
+                // bail-out anywhere below still re-enables the dots.
+                useUiStore.getState().setIsDraggingNode(false);
                 // Commit the post-drag position both locally (instant) and to
                 // the server (eventually consistent via SSE echo, idempotent
                 // by event id).
@@ -1004,7 +1040,11 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
                   }
                 }
               },
+              onSelectionDragStart: () => {
+                useUiStore.getState().setIsDraggingNode(true);
+              },
               onSelectionDragStop: (_event, draggedNodes) => {
+                useUiStore.getState().setIsDraggingNode(false);
                 // Multi-select drag: ReactFlow moves every selected node
                 // visually during the gesture, but `onNodeDragStop` only
                 // fires for the primary. Without persisting each one, the
@@ -1046,6 +1086,17 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
             target={contextMenuTarget}
             onClose={() => setContextMenuTarget(null)}
           />
+          {/* Miro-style edge editor — floating mini-toolbar at the
+              selected edge's midpoint, the right-click context menu, and
+              the waypoint drag overlay (only for smooth/step/straight
+              routings). Each is no-op when there's no selected edge. */}
+          <EdgeContextToolbar workspaceSlug={slug} />
+          <EdgeContextMenu
+            workspaceSlug={slug}
+            target={edgeContextTarget}
+            onClose={() => setEdgeContextTarget(null)}
+          />
+          <WaypointEditor workspaceSlug={slug} />
           {/* WYSIWYG paint preview. Only renders while the user is
               actively drag-sizing an armed shape; `pointer-events-none`
               so the gesture's pointer-up still reaches our wrapper. */}

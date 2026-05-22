@@ -39,35 +39,70 @@ export type EdgeForMode = {
 /**
  * Decide what ReactFlow `type` an edge should use right now.
  *
- *   - "anchored": edge is evidence AND the hovered source_ref matches this
- *      edge's stored source_ref (same slug + page; same region_id if both
- *      sides know it). Edge will use its sourceHandle/targetHandle.
- *   - "floating": everything else, including evidence edges with no active
- *      hover match. The node-to-node centroid renderer is the rest state.
+ * Return value is the literal `edge_type` string ReactFlow's `edgeTypes`
+ * map resolves to a renderer. The Miro-style edge editor lets a user pick
+ * any of `floating`, `anchored`, `smooth`, `step`, `straight`, so the
+ * function must preserve user picks for non-evidence edges AND fall back
+ * to user picks for evidence edges that aren't currently hover-matched.
+ *
+ * Behaviour:
+ *
+ *   - Non-evidence: return the stored `edge_type` unchanged. Any of the
+ *     five routers is fine; we just hand it back so ReactFlow renders
+ *     with the matching component. (Pre-feature: anchored/floating only;
+ *     unknown values would default-fall-through. We keep that fallback
+ *     for unknown values so the previous test cases still pass.)
+ *
+ *   - Evidence: when the hover broadcasts a source_ref that matches the
+ *     edge's stored source_ref (slug + page; region_id if both sides
+ *     know it), flip to `anchored` so the row-handle → region-handle
+ *     wiring shows. Otherwise return the stored `edge_type` — i.e. the
+ *     user's chosen routing for that edge (smooth/step/straight all
+ *     preserved). This is what lets a user pick "Route → smooth" on an
+ *     evidence edge without losing the row-handle swap on hover.
  */
+export type EdgeRouteType = "floating" | "anchored" | "smooth" | "step" | "straight";
+
+const KNOWN_TYPES = new Set<EdgeRouteType>(["floating", "anchored", "smooth", "step", "straight"]);
+
+function asKnownType(t: string): EdgeRouteType {
+  return (KNOWN_TYPES.has(t as EdgeRouteType) ? (t as EdgeRouteType) : "floating");
+}
+
+/**
+ * Rest-state mapping for an evidence edge that isn't currently hover-matched.
+ *
+ *   - stored `anchored` → render as `floating` (legacy: evidence edges
+ *     persist as anchored but visually float when not hovered).
+ *   - stored `smooth` / `step` / `straight` / `floating` → preserve the
+ *     user's chosen routing. This is what lets the Miro-style picker
+ *     change the route on an evidence edge without losing the
+ *     row→region hover swap.
+ */
+function evidenceRestState(stored: EdgeRouteType): EdgeRouteType {
+  return stored === "anchored" ? "floating" : stored;
+}
+
 export function pickEdgeMode(
   edge: EdgeForMode,
   hovered: HoveredSourceRef,
-): "anchored" | "floating" {
+): EdgeRouteType {
+  const stored = asKnownType(edge.edge_type);
   // Non-evidence anchored edges (e.g. SysML port-to-port) keep their type.
   const kind = edge.data?.kind;
-  if (kind !== "evidence") {
-    return edge.edge_type === "anchored" ? "anchored" : "floating";
-  }
-  // Evidence edges with no hover context always float.
-  if (!hovered) return "floating";
+  if (kind !== "evidence") return stored;
+  // Evidence edges with no hover context fall back to the rest state.
+  if (!hovered) return evidenceRestState(stored);
   const ref = edge.data?.source_ref;
-  if (!ref) return "floating";
+  if (!ref) return evidenceRestState(stored);
   // Slug must match the document on the target end.
-  if (edge.targetDocSlug && hovered.slug !== edge.targetDocSlug) return "floating";
-  if (ref.page !== undefined && hovered.page !== ref.page) return "floating";
-  // If BOTH sides claim a region_id and they disagree → no match. If either
-  // side omits region_id, the page-level match is sufficient (table-row
-  // hover broadcasts region_id, but bare doc-page hover may not).
+  if (edge.targetDocSlug && hovered.slug !== edge.targetDocSlug) return evidenceRestState(stored);
+  if (ref.page !== undefined && hovered.page !== ref.page) return evidenceRestState(stored);
+  // If BOTH sides claim a region_id and they disagree → no match.
   if (
     ref.region_id !== undefined
     && hovered.region_id !== undefined
     && ref.region_id !== hovered.region_id
-  ) return "floating";
+  ) return evidenceRestState(stored);
   return "anchored";
 }

@@ -19,9 +19,11 @@
  * changes (subscribing via `useStore((s) => s.transform)`) and whenever
  * the selection itself changes.
  *
- * Hidden by default (renders null) when fewer than one node is selected.
- * Hidden when only one node is selected for *alignment* buttons; those
- * buttons appear from two-node selections upward.
+ * Style chips: three small buttons surface Fill / Stroke / Text at the
+ * top level — no nested Style submenu. Each chip is its own Radix
+ * Popover, so they each have their own anchor and z-stack; the previous
+ * "Style → Fill/Stroke" implementation shared a single anchor and the two
+ * Radix Content layers collided.
  */
 import { useReactFlow, useStore } from "@xyflow/react";
 import {
@@ -33,10 +35,11 @@ import {
   AlignStartVertical,
   ChevronDown,
   Eye,
+  Lock,
   MoreVertical,
   Move3d,
-  Palette,
   Trash2,
+  Unlock,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -50,10 +53,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
-import { StylePicker } from "./StylePicker";
+import { DEFAULT_BG, resolveColors } from "./colors";
+import { FillPicker } from "./FillPicker";
+import { StrokePicker } from "./StrokePicker";
+import { TextPicker } from "./TextPicker";
 
 type Props = {
   workspaceSlug: string;
@@ -77,12 +88,6 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
   // the bounding box matches the actual rendered geometry.
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
-
-  // Style picker overlay — opened from ⋮ More → Style…
-  const [styleOpen, setStyleOpen] = useState(false);
-  // Close the picker any time the selection changes — otherwise it would
-  // float over a stale set of node ids.
-  useEffect(() => { setStyleOpen(false); }, [selectedNodeIds.join(",")]);
 
   // For "Organize ▾": only show when at least one selected node has an
   // edge touching it (mirrors OrganizeEditor's `hasChildren`). The
@@ -157,6 +162,15 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
   const singleNode = selectedNodeIds.length === 1 && firstId ? nodes[firstId] ?? null : null;
   const isDocument = singleNode?.node_type === "document";
 
+  // Chip visuals — derive from the first selected node's current `data`
+  // so the chip itself reflects the live colour (Miro pattern). Multi-
+  // select shows the first node's value; picks apply to all.
+  const firstData = firstId ? nodes[firstId]?.data ?? {} : {};
+  const { bg: firstBg, stroke: firstStroke } = resolveColors(firstData);
+  const firstTextColor =
+    (firstData as { text_color?: string }).text_color ?? firstStroke;
+  const isLocked = (firstData as { locked?: boolean }).locked === true;
+
   const handleOrganize = async (orientation: "vertical" | "horizontal") => {
     // Use the first selected node as root — matches OrganizeEditor's
     // single-node convention. With multi-select, organising "everything"
@@ -199,6 +213,21 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
     }
     setConfirmingDelete(false);
   };
+
+  const toggleLock = async () => {
+    const next = !isLocked;
+    for (const id of selectedNodeIds) {
+      const data = { ...(nodes[id]?.data ?? {}), locked: next };
+      try {
+        await canvases.patchNode(workspaceSlug, id, { data });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("lock toggle failed", err);
+      }
+    }
+  };
+
+  const getNodeData = (nid: string) => nodes[nid]?.data;
 
   // Anchor toolbar above the box, with a small breathing gap.
   const TOOLBAR_OFFSET = 12;
@@ -249,6 +278,124 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
             </DropdownMenuContent>
           </DropdownMenu>
         ) : null}
+
+        {/* Open Viewer — single document node only. */}
+        {isDocument && singleNode ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            title="Open in viewer"
+            aria-label="Open in viewer"
+            onClick={() => {
+              const slug = (singleNode.data as { slug?: string } | undefined)?.slug;
+              if (slug) useUiStore.getState().openPdf(slug, {
+                workspaceSlug,
+                documentNodeId: singleNode.id,
+              });
+            }}
+          >
+            <Eye className="size-3.5" />
+            <span className="text-[11px]">Open viewer</span>
+          </Button>
+        ) : null}
+
+        {/* ────── Style chips ────── */}
+        {/* Fill chip — square swatch tinted with current bg, falls back to
+            transparent-checker visual when no fill is set. */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              data-testid="chip-fill"
+              aria-label="Fill colour"
+              title="Fill colour"
+              className="inline-flex h-6 items-center gap-1 rounded border border-neutral-300 bg-white px-1.5 transition hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-sky-500"
+            >
+              <ChipFillSwatch color={firstBg} />
+              <ChevronDown className="size-3 text-neutral-500" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="center" sideOffset={6}>
+            <FillPicker
+              workspaceSlug={workspaceSlug}
+              nodeIds={selectedNodeIds}
+              getNodeData={getNodeData}
+            />
+          </PopoverContent>
+        </Popover>
+
+        {/* Stroke chip — filled circle tinted with current stroke. */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              data-testid="chip-stroke"
+              aria-label="Stroke colour"
+              title="Stroke colour"
+              className="inline-flex h-6 items-center gap-1 rounded border border-neutral-300 bg-white px-1.5 transition hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-sky-500"
+            >
+              <span
+                className="block h-3.5 w-3.5 rounded-full border border-neutral-400"
+                style={{ background: firstStroke }}
+                aria-hidden
+              />
+              <ChevronDown className="size-3 text-neutral-500" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="center" sideOffset={6}>
+            <StrokePicker
+              workspaceSlug={workspaceSlug}
+              nodeIds={selectedNodeIds}
+              getNodeData={getNodeData}
+            />
+          </PopoverContent>
+        </Popover>
+
+        {/* Text chip — letter A with a coloured underline tint (Miro's A̲). */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              data-testid="chip-text"
+              aria-label="Text style"
+              title="Text style"
+              className="inline-flex h-6 items-center gap-1 rounded border border-neutral-300 bg-white px-1.5 transition hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-sky-500"
+            >
+              <span
+                className="inline-flex h-4 w-4 items-center justify-center text-[11px] font-semibold leading-none text-neutral-700"
+                aria-hidden
+                style={{
+                  borderBottom: `2px solid ${firstTextColor}`,
+                  paddingBottom: 1,
+                }}
+              >
+                A
+              </span>
+              <ChevronDown className="size-3 text-neutral-500" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="center" sideOffset={6}>
+            <TextPicker
+              workspaceSlug={workspaceSlug}
+              nodeIds={selectedNodeIds}
+              getNodeData={getNodeData}
+            />
+          </PopoverContent>
+        </Popover>
+
+        {/* Lock chip — toggles data.locked. */}
+        <Button
+          variant="ghost"
+          size="icon"
+          title={isLocked ? "Unlock" : "Lock"}
+          aria-label={isLocked ? "Unlock node" : "Lock node"}
+          aria-pressed={isLocked}
+          onClick={() => void toggleLock()}
+          data-testid="chip-lock"
+          className={isLocked ? "bg-neutral-100 text-neutral-900" : undefined}
+        >
+          {isLocked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}
+        </Button>
 
         {/* Multi-select alignment buttons. Distribute needs ≥3. */}
         {isMulti ? (
@@ -332,25 +479,6 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
           </>
         ) : null}
 
-        {/* Open Viewer — single document node only. */}
-        {isDocument && singleNode ? (
-          <Button
-            variant="ghost"
-            size="icon"
-            title="Open in viewer"
-            aria-label="Open in viewer"
-            onClick={() => {
-              const slug = (singleNode.data as { slug?: string } | undefined)?.slug;
-              if (slug) useUiStore.getState().openPdf(slug, {
-                workspaceSlug,
-                documentNodeId: singleNode.id,
-              });
-            }}
-          >
-            <Eye className="size-3.5" />
-          </Button>
-        ) : null}
-
         {/* Delete — two-tap inline confirm. */}
         {confirmingDelete ? (
           <Button
@@ -399,20 +527,6 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
             }}>
               Edit properties…
             </DropdownMenuItem>
-            {/* Style picker — opens a small floating panel anchored at the
-                toolbar (single source of truth across the right-click menu
-                and the toolbar's overflow). */}
-            <DropdownMenuItem
-              onSelect={(e) => {
-                // Don't close the dropdown via Radix's default — we want the
-                // dropdown to dismiss but our local picker to open underneath.
-                e.preventDefault();
-                setStyleOpen(true);
-              }}
-            >
-              <Palette className="mr-1.5 size-3.5" />
-              Style…
-            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem disabled>
               Bring to front (coming soon)
@@ -431,23 +545,41 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
           right-click for more
         </div>
       ) : null}
-      {styleOpen ? (
-        <div
-          className="absolute right-0 top-full mt-1"
-          // Same stopPropagation rationale as the parent toolbar — without
-          // it the click that picks a swatch lands on the canvas pane and
-          // deselects everything, killing the picker mid-action.
-          onMouseDown={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <StylePicker
-            workspaceSlug={workspaceSlug}
-            nodeIds={selectedNodeIds}
-            getNodeData={(nid) => nodes[nid]?.data}
-            onClose={() => setStyleOpen(false)}
-          />
-        </div>
-      ) : null}
     </div>
   );
 }
+
+/**
+ * Fill chip swatch — square that's tinted with the current `bg_color`. When
+ * the colour resolves to `transparent` (no fill) we render a tiny
+ * checkered-transparent indicator so the user can tell "no fill" apart
+ * from "white fill", matching Miro's visual vocabulary.
+ */
+function ChipFillSwatch({ color }: { color: string }) {
+  const isTransparent = color === DEFAULT_BG || color === "transparent";
+  if (isTransparent) {
+    return (
+      <span
+        className="block h-3.5 w-3.5 rounded border border-neutral-400"
+        style={{
+          backgroundImage:
+            "linear-gradient(45deg, #d4d4d4 25%, transparent 25%), " +
+            "linear-gradient(-45deg, #d4d4d4 25%, transparent 25%), " +
+            "linear-gradient(45deg, transparent 75%, #d4d4d4 75%), " +
+            "linear-gradient(-45deg, transparent 75%, #d4d4d4 75%)",
+          backgroundSize: "6px 6px",
+          backgroundPosition: "0 0, 0 3px, 3px -3px, -3px 0px",
+        }}
+        aria-hidden
+      />
+    );
+  }
+  return (
+    <span
+      className="block h-3.5 w-3.5 rounded border border-neutral-400"
+      style={{ background: color }}
+      aria-hidden
+    />
+  );
+}
+

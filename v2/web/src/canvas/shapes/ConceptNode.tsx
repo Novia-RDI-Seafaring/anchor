@@ -1,7 +1,7 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
-import { resolveColors } from "@/canvas/colors";
+import { resolveColors, resolveText } from "@/canvas/colors";
 import { Pictogram } from "@/canvas/icons";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
@@ -28,6 +28,7 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
   const borderStyle = d.dashed ? "border-dashed" : "border-solid";
   const opacityClass = d.dashed ? "opacity-70" : "";
   const { bg, stroke } = resolveColors(d);
+  const t = resolveText(d);
   const { id: workspaceSlug } = useParams<{ id: string }>();
   const rename = useInlineField({
     workspaceSlug: workspaceSlug ?? "",
@@ -79,7 +80,14 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
             />
           ) : (
             <div
-              className={`truncate font-medium leading-tight ${selected ? "cursor-text" : "cursor-pointer"}`}
+              className={`truncate leading-tight ${selected ? "cursor-text" : "cursor-pointer"}`}
+              style={{
+                color: t.color,
+                fontWeight: t.fontWeight,
+                textAlign: t.textAlign,
+                fontFamily: t.fontFamily,
+                fontSize: t.fontSize,
+              }}
               onDoubleClick={(e) => {
                 e.stopPropagation();
                 rename.beginEdit();

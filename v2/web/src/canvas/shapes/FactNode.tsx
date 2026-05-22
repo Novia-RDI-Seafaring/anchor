@@ -1,7 +1,7 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
-import { resolveColors } from "@/canvas/colors";
+import { resolveColors, resolveText } from "@/canvas/colors";
 import { Pictogram } from "@/canvas/icons";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
@@ -27,6 +27,7 @@ export function FactNode({ id, data, selected }: NodeProps) {
   const borderStyle = d.dashed ? "border-dashed" : "border-solid";
   const opacityClass = d.dashed ? "opacity-70" : "";
   const { bg, stroke } = resolveColors(d);
+  const t = resolveText(d);
   const { id: workspaceSlug } = useParams<{ id: string }>();
   const rename = useInlineField({
     workspaceSlug: workspaceSlug ?? "",
@@ -74,7 +75,14 @@ export function FactNode({ id, data, selected }: NodeProps) {
             />
           ) : (
             <div
-              className={`text-[11px] font-semibold uppercase tracking-wide ${selected ? "cursor-text" : "cursor-pointer"}`}
+              className={`uppercase tracking-wide ${selected ? "cursor-text" : "cursor-pointer"}`}
+              style={{
+                color: t.color,
+                fontWeight: Math.max(t.fontWeight, 600),
+                textAlign: t.textAlign,
+                fontFamily: t.fontFamily,
+                fontSize: "11px",
+              }}
               onDoubleClick={(e) => {
                 e.stopPropagation();
                 rename.beginEdit();
@@ -84,7 +92,20 @@ export function FactNode({ id, data, selected }: NodeProps) {
               {label || <span className="font-normal italic tracking-normal opacity-50">untitled</span>}
             </div>
           )}
-          {d.text ? <div className="mt-1">{d.text}</div> : null}
+          {d.text ? (
+            <div
+              className="mt-1"
+              style={{
+                color: t.color,
+                fontWeight: t.fontWeight,
+                textAlign: t.textAlign,
+                fontFamily: t.fontFamily,
+                fontSize: t.fontSize,
+              }}
+            >
+              {d.text}
+            </div>
+          ) : null}
         </div>
       </div>
       <Handle type="source" position={Position.Right} />

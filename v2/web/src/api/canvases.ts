@@ -48,6 +48,18 @@ export const canvases = {
     api.del(`/api/workspaces/${slug}/nodes/${id}`),
   addEdge: (slug: string, body: Record<string, unknown>) =>
     api.post(`/api/workspaces/${slug}/edges`, body),
+  /**
+   * Partial edge update — mirrors `patchNode`. Accepts any of
+   * `label`, `edge_type`, `sourceHandle`, `targetHandle`, `data` (the last
+   * one MUST be the merged dict; the server replaces `data` whole the same
+   * way it does for nodes, so callers spread `{ ...existing, ...changes }`).
+   *
+   * The HTTP/MCP/CLI parity layer already routes this to
+   * `WorkspaceService.update_edge`, which emits an `EdgeUpdated` event so
+   * SSE reconciles other clients.
+   */
+  patchEdge: (slug: string, id: string, body: Record<string, unknown>) =>
+    api.patch(`/api/workspaces/${slug}/edges/${id}`, body),
   removeEdge: (slug: string, id: string) =>
     api.del(`/api/workspaces/${slug}/edges/${id}`),
   organizeSubtree: (

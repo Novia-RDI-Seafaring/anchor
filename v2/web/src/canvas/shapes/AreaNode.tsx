@@ -1,7 +1,7 @@
 import { NodeResizer, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
-import { DEFAULT_BG, DEFAULT_STROKE, resolveColors } from "@/canvas/colors";
+import { DEFAULT_BG, DEFAULT_STROKE, resolveColors, resolveText } from "@/canvas/colors";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
 import { useUiStore } from "@/stores/uiStore";
@@ -73,6 +73,10 @@ export function AreaNode({ id, data, selected }: NodeProps) {
   // tone classes to draw the colour (DEFAULT_BG / DEFAULT_STROKE are
   // sentinel-only, applied via `inherit` to keep the original look).
   const { bg, stroke } = resolveColors(d);
+  // Area labels resolve their text style through resolveText so the Text
+  // chip works here too. We DO NOT modify the drop-target highlight logic
+  // (the dashed-border + sky tint) below — only the label rendering.
+  const t = resolveText(d);
   const styleOverride: React.CSSProperties = {
     width: w,
     height: h,
@@ -118,7 +122,17 @@ export function AreaNode({ id, data, selected }: NodeProps) {
           />
         ) : (
           <div
-            className={`text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-700 ${selected ? "cursor-text" : "cursor-pointer"}`}
+            className={`text-[10px] uppercase tracking-[0.18em] text-neutral-700 ${selected ? "cursor-text" : "cursor-pointer"}`}
+            style={{
+              // Only override colour when the user has explicitly picked
+              // one — otherwise the neutral-700 cascade carries the look.
+              ...((d as { text_color?: string }).text_color
+                ? { color: t.color }
+                : {}),
+              fontWeight: Math.max(t.fontWeight, 600),
+              textAlign: t.textAlign,
+              fontFamily: t.fontFamily,
+            }}
             onDoubleClick={(e) => {
               e.stopPropagation();
               rename.beginEdit();

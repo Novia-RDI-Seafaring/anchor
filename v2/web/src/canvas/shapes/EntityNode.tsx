@@ -1,7 +1,7 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
-import { resolveColors } from "@/canvas/colors";
+import { resolveColors, resolveText } from "@/canvas/colors";
 import { Pictogram } from "@/canvas/icons";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
@@ -26,6 +26,9 @@ export function EntityNode({ id, data, selected }: NodeProps) {
   const borderStyle = d.dashed ? "border-dashed" : "border-solid";
   const opacityClass = d.dashed ? "opacity-70" : "";
   const { bg, stroke } = resolveColors(d);
+  // EntityNode's label has historically been centred; pass that through as
+  // the default while still letting the Text picker override it.
+  const t = resolveText({ text_align: "center", ...d });
   const { id: workspaceSlug } = useParams<{ id: string }>();
   const rename = useInlineField({
     workspaceSlug: workspaceSlug ?? "",
@@ -73,7 +76,15 @@ export function EntityNode({ id, data, selected }: NodeProps) {
         />
       ) : (
         <span
-          className={`px-2 text-center leading-tight ${selected ? "cursor-text" : "cursor-pointer"}`}
+          className={`px-2 leading-tight ${selected ? "cursor-text" : "cursor-pointer"}`}
+          style={{
+            color: t.color,
+            fontWeight: t.fontWeight,
+            textAlign: t.textAlign,
+            fontFamily: t.fontFamily,
+            fontSize: t.fontSize,
+            display: "block",
+          }}
           onDoubleClick={(e) => {
             e.stopPropagation();
             rename.beginEdit();

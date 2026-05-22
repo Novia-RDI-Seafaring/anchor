@@ -1,7 +1,7 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
-import { DEFAULT_BG, DEFAULT_STROKE, resolveColors } from "@/canvas/colors";
+import { DEFAULT_BG, DEFAULT_STROKE, resolveColors, resolveText } from "@/canvas/colors";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
 
@@ -57,6 +57,10 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   // hasn't picked anything, so existing sticky notes keep their familiar
   // look. A Reset on a recoloured note also flips back to yellow.
   const { bg, stroke } = resolveColors(d);
+  // Note's title strip historically uses an amber-700 accent; pass that as
+  // the default so existing sticky notes keep their colour until the user
+  // picks a text override. The body text inherits the wrapper's color.
+  const t = resolveText(d);
   const wrapStyle: React.CSSProperties = liveW && liveH
     ? { width: liveW, height: liveH, maxWidth: "none" }
     : {};
@@ -86,7 +90,17 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         />
       ) : (
         <div
-          className={`text-[11px] font-semibold uppercase tracking-wide text-amber-700 ${selected ? "cursor-text" : "cursor-pointer"}`}
+          className={`text-[11px] uppercase tracking-wide text-amber-700 ${selected ? "cursor-text" : "cursor-pointer"}`}
+          style={{
+            // Only apply text overrides when the user has set them — keep
+            // the amber-700 cascade when no `text_color` was picked.
+            ...((d as { text_color?: string }).text_color
+              ? { color: t.color }
+              : {}),
+            fontWeight: Math.max(t.fontWeight, 600),
+            textAlign: t.textAlign,
+            fontFamily: t.fontFamily,
+          }}
           onDoubleClick={(e) => {
             e.stopPropagation();
             rename.beginEdit();
@@ -105,6 +119,15 @@ export function NoteNode({ id, data, selected }: NodeProps) {
       ) : text ? (
         <div
           className={`mt-1 whitespace-pre-wrap leading-snug ${selected ? "cursor-text" : "cursor-pointer"}`}
+          style={{
+            ...((d as { text_color?: string }).text_color
+              ? { color: t.color }
+              : {}),
+            fontWeight: t.fontWeight,
+            textAlign: t.textAlign,
+            fontFamily: t.fontFamily,
+            fontSize: t.fontSize,
+          }}
           onDoubleClick={(e) => {
             e.stopPropagation();
             body.beginEdit();

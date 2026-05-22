@@ -85,6 +85,59 @@ export function EdgeMarkerDefs() {
             strokeLinejoin="round"
           />
         </marker>
+
+        {/* User-pickable cap markers (Miro-style edge editor). These are
+            simpler than the SysML markers — they inherit the edge's stroke
+            colour via `currentColor` so a stroke-colour change repaints the
+            marker too. The `*-sel` variants are mounted at 20% larger size
+            for the selected-edge visual. */}
+        {/* Filled arrow at end — default. */}
+        <marker
+          id={MARKER_IDS.userArrow}
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerWidth="9"
+          markerHeight="9"
+          orient="auto-start-reverse"
+        >
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
+        </marker>
+        <marker
+          id={MARKER_IDS.userArrowSel}
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerWidth="11"
+          markerHeight="11"
+          orient="auto-start-reverse"
+        >
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
+        </marker>
+
+        {/* Filled circle (dot) — works equally well as a start or end cap. */}
+        <marker
+          id={MARKER_IDS.userCircle}
+          viewBox="0 0 10 10"
+          refX="5"
+          refY="5"
+          markerWidth="7"
+          markerHeight="7"
+          orient="auto-start-reverse"
+        >
+          <circle cx="5" cy="5" r="4" fill="currentColor" />
+        </marker>
+        <marker
+          id={MARKER_IDS.userCircleSel}
+          viewBox="0 0 10 10"
+          refX="5"
+          refY="5"
+          markerWidth="8.4"
+          markerHeight="8.4"
+          orient="auto-start-reverse"
+        >
+          <circle cx="5" cy="5" r="4" fill="currentColor" />
+        </marker>
       </defs>
     </svg>
   );

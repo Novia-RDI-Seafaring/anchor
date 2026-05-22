@@ -143,3 +143,53 @@ describe("ConceptNode Style picker", () => {
     expect(wrapper.style.color).toBe("rgb(202, 138, 4)");
   });
 });
+
+/**
+ * Text picker smoke — proves `data.text_*` fields actually reach the label
+ * element's inline style. Catches the case where the resolveText() call is
+ * removed from ConceptNode by mistake.
+ */
+describe("ConceptNode Text picker", () => {
+  function renderWithText(data: Record<string, unknown>) {
+    return render(
+      <MemoryRouter initialEntries={["/canvas/w1"]}>
+        <Routes>
+          <Route
+            path="/canvas/:id"
+            element={
+              <ReactFlowProvider>
+                <ConceptNode
+                  {...({
+                    id: "n1",
+                    data: { label: "tint", ...data },
+                    selected: false,
+                    dragging: false,
+                    isConnectable: false,
+                    positionAbsoluteX: 0,
+                    positionAbsoluteY: 0,
+                    type: "concept",
+                    zIndex: 0,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  } as any)}
+                />
+              </ReactFlowProvider>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it("applies text_bold + text_align to the label", () => {
+    const { getByText } = renderWithText({ text_bold: true, text_align: "center" });
+    const label = getByText("tint") as HTMLElement;
+    expect(label.style.fontWeight).toBe("700");
+    expect(label.style.textAlign).toBe("center");
+  });
+
+  it("applies text_size 'lg' as 1rem", () => {
+    const { getByText } = renderWithText({ text_size: "lg" });
+    const label = getByText("tint") as HTMLElement;
+    expect(label.style.fontSize).toBe("1rem");
+  });
+});

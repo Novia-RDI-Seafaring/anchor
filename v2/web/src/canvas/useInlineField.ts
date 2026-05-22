@@ -35,6 +35,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { canvases } from "@/api/canvases";
+import { useCanvasStore } from "@/stores/canvasStore";
+import { useUiStore } from "@/stores/uiStore";
 
 type Options = {
   /** Canvas workspace slug — required to PATCH the node. */
@@ -132,8 +134,14 @@ export function useInlineField<M extends boolean = false>({
       ? canonicalValue.replace(/\s+$/g, "")
       : canonicalValue.trim();
     if (next === canonical) return;
-    const body: Record<string, unknown> =
-      field === "label" ? { label: next } : { data: { [field]: next } };
+    // For non-label fields, merge with the current `data` snapshot before
+    // patching. The server replaces `data` whole, so a naive
+    // `{ data: { [field]: next } }` would wipe every other key — most
+    // notably `canvas_slug` on a sub-canvas tile, which then breaks the
+    // CanvasListPage / CanvasTree builder.
+    const body: Record<string, unknown> = field === "label"
+      ? { label: next }
+      : { data: { ...(useCanvasStore.getState().nodes[nodeId]?.data ?? {}), [field]: next } };
     canvases.patchNode(workspaceSlug, nodeId, body).catch((err) => {
       // eslint-disable-next-line no-console
       console.error(`inline ${field} edit failed`, err);
@@ -174,6 +182,24 @@ export function useInlineField<M extends boolean = false>({
     setEditing(true);
   }, [canonicalValue, canEdit]);
 
+  // Quick-add coordination: when `DirectionalConnectors` or
+  // `QuickAddPopover` mints a new node, they stamp the new id into
+  // `useUiStore.pendingInlineRenameNodeId`. We're the natural consumer
+  // because every shape primitive that owns a label mounts a
+  // `useInlineField({ field: "label" })` — centralising the auto-focus
+  // here avoids editing each shape file. Gated on `field === "label"` so
+  // body-editor hooks on the same node don't race for focus.
+  const pendingRenameId = useUiStore((s) => s.pendingInlineRenameNodeId);
+  useEffect(() => {
+    if (field !== "label") return;
+    if (!canEdit) return;
+    if (pendingRenameId !== nodeId) return;
+    const consumed = useUiStore.getState().consumeInlineRename(nodeId);
+    if (!consumed) return;
+    setValue(canonicalValue);
+    setEditing(true);
+  }, [pendingRenameId, nodeId, field, canEdit, canonicalValue]);
+
   const cancel = useCallback(() => {
     setValue(canonicalValue);
     setEditing(false);
@@ -187,8 +213,9 @@ export function useInlineField<M extends boolean = false>({
     const next = multiline ? value.replace(/\s+$/g, "") : value.trim();
     const canonical = multiline ? canonicalValue.replace(/\s+$/g, "") : canonicalValue.trim();
     if (next === canonical) return; // no-op
-    const body: Record<string, unknown> =
-      field === "label" ? { label: next } : { data: { [field]: next } };
+    const body: Record<string, unknown> = field === "label"
+      ? { label: next }
+      : { data: { ...(useCanvasStore.getState().nodes[nodeId]?.data ?? {}), [field]: next } };
     canvases.patchNode(workspaceSlug, nodeId, body).catch((err) => {
       // eslint-disable-next-line no-console
       console.error(`inline ${field} edit failed`, err);
