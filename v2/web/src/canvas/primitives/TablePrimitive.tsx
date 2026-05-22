@@ -201,7 +201,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       <Handle type="target" position={Position.Left} />
       <div
         className={`flex items-center justify-between border-b border-neutral-200 px-3 py-2 gap-2 ${
-          canOpen ? "nodrag nopan cursor-pointer hover:bg-sky-50/60" : ""
+          canOpen ? "cursor-pointer hover:bg-sky-50/60" : ""
         }`}
         onClick={() => {
           if (canOpen) openSource();
@@ -235,7 +235,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       {cropUrl ? (
         <div
           className={`border-b border-neutral-200 bg-neutral-50 ${
-            canOpen ? "nodrag nopan cursor-pointer" : ""
+            canOpen ? "cursor-pointer" : ""
           }`}
           onClick={() => {
             if (canOpen) openSource();
