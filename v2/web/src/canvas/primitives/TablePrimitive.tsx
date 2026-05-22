@@ -207,13 +207,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       />
       <Handle type="target" position={Position.Left} />
       <div
-        className={`flex items-center justify-between border-b border-neutral-200 px-3 py-2 gap-2 ${
-          canOpen ? "cursor-pointer hover:bg-sky-50/60" : ""
-        }`}
-        onClick={() => {
-          if (canOpen) openSource();
-        }}
-        title={canOpen ? `Open page ${d.source_ref?.page} in viewer` : undefined}
+        className="flex items-center justify-between border-b border-neutral-200 px-3 py-2 gap-2"
       >
         <div className="min-w-0">
           <div className="text-[10px] uppercase tracking-wide text-neutral-500">spec</div>
@@ -240,15 +234,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       </div>
 
       {cropUrl ? (
-        <div
-          className={`border-b border-neutral-200 bg-neutral-50 ${
-            canOpen ? "cursor-pointer" : ""
-          }`}
-          onClick={() => {
-            if (canOpen) openSource();
-          }}
-          title={canOpen ? `Open page ${d.source_ref?.page} in viewer` : undefined}
-        >
+        <div className="border-b border-neutral-200 bg-neutral-50">
           <img
             src={cropUrl}
             alt={d.label ?? "region"}
