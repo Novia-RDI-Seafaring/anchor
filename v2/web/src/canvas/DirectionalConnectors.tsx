@@ -72,7 +72,14 @@ type Direction = "N" | "E" | "S" | "W";
 
 type DragState = {
   direction: Direction;
+  /** Screen-space anchor of the dot — drawn from here to the cursor while
+   *  the drag arrow renders. */
   startScreen: { x: number; y: number };
+  /** Pointer-down position. Used for the click-vs-drag threshold so a
+   *  stationary release doesn't get treated as a drag end. Different
+   *  from `startScreen` because the user rarely clicks the dot's exact
+   *  centre pixel. */
+  pointerDown: { x: number; y: number };
   currentScreen: { x: number; y: number };
 };
 
@@ -238,11 +245,13 @@ export function DirectionalConnectors({ workspaceSlug }: Props) {
       // Click-vs-drag threshold: if the pointer barely moved between
       // pointer-down and pointer-up, treat it as a click — defer to the
       // dot's onClick handler (which calls `createPeer` for a same-type
-      // peer). Without this check every click would also fall through to
-      // the popover path below.
-      const dx = event.clientX - drag.startScreen.x;
-      const dy = event.clientY - drag.startScreen.y;
-      if (dx * dx + dy * dy < 16) {  // < 4 px in any direction
+      // peer). Compare against the POINTER-DOWN position, not the dot's
+      // centre — the user rarely clicks the exact centre pixel, and using
+      // the dot centre as the anchor made every click look like a small
+      // drag.
+      const dx = event.clientX - drag.pointerDown.x;
+      const dy = event.clientY - drag.pointerDown.y;
+      if (dx * dx + dy * dy < 36) {  // < 6 px in any direction
         return;
       }
       // Test what's under the release point. ReactFlow tags every node
@@ -299,6 +308,7 @@ export function DirectionalConnectors({ workspaceSlug }: Props) {
       const drag: DragState = {
         direction,
         startScreen: { x: origin.x, y: origin.y },
+        pointerDown: { x: event.clientX, y: event.clientY },
         currentScreen: { x: event.clientX, y: event.clientY },
       };
       dragRef.current = drag;
