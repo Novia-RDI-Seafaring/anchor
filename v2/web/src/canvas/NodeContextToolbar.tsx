@@ -27,17 +27,20 @@
  */
 import { useReactFlow, useStore } from "@xyflow/react";
 import {
-  AlignCenter,
+  AlignCenterHorizontal,
   AlignCenterVertical,
   AlignEndHorizontal,
   AlignEndVertical,
+  AlignHorizontalSpaceAround,
   AlignStartHorizontal,
   AlignStartVertical,
+  AlignVerticalSpaceAround,
   ChevronDown,
   Eye,
   Lock,
   MoreVertical,
   Move3d,
+  StretchHorizontal,
   Trash2,
   Unlock,
 } from "lucide-react";
@@ -397,84 +400,83 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
           {isLocked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}
         </Button>
 
-        {/* Multi-select alignment buttons. Distribute needs ≥3. */}
+        {/* Multi-select: collapse the 6 align icons + 2 distribute icons
+            into two dropdowns. The toolbar stays compact and the user
+            doesn't have to remember which icon means which axis. */}
         {isMulti ? (
           <>
-            <Button
-              variant="ghost"
-              size="icon"
-              title="Align top"
-              aria-label="Align top"
-              onClick={() => void handleAlign("top")}
-            >
-              <AlignStartHorizontal className="size-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              title="Align bottom"
-              aria-label="Align bottom"
-              onClick={() => void handleAlign("bottom")}
-            >
-              <AlignEndHorizontal className="size-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              title="Align left"
-              aria-label="Align left"
-              onClick={() => void handleAlign("left")}
-            >
-              <AlignStartVertical className="size-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              title="Align right"
-              aria-label="Align right"
-              onClick={() => void handleAlign("right")}
-            >
-              <AlignEndVertical className="size-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              title="Center horizontally (share y midline)"
-              aria-label="Center horizontally"
-              onClick={() => void handleAlign("center-h")}
-            >
-              <AlignCenter className="size-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              title="Center vertically (share x midline)"
-              aria-label="Center vertically"
-              onClick={() => void handleAlign("center-v")}
-            >
-              <AlignCenterVertical className="size-3.5" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  title="Align selection"
+                  aria-label="Align selection"
+                >
+                  <StretchHorizontal className="size-3.5" />
+                  <span className="text-[11px]">Align</span>
+                  <ChevronDown className="size-3 text-neutral-500" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center" sideOffset={6}>
+                <DropdownMenuLabel className="text-[10px] uppercase tracking-wide">
+                  Horizontal (share x)
+                </DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => void handleAlign("left")}>
+                  <AlignStartVertical className="size-3.5" />
+                  <span>Left</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void handleAlign("center-v")}>
+                  <AlignCenterVertical className="size-3.5" />
+                  <span>Center</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void handleAlign("right")}>
+                  <AlignEndVertical className="size-3.5" />
+                  <span>Right</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel className="text-[10px] uppercase tracking-wide">
+                  Vertical (share y)
+                </DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => void handleAlign("top")}>
+                  <AlignStartHorizontal className="size-3.5" />
+                  <span>Top</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void handleAlign("center-h")}>
+                  <AlignCenterHorizontal className="size-3.5" />
+                  <span>Middle</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => void handleAlign("bottom")}>
+                  <AlignEndHorizontal className="size-3.5" />
+                  <span>Bottom</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             {isTriPlus ? (
-              <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  title="Distribute horizontally"
-                  aria-label="Distribute horizontally"
-                  onClick={() => void handleDistribute("horizontal")}
-                >
-                  <span className="text-[11px]">↔</span>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  title="Distribute vertically"
-                  aria-label="Distribute vertically"
-                  onClick={() => void handleDistribute("vertical")}
-                >
-                  <span className="text-[11px]">↕</span>
-                </Button>
-              </>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    title="Distribute selection"
+                    aria-label="Distribute selection"
+                  >
+                    <AlignHorizontalSpaceAround className="size-3.5" />
+                    <span className="text-[11px]">Distribute</span>
+                    <ChevronDown className="size-3 text-neutral-500" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="center" sideOffset={6}>
+                  <DropdownMenuItem onClick={() => void handleDistribute("horizontal")}>
+                    <AlignHorizontalSpaceAround className="size-3.5" />
+                    <span>Horizontally</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => void handleDistribute("vertical")}>
+                    <AlignVerticalSpaceAround className="size-3.5" />
+                    <span>Vertically</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : null}
           </>
         ) : null}
