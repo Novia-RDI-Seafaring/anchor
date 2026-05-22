@@ -366,7 +366,14 @@ export function DirectionalConnectors({ workspaceSlug }: Props) {
               border: "none",
               background: "transparent",
               cursor: "crosshair",
-              pointerEvents: dragging ? "none" : "auto",
+              // Leave pointer events ON during drag so the dot still
+              // receives the synthesized click on a no-move release —
+              // gating on `dragging` blocked the click event and
+              // first-click became a no-op (the user had to click again,
+              // by which time the drag-release path was treating it as a
+              // drag). The drag arrow renders in a separate overlay
+              // above the dot, so hover/visual conflicts aren't an issue.
+              pointerEvents: "auto",
               opacity: dragging ? 0 : 1,
               zIndex: 28,
               display: "flex",
