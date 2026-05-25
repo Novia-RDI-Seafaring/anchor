@@ -21,10 +21,10 @@ pnpm --dir web build
 
 # build the Python wheel
 uv build --wheel
-# → dist/anchor-0.2.0-py3-none-any.whl
+# → dist/anchor_kb-0.2.0-py3-none-any.whl
 
 # install once, run forever
-uv tool install ./dist/anchor-0.2.0-py3-none-any.whl
+uv tool install ./dist/anchor_kb-0.2.0-py3-none-any.whl
 anchor version    # → 0.2.0
 ```
 

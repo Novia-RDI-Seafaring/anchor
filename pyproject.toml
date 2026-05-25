@@ -3,11 +3,20 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "anchor"
+# PyPI distribution name. The Python import path stays ``anchor`` (the
+# package under ``src/anchor/``) — only the dist name picks up the
+# ``-kb`` suffix to clear the squatted ``anchor`` on PyPI and to leave
+# room for a future split into ``anchor-canvas`` + ``anchor-canvas-pdfs``
+# + ``anchor-canvas-fmus`` etc. ``anchor-kb`` then becomes a thin
+# meta-package depending on those, the same pattern ``langchain`` uses.
+name = "anchor-kb"
 version = "0.2.0"
-description = "Anchor v2 — agent-first knowledge canvas (hexagonal modular monolith)"
+description = "Anchor — agent-first knowledge canvas with PDF ingest, FMU simulation, and source-grounded provenance"
 requires-python = ">=3.12"
-authors = [{name = "Christoffer Björkskog"}]
+authors = [
+    {name = "Christoffer Björkskog"},
+    {name = "Lamin Jatta"},
+]
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
