@@ -11,6 +11,7 @@ from anchor.adapters.http.schemas import (
     CreateWorkspaceRequest,
     DistributeNodesRequest,
     OrganizeSubtreeRequest,
+    RenameWorkspaceRequest,
     SnapshotRequest,
 )
 from anchor.core.services.workspace_service import WorkspaceService
@@ -27,6 +28,18 @@ async def list_workspaces(svc: WorkspaceService = Depends(get_workspace_service)
 @router.post("", status_code=201)
 async def create_workspace(req: CreateWorkspaceRequest, svc: WorkspaceService = Depends(get_workspace_service)):
     return await svc.create_workspace(req.slug, title=req.title)
+
+
+@router.patch("/{slug}")
+async def rename_workspace(
+    slug: str,
+    req: RenameWorkspaceRequest,
+    svc: WorkspaceService = Depends(get_workspace_service),
+):
+    try:
+        return await svc.rename_workspace(slug, title=req.title)
+    except FileNotFoundError:
+        raise HTTPException(404, f"workspace {slug!r} not found")
 
 
 @router.get("/{slug}/state")

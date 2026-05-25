@@ -11,6 +11,11 @@ class CreateWorkspaceRequest(BaseModel):
     title: str = ""
 
 
+class RenameWorkspaceRequest(BaseModel):
+    """Update only the display title; the slug (directory id) is immutable."""
+    title: str
+
+
 class AddNodeRequest(BaseModel):
     id: str | None = None
     node_type: str = "concept"

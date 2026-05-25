@@ -148,6 +148,12 @@ class WorkspaceService:
         meta = await self.store.create(slug, title=title)
         return meta.model_dump()
 
+    async def rename_workspace(self, slug: str, *, title: str) -> dict[str, Any]:
+        """Update the workspace's display title in meta + state. Slug is
+        immutable. Idempotent."""
+        meta = await self.store.rename(slug, title=title)
+        return meta.model_dump()
+
     async def get_state(self, slug: str) -> dict[str, Any]:
         ws = await self.store.load(slug)
         return ws.get_state()

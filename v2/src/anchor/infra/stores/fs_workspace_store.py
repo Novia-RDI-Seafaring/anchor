@@ -90,6 +90,32 @@ class FsWorkspaceStore:
         d = self._slug_dir(slug)
         await self._atomic_write_text(d / "state.json", state.model_dump_json(indent=2))
 
+    async def rename(self, slug: str, *, title: str) -> WorkspaceMeta:
+        """Update only the display title in meta.json. The slug (directory
+        name) is immutable — it's a stable id referenced from other
+        canvases via `data.canvas_slug` on canvas-typed nodes, so we
+        never rewrite it.
+
+        Idempotent: writing the same title is a no-op."""
+        d = self._slug_dir(slug)
+        meta_path = d / "meta.json"
+        if not meta_path.exists():
+            raise FileNotFoundError(f"workspace {slug!r} does not exist")
+        meta = WorkspaceMeta(**json.loads(meta_path.read_text()))
+        if meta.title == title:
+            return meta
+        meta = WorkspaceMeta(slug=meta.slug, title=title, created_at=meta.created_at)
+        await self._atomic_write_text(meta_path, meta.model_dump_json(indent=2))
+        # Mirror the title into the snapshot so subsequent loads see it
+        # without a replay. Don't touch state.json's nodes/edges/version.
+        snap_path = d / "state.json"
+        if snap_path.exists():
+            ws = Workspace.model_validate_json(snap_path.read_text())
+            if ws.title != title:
+                ws.title = title
+                await self._atomic_write_text(snap_path, ws.model_dump_json(indent=2))
+        return meta
+
     # ── internals ─────────────────────────────────────────────────────────
     async def _atomic_write_text(self, path: Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

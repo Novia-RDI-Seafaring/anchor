@@ -120,10 +120,19 @@ describe("SubCanvasPrimitive", () => {
   });
 
   it("does NOT fetch a PNG snapshot of the child canvas", async () => {
-    mockWorkspaces([{ slug: "child", node_count: 1, edge_count: 1 }]);
+    mockWorkspaces([
+      // Stored child title matches the tile's title so the cascade-rename
+      // effect bails (idempotent) and doesn't issue its own PATCH.
+      { slug: "child", title: "X", node_count: 1, edge_count: 1 },
+    ]);
     await renderTile({ data: { canvas_slug: "child", title: "X" } });
-    // global.fetch is stubbed to a bare vi.fn(); zero calls = no snapshot.
-    expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
+    // No call to anything resembling a snapshot endpoint. The rename
+    // PATCH is allowed and tested separately.
+    const calls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls;
+    const snapshotCalls = calls.filter(([url]) =>
+      typeof url === "string" && url.includes("/snapshot"),
+    );
+    expect(snapshotCalls.length).toBe(0);
   });
 
   it("does NOT show the already-visiting badge for a fresh chain", async () => {

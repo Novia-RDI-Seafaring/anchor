@@ -25,8 +25,10 @@
  * This primitive only renders.
  */
 import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 
+import { canvases } from "@/api/canvases";
 import { breadcrumb } from "@/canvas/breadcrumb";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useWorkspacesList } from "@/canvas/useWorkspacesList";
@@ -79,6 +81,21 @@ export function SubCanvasPrimitive({ id, data, selected }: NodeProps) {
     field: "title",
     canEdit: selected ?? false,
   });
+
+  // Cascade-rename: whenever the tile's `data.title` differs from the
+  // CHILD workspace's stored `meta.title`, push the new title to the
+  // child via PATCH /api/workspaces/<child>. Without this, the tile
+  // displays the renamed title but the landing-page folder tree, the
+  // breadcrumbs, and any other view of the child canvas still show
+  // "Sub-canvas". The rename API is idempotent (no-op on equal titles),
+  // so this effect is safe to fire on every render. We swallow errors;
+  // SSE / next list refresh reconciles eventually.
+  useEffect(() => {
+    if (!subSlug) return;
+    if (!d.title) return;
+    if (child && child.title === d.title) return;
+    canvases.rename(subSlug, d.title).catch(() => {});
+  }, [subSlug, d.title, child]);
 
   return (
     <div
