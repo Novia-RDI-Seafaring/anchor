@@ -116,6 +116,7 @@ export function LeftToolRail({ workspaceSlug }: Props) {
   // the producers (document, cad:model, ...) still live behind the `+`
   // popover because they need a file upload first.
   const subCanvasEntry = paletteEntries("producers").find((e) => e.name === "canvas");
+  const specEntry = paletteEntries("producers").find((e) => e.name === "spec");
 
   const dropPayload = (name: string, meta: PaletteMeta) => {
     const label = meta.noDefaultLabel ? "" : meta.label;
@@ -179,17 +180,28 @@ export function LeftToolRail({ workspaceSlug }: Props) {
           ))}
         </RailGroup>
 
-        {subCanvasEntry ? (
+        {subCanvasEntry || specEntry ? (
           <>
             <RailDivider />
             <RailGroup label="Producers">
-              <RailTile
-                name={subCanvasEntry.name}
-                meta={subCanvasEntry.meta}
-                armed={armedTool === subCanvasEntry.name}
-                onClick={() => armTool(subCanvasEntry.name)}
-                dropPayload={dropPayload}
-              />
+              {specEntry ? (
+                <RailTile
+                  name={specEntry.name}
+                  meta={specEntry.meta}
+                  armed={armedTool === specEntry.name}
+                  onClick={() => armTool(specEntry.name)}
+                  dropPayload={dropPayload}
+                />
+              ) : null}
+              {subCanvasEntry ? (
+                <RailTile
+                  name={subCanvasEntry.name}
+                  meta={subCanvasEntry.meta}
+                  armed={armedTool === subCanvasEntry.name}
+                  onClick={() => armTool(subCanvasEntry.name)}
+                  dropPayload={dropPayload}
+                />
+              ) : null}
             </RailGroup>
           </>
         ) : null}

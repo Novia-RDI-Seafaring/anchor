@@ -766,8 +766,13 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
       }
       return;
     }
-    // Pull the palette meta for default size + payload shape.
-    const all = [...paletteEntries("shapes"), ...paletteEntries("cards")];
+    // Pull the palette meta for default size + payload shape. Producers
+    // are included so click-to-arm-then-place works for the spec tile.
+    const all = [
+      ...paletteEntries("shapes"),
+      ...paletteEntries("cards"),
+      ...paletteEntries("producers"),
+    ];
     const meta = all.find((e) => e.name === armedTool)?.meta;
     const label = meta?.noDefaultLabel ? "" : meta?.label ?? "";
     const width = sizeOverride?.width ?? meta?.width;
