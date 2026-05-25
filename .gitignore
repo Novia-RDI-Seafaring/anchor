@@ -1,114 +1,67 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-node_modules
-dist
-dist-ssr
-*.local
-data/
-
-# Environment Variables
-.env
-.env.local
-.env*.local
-!.env.example
-!.env.local.example
-backend/.env
-!backend/.env.example
-
-# Next.js
-.next/
-out/
-build/
-paper/
-mydata/
-paperx/
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# Python
+# Build / cache
 __pycache__/
 *.pyc
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-*.egg
+.pytest_cache/
+.import_linter_cache/
+.venv/
 *.egg-info/
 dist/
-*.whl
-
-# Python Virtual Environments (uv manages these, but ignore if manually created)
-venv/
-env/
-ENV/
-.venv/
-.ENV/
-
-# Python Testing & Coverage
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-htmlcov/
-.tox/
-.hypothesis/
-
-# User uploads, Test Scripts (documents, PDFs)
-uploads/
-!uploads/.gitkeep
-test_chunking/
-test_scripts/
-notes_docs/
-diagrams/*
-docs/*
-
-# Documentation (temporary/working files)
-backend/diagrams/
-backend/undecided_files/
-backend/evals/findings.md
-notes_docs/
-
-# Docling processing artifacts (if any temp files created)
-*.docling-tmp
-docling_cache/
-
-# TypeScript
+build/
 *.tsbuildinfo
 
-# OS-specific
-Thumbs.db
+# Frontend
+node_modules/
+web/dist/
+
+# User data — never tracked, lives in --data-dir / ANCHOR_DATA_DIR
+data/
+# Note: top-level docs/ IS tracked — the architecture documentation lives
+# there. User-data canvases/ live inside `data/` which is already ignored.
+
+# Local config / env files — never commit credentials
+.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/
+.idea/
+
+# OS
 .DS_Store
-*.swp
-*.swo
-*~
+.playwright-cli/
+.next/
 
-# Temporary files
-*.tmp
-*.temp
-.cache/
-
-# Docling processing artifacts (if any temp files created)
-*.docling-tmp
-docling_cache/
-
-# Logfire cache (observability tool)
-.logfire/
-logfire_cache/
+# Legacy v1 working-tree leftovers at the repo root. These directories /
+# files existed before v2 was promoted; they survive locally as untracked
+# entries after pulling this commit. Full history is on the
+# `archive/pre-v2` branch / `pre-v2-cutoff` tag.
+#
+# Leading slashes restrict the patterns to the repo root so they don't
+# shadow legitimate files of the same name inside `web/`.
+/backend/
+/backend2/
+/packages/
+/paperx/
+/paper/
+/posters/
+/public/
+/mydata/
+/uploads/
+/tmp/
+/Untitled/
+/v2/
+/src/components/
+/src/app/
+/2026-*-hi.txt
+/output_bboxes.txt
+/metadata.json
+/package.json
+/package-lock.json
+/pnpm-lock.yaml
+/postcss.config.cjs
+/tailwind.config.cjs
+/tsconfig.json
+/next.config.ts
+/next-env.d.ts
+/todos.md
