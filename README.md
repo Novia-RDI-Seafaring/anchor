@@ -20,7 +20,7 @@ Two paths, depending on whether you want to *use* Anchor or *hack on it*.
 
 ```bash
 uv tool install anchor-kb
-anchor serve              # → http://127.0.0.1:8002
+uv run anchor serve              # → http://127.0.0.1:8002
 ```
 
 `anchor` and `anchor-mcp` are now on your PATH globally. The wheel
