@@ -33,6 +33,11 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
-    sourcemap: true,
+    // Source maps balloon the published wheel by ~8 MB and only help
+    // debug *your own* frontend in browser devtools — useless to end
+    // users. Off for production. Dev builds (``vite dev``) still
+    // produce inline source maps regardless of this flag, so HMR is
+    // unaffected.
+    sourcemap: false,
   },
 });
