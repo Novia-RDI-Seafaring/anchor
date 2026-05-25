@@ -1,166 +1,152 @@
-# Anchor KB — Knowledge-Grounded Engineering Canvas
+# Anchor — agent-first knowledge canvas (v2)
 
-## Python
-
-the backend is python
-we use uv.
+This file is the at-a-glance briefing for any Claude session working on
+this repo. Read [`README.md`](./README.md) for the user-facing intro and
+[`docs/01-architecture.md`](./docs/01-architecture.md) for the deep
+architecture.
 
 ## What this app does
 
-A full-stack tool for engineers to work with technical documents (PDF datasheets, product leaflets) alongside simulation models (FMUs). An AI agent reads documents, extracts structured data, and helps connect document-sourced parameters to simulation inputs.
+A canvas an AI agent can actually drive. Drop a PDF datasheet into a
+workspace, ask the agent for the operating limits, get a grounded spec
+table where every value points back to its source page + bbox. Wire
+those values into a simulation. **No managed cloud, no vendor lock-in,
+data stays on the user's laptop.**
 
 The core workflow:
-1. Upload technical documents (PDF) into the knowledge base
-2. Add them to a visual canvas
-3. Ask the AI agent to extract specs, operating data, parameter tables
-4. Get grounded, source-referenced data tables on the canvas
-5. Wire extracted values into FMU simulation parameters
+
+1. Ingest a technical PDF into the bronze → silver → gold pipeline
+2. Drop the resulting document node onto a canvas (or use placeholders)
+3. Ask the agent (via MCP) to extract specs, operating data, parameter tables
+4. Get grounded, source-referenced spec tables on the canvas
+5. Wire values into FMU simulation parameters
 6. Run simulations directly from the canvas
 
-## Architecture
+## Architecture (v2 — hexagonal modular monolith)
 
-### Frontend (`/src`)
-- **Next.js 15** (App Router), React 19, Tailwind CSS
-- **CopilotKit** (`@copilotkit/react-core` + `@copilotkit/react-ui`, v1.51) for chat/agent UI
-- **React Flow** (`@xyflow/react`) for the canvas graph
-- API route at `/api/copilotkit` proxies to backend via `HttpAgent` from `@ag-ui/client`
+```
+src/anchor/
+  core/          — pure domain. No httpx, no fastapi, no openai, no pymupdf.
+  infra/         — port implementations (fs stores, openai clients, pymupdf, ...)
+  adapters/      — http / mcp / cli — all three share one WorkspaceService
+  extensions/    — anchor_pdfs / anchor_fmus / anchor_cad / anchor_sysml
+web/             — React 19 + Vite + Tailwind v4 + ReactFlow
+docs/            — architecture, ingestion, extensions, OIP
+tests/           — function-based pytest
+```
 
-### Backend (`/backend`)
-- **FastAPI** + asyncpg + pgvector
-- **PydanticAI** agent with AG-UI protocol, endpoint at `/agent`
-- Runs at `localhost:8001`
-
-### Database
-- PostgreSQL, schema `anchor`
-- Tables: `documents`, `conversations` (JSONB for `messages` and `canvas_state`)
+- **Python**: uv (NOT pip). `uv sync --extra dev` to install everything.
+- **Frontend**: `pnpm --dir web ...` (NOT `pnpm --filter`; there is no
+  workspace file at the root).
+- **Database**: none. Per-workspace folders under `~/anchor-data/canvases/`
+  with `meta.json` + `state.json` + append-only `events.jsonl`.
+- **Real-time sync**: server-authoritative EventBus → SSE fan-out to
+  every connected client. No pgvector, no Postgres, no Redis.
+- **Default data dir**: `~/anchor-data` (overridable via
+  `--data-dir` or `ANCHOR_DATA_DIR`).
 
 ## Canvas node types
 
-The canvas uses React Flow with custom node types:
+| Node type | Purpose |
+| --- | --- |
+| `document` | PDF / document card with cover image |
+| `spec` | Parameter / spec table with row-level source refs |
+| `fmu` | FMU model node with inputs/outputs/parameters |
+| `cad` | Parametric CAD (jscad/scad) viewer |
+| `canvas` | Sub-canvas tile linking to another workspace |
+| `concept`, `entity`, `fact`, `area`, `funnel`, `image`, `plot`, etc. | General shapes |
 
-| Node type | Purpose | Key file |
-|-----------|---------|----------|
-| `document` | PDF/document card with cover image, handles for connecting | `KnowledgeNodes.tsx` |
-| `spec` | Parameter/spec table with row-level source refs | `KnowledgeNodes.tsx` |
-| `fmu` | FMU simulation node with inputs/outputs/parameters | `KnowledgeNodes.tsx` |
-| `model` | Named model bridge (e.g. "LKH-5 Pump") connecting docs to FMUs | `KnowledgeNodes.tsx` |
-| `concept` | Box shape — general purpose grouping node | `KnowledgeNodes.tsx` |
-| `entity` | Circle shape — product/system root | `KnowledgeNodes.tsx` |
-| `fact` | Text/note card with markdown | `KnowledgeNodes.tsx` |
-| `area` | Dashed container region, other nodes can be parented inside | `KnowledgeNodes.tsx` |
-| `funnel` | Diamond shape | `KnowledgeNodes.tsx` |
-| `plot` | Simulation result chart | `KnowledgeNodes.tsx` |
-| `image` | PDF page screenshot | `KnowledgeNodes.tsx` |
+Renderers live under `web/src/canvas/primitives/` and shapes under
+`web/src/canvas/shapes/`; the registry mapping `node_type` to a
+component is `web/src/canvas/registry.ts`.
 
-### Model node (new, 2026-04-02)
-
-The **model node** is a semantic bridge between documents and FMU parameters. It represents a named engineering model (e.g. "Pump", "Heat Exchanger"). The intended flow:
-
-- **Document → Model node**: "this is the source document for this model"
-- **Model node → FMU**: "find the parameters this FMU needs from the connected documents"
-- **Model node → Canvas**: "extract specific data sections (description, param tables, curves)"
-
-The model node has an inline-editable label (double-click to rename). Toolbar shortcut: `6`.
-
-### Edge types
+## Edge types
 
 - `floating` — loose graph edges (automatic routing)
-- `anchored` — explicit handle-to-handle connections (row-level wiring, evidence edges)
+- `anchored` — explicit handle-to-handle connections (row-level wiring,
+  evidence edges)
 
-## Canvas key files
+## Adapter parity rule
 
-| File | Role |
-|------|------|
-| `src/components/canvas/CanvasGraph.tsx` | Main canvas component — node/edge building, toolbar, drag-drop, layout |
-| `src/components/canvas/KnowledgeNodes.tsx` | All node renderers (document, spec, fmu, model, etc.) |
-| `src/components/canvas/canvas-model.ts` | TypeScript types for canvas items, legacy node adaptation |
-| `src/components/canvas/FloatingEdge.tsx` | Floating edge renderer |
-| `src/components/canvas/AnchoredEdge.tsx` | Handle-anchored edge renderer |
-| `src/components/canvas/PDFModal.tsx` | PDF viewer modal |
-| `src/components/layout/MainContent.tsx` | Canvas state management, event handlers (add/delete/update nodes) |
+**Every new operation must reach HTTP, MCP, and CLI in the same PR.**
+Agents and shell users get parity with the UI. See the
+`feedback_adapter_parity.md` memory entry for the rationale.
 
-## Backend agent structure
+## Document ingestion pipeline (Bronze / Silver / Gold)
 
-### Capabilities (`/backend/src/agent/capabilities/`)
-- `context.py` — injects canvas state + document list into agent context, provides `read_document_page`
-- `canvas.py` — canvas node/relation CRUD tools
-- `product_data.py` — gold-layer product data lookup tool
-- `knowledge.py` — knowledge graph behavior instructions (currently disabled)
-- `router.py` — intent routing (currently disabled)
-- `fmu.py` — FMU/simulation behavior (currently disabled)
-- `document_vision.py` — vision-based document reading (currently disabled)
-- `engineering_knowledge/` — domain reference material (pump curves, etc.)
-
-### Tools (`/backend/src/agent/tools/`)
-- `knowledge.py` — RAG search, spec/fact table creation
-- `document.py` — page reading, page images, bbox extraction
-- `canvas.py` — canvas node manipulation, bbox backfill
-- `fmu.py` — FMU upload, simulation execution
-- `vision.py` — vision tools
-- `product_data.py` — gold-layer lookup: `get_product_data(document_id)` returns pre-extracted structured JSON with bboxes
-
-## Document Ingestion Pipeline (Bronze / Silver / Gold)
-
-Three-layer medallion architecture for transforming PDFs into structured, queryable product knowledge.
+Three-layer medallion architecture under `~/anchor-data/`:
 
 | Layer | Path | Contents |
-|-------|------|----------|
-| **Bronze** | `backend/data/uploads/` | Raw PDF files + `files_index.json` |
-| **Silver** | `backend/data/silver/<slug>/` | Docling extraction output — items with type, text, page, bbox |
-| **Gold** | `backend/data/gold/` | Structured product knowledge JSON, one per document |
+| --- | --- | --- |
+| **Bronze** | `bronze/<filename>.pdf` | Raw PDF files |
+| **Silver** | `silver/<slug>/` | Docling extraction: items, pages, bboxes |
+| **Gold** | `gold/<slug>/` | Structured product knowledge JSON, region crops |
 
-**Full spec:** `backend/data/INGESTION_PIPELINE_SPEC.md`
+Every region carries `page` + `bbox` (BOTTOMLEFT coordinates from
+Docling). The agent's `get_product_data(slug)` tool returns the full
+gold JSON in one call.
 
-### Gold JSON structure
-- Mirrors actual document section hierarchy (not reorganized)
-- Every section/table/item has `page` and `bbox` (BOTTOMLEFT coordinates, from Docling)
-- Table types: `property_table` (same for all models), `model_dependent_table` (values vary by model), `model_table` (one column per model), `motor_table` (one column per IEC frame)
-- Reference example: `backend/data/gold/alfa-laval-lkh-centrifugal-pump.json` (Alfa Laval LKH pump, 4 pages, 13 models)
+## FMU runtime
 
-### Agent integration
-- **Capability:** `backend/src/agent/capabilities/product_data.py` → `ProductDataCapability`
-- **Tool:** `get_product_data(filename)` — returns full gold JSON in one call
-- **Lookup:** matches filename against gold JSON `document.filename` field directly (no dependency on files_index.json or document IDs)
-- Agent tries gold data first, falls back to `read_document_page()` if no gold exists
-- Currently active capabilities: `ContextCapability`, `CanvasCapability`, `ProductDataCapability`
+- Real runtime: `fmpy` — `uv pip install 'anchor[fmus]'`.
+- Demo runtime: `ANCHOR_FMU_DEMO=1`. Every result is stamped
+  `synthetic=true` so the UI can show a `[SYNTHETIC]` badge.
+- The extension **fails closed** if neither is available — the previous
+  behaviour silently mounted the fake runtime, which was unsafe.
 
-### Pipeline roadmap
-1. **Phase 1 (current):** Gold JSON hand-crafted, silver saved as reference
-2. **Phase 2:** LLM-assisted extraction (silver → gold draft) + verification agent
-3. **Phase 3:** Agent tagging tools (semantic tags, model scoping, cross-doc links, verification status)
-4. **Phase 4:** Fully automated on-upload pipeline
+## Security model
+
+The HTTP server is **unauthenticated**. Defaults are loopback-only
+(`127.0.0.1`); CORS allows just the Vite dev origins. Workspace slugs
+and upload filenames go through `validate_workspace_slug` and
+`safe_upload_name`; the filesystem stores re-validate as
+defence-in-depth. See `src/anchor/core/upload_safety.py` and
+`src/anchor/core/ids.py` for the policy.
 
 ## Key design rules
 
-- **FMU nodes are separate from the knowledge graph.** The agent should not auto-connect knowledge nodes to FMUs. Manual wiring from spec table rows to FMU parameters is allowed.
-- **Row-level provenance.** Each row in a spec table carries its own `ParameterSource` (doc_id, filename, page, bbox). Source edges are visible on the canvas.
-- **One table per extraction.** When extracting operating/spec data, produce one grounded table — don't split into many small nodes.
-
-## CopilotKit notes
-
-- Use `useCopilotChatInternal` (not `useCopilotChat`) for `setMessages`/`messages` access
-- Do NOT use `@copilotkitnext/react` — it's deprecated
-- Custom `Input` component receives `onSend` and `inProgress` as props
-
-## FMU library
-
-External FMU files are in `/Users/toffe/dev/ai/novia/fmu-library` (branch `refactor/engine-cooling-fmus`). Engine cooling system components:
-- `pump_FMI2.fmu` — inputs: temp_in [degC], mass_in [kg/s], pump_value [kg/s]; outputs: temp_out, mass_out
-- `control_valve_FMI2.fmu`, `engine_heat_load_FMI2.fmu`, `heat_exchanger_FMI2.fmu`, `mixer_FMI2.fmu`
-- System-level: `LOC_31032026_FMI2.fmu`, `LOC_System_31032026_FMI2.fmu`, `LOC_Control_31032026_FMI2.fmu`
+- **FMU nodes are separate from the knowledge graph.** The agent should
+  not auto-connect knowledge nodes to FMUs. Manual wiring from spec
+  rows to FMU parameters is allowed.
+- **Row-level provenance.** Each spec-table row carries its own
+  `source_ref` (doc_id, filename, page, bbox). Source edges are visible.
+- **One table per extraction.** When extracting operating/spec data,
+  produce one grounded table — don't split into many small nodes.
 
 ## Development
 
 ```bash
-# Frontend
-npm run dev          # localhost:3000
+# Backend + frontend
+uv sync --extra dev
+pnpm --dir web install
 
-# Backend
-cd backend
-source .venv/bin/activate
-uvicorn src.main:app --reload --port 8001
+# Run the server
+uv run anchor serve          # http://127.0.0.1:8002
+# Or with Vite HMR:
+pnpm --dir web dev           # http://localhost:5173, proxies API to 8002
+
+# CLI
+uv run anchor demo           # seeds a `demo` workspace with the bundled LKH-5 PDF
+uv run anchor canvas list
+uv run anchor canvas state <slug>
+uv run anchor canvas add-node <slug> spec --label "..." --data '{"rows": [...]}'
+
+# Tests
+uv run --extra dev pytest
+uv run --extra dev lint-imports
+pnpm --dir web test
+pnpm --dir web exec tsc --noEmit
 ```
+
+## Legacy code
+
+The pre-v2 codebase (Next.js + CopilotKit frontend, FastAPI + asyncpg +
+pgvector backend, standalone `anchor-canvas` / `anchor-ingest` packages,
+paper / poster drafts) lives on the `archive/pre-v2` branch (tag
+`pre-v2-cutoff`). Don't revive it on `main` — open it on its own branch
+if you need to crib code or context.
 
 ## Git
 
-- Do not add "Co-Authored-By" trailers to commits
+- Do not add "Co-Authored-By" trailers to commits.
+- PRs go to `main`; feature branches `feat/<topic>`, fixups `fix/<topic>`.
