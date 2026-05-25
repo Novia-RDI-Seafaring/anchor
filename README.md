@@ -1,5 +1,9 @@
 # Anchor · agent-first knowledge canvas
 
+[![PyPI version](https://img.shields.io/pypi/v/anchor-kb.svg)](https://pypi.org/project/anchor-kb/)
+[![Python versions](https://img.shields.io/pypi/pyversions/anchor-kb.svg)](https://pypi.org/project/anchor-kb/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 > A canvas your AI agent can actually drive. Drop a PDF datasheet onto a workspace, ask the agent for the operating limits, get a grounded spec table where every value points back to its source page+bbox. Wire those values into a simulation. **No managed cloud, no vendor lock-in, your data stays on your laptop.**
 
 Anchor is two things: a **generic canvas primitive** (workspace, nodes, edges, real-time multi-client sync over MCP/HTTP/SSE) and a **PDF-ingestion extension** (medallion bronze→silver→gold pipeline producing structured, page-and-bbox-anchored regions). Today PDFs are the canonical use case; the canvas itself is domain-agnostic and other extensions (transcription, code, web pages) will land alongside.
@@ -10,32 +14,42 @@ Anchor is two things: a **generic canvas primitive** (workspace, nodes, edges, r
 
 ## Install
 
-You need: **Python ≥ 3.12**, **Node ≥ 20** (only for the frontend). macOS or Linux today; Windows on the roadmap.
+Two paths, depending on whether you want to *use* Anchor or *hack on it*.
 
-### From a built wheel (recommended)
+### Use it (from PyPI)
 
 ```bash
-# build the frontend first so it ships inside the wheel
-pnpm --dir web install
-pnpm --dir web build
-
-# build the Python wheel
-uv build --wheel
-# → dist/anchor_kb-0.2.0-py3-none-any.whl
-
-# install once, run forever
-uv tool install ./dist/anchor_kb-0.2.0-py3-none-any.whl
-anchor version    # → 0.2.0
+uv tool install anchor-kb
+anchor serve              # → http://127.0.0.1:8002
 ```
 
-`anchor` and `anchor-mcp` are now on your PATH globally.
+`anchor` and `anchor-mcp` are now on your PATH globally. The wheel
+includes the prebuilt frontend, so no Node toolchain is required to
+just run it.
 
-### From source (for development)
+Requires Python ≥ 3.12. macOS and Linux supported today; Windows on
+the roadmap.
+
+If you prefer plain pip:
 
 ```bash
-git clone https://github.com/Novia-RDI-Seafaring/anchor-kb-ui-RAG
-cd anchor-kb-ui-RAG
-uv sync --extra dev    # `--extra dev` adds pytest, ruff, import-linter
+pipx install anchor-kb
+# or, in a virtualenv:
+pip install anchor-kb
+```
+
+Optional extras:
+
+| Extra | Install | Adds |
+|---|---|---|
+| `fmus` | `uv tool install 'anchor-kb[fmus]'` | FMU simulation runtime (`fmpy`). Without it, FMU tools fail closed unless you opt into the synthetic demo with `ANCHOR_FMU_DEMO=1`. |
+
+### Hack on it (from source)
+
+```bash
+git clone https://github.com/Novia-RDI-Seafaring/anchor
+cd anchor
+uv sync --extra dev          # adds pytest, ruff, import-linter
 pnpm --dir web install
 
 # dev mode: two processes
@@ -47,11 +61,10 @@ pnpm --dir web dev
 Default `--data-dir` is `~/anchor-data`; override per-command or via
 `ANCHOR_DATA_DIR`.
 
-Optional extras:
-
-| Extra | Install | Adds |
-|---|---|---|
-| `fmus` | `uv sync --extra fmus` | FMU simulation runtime (`fmpy`). Without it, FMU tools fail at call time. |
+Releases are tag-driven: pushing a `v*` tag triggers the
+[release workflow](./.github/workflows/release.yml), which publishes
+to PyPI via OIDC trusted publishing (no token sits in the repo). See
+[`PUBLISHING.md`](./PUBLISHING.md) for the full release process.
 
 ---
 

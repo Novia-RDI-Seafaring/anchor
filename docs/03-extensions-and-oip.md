@@ -61,7 +61,7 @@ consumer invokes it. Verbatim from `anchor_fmus`:
     "name": "anchor-fmus",
     "display_name": "Anchor FMUs",
     "version": "0.2.0",
-    "homepage": "https://github.com/Novia-RDI-Seafaring/anchor-kb-ui-RAG"
+    "homepage": "https://github.com/Novia-RDI-Seafaring/anchor"
   },
   "kind": "bundled-in-tree",
   "data_dir": "/.../data",

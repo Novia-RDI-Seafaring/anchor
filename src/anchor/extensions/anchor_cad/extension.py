@@ -36,7 +36,7 @@ def manifest(data_dir: Path | None = None) -> dict[str, Any]:
             "name": NAME,
             "display_name": DISPLAY_NAME,
             "version": VERSION,
-            "homepage": "https://github.com/Novia-RDI-Seafaring/anchor-kb-ui-RAG",
+            "homepage": "https://github.com/Novia-RDI-Seafaring/anchor",
         },
         "kind": "bundled-in-tree",
         "data_dir": str(data_dir) if data_dir else None,

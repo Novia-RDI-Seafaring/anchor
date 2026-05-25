@@ -51,7 +51,7 @@ def _bundled_producers() -> list[dict[str, Any]]:
                 "name": "anchor-pdfs",
                 "display_name": "Anchor PDFs",
                 "version": __version__,
-                "homepage": "https://github.com/Novia-RDI-Seafaring/anchor-kb-ui-RAG",
+                "homepage": "https://github.com/Novia-RDI-Seafaring/anchor",
             },
             "kind": "bundled-in-tree",
             "produces": {
