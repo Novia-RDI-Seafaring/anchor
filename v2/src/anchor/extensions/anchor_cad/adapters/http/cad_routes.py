@@ -7,14 +7,26 @@ methods that MCP calls — adapter is a thin translation layer.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
+log = logging.getLogger(__name__)
+
+from anchor.core.upload_safety import UnsafeUploadError, safe_upload_name
 from anchor.extensions.anchor_cad.core.services import CadService
 
 router = APIRouter(prefix="/api/cad", tags=["cad"])
+
+_ALLOWED_CAD_EXTENSIONS = {
+    ".stl", ".obj", ".gltf", ".glb", ".3mf", ".ply",
+    ".step", ".stp", ".jscad", ".scad",
+}
+
+# CAD meshes can be larger than PDFs (STL files routinely hit 50-100 MB).
+_MAX_CAD_BYTES = 200 * 1024 * 1024
 
 _MIME_BY_EXT = {
     ".stl": "model/stl",
@@ -68,13 +80,20 @@ async def inspect(
 
     Returns the CadModel JSON: parameters, parts, features, dimensions.
     """
-    if not file.filename:
-        raise HTTPException(400, "uploaded file has no filename")
-    body = await file.read()
     try:
-        model = await service.upload_and_inspect(body, file.filename)
-    except Exception as exc:  # noqa: BLE001
+        filename = safe_upload_name(file.filename, allowed_extensions=_ALLOWED_CAD_EXTENSIONS)
+    except UnsafeUploadError as exc:
         raise HTTPException(400, str(exc))
+    body = await file.read()
+    if len(body) > _MAX_CAD_BYTES:
+        raise HTTPException(413, f"CAD file exceeds {_MAX_CAD_BYTES // (1024 * 1024)} MB cap")
+    try:
+        model = await service.upload_and_inspect(body, filename)
+    except ValueError as exc:
+        raise HTTPException(400, "could not parse CAD file")
+    except Exception:
+        log.exception("CAD upload-and-inspect failed")
+        raise HTTPException(400, "could not parse CAD file")
     return JSONResponse(model.model_dump())
 
 

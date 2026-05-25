@@ -18,10 +18,18 @@ from anchor.adapters.http.deps import get_ingest_service, get_workspace_service
 from anchor.adapters.http.schemas import IngestUploadResponse
 from anchor.core.ids import new_event_id, new_id, slugify
 from anchor.core.services.workspace_service import WorkspaceService
+from anchor.core.upload_safety import UnsafeUploadError, safe_upload_name
 from anchor.extensions.anchor_pdfs.core.services import IngestService
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/workspaces", tags=["upload"])
+
+# Server-side cap. 200 MB is enough for the largest catalogue PDFs we've
+# seen in industry datasheets; uploads above this almost always indicate
+# a misclick (video, archive) or an exploit. The check happens after the
+# body is read — FastAPI / Starlette buffer to disk, so memory is not
+# exhausted, but we still reject before parsing.
+_MAX_PDF_BYTES = 200 * 1024 * 1024
 
 
 @router.post("/{slug}/upload")
@@ -33,10 +41,13 @@ async def upload(
     ingest: IngestService = Depends(get_ingest_service),
     workspace: WorkspaceService = Depends(get_workspace_service),
 ) -> IngestUploadResponse:
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(400, "PDF expected")
+    try:
+        filename = safe_upload_name(file.filename, allowed_extensions={".pdf"})
+    except UnsafeUploadError as exc:
+        raise HTTPException(400, str(exc))
     pdf_bytes = await file.read()
-    filename = file.filename or "upload.pdf"
+    if len(pdf_bytes) > _MAX_PDF_BYTES:
+        raise HTTPException(413, f"PDF exceeds {_MAX_PDF_BYTES // (1024 * 1024)} MB cap")
     doc_slug = slugify(Path(filename).stem)
     job_id = new_event_id()
     node_id = new_id()

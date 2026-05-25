@@ -28,13 +28,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function mockWorkspaces(entries: Array<{ slug: string; node_count: number; edge_count: number }>) {
+function mockWorkspaces(
+  entries: Array<{ slug: string; node_count: number; edge_count: number; title?: string }>,
+) {
   const bySlug = new Map(
     entries.map((e) => [
       e.slug,
       {
         slug: e.slug,
-        title: "",
+        title: e.title ?? "",
         created_at: 0,
         node_count: e.node_count,
         edge_count: e.edge_count,

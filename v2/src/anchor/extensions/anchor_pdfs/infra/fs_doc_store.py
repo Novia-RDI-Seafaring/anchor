@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -25,6 +24,7 @@ from typing import Any
 import aiofiles
 
 from anchor.core.ids import slugify
+from anchor.core.upload_safety import UnsafeUploadError, assert_within, safe_upload_name
 
 
 class FsDocStore:
@@ -114,9 +114,19 @@ class FsDocStore:
         }
 
     async def get_crop_path(self, slug: str, rel_path: str) -> Path | None:
-        cleaned = re.sub(r"\.\.+", ".", rel_path).lstrip("/")
-        p = self.gold / slug / "pages" / cleaned
-        return p if p.exists() else None
+        # ``rel_path`` arrives from the agent (e.g. region.crops.png →
+        # ``"3/r1.png"``). It must stay inside this document's gold pages
+        # directory. The previous implementation used an ad-hoc
+        # ``re.sub(r"\.\.+", ".", ...)`` replacement which fails closed for
+        # ``..`` but does nothing about backslashes, absolute paths, or
+        # symlink escapes. Resolve the candidate and verify containment.
+        base = self.gold / slug / "pages"
+        candidate = (base / rel_path)
+        try:
+            resolved = assert_within(candidate, base)
+        except UnsafeUploadError:
+            return None
+        return resolved if resolved.exists() else None
 
     async def get_raw_pdf_path(self, slug: str) -> Path | None:
         # bronze/ uses the original filename, not the slug — recover from
@@ -131,8 +141,15 @@ class FsDocStore:
         return p if p.is_file() else None
 
     async def stash_bronze(self, pdf_bytes: bytes, filename: str) -> Path:
+        # Defence-in-depth: re-validate the filename here so direct
+        # callers (CLI ``anchor ingest``, tests, future agents) get the
+        # same protection the HTTP upload route applies. ``safe_upload_name``
+        # rejects path components and a non-pdf extension; ``assert_within``
+        # rejects any residual escape via the resolved path.
+        clean = safe_upload_name(filename, allowed_extensions={".pdf"})
         async with self._lock:
-            target = self.bronze / filename
+            target = self.bronze / clean
+            assert_within(target, self.bronze)
             async with aiofiles.open(target, "wb") as f:
                 await f.write(pdf_bytes)
             return target

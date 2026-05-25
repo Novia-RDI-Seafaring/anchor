@@ -34,6 +34,11 @@ class FmuModel(BaseModel):
     fmi_version: str = "2.0"
     platforms: list[str] = Field(default_factory=list)
     variables: list[FmuVariable] = Field(default_factory=list)
+    # ``true`` when the model description came from the offline-demo
+    # ``FakeFmuRuntime`` rather than a real FMU runtime (FMPy). UI badges
+    # and CLI output use this to make the synthetic nature obvious so an
+    # engineer doesn't mistake demo data for a real simulation.
+    synthetic: bool = False
 
     def inputs(self) -> list[FmuVariable]:
         return [v for v in self.variables if v.causality == "input"]
@@ -57,6 +62,10 @@ class SimulationRun(BaseModel):
     output_interval: float = 0.01
     parameter_overrides: dict[str, float] = Field(default_factory=dict)
     error: str | None = None
+    # ``true`` when the result came from FakeFmuRuntime. Carried separately
+    # from the model flag so a real FMU run against a synthetic-marked
+    # model (mixed mode in test harnesses) is still distinguishable.
+    synthetic: bool = False
 
 
 class TimeSeries(BaseModel):
@@ -65,6 +74,7 @@ class TimeSeries(BaseModel):
     simulation_id: str
     time: list[float]
     variables: dict[str, list[float]] = Field(default_factory=dict)
+    synthetic: bool = False
 
 
 # ── Source-ref kinds for OIP ────────────────────────────────────────────

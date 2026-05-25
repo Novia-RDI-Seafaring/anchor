@@ -16,8 +16,8 @@ You need: **Python ≥ 3.12**, **Node ≥ 20** (only for the frontend). macOS or
 
 ```bash
 # build the frontend first so it ships inside the wheel
-pnpm --filter @anchor/web install
-pnpm --filter @anchor/web build
+pnpm --dir web install
+pnpm --dir web build
 
 # build the Python wheel
 uv build --wheel
@@ -34,13 +34,13 @@ anchor version    # → 0.2.0
 
 ```bash
 git clone https://github.com/Novia-RDI-Seafaring/anchor-kb-ui-RAG
-cd anchor-kb-ui-RAG/v2
-uv sync
-pnpm --filter @anchor/web install
+cd anchor-kb-ui-RAG
+uv sync --extra dev    # `--extra dev` adds pytest, ruff, import-linter
+pnpm --dir web install
 
 # dev mode: two processes
 uv run anchor serve &
-pnpm --filter @anchor/web dev
+pnpm --dir web dev
 # → backend on :8002, Vite HMR on :5173
 ```
 
@@ -220,18 +220,20 @@ For implementation status: today, an OIP-registered producer is *visible* in `ex
 ## Tests
 
 ```bash
-uv run pytest             # 97 backend tests
-uv run lint-imports       # 3 dependency-rule contracts
-pnpm --filter @anchor/web typecheck
+uv sync --extra dev                       # one-time: install pytest/ruff/import-linter
+uv run pytest                             # ~315 backend tests
+uv run lint-imports                       # 6 dependency-rule contracts
+pnpm --dir web test                       # ~180 web tests (Vitest)
+pnpm --dir web exec tsc --noEmit          # web typecheck
 ```
 
-The test seam is function-based pytest (matches the legacy `backend/tests/` style) with in-memory implementations of every port. Real I/O tests use `tmp_path`. The frontend currently has no tests; that's the next thing to add.
+The test seam is function-based pytest (matches the legacy `backend/tests/` style) with in-memory implementations of every port. Real I/O tests use `tmp_path`. The frontend tests cover canvas primitives, the SSE event store, and the inline-edit hooks.
 
 ---
 
 ## Status & roadmap
 
-**v0.2 (current):** canvas primitive + PDF ingestion in one package, real-time SSE sync, MCP integration, skill installer for Claude Code/Cursor, 97 passing tests, hexagonal contracts enforced.
+**v0.2 (current):** canvas primitive + PDF ingestion in one package, real-time SSE sync, MCP integration, skill installer for Claude Code/Cursor, ~315 Python + ~180 web tests, hexagonal contracts enforced.
 
 **Near-term:** real `pnpm build` integration in the wheel build, port the remaining 14 v1 node renderers (image, FMU, plot, model, …), assets system (SVG/PNG upload + serve), screenshot mechanism (browser-as-screenshotter via the EventBus), viewport/visibility math, lock state on nodes.
 
@@ -241,9 +243,43 @@ The test seam is function-based pytest (matches the legacy `backend/tests/` styl
 
 ---
 
+## Security model — read before exposing
+
+Anchor's HTTP server is **unauthenticated by design**. It edits local
+engineering data (workspaces, documents, FMU files) and is meant to run
+on your own machine.
+
+- Default bind is `127.0.0.1` (loopback). Nothing else on the LAN can
+  reach it unless you pass `--host 0.0.0.0`.
+- CORS is restricted to the dev Vite origin (`localhost:5173`); set
+  `ANCHOR_CORS_ORIGINS=https://your-host` for explicit overrides.
+- Workspace slugs and upload filenames are policy-checked and
+  containment-asserted before they hit disk — the v2 codebase does not
+  trust client-supplied paths.
+
+If you want to share an Anchor instance on a network, **add your own
+reverse proxy with auth in front of it** (Tailscale, OAuth proxy,
+basic-auth nginx, ...). Don't expose the unauthenticated port directly.
+
+## Limitations (v0.2)
+
+These extensions are intentionally rough; we ship them so you can see
+the shape and contribute, not as finished features:
+
+- **`anchor_cad`** — parametric-CAD producer (jscad/openSCAD) ships as a
+  proof of concept; full feature parity with STEP/STL viewing is on the
+  roadmap. SVG export still has a known font-handling bug.
+- **`anchor_sysml`** — SysML import (BSD-3-Clause fixtures from the OMG
+  reference) and export to SVG/markdown are experimental; we'll swap
+  the hand-rolled IR for the official Pydantic model when that lands.
+- **`anchor_fmus`** — FMU simulation requires `fmpy` (install via
+  `uv pip install 'anchor[fmus]'`). Without it the extension fails
+  closed; set `ANCHOR_FMU_DEMO=1` to use the synthetic-output runtime
+  (every result is stamped `synthetic=true` so the UI can warn you).
+
 ## License
 
-TBD (MIT or Apache-2.0). For now: research code; ask before redistributing.
+MIT — see [LICENSE](LICENSE).
 
 ## Contributing
 

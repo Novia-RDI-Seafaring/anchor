@@ -47,8 +47,14 @@ class FmuService:
         path = await self.store.stash_fmu(fmu_bytes, filename)
         model = await self.runtime.inspect(path)
         # Backfill slug from filename if the runtime didn't set one
+        updates: dict[str, Any] = {}
         if not model.slug:
-            model = model.model_copy(update={"slug": slugify(filename.replace(".fmu", ""))})
+            updates["slug"] = slugify(filename.replace(".fmu", ""))
+        # Stamp the runtime's synthetic provenance onto the saved model so
+        # listings and node renderers can show a [SYNTHETIC] badge even
+        # after a restart that re-reads from disk.
+        updates["synthetic"] = bool(getattr(self.runtime, "synthetic", False))
+        model = model.model_copy(update=updates)
         await self.store.write_model_summary(model.slug, model)
         await self._publish(FmuInspected(fmu_slug=model.slug, variable_count=len(model.variables)))
         return model
@@ -71,12 +77,14 @@ class FmuService:
         if path is None:
             raise FileNotFoundError(f"unknown FMU slug: {fmu_slug}")
 
+        synthetic = bool(getattr(self.runtime, "synthetic", False))
         run = SimulationRun(
             fmu_slug=fmu_slug,
             started_at=self.clock.now(),
             stop_time=stop_time,
             output_interval=output_interval,
             parameter_overrides=parameter_overrides or {},
+            synthetic=synthetic,
         )
         await self._publish(SimulationStarted(
             simulation_id=run.id, fmu_slug=fmu_slug,
@@ -85,6 +93,11 @@ class FmuService:
         try:
             t0 = time.monotonic()
             series = await self.runtime.simulate(path, run=run)
+            # Carry the synthetic provenance onto the series too — clients
+            # that pull just the time-series (e.g. the plot node) shouldn't
+            # have to fetch the run separately to know it's demo data.
+            if synthetic and not series.synthetic:
+                series = series.model_copy(update={"synthetic": True})
             run = run.model_copy(update={
                 "status": "completed",
                 "completed_at": self.clock.now(),

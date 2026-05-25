@@ -17,6 +17,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+from anchor.core.ids import validate_workspace_slug
 from anchor.core.ports.snapshot import SnapshotResult
 
 
@@ -54,6 +55,13 @@ class HeadlessChromiumSnapshotter:
         viewport: tuple[int, int] | None = None,
         full_page: bool = True,
     ) -> SnapshotResult:
+        # The slug is interpolated into both the navigation URL and the
+        # output filename. Validate it here so the snapshotter is hardened
+        # even when invoked from contexts that bypass the HTTP layer
+        # (CLI ``anchor canvas snapshot``, future agents calling the port
+        # directly).
+        validate_workspace_slug(slug)
+
         if format not in {"png", "svg"}:
             raise ValueError(f"unsupported snapshot format: {format!r}")
         # SVG export from React Flow is fiddly (needs a frontend export

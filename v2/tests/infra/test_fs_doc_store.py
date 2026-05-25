@@ -78,9 +78,37 @@ def test_get_page_text_falls_back_to_raw(store):
 
 
 def test_get_crop_path_blocks_traversal(store):
+    """Crafted rel-paths must NEVER resolve outside the document's gold dir.
+
+    Covers parent-dir tokens, leading slashes, and Windows-style
+    separators. Each one should yield ``None`` rather than a path that
+    points elsewhere on disk; the previous regex-based "clean" returned a
+    sometimes-valid path which was the original review blocker.
+    """
     async def run():
-        # No crop exists; traversal-cleansed path stays under the slug.
-        p = await store.get_crop_path("demo", "../../escape.png")
-        assert p is None or "demo" in str(p)
+        for rel_path in [
+            "../../escape.png",
+            "../../../../etc/passwd",
+            "..\\..\\windows.png",
+            "/abs/path.png",
+            "./.././foo.png",
+        ]:
+            p = await store.get_crop_path("demo", rel_path)
+            assert p is None, f"traversal {rel_path!r} returned {p!s}"
+
+    asyncio.run(run())
+
+
+def test_stash_bronze_rejects_traversal_filename(store):
+    """The store re-applies safe_upload_name even for direct (non-HTTP) callers."""
+    from anchor.core.upload_safety import UnsafeUploadError
+
+    async def run():
+        for bad in ["../../evil.pdf", "..\\evil.pdf", "/abs/evil.pdf", "evil.exe"]:
+            try:
+                await store.stash_bronze(b"%PDF-fake", bad)
+            except UnsafeUploadError:
+                continue
+            raise AssertionError(f"stash_bronze accepted {bad!r}")
 
     asyncio.run(run())

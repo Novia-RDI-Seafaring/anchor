@@ -16,7 +16,11 @@ class AnchorConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ANCHOR_", env_file=".env", extra="ignore")
 
     data_dir: Path = Field(default_factory=lambda: Path.home() / "anchor-data")
-    http_host: str = "0.0.0.0"
+    # Loopback by default: the HTTP server is unauthenticated and edits
+    # local engineering data. Users who want LAN access can opt in via
+    # ``ANCHOR_HTTP_HOST=0.0.0.0`` or ``--host 0.0.0.0``, and at that
+    # point are responsible for adding their own reverse proxy / auth.
+    http_host: str = "127.0.0.1"
     http_port: int = 8002
 
     openai_api_key: SecretStr | None = None

@@ -109,7 +109,15 @@ def _build_embedder(api_key: str | None):
 @app.command()
 def serve(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
-    host: str = typer.Option("0.0.0.0", "--host"),
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help=(
+            "Bind address. Defaults to 127.0.0.1 (loopback) because the HTTP "
+            "server is unauthenticated. Pass --host 0.0.0.0 to expose to "
+            "your LAN — you are responsible for fronting it with auth."
+        ),
+    ),
     port: int = typer.Option(8002, "--port", "-p"),
 ) -> None:
     """Run the HTTP adapter (FastAPI + SSE) and serve the frontend bundle."""
@@ -146,14 +154,20 @@ def serve(
         md_renderer=MarpSynopsisRenderer(),
     )
 
-    # Wire the FMU extension — optional (requires FMPy). Fall back silently
-    # so `anchor serve` still boots on machines without simulation deps.
+    # Wire the FMU extension — optional. Real runtime requires FMPy
+    # (`uv pip install 'anchor[fmus]'`); the synthetic demo runtime is
+    # gated behind ANCHOR_FMU_DEMO=1. Without either, build_service now
+    # raises FmuRuntimeUnavailableError (we deliberately do NOT silently
+    # mount the fake runtime — see the OSS review). The user sees a
+    # one-line hint and the server boots fine without the FMU routes.
     fmu_service = None
     try:
         from anchor.extensions.anchor_fmus import extension as fmu_ext
         fmu_service = fmu_ext.build_service(data_dir, bus)
-    except Exception:  # noqa: BLE001
-        pass
+    except fmu_ext.FmuRuntimeUnavailableError as exc:
+        typer.echo(f"⚠ FMU extension disabled: {exc}", err=True)
+    except Exception as exc:  # noqa: BLE001
+        typer.echo(f"⚠ FMU extension failed to start: {exc}", err=True)
 
     app_ = build_app(
         workspace_service=workspace,
@@ -1062,7 +1076,12 @@ def sysml_export(
 
 def _build_fmu_service(data_dir: Path):
     """Best-effort FMU service for one-shot CLI commands.
-    Raises a clean error if FMPy isn't importable."""
+
+    Raises a clean error if neither FMPy nor the ANCHOR_FMU_DEMO=1
+    opt-in is available; the FmuRuntimeUnavailableError message tells
+    the user how to fix it (install the fmus extra, or set the env var
+    if they want the synthetic offline demo).
+    """
     try:
         from anchor.extensions.anchor_fmus import extension as fmu_ext
         from anchor.infra.bus.memory_bus import MemoryEventBus
@@ -1070,7 +1089,11 @@ def _build_fmu_service(data_dir: Path):
         typer.echo(f"FMU extension not available: {e}", err=True)
         raise typer.Exit(code=1)
     bus = MemoryEventBus()
-    return fmu_ext.build_service(data_dir, bus)
+    try:
+        return fmu_ext.build_service(data_dir, bus)
+    except fmu_ext.FmuRuntimeUnavailableError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1)
 
 
 @fmu_app.command("inspect")
@@ -1332,7 +1355,11 @@ def _find_sample_pdf() -> Path | None:
 def demo(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
     port: int = typer.Option(8002, "--port", "-p"),
-    host: str = typer.Option("0.0.0.0", "--host"),
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help="Bind address; loopback by default (see `anchor serve --help`).",
+    ),
     no_serve: bool = typer.Option(
         False, "--no-serve",
         help="Skip the `anchor serve` boot at the end (useful for CI / smoke).",

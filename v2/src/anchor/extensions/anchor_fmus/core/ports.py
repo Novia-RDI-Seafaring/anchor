@@ -12,7 +12,16 @@ from anchor.extensions.anchor_fmus.core.schemas import (
 
 
 class FmuRuntime(Protocol):
-    """Inspect + simulate FMUs. Real impl: FMPy. Test impl: in-memory fake."""
+    """Inspect + simulate FMUs. Real impl: FMPy. Test impl: in-memory fake.
+
+    ``synthetic`` lets the orchestrating service stamp every result it
+    produces with provenance: ``True`` means "this came from a
+    sinusoid-generator, not a real FMU solve", and HTTP/MCP/CLI surfaces
+    expose that to the user/agent so they can't mistake demo output for a
+    real engineering computation.
+    """
+
+    synthetic: bool
 
     async def inspect(self, fmu_path: Path) -> FmuModel: ...
 

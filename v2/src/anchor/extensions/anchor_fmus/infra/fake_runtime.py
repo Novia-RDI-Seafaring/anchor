@@ -26,6 +26,8 @@ class FakeFmuRuntime(FmuRuntime):
     extension tests, frontend dev, demos without FMPy.
     """
 
+    synthetic = True
+
     def __init__(self, model_template: FmuModel | None = None) -> None:
         self._template = model_template or FmuModel(
             slug="",  # filled in by service from filename

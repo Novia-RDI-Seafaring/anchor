@@ -14,8 +14,24 @@ from anchor.adapters.http.schemas import (
     RenameWorkspaceRequest,
     SnapshotRequest,
 )
+from anchor.core.ids import InvalidWorkspaceSlugError, validate_workspace_slug
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.core.workspace.workspace import CommandError
+
+
+def _check_slug(slug: str) -> None:
+    """Translate identifier-policy violations into HTTP 400.
+
+    Applied at every endpoint that takes a ``slug`` path parameter so the
+    workspace service and filesystem store never see a path-traversal
+    payload. The same check fires defensively inside
+    ``FsWorkspaceStore._slug_dir`` for paths that bypass the HTTP layer
+    (MCP, CLI, direct service tests).
+    """
+    try:
+        validate_workspace_slug(slug)
+    except InvalidWorkspaceSlugError as exc:
+        raise HTTPException(400, str(exc))
 
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
@@ -27,6 +43,7 @@ async def list_workspaces(svc: WorkspaceService = Depends(get_workspace_service)
 
 @router.post("", status_code=201)
 async def create_workspace(req: CreateWorkspaceRequest, svc: WorkspaceService = Depends(get_workspace_service)):
+    _check_slug(req.slug)
     return await svc.create_workspace(req.slug, title=req.title)
 
 
@@ -36,6 +53,7 @@ async def rename_workspace(
     req: RenameWorkspaceRequest,
     svc: WorkspaceService = Depends(get_workspace_service),
 ):
+    _check_slug(slug)
     try:
         return await svc.rename_workspace(slug, title=req.title)
     except FileNotFoundError:
@@ -44,6 +62,7 @@ async def rename_workspace(
 
 @router.get("/{slug}/state")
 async def get_state(slug: str, svc: WorkspaceService = Depends(get_workspace_service)):
+    _check_slug(slug)
     state = await svc.get_state(slug)
     if state is None:
         raise HTTPException(404, f"workspace {slug!r} not found")

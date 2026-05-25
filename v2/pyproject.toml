@@ -9,6 +9,8 @@ description = "Anchor v2 — agent-first knowledge canvas (hexagonal modular mon
 requires-python = ">=3.12"
 authors = [{name = "Christoffer Björkskog"}]
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "docling>=2.63.0",
     "pymupdf>=1.27.2.2",

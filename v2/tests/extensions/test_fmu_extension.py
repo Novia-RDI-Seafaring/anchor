@@ -215,3 +215,51 @@ def test_mcp_tool_definitions_have_required_fields():
     assert {"fmu.inspect", "fmu.simulate", "fmu.list_models"} <= names
     # Every name is namespaced under "fmu."
     assert all(name.startswith("fmu.") for name in names)
+
+
+# ── synthetic flag plumbing ─────────────────────────────────────────────
+
+
+def test_fake_runtime_marks_results_synthetic(tmp_path):
+    """A model inspected through FakeFmuRuntime must carry synthetic=True.
+
+    Same for the SimulationRun + TimeSeries. This is the visible evidence
+    the OSS review demanded — without it an engineer could mistake demo
+    output for a real solve.
+    """
+    async def run():
+        svc = _service(MemoryFmuStore())
+        model = await svc.upload_and_inspect(b"FAKE", "pump.fmu")
+        assert model.synthetic is True
+
+        run_ = await svc.simulate("pump", stop_time=0.1, output_interval=0.05)
+        assert run_.synthetic is True
+
+        series = await svc.get_series(run_.id)
+        assert series is not None
+        assert series.synthetic is True
+
+    asyncio.run(run())
+
+
+def test_build_service_fails_closed_without_fmpy(tmp_path, monkeypatch):
+    """build_service must raise rather than silently mount FakeFmuRuntime."""
+    # Pretend fmpy is unavailable + the demo opt-in is absent.
+    monkeypatch.delenv("ANCHOR_FMU_DEMO", raising=False)
+    import sys
+    monkeypatch.setitem(sys.modules, "anchor.extensions.anchor_fmus.infra.fmpy_runtime", None)
+
+    bus = MemoryEventBus()
+    with pytest.raises(fmu_ext.FmuRuntimeUnavailableError):
+        fmu_ext.build_service(tmp_path, bus)
+
+
+def test_build_service_opts_in_to_demo(tmp_path, monkeypatch):
+    """With ANCHOR_FMU_DEMO=1 set, build_service returns a synthetic-stamped service."""
+    monkeypatch.setenv("ANCHOR_FMU_DEMO", "1")
+    import sys
+    monkeypatch.setitem(sys.modules, "anchor.extensions.anchor_fmus.infra.fmpy_runtime", None)
+
+    bus = MemoryEventBus()
+    svc = fmu_ext.build_service(tmp_path, bus)
+    assert getattr(svc.runtime, "synthetic", False) is True

@@ -16,6 +16,7 @@ from pathlib import Path
 import aiofiles
 
 from anchor.core.ids import slugify
+from anchor.core.upload_safety import assert_within
 from anchor.extensions.anchor_fmus.core.ports import FmuStore
 from anchor.extensions.anchor_fmus.core.schemas import (
     FmuModel,
@@ -36,8 +37,15 @@ class FsFmuStore(FmuStore):
         self._lock = asyncio.Lock()
 
     async def stash_fmu(self, fmu_bytes: bytes, filename: str) -> Path:
+        # Defence-in-depth: the HTTP/MCP layer should have normalised the
+        # filename via safe_upload_name, but stores get called from places
+        # that side-step the adapter (CLI scripts, tests, future agents).
+        # Slugify the stem so we never write a client-controlled directory
+        # component, and verify the resolved target stays under self.bronze.
+        stem = Path(filename).stem or "upload"
+        target = self.bronze / f"{slugify(stem)}.fmu"
         async with self._lock:
-            target = self.bronze / filename
+            assert_within(target, self.bronze)
             async with aiofiles.open(target, "wb") as f:
                 await f.write(fmu_bytes)
         return target

@@ -12,9 +12,13 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
+from anchor.core.upload_safety import UnsafeUploadError, safe_upload_name
 from anchor.extensions.anchor_fmus.core.services import FmuService
 
 router = APIRouter(prefix="/api/fmu", tags=["fmu"])
+
+# Most FMU files we've seen are under 50 MB. Allow some headroom.
+_MAX_FMU_BYTES = 100 * 1024 * 1024
 
 
 def get_fmu_service() -> FmuService:  # pragma: no cover — overridden in app wiring
@@ -46,10 +50,17 @@ async def inspect(
 
     Returns the FmuModel JSON: variables, causality, units, defaults.
     """
-    if not file.filename:
-        raise HTTPException(400, "uploaded file has no filename")
+    try:
+        filename = safe_upload_name(file.filename, allowed_extensions={".fmu"})
+    except UnsafeUploadError as exc:
+        raise HTTPException(400, str(exc))
     body = await file.read()
-    model = await service.upload_and_inspect(body, file.filename)
+    if len(body) > _MAX_FMU_BYTES:
+        raise HTTPException(413, f"FMU exceeds {_MAX_FMU_BYTES // (1024 * 1024)} MB cap")
+    try:
+        model = await service.upload_and_inspect(body, filename)
+    except ValueError as exc:
+        raise HTTPException(400, "could not parse FMU")
     return JSONResponse(model.model_dump())
 
 

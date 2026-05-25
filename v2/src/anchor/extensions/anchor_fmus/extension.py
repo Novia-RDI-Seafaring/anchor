@@ -65,19 +65,41 @@ def manifest(data_dir: Path | None = None) -> dict[str, Any]:
     }
 
 
+class FmuRuntimeUnavailableError(RuntimeError):
+    """Raised when FMPy is not installed and the caller has not opted into demo mode.
+
+    The old behaviour silently fell back to ``FakeFmuRuntime``, which
+    returned sinusoidal outputs that look like a successful simulation.
+    For an engineering tool that is unsafe: a user could call
+    ``simulate`` against a real-looking FMU model and trust the chart.
+    We now fail closed and require an explicit demo opt-in.
+    """
+
+
 def build_service(
     data_dir: Path,
     bus: object,
     *,
     runtime: object | None = None,
 ):
-    """Wire up FmuService with FS-backed storage and a real or fake runtime.
+    """Wire up :class:`FmuService` with FS-backed storage and a runtime.
 
-    `runtime` defaults to FakeFmuRuntime when FMPy isn't installed — keeps
-    the extension working in offline/demo mode. Tests inject MemoryFmuStore +
-    FakeFmuRuntime directly.
+    Resolution order for the runtime:
+
+    1. Explicit ``runtime`` argument (tests inject ``FakeFmuRuntime``).
+    2. :class:`FmpyFmuRuntime` if FMPy is importable.
+    3. ``FakeFmuRuntime`` only when ``ANCHOR_FMU_DEMO=1`` is set in the
+       environment. Every result it produces is stamped with
+       ``synthetic=True`` so HTTP/MCP/CLI clients can render a clear
+       "demo only" badge.
+
+    If neither FMPy nor the demo opt-in is present we raise rather than
+    return a silently-fake service — the previous behaviour caused exactly
+    the failure mode flagged by the OSS readiness review.
     """
-    from anchor.core.ports.event_bus import EventBus
+    import logging
+    import os
+
     from anchor.extensions.anchor_fmus.core.services import FmuService
     from anchor.extensions.anchor_fmus.infra.fs_store import FsFmuStore
 
@@ -85,8 +107,21 @@ def build_service(
         try:
             from anchor.extensions.anchor_fmus.infra.fmpy_runtime import FmpyFmuRuntime
             runtime = FmpyFmuRuntime()
-        except ImportError:
+        except ImportError as exc:
+            if os.environ.get("ANCHOR_FMU_DEMO") != "1":
+                raise FmuRuntimeUnavailableError(
+                    "FMPy is not installed and ANCHOR_FMU_DEMO is not set. "
+                    "Install the real runtime with `uv pip install 'anchor[fmus]'` "
+                    "(or `pip install fmpy>=0.3.22`). To run the synthetic "
+                    "offline demo instead, set ANCHOR_FMU_DEMO=1 — all results "
+                    "will be marked synthetic=true."
+                ) from exc
             from anchor.extensions.anchor_fmus.infra.fake_runtime import FakeFmuRuntime
+            logging.getLogger(__name__).warning(
+                "FMU extension running in DEMO mode (ANCHOR_FMU_DEMO=1). "
+                "Every simulation result is synthetic — do NOT trust the "
+                "numbers for engineering decisions."
+            )
             runtime = FakeFmuRuntime()
 
     return FmuService(

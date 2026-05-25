@@ -3,14 +3,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from anchor.adapters.http.routers import edges, nodes, sse, workspaces
+from anchor.core.ids import InvalidWorkspaceSlugError
 from anchor.core.ports.event_bus import EventBus
 from anchor.core.services.workspace_service import WorkspaceService
+from anchor.core.upload_safety import UnsafeUploadError
 from anchor.extensions.anchor_cad.adapters.http import cad_routes
 from anchor.extensions.anchor_cad.core.services import CadService
 from anchor.extensions.anchor_fmus.adapters.http import fmu_routes
@@ -53,12 +55,40 @@ def build_app(
     else:
         app.state.tailer_registry = None
 
+    # CORS: this server runs same-origin behind the SPA mount in production,
+    # so no CORS headers are needed there. During development the Vite dev
+    # server on http://localhost:5173 proxies API calls, which means it
+    # too is technically same-origin from the browser's POV — but if a
+    # contributor runs Vite without the proxy we still want it to work.
+    # We therefore allow only the documented dev origins and let users
+    # override via ANCHOR_CORS_ORIGINS for unusual deployments.
+    import os
+    extra_origins = [
+        o.strip()
+        for o in os.environ.get("ANCHOR_CORS_ORIGINS", "").split(",")
+        if o.strip()
+    ]
+    cors_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        *extra_origins,
+    ]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=cors_origins,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.exception_handler(InvalidWorkspaceSlugError)
+    async def _invalid_slug(_req: Request, exc: InvalidWorkspaceSlugError) -> JSONResponse:
+        # Surfaces both boundary validation and the defence-in-depth check
+        # inside FsWorkspaceStore as a consistent 400.
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+
+    @app.exception_handler(UnsafeUploadError)
+    async def _unsafe_upload(_req: Request, exc: UnsafeUploadError) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
 
     app.include_router(workspaces.router)
     app.include_router(nodes.router)
@@ -78,6 +108,7 @@ def build_app(
 
     if static_dir is not None and static_dir.is_dir():
         index = static_dir / "index.html"
+        static_root = static_dir.resolve()
 
         @app.get("/")
         async def root() -> FileResponse:
@@ -85,7 +116,16 @@ def build_app(
 
         @app.get("/{full_path:path}")
         async def spa_fallback(full_path: str) -> FileResponse:
-            target = static_dir / full_path
+            # Containment: a crafted request like ``/api/../../../etc/passwd``
+            # would otherwise resolve to an arbitrary file on disk. Resolve
+            # the candidate and only serve it when it stays under the
+            # static bundle root; any traversal falls through to the SPA
+            # index, which is the safe default for an unknown route.
+            target = (static_dir / full_path).resolve()
+            try:
+                target.relative_to(static_root)
+            except ValueError:
+                return FileResponse(index)
             if target.is_file():
                 return FileResponse(target)
             return FileResponse(index)

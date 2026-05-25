@@ -50,14 +50,19 @@ async def _run(data_dir: Path, base_url: str = "http://localhost:8002") -> None:
     from anchor.extensions.anchor_cad import extension as cad_ext
     cad = cad_ext.build_service(data_dir, bus)
 
-    # Wire FMU extension service if FmuService is importable. Falls back
-    # silently to no-FMU if FMPy or its deps aren't installed.
+    # Wire FMU extension service. Real runtime needs FMPy; the synthetic
+    # demo runtime is gated behind ANCHOR_FMU_DEMO=1. Without either,
+    # the FMU tools are simply absent from this MCP server's tool list.
+    # We log to stderr rather than swallowing so the user knows why.
+    import sys
     fmu = None
     try:
         from anchor.extensions.anchor_fmus import extension as fmu_ext
         fmu = fmu_ext.build_service(data_dir, bus)
-    except Exception:  # noqa: BLE001
-        pass
+    except fmu_ext.FmuRuntimeUnavailableError as exc:
+        print(f"⚠ anchor-mcp: FMU tools disabled — {exc}", file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001
+        print(f"⚠ anchor-mcp: FMU tools failed to start — {exc}", file=sys.stderr)
 
     # Wire SysML extension — pure-Python, no optional deps to fall over.
     from anchor.extensions.anchor_sysml import extension as sysml_ext

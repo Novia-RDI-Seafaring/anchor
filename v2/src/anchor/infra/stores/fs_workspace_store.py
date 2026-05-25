@@ -17,6 +17,8 @@ from pathlib import Path
 import aiofiles
 
 from anchor.core.events.envelope import DomainEvent
+from anchor.core.ids import validate_workspace_slug
+from anchor.core.upload_safety import assert_within
 from anchor.core.workspace.workspace import Workspace, WorkspaceMeta
 
 
@@ -29,7 +31,15 @@ class FsWorkspaceStore:
         self._lock = asyncio.Lock()
 
     def _slug_dir(self, slug: str) -> Path:
-        return self.root / slug
+        # Defence-in-depth: even if a caller skipped boundary validation,
+        # we refuse to construct a path outside the canvases root.
+        validate_workspace_slug(slug)
+        target = self.root / slug
+        # ``resolve(strict=False)`` follows existing symlinks but does not
+        # error on missing trailing segments — exactly what we want for a
+        # workspace that hasn't been created yet.
+        assert_within(target, self.root)
+        return target
 
     async def list_workspaces(self) -> list[WorkspaceMeta]:
         out: list[WorkspaceMeta] = []

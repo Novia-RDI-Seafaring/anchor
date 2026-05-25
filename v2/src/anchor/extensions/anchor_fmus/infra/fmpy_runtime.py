@@ -28,6 +28,8 @@ from anchor.extensions.anchor_fmus.core.schemas import (
 
 
 class FmpyFmuRuntime(FmuRuntime):
+    synthetic = False
+
     def __init__(self) -> None:
         try:
             import fmpy  # noqa: F401
