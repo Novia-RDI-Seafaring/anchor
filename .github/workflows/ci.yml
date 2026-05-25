@@ -48,6 +48,18 @@ jobs:
         with:
           version: "latest"
 
+      # The hatch force-include in pyproject.toml expects ``web/dist`` to
+      # exist when uv builds the project (even for an editable install).
+      # CI doesn't ship the frontend as an artifact between jobs, so we
+      # build a minimal placeholder bundle here. The python job's tests
+      # don't actually USE the bundle — they just need the path to exist
+      # so hatch doesn't error on the force-include. The full web bundle
+      # is built in the ``web`` job and again on tag in release.yml.
+      - name: Stub web/dist for hatch force-include
+        run: |
+          mkdir -p web/dist
+          echo "<!doctype html><title>stub</title>" > web/dist/index.html
+
       - name: Sync deps (frozen)
         run: uv sync --extra dev --frozen
 

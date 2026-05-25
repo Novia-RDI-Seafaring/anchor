@@ -12,30 +12,13 @@
 # noise is real, but moderate-on-PR is a reasonable default.
 fail-on-severity: moderate
 
-# Allow-list of SPDX licences. Anything outside this set blocks the
-# PR until a maintainer either swaps the dep or adds the licence
-# here. Reflects MIT + the common compatible licences in the JS/TS +
-# Python ecosystems.
-allow-licenses:
-  - MIT
-  - MIT-0
-  - Apache-2.0
-  - BSD-2-Clause
-  - BSD-3-Clause
-  - ISC
-  - 0BSD
-  - CC0-1.0
-  - Python-2.0
-  # Unicode / Unicode-3.0 covers a handful of i18n libraries.
-  - Unicode-DFS-2016
-  - Unicode-3.0
-  # Mozilla Public License — file-level copyleft, fine for libraries
-  # we link rather than modify. Reassess if we ever fork an MPL dep.
-  - MPL-2.0
-
-# Deny-list of licences we explicitly refuse. These are the strong
-# copyleft licences that would force our MIT distribution to relicense
-# itself — accidentally landing one is a real OSS-compliance hazard.
+# The action accepts EITHER an allow-list OR a deny-list, not both. We
+# go deny-only because the OSS ecosystem keeps minting new permissive
+# licences (0BSD, MIT-0, Unicode-3.0, Python-3.0, ...) and an allow-list
+# would block any new dep that picked one of them until a maintainer
+# updates this file. The deny-list captures the actual risk: strong
+# copyleft licences that would force this MIT distribution to
+# relicense itself if we ever statically link them.
 deny-licenses:
   - GPL-1.0-or-later
   - GPL-2.0-or-later
