@@ -20,12 +20,20 @@ Two paths, depending on whether you want to *use* Anchor or *hack on it*.
 
 ```bash
 uv tool install anchor-kb
-anchor serve              # → http://127.0.0.1:8002
 ```
 
 `anchor` and `anchor-mcp` are now on your PATH globally. The wheel
 includes the prebuilt frontend, so no Node toolchain is required to
 just run it.
+
+If you want LLM-backed gold region extraction on your first PDF upload,
+create a `.env` file before starting Anchor; see
+[Enable gold region extraction](#enable-gold-region-extraction). Installation
+itself does not require an API key.
+
+```bash
+anchor serve              # → http://127.0.0.1:8002
+```
 
 Requires Python ≥ 3.12. macOS and Linux supported today; Windows on
 the roadmap.
@@ -69,6 +77,10 @@ to PyPI via OIDC trusted publishing (no token sits in the repo). See
 ---
 
 ## Quick start
+
+To produce gold regions, configure a `.env` file before running `anchor demo`
+or `anchor ingest`; see [Enable gold region extraction](#enable-gold-region-extraction).
+Without it, Anchor still produces the silver document extraction.
 
 ```bash
 # 0. One-shot: ingest the bundled LKH-5 sample, seed a `demo` workspace
@@ -159,7 +171,7 @@ Anchor reads its config from environment variables prefixed `ANCHOR_`:
 | `ANCHOR_HTTP_PORT` | `8002` | Backend HTTP/SSE port |
 | `ANCHOR_HTTP_HOST` | `0.0.0.0` | Backend listen host |
 | `ANCHOR_OPENAI_API_KEY` | (unset) | Optional — enables LLM polish + region extraction in the gold layer |
-| `ANCHOR_OPENAI_BASE_URL` | (unset) | Override the OpenAI endpoint. Point at Azure OpenAI, Ollama (`http://localhost:11434/v1`), vLLM, LM Studio, ... |
+| `ANCHOR_OPENAI_BASE_URL` | (unset) | Override the OpenAI-compatible endpoint. For Azure OpenAI v1 use `https://<resource>.openai.azure.com/openai/v1/`; for Ollama use `http://localhost:11434/v1`. |
 | `ANCHOR_POLISH_MODEL` | `gpt-5.4` | Model name for page-MD polishing |
 | `ANCHOR_REGION_MODEL` | `gpt-5.4` | Model name for region extraction |
 | `ANCHOR_EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | Local sentence-transformer model used for semantic search. Recorded in every `embeddings.json` so cross-model search refuses to mix vectors. |
@@ -168,7 +180,59 @@ Anchor reads its config from environment variables prefixed `ANCHOR_`:
 
 If you don't set `ANCHOR_OPENAI_API_KEY`, ingest still produces silver (deterministic Docling extraction + per-page markdown). Gold extraction (LLM-driven structured regions) is skipped. The system stays useful without an API key — silver is the workable substrate; gold is the polish.
 
-For Azure / Ollama / local-LLM recipes, see [`docs/ADOPTION.md`](./docs/ADOPTION.md).
+### Enable gold region extraction
+
+Gold regions are created during PDF ingestion only. Configure a vision-capable
+LLM endpoint before uploading a document or running `anchor ingest`. Documents
+already ingested as silver-only are not backfilled automatically; ingest them
+again after enabling a provider.
+
+Anchor reads `.env` from the directory where you start `anchor serve`,
+`anchor demo`, or `anchor ingest`. For users installed with
+`uv tool install anchor-kb`, create that `.env` file in your chosen launch
+directory before the first upload.
+
+For OpenAI, create `.env` containing:
+
+```dotenv
+ANCHOR_OPENAI_API_KEY=<your-openai-api-key>
+ANCHOR_POLISH_MODEL=gpt-5.4
+ANCHOR_REGION_MODEL=gpt-5.4
+```
+
+For Azure OpenAI, Anchor currently supports the Azure OpenAI **v1** endpoint
+through the standard OpenAI-compatible client using API-key authentication:
+
+```dotenv
+ANCHOR_OPENAI_API_KEY=<your-azure-openai-key>
+ANCHOR_OPENAI_BASE_URL=https://<resource-name>.openai.azure.com/openai/v1/
+ANCHOR_POLISH_MODEL=<vision-capable-deployment-name>
+ANCHOR_REGION_MODEL=<vision-capable-deployment-name>
+```
+
+The Azure deployment name is used as `model` and must support image input and
+JSON-formatted chat completion output. Azure Entra ID authentication and the
+older Azure deployment/API-version endpoint shape are not configured by Anchor
+environment variables today. See Microsoft's
+[Azure OpenAI v1 API documentation](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/api-version-lifecycle?tabs=python)
+for endpoint details.
+
+From the same directory as `.env`, start Anchor and upload the PDF in the UI:
+
+```powershell
+anchor serve
+```
+
+Alternatively, ingest a file directly from the same directory:
+
+```powershell
+anchor ingest "C:\path\to\datasheet.pdf" --data-dir "$HOME\anchor-data"
+```
+
+Successful gold extraction creates `~/anchor-data/gold/<doc-slug>/pages/*.regions.json`
+and returns a non-zero `region_count` when regions are identified.
+
+For Ollama / local-LLM recipes, see [`docs/ADOPTION.md`](./docs/ADOPTION.md).
 
 ---
 
