@@ -8,13 +8,10 @@ half of Anchor that makes the canvas pay off.
 
 ## 1. Install
 
-You need Python 3.12+ and (only for development) Node 20+.
-
-The simplest path is `uv tool install` against this repo's `v2/` subdir:
+You need Python 3.12+ on macOS or Linux.
 
 ```bash
-uv tool install \
-  git+https://github.com/Novia-RDI-Seafaring/anchor-kb-ui-RAG@feat/architecture#subdirectory=v2
+uv tool install anchor-kb
 ```
 
 After the install completes, `anchor` and `anchor-mcp` are on your `$PATH`.
@@ -23,7 +20,13 @@ After the install completes, `anchor` and `anchor-mcp` are on your `$PATH`.
 anchor version
 ```
 
-If you prefer a per-project install, `pip install` works the same way.
+If you prefer plain pip / pipx, both work too:
+
+```bash
+pipx install anchor-kb           # isolated CLI install
+# or
+pip install anchor-kb            # in your active virtualenv
+```
 
 ## 2. Run `anchor demo`
 

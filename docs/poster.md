@@ -123,19 +123,18 @@ A three-section footer running across the bottom of the poster.
 ### Try it yourself
 
 ```
-git clone github.com/Novia-RDI-Seafaring/anchor-kb-ui-RAG
-cd anchor-kb-ui-RAG/v2
-uv run anchor serve
-open http://localhost:8002
+uv tool install anchor-kb
+anchor serve
+open http://127.0.0.1:8002
 ```
 
-QR code → repo root.
+QR code → github.com/Novia-RDI-Seafaring/anchor
 
 ### Credits
 
-- **Authors**: Christoffer Björkskog, Novia RDI Seafaring
-- **Built on**: KerML / SysML v2 (OMG), MCP (Anthropic), OIP (open spec), PydanticAI, ReactFlow, PyMuPDF, Docling, Playwright, FMPy
-- **Status**: open-source, Apache-2.0. *Talk to us at the booth or open an issue.*
+- **Authors**: Christoffer Björkskog, Lamin Jatta, Novia RDI Seafaring
+- **Built on**: KerML / SysML v2 (OMG), MCP (Anthropic), OIP (open spec), ReactFlow, PyMuPDF, Docling, Playwright, FMPy
+- **Status**: open-source, MIT. *Talk to us at the booth or open an issue.*
 
 ---
 

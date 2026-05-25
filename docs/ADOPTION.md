@@ -15,17 +15,17 @@ Tone of this doc is operational. No marketing. Where something doesn't work toda
 
 Honest walk-through. The README sounds smoother than the real path because some steps are still manual.
 
-- **Install Python 3.12+, Node 20+, uv, pnpm.** Anchor needs all four. macOS and Linux only; Windows is unverified. `uv` is the Python toolchain (`pip install uv` or `brew install uv`); `pnpm` builds the React frontend. You can skip pnpm only if you `uv tool install` a prebuilt wheel that already contains `web/dist/`.
+- **The one-line install is real now.** `uv tool install anchor-kb` puts `anchor` and `anchor-mcp` on your PATH; the frontend bundle ships inside the wheel. macOS and Linux only; Windows is unverified. `uv` is the Python toolchain (`pip install uv` or `brew install uv`). `pipx install anchor-kb` works too if you prefer pipx.
 
-- **Pick `~/anchor-data` as your data dir.** The README still shows `./data` in some examples, but the canonical location (and the default of `anchor install claude-code`) is `~/anchor-data`. Use it everywhere. Mixing the two is the first foot-gun: ingest writes to one, serve reads from the other, and you wonder why the canvas is empty. Pass `--data-dir ~/anchor-data` to every command or set `ANCHOR_DATA_DIR=~/anchor-data`.
+- **You don't need Node to *run* Anchor, only to *hack on* it.** The wheel includes a prebuilt `web/dist/`. You only need Node + pnpm if you clone the repo and want HMR while editing the React app.
 
-- **From source, the boot story is two processes.** `uv sync` in `v2/`, then `uv run anchor serve --data-dir ~/anchor-data` in one terminal and `pnpm --filter @anchor/web dev` in another. There's a convenience script at `v2/scripts/dev.sh` but it points at `./data`, not `~/anchor-data`. If you use it, edit the path or `cd` into a folder where `./data` is what you want.
+- **Pick `~/anchor-data` as your data dir.** It's the default and the location `anchor install claude-code` writes into its MCP config. Use it everywhere — mixing `./data` with `~/anchor-data` is the first foot-gun: ingest writes to one, serve reads from the other, and you wonder why the canvas is empty. Override via `--data-dir <path>` or `ANCHOR_DATA_DIR=<path>` if you want.
 
-- **From a wheel, it's one command but you build the wheel first.** `uv build --wheel` produces `dist/anchor-0.2.0-py3-none-any.whl`. `uv tool install ./dist/anchor-0.2.0-py3-none-any.whl` puts `anchor` and `anchor-mcp` on your PATH. The wheel only contains the prebuilt frontend if you ran `pnpm --filter @anchor/web build` first; if you didn't, `anchor serve` boots but serves no UI. That's an easy step to miss.
+- **From source, the boot story is two processes.** Clone the repo, `uv sync --extra dev` at the root, then `uv run anchor serve` in one terminal and `pnpm --dir web dev` in another. Convenience script at `scripts/dev.sh` does both; check the data-dir flag at the top before running it.
 
 - **OpenAI is optional but the defaults assume it.** No `ANCHOR_OPENAI_API_KEY` means silver builds (Docling extraction, per-page markdown, page PNGs) but gold extraction is skipped. The CLI doesn't warn you about this on first run; you only notice when `anchor regions <slug>` returns nothing. Embeddings have a local fallback (`sentence-transformers`, see section 4), so vector search works air-gapped today.
 
-- **Mystery deps live behind extensions.** The CAD extension needs `trimesh` (already in `pyproject.toml`). The FMU extension wants `fmpy`, which is **not** in `pyproject.toml`; if you don't install it, `anchor fmu inspect` errors out at runtime with `FMU extension not available`. There's no `uv sync --extra fmus` group yet — you install fmpy yourself.
+- **Extensions:** CAD support ships in the base wheel (uses `trimesh`, bundled). FMU simulation needs the `fmus` extra: `uv tool install 'anchor-kb[fmus]'` (or `pip install 'anchor-kb[fmus]'`). Without it, FMU tools fail closed with a clear error — they don't silently return synthetic data. If you want the offline demo runtime instead, set `ANCHOR_FMU_DEMO=1`; every result is then stamped `synthetic=true`.
 
 - **`anchor install claude-code` is the one-shot harness setup.** It writes `~/.claude/mcp.json` and a skill file at `~/.claude/skills/anchor/SKILL.md`. After that you restart Claude Code, type `/mcp`, and `anchor` shows up with ~17 tools. The same command exists for Cursor: `anchor install cursor`. No equivalent yet for opencode (you write the JSON by hand — see section 2).
 
