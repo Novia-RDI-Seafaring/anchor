@@ -79,7 +79,7 @@ class FsDocStore:
         for name in (f"{page}.md", f"{page}.raw.md"):
             p = self.silver / slug / "pages" / name
             if p.exists():
-                return p.read_text()
+                return p.read_text(encoding="utf-8")
         return None
 
     async def get_page_image_path(self, slug: str, page: int) -> Path | None:
@@ -158,7 +158,7 @@ class FsDocStore:
         target = self.silver / slug / name
         target.parent.mkdir(parents=True, exist_ok=True)
         if isinstance(payload, str):
-            async with aiofiles.open(target, "w") as f:
+            async with aiofiles.open(target, "w", encoding="utf-8") as f:
                 await f.write(payload)
         else:
             async with aiofiles.open(target, "wb") as f:
@@ -168,14 +168,14 @@ class FsDocStore:
     async def write_gold_region_file(self, slug: str, page: int, regions: list[dict[str, Any]]) -> Path:
         target = self.gold / slug / "pages" / f"{page}.regions.json"
         target.parent.mkdir(parents=True, exist_ok=True)
-        async with aiofiles.open(target, "w") as f:
+        async with aiofiles.open(target, "w", encoding="utf-8") as f:
             await f.write(json.dumps({"page": page, "regions": list(regions)}, indent=2))
         return target
 
     async def write_embeddings(self, slug: str, payload: dict[str, Any]) -> Path:
         target = self.gold / slug / "embeddings.json"
         target.parent.mkdir(parents=True, exist_ok=True)
-        async with aiofiles.open(target, "w") as f:
+        async with aiofiles.open(target, "w", encoding="utf-8") as f:
             await f.write(json.dumps(payload))
         return target
 
@@ -183,7 +183,7 @@ class FsDocStore:
         target = self.gold / slug / "embeddings.json"
         if not target.is_file():
             return None
-        async with aiofiles.open(target) as f:
+        async with aiofiles.open(target, encoding="utf-8") as f:
             return json.loads(await f.read())
 
     async def list_embeddings(self) -> list[dict[str, Any]]:
@@ -195,7 +195,7 @@ class FsDocStore:
             if not p.is_file():
                 continue
             try:
-                async with aiofiles.open(p) as f:
+                async with aiofiles.open(p, encoding="utf-8") as f:
                     data = json.loads(await f.read())
                 out.append({
                     "slug": d.name,

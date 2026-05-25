@@ -77,6 +77,15 @@ def test_get_page_text_falls_back_to_raw(store):
     asyncio.run(run())
 
 
+def test_page_text_round_trips_unicode_as_utf8(store):
+    async def run():
+        content = "pressure \u2264 10 bar"
+        await store.write_silver_artifact("demo", "pages/3.raw.md", content)
+        assert await store.get_page_text("demo", 3) == content
+
+    asyncio.run(run())
+
+
 def test_get_crop_path_blocks_traversal(store):
     """Crafted rel-paths must NEVER resolve outside the document's gold dir.
 
