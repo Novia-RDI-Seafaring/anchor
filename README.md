@@ -196,7 +196,7 @@ Anchor is a **hexagonal modular monolith**. Pure domain code in `core/` (no I/O,
 
 ## Extensions and the Open Ingestion Protocol
 
-Anchor's canvas is one **OIP consumer**. PDF ingestion is one **OIP producer**, bundled with this build. The protocol — see [`OIP.md`](./OIP.md) — is governance-neutral: any tool that produces ingested knowledge in OIP shape can plug in, and any OIP-aware consumer can read its output. A transcription tool, a code-region extractor, a web crawler, your own ingestion logic — none of them need to import Anchor; they just ship an OIP manifest at a known location and Anchor picks them up.
+Anchor's canvas is one **OIP consumer**. PDF ingestion is one **OIP producer**, bundled with this build. The protocol — specified at [github.com/Novia-RDI-Seafaring/OIP](https://github.com/Novia-RDI-Seafaring/OIP) — is governance-neutral: any tool that produces ingested knowledge in OIP shape can plug in, and any OIP-aware consumer can read its output. A transcription tool, a code-region extractor, a web crawler, your own ingestion logic — none of them need to import Anchor; they just ship an OIP manifest at a known location and Anchor picks them up.
 
 The CLI surfaces this:
 
@@ -213,7 +213,7 @@ Discovery, in priority order:
 2. **System-wide** — `~/.config/oip/producers.d/*.json` (any installer can drop a manifest here; visible to every OIP consumer on the machine)
 3. **Bundled** — compiled into this Anchor wheel (currently just `anchor-pdfs`)
 
-For implementation status: today, an OIP-registered producer is *visible* in `extensions list` but Anchor doesn't yet *spawn* external producer MCP servers and proxy their tools. That's the next engineering lift — see `OIP.md` and `EXTENSIONS.md`.
+For implementation status: today, an OIP-registered producer is *visible* in `extensions list` but Anchor doesn't yet *spawn* external producer MCP servers and proxy their tools. That's the next engineering lift — see the [OIP repo](https://github.com/Novia-RDI-Seafaring/OIP) for the spec and `EXTENSIONS.md` for Anchor's host-side roadmap.
 
 ---
 
