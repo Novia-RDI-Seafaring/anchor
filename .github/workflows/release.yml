@@ -1,0 +1,113 @@
+# Release workflow — build the frontend bundle, build the Python wheel,
+# and publish to PyPI when a semver tag is pushed.
+#
+# Trigger: pushing a tag matching ``v*`` (e.g. ``git tag v0.2.0 && git push --tags``).
+# The workflow does NOT trigger on a plain ``main`` push — that would
+# accidentally publish every merge. Tag-driven releases are the
+# single source of truth.
+#
+# Authentication: PyPI trusted publishing (OIDC), no API token in the
+# repo. To enable for first release:
+#   1. Create the project on PyPI (manually upload ``anchor-kb 0.0.1``
+#      from your laptop ONCE — see PUBLISHING.md).
+#   2. On PyPI: project → Settings → Publishing → add a trusted
+#      publisher with:
+#        owner:           Novia-RDI-Seafaring
+#        repository:      anchor
+#        workflow:        release.yml
+#        environment:     pypi
+#   3. After that, this workflow runs hands-off on every tag.
+#
+# The frontend bundle is built inside the wheel via the existing
+# hatch config (``[tool.hatch.build.targets.wheel.force-include]``),
+# so we need a Node toolchain in CI just like local builds need.
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write          # needed to create a GitHub release
+  id-token: write          # needed for PyPI trusted publishing
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: pypi      # protect with required reviewers if desired
+
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      # ── Build the frontend so hatch can force-include it in the wheel.
+      - name: Install web deps
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check + test the web app
+        working-directory: web
+        run: |
+          pnpm exec tsc --noEmit
+          pnpm test
+
+      - name: Build the web bundle
+        working-directory: web
+        run: pnpm build
+
+      # ── Python side: install dev extras, run the full test + contract
+      #    suite, build the wheel.
+      - name: Sync Python deps
+        run: uv sync --extra dev --frozen
+
+      - name: Run pytest
+        run: uv run --extra dev pytest
+
+      - name: Run import-linter contracts
+        run: uv run --extra dev lint-imports
+
+      - name: Build the wheel + sdist
+        run: uv build
+
+      # ── Publish to PyPI via trusted publishing.
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      # ── Attach the wheel to a GitHub Release for users who'd rather
+      #    download than ``pip install``.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            Install:
+
+            ```bash
+            uv tool install anchor-kb
+            anchor serve
+            ```
+
+            See [`CHANGELOG.md`](./CHANGELOG.md) for the full diff.

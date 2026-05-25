@@ -1,0 +1,86 @@
+# Changelog
+
+All notable changes to Anchor are recorded here. Format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
+follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+Unreleased changes accumulate under `## [Unreleased]` and roll into the
+next version section on tag.
+
+## [Unreleased]
+
+## [0.2.0] — 2026-05-25
+
+First public release. The v2 hexagonal-modular-monolith codebase moved
+from `v2/` to the repo root, the legacy v1 stack (Next.js +
+CopilotKit + FastAPI + pgvector) was archived on the `archive/pre-v2`
+branch, and a focused OSS readiness pass landed every "real blocker"
+flagged by the pre-release review.
+
+### Added
+
+- MIT license + reflected in package metadata.
+- `safe_upload_name()` / `assert_within()` path-containment helpers
+  applied at every upload route (PDF, FMU, CAD) and re-applied
+  defensively inside the filesystem stores.
+- `validate_workspace_slug()` policy applied at HTTP, MCP, CLI, and
+  filesystem boundaries; surfaced as a clean HTTP 400 instead of a 500.
+- `FmuRuntime.synthetic` flag propagated onto `FmuModel`,
+  `SimulationRun`, and `TimeSeries` so consumers can render a
+  `[SYNTHETIC]` badge.
+- `ANCHOR_FMU_DEMO=1` env var as the explicit opt-in for the offline
+  synthetic FMU runtime.
+- `ANCHOR_CORS_ORIGINS` env var for additional CORS origins beyond the
+  bundled Vite dev origins.
+- `PATCH /api/workspaces/{slug}` to rename a workspace's display title;
+  sub-canvas tiles cascade the rename to the child workspace's
+  `meta.title`.
+- `web/eslint.config.js` (flat config for ESLint 9).
+- `.env.example` covering every documented `ANCHOR_*` variable.
+- This `CHANGELOG.md` and the `.github/workflows/release.yml` tag-driven
+  publication pipeline.
+
+### Changed
+
+- PyPI distribution name: **`anchor-kb`** (the Python import path stays
+  `anchor`; only the wheel/sdist filename and `uv tool install`
+  invocation pick up the `-kb` suffix).
+- Default HTTP bind: `0.0.0.0` → `127.0.0.1`. Pass `--host 0.0.0.0`
+  or set `ANCHOR_HTTP_HOST=0.0.0.0` for LAN exposure (you are then
+  responsible for adding auth via a reverse proxy).
+- CORS: wildcard `*` → exactly the dev Vite origins, plus the
+  `ANCHOR_CORS_ORIGINS` opt-in.
+- FMU runtime resolution: silent fallback to `FakeFmuRuntime` is
+  replaced by a fail-closed `FmuRuntimeUnavailableError`. The previous
+  behaviour could return synthetic sinusoids that looked like real
+  simulation output — unsafe for an engineering tool.
+- `FsDocStore.get_crop_path()` now resolves the candidate and asserts
+  it stays under the document's gold-pages root, replacing an ad-hoc
+  `re.sub(r"\.\.+", ".", …)` substitution that did not handle Windows
+  separators or absolute paths.
+- README install: `uv sync` → `uv sync --extra dev`; `pnpm --filter`
+  → `pnpm --dir web`; updated test counts and added a Limitations
+  section + a Security model section.
+
+### Removed
+
+- 17 draft architecture diagram iterations (`-v1` through `-v16`,
+  `-v18`, `-v19`) plus four unused sibling assets. Kept the canonical
+  `architecture-diagram-v17.png`, `ingestion-pipeline-v3.png`,
+  `oip-extension-anatomy-v2.png`, and `sysml-ir-round-trip.png`.
+  `docs/assets/` dropped from 75 MB to 14 MB.
+- 22 tracked `.playwright-cli/*.yml` session artefacts that lived
+  under a `.gitignore`d directory.
+- The 210-line in-tree OIP draft spec; replaced with a 26-line pointer
+  to the canonical repo at <https://github.com/Novia-RDI-Seafaring/OIP>.
+
+### Security
+
+- Unauthenticated HTTP server now binds loopback-only by default.
+- Workspace slugs and upload filenames go through a documented
+  identifier policy at every public boundary.
+- Snapshot output paths and the SPA static catch-all both apply
+  resolve-and-contain checks.
+
+[Unreleased]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Novia-RDI-Seafaring/anchor/releases/tag/v0.2.0
