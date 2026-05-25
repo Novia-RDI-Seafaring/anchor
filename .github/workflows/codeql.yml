@@ -1,0 +1,60 @@
+# CodeQL — static analysis of our OWN code for security smells.
+#
+# Distinct from the supply-chain audit (which inspects dependencies):
+# CodeQL catches the case where *we* wrote a path-traversal bug, an
+# injection sink, an unsafe deserialisation, etc. Free for public repos,
+# results land in the Security tab.
+#
+# Languages covered: Python (the core + adapters + extensions) and
+# JavaScript/TypeScript (the web app). The default query suite is
+# already a good baseline; bump to ``security-extended`` if you want
+# slower but stricter scans.
+
+name: codeql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Weekly re-scan picks up newly-published rules without needing a
+  # commit. The schedule is intentionally off-peak.
+  schedule:
+    - cron: "27 4 * * 2"  # Tue 04:27 UTC
+
+permissions:
+  contents: read
+  security-events: write   # post findings to the Security tab
+  actions: read
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Init CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Keep the default query suite. Switch to ``security-extended``
+          # once we have time to triage the additional findings.
+          queries: security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"

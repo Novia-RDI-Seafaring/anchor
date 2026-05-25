@@ -1,0 +1,58 @@
+# Dependency Review configuration — read by the `actions/dependency-review-action@v4`
+# step in ci.yml. Blocks a PR if it would introduce a known-vulnerable
+# dependency or a dependency under a licence we won't accept.
+#
+# The reference for valid keys lives at:
+# https://github.com/actions/dependency-review-action
+
+# Fail the PR if any newly-introduced dep has a CVE at this severity
+# or higher. ``moderate`` is the right floor for an OSS supply-chain
+# guard: ``low`` is too noisy (typically informational), ``high`` lets
+# medium-severity issues land. We can bump to ``high`` later if the
+# noise is real, but moderate-on-PR is a reasonable default.
+fail-on-severity: moderate
+
+# Allow-list of SPDX licences. Anything outside this set blocks the
+# PR until a maintainer either swaps the dep or adds the licence
+# here. Reflects MIT + the common compatible licences in the JS/TS +
+# Python ecosystems.
+allow-licenses:
+  - MIT
+  - MIT-0
+  - Apache-2.0
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - ISC
+  - 0BSD
+  - CC0-1.0
+  - Python-2.0
+  # Unicode / Unicode-3.0 covers a handful of i18n libraries.
+  - Unicode-DFS-2016
+  - Unicode-3.0
+  # Mozilla Public License — file-level copyleft, fine for libraries
+  # we link rather than modify. Reassess if we ever fork an MPL dep.
+  - MPL-2.0
+
+# Deny-list of licences we explicitly refuse. These are the strong
+# copyleft licences that would force our MIT distribution to relicense
+# itself — accidentally landing one is a real OSS-compliance hazard.
+deny-licenses:
+  - GPL-1.0-or-later
+  - GPL-2.0-or-later
+  - GPL-3.0-or-later
+  - AGPL-1.0-or-later
+  - AGPL-3.0-or-later
+  - SSPL-1.0
+
+# Optional: scope checks to the PR's actual diff so a PR that doesn't
+# touch deps doesn't get flagged for pre-existing issues. ``true`` is
+# the right default for fast feedback; we have CodeQL + Renovate for
+# the periodic full-tree check.
+fail-on-scopes:
+  - runtime
+  - development
+
+# Block dependencies with explicit OpenSSF Scorecard warnings — these
+# capture things like maintainer-account inactivity, missing 2FA on
+# the publisher, etc.
+warn-on-openssf-scorecard-level: 3

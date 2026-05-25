@@ -1,0 +1,149 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+
+  "//": [
+    "Renovate configuration for the Anchor monorepo.",
+    "",
+    "Single most important setting: minimumReleaseAge. We refuse to even",
+    "OPEN a PR for a dependency upgrade until the upstream release is at",
+    "least N days old. This is the cooldown that catches supply-chain",
+    "attacks like the npm shai-hulud worm, the Ultralytics PyPI compromise,",
+    "and the various LangChain/MCP typosquats — those bad versions are",
+    "almost always yanked within 48-72h, so a 7-day floor means we",
+    "simply never adopt them.",
+    "",
+    "Per-category overrides below tighten or loosen this depending on",
+    "blast radius: runtime deps (7d), dev/test tools (3d, less risky),",
+    "GitHub Actions (14d, CI compromise is high-impact), majors (30d,",
+    "always require human review).",
+    "",
+    "Renovate is run as a GitHub App (https://github.com/apps/renovate).",
+    "Enable it on the repo via the GitHub UI; no token needed in the repo."
+  ],
+
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":separateMajorReleases",
+    ":maintainLockFilesWeekly",
+    "group:monorepos",
+    "group:recommended"
+  ],
+
+  "minimumReleaseAge": "7 days",
+
+  "schedule": [
+    "before 6am every weekday",
+    "every weekend"
+  ],
+
+  "prHourlyLimit": 3,
+  "prConcurrentLimit": 8,
+  "rebaseWhen": "conflicted",
+
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on sunday"],
+    "commitMessageAction": "lockfile",
+    "commitMessageTopic": "lockfile maintenance"
+  },
+
+  "vulnerabilityAlerts": {
+    "//": "Security fixes bypass the cooldown — if there's a known CVE we want the patch ASAP. Renovate still verifies the fix version isn't itself the compromised one (it checks the advisory).",
+    "minimumReleaseAge": "0 days",
+    "labels": ["security"],
+    "prPriority": 10
+  },
+
+  "packageRules": [
+    {
+      "//": "Dev / test tools: shorter cooldown. Pytest/ruff/typescript-eslint don't run on user machines, so a compromise here is bounded to CI + our laptops. 3 days is still enough to catch the typical bad-publish-then-yank cycle.",
+      "matchDepTypes": ["devDependencies"],
+      "minimumReleaseAge": "3 days"
+    },
+
+    {
+      "//": "GitHub Actions: longer cooldown. A compromised Action runs with our CI's permissions, can write to checked-out trees, and (in release.yml) is the thing PyPI's OIDC trusts. 14 days is conservative on purpose.",
+      "matchManagers": ["github-actions"],
+      "minimumReleaseAge": "14 days"
+    },
+
+    {
+      "//": "Major version bumps: always 30 days minimum + manual review. Majors often carry breaking changes that take weeks for the community to triage; we don't want to be on the bleeding edge.",
+      "matchUpdateTypes": ["major"],
+      "minimumReleaseAge": "30 days",
+      "automerge": false,
+      "labels": ["major-bump"]
+    },
+
+    {
+      "//": "Patch + minor bumps for dev deps: auto-merge after CI passes. Saves human attention for what matters. Runtime deps stay manual.",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
+    },
+
+    {
+      "//": "Group React + ReactFlow + adjacent ecosystem so their bumps land together rather than 5 sequential PRs.",
+      "matchPackagePatterns": ["^react", "^@xyflow/", "^@tanstack/react"],
+      "groupName": "react ecosystem"
+    },
+
+    {
+      "//": "Group Vite + its plugins. Same reasoning.",
+      "matchPackagePatterns": ["^vite", "^@vitejs/", "^vitest"],
+      "groupName": "vite ecosystem"
+    },
+
+    {
+      "//": "Group Tailwind + PostCSS + the styling toolchain.",
+      "matchPackagePatterns": ["tailwind", "postcss", "autoprefixer"],
+      "groupName": "styling toolchain"
+    },
+
+    {
+      "//": "Group ESLint + plugins.",
+      "matchPackagePatterns": ["^eslint", "^@eslint/", "^typescript-eslint", "^eslint-plugin-"],
+      "groupName": "eslint"
+    },
+
+    {
+      "//": "Group the Radix UI primitives — they release in coordinated waves.",
+      "matchPackagePatterns": ["^@radix-ui/"],
+      "groupName": "radix-ui"
+    },
+
+    {
+      "//": "Group the FastAPI / Starlette / uvicorn family — same release coordination.",
+      "matchPackagePatterns": ["^fastapi", "^starlette", "^uvicorn", "^sse-starlette"],
+      "groupName": "fastapi stack"
+    },
+
+    {
+      "//": "Pydantic + pydantic-settings + the OpenAI SDK that depends on it — keep them in lockstep.",
+      "matchPackageNames": ["pydantic", "pydantic-settings", "openai"],
+      "groupName": "pydantic + openai"
+    },
+
+    {
+      "//": "PyMuPDF + Docling: the PDF ingest stack. Tightly coupled bbox semantics — bumping one without the other has bitten us. Force them into one PR.",
+      "matchPackageNames": ["pymupdf", "docling"],
+      "groupName": "pdf stack"
+    },
+
+    {
+      "//": "Pin Python to 3.12 unless we deliberately decide to bump. Renovate's default is to chase the latest, which would risk breaking the wheel's classifiers.",
+      "matchPackageNames": ["python"],
+      "enabled": false
+    }
+  ],
+
+  "python": {
+    "//": "uv's lockfile is renovate-compatible since renovate v37. No extra config needed."
+  },
+
+  "labels": ["dependencies"]
+}

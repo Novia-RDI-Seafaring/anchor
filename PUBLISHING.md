@@ -50,11 +50,72 @@ On PyPI:
    - **Workflow filename:** `release.yml`
    - **Environment name:** `pypi`
 3. On GitHub: repo → Settings → Environments → New environment → name
-   it `pypi`. Optionally add required reviewers so a release pause for
-   approval before publishing.
+   it `pypi`. Configure these defence-in-depth gates:
+   - **Required reviewers:** add at least one human reviewer (ideally
+     two). This means a successful tag push still pauses the
+     publish job until a reviewer approves. A compromised maintainer
+     account alone cannot ship a poisoned wheel — the attacker would
+     also need to compromise the reviewer.
+   - **Wait timer:** `10` minutes. Gives you a window after a tag is
+     pushed to notice the email/notification and revoke before the
+     publish actually fires.
+   - **Deployment branches and tags:** Selected — only allow `main`
+     and tags matching `v*` so a publish can't be triggered from a
+     random branch.
 
 After this, the `release.yml` workflow can publish without any
 PyPI credentials in the repo.
+
+### 3. Tag protection rules (GitHub side)
+
+On GitHub: repo → Settings → Tags → New rule:
+
+- **Tag name pattern:** `v*`
+- **Restrict creation to:** specific roles or specific users (admins
+  only, ideally a single maintainer account with hardware 2FA).
+
+A non-admin contributor whose laptop is compromised then *cannot*
+create a `v*` tag — and the entire release pipeline is gated on
+`v*` tag creation.
+
+### 4. Hardware 2FA on every privileged account
+
+The single biggest payoff for the least effort:
+
+- **PyPI:** account → 2FA → register a hardware security key (Yubikey,
+  Solo, etc.). SMS-based 2FA is defeated by SIM swapping; WebAuthn /
+  hardware keys are not.
+- **GitHub:** account → Settings → Password and authentication →
+  register a hardware key. Disable SMS fallback.
+- **Recovery email:** the email on both accounts should be at a
+  domain you control (not a free Gmail/Yahoo), and that email
+  account should *also* use hardware 2FA. Account-recovery via
+  email is the most common single point of failure.
+
+A $30 hardware key per maintainer is the highest-leverage security
+spend you'll ever make for this project.
+
+### 5. Supply chain defences (already wired, just confirm)
+
+These are configured in-repo and run automatically; no UI clicks needed:
+
+- **Lockfiles** (`uv.lock`, `web/pnpm-lock.yaml`) — frozen-installed
+  in CI. A bad dep can't sneak in via a free-resolve.
+- **Renovate cooldown** (`renovate.json`) — 7 days for runtime deps,
+  14 days for GitHub Actions, 30 days for majors. Blocks the
+  zero-day window where a compromised package version is live but
+  not yet yanked.
+- **Dependency Review** (in `ci.yml`) — fails PRs that introduce
+  known-vulnerable deps or deps under deny-listed licences.
+- **CodeQL** (`codeql.yml`) — scans our own code for vulnerabilities
+  on every PR + weekly.
+- **SLSA provenance** — the `pypa/gh-action-pypi-publish` step
+  generates a Sigstore attestation automatically when using OIDC.
+  Users can verify the wheel was built by this exact workflow from
+  this exact commit.
+
+Enable Renovate by installing the GitHub App at
+<https://github.com/apps/renovate> and selecting this repository.
 
 ## Releasing a new version
 

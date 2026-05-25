@@ -1,0 +1,137 @@
+# CI — run on every PR + every push to main.
+#
+# Three concurrent jobs: Python, web, and a supply-chain audit. The
+# release workflow re-runs the same checks before publishing, so this
+# workflow being green is necessary but not sufficient for a release;
+# it just keeps main honest day-to-day.
+#
+# We deliberately use frozen-lockfile installs everywhere: a CI that
+# happily resolves whatever's newest defeats the entire point of having
+# locked dependencies. If the locks are out of date, a Renovate PR
+# should be the one to update them, not a side effect of CI.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Allow manual re-runs from the Actions tab if a transient failure
+  # needs a kick.
+  workflow_dispatch:
+
+# Cancel in-flight runs when a new commit lands on the same branch /
+# PR — saves CI minutes and avoids "the second-to-last run is the
+# canonical green" confusion.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Sync deps (frozen)
+        run: uv sync --extra dev --frozen
+
+      - name: pytest
+        run: uv run --extra dev pytest -q
+
+      - name: import-linter contracts
+        run: uv run --extra dev lint-imports
+
+      # ruff currently reports many findings — see the OSS review.
+      # We run it but don't fail the build on it yet; that'd block PRs
+      # on pre-existing tech debt. The plan is to set explicit
+      # per-rule exemptions and then flip this to a blocking check.
+      - name: ruff (advisory)
+        run: uv run --extra dev ruff check src tests conftest.py tools || true
+
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10"
+
+      - name: Install deps (frozen)
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        working-directory: web
+        run: pnpm exec tsc --noEmit
+
+      - name: Vitest
+        working-directory: web
+        run: pnpm test
+
+      # ESLint is advisory until the pre-existing findings are
+      # cleaned up. Same reasoning as ruff on the Python side.
+      - name: ESLint (advisory)
+        working-directory: web
+        run: pnpm exec eslint src || true
+
+  supply-chain:
+    name: supply-chain audit
+    runs-on: ubuntu-latest
+    # Dependency Review only fires meaningfully on PRs (it compares the
+    # base ref to the head); on plain pushes we skip it.
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── PR-time guard. Compares the lockfile/manifest diff against
+      # the GitHub Advisory Database. Refuses to land a PR that
+      # introduces a known-vulnerable dep or a disallowed licence.
+      # Configured in .github/dependency-review-config.yml.
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          config-file: ./.github/dependency-review-config.yml
+
+      # ── pnpm's view of the same question. Catches things the
+      # Advisory DB has but the Dependency Review may not surface
+      # because the dep didn't change in this PR.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10"
+
+      - name: pnpm audit (production deps, fail on high)
+        working-directory: web
+        run: pnpm audit --prod --audit-level=high

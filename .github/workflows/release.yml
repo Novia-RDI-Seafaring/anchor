@@ -18,6 +18,13 @@
 #        environment:     pypi
 #   3. After that, this workflow runs hands-off on every tag.
 #
+# Defence-in-depth (configure once in the GitHub UI, see PUBLISHING.md):
+#   - Settings → Environments → ``pypi`` → required reviewers (1-2 humans)
+#   - Same screen → wait timer 10 minutes (gives you time to notice + revoke
+#     an unauthorised tag before the publish job actually runs)
+#   - Settings → Tags → tag protection rule: only admins can push v*
+#   - All maintainer GitHub + PyPI accounts use hardware 2FA
+#
 # The frontend bundle is built inside the wheel via the existing
 # hatch config (``[tool.hatch.build.targets.wheel.force-include]``),
 # so we need a Node toolchain in CI just like local builds need.
