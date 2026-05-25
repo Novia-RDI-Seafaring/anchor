@@ -6,6 +6,7 @@ import { canvases } from "@/api/canvases";
 import { documents } from "@/api/documents";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
 import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
+import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -182,6 +183,19 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   const canOpen = Boolean(d.source_doc_slug && d.source_ref?.page);
 
   const canEdit = selected ?? false;
+  // Inline title rename — wires the spec table's `label` field to the same
+  // hook every shape/card uses. Selection-gated (only when `selected`),
+  // commits via the standard merge-with-existing-data path so the spec's
+  // other data fields (rows, source_ref, …) survive. `workspaceSlug` is
+  // declared earlier in this component for the broadcastHover wiring;
+  // reusing it here avoids a duplicate-binding error.
+  const titleEdit = useInlineField({
+    workspaceSlug: workspaceSlug ?? "",
+    nodeId: id,
+    value: d.label ?? "",
+    field: "label",
+    canEdit,
+  });
   // Live-resize mirror — see useLiveResize for the rationale. When the user
   // hasn't resized yet, fall back to the Tailwind `w-72` default; once a
   // dimension is in flight or persisted, the explicit style override wins.
@@ -226,7 +240,24 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         <div className="min-w-0">
           <div className="text-[10px] uppercase tracking-wide text-neutral-500">spec</div>
           <div className="truncate font-medium text-neutral-900">
-            {d.label ?? "spec"}
+            {titleEdit.editing ? (
+              <input
+                {...titleEdit.inputProps}
+                className={`${titleEdit.inputProps.className} w-full min-w-[6rem] truncate rounded border border-neutral-300 bg-white px-1 py-0 text-sm font-medium leading-tight outline-none focus:border-neutral-500`}
+                placeholder="spec title"
+              />
+            ) : (
+              <div
+                className={canEdit ? "cursor-text" : "cursor-pointer"}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  titleEdit.beginEdit();
+                }}
+                title={canEdit ? "double-click to rename" : undefined}
+              >
+                {d.label || <span className="text-neutral-400">untitled spec</span>}
+              </div>
+            )}
           </div>
         </div>
         {d.source_ref?.page ? (
