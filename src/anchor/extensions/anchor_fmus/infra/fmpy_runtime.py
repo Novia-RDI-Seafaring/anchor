@@ -3,7 +3,7 @@
 Lazy-imports FMPy so installing the extension without FMPy installed
 doesn't break import. Users opt in via:
 
-    pip install 'anchor[fmus]'         # or
+    pip install 'anchor-kb[fmus]'      # or
     pip install fmpy>=0.3.22
 
 If FMPy isn't installed, instantiating this class raises a clear
@@ -35,7 +35,7 @@ class FmpyFmuRuntime(FmuRuntime):
             import fmpy  # noqa: F401
         except ImportError as exc:
             raise ImportError(
-                "FMPy is not installed. Install with `pip install 'anchor[fmus]'` "
+                "FMPy is not installed. Install with `pip install 'anchor-kb[fmus]'` "
                 "or `pip install fmpy>=0.3.22`. Or use FakeFmuRuntime for offline use."
             ) from exc
 

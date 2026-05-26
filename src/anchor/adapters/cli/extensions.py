@@ -87,7 +87,7 @@ def _bundled_producers() -> list[dict[str, Any]]:
 def _load_manifest(path: Path) -> dict[str, Any] | None:
     """Read + minimally validate a manifest. Returns None on failure (with stderr echo)."""
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
         typer.echo(f"  [skip] {path}: {e}", err=True)
         return None
@@ -231,7 +231,7 @@ def extensions_add(
         raise typer.Exit(code=1)
 
     shutil.copy2(manifest_path, target)
-    typer.echo(f"registered '{name}' → {target}")
+    typer.echo(f"registered '{name}' -> {target}")
 
 
 @extensions_app.command("remove")
