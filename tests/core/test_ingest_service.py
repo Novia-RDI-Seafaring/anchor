@@ -59,6 +59,41 @@ def test_ingest_skips_polish_and_regions_when_disabled():
     asyncio.run(run())
 
 
+def test_ingest_uses_service_level_pipeline_defaults():
+    async def run():
+        s = make_in_memory_services(page_count=1)
+        seen: dict[str, object] = {}
+
+        async def render_pages(_pdf, dpi=150):
+            seen["dpi"] = dpi
+            return {1: b"PNG"}
+
+        async def polish_page(*, page_image, page_no, deterministic_md, docling_items, model):
+            seen["polish_model"] = model
+            return deterministic_md
+
+        async def extract_page(*, page_image, page_no, docling_items, model):
+            seen["region_model"] = model
+            return []
+
+        s.renderer.render_pages = render_pages  # type: ignore[method-assign]
+        s.polisher.polish_page = polish_page  # type: ignore[method-assign]
+        s.region_extractor.extract_page = extract_page  # type: ignore[method-assign]
+        s.ingest.default_polish_model = "configured-polish"
+        s.ingest.default_region_model = "configured-regions"
+        s.ingest.default_dpi = 222
+
+        await s.ingest.ingest_pdf(b"%PDF-fake", "configured.pdf")
+
+        assert seen == {
+            "dpi": 222,
+            "polish_model": "configured-polish",
+            "region_model": "configured-regions",
+        }
+
+    asyncio.run(run())
+
+
 def test_ingest_failure_emits_failed_event():
     async def run():
         s = make_in_memory_services()

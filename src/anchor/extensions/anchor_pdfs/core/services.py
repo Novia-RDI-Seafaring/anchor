@@ -95,6 +95,9 @@ class IngestService:
         region_extractor: RegionExtractor | None = None,
         embedder: Embedder | None = None,
         embed_model_id: str | None = None,
+        default_polish_model: str = "gpt-5.4",
+        default_region_model: str = "gpt-5.4",
+        default_dpi: int = 150,
         clock: Clock | None = None,
         global_workspace_id: str = "_global",
     ) -> None:
@@ -110,6 +113,9 @@ class IngestService:
         # was used. If not given, fall back to a string attribute exposed
         # by the embedder if it has one (e.g. LocalSentenceTransformerEmbedder).
         self.embed_model_id = embed_model_id or getattr(embedder, "model_id", None)
+        self.default_polish_model = default_polish_model
+        self.default_region_model = default_region_model
+        self.default_dpi = default_dpi
         self.clock: Clock = clock or SystemClock()
         self._gid = global_workspace_id
 
@@ -122,10 +128,13 @@ class IngestService:
         workspace_id: str | None = None,
         polish: bool = True,
         regions: bool = True,
-        polish_model: str = "gpt-5.4",
-        region_model: str = "gpt-5.4",
-        dpi: int = 150,
+        polish_model: str | None = None,
+        region_model: str | None = None,
+        dpi: int | None = None,
     ) -> dict[str, Any]:
+        polish_model = polish_model or self.default_polish_model
+        region_model = region_model or self.default_region_model
+        dpi = self.default_dpi if dpi is None else dpi
         slug = slug or slugify(Path(filename).stem)
         publish_workspace_id = workspace_id or self._gid
         try:

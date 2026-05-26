@@ -114,6 +114,10 @@ even after filling — it's useful audit history.
 """
 
 
+def _error_result(exc: Exception) -> str:
+    return _json.dumps({"error": str(exc)})
+
+
 def build_mcp_server(
     *,
     workspace: WorkspaceService,
@@ -179,7 +183,7 @@ def build_mcp_server(
                     synopsis=synopsis,
                 )
         except Exception as exc:  # noqa: BLE001  - surface to caller as JSON
-            text = f'{{"error": {exc!s}}}'
+            text = _error_result(exc)
         # Promote inline-image envelopes (`{"_mcp_image_b64": ..., "_mcp_mime": ...}`)
         # to MCP ImageContent so the host harness renders the bytes inline.
         # Any other return shape stays TextContent.

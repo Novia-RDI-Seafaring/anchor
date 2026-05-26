@@ -8,6 +8,7 @@ class OpenAIEmbedder:
     def __init__(self, api_key: str | None = None, *, model: str = "text-embedding-3-large", base_url: str | None = None) -> None:
         self.api_key = api_key
         self.model = model
+        self.model_id = model
         self.base_url = base_url
 
     async def embed(self, texts: list[str]) -> list[list[float]]:

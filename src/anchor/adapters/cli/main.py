@@ -73,7 +73,11 @@ def _build_real_services(data_dir: Path, *, base_url: str = "http://localhost:80
     # treated the same as None so a stray env var doesn't break stock
     # OpenAI usage.
     openai_base_url = (config.openai_base_url or "").strip() or None
-    embedder = _build_embedder(api_key if has_openai else None)
+    embedder = _build_embedder(
+        api_key if has_openai else None,
+        base_url=openai_base_url,
+        local_model=config.embed_model,
+    )
     ingest = IngestService(
         doc_store, bus,
         extractor=DoclingPdfExtractor(),
@@ -82,11 +86,19 @@ def _build_real_services(data_dir: Path, *, base_url: str = "http://localhost:80
         region_extractor=OpenAIRegionExtractor(api_key=api_key, base_url=openai_base_url) if has_openai else None,
         embedder=embedder,
         embed_model_id=getattr(embedder, "model_id", None),
+        default_polish_model=config.polish_model,
+        default_region_model=config.region_model,
+        default_dpi=config.dpi,
     )
     return config, bus, workspace, ingest, doc_store
 
 
-def _build_embedder(api_key: str | None):
+def _build_embedder(
+    api_key: str | None,
+    *,
+    base_url: str | None = None,
+    local_model: str = "BAAI/bge-small-en-v1.5",
+):
     """Local-first: sentence-transformers if installed, OpenAI as fallback.
 
     Returning None is fine — the embedder is only used when query/embed
@@ -94,14 +106,14 @@ def _build_embedder(api_key: str | None):
     if api_key:
         try:
             from anchor.extensions.anchor_pdfs.infra.llm.openai_embedder import OpenAIEmbedder
-            return OpenAIEmbedder(api_key=api_key)
+            return OpenAIEmbedder(api_key=api_key, base_url=base_url)
         except ImportError:
             pass
     try:
         from anchor.extensions.anchor_pdfs.infra.llm.local_sentence_transformer_embedder import (
             LocalSentenceTransformerEmbedder,
         )
-        return LocalSentenceTransformerEmbedder()
+        return LocalSentenceTransformerEmbedder(model=local_model)
     except ImportError:
         return None
 
