@@ -146,7 +146,69 @@ paper / poster drafts) lives on the `archive/pre-v2` branch (tag
 `pre-v2-cutoff`). Don't revive it on `main` — open it on its own branch
 if you need to crib code or context.
 
-## Git
+## Git workflow (binding for agents)
 
-- Do not add "Co-Authored-By" trailers to commits.
-- PRs go to `main`; feature branches `feat/<topic>`, fixups `fix/<topic>`.
+This repo is **trunk-based**. There is one long-lived branch: `main`.
+Every change reaches it through a pull request. The full workflow for
+humans is documented in [`CONTRIBUTING.md`](./CONTRIBUTING.md); the
+rules below are the agent-binding subset.
+
+**Branch naming.** Pick a prefix based on the change kind:
+
+| Prefix | Used for |
+| --- | --- |
+| `feat/<topic>` | new functionality |
+| `fix/<topic>` | bug fixes |
+| `docs/<topic>` | docs / README / CHANGELOG / asset prose |
+| `chore/<topic>` | tooling, CI, deps, repo plumbing |
+| `refactor/<topic>` | internal restructuring without behaviour change |
+| `test/<topic>` | tests only |
+
+**Commit + PR title.** Use Conventional Commits style: `feat: ...`,
+`fix(scope): ...`, `docs(readme): ...`. The release pipeline groups
+changelog entries by these prefixes.
+
+**The hard rules.**
+
+- **Never push directly to `main`.** Branch protection blocks it, but
+  the discipline is to not even try. Always work on a feature branch
+  and open a PR.
+- **Never force-push to any pushed branch**, including PR branches,
+  even with `--force-with-lease`. The system of CI runs + review
+  history + audit trail depends on commit hashes staying stable. If a
+  PR branch is behind main, use one of:
+  1. `gh pr update-branch <number>` — merges main into the PR via the
+     GitHub API. Normal push, CI re-runs cleanly.
+  2. `git fetch && git merge origin/main` on the PR branch → normal
+     push.
+  Never `git rebase main && git push --force-with-lease`. If a rebase
+  is genuinely needed, ask the user first.
+- **Never use `git reset --hard` on a pushed branch.** Same reason.
+- **No `Co-Authored-By: Claude` trailer** on commits. The work is
+  attributed to the human committer.
+- **Never skip hooks** (`--no-verify`) or signing flags. If a hook
+  fails, fix the issue, don't bypass.
+- **CI must be green before merge.** Branch protection enforces it;
+  the social contract is to not ask for exceptions.
+
+**Updating a PR branch when it's behind main.** Use:
+
+```bash
+gh pr update-branch <pr-number>
+```
+
+This is the only correct approach. It performs a merge via GitHub's
+API, runs CI on the merge commit, preserves the PR's review history,
+and uses a normal push.
+
+**Merging a PR.** Squash-merge is the default (`gh pr merge <n> --squash --delete-branch`).
+The squash collapses the PR's commits into one Conventional-Commit
+entry on `main`, which is what the changelog / release notes
+ingestion expects.
+
+**Releasing.** Releases are tag-driven: bump `pyproject.toml` +
+`CHANGELOG.md`, commit, tag `v0.X.Y`, push the tag. The release
+workflow does the rest. See [`PUBLISHING.md`](./PUBLISHING.md).
+
+**Legacy code.** The pre-v2 codebase is on `archive/pre-v2` (tag
+`pre-v2-cutoff`). Don't revive any of it on `main`.
