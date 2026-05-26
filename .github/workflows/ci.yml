@@ -118,11 +118,9 @@ jobs:
         working-directory: web
         run: pnpm test
 
-      # ESLint is advisory until the pre-existing findings are
-      # cleaned up. Same reasoning as ruff on the Python side.
-      - name: ESLint (advisory)
+      - name: ESLint
         working-directory: web
-        run: pnpm exec eslint src || true
+        run: pnpm exec eslint src
 
   supply-chain:
     name: supply-chain audit

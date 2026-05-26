@@ -133,20 +133,32 @@ export function Model3DPrimitive({ data }: NodeProps) {
 
 function ModelMesh({ url, kind }: { url: string; kind: string }) {
   if (kind === "stl") {
-    const geometry = useLoader(STLLoader, url);
-    return (
-      <mesh geometry={geometry as unknown as THREE.BufferGeometry} castShadow receiveShadow>
-        <meshStandardMaterial color="#9CA3AF" metalness={0.1} roughness={0.6} />
-      </mesh>
-    );
+    return <StlMesh url={url} />;
   }
   if (kind === "obj") {
-    const obj = useLoader(OBJLoader, url);
-    return <primitive object={obj} />;
+    return <ObjMesh url={url} />;
   }
   if (kind === "gltf" || kind === "glb") {
-    const gltf = useLoader(GLTFLoader, url);
-    return <primitive object={gltf.scene} />;
+    return <GltfMesh url={url} />;
   }
   return null;
+}
+
+function StlMesh({ url }: { url: string }) {
+  const geometry = useLoader(STLLoader, url);
+  return (
+    <mesh geometry={geometry as unknown as THREE.BufferGeometry} castShadow receiveShadow>
+      <meshStandardMaterial color="#9CA3AF" metalness={0.1} roughness={0.6} />
+    </mesh>
+  );
+}
+
+function ObjMesh({ url }: { url: string }) {
+  const obj = useLoader(OBJLoader, url);
+  return <primitive object={obj} />;
+}
+
+function GltfMesh({ url }: { url: string }) {
+  const gltf = useLoader(GLTFLoader, url);
+  return <primitive object={gltf.scene} />;
 }
