@@ -184,8 +184,6 @@ changelog entries by these prefixes.
   Never `git rebase main && git push --force-with-lease`. If a rebase
   is genuinely needed, ask the user first.
 - **Never use `git reset --hard` on a pushed branch.** Same reason.
-- **No `Co-Authored-By: Claude` trailer** on commits. The work is
-  attributed to the human committer.
 - **Never skip hooks** (`--no-verify`) or signing flags. If a hook
   fails, fix the issue, don't bypass.
 - **CI must be green before merge.** Branch protection enforces it;
