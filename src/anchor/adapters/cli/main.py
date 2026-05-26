@@ -17,7 +17,7 @@ from anchor.adapters.cli.install import install_app
 # `ANCHOR_DATA_DIR`.
 DEFAULT_DATA_DIR = Path.home() / "anchor-data"
 
-app = typer.Typer(help="Anchor — agent-first knowledge canvas.")
+app = typer.Typer(help="Anchor - agent-first knowledge canvas.")
 canvas_app = typer.Typer(help="Manage workspaces (canvases).")
 sysml_app = typer.Typer(help="Render and export SysML v2 diagrams.")
 fmu_app = typer.Typer(help="Inspect and simulate FMU models.")
@@ -115,7 +115,7 @@ def serve(
         help=(
             "Bind address. Defaults to 127.0.0.1 (loopback) because the HTTP "
             "server is unauthenticated. Pass --host 0.0.0.0 to expose to "
-            "your LAN — you are responsible for fronting it with auth."
+            "your LAN - you are responsible for fronting it with auth."
         ),
     ),
     port: int = typer.Option(8002, "--port", "-p"),
@@ -155,7 +155,7 @@ def serve(
     )
 
     # Wire the FMU extension — optional. Real runtime requires FMPy
-    # (`uv pip install 'anchor[fmus]'`); the synthetic demo runtime is
+    # (`uv tool install 'anchor-kb[fmus]'`); the synthetic demo runtime is
     # gated behind ANCHOR_FMU_DEMO=1. Without either, build_service now
     # raises FmuRuntimeUnavailableError (we deliberately do NOT silently
     # mount the fake runtime — see the OSS review). The user sees a
@@ -165,9 +165,9 @@ def serve(
         from anchor.extensions.anchor_fmus import extension as fmu_ext
         fmu_service = fmu_ext.build_service(data_dir, bus)
     except fmu_ext.FmuRuntimeUnavailableError as exc:
-        typer.echo(f"⚠ FMU extension disabled: {exc}", err=True)
+        typer.echo(f"Warning: FMU extension disabled: {exc}", err=True)
     except Exception as exc:  # noqa: BLE001
-        typer.echo(f"⚠ FMU extension failed to start: {exc}", err=True)
+        typer.echo(f"Warning: FMU extension failed to start: {exc}", err=True)
 
     app_ = build_app(
         workspace_service=workspace,
@@ -192,7 +192,7 @@ def ingest(
     skip_polish: bool = typer.Option(False, "--skip-polish"),
     skip_regions: bool = typer.Option(False, "--skip-regions"),
 ) -> None:
-    """Run a PDF through the bronze → silver → gold pipeline."""
+    """Run a PDF through the bronze -> silver -> gold pipeline."""
     if not pdf_path.exists():
         typer.echo(f"PDF not found: {pdf_path}", err=True)
         raise typer.Exit(code=1)
@@ -232,7 +232,7 @@ def search(
     """
     _, _, _, ingest_svc, _ = _build_real_services(data_dir)
     if ingest_svc.embedder is None:
-        typer.echo("no embedder wired — install sentence-transformers (uv add sentence-transformers)", err=True)
+        typer.echo("no embedder wired - install sentence-transformers (uv add sentence-transformers)", err=True)
         raise typer.Exit(code=1)
     out = asyncio.run(ingest_svc.search(query, k=k))
     typer.echo(json.dumps(out, indent=2))
@@ -252,7 +252,7 @@ def embed(
     """
     _, _, _, ingest_svc, doc_store = _build_real_services(data_dir)
     if ingest_svc.embedder is None:
-        typer.echo("no embedder wired — install sentence-transformers (uv add sentence-transformers)", err=True)
+        typer.echo("no embedder wired - install sentence-transformers (uv add sentence-transformers)", err=True)
         raise typer.Exit(code=1)
 
     async def run_all() -> list[dict]:
@@ -490,7 +490,7 @@ def canvas_list(
     """List all workspaces with counts + reference edges.
 
     ``--format text`` (default) prints one canvas per line as
-    ``slug — N nodes · M edges · refs N · refd-by M``. ``--format json``
+    ``slug - N nodes / M edges / refs N / refd-by M``. ``--format json``
     prints the full envelope including the ``references`` /
     ``referenced_by`` slug lists — same shape returned by the HTTP
     ``GET /api/workspaces`` and the ``canvas_list_workspaces`` MCP tool.
@@ -508,8 +508,8 @@ def canvas_list(
         return
     for it in items:
         typer.echo(
-            f"{it['slug']} — {it['node_count']} nodes · "
-            f"{it['edge_count']} edges · refs {len(it['references'])} · "
+            f"{it['slug']} - {it['node_count']} nodes / "
+            f"{it['edge_count']} edges / refs {len(it['references'])} / "
             f"refd-by {len(it['referenced_by'])}",
         )
 
@@ -543,7 +543,7 @@ def canvas_placeholders(
         typer.echo("(no placeholders)")
         return
     for it in items:
-        hint = f" · {it['hint']}" if it.get("hint") else ""
+        hint = f" / {it['hint']}" if it.get("hint") else ""
         typer.echo(f"{it['id']}  [{it['node_type']}] {it['label']!r}{hint}")
 
 
@@ -671,7 +671,7 @@ def canvas_update_node(
     parent_op = parent is not None or unparent
     parent_val = parent if parent is not None else (None if unparent else None)
     if not fields and not parent_op:
-        typer.echo("nothing to update — pass at least one field", err=True)
+        typer.echo("nothing to update - pass at least one field", err=True)
         raise typer.Exit(code=2)
 
     async def run():
@@ -768,7 +768,7 @@ def canvas_update_edge(
     if target_handle is not None: fields["targetHandle"] = target_handle
     if data is not None: fields["data"] = _parse_data(data)
     if not fields:
-        typer.echo("nothing to update — pass at least one of --label / --type / --source-handle / --target-handle / --data", err=True)
+        typer.echo("nothing to update - pass at least one of --label / --type / --source-handle / --target-handle / --data", err=True)
         raise typer.Exit(code=1)
 
     async def run():
@@ -780,7 +780,7 @@ def canvas_update_edge(
 @canvas_app.command("clear")
 def canvas_clear(
     slug: str,
-    yes: bool = typer.Option(False, "--yes", "-y", help="Confirm — clear removes EVERY node and edge on the workspace."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Confirm - clear removes EVERY node and edge on the workspace."),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Remove every node and edge from a workspace (workspace itself stays)."""
@@ -810,9 +810,9 @@ def canvas_organize(
     direction: str = typer.Option(
         "any", "--direction",
         help=(
-            "Edge-walk policy. `outgoing` (parent→child arrows), `incoming` "
-            "(reports-to: subordinate→boss arrows), or `any` (undirected, "
-            "the default — v1 behaviour). Pick `incoming` on a reports-to "
+            "Edge-walk policy. `outgoing` (parent->child arrows), `incoming` "
+            "(reports-to: subordinate->boss arrows), or `any` (undirected, "
+            "the default - v1 behaviour). Pick `incoming` on a reports-to "
             "chart to scope strictly to subordinates of <root_id>."
         ),
     ),
@@ -851,7 +851,7 @@ def canvas_organize(
 @canvas_app.command("align")
 def canvas_align(
     slug: str,
-    node_ids: list[str] = typer.Argument(..., help="Node ids to align (≥2)."),
+    node_ids: list[str] = typer.Argument(..., help="Node ids to align (at least 2)."),
     anchor: str = typer.Option(
         "top", "--anchor", "-a",
         help="`top` | `bottom` | `left` | `right` | `center-h` | `center-v`.",
@@ -891,7 +891,7 @@ def canvas_align(
 @canvas_app.command("distribute")
 def canvas_distribute(
     slug: str,
-    node_ids: list[str] = typer.Argument(..., help="Node ids to distribute (≥3)."),
+    node_ids: list[str] = typer.Argument(..., help="Node ids to distribute (at least 3)."),
     axis: str = typer.Option(
         "horizontal", "--axis", "-x",
         help="`horizontal` (default) or `vertical`.",
@@ -1384,7 +1384,7 @@ def demo(
         src = _find_sample_pdf()
         if src is not None:
             shutil.copyfile(src, target_pdf)
-            typer.echo(f"[demo] staged sample PDF → {target_pdf}")
+            typer.echo(f"[demo] staged sample PDF -> {target_pdf}")
         else:
             typer.echo(
                 "[demo] bundled LKH-5 PDF not found in this install; "
@@ -1400,7 +1400,7 @@ def demo(
         docs = await doc_store.list_documents()
         existing = {d["slug"] for d in docs}
         if target_pdf.exists() and _DEMO_SLUG not in existing:
-            typer.echo(f"[demo] ingesting {_DEMO_PDF_NAME} (silver + gold)…")
+            typer.echo(f"[demo] ingesting {_DEMO_PDF_NAME} (silver + gold)...")
             await ingest_svc.ingest_pdf(
                 target_pdf.read_bytes(), _DEMO_PDF_NAME,
                 polish=True, regions=True,
@@ -1409,7 +1409,7 @@ def demo(
                 dpi=config.dpi,
             )
         elif _DEMO_SLUG in existing:
-            typer.echo(f"[demo] {_DEMO_SLUG} already ingested — skipping")
+            typer.echo(f"[demo] {_DEMO_SLUG} already ingested - skipping")
 
         # 3. Create the `demo` workspace if missing. The store auto-creates
         # on `.load()`, so check `list_workspaces` instead — that doesn't
@@ -1477,9 +1477,9 @@ def demo(
 
     canvas_url = f"http://localhost:{port}/c/{_DEMO_WORKSPACE}"
     typer.echo("")
-    typer.echo("─" * 60)
+    typer.echo("-" * 60)
     typer.echo("  Anchor demo is ready.")
-    typer.echo("─" * 60)
+    typer.echo("-" * 60)
     typer.echo(f"  Workspace        : {summary['workspace']}  ({summary['node_count']} nodes)")
     typer.echo(f"  Canvas URL       : {canvas_url}")
     typer.echo(f"  Data dir         : {data_dir}")
@@ -1492,14 +1492,14 @@ def demo(
         '    "Please fill in the placeholder spec nodes on the `demo` '
         'canvas using `canvas_list_placeholders` + `search_documents`."',
     )
-    typer.echo("─" * 60)
+    typer.echo("-" * 60)
 
     if no_serve:
         typer.echo("[demo] --no-serve set; not booting the server.")
         return
 
     typer.echo("")
-    typer.echo(f"[demo] starting `anchor serve` on {host}:{port}…")
+    typer.echo(f"[demo] starting `anchor serve` on {host}:{port}...")
     # Delegate to the existing `serve` command implementation rather than
     # re-wiring everything. Use the same parameter contract so users can
     # later switch to plain `anchor serve` and get the same env.
