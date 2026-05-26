@@ -7,6 +7,7 @@ import json
 import pytest
 
 from anchor.adapters.mcp import handlers_canvas
+from anchor.adapters.mcp.server import _error_result
 
 from tests.fixtures.services import make_in_memory_services
 
@@ -59,6 +60,11 @@ def test_unknown_tool_returns_json_error():
         assert "error" in json.loads(body)
 
     asyncio.run(run())
+
+
+def test_mcp_error_result_is_valid_json_for_quoted_message():
+    message = 'invalid "quoted" input at C:\\tmp\\fixture'
+    assert json.loads(_error_result(ValueError(message))) == {"error": message}
 
 
 def test_invalid_command_returns_json_error():
