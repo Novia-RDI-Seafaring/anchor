@@ -128,7 +128,7 @@ Configured at install time. Default `~/anchor-data/`:
 def _load_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
-    text = path.read_text().strip()
+    text = path.read_text(encoding="utf-8").strip()
     if not text:
         return {}
     return json.loads(text)
@@ -136,7 +136,7 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + "\n")
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
 def _resolve_anchor_mcp() -> str:
@@ -168,7 +168,7 @@ def _install_skill(skill_dir: Path, *, dry_run: bool) -> Path:
     skill_path = skill_dir / "SKILL.md"
     if not dry_run:
         skill_dir.mkdir(parents=True, exist_ok=True)
-        skill_path.write_text(_SKILL_MD)
+        skill_path.write_text(_SKILL_MD, encoding="utf-8")
     return skill_path
 
 
@@ -189,11 +189,11 @@ def install_claude_code(
     if not dry_run and not data_dir.exists():
         data_dir.mkdir(parents=True, exist_ok=True)
 
-    typer.echo(("[dry-run] " if dry_run else "") + f"MCP entry → {config_path}")
+    typer.echo(("[dry-run] " if dry_run else "") + f"MCP entry -> {config_path}")
     typer.echo(f"          command: {entry['command']}")
     typer.echo(f"          args:    {entry['args']}")
-    typer.echo(("[dry-run] " if dry_run else "") + f"Skill    → {skill_path}")
-    typer.echo(("[dry-run] " if dry_run else "") + f"Data dir → {data_dir}")
+    typer.echo(("[dry-run] " if dry_run else "") + f"Skill    -> {skill_path}")
+    typer.echo(("[dry-run] " if dry_run else "") + f"Data dir -> {data_dir}")
     if not dry_run:
         typer.echo("")
         typer.echo("Next:")
@@ -214,10 +214,10 @@ def install_cursor(
     if not dry_run and not data_dir.exists():
         data_dir.mkdir(parents=True, exist_ok=True)
 
-    typer.echo(("[dry-run] " if dry_run else "") + f"MCP entry → {config_path}")
+    typer.echo(("[dry-run] " if dry_run else "") + f"MCP entry -> {config_path}")
     typer.echo(f"          command: {entry['command']}")
     typer.echo(f"          args:    {entry['args']}")
-    typer.echo(("[dry-run] " if dry_run else "") + f"Data dir → {data_dir}")
+    typer.echo(("[dry-run] " if dry_run else "") + f"Data dir -> {data_dir}")
 
 
 @install_app.command("print")
