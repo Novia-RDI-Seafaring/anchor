@@ -1,11 +1,8 @@
 # Contributing to Anchor
 
 Thanks for your interest. This file describes how to contribute code,
-docs, or bug reports.
-
-If you're an AI agent (Claude Code, Cursor, etc.) working in this repo,
-the binding subset of these rules also lives in [`CLAUDE.md`](./CLAUDE.md).
-Both files agree.
+docs, or bug reports. The repo-level conventions also live in
+[`CLAUDE.md`](./CLAUDE.md); both files agree.
 
 ## Reporting bugs and security issues
 
@@ -89,8 +86,9 @@ both commit messages and the PR title:
 
 The release pipeline groups changelog entries by these prefixes.
 
-**Do not add `Co-Authored-By: Claude` (or any AI-tool) trailer to
-commits.** The work is attributed to the human committer.
+Commits should attribute work to the human author only. If your
+tooling auto-inserts `Co-Authored-By:` trailers, strip them before
+pushing.
 
 ### 4. Open the PR
 
@@ -153,15 +151,14 @@ in the repo) and the GitHub Release.
 
 ## Style notes
 
-- **No AI-tells in prose.** The README, posters, and `SKILL.md`
-  speak in plain English: periods over em-dashes, active
-  second-person, one claim per sentence. Avoid "actually", "truly",
-  "really", "canonical", "domain-agnostic", and the bolded-bullet
-  marketing cadence.
-- **No comments narrating WHAT the code does.** Well-named
-  identifiers handle that. Comments are for non-obvious WHY: a hidden
-  constraint, a workaround for a specific bug, behaviour that would
-  surprise a reader.
+- **Prose.** Match the voice of the existing README and posters.
+  Short sentences. Active second-person. One claim per sentence.
+  Periods over em-dashes. Skip marketing intensifiers and bolded
+  summary claims.
+- **Code comments.** Don't narrate what the code does — well-named
+  identifiers handle that. Comments earn their place when they
+  capture non-obvious *why*: a hidden constraint, a workaround for
+  a specific bug, behaviour that would surprise a reader.
 
 ## Questions
 
