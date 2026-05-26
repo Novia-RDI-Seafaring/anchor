@@ -7,9 +7,8 @@ Anchor draws a deliberate line:
 - **Anchor-level extensions** are Python packages that share Anchor's
   process, register node types, edge styles, and MCP tools, and can
   reach into canvas internals when they have to. They follow the
-  contract in [`v2/EXTENSIONS.md`](../EXTENSIONS.md). `anchor_pdfs` and
-  `anchor_fmus` are this kind of extension. They ship in-tree today;
-  out-of-tree is supported but not yet needed.
+  contract in [`EXTENSIONS.md`](../EXTENSIONS.md). The bundled producers
+  ship in-tree today; third-party extension loading remains proposed.
 
 - **OIP producers** are anything that ingests source material into a
   region-of-interest layout that any consumer (Anchor, but also others)
@@ -210,14 +209,13 @@ A producer goes through three states as it matures:
 
 1. **Hardcoded.** Inline in the consumer's source. Quickest path to a
    demo, terrible for sharing. This is where `anchor_pdfs` started.
-2. **Bundled extension.** Lives in `v2/src/anchor/extensions/`,
+2. **Bundled extension.** Lives in `src/anchor/extensions/`,
    ships in the same wheel, but is structurally separated and
-   reachable through OIP. This is where the two extensions live today.
-3. **External package.** Its own repo, `pip install your-tool`, drops
-   a manifest into `~/.config/oip/producers.d/` on install. Anchor (or
-   anyone else) picks it up at next start. This is the shape OIP is
-   designed for; it's also the shape we haven't shipped a third-party
-   example of yet.
+   reachable through OIP. This is where the bundled implementations live today.
+3. **External package (proposed execution path).** Its own repo,
+   `pip install your-tool`, drops a manifest into
+   `~/.config/oip/producers.d/` on install. Anchor can list that manifest
+   today; spawning and proxying its server remains follow-up work.
 
 The ladder is one-directional: extensions can move outward but can't
 move inward without losing the property of being independent. The

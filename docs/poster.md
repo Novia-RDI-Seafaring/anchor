@@ -9,8 +9,8 @@ skill) or a printed one-pager — every zone below is explicitly named so
 the layout team can place the prose into the right tile.
 
 The artwork already on disk that the poster should pull from:
-`v2/docs/assets/architecture-diagram-v17.png` (the canonical hexagonal
-diagram) and `v2/docs/assets/sysml-ir-round-trip.png` (the dual-path
+`docs/assets/architecture-diagram-v17.png` (the canonical hexagonal
+diagram) and `docs/assets/sysml-ir-round-trip.png` (the dual-path
 parser + agent → IR figure).
 
 ---
@@ -57,7 +57,7 @@ A small bottom-left vignette: a screenshot of a typical datasheet (Alfa Laval LK
 
 **Header**: *Hexagonal monolith. Three peer adapters. One source of truth.*
 
-Use the existing diagram `v2/docs/assets/architecture-diagram-v17.png`
+Use the existing diagram `docs/assets/architecture-diagram-v17.png`
 as the centrepiece of this column. Around it, three concise notes:
 
 **Producers (left of the diagram)** — pluggable via OIP, the Open Ingestion Protocol:
@@ -187,5 +187,5 @@ Things that are tempting but make the poster denser, not stronger:
 ### Print specs
 
 - A1 landscape (594 × 841 mm). Use the existing `posters/anchor/` LaTeX scaffold if it's still there, or scaffold a fresh one with the `better-poster` skill.
-- Body type: a humanist sans-serif (Source Sans Pro / Inter / IBM Plex Sans). The blueprint-style figures in `v2/docs/assets/` are line-art; pair them with a sans-serif of similar weight.
+- Body type: a humanist sans-serif (Source Sans Pro / Inter / IBM Plex Sans). The blueprint-style figures in `docs/assets/` are line-art; pair them with a sans-serif of similar weight.
 - Keep the architecture figure at ≥ 35 cm wide so a reader at 1 m can follow every arrow.

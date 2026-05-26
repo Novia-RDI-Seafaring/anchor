@@ -22,10 +22,10 @@ reference producer. Both can be replaced.
 - **Anchor's canvas** is an OIP **consumer**: it reads OIP-compliant gold
   regions from disk and renders them as canvas nodes with row-level
   provenance.
-- **Anchor's bundled extensions** (`anchor_pdfs`, `anchor_fmus`,
-  `anchor_cad`, `anchor_sysml`) are OIP **producers**: each declares an
-  OIP manifest, writes to the OIP-fixed artefact tree, and exposes
-  ingest/list/get operations the canvas can discover.
+- **Anchor's bundled producer manifests** currently cover `anchor_pdfs`,
+  `anchor_fmus`, and `anchor_cad`. The experimental `anchor_sysml` tools are
+  wired into `anchor-mcp`, but its text-to-canvas flow is not yet surfaced by
+  `anchor extensions list`.
 
 For the manifest schema, the on-disk tree, the discovery rules, and the
 list of source-kinds, **read the OIP repo's spec**. This file used to

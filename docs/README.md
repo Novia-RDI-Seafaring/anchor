@@ -6,7 +6,7 @@ project, or use to redo a poster from scratch.
 
 **Want a hands-on first-day?** Start with [`TUTORIAL.md`](./TUTORIAL.md) — it
 walks you from `uv tool install` to "agent fills placeholders" in about
-five minutes against the bundled LKH-5 sample.
+five minutes using a PDF you provide.
 
 The six conceptual documents are small on purpose. Read them in order:
 

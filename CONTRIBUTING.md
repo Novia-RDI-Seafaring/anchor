@@ -40,8 +40,8 @@ uv run anchor serve            # backend on http://127.0.0.1:8002
 pnpm --dir web dev             # Vite HMR on http://localhost:5173
 ```
 
-Default data dir is `~/anchor-data`. Override with `--data-dir` or
-`ANCHOR_DATA_DIR`.
+Default data dir is `~/anchor-data`. Override by passing `--data-dir`
+consistently to commands and agent installers.
 
 ## Workflow
 

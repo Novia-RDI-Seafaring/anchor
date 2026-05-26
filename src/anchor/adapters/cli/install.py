@@ -198,7 +198,7 @@ def install_claude_code(
         typer.echo("")
         typer.echo("Next:")
         typer.echo("  1. Restart Claude Code (the MCP server list reloads on startup).")
-        typer.echo("  2. /mcp in Claude Code should list 'anchor' with 17 tools.")
+        typer.echo("  2. /mcp in Claude Code should list 'anchor' with its available tools.")
         typer.echo("  3. Try: 'list anchor documents' or 'ingest this PDF: <path>'.")
 
 

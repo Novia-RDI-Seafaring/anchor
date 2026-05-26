@@ -51,17 +51,15 @@ is built today beyond the visual canvas; that's the point — they're
 
 ### Visual canvas (today)
 
-ReactFlow + React 19 in `v2/web/`. 7 built-in node types, runtime
+ReactFlow + React 19 in `web/`. Built-in node types, runtime
 extensible via `registerCardType`. Subscribes to SSE; mutates via HTTP.
 [See 05-canvas.md](./05-canvas.md).
 
-### In-browser agent dock (optional, today)
+### In-browser agent dock (proposed)
 
-A side panel that mounts an MCP client speaking to `/mcp/sse`. Same
-tools an external Claude Code uses; no privileged path. Off by
-default behind `VITE_ENABLE_CHAT`. The fact that the canvas works
-*without* it is the architectural proof that the bundled agent isn't
-special.
+No in-browser MCP dock is shipped today. External agents use the local
+`anchor-mcp` stdio process; the browser uses the HTTP API and SSE event
+stream. A future dock would need its own authenticated transport design.
 
 ### Voice / speech (accessibility, hands-free)
 

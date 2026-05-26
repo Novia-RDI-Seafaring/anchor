@@ -3,11 +3,18 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .import_linter_cache/
+.ruff_cache/
+.mypy_cache/
+.uv-cache/
 .venv/
 *.egg-info/
 dist/
 build/
 *.tsbuildinfo
+.coverage
+htmlcov/
+coverage/
+*.log
 
 # Frontend
 node_modules/
