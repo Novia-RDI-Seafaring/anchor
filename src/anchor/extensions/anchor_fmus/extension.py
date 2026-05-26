@@ -111,15 +111,15 @@ def build_service(
             if os.environ.get("ANCHOR_FMU_DEMO") != "1":
                 raise FmuRuntimeUnavailableError(
                     "FMPy is not installed and ANCHOR_FMU_DEMO is not set. "
-                    "Install the real runtime with `uv pip install 'anchor[fmus]'` "
+                    "Install the real runtime with `uv tool install 'anchor-kb[fmus]'` "
                     "(or `pip install fmpy>=0.3.22`). To run the synthetic "
-                    "offline demo instead, set ANCHOR_FMU_DEMO=1 — all results "
+                    "offline demo instead, set ANCHOR_FMU_DEMO=1 - all results "
                     "will be marked synthetic=true."
                 ) from exc
             from anchor.extensions.anchor_fmus.infra.fake_runtime import FakeFmuRuntime
             logging.getLogger(__name__).warning(
                 "FMU extension running in DEMO mode (ANCHOR_FMU_DEMO=1). "
-                "Every simulation result is synthetic — do NOT trust the "
+                "Every simulation result is synthetic - do NOT trust the "
                 "numbers for engineering decisions."
             )
             runtime = FakeFmuRuntime()

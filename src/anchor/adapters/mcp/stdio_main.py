@@ -60,9 +60,9 @@ async def _run(data_dir: Path, base_url: str = "http://localhost:8002") -> None:
         from anchor.extensions.anchor_fmus import extension as fmu_ext
         fmu = fmu_ext.build_service(data_dir, bus)
     except fmu_ext.FmuRuntimeUnavailableError as exc:
-        print(f"⚠ anchor-mcp: FMU tools disabled — {exc}", file=sys.stderr)
+        print(f"Warning: anchor-mcp: FMU tools disabled - {exc}", file=sys.stderr)
     except Exception as exc:  # noqa: BLE001
-        print(f"⚠ anchor-mcp: FMU tools failed to start — {exc}", file=sys.stderr)
+        print(f"Warning: anchor-mcp: FMU tools failed to start - {exc}", file=sys.stderr)
 
     # Wire SysML extension — pure-Python, no optional deps to fall over.
     from anchor.extensions.anchor_sysml import extension as sysml_ext
