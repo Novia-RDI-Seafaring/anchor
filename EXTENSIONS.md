@@ -8,6 +8,13 @@ this document describes the contract every extension follows so future
 extensions — transcription, code regions, web pages, your own — can ship
 either in-tree or as separate `anchor-canvas-*` packages.
 
+> **Implementation status:** This is a design contract, not a promise that
+> third-party extension loading is complete. The current wheel wires its
+> bundled implementations from `src/anchor/extensions/` and can list or
+> manage OIP manifests with `anchor extensions ...`. It does not yet import
+> third-party Python/JavaScript bundles or proxy registered external producer
+> servers.
+
 ---
 
 ## What an extension provides
@@ -115,31 +122,22 @@ add what's specific to their domain.
 ### 1. In-tree (`extensions/` folder, recommended for the curated set)
 
 ```
-v2/extensions/
+src/anchor/extensions/
 └── anchor_pdfs/
-    ├── pyproject.toml
-    ├── src/anchor_pdfs/
-    │   ├── extension.py              # AnchorExtension implementation
-    │   ├── core/, infra/, adapters/  # backend code
-    │   └── ...
-    ├── web/
-    │   ├── package.json
-    │   └── src/index.ts              # registerExtension(...)
-    └── tests/
+    ├── core/
+    ├── infra/
+    ├── adapters/
+    └── mcp_handlers.py
 ```
 
-Discovery: the canvas runner walks `extensions/` at startup, imports each
-`extension:Extension` class, calls `configure(canvas)`. Frontend imports each
-`extensions/*/web/dist/index.js` at canvas mount.
+**Status today:** PDF, FMU, CAD, and SysML implementations live under
+`src/anchor/extensions/` and are wired by the bundled application. The
+general-purpose `AnchorExtension` loading API and separately bundled frontend
+extension assets are still design work.
 
-**Status today:** PDF ingestion lives inside `src/anchor/` directly, not yet
-extracted into `extensions/anchor_pdfs/`. The split lands as a refactor pass
-once the API surface is stable. Use `extensions/` for genuinely new
-extensions you'd contribute upstream.
+### 2. Out-of-tree pip-installable package (planned)
 
-### 2. Out-of-tree pip-installable package
-
-Anyone publishes their own `anchor-canvas-<name>` package to PyPI:
+Target packaging shape for a future third-party extension:
 
 ```toml
 # my-anchor-ext/pyproject.toml
@@ -160,9 +158,9 @@ uv tool install --with anchor-canvas-mermaid anchor-canvas
 anchor serve --data-dir ~/anchor-data    # picks up mermaid automatically
 ```
 
-### 3. Local / editable (for extension developers)
+### 3. Local / editable (planned)
 
-Set `ANCHOR_EXTENSIONS_PATH` to a colon-separated list of directories
+The proposed workflow sets `ANCHOR_EXTENSIONS_PATH` to a colon-separated list of directories
 containing extension source code. Canvas runner walks each path, finds the
 `extension.py` entry point, loads the extension without packaging.
 
@@ -272,12 +270,9 @@ function, it doesn't belong in core. Canvas core only knows registries.
 - Out-of-tree extension discovery via Python entry points
 - `anchor.toml` per-project extension pinning
 - `ANCHOR_EXTENSIONS_PATH` for editable-install paths
-- `anchor extensions {list, install, remove}` CLI subcommand
+- Automatic spawning/proxying of registered external producer MCP servers
 
-If you're writing an extension *today*, your safest bet is to clone v2,
-add it under `extensions/`, follow the patterns in the existing PDF code
-(see `src/anchor/core/services/ingest_service.py`,
-`src/anchor/adapters/mcp/handlers_ingest.py`,
-`src/anchor/infra/llm/`). The contract above is the target shape; the
-move from "implicit in v2" to "explicit Protocol" is a follow-up
-refactor.
+If you're writing an extension *today*, follow the bundled implementations
+under `src/anchor/extensions/` and expect integration work in the application
+wiring. The contract above is the target shape; a stable third-party loading
+surface is a follow-up refactor.

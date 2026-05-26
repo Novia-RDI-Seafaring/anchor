@@ -39,8 +39,8 @@ itself does not require an API key.
 anchor serve              # → http://127.0.0.1:8002
 ```
 
-Requires Python ≥ 3.12. macOS and Linux supported today; Windows on
-the roadmap.
+Requires Python >= 3.12. CI tests Linux and runs CLI smoke checks on
+macOS and Windows; verify browser and PDF workflows on your target platform.
 
 If you prefer plain pip:
 
@@ -89,8 +89,9 @@ corepack pnpm@10 --dir web install
 corepack pnpm@10 --dir web dev
 ```
 
-Default `--data-dir` is `~/anchor-data`; override per-command or via
-`ANCHOR_DATA_DIR`.
+Document, canvas, and server commands default `--data-dir` to
+`~/anchor-data`. Pass `--data-dir` explicitly when registering agents or
+working with extension manifests so every surface addresses the same store.
 
 Releases are tag-driven: pushing a `v*` tag triggers the
 [release workflow](./.github/workflows/release.yml), which publishes
@@ -106,8 +107,9 @@ or `anchor ingest`; see [Enable gold region extraction](#enable-gold-region-extr
 Without it, Anchor still produces the silver document extraction.
 
 ```bash
-# 0. One-shot: ingest the bundled LKH-5 sample, seed a `demo` workspace
-#    with six placeholder spec slots, and start the server.
+# 0. One-shot: seed a `demo` workspace with six placeholder spec slots
+#    and start the server. If you already have the optional local demo PDF,
+#    Anchor ingests it too; otherwise ingest your own PDF in step 3.
 anchor demo
 
 # Or step by step:
@@ -115,7 +117,7 @@ anchor demo
 # 1. Pick a folder for your data; create your first canvas
 anchor canvas create my-first-canvas --data-dir ~/anchor-data
 
-# 2. Start the server (serves the canvas + the API + MCP-SSE on one port)
+# 2. Start the server (serves the canvas UI, HTTP API, and browser SSE updates)
 anchor serve --data-dir ~/anchor-data
 
 # 3. (in another terminal) Ingest a PDF
@@ -142,7 +144,9 @@ This writes:
 - `~/.claude/mcp.json` — the MCP server entry pointing at your `anchor-mcp` binary
 - `~/.claude/skills/anchor/SKILL.md` — a skill description so Claude knows when to invoke Anchor
 
-**Restart Claude Code** (Cmd+Q, reopen). In any conversation, run `/mcp` and you should see `anchor` listed with 14 tools (5 ingest + 9 canvas). Then talk normally:
+**Restart Claude Code** (Cmd+Q, reopen). In any conversation, run `/mcp`
+and you should see `anchor` listed with its available tools. The exact list
+depends on optional extensions such as FMU support. Then talk normally:
 
 > "Ingest the PDF at ~/Downloads/lkh-pump.pdf and create a canvas called pump-analysis with a document node for it."
 >
@@ -186,20 +190,19 @@ This layout is **the contract**. You can hand-edit JSON files, copy a canvas fol
 
 ## Configuration
 
-Anchor reads its config from environment variables prefixed `ANCHOR_`:
+Select the data directory and server bind address with the CLI flags
+`--data-dir`, `--host`, and `--port`. The following `ANCHOR_` environment
+variables configure processing and browser access:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ANCHOR_DATA_DIR` | `~/anchor-data` | Where canvases + documents live |
-| `ANCHOR_HTTP_PORT` | `8002` | Backend HTTP/SSE port |
-| `ANCHOR_HTTP_HOST` | `0.0.0.0` | Backend listen host |
 | `ANCHOR_OPENAI_API_KEY` | (unset) | Optional — enables LLM polish + region extraction in the gold layer |
 | `ANCHOR_OPENAI_BASE_URL` | (unset) | Override the OpenAI-compatible endpoint. For Azure OpenAI v1 use `https://<resource>.openai.azure.com/openai/v1/`; for Ollama use `http://localhost:11434/v1`. |
 | `ANCHOR_POLISH_MODEL` | `gpt-5.4` | Model name for page-MD polishing |
 | `ANCHOR_REGION_MODEL` | `gpt-5.4` | Model name for region extraction |
-| `ANCHOR_EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | Local sentence-transformer model used for semantic search. Recorded in every `embeddings.json` so cross-model search refuses to mix vectors. |
+| `ANCHOR_EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | Local sentence-transformer model used by default for semantic search. Recorded in every `embeddings.json` so cross-model search refuses to mix vectors. |
 | `ANCHOR_DPI` | `150` | Render DPI for page images |
-| `ANCHOR_LOG_LEVEL` | `INFO` | Logging |
+| `ANCHOR_CORS_ORIGINS` | (unset) | Comma-separated additional origins permitted by the HTTP server |
 
 If you don't set `ANCHOR_OPENAI_API_KEY`, ingest still produces silver (deterministic Docling extraction + per-page markdown). Gold extraction (LLM-driven structured regions) is skipped. The system stays useful without an API key — silver is the workable substrate; gold is the polish.
 
@@ -263,6 +266,7 @@ For Ollama / local-LLM recipes, see [`docs/ADOPTION.md`](./docs/ADOPTION.md).
 
 ```
 anchor serve     [--data-dir DIR] [--host HOST] [--port PORT]
+anchor demo      [--data-dir DIR] [--host HOST] [--port PORT] [--no-serve]
 anchor ingest    PDF_PATH [--data-dir DIR] [--skip-polish] [--skip-regions]
 anchor list      [--data-dir DIR]
 anchor index     SLUG [--data-dir DIR]
@@ -272,6 +276,8 @@ anchor embed     [SLUG] [--overwrite] [--data-dir DIR]
 anchor search    "<query>" [--k N] [--data-dir DIR]
 anchor canvas    list   [--data-dir DIR]
 anchor canvas    create SLUG [--title TITLE] [--data-dir DIR]
+anchor canvas    placeholders SLUG [--data-dir DIR]
+anchor canvas    snapshot SLUG [--data-dir DIR] [--base-url URL]
 anchor install     claude-code [--data-dir DIR] [--dry-run]
 anchor install     cursor [--data-dir DIR] [--dry-run]
 anchor install     print [--data-dir DIR]
@@ -290,7 +296,7 @@ anchor version
 
 ## Architecture (one paragraph)
 
-Anchor is a **hexagonal modular monolith**. Pure domain code in `core/` (no I/O, no framework imports — enforced by `lint-imports`). Concrete protocol implementations in `infra/`. Transport adapters in `adapters/` (HTTP, MCP, CLI, SSE). The Python wheel ships the React frontend bundle inside it (`anchor/_web_dist/`) so one process serves both the API and the UI. State changes are events, persisted to `events.jsonl` per canvas, broadcast to every subscriber (agents on MCP, browsers on SSE) within ~50 ms. The full architecture diagram is at `paperx/figures/anchor_v2_architecture.png`.
+Anchor is a **hexagonal modular monolith**. Pure domain code in `core/` (no I/O, no framework imports — enforced by `lint-imports`). Concrete protocol implementations in `infra/`. Transport adapters in `adapters/` (HTTP, MCP, CLI, SSE). The Python wheel ships the React frontend bundle inside it (`anchor/_web_dist/`) so one process serves both the API and the UI. State changes are events, persisted to `events.jsonl` per canvas, broadcast to subscribers (agents on MCP, browsers on SSE). See the [architecture diagram](./docs/assets/architecture-diagram-v17.png).
 
 ---
 
@@ -311,7 +317,8 @@ anchor extensions info anchor-pdfs            # full manifest for one producer
 Discovery, in priority order:
 1. **Per-data-dir** — `<data-dir>/.oip/producers.d/*.json` (highest priority; bound to a specific workspace tree)
 2. **System-wide** — `~/.config/oip/producers.d/*.json` (any installer can drop a manifest here; visible to every OIP consumer on the machine)
-3. **Bundled** — compiled into this Anchor wheel (currently just `anchor-pdfs`)
+3. **Bundled** — compiled into this Anchor wheel (`anchor-pdfs`, `anchor-fmus`,
+   and `anchor-cad`; SysML tools are also exposed by the bundled MCP server)
 
 For implementation status: today, an OIP-registered producer is *visible* in `extensions list` but Anchor doesn't yet *spawn* external producer MCP servers and proxy their tools. That's the next engineering lift — see the [OIP repo](https://github.com/Novia-RDI-Seafaring/OIP) for the spec and `EXTENSIONS.md` for Anchor's host-side roadmap.
 
@@ -333,11 +340,11 @@ The test seam is function-based pytest (matches the legacy `backend/tests/` styl
 
 ## Status & roadmap
 
-**v0.2 (current):** canvas primitive + PDF ingestion in one package, real-time SSE sync, MCP integration, skill installer for Claude Code/Cursor, ~315 Python + ~180 web tests, hexagonal contracts enforced.
+**v0.2 (current):** canvas primitive + PDF ingestion in one package, real-time SSE sync, MCP integration, skill installer for Claude Code/Cursor, backend and web test suites, hexagonal contracts enforced.
 
-**Near-term:** real `pnpm build` integration in the wheel build, port the remaining 14 v1 node renderers (image, FMU, plot, model, …), assets system (SVG/PNG upload + serve), screenshot mechanism (browser-as-screenshotter via the EventBus), viewport/visibility math, lock state on nodes.
+**Near-term:** complete remaining node renderer and asset workflows, then stabilise the extension registration surface.
 
-**Mid-term:** split the canvas primitive (`anchor-canvas`) and PDF extension (`anchor-canvas-pdfs`) into separately-publishable packages, formal extension contract for third-party authors, per-project `anchor.toml` for declarative extension sets, PyPI publication.
+**Mid-term:** split the canvas primitive (`anchor-canvas`) and PDF extension (`anchor-canvas-pdfs`) into separately-publishable packages, formal extension contract for third-party authors, and per-project `anchor.toml` for declarative extension sets.
 
 **Longer term:** other ingestion extensions (audio/video transcription, code, web), shared org docs / personal canvases topology, optional Postgres event store for very large workspaces.
 
@@ -383,4 +390,8 @@ MIT — see [LICENSE](LICENSE).
 
 ## Contributing
 
-PRs welcome on the `feat/architecture` branch. Run `uv run pytest && uv run lint-imports` before pushing. The `extensions/` folder convention for new extensions lands once the canvas/extension split is finalised — see `EXTENSIONS.md` for the proposed contract.
+Open changes as short-lived branches targeting `main`; see
+[`CONTRIBUTING.md`](./CONTRIBUTING.md). Run `uv run --extra dev pytest` and
+`uv run --extra dev lint-imports` before pushing backend changes. See
+[`EXTENSIONS.md`](./EXTENSIONS.md) for the proposed third-party extension
+contract and its current implementation status.

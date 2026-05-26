@@ -11,10 +11,8 @@ import typer
 from anchor.adapters.cli.extensions import extensions_app
 from anchor.adapters.cli.install import install_app
 
-# Canonical data dir. Per project memory the standard location is
-# `~/anchor-data` so a fresh `anchor serve` / `anchor ingest` from any
-# cwd lands at the same place. Override with `--data-dir` or env
-# `ANCHOR_DATA_DIR`.
+# Canonical data dir. `~/anchor-data` keeps fresh `anchor serve` and
+# `anchor ingest` invocations aligned. Override with `--data-dir`.
 DEFAULT_DATA_DIR = Path.home() / "anchor-data"
 
 app = typer.Typer(help="Anchor - agent-first knowledge canvas.")
@@ -143,7 +141,7 @@ def serve(
     _, bus, workspace, ingest, doc_store = _build_real_services(data_dir, base_url=base_url)
     static_dir = Path(__file__).resolve().parents[2] / "_web_dist"
     if not static_dir.is_dir():
-        # development: walk up to v2/web/dist
+        # development: walk up to web/dist in the repository checkout
         static_dir = Path(__file__).resolve().parents[4] / "web" / "dist"
 
     # Wire the CAD extension service. Manifest already lives in
@@ -576,7 +574,7 @@ def canvas_create(
 # method that the HTTP router and MCP handler call. The work happens in
 # CORE; this file only translates flags into kwargs. Keeping all three
 # adapters in lockstep is the architecture's standing rule
-# (see `v2/docs/06-many-interfaces.md`).
+# (see `docs/06-many-interfaces.md`).
 #
 # `--data` accepts a JSON string. Shells are awkward at JSON quoting; for
 # multi-field nodes use a here-doc or pipe through a file:
@@ -1314,11 +1312,10 @@ def cad_set_parameter(
 
 # ── First-day demo ──────────────────────────────────────────────────────────
 #
-# `anchor demo` is the brand-new-user landing. It seeds ~/anchor-data with the
-# bundled LKH-5 sample PDF, ingests it (silver + gold if those layers don't
-# exist yet), creates a `demo` workspace, and drops one document node plus
-# six placeholder spec slots. Then it boots `anchor serve` so the user opens
-# the browser and watches their AI harness fill the placeholders in live.
+# `anchor demo` is the brand-new-user landing. It creates a `demo` workspace
+# with six placeholder spec slots, optionally ingests a locally available
+# sample PDF, and boots `anchor serve` so the user can fill placeholders from
+# their own ingested document.
 #
 # Placeholders carry `data.placeholder: true` and `data.placeholder_hint:
 # "<what we want here>"`. The web UI dashes the outline + shows a hint chip;
@@ -1340,18 +1337,18 @@ _DEMO_WORKSPACE = "demo"
 
 
 def _find_sample_pdf() -> Path | None:
-    """Locate the bundled LKH-5 PDF the demo needs.
+    """Locate an optional local LKH-5 PDF for the demo.
 
     Search order:
-      1. `v2/data/bronze/<pdf>` — checked-in sample beside the source tree.
-      2. `v2/data/samples/<pdf>` — placeholder alt path if we move samples.
-      3. anchor wheel's bundled data (when running from `uv tool install`).
+      1. Repository-local `data/bronze/<pdf>`.
+      2. Repository-local `data/samples/<pdf>`.
+      3. Packaged sample data, if a downstream distribution provides it.
 
     Returns None if nothing is found — the demo then falls back to "seeded
     workspace without a real PDF" so the rest still works."""
     here = Path(__file__).resolve()
     # When installed: parents[2] is `anchor/` package root.
-    # When in repo:   parents[4] is `v2/`.
+    # When in repo:   parents[4] is the repository root.
     candidates = [
         here.parents[4] / "data" / "bronze" / _DEMO_PDF_NAME,
         here.parents[4] / "data" / "samples" / _DEMO_PDF_NAME,
@@ -1377,8 +1374,8 @@ def demo(
         help="Skip the `anchor serve` boot at the end (useful for CI / smoke).",
     ),
 ) -> None:
-    """One-shot first-day setup. Ingests the bundled LKH-5 PDF, seeds a `demo`
-    workspace with one document node + six placeholder spec slots, then runs
+    """One-shot first-day setup. Seeds a `demo` workspace with six placeholder
+    spec slots, optionally ingests an available local sample PDF, then runs
     `anchor serve`.
 
     Idempotent: re-running won't re-ingest a doc that's already silvered, and
@@ -1389,7 +1386,7 @@ def demo(
     data_dir.mkdir(parents=True, exist_ok=True)
     (data_dir / "bronze").mkdir(parents=True, exist_ok=True)
 
-    # 1. Stage the bundled PDF into bronze so the user can re-ingest from
+    # 1. Stage an optional local PDF into bronze so the user can re-ingest from
     # the same path agents would see via `list_documents`.
     target_pdf = data_dir / "bronze" / _DEMO_PDF_NAME
     if not target_pdf.exists():
@@ -1399,8 +1396,9 @@ def demo(
             typer.echo(f"[demo] staged sample PDF -> {target_pdf}")
         else:
             typer.echo(
-                "[demo] bundled LKH-5 PDF not found in this install; "
-                "the demo workspace will be created without an ingested doc.",
+                "[demo] optional LKH-5 PDF not found; the demo workspace will "
+                "be created without an ingested document. Use `anchor ingest "
+                "/path/to/datasheet.pdf` to add your own.",
             )
 
     config, _, ws, ingest_svc, doc_store = _build_real_services(
