@@ -86,10 +86,6 @@ both commit messages and the PR title:
 
 The release pipeline groups changelog entries by these prefixes.
 
-Commits should attribute work to the human author only. If your
-tooling auto-inserts `Co-Authored-By:` trailers, strip them before
-pushing.
-
 ### 4. Open the PR
 
 Target `main`. Fill in the template. CI must pass before the PR can
