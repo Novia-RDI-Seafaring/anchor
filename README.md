@@ -4,11 +4,15 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/anchor-kb.svg)](https://pypi.org/project/anchor-kb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-> A canvas your AI agent can actually drive. Drop a PDF datasheet onto a workspace, ask the agent for the operating limits, get a grounded spec table where every value points back to its source page+bbox. Wire those values into a simulation. **No managed cloud, no vendor lock-in, your data stays on your laptop.**
+Anchor is a tool that lets you and your agent work with engineering documents.
 
-Anchor is two things: a **generic canvas primitive** (workspace, nodes, edges, real-time multi-client sync over MCP/HTTP/SSE) and a **PDF-ingestion extension** (medallion bronze→silver→gold pipeline producing structured, page-and-bbox-anchored regions). Today PDFs are the canonical use case; the canvas itself is domain-agnostic and other extensions (transcription, code, web pages) will land alongside.
+Drop a PDF onto a canvas. The agent reads it and pulls the values you need into a spec table. Every value links back to the page and bounding box it came from, so you can click and see the source.
 
-**New here?** Walk through [`docs/TUTORIAL.md`](./docs/TUTORIAL.md) — five minutes from `uv tool install` to "agent fills my engineering specs while I watch".
+Drop FMU simulation models onto the same canvas and wire the extracted values into their parameters.
+
+It runs on your laptop. Data lives under `~/anchor-data`. Agents talk to it over MCP, so it works with Claude Code, Cursor, or any MCP client. There's an HTTP API and a CLI too.
+
+First five minutes: [`docs/TUTORIAL.md`](./docs/TUTORIAL.md).
 
 ---
 
