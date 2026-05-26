@@ -102,8 +102,8 @@ function shortId(): string {
  *  expectation when a node is nested. Returns (0, 0) when there's no
  *  ancestry or the chain is broken. Safe against cycles via a visited set. */
 function ancestorOffset(nodeId: string, allNodes: Record<string, StoreNode>): { x: number; y: number } {
-  let acc = { x: 0, y: 0 };
-  let visited = new Set<string>();
+  const acc = { x: 0, y: 0 };
+  const visited = new Set<string>();
   let cur = allNodes[nodeId]?.parent ?? null;
   while (cur != null) {
     if (visited.has(cur)) break;

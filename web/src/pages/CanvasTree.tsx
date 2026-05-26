@@ -124,11 +124,8 @@ function Row({ slug, index, level, ancestors, expanded, toggle }: RowProps) {
   const isOpen = expanded.has(slug);
   const multiParent = entry.referenced_by.length > 1;
   // Children inherit the ancestor set + this slug.
-  const childAncestors = useMemo(() => {
-    const next = new Set(ancestors);
-    next.add(slug);
-    return next;
-  }, [ancestors, slug]);
+  const childAncestors = new Set(ancestors);
+  childAncestors.add(slug);
 
   return (
     <li>
