@@ -12,7 +12,7 @@ Drop FMU simulation models onto the same canvas and wire the extracted values in
 
 It runs on your laptop. Data lives under `~/anchor-data`. Agents talk to it over MCP, so it works with Claude Code, Cursor, or any MCP client. There's an HTTP API and a CLI too.
 
-First five minutes: [`docs/TUTORIAL.md`](./docs/TUTORIAL.md).
+First five minutes: [`docs/getting-started/tutorial.md`](./docs/getting-started/tutorial.md).
 
 ---
 
@@ -126,7 +126,7 @@ anchor ingest /path/to/datasheet.pdf --data-dir ~/anchor-data
 # 4. Open http://localhost:8002/c/my-first-canvas in your browser
 ```
 
-See [`docs/TUTORIAL.md`](./docs/TUTORIAL.md) for a walked-through `anchor demo` → "agent fills the placeholders" tour.
+See [`docs/getting-started/tutorial.md`](./docs/getting-started/tutorial.md) for a walked-through `anchor demo` -> "agent fills the placeholders" tour.
 
 That's the whole loop. Every PDF you ingest becomes a structured set of regions on disk; every canvas you create is a folder you can zip and email.
 
@@ -258,7 +258,7 @@ anchor ingest "C:\path\to\datasheet.pdf" --data-dir "$HOME\anchor-data"
 Successful gold extraction creates `~/anchor-data/gold/<doc-slug>/pages/*.regions.json`
 and returns a non-zero `region_count` when regions are identified.
 
-For Ollama / local-LLM recipes, see [`docs/ADOPTION.md`](./docs/ADOPTION.md).
+For Ollama / local-LLM recipes, see [`docs/guides/agent-setup.md`](./docs/guides/agent-setup.md).
 
 ---
 
@@ -296,7 +296,7 @@ anchor version
 
 ## Architecture (one paragraph)
 
-Anchor is a **hexagonal modular monolith**. Pure domain code in `core/` (no I/O, no framework imports — enforced by `lint-imports`). Concrete protocol implementations in `infra/`. Transport adapters in `adapters/` (HTTP, MCP, CLI, SSE). The Python wheel ships the React frontend bundle inside it (`anchor/_web_dist/`) so one process serves both the API and the UI. State changes are events, persisted to `events.jsonl` per canvas, broadcast to subscribers (agents on MCP, browsers on SSE). See the [architecture diagram](./docs/assets/architecture-diagram-v17.png).
+Anchor is a **hexagonal modular monolith**. Pure domain code in `core/` (no I/O, no framework imports - enforced by `lint-imports`). Concrete protocol implementations in `infra/`. Transport adapters in `adapters/` (HTTP, MCP, CLI, SSE). The Python wheel ships the React frontend bundle inside it (`anchor/_web_dist/`) so one process serves both the API and the UI. State changes are events, persisted to `events.jsonl` per canvas, broadcast to subscribers (agents on MCP, browsers on SSE). See the [architecture diagram](./docs/assets/diagrams/architecture-diagram-v17.png).
 
 ---
 

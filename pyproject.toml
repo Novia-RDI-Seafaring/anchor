@@ -51,6 +51,11 @@ local-embed = [
 fmus = [
     "fmpy>=0.3",
 ]
+docs = [
+    "mkdocs-material>=9.5",
+    "mkdocs>=1.6",
+    "pymdown-extensions>=10.0",
+]
 
 [project.scripts]
 anchor = "anchor.adapters.cli.main:app"

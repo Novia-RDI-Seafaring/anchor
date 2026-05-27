@@ -52,6 +52,9 @@ data/
 /paperx/
 /paper/
 /posters/
+/arxiv-paper-axux/
+# MkDocs build output
+/site/
 /public/
 /mydata/
 /uploads/
