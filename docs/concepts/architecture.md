@@ -19,32 +19,8 @@ extensions (PDFs, FMUs) is what we ship today. A canvas with someone
 else's extension (audio transcripts, code regions, video frames) is
 why OIP exists.
 
-```mermaid
-flowchart LR
-    subgraph durable["DURABLE on disk"]
-        DOCS["DOCUMENTS<br/>per producer<br/>data/&lt;producer&gt;/..."]
-        CAN["CANVASES<br/>per workspace<br/>data/canvases/&lt;slug&gt;/"]
-    end
-    subgraph ephemeral["EPHEMERAL in process"]
-        BUS["EVENT BUS<br/>in-memory pub/sub"]
-    end
-    INGEST["IngestService<br/>extension"]
-    WS["WorkspaceService<br/>core"]
-    DOCS -.reads.-> INGEST
-    INGEST -.writes.-> DOCS
-    INGEST -- "DocIngested,<br/>IngestProgress" --> BUS
-    WS -- "NodeAdded,<br/>EdgeAdded, ..." --> BUS
-    CAN -.events.jsonl.-> WS
-    WS -.snapshot.json.-> CAN
-    BUS --> HTTP["HTTP/SSE<br/>web UI"]
-    BUS --> MCP["MCP stdio<br/>agents"]
-    BUS --> CLI["CLI<br/>scripts"]
-```
-
-*Three substrates — durable documents, durable canvases, ephemeral
-session. Two services sit between them. Four consumer protocols attach
-to the same event bus, so a human dragging a node and an agent making a
-tool call drive the same code path.*
+The runtime, durable stores, event bus, consumers, and ports-and-adapters
+layers are shown together in [The hexagon](#the-hexagon).
 
 ---
 
@@ -93,38 +69,13 @@ routes, MCP tool definitions, CLI subcommands — lives in `adapters/`.
 Anything PDF- or FMU-specific lives in `extensions/` and the canvas
 itself does not import it.
 
-```mermaid
-flowchart TB
-    subgraph adapters["ADAPTERS — transport"]
-        HTTP["FastAPI<br/>HTTP + SSE"]
-        MCP["MCP<br/>stdio server"]
-        CLI["Typer<br/>CLI"]
-    end
-    subgraph infra["INFRA — port impls"]
-        BUS["MemoryEventBus"]
-        STORE["FsWorkspaceStore<br/>MemoryWorkspaceStore"]
-    end
-    subgraph core["CORE — pure domain"]
-        WS["Workspace<br/>aggregate"]
-        EV["DomainEvent<br/>11 event types"]
-        SVC["WorkspaceService"]
-        PORTS["Ports<br/>EventBus, WorkspaceStore"]
-    end
-    subgraph ext["EXTENSIONS — own hexagon each"]
-        PDF["anchor_pdfs<br/>core / infra / adapters"]
-        FMU["anchor_fmus<br/>core / infra / adapters"]
-    end
-    adapters --> infra
-    infra --> core
-    ext --> adapters
-    ext --> infra
-```
+![Anchor runtime and hexagonal architecture](../assets/diagrams/hexagon-architecture.svg)
 
-*Layered structure. The arrows point in the only direction imports are
-allowed. The core is pure domain — five contracts in `.importlinter`
-fail the build if anyone reaches across a boundary or pulls a transport
-or vendor SDK into a place it doesn't belong. Extensions repeat the same
-shape inside their own boundary.*
+*The runtime separates source producers, durable document and canvas
+stores, ports-and-adapters layers, and consumers. The core is pure
+domain; `.importlinter` fails the build if code reaches across a
+boundary or pulls a transport or vendor SDK into a place it does not
+belong.*
 
 ### What lives in each layer
 

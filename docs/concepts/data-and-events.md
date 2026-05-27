@@ -92,31 +92,21 @@ The same flow drives the SSE stream and the MCP `notifications/resources/updated
 ping. There is no second "send the event to subscribers" step — the bus
 *is* the dispatch.
 
-```mermaid
-sequenceDiagram
-    participant C as Client<br/>(browser, agent, CLI)
-    participant S as WorkspaceService
-    participant L as Per-workspace Lock
-    participant ST as Store<br/>events.jsonl + snapshot.json
-    participant B as EventBus
-    participant SUB as Subscribers<br/>(SSE, MCP)
+The lock keeps mutations on one workspace serialised; different
+workspaces proceed in parallel. Extensions emit their own events
+(`DocBronzed`, `IngestProgress`, `SimulationCompleted`) on the same
+bus.
 
-    C->>S: command (move_node, add_edge, ...)
-    S->>L: acquire lock
-    S->>ST: load Workspace
-    S->>S: validate command
-    S->>S: apply event (pure reducer)
-    S->>ST: append_event → version N+1
-    S->>B: publish DomainEvent
-    S->>L: release lock
-    S-->>C: (state, event)
-    B-->>SUB: fan-out to all listeners
-```
+## Document ingestion pipeline
 
-*Mutation flow. Same code path for every consumer. The lock keeps
-mutations on one workspace serialised; different workspaces proceed in
-parallel. Extensions emit their own events (`DocBronzed`, `IngestProgress`,
-`SimulationCompleted`) on the same bus.*
+The PDF extension stores the original source before deriving structured
+content and source-grounded regions for use by canvases, agents, and
+simulations.
+
+![Document ingestion and provenance data pipeline](../assets/diagrams/data-pipeline.svg)
+
+*Source files move through bronze, silver, and gold artefacts; every
+downstream consumer receives values with source provenance.*
 
 ## Real-time sync as a side effect
 
