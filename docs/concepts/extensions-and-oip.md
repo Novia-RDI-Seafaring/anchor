@@ -2,29 +2,29 @@
 
 ## Two layers of contract
 
-Anchor draws a deliberate line:
+ANCHOR draws a deliberate line:
 
-- **Anchor-level extensions** are Python packages that share Anchor's
+- **ANCHOR-level extensions** are Python packages that share ANCHOR's
   process, register node types, edge styles, and MCP tools, and can
   reach into canvas internals when they have to. They follow the
   contract in [`EXTENSIONS.md`](https://github.com/Novia-RDI-Seafaring/anchor/blob/main/EXTENSIONS.md). The bundled producers
   ship in-tree today; third-party extension loading remains proposed.
 
 - **OIP producers** are anything that ingests source material into a
-  region-of-interest layout that any consumer (Anchor, but also others)
+  region-of-interest layout that any consumer (ANCHOR, but also others)
   can attach to. They speak a vendor-neutral on-disk shape and an
-  MCP-stdio invocation contract. They don't import Anchor; Anchor
+  MCP-stdio invocation contract. They don't import ANCHOR; ANCHOR
   doesn't import them. Discovery happens through a manifest file at a
   known path.
 
-Every Anchor extension *is* an OIP producer (it ships a manifest and
-writes OIP-shaped artefacts). Not every OIP producer is an Anchor
+Every ANCHOR extension *is* an OIP producer (it ships a manifest and
+writes OIP-shaped artefacts). Not every OIP producer is an ANCHOR
 extension. That's the whole point.
 
 ![OIP extension manifest, artefacts, tools, and consumers](../assets/diagrams/extension-flow.svg)
 
 *An OIP producer is three things: a manifest, an on-disk artefact shape,
-and a set of MCP tools. Anchor extensions add canvas-side hooks (node
+and a set of MCP tools. ANCHOR extensions add canvas-side hooks (node
 types, edge handlers, React components) on top of that — but those hooks
 are advisory. Another OIP consumer can render the same artefacts
 differently.*
@@ -42,7 +42,7 @@ consumer invokes it. Verbatim from `anchor_fmus`:
   "oip_version": "0.1",
   "producer": {
     "name": "anchor-fmus",
-    "display_name": "Anchor FMUs",
+    "display_name": "ANCHOR FMUs",
     "version": "0.2.0",
     "homepage": "https://github.com/Novia-RDI-Seafaring/anchor"
   },
@@ -157,7 +157,7 @@ When `anchor extensions list` runs, it walks (in order):
 
 1. **Bundled in-tree** — manifests returned by Python entry-point
    functions like `anchor_fmus.extension.manifest()`. These are the
-   extensions baked into Anchor's wheel.
+   extensions baked into ANCHOR's wheel.
 2. **System-wide** — `${XDG_CONFIG_HOME:-~/.config}/oip/producers.d/*.json`.
    For producers a user installed once, available across projects.
 3. **Per-project** — `<data-dir>/.oip/producers.d/*.json`. For
@@ -169,7 +169,7 @@ location wins (project > system > bundled).
 
 A producer becomes discoverable by writing one file. Removing it is
 deleting one file. There is no registry, no plugin manager, no
-"please restart Anchor."
+"please restart ANCHOR."
 
 ---
 
@@ -178,7 +178,7 @@ deleting one file. There is no registry, no plugin manager, no
 - **Not a runtime.** OIP doesn't say how a producer extracts regions,
   what model it calls, or what library it uses. That's deliberately
   out of scope.
-- **Not Anchor-specific.** A future RAG system, a Notion-like canvas,
+- **Not ANCHOR-specific.** A future RAG system, a Notion-like canvas,
   or an in-IDE assistant could consume the same producer outputs. The
   spec is at `github.com/Novia-RDI-Seafaring/OIP` and ships its own
   CLI (`uvx oip validate <data-dir>`).
@@ -198,7 +198,7 @@ A producer goes through three states as it matures:
    reachable through OIP. This is where the bundled implementations live today.
 3. **External package (proposed execution path).** Its own repo,
    `pip install your-tool`, drops a manifest into
-   `~/.config/oip/producers.d/` on install. Anchor can list that manifest
+   `~/.config/oip/producers.d/` on install. ANCHOR can list that manifest
    today; spawning and proxying its server remains follow-up work.
 
 The ladder is one-directional: extensions can move outward but can't
@@ -380,7 +380,7 @@ convention:
 3. **On-disk artefacts** — written under `status: draft` while the
    session is open; transitioned to `status: approved` on commit.
 4. **Bus events** — the producer emits progress events on its MCP
-   notifications channel as the session unfolds. Anchor (or any other
+   notifications channel as the session unfolds. ANCHOR (or any other
    consumer) subscribes and watches the artefact materialise live.
 
 ### The session lifecycle
@@ -401,7 +401,7 @@ OR user discards  → producer deletes the draft (or marks rejected)
                   → producer emits SessionDiscarded
 ```
 
-Anchor's canvas displays draft artefacts visibly (dashed border,
+ANCHOR's canvas displays draft artefacts visibly (dashed border,
 *draft* badge) so users know they're not yet ground truth. When the
 artefact transitions to approved, the badge disappears and other
 consumers (FMUs, simulators, agents reading provenance) can rely on
@@ -412,17 +412,17 @@ it.
 Interactive producers usually have substantial UI (the existing
 chart-tracer is a good example — click-on-axes, drag-along-curves,
 fit-and-export). **The architecture doesn't require porting that UI
-into Anchor.** Three options, in order of cost:
+into ANCHOR.** Three options, in order of cost:
 
 1. **Standalone app, file-export to OIP folder.** Cheapest. User
-   opens the producer's app, does the work, hits export. Anchor
+   opens the producer's app, does the work, hits export. ANCHOR
    ingests the resulting folder when it appears in the data dir.
-2. **MCP-driven launch.** Anchor calls `start_session(...)`, the
+2. **MCP-driven launch.** ANCHOR calls `start_session(...)`, the
    producer opens its own window. User works there. On commit, the
-   producer writes the artefact and Anchor's library refreshes via
+   producer writes the artefact and ANCHOR's library refreshes via
    the bus event. No UI integration; full feedback loop.
-3. **Embedded UI inside Anchor's canvas.** The producer ships a Web
-   Component (Lit, Stencil, vanilla custom element). Anchor's
+3. **Embedded UI inside ANCHOR's canvas.** The producer ships a Web
+   Component (Lit, Stencil, vanilla custom element). ANCHOR's
    `cad:model`-style primitive renders the producer's element
    in-canvas. Most polished UX; highest packaging cost.
 
@@ -464,7 +464,7 @@ v0.3 can grow a `session_id` field on regions.
 ## Future delight — the anchor-and-chain motif
 
 A small visual idea worth keeping: every evidence edge in the canvas
-connects a node to its `source_ref`. The project is called *Anchor* for
+connects a node to its `source_ref`. The project is called *ANCHOR* for
 exactly that reason — every claim on the canvas is anchored to a region
 of source material. A natural-but-deferred polish is to render those
 edges with **a small anchor glyph at the source endpoint** and **a

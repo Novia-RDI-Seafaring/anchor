@@ -1,10 +1,10 @@
 # Working with documents and canvases
 
-Anchor keeps documents and canvases separate: ingest a source document once,
+ANCHOR keeps documents and canvases separate: ingest a source document once,
 then reuse it on one or more canvases while retaining page and region
 provenance.
 
-## 1. Start Anchor
+## 1. Start ANCHOR
 
 ```bash
 anchor serve --data-dir ~/anchor-data
@@ -52,7 +52,7 @@ through the MCP tools.
 
 ## 5. Work without an LLM key
 
-Anchor can store PDFs, render pages and manage canvases without an external
+ANCHOR can store PDFs, render pages and manage canvases without an external
 LLM. Configure an OpenAI-compatible vision endpoint only when you need
 gold-region extraction and grounded semantic lookup.
 

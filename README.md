@@ -1,10 +1,13 @@
-# Anchor · agent-first knowledge canvas
+# ANCHOR
+
+**AN**ything **C**an **H**ave **O**rder and **R**eason<br>
+*Agent-First Knowledge Canvas with Source-Grounded Provenance*
 
 [![PyPI version](https://img.shields.io/pypi/v/anchor-kb.svg)](https://pypi.org/project/anchor-kb/)
 [![Python versions](https://img.shields.io/pypi/pyversions/anchor-kb.svg)](https://pypi.org/project/anchor-kb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-Anchor is a tool that lets you and your agent work with engineering documents.
+ANCHOR is a tool that lets you and your agent work with engineering documents.
 
 Drop a PDF onto a canvas. The agent reads it and pulls the values you need into a spec table. Every value links back to the page and bounding box it came from, so you can click and see the source.
 
@@ -18,7 +21,7 @@ First five minutes: [`docs/getting-started/tutorial.md`](./docs/getting-started/
 
 ## Install
 
-Two paths, depending on whether you want to *use* Anchor or *hack on it*.
+Two paths, depending on whether you want to *use* ANCHOR or *hack on it*.
 
 ### Use it (from PyPI)
 
@@ -31,7 +34,7 @@ includes the prebuilt frontend, so no Node toolchain is required to
 just run it.
 
 If you want LLM-backed gold region extraction on your first PDF upload,
-create a `.env` file before starting Anchor; see
+create a `.env` file before starting ANCHOR; see
 [Enable gold region extraction](#enable-gold-region-extraction). Installation
 itself does not require an API key.
 
@@ -104,12 +107,12 @@ to PyPI via OIDC trusted publishing (no token sits in the repo). See
 
 To produce gold regions, configure a `.env` file before running `anchor demo`
 or `anchor ingest`; see [Enable gold region extraction](#enable-gold-region-extraction).
-Without it, Anchor still produces the silver document extraction.
+Without it, ANCHOR still produces the silver document extraction.
 
 ```bash
 # 0. One-shot: seed a `demo` workspace with six placeholder spec slots
 #    and start the server. If you already have the optional local demo PDF,
-#    Anchor ingests it too; otherwise ingest your own PDF in step 3.
+#    ANCHOR ingests it too; otherwise ingest your own PDF in step 3.
 anchor demo
 
 # Or step by step:
@@ -132,9 +135,9 @@ That's the whole loop. Every PDF you ingest becomes a structured set of regions 
 
 ---
 
-## Using Anchor with an AI agent (Claude Code, Cursor, your own)
+## Using ANCHOR with an AI agent (Claude Code, Cursor, your own)
 
-Anchor exposes its tools over **MCP** (Model Context Protocol). One command registers it with Claude Code:
+ANCHOR exposes its tools over **MCP** (Model Context Protocol). One command registers it with Claude Code:
 
 ```bash
 anchor install claude-code --data-dir ~/anchor-data
@@ -142,7 +145,7 @@ anchor install claude-code --data-dir ~/anchor-data
 
 This writes:
 - `~/.claude/mcp.json` — the MCP server entry pointing at your `anchor-mcp` binary
-- `~/.claude/skills/anchor/SKILL.md` — a skill description so Claude knows when to invoke Anchor
+- `~/.claude/skills/anchor/SKILL.md` — a skill description so Claude knows when to invoke ANCHOR
 
 **Restart Claude Code** (Cmd+Q, reopen). In any conversation, run `/mcp`
 and you should see `anchor` listed with its available tools. The exact list
@@ -213,7 +216,7 @@ LLM endpoint before uploading a document or running `anchor ingest`. Documents
 already ingested as silver-only are not backfilled automatically; ingest them
 again after enabling a provider.
 
-Anchor reads `.env` from the directory where you start `anchor serve`,
+ANCHOR reads `.env` from the directory where you start `anchor serve`,
 `anchor demo`, or `anchor ingest`. For users installed with
 `uv tool install anchor-kb`, create that `.env` file in your chosen launch
 directory before the first upload.
@@ -226,7 +229,7 @@ ANCHOR_POLISH_MODEL=gpt-5.4
 ANCHOR_REGION_MODEL=gpt-5.4
 ```
 
-For Azure OpenAI, Anchor currently supports the Azure OpenAI **v1** endpoint
+For Azure OpenAI, ANCHOR currently supports the Azure OpenAI **v1** endpoint
 through the standard OpenAI-compatible client using API-key authentication:
 
 ```dotenv
@@ -238,12 +241,12 @@ ANCHOR_REGION_MODEL=<vision-capable-deployment-name>
 
 The Azure deployment name is used as `model` and must support image input and
 JSON-formatted chat completion output. Azure Entra ID authentication and the
-older Azure deployment/API-version endpoint shape are not configured by Anchor
+older Azure deployment/API-version endpoint shape are not configured by ANCHOR
 environment variables today. See Microsoft's
 [Azure OpenAI v1 API documentation](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/api-version-lifecycle?tabs=python)
 for endpoint details.
 
-From the same directory as `.env`, start Anchor and upload the PDF in the UI:
+From the same directory as `.env`, start ANCHOR and upload the PDF in the UI:
 
 ```powershell
 anchor serve
@@ -296,18 +299,18 @@ anchor version
 
 ## Architecture (one paragraph)
 
-Anchor is a **hexagonal modular monolith**. Pure domain code in `core/` (no I/O, no framework imports - enforced by `lint-imports`). Concrete protocol implementations in `infra/`. Transport adapters in `adapters/` (HTTP, MCP, CLI, SSE). The Python wheel ships the React frontend bundle inside it (`anchor/_web_dist/`) so one process serves both the API and the UI. State changes are events, persisted to `events.jsonl` per canvas, broadcast to subscribers (agents on MCP, browsers on SSE). See the [architecture diagram](./docs/assets/diagrams/architecture-diagram-v17.png).
+ANCHOR is a **hexagonal modular monolith**. Pure domain code in `core/` (no I/O, no framework imports - enforced by `lint-imports`). Concrete protocol implementations in `infra/`. Transport adapters in `adapters/` (HTTP, MCP, CLI, SSE). The Python wheel ships the React frontend bundle inside it (`anchor/_web_dist/`) so one process serves both the API and the UI. State changes are events, persisted to `events.jsonl` per canvas, broadcast to subscribers (agents on MCP, browsers on SSE). See the [architecture diagram](./docs/assets/diagrams/architecture-diagram-v17.png).
 
 ---
 
 ## Extensions and the Open Ingestion Protocol
 
-Anchor's canvas is one **OIP consumer**. PDF ingestion is one **OIP producer**, bundled with this build. The protocol — specified at [github.com/Novia-RDI-Seafaring/OIP](https://github.com/Novia-RDI-Seafaring/OIP) — is governance-neutral: any tool that produces ingested knowledge in OIP shape can plug in, and any OIP-aware consumer can read its output. A transcription tool, a code-region extractor, a web crawler, your own ingestion logic — none of them need to import Anchor; they just ship an OIP manifest at a known location and Anchor picks them up.
+ANCHOR's canvas is one **OIP consumer**. PDF ingestion is one **OIP producer**, bundled with this build. The protocol — specified at [github.com/Novia-RDI-Seafaring/OIP](https://github.com/Novia-RDI-Seafaring/OIP) — is governance-neutral: any tool that produces ingested knowledge in OIP shape can plug in, and any OIP-aware consumer can read its output. A transcription tool, a code-region extractor, a web crawler, your own ingestion logic — none of them need to import ANCHOR; they just ship an OIP manifest at a known location and ANCHOR picks them up.
 
 The CLI surfaces this:
 
 ```bash
-anchor extensions list                        # what producers can this Anchor see?
+anchor extensions list                        # what producers can this ANCHOR see?
 anchor extensions discover                    # where does it look for manifests?
 anchor extensions add <path-to-manifest.json> # register a new producer (system-wide)
 anchor extensions schema                      # print a starter manifest to edit
@@ -317,10 +320,10 @@ anchor extensions info anchor-pdfs            # full manifest for one producer
 Discovery, in priority order:
 1. **Per-data-dir** — `<data-dir>/.oip/producers.d/*.json` (highest priority; bound to a specific workspace tree)
 2. **System-wide** — `~/.config/oip/producers.d/*.json` (any installer can drop a manifest here; visible to every OIP consumer on the machine)
-3. **Bundled** — compiled into this Anchor wheel (`anchor-pdfs`, `anchor-fmus`,
+3. **Bundled** — compiled into this ANCHOR wheel (`anchor-pdfs`, `anchor-fmus`,
    and `anchor-cad`; SysML tools are also exposed by the bundled MCP server)
 
-For implementation status: today, an OIP-registered producer is *visible* in `extensions list` but Anchor doesn't yet *spawn* external producer MCP servers and proxy their tools. That's the next engineering lift — see the [OIP repo](https://github.com/Novia-RDI-Seafaring/OIP) for the spec and `EXTENSIONS.md` for Anchor's host-side roadmap.
+For implementation status: today, an OIP-registered producer is *visible* in `extensions list` but ANCHOR doesn't yet *spawn* external producer MCP servers and proxy their tools. That's the next engineering lift — see the [OIP repo](https://github.com/Novia-RDI-Seafaring/OIP) for the spec and `EXTENSIONS.md` for ANCHOR's host-side roadmap.
 
 ---
 
@@ -352,7 +355,7 @@ The test seam is function-based pytest (matches the legacy `backend/tests/` styl
 
 ## Security model — read before exposing
 
-Anchor's HTTP server is **unauthenticated by design**. It edits local
+ANCHOR's HTTP server is **unauthenticated by design**. It edits local
 engineering data (workspaces, documents, FMU files) and is meant to run
 on your own machine.
 
@@ -364,7 +367,7 @@ on your own machine.
   containment-asserted before they hit disk — the v2 codebase does not
   trust client-supplied paths.
 
-If you want to share an Anchor instance on a network, **add your own
+If you want to share an ANCHOR instance on a network, **add your own
 reverse proxy with auth in front of it** (Tailscale, OAuth proxy,
 basic-auth nginx, ...). Don't expose the unauthenticated port directly.
 
@@ -390,12 +393,12 @@ MIT — see [LICENSE](LICENSE).
 
 ## Citation
 
-If you use Anchor, please cite the software repository:
+If you use ANCHOR, please cite the software repository:
 
 ```bibtex
-@misc{Anchor,
+@misc{ANCHOR,
   author       = {Lamin Jatta and Christoffer Bj{\"o}rkskog},
-  title        = {Anchor: Agent-First Knowledge Canvas with Source-Grounded Provenance},
+  title        = {ANCHOR: Agent-First Knowledge Canvas with Source-Grounded Provenance},
   year         = {2026},
   howpublished = {\url{https://github.com/Novia-RDI-Seafaring/anchor}},
 }

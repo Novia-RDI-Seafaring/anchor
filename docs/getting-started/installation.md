@@ -1,6 +1,6 @@
 # Install
 
-Two paths, depending on whether you want to *use* Anchor or *hack on it*.
+Two paths, depending on whether you want to *use* ANCHOR or *hack on it*.
 
 ## Use it (from PyPI)
 
@@ -86,7 +86,7 @@ anchor canvas list      # → your existing canvases (empty on a fresh install)
 
 ## Canvas snapshots
 
-Snapshot rendering uses Playwright Chromium and requires a running Anchor
+Snapshot rendering uses Playwright Chromium and requires a running ANCHOR
 server. Install the browser once before using `anchor canvas snapshot`:
 
 ```bash
@@ -97,4 +97,4 @@ anchor canvas snapshot demo --out demo.png
 
 ## Release process
 
-Anchor uses tag-driven releases via PyPI's OIDC trusted publishing. Maintainers: see [`PUBLISHING.md`](https://github.com/Novia-RDI-Seafaring/anchor/blob/main/PUBLISHING.md) in the repo for the full procedure.
+ANCHOR uses tag-driven releases via PyPI's OIDC trusted publishing. Maintainers: see [`PUBLISHING.md`](https://github.com/Novia-RDI-Seafaring/anchor/blob/main/PUBLISHING.md) in the repo for the full procedure.

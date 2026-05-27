@@ -1,6 +1,9 @@
-# Anchor
+# ANCHOR
 
-Anchor is a tool that lets you and your agent work with engineering documents.
+**AN**ything **C**an **H**ave **O**rder and **R**eason<br>
+*Agent-First Knowledge Canvas with Source-Grounded Provenance*
+
+ANCHOR is a tool that lets you and your agent work with engineering documents.
 
 Drop a PDF onto a canvas. The agent reads it and pulls the values you need into a spec table. Every value links back to the page and bounding box it came from, so you can click and see the source.
 
@@ -56,12 +59,12 @@ Windows; verify browser and PDF workflows on your target platform.
 - **[Extensions and OIP](concepts/extensions-and-oip.md)** - how third-party producers plug in
 - **[Agent setup](guides/agent-setup.md)** - connect MCP clients and optional local models
 - **[Reference](reference/cli.md)** - CLI, MCP tool families, and configuration
-- **[Citation and acknowledgments](reference/citation.md)** - citing Anchor and project funding
+- **[Citation and acknowledgments](reference/citation.md)** - citing ANCHOR and project funding
 
 ---
 
 ## Designed for both humans and agents
 
-Anchor is **agent-native**: every operation reaches HTTP, MCP, and CLI in parity. An agent driving the canvas through MCP and a human clicking in a browser end up at the same workspace, see each other's edits in real time, and share the same source-grounded view of the data.
+ANCHOR is **agent-native**: every operation reaches HTTP, MCP, and CLI in parity. An agent driving the canvas through MCP and a human clicking in a browser end up at the same workspace, see each other's edits in real time, and share the same source-grounded view of the data.
 
 The point is to kill the manual loop: open a datasheet, find a number, paste it into a spreadsheet or simulation, hope you got the right one. The agent does the lookup; the source link makes every answer checkable.

@@ -18,7 +18,7 @@ canvas exists. They both project the same workspace state.
 
 ```mermaid
 flowchart TB
-    subgraph core["Anchor core — the truth"]
+    subgraph core["ANCHOR core — the truth"]
         WS["WorkspaceService"]
         EV["EventBus"]
         ST["Workspace state"]
@@ -85,7 +85,7 @@ literal chains in space. Most interestingly: nodes whose `source_ref`
 points at a physical object render *next to that object* when the user
 looks at it. The pump's flow-rate spec floats next to the actual pump.
 
-The "Anchor" name becomes literal here. Today a node is anchored to a
+The "ANCHOR" name becomes literal here. Today a node is anchored to a
 PDF page bbox; tomorrow the same node is anchored to a real pump via
 an ArUco marker, a QR code, or a world-anchor coordinate. The
 `source_ref.kind` polymorphism handles it — a new kind, a new handler,
@@ -164,7 +164,7 @@ genuinely just one rendering — not the canonical one. Every other
 interface follows from that.
 
 The same test, restated for industry: *can a maintenance engineer
-wearing a Vision Pro on the engine deck of a ship use Anchor without
+wearing a Vision Pro on the engine deck of a ship use ANCHOR without
 ever opening a browser?* If yes, the architecture is ready for
 industrial deployment. If no, the canvas has accumulated implicit
 state that should have been in the workspace.

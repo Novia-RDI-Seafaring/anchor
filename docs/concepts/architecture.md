@@ -2,7 +2,7 @@
 
 ## Thesis
 
-Anchor is a **canvas primitive** with **swappable extensions**. The
+ANCHOR is a **canvas primitive** with **swappable extensions**. The
 canvas is a small, domain-agnostic piece of software that knows about
 nodes, edges, workspaces, and events. Everything that turns a PDF into
 something you can drag onto that canvas — Docling extraction, vision-LM
@@ -46,7 +46,7 @@ in an agent's MCP view within ~50ms, with no separate sync layer.
 
 ## The hexagon
 
-Anchor's Python package follows ports-and-adapters layering, enforced
+ANCHOR's Python package follows ports-and-adapters layering, enforced
 in CI by `import-linter`. The contracts (verbatim from `.importlinter`):
 
 ```
@@ -69,7 +69,7 @@ routes, MCP tool definitions, CLI subcommands — lives in `adapters/`.
 Anything PDF- or FMU-specific lives in `extensions/` and the canvas
 itself does not import it.
 
-![Anchor runtime and hexagonal architecture](../assets/diagrams/hexagon-architecture.svg)
+![ANCHOR runtime and hexagonal architecture](../assets/diagrams/hexagon-architecture.svg)
 
 *The runtime separates source producers, durable document and canvas
 stores, ports-and-adapters layers, and consumers. The core is pure
@@ -109,8 +109,8 @@ add their own. Today there are two:
   bronze (raw) → silver (Docling extraction) → gold (VLM-polished
   markdown + region detection). Emits progress events on the same bus.
 
-Anchor-fmus has its own `FmuService` (`upload_and_inspect`,
-`simulate`, `list_simulations`, ...). Anchor's canvas core never
+`anchor_fmus` has its own `FmuService` (`upload_and_inspect`,
+`simulate`, `list_simulations`, ...). ANCHOR's canvas core never
 imports either.
 
 ---
