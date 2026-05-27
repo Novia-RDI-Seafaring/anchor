@@ -21,23 +21,7 @@ Every Anchor extension *is* an OIP producer (it ships a manifest and
 writes OIP-shaped artefacts). Not every OIP producer is an Anchor
 extension. That's the whole point.
 
-```mermaid
-flowchart LR
-    subgraph oip["OIP producer — vendor neutral"]
-        M["manifest.json<br/>oip_version, producer,<br/>produces, invocation,<br/>ui_hints"]
-        A["artefacts/&lt;slug&gt;/<br/>document.json<br/>regions.json<br/>content/*.{md,png,json}"]
-        T["MCP tools<br/>tools_namespace.&lt;tool&gt;"]
-    end
-    subgraph anchor["Anchor extension layer (optional)"]
-        NT["Node types<br/>pdf:document, fmu:model, ..."]
-        EH["Edge handlers<br/>source_ref → UI behaviour"]
-        UI["React components<br/>per node type"]
-    end
-    M --> NT
-    M --> EH
-    A --> UI
-    T --> UI
-```
+![OIP extension manifest, artefacts, tools, and consumers](../assets/diagrams/extension-flow.svg)
 
 *An OIP producer is three things: a manifest, an on-disk artefact shape,
 and a set of MCP tools. Anchor extensions add canvas-side hooks (node
