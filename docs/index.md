@@ -56,6 +56,7 @@ Windows; verify browser and PDF workflows on your target platform.
 - **[Extensions and OIP](concepts/extensions-and-oip.md)** - how third-party producers plug in
 - **[Agent setup](guides/agent-setup.md)** - connect MCP clients and optional local models
 - **[Reference](reference/cli.md)** - CLI, MCP tool families, and configuration
+- **[Citation and acknowledgments](reference/citation.md)** - citing Anchor and project funding
 
 ---
 
