@@ -7,7 +7,7 @@ Anchor draws a deliberate line:
 - **Anchor-level extensions** are Python packages that share Anchor's
   process, register node types, edge styles, and MCP tools, and can
   reach into canvas internals when they have to. They follow the
-  contract in [`EXTENSIONS.md`](../EXTENSIONS.md). The bundled producers
+  contract in [`EXTENSIONS.md`](https://github.com/Novia-RDI-Seafaring/anchor/blob/main/EXTENSIONS.md). The bundled producers
   ship in-tree today; third-party extension loading remains proposed.
 
 - **OIP producers** are anything that ingests source material into a

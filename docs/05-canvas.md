@@ -81,9 +81,8 @@ Two:
 
 An anchored edge that carries a `source_ref` in its `data` field is an
 **evidence edge** — it says "this value is grounded in this region of
-this document." Today they render as straight lines; the
-[future-delight motif](./03-extensions-and-oip.md#future-delight--the-anchor-and-chain-motif)
-is to render those edges with an anchor glyph at the source endpoint
+this document." Today they render as straight lines; a future visual
+treatment is to render those edges with an anchor glyph at the source endpoint
 and a chain-link pattern along the stroke. The metaphor is already in
 the code; the visual just doesn't lean into it yet.
 

@@ -1,0 +1,128 @@
+# MkDocs configuration for the Anchor documentation site.
+#
+# Live preview: `uv run --extra docs mkdocs serve` (http://127.0.0.1:8000)
+# Static build: `uv run --extra docs mkdocs build` → site/
+# Deploy:        runs from .github/workflows/docs.yml on push to main.
+#
+# The site is published to https://novia-rdi-seafaring.github.io/anchor/
+
+site_name: Anchor
+site_description: Agent-first knowledge canvas with PDF ingest, FMU simulation, and source-grounded provenance.
+site_url: https://novia-rdi-seafaring.github.io/anchor/
+site_author: Novia RDI Seafaring
+repo_name: Novia-RDI-Seafaring/anchor
+repo_url: https://github.com/Novia-RDI-Seafaring/anchor
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; 2026 Novia University of Applied Sciences. MIT licensed.
+
+docs_dir: docs
+
+# These files live under docs/ for editor convenience but aren't part of
+# the published site (drafts, internal design notes, asset metadata).
+exclude_docs: |
+  TOOLBAR_DESIGN.md
+  poster.md
+  assets/README.md
+  assets/REVIEW.md
+  assets/source/*
+
+theme:
+  name: material
+  language: en
+  # Anchor's brand placeholder. Swap in a real SVG at docs/assets/logo.svg
+  # when one exists; the `logo:` key picks it up automatically.
+  icon:
+    logo: material/anchor
+    repo: fontawesome/brands/github
+  favicon: assets/favicon.svg
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    # Light mode — monochrome to match the architecture diagrams.
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: black
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Dark mode — inverted, white on near-black.
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: white
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs              # top-level sections as tabs
+    - navigation.tabs.sticky
+    - navigation.sections          # section labels in the sidebar
+    - navigation.expand            # expand the active section
+    - navigation.top               # back-to-top button
+    - navigation.indexes           # section-level index.md files
+    - navigation.footer            # prev/next links at page foot
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy            # copy button on code blocks
+    - content.code.annotate
+    - content.tabs.link            # tab selection persists across pages
+    - content.action.edit          # "edit this page" pencil
+    - toc.follow                   # right-side TOC scrolls with the page
+
+extra_css:
+  - assets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Novia-RDI-Seafaring/anchor
+    - icon: fontawesome/solid/cube
+      link: https://pypi.org/project/anchor-kb/
+
+markdown_extensions:
+  # Admonitions: !!! note / !!! warning / !!! tip / etc.
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  # Tabbed content: === "uv" / === "pip" / === "pipx"
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - toc:
+      permalink: true
+      title: On this page
+
+# Navigation order. Files not listed still build but won't appear in the
+# sidebar — useful for drafts (poster.md, TOOLBAR_DESIGN.md).
+nav:
+  - Home: index.md
+  - Tutorial: TUTORIAL.md
+  - Install: install.md
+  - Concepts:
+    - Architecture: 01-architecture.md
+    - Data and events: 02-data-and-events.md
+    - On-disk substrate: 04-on-disk-substrate.md
+    - Canvas: 05-canvas.md
+    - Many interfaces: 06-many-interfaces.md
+  - Extensions:
+    - Overview: 03-extensions-and-oip.md
+  - Adoption: ADOPTION.md
