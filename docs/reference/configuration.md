@@ -1,6 +1,6 @@
 # Configuration
 
-Anchor uses command-line flags for server location and data-directory
+ANCHOR uses command-line flags for server location and data-directory
 selection. Environment variables configure optional extraction and local
 runtime behavior.
 
@@ -29,7 +29,7 @@ deployment layer.
 | `ANCHOR_FMU_DEMO` | Enables synthetic FMU demo behavior when explicitly set. |
 
 Copy [`.env.example`](https://github.com/Novia-RDI-Seafaring/anchor/blob/main/.env.example)
-to `.env` in the directory where you launch Anchor and set only the values
+to `.env` in the directory where you launch ANCHOR and set only the values
 you need.
 
 ## Example: OpenAI-compatible extraction

@@ -1,4 +1,4 @@
-# MkDocs configuration for the Anchor documentation site.
+# MkDocs configuration for the ANCHOR documentation site.
 #
 # Live preview: `uv run --extra docs mkdocs serve` (http://127.0.0.1:8000)
 # Static build: `uv run --extra docs mkdocs build` → site/
@@ -6,8 +6,8 @@
 #
 # The site is published to https://novia-rdi-seafaring.github.io/anchor/
 
-site_name: Anchor
-site_description: Agent-first knowledge canvas with PDF ingest, FMU simulation, and source-grounded provenance.
+site_name: ANCHOR
+site_description: ANCHOR - Anything Can Have Order and Reason; Agent-First Knowledge Canvas with Source-Grounded Provenance.
 site_url: https://novia-rdi-seafaring.github.io/anchor/
 site_author: Novia RDI Seafaring
 repo_name: Novia-RDI-Seafaring/anchor
@@ -20,7 +20,7 @@ docs_dir: docs
 theme:
   name: material
   language: en
-  logo: assets/branding/android-chrome-192x192.png
+  logo: assets/branding/bild.png
   icon:
     repo: fontawesome/brands/github
   favicon: assets/branding/favicon-32x32.png

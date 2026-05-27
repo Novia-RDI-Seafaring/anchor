@@ -62,7 +62,7 @@ asks the registry without recompilation.
 
 This is what makes extensions composable on the frontend. An OIP
 producer's manifest can declare `pdf:document` as a node type with
-`renders: "document with cover image and region overlay"`; the Anchor
+`renders: "document with cover image and region overlay"`; the ANCHOR
 extension that ships alongside that manifest registers a real React
 component under the name `pdf:document`; the canvas core never has to
 know about it.

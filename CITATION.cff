@@ -1,6 +1,6 @@
 cff-version: 1.2.0
-message: "If you use Anchor, please cite this software."
-title: "Anchor: Agent-First Knowledge Canvas with Source-Grounded Provenance"
+message: "If you use ANCHOR, please cite this software."
+title: "ANCHOR: Agent-First Knowledge Canvas with Source-Grounded Provenance"
 type: software
 authors:
   - family-names: Jatta

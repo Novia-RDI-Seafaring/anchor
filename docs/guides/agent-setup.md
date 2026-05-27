@@ -1,6 +1,6 @@
 # Adoption
 
-This guide describes the supported path for running Anchor outside the
+This guide describes the supported path for running ANCHOR outside the
 repository and connecting it to an MCP-capable agent harness.
 
 ## 1. Install and run
@@ -33,7 +33,7 @@ corepack pnpm@10 --dir web install
 corepack pnpm@10 --dir web dev
 ```
 
-Anchor serves the UI and HTTP API at `http://127.0.0.1:8002` by default.
+ANCHOR serves the UI and HTTP API at `http://127.0.0.1:8002` by default.
 It is unauthenticated, so bind to a network interface only behind an
 authentication layer.
 
@@ -51,7 +51,7 @@ ship a vendor PDF. In normal use, ingest a PDF you are allowed to process.
 
 ## 2. Agent harness setup
 
-Anchor exposes MCP tools through the `anchor-mcp` stdio executable. Supported
+ANCHOR exposes MCP tools through the `anchor-mcp` stdio executable. Supported
 one-command installers are:
 
 ```bash
@@ -141,7 +141,7 @@ Use a model that accepts image input and evaluate extraction quality on your
 own documents before relying on extracted engineering values.
 
 Embeddings use the local sentence-transformer model
-`BAAI/bge-small-en-v1.5` by default. The Python dependency ships with Anchor;
+`BAAI/bge-small-en-v1.5` by default. The Python dependency ships with ANCHOR;
 the model weights must already be cached or downloaded before fully offline
 use.
 
@@ -155,7 +155,7 @@ use.
 | Region embeddings and search | Yes, after model availability | Local sentence-transformer default. |
 | Workspace state, HTTP, SSE, MCP-stdio | Yes | Runs on the local machine. |
 | Canvas snapshot | Yes | Requires local `anchor serve` and Chromium support. |
-| Agent harness model calls | Outside Anchor | Governed by the harness you choose. |
+| Agent harness model calls | Outside ANCHOR | Governed by the harness you choose. |
 
 ## Code pointers
 

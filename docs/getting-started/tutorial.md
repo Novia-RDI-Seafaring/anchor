@@ -1,10 +1,10 @@
-# Anchor tutorial — first day
+# ANCHOR tutorial - first day
 
 Five minutes from zero to "agent fills in my engineering specs while I watch".
 
 This walkthrough assumes you have a working AI harness on your machine
 (Claude Code, Cursor, opencode). If not, do that first; the agent is the
-half of Anchor that makes the canvas pay off.
+half of ANCHOR that makes the canvas pay off.
 
 ## 1. Install
 
@@ -76,7 +76,7 @@ You'll see:
 Try it: right-click a plain shape, pick `Mark as placeholder`. It
 flips to the dashed-sky look. Pick `Clear placeholder` to revert.
 
-## 4. Register Anchor with your AI harness
+## 4. Register ANCHOR with your AI harness
 
 In a second terminal:
 
@@ -88,12 +88,12 @@ This writes:
 
 - `~/.claude/mcp.json` — an MCP server entry pointing at `anchor-mcp`.
 - `~/.claude/skills/anchor/SKILL.md` — a skill so Claude Code knows
-  when to invoke Anchor's tools.
+  when to invoke ANCHOR's tools.
 
 Restart your harness (`Cmd+Q`, reopen). In any conversation, `/mcp`
 should now show `anchor` with a handful of tools.
 
-Anchor's MCP server also returns a short system-prompt block on connect
+ANCHOR's MCP server also returns a short system-prompt block on connect
 that tells the agent how to think about the canvas — the substrates,
 the source-grounding rule, and the placeholder protocol. You don't
 need to brief it yourself.

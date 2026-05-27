@@ -1,14 +1,14 @@
 # Citation and acknowledgments
 
-## Cite Anchor
+## Cite ANCHOR
 
-If you use Anchor in research, development, or demonstrations, cite the
+If you use ANCHOR in research, development, or demonstrations, cite the
 software repository:
 
 ```bibtex
-@misc{Anchor,
+@misc{ANCHOR,
   author       = {Lamin Jatta and Christoffer Bj{\"o}rkskog},
-  title        = {Anchor: Agent-First Knowledge Canvas with Source-Grounded Provenance},
+  title        = {ANCHOR: Agent-First Knowledge Canvas with Source-Grounded Provenance},
   year         = {2026},
   howpublished = {\url{https://github.com/Novia-RDI-Seafaring/anchor}},
 }

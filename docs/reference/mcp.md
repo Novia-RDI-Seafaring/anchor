@@ -1,6 +1,6 @@
 # MCP tools
 
-`anchor-mcp` exposes Anchor over MCP stdio for local agent harnesses. The
+`anchor-mcp` exposes ANCHOR over MCP stdio for local agent harnesses. The
 tools available at runtime include canvas operations and bundled extension
 tools; optional FMU behavior depends on installed/runtime configuration.
 
