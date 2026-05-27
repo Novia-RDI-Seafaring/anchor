@@ -388,6 +388,27 @@ the shape and contribute, not as finished features:
 
 MIT — see [LICENSE](LICENSE).
 
+## Citation
+
+If you use Anchor, please cite the software repository:
+
+```bibtex
+@misc{Anchor,
+  author       = {Lamin Jatta and Christoffer Bj{\"o}rkskog},
+  title        = {Anchor: Agent-First Knowledge Canvas with Source-Grounded Provenance},
+  year         = {2026},
+  howpublished = {\url{https://github.com/Novia-RDI-Seafaring/anchor}},
+}
+```
+
+GitHub-compatible citation metadata is provided in
+[`CITATION.cff`](./CITATION.cff).
+
+## Acknowledgments
+
+This work was done in the Business Finland funded project
+[Virtual Sea Trial](https://virtualseatrial.fi/).
+
 ## Contributing
 
 Open changes as short-lived branches targeting `main`; see
