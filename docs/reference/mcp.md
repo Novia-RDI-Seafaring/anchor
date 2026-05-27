@@ -1,0 +1,54 @@
+# MCP tools
+
+`anchor-mcp` exposes Anchor over MCP stdio for local agent harnesses. The
+tools available at runtime include canvas operations and bundled extension
+tools; optional FMU behavior depends on installed/runtime configuration.
+
+## Connect an agent harness
+
+```bash
+anchor install claude-code --data-dir ~/anchor-data
+# or
+anchor install cursor --data-dir ~/anchor-data
+```
+
+For another stdio-compatible MCP client:
+
+```json
+{
+  "mcpServers": {
+    "anchor": {
+      "command": "anchor-mcp",
+      "args": ["--data-dir", "/home/you/anchor-data"]
+    }
+  }
+}
+```
+
+## Tool families
+
+| Family | Representative operations |
+| --- | --- |
+| Canvas | `canvas_list_workspaces`, `canvas_get_state`, `canvas_add_node`, `canvas_update_node`, `canvas_add_edge`, `canvas_snapshot` |
+| Documents | `ingest_pdf`, `list_documents`, `get_document_index`, `get_gold_regions`, `search_documents`, `get_crop` |
+| CAD | `inspect`, `list_models`, `set_parameter` |
+| SysML | `sysml_render`, `sysml_export` |
+| FMU | Inspection and simulation tools when enabled by the bundled FMU extension. |
+
+## Source-grounded workflow
+
+1. Call `canvas_list_placeholders` for a workspace.
+2. Find relevant material through `search_documents` or
+   `get_gold_regions`.
+3. Update the target node with `placeholder: false` and a `source_ref`.
+4. Use `canvas_organize_subtree` or alignment helpers if the result needs
+   layout cleanup.
+
+For snapshots, keep `anchor serve` running and call `canvas_snapshot` with
+`format="inline"` when your MCP client supports displayed images.
+
+## Transport boundary
+
+The packaged MCP server is stdio-based. `anchor serve` exposes the browser UI,
+HTTP API and SSE updates; it does not provide a hosted authenticated MCP HTTP
+endpoint.

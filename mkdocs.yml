@@ -17,24 +17,13 @@ copyright: Copyright &copy; 2026 Novia University of Applied Sciences. MIT licen
 
 docs_dir: docs
 
-# These files live under docs/ for editor convenience but aren't part of
-# the published site (drafts, internal design notes, asset metadata).
-exclude_docs: |
-  TOOLBAR_DESIGN.md
-  poster.md
-  assets/README.md
-  assets/REVIEW.md
-  assets/source/*
-
 theme:
   name: material
   language: en
-  # Anchor's brand placeholder. Swap in a real SVG at docs/assets/logo.svg
-  # when one exists; the `logo:` key picks it up automatically.
+  logo: assets/branding/android-chrome-192x192.png
   icon:
-    logo: material/anchor
     repo: fontawesome/brands/github
-  favicon: assets/favicon.svg
+  favicon: assets/branding/favicon-32x32.png
   font:
     text: Inter
     code: JetBrains Mono
@@ -73,7 +62,7 @@ theme:
     - toc.follow                   # right-side TOC scrolls with the page
 
 extra_css:
-  - assets/extra.css
+  - assets/styles/extra.css
 
 extra:
   social:
@@ -90,7 +79,6 @@ markdown_extensions:
       custom_fences:
         - name: mermaid
           class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
   # Tabbed content: === "uv" / === "pip" / === "pipx"
   - pymdownx.tabbed:
       alternate_style: true
@@ -100,9 +88,6 @@ markdown_extensions:
       pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
-  - pymdownx.emoji:
-      emoji_index: !!python/name:material.extensions.emoji.twemoji
-      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - attr_list
   - md_in_html
   - tables
@@ -111,18 +96,23 @@ markdown_extensions:
       permalink: true
       title: On this page
 
-# Navigation order. Files not listed still build but won't appear in the
-# sidebar — useful for drafts (poster.md, TOOLBAR_DESIGN.md).
+# Navigation order for the public documentation site.
 nav:
   - Home: index.md
-  - Tutorial: TUTORIAL.md
-  - Install: install.md
+  - Get started:
+    - Install: getting-started/installation.md
+    - Tutorial: getting-started/tutorial.md
+  - Guides:
+    - Working with documents and canvases: guides/documents-and-canvases.md
+    - Agent setup: guides/agent-setup.md
   - Concepts:
-    - Architecture: 01-architecture.md
-    - Data and events: 02-data-and-events.md
-    - On-disk substrate: 04-on-disk-substrate.md
-    - Canvas: 05-canvas.md
-    - Many interfaces: 06-many-interfaces.md
-  - Extensions:
-    - Overview: 03-extensions-and-oip.md
-  - Adoption: ADOPTION.md
+    - Architecture: concepts/architecture.md
+    - Data and events: concepts/data-and-events.md
+    - Extensions and OIP: concepts/extensions-and-oip.md
+    - On-disk substrate: concepts/on-disk-substrate.md
+    - Canvas: concepts/canvas.md
+    - Many interfaces: concepts/interfaces.md
+  - Reference:
+    - CLI: reference/cli.md
+    - MCP tools: reference/mcp.md
+    - Configuration: reference/configuration.md

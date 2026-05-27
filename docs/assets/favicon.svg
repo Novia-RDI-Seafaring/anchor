@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-  <!-- minimal anchor glyph: ring, shank, stock, fluke arc -->
-  <circle cx="16" cy="7" r="2.5"/>
-  <line x1="16" y1="9.5" x2="16" y2="24.5"/>
-  <line x1="11" y1="12" x2="21" y2="12"/>
-  <path d="M7 18c0 4 4 7 9 7s9-3 9-7"/>
-</svg>
