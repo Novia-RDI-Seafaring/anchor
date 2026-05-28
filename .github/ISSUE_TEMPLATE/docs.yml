@@ -1,0 +1,33 @@
+name: Docs improvement
+description: Something in the docs is wrong, missing, or unclear
+title: "docs: "
+labels: ["type:docs"]
+body:
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: Which page or file?
+      placeholder: "docs/getting-started/installation.md / README.md / etc."
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's wrong or missing
+      placeholder: |
+        The install page says `pnpm --filter @anchor/web` but the repo doesn't
+        have a workspace file; the command fails. Should be `pnpm --dir web`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggested
+    attributes:
+      label: Suggested fix
+      placeholder: |
+        Replace the `pnpm --filter` block with the `--dir web` equivalent
+        shown in CONTRIBUTING.md.
+    validations:
+      required: false

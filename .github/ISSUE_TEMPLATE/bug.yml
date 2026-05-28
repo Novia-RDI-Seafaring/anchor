@@ -1,0 +1,49 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly
+title: "bug: "
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, what did you get instead?
+      placeholder: |
+        I ran `anchor serve`, then dropped a PDF onto the canvas.
+        I expected a document node to appear. Instead the canvas stayed empty
+        and `anchor.log` shows a 500 from /api/workspaces/.../upload.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: Steps another person (or agent) can follow to see the same thing.
+      placeholder: |
+        1. uv tool install anchor-kb
+        2. anchor serve --data-dir /tmp/anchor-test
+        3. ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: anchor version, OS, Python version, anything else that might matter.
+      placeholder: |
+        - anchor-kb: 0.2.0
+        - macOS 14.5 / Linux Ubuntu 24.04 / Windows 11
+        - Python 3.12.3
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / traceback
+      description: Paste relevant output, redacted if needed.
+      render: shell
+    validations:
+      required: false
