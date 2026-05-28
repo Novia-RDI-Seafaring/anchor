@@ -31,6 +31,13 @@ and coding agents.
    pick it up unattended, add `agent-ready`. If architectural
    decisions are still open, add `needs-design` instead.
 
+> **Trust boundary.** Coding agents only act on `agent-ready` issues
+> authored by repo collaborators. If you're not yet a collaborator
+> your issue is welcome and will be read, but a maintainer needs to
+> triage it (and, if appropriate, file the work as a
+> maintainer-authored issue) before an agent picks it up. This is a
+> deliberate guard against drive-by issues steering autonomous work.
+
 ### Claiming
 
 Self-assign before you start so two people don't pick up the same
