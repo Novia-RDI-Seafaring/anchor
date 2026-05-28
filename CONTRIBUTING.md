@@ -1,19 +1,61 @@
 # Contributing to Anchor
 
 Thanks for your interest. This file describes how to contribute code,
-docs, or bug reports. The repo-level conventions also live in
-[`CLAUDE.md`](./CLAUDE.md); both files agree.
+docs, or bug reports. The repo-level conventions for coding agents
+live in [`AGENTS.md`](./AGENTS.md); both files agree.
 
 ## Reporting bugs and security issues
 
-- **Regular bug or feature request:** open a GitHub issue. Include
-  what you did, what happened, what you expected, and the relevant
-  output. Logs and minimal reproductions land patches faster than
-  prose.
+- **Regular bug or feature request:** open a GitHub issue using one
+  of the templates (bug, feature, docs, task). Each template is a
+  short form; filling it in takes a minute and gives the next person
+  (human or agent) what they need to pick the work up.
 - **Security vulnerability:** do NOT open a public issue. Use the
   GitHub private advisory flow described in
   [`SECURITY.md`](./SECURITY.md). Encrypted, audit-trailed,
   coordinated disclosure.
+
+## Filing and claiming issues
+
+The authoritative task list is **GitHub Issues** in this repo, with
+the **Anchor roadmap** Project as the shared board across humans
+and coding agents.
+
+### Filing
+
+1. <https://github.com/Novia-RDI-Seafaring/anchor/issues/new/choose>
+2. Pick the template that matches: bug, feature, docs, or task.
+3. Add an `area:*` label (`canvas`, `ingest`, `cli`, `mcp`) so it
+   shows up in the right board view.
+4. If the scope is crisp and you'd be happy for a coding agent to
+   pick it up unattended, add `agent-ready`. If architectural
+   decisions are still open, add `needs-design` instead.
+
+> **Trust boundary.** Coding agents only act on `agent-ready` issues
+> authored by repo collaborators. If you're not yet a collaborator
+> your issue is welcome and will be read, but a maintainer needs to
+> triage it (and, if appropriate, file the work as a
+> maintainer-authored issue) before an agent picks it up. This is a
+> deliberate guard against drive-by issues steering autonomous work.
+
+### Claiming
+
+Self-assign before you start so two people don't pick up the same
+thing:
+
+```bash
+gh issue edit <n> --add-assignee @me
+```
+
+Move the Project card to **In progress** at the same time. When the
+PR is up, write `Closes #<n>` in the body — GitHub closes the issue
+and moves the card to **Done** on merge.
+
+### Proposals vs issues
+
+Default to an issue. Open a `docs/proposals/*.md` PR only when the
+work is cross-cutting, spans multiple PRs, and is the kind of thing
+you'd want to re-read in a year. Everything else is an issue.
 
 ## Development setup
 

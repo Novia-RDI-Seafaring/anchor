@@ -1,0 +1,35 @@
+# Keep the repo's label set in lockstep with .github/labels.yml.
+# Edit labels.yml; merge; labels appear on GitHub.
+#
+# Runs only on push to main when labels.yml changes, plus a manual
+# trigger for forced reconciliation.
+
+name: sync-labels
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/labels.yml"
+      - ".github/workflows/sync-labels.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync labels
+        uses: EndBug/label-sync@v2
+        with:
+          config-file: .github/labels.yml
+          # Don't delete labels we haven't listed — GitHub creates
+          # some by default (e.g. 'invalid', 'wontfix') and Renovate
+          # adds 'dependencies'. Removing them would be churn for no
+          # benefit.
+          delete-other-labels: false
