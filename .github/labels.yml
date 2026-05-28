@@ -1,0 +1,56 @@
+# Single source of truth for repo labels. Synced to GitHub on push to
+# main via .github/workflows/sync-labels.yml (EndBug/label-sync).
+#
+# Deliberately small. If you find yourself wanting a 13th label, ask
+# whether the 12 below are doing their job.
+
+# ── Type — what kind of change this is ────────────────────────────────
+- name: "type:bug"
+  color: "d73a4a"
+  description: "Something is broken or behaves unexpectedly"
+
+- name: "type:feature"
+  color: "0e8a16"
+  description: "New functionality"
+
+- name: "type:docs"
+  color: "0075ca"
+  description: "Documentation only"
+
+- name: "type:chore"
+  color: "8b949e"
+  description: "Tooling, CI, deps, repo plumbing"
+
+- name: "type:refactor"
+  color: "5319e7"
+  description: "Internal restructuring without behaviour change"
+
+# ── Area — which part of the codebase ─────────────────────────────────
+- name: "area:canvas"
+  color: "fef2c0"
+  description: "Workspaces, nodes, edges, the canvas UI"
+
+- name: "area:ingest"
+  color: "fef2c0"
+  description: "Bronze / silver / gold pipeline + producers"
+
+- name: "area:cli"
+  color: "fef2c0"
+  description: "`anchor` command-line surface"
+
+- name: "area:mcp"
+  color: "fef2c0"
+  description: "MCP server, tool definitions, agent skills"
+
+# ── Special — operational signals ─────────────────────────────────────
+- name: "agent-ready"
+  color: "1d76db"
+  description: "Scope crisp, acceptance criteria clear, safe for a coding agent to pick up"
+
+- name: "good-first-issue"
+  color: "7057ff"
+  description: "Approachable for someone new to the codebase"
+
+- name: "needs-design"
+  color: "fbca04"
+  description: "Open architectural decisions; not ready to implement"

@@ -1,0 +1,51 @@
+# Strip the `agent-ready` label when applied to an issue whose author is
+# not a repo collaborator. The label is a signal that autonomous agents
+# may pick the work up; we don't want drive-by issues steering that.
+#
+# Belt and braces. The agent itself is also expected to check
+# authorAssociation before acting (see AGENTS.md).
+
+name: agent-ready-guard
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: write
+  pull-requests: read
+
+jobs:
+  guard:
+    if: github.event.label.name == 'agent-ready'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove label if author is not a collaborator
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const trusted = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+            const association = context.payload.issue.author_association;
+            if (trusted.has(association)) {
+              core.info(`Author association ${association} is trusted; keeping label.`);
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.issue.number;
+            await github.rest.issues.removeLabel({
+              owner, repo, issue_number, name: 'agent-ready',
+            });
+            await github.rest.issues.createComment({
+              owner, repo, issue_number,
+              body: [
+                `The \`agent-ready\` label has been removed automatically.`,
+                ``,
+                `Coding agents only act on \`agent-ready\` issues authored by`,
+                `repo collaborators. This issue's author association is`,
+                `\`${association}\`. A maintainer can triage the request and,`,
+                `if appropriate, file a maintainer-authored issue that mirrors`,
+                `the work — agents can then pick that one up.`,
+              ].join('\n'),
+            });
+            core.info(`Removed agent-ready from #${issue_number} (author=${association}).`);

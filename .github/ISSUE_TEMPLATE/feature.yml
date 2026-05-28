@@ -1,0 +1,49 @@
+name: Feature request
+description: Propose something ANCHOR doesn't do yet
+title: "feat: "
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What
+      description: One paragraph — the thing you want.
+      placeholder: |
+        Add `anchor doctor` — a single CLI command that prints a one-page report
+        of the current configuration, OpenAI connectivity, web bundle presence,
+        and installed MCP harnesses.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What problem this solves. Include who hits it.
+      placeholder: |
+        Every "I followed the README but it's not working" message starts with the
+        same diagnostic round-trip. A doctor command turns it into one command.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How will we know it's done? A short checklist works.
+      placeholder: |
+        - [ ] `anchor doctor` prints config (data_dir, openai_*, http_*) without secrets
+        - [ ] Reports MCP install status for claude-code and cursor
+        - [ ] Exit code 0 on healthy, 1 on broken
+        - [ ] Listed in `anchor --help`
+    validations:
+      required: false
+
+  - type: input
+    id: related
+    attributes:
+      label: Related design proposal (if any)
+      description: Link to a `docs/proposals/*.md` if this is part of a bigger design.
+      placeholder: "docs/proposals/anchor-projects.md"
+    validations:
+      required: false

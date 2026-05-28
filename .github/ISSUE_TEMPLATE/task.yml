@@ -1,0 +1,31 @@
+name: Task
+description: Chore, refactor, test, or other unscoped work
+title: "chore: "
+labels: ["type:chore"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What
+      description: One paragraph of what needs doing.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why now
+      description: Why this matters; what it unblocks or prevents.
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Done when
+      description: How we know it's finished.
+      placeholder: |
+        - [ ] CI gate added for X
+        - [ ] Documented in CONTRIBUTING.md
+    validations:
+      required: false

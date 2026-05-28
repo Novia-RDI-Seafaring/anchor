@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discussion
+    url: https://github.com/Novia-RDI-Seafaring/anchor/discussions
+    about: For open-ended questions, design conversations, or anything not yet a concrete task.
+  - name: Security
+    url: https://github.com/Novia-RDI-Seafaring/anchor/security/advisories/new
+    about: Report a security vulnerability privately. Do not open a public issue.
