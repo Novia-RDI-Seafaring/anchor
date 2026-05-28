@@ -331,7 +331,7 @@ For implementation status: today, an OIP-registered producer is *visible* in `ex
 
 ```bash
 uv sync --extra dev                       # one-time: install pytest/ruff/import-linter
-uv run pytest                             # ~315 backend tests
+uv run pytest                             # ~340 backend tests
 uv run lint-imports                       # 6 dependency-rule contracts
 pnpm --dir web test                       # ~180 web tests (Vitest)
 pnpm --dir web exec tsc --noEmit          # web typecheck
