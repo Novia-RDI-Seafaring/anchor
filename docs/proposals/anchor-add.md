@@ -2,7 +2,6 @@
 
 **Status:** draft, not yet implemented
 **Target:** v0.3
-**Owners:** Christoffer Björkskog, Lamin Jatta
 **Depends on:** [`anchor-projects.md`](./anchor-projects.md) (the `.anchor/` directory
 convention), [`agent-skill-spec.md`](./agent-skill-spec.md) (the OIP 0.2
 `agent` block), OIP PR #1 (the protocol-side schema for that block)
