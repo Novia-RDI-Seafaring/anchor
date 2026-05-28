@@ -2,7 +2,6 @@
 
 **Status:** draft, not yet implemented
 **Target:** v0.3
-**Owners:** Christoffer Björkskog, Lamin Jatta
 
 ## Motivation
 
