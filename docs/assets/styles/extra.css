@@ -1,26 +1,34 @@
-/* Anchor docs site — brand overrides on top of mkdocs-material.
+/* ANCHOR docs site - brand overrides on top of mkdocs-material.
  *
- * The architecture diagrams in this site are pure monochrome
- * (black ink on off-white background). The docs honour that:
- * black-on-white in light mode, white-on-near-black in dark
- * mode. No accent colour pollutes the palette yet — that
- * decision can land when we have a designer-approved brand. */
+ * Navigation remains optimized for documentation, while the colors
+ * reuse the neutral surfaces and blue action accent from the app. */
+
+:root {
+  --anchor-accent: #2563eb;
+  --anchor-border: #e4e4e7;
+  --anchor-muted: #f4f4f5;
+  --anchor-foreground: #18181b;
+}
 
 /* ── Light mode tweaks ──────────────────────────────────── */
 
 [data-md-color-scheme="default"] {
   --md-primary-fg-color: #111;
-  --md-primary-bg-color: #fdfdf9;     /* off-white, matches diagram bg */
-  --md-accent-fg-color: #111;
-  --md-default-bg-color: #fdfdf9;
+  --md-primary-bg-color: #fff;
+  --md-accent-fg-color: var(--anchor-accent);
+  --md-typeset-a-color: var(--anchor-accent);
+  --md-default-bg-color: #fff;
+  --md-default-fg-color: var(--anchor-foreground);
+  --md-code-bg-color: var(--anchor-muted);
 }
 
 /* ── Dark mode tweaks ───────────────────────────────────── */
 
 [data-md-color-scheme="slate"] {
-  --md-primary-fg-color: #fff;
-  --md-primary-bg-color: #0b0c0d;
-  --md-accent-fg-color: #fff;
+  --md-primary-fg-color: #0b0c0d;
+  --md-primary-bg-color: #fff;
+  --md-accent-fg-color: #60a5fa;
+  --md-typeset-a-color: #60a5fa;
   --md-default-bg-color: #0b0c0d;
   --md-default-fg-color--light: #e8e8e3;
 }
@@ -42,8 +50,20 @@
   font-weight: 600;
 }
 
+/* ── Content surfaces ───────────────────────────────────── */
+
+[data-md-color-scheme="default"] .md-typeset code,
+[data-md-color-scheme="default"] .md-typeset .admonition,
+[data-md-color-scheme="default"] .md-typeset details {
+  border-color: var(--anchor-border);
+}
+
 /* ── Code blocks ─────────────────────────────────────────
  * Hairline border in dark mode so they sit apart from the page. */
+
+[data-md-color-scheme="default"] .highlight pre {
+  border: 1px solid var(--anchor-border);
+}
 
 [data-md-color-scheme="slate"] .highlight pre {
   border: 1px solid #1f2123;
