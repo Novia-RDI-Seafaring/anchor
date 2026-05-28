@@ -303,21 +303,37 @@ PR bodies say `Closes #<n>` (or `Fixes #<n>` for bugs). GitHub
 auto-closes the Issue and the Project card moves to **Done** on
 merge. No manual cleanup.
 
-### What's an Issue and what's a proposal?
+### Where does the work go?
 
-| Open an Issue | Open a `docs/proposals/*.md` PR |
-|---|---|
-| Default for anything you want done | Only when **all three** apply: |
-| | – Cross-cutting (multiple subsystems / extensions) |
-| | – Multi-PR (work doesn't fit one PR) |
-| | – Re-readable in a year (the *why* matters as much as the *what*) |
+Four buckets, smallest to largest. Pick the smallest that fits:
 
-If none of the three apply, it's an Issue. Bugs, single-feature adds,
-refactors in one area, doc updates — all Issues.
+| Bucket | Use when | How |
+|---|---|---|
+| **Just do it** | Single step. In scope of the current task. A few minutes. No follow-up. | Inline. No tracking artifact. |
+| **Internal todo** | Multi-step, but finishes in this session. Helps you not drop a step. Nobody else needs to see it. | `TaskCreate` — visible to this session only. |
+| **GitHub Issue** | Won't finish in this session, OR is out of scope of the current task, OR needs to be visible to other agents / humans, OR you discovered it mid-flow and shouldn't context-switch. | `gh issue create` with the right template + labels. |
+| **`docs/proposals/*.md` PR** | Cross-cutting AND multi-PR AND re-readable in a year (all three). | New file under `docs/proposals/`. |
+
+Default down. If you're choosing between Just-do-it and Internal todo,
+just do it. If you're choosing between Internal todo and Issue, prefer
+the todo unless someone else needs to see it. The Issue queue is for
+work that **outlives this session**; the todo list is for **finishing
+this session**.
+
+If none of the proposal triple applies, it's an Issue. Bugs,
+single-feature adds, refactors in one area, doc updates — all Issues.
 
 When a proposal is open, file a tracking Issue (*"Track: <proposal
 title>"*) and link the proposal from it. Implementation sub-tasks
 become child Issues linked to the tracker.
+
+### Discovered-mid-task work
+
+If you find a separate bug / missing feature / doc gap while doing
+something else, the answer is almost always **file an Issue and keep
+going**. Don't expand the current PR to cover it; don't carry it in
+memory only. The Issue is how the next person (you in two days,
+another agent, a human) finds out it exists.
 
 ### Labels
 
@@ -424,3 +440,75 @@ With it in place, an agent cannot self-merge even if every gate above
 is bypassed. Without it, the agent's auto-merge after CI is the only
 gate between an Issue and `main` — which is why the rules above are
 hard and not advisory.
+
+## PR review pass
+
+Every poll tick of the autonomous loop also checks the open-PR queue
+and leaves a review on anything new. The goal is **a second set of
+eyes that runs without waiting on a human**, not approval power.
+
+### What to review
+
+```bash
+gh pr list --state open --search "draft:false" \
+  --json number,title,author,headRefName,reviewDecision,updatedAt
+```
+
+Skip a PR when any of these hold:
+
+- You are the PR author (`author.login == @me`)
+- You have already reviewed at `head_sha` (the PR hasn't been pushed to
+  since your last review)
+- The PR is in draft
+
+### What to look for
+
+Read the diff (`gh pr diff <n>`) and read the PR body for stated intent.
+Comment on:
+
+1. **Security** — anything that would violate the "Security boundaries
+   for autonomous work" section above (off-limits paths now in-repo,
+   credentials in the diff, new remotes, weakened CI gates), plus the
+   general OWASP-y reads: injection, auth bypass, broken CORS, leaked
+   secrets, SSRF, path traversal.
+2. **DX / ease of use** — does a new command, env var, or config knob
+   match the existing voice? Does the README or `--help` tell a user
+   what to do? Are error messages actionable? Does the default behavior
+   match what a first-time user would expect? Is a flag named
+   consistently with the rest of the CLI?
+3. **Correctness** — does the change do what its PR body says? Do the
+   tests cover the new branch? Does anything obviously break the
+   adapter-parity rule (HTTP, MCP, CLI)?
+4. **Scope** — does the diff stay inside the PR title? If a PR titled
+   "fix README typo" also bumps three dependencies, flag the scope
+   creep, don't approve through it.
+5. **Style nits, last** — short list, framed as suggestions, never the
+   bulk of the review.
+
+### How to post
+
+One review per pass, as a single comment (not an approve, not a
+request-changes). Approving is a human's call; blocking is a human's
+call. The agent's job is to surface signal:
+
+```bash
+gh pr review <n> --comment --body "<review-body>"
+```
+
+Structure the body with the five headers above, in that order. Omit
+sections that have nothing to say — empty headers are noise. End with
+a one-line summary of overall posture: *"Looks fine, just the DX nit"*
+or *"Holding the security flag up — would not auto-merge."*
+
+### Trust and the agent
+
+Apply the same skepticism the security section names for Issues. A PR
+from outside the trust boundary doesn't get a different review — the
+diff is what matters — but it's a stronger signal to read the diff
+carefully and to flag anything off-limits explicitly in the security
+section of your comment.
+
+### Don't self-block
+
+Never comment on your own PRs. Other agents reviewing your PR is
+fine; you reviewing your own creates a feedback loop with no signal.
