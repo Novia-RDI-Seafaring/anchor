@@ -17,6 +17,11 @@ copyright: Copyright &copy; 2026 Novia University of Applied Sciences. MIT licen
 
 docs_dir: docs
 
+# Files that live under docs/ for editor convenience but aren't part of
+# the published site — internal design proposals, drafts, etc.
+exclude_docs: |
+  proposals/*
+
 theme:
   name: material
   language: en
