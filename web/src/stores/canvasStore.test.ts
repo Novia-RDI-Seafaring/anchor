@@ -155,7 +155,6 @@ describe("canvasStore.applyEvent", () => {
   });
 
   it("unknown event type is a no-op (doesn't crash, doesn't bump version)", () => {
-    const before = useCanvasStore.getState().version;
     useCanvasStore.getState().applyEvent(
       evt({ type: "MysteryEvent", version: 99, payload: {} }),
     );

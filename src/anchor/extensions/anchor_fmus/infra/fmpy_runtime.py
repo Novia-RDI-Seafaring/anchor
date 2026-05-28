@@ -18,12 +18,10 @@ from typing import Any
 
 from anchor.extensions.anchor_fmus.core.ports import FmuRuntime
 from anchor.extensions.anchor_fmus.core.schemas import (
-    Causality,
     FmuModel,
     FmuVariable,
     SimulationRun,
     TimeSeries,
-    Variability,
 )
 
 
@@ -119,5 +117,7 @@ def _detect_platforms(fmu_path: Path) -> list[str]:
                         if platform and platform not in out:
                             out.append(platform)
     except (zipfile.BadZipFile, OSError):
+        # Platform metadata is advisory; corrupt/unreadable FMUs are handled
+        # later by the real inspection path.
         pass
     return out

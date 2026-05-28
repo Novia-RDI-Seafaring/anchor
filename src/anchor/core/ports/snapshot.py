@@ -55,4 +55,4 @@ class SnapshotPort(Protocol):
           default (the canvas at its natural size).
         - `full_page`: capture the whole document, not just the viewport.
         """
-        ...
+        raise NotImplementedError

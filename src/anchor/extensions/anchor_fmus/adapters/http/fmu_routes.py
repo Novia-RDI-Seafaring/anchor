@@ -59,7 +59,7 @@ async def inspect(
         raise HTTPException(413, f"FMU exceeds {_MAX_FMU_BYTES // (1024 * 1024)} MB cap")
     try:
         model = await service.upload_and_inspect(body, filename)
-    except ValueError as exc:
+    except ValueError:
         raise HTTPException(400, "could not parse FMU")
     return JSONResponse(model.model_dump())
 

@@ -116,6 +116,7 @@ def test_ingest_failure_emits_failed_event():
         try:
             await s.ingest.ingest_pdf(b"x", "boom.pdf")
         except RuntimeError:
+            # Expected: this test asserts that the failure event is published.
             pass
         await asyncio.wait_for(sub, timeout=2.0)
         assert any(e.type == "DocIngestFailed" for e in seen)

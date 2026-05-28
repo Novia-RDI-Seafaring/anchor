@@ -23,7 +23,8 @@ class FmuRuntime(Protocol):
 
     synthetic: bool
 
-    async def inspect(self, fmu_path: Path) -> FmuModel: ...
+    async def inspect(self, fmu_path: Path) -> FmuModel:
+        raise NotImplementedError
 
     async def simulate(
         self,
@@ -31,24 +32,33 @@ class FmuRuntime(Protocol):
         *,
         run: SimulationRun,
         on_progress: object | None = None,
-    ) -> TimeSeries: ...
+    ) -> TimeSeries:
+        raise NotImplementedError
 
 
 class FmuStore(Protocol):
     """Persist FMU bronze (raw .fmu files) + simulation runs + time series."""
 
-    async def stash_fmu(self, fmu_bytes: bytes, filename: str) -> Path: ...
+    async def stash_fmu(self, fmu_bytes: bytes, filename: str) -> Path:
+        raise NotImplementedError
 
-    async def get_fmu_path(self, slug: str) -> Path | None: ...
+    async def get_fmu_path(self, slug: str) -> Path | None:
+        raise NotImplementedError
 
-    async def list_fmus(self) -> list[FmuModel]: ...
+    async def list_fmus(self) -> list[FmuModel]:
+        raise NotImplementedError
 
-    async def write_model_summary(self, slug: str, model: FmuModel) -> Path: ...
+    async def write_model_summary(self, slug: str, model: FmuModel) -> Path:
+        raise NotImplementedError
 
-    async def get_model(self, slug: str) -> FmuModel | None: ...
+    async def get_model(self, slug: str) -> FmuModel | None:
+        raise NotImplementedError
 
-    async def write_simulation(self, run: SimulationRun, series: TimeSeries) -> Path: ...
+    async def write_simulation(self, run: SimulationRun, series: TimeSeries) -> Path:
+        raise NotImplementedError
 
-    async def list_simulations(self, fmu_slug: str | None = None) -> list[SimulationRun]: ...
+    async def list_simulations(self, fmu_slug: str | None = None) -> list[SimulationRun]:
+        raise NotImplementedError
 
-    async def get_series(self, simulation_id: str) -> TimeSeries | None: ...
+    async def get_series(self, simulation_id: str) -> TimeSeries | None:
+        raise NotImplementedError

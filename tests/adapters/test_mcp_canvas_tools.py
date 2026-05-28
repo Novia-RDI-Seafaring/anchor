@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import json
 
-import pytest
 
 from anchor.adapters.mcp import handlers_canvas
 from anchor.adapters.mcp.server import _error_result

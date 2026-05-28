@@ -17,13 +17,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-import shutil
 from pathlib import Path
 from typing import Any
 
 import aiofiles
 
-from anchor.core.ids import slugify
 from anchor.core.upload_safety import UnsafeUploadError, assert_within, safe_upload_name
 
 

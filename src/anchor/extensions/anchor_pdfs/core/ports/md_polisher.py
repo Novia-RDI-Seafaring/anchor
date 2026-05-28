@@ -13,4 +13,5 @@ class PageMdPolisher(Protocol):
         deterministic_md: str,
         docling_items: list[dict[str, Any]],
         model: str,
-    ) -> str: ...
+    ) -> str:
+        raise NotImplementedError

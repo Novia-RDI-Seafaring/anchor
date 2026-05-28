@@ -180,8 +180,6 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       ? `${(import.meta.env.VITE_BACKEND_URL as string | undefined) ?? ""}/api/documents/${d.source_doc_slug}/crops/${d.source_ref.page}/${d.source_region_id}.png`
       : null;
 
-  const canOpen = Boolean(d.source_doc_slug && d.source_ref?.page);
-
   const canEdit = selected ?? false;
   // Inline title rename — wires the spec table's `label` field to the same
   // hook every shape/card uses. Selection-gated (only when `selected`),
