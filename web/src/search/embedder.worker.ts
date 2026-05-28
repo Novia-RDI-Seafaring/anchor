@@ -47,11 +47,29 @@ type OutMessage =
   | { id: string; type: "result"; vectors: number[][] }
   | { id: string; type: "error"; message: string };
 
+function isInMessage(value: unknown): value is InMessage {
+  if (!value || typeof value !== "object") return false;
+  const msg = value as Partial<InMessage>;
+  if (typeof msg.id !== "string") return false;
+  if (msg.type === "init") return true;
+  return msg.type === "embed" && Array.isArray(msg.texts) && msg.texts.every((text) => typeof text === "string");
+}
+
+function isTrustedParentMessage(ev: MessageEvent<unknown>): ev is MessageEvent<InMessage> {
+  // Dedicated worker messages come from the parent document. Keep an
+  // explicit same-origin guard for static analyzers and future refactors
+  // that might move this code to a cross-window message boundary.
+  const expectedOrigin = (self as unknown as DedicatedWorkerGlobalScope).location.origin;
+  if (ev.origin && ev.origin !== expectedOrigin) return false;
+  return isInMessage(ev.data);
+}
+
 function post(msg: OutMessage): void {
   (self as unknown as DedicatedWorkerGlobalScope).postMessage(msg);
 }
 
-self.addEventListener("message", async (ev: MessageEvent<InMessage>) => {
+self.addEventListener("message", async (ev: MessageEvent<unknown>) => {
+  if (!isTrustedParentMessage(ev)) return;
   const msg = ev.data;
   try {
     if (msg.type === "init") {

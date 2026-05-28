@@ -1000,11 +1000,14 @@ def canvas_snapshot(
 
     try:
         result = asyncio.run(run())
+    except NotImplementedError as e:
+        typer.echo(f"snapshot failed: {e}", err=True)
+        raise typer.Exit(code=2)
     except RuntimeError as e:
         typer.echo(f"snapshot failed: {e}", err=True)
         typer.echo("Hint: ensure `anchor serve --port <p>` is running and pass --base-url http://localhost:<p>.", err=True)
         raise typer.Exit(code=1)
-    except (ValueError, NotImplementedError) as e:
+    except ValueError as e:
         typer.echo(f"snapshot failed: {e}", err=True)
         raise typer.Exit(code=2)
 

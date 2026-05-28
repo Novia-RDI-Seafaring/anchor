@@ -76,10 +76,12 @@ class EventTailer:
                         self._offset = size
                         partial = b""
             except FileNotFoundError:
+                # The event file may not exist until the first workspace event.
                 pass
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self.poll_interval)
             except asyncio.TimeoutError:
+                # Timeout is the polling cadence; loop again unless stopped.
                 pass
 
     async def _publish(self, line: bytes) -> None:

@@ -55,5 +55,7 @@ class OpenAIRegionExtractor:
                 try:
                     return list(json.loads(match.group(0)).get("regions", []))
                 except json.JSONDecodeError:
+                    # Fall through to an empty extraction when the model
+                    # returned neither direct JSON nor an embedded object.
                     pass
             return []

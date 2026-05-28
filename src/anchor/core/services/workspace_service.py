@@ -42,7 +42,8 @@ from anchor.core.workspace.workspace import CommandError, Workspace, validate_co
 
 
 class _LocksProto(Protocol):
-    def lock(self, workspace_id: str) -> AbstractAsyncContextManager[None]: ...
+    def lock(self, workspace_id: str) -> AbstractAsyncContextManager[None]:
+        raise NotImplementedError
 
 
 @asynccontextmanager

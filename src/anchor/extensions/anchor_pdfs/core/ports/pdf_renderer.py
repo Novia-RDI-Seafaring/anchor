@@ -9,7 +9,8 @@ CropFormat = Literal["png", "svg", "pdf"]
 
 
 class PdfRenderer(Protocol):
-    async def render_pages(self, pdf_path: Path, dpi: int = 150) -> dict[int, bytes]: ...
+    async def render_pages(self, pdf_path: Path, dpi: int = 150) -> dict[int, bytes]:
+        raise NotImplementedError
 
     async def crop_region(
         self,
@@ -18,4 +19,5 @@ class PdfRenderer(Protocol):
         bbox: list[float],
         fmt: CropFormat = "png",
         dpi: int = 200,
-    ) -> bytes: ...
+    ) -> bytes:
+        raise NotImplementedError

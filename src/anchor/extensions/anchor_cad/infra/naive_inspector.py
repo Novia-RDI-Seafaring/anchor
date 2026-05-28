@@ -54,6 +54,8 @@ class NaiveCadInspector:
                         continue
                     params.append(CadParameter(name=name, value=v))
             except OSError:
+                # Best-effort parameter extraction; unreadable source files
+                # still produce a valid coarse CAD summary.
                 pass
 
         return CadModel(

@@ -112,14 +112,14 @@ async def snapshot(
             viewport=req.viewport,
             full_page=req.full_page,
         )
+    except NotImplementedError as e:
+        raise HTTPException(501, str(e))
     except RuntimeError as e:
         # No snapshotter wired (dev served without playwright). 501 makes
         # it obvious this isn't a missing-workspace problem.
         raise HTTPException(501, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
-    except NotImplementedError as e:
-        raise HTTPException(501, str(e))
 
     if result.path is not None:
         return FileResponse(result.path, media_type=result.content_type)

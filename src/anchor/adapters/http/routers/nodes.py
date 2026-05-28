@@ -49,10 +49,12 @@ async def update_node(slug: str, node_id: str, req: UpdateNodeRequest, svc: Work
                 parent_val = raw.pop("parent")
                 fields = {k: v for k, v in raw.items() if v is not None}
                 if fields:
-                    state, env = await svc.update_node(slug, node_id, fields)
+                    await svc.update_node(slug, node_id, fields)
                 state, env = await svc.reparent_node(slug, node_id, parent_val)
             else:
                 fields = {k: v for k, v in raw.items() if v is not None}
+                if not fields:
+                    raise HTTPException(400, "nothing to update")
                 state, env = await svc.update_node(slug, node_id, fields)
     except CommandError as e:
         raise HTTPException(400, str(e))

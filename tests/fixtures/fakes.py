@@ -7,11 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from anchor.extensions.anchor_pdfs.core.ports.embedder import Embedder  # noqa: F401
-from anchor.extensions.anchor_pdfs.core.ports.md_polisher import PageMdPolisher  # noqa: F401
-from anchor.extensions.anchor_pdfs.core.ports.pdf_extractor import PdfExtractor  # noqa: F401
-from anchor.extensions.anchor_pdfs.core.ports.pdf_renderer import CropFormat, PdfRenderer  # noqa: F401
-from anchor.extensions.anchor_pdfs.core.ports.region_extractor import RegionExtractor  # noqa: F401
+from anchor.extensions.anchor_pdfs.core.ports.pdf_renderer import CropFormat
 
 
 class FakePdfExtractor:

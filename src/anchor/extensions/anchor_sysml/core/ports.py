@@ -16,7 +16,8 @@ from anchor.extensions.anchor_sysml.core.schemas import (
 class SysmlParser(Protocol):
     """Lex + parse a SysML v2 textual document into the IR."""
 
-    def parse(self, text: str, *, filename: str | None = None) -> IrModel: ...
+    def parse(self, text: str, *, filename: str | None = None) -> IrModel:
+        raise NotImplementedError
 
 
 class CanvasMapper(Protocol):
@@ -28,7 +29,8 @@ class CanvasMapper(Protocol):
         *,
         x_offset: float = 0,
         y_offset: float = 0,
-    ) -> CanvasBatch: ...
+    ) -> CanvasBatch:
+        raise NotImplementedError
 
 
 class SysmlRenderer(Protocol):
@@ -39,4 +41,5 @@ class SysmlRenderer(Protocol):
     real round-trip renderer without touching its public surface.
     """
 
-    def render(self, workspace_state: dict) -> str: ...
+    def render(self, workspace_state: dict) -> str:
+        raise NotImplementedError

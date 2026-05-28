@@ -83,6 +83,8 @@ async def upload(
                     "status": "failed", "error": str(exc),
                 })
             except Exception:
+                # The ingest error is already logged; a best-effort status
+                # update must not crash the background task.
                 pass
 
     asyncio.create_task(_run())

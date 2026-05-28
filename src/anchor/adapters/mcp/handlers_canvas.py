@@ -406,10 +406,13 @@ async def call_tool(svc: WorkspaceService, name: str, args: dict[str, Any]) -> s
             elif parent_present and not fields:
                 state, env = await svc.reparent_node(slug, node_id, parent_val)
             else:
-                if fields:
-                    state, env = await svc.update_node(slug, node_id, fields)
                 if parent_present:
+                    await svc.update_node(slug, node_id, fields)
                     state, env = await svc.reparent_node(slug, node_id, parent_val)
+                else:
+                    if not fields:
+                        return json.dumps({"error": "nothing to update"})
+                    state, env = await svc.update_node(slug, node_id, fields)
             return json.dumps({"event": env.model_dump(), "state": state.get_state()})
         if name == "canvas_remove_node":
             state, envelopes = await svc.remove_node(args["workspace_slug"], args["id"])
@@ -504,11 +507,11 @@ async def call_tool(svc: WorkspaceService, name: str, args: dict[str, Any]) -> s
                     viewport=viewport,
                     full_page=full_page,
                 )
+            except NotImplementedError as e:
+                return json.dumps({"error": str(e)})
             except RuntimeError as e:
                 return json.dumps({"error": str(e)})
             except ValueError as e:
-                return json.dumps({"error": str(e)})
-            except NotImplementedError as e:
                 return json.dumps({"error": str(e)})
             return _byte_envelope_from_result(
                 path=result.path, bytes_=result.bytes_,

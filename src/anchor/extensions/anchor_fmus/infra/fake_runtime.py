@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Any
 
 from anchor.extensions.anchor_fmus.core.ports import FmuRuntime
 from anchor.extensions.anchor_fmus.core.schemas import (
