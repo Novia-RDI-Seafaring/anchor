@@ -21,6 +21,8 @@ from typing import Any
 
 import typer
 
+from anchor.adapters.skills import compose_skill_md
+
 install_app = typer.Typer(help="Register Anchor with an AI harness.")
 
 
@@ -35,91 +37,6 @@ def _claude_code_paths() -> tuple[Path, Path]:
 def _cursor_paths() -> Path:
     return Path.home() / ".cursor" / "mcp.json"
 
-
-# ── skill template ─────────────────────────────────────────────────────
-
-_SKILL_MD = """---
-name: anchor
-description: Use this skill when the user works with engineering PDFs (datasheets, leaflets, manuals, P&ID drawings) and wants to ingest them into a grounded knowledge base, query the structured contents, or build a workspace canvas where every value points back to its source page+bbox. Anchor exposes ingestion + workspace tools over MCP, so this skill is the right call any time the user says "ingest this PDF", "what does the leaflet say about X", "place that spec on the canvas", "wire this value into a simulation", or works with a folder of technical PDFs.
----
-
-# Anchor — agent-first engineering knowledge canvas
-
-Anchor turns a folder of engineering PDFs into a structured, source-grounded
-knowledge base that you can drive over MCP. Every value you quote points
-back to a specific page region.
-
-## When to use
-
-Trigger this skill when the user:
-- Drops a PDF datasheet, leaflet, or manual and wants it readable
-- Asks "what does this document say about X" or wants to look up specs
-- Wants to place a spec table, document card, or region crop on a canvas
-- Asks for help wiring a datasheet value into a simulation (FMU)
-- Mentions a workspace folder or canvas
-- Asks "where does this number come from?" — provenance is the whole point
-
-## What's available
-
-Two MCP tool sets, all under one server:
-
-**Ingest tools** (act on the shared DOCS substrate):
-- `ingest_pdf(pdf_path, slug?, skip_polish?, skip_regions?)` — bronze → silver → gold pipeline
-- `list_documents()` — every document and its status
-- `get_document_index(slug)` — silver outline (sections, tables, figures)
-- `get_gold_regions(slug, page?)` — structured regions with page+bbox
-- `get_page_text(slug, page)` — polished or raw page markdown
-
-**Canvas tools** (act on a per-canvas WORKSPACES substrate):
-- `canvas_create_workspace(slug, title?)` and `canvas_list_workspaces()`
-- `canvas_get_state(workspace_slug)` — full canvas state
-- `canvas_list_placeholders(workspace_slug)` — every node flagged
-  `data.placeholder == true`, with its `placeholder_hint`. Your "what
-  to fill" entrypoint when the user says "fill in the specs I marked".
-- `canvas_add_node(workspace_slug, node_type, label, x, y, data?)`
-- `canvas_update_node(workspace_slug, id, ...)` and `canvas_remove_node(...)`
-- `canvas_add_edge(workspace_slug, source, target, edge_type?, data?)`
-- `canvas_remove_edge(workspace_slug, id)`
-- `canvas_clear(workspace_slug)`
-
-## Conventions
-
-- **Always pass a workspace_slug.** Anchor is multi-canvas; create one
-  per question/project (`canvas_create_workspace`) and reuse it.
-- **Provenance is the contract.** When you place a spec value or quote
-  a number, anchor it to the source via an edge with
-  `data.kind = "evidence"` and `data.source_ref = {page, bbox}`.
-  The system enforces this on `anchored` evidence edges.
-- **Slug naming.** Document slugs are filename-derived (lowercase,
-  hyphenated). Canvas slugs are user-chosen, e.g. `pump-analysis`.
-- **Don't re-ingest.** `list_documents()` first; if the slug exists with
-  `has_gold: true`, skip ingest unless the user asks for a fresh pass.
-
-## Typical flow
-
-1. `canvas_create_workspace(slug="pump-analysis")` — once
-2. `ingest_pdf(pdf_path="/abs/path/to/datasheet.pdf")` if the user just dropped a PDF
-3. `get_document_index(slug="alfa-laval-lkh")` — see what's in it
-4. `get_gold_regions(slug="alfa-laval-lkh", page=2)` — get region IDs and bboxes
-5. `canvas_add_node(workspace_slug="pump-analysis", node_type="document", label="LKH Pump", data={"slug": "alfa-laval-lkh", "page_count": 4})`
-6. `canvas_add_node(...)` for spec rows, with `node_type="spec"` and `data.rows` carrying source refs
-7. `canvas_add_edge(workspace_slug=..., source=..., target=..., edge_type="anchored", data={"kind": "evidence", "source_ref": {"page": 2, "bbox": [...]}}` to wire row → source
-
-## Live state
-
-The canvas has SSE; if a browser tab is open at the same time, the user
-sees your changes appear live. Don't worry about cooperating with the
-browser — the server is authoritative and serialises commands per
-workspace.
-
-## Where things live
-
-Configured at install time. Default `~/anchor-data/`:
-- `bronze/` raw PDFs
-- `silver/<slug>/` per-page md + png
-- `gold/<slug>/` structured regions with crops
-- `canvases/<slug>/` per-canvas durable state + events log
-"""
 
 
 # ── installer impl ─────────────────────────────────────────────────────
@@ -165,10 +82,15 @@ def _install_mcp(config_path: Path, data_dir: Path, *, dry_run: bool) -> tuple[P
 
 
 def _install_skill(skill_dir: Path, *, dry_run: bool) -> Path:
+    """Write the composed SKILL.md to ``skill_dir``.
+
+    Source files live under ``src/anchor/skills/`` and ship as package
+    data; see ``anchor.adapters.skills`` for the composition rules.
+    """
     skill_path = skill_dir / "SKILL.md"
     if not dry_run:
         skill_dir.mkdir(parents=True, exist_ok=True)
-        skill_path.write_text(_SKILL_MD, encoding="utf-8")
+        skill_path.write_text(compose_skill_md(), encoding="utf-8")
     return skill_path
 
 
