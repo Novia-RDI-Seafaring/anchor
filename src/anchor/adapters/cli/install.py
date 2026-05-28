@@ -21,7 +21,7 @@ from typing import Any
 
 import typer
 
-from anchor.adapters.skills import compose_skill_md
+from anchor.adapters.skills import compose_skill_md, discover_third_party_manifests
 
 install_app = typer.Typer(help="Register Anchor with an AI harness.")
 
@@ -81,16 +81,27 @@ def _install_mcp(config_path: Path, data_dir: Path, *, dry_run: bool) -> tuple[P
     return config_path, cfg["mcpServers"]["anchor"]
 
 
-def _install_skill(skill_dir: Path, *, dry_run: bool) -> Path:
+def _install_skill(skill_dir: Path, data_dir: Path, *, dry_run: bool) -> Path:
     """Write the composed SKILL.md to ``skill_dir``.
 
-    Source files live under ``src/anchor/skills/`` and ship as package
-    data; see ``anchor.adapters.skills`` for the composition rules.
+    Sources:
+
+    - bundled skill files under ``src/anchor/skills/`` shipped as
+      package data
+    - third-party OIP producer manifests discovered via the standard
+      OIP locations (system-wide ``$XDG_CONFIG_HOME/oip/producers.d/``
+      and the active data dir's ``.oip/producers.d/``)
+
+    See ``anchor.adapters.skills`` for the composition rules.
     """
     skill_path = skill_dir / "SKILL.md"
     if not dry_run:
         skill_dir.mkdir(parents=True, exist_ok=True)
-        skill_path.write_text(compose_skill_md(), encoding="utf-8")
+        third_party = discover_third_party_manifests(data_dir=data_dir)
+        skill_path.write_text(
+            compose_skill_md(third_party_manifests=third_party),
+            encoding="utf-8",
+        )
     return skill_path
 
 
@@ -107,7 +118,7 @@ def install_claude_code(
         data_dir = Path.home() / "anchor-data"
     mcp_config_path, skill_dir = _claude_code_paths()
     config_path, entry = _install_mcp(mcp_config_path, data_dir, dry_run=dry_run)
-    skill_path = _install_skill(skill_dir, dry_run=dry_run)
+    skill_path = _install_skill(skill_dir, data_dir, dry_run=dry_run)
     if not dry_run and not data_dir.exists():
         data_dir.mkdir(parents=True, exist_ok=True)
 
