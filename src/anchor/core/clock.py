@@ -6,7 +6,8 @@ from typing import Protocol
 
 
 class Clock(Protocol):
-    def now(self) -> float: ...
+    def now(self) -> float:
+        raise NotImplementedError
 
 
 class SystemClock:

@@ -18,13 +18,15 @@ CropPathResolver = Callable[[str, str], Awaitable[Path | None]]
 class PdfSynopsisRenderer(Protocol):
     async def render_pdf(
         self, data: SynopsisData, *, resolve_crop: CropPathResolver,
-    ) -> bytes: ...
+    ) -> bytes:
+        raise NotImplementedError
 
 
 class MarkdownSynopsisRenderer(Protocol):
     def render_markdown(
         self, data: SynopsisData, *, crop_url_for: Callable[[str, str], str] | None = None,
-    ) -> str: ...
+    ) -> str:
+        raise NotImplementedError
 
 
 __all__ = ["PdfSynopsisRenderer", "MarkdownSynopsisRenderer", "CropPathResolver"]

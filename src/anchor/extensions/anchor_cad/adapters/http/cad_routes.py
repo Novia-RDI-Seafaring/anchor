@@ -89,7 +89,7 @@ async def inspect(
         raise HTTPException(413, f"CAD file exceeds {_MAX_CAD_BYTES // (1024 * 1024)} MB cap")
     try:
         model = await service.upload_and_inspect(body, filename)
-    except ValueError as exc:
+    except ValueError:
         raise HTTPException(400, "could not parse CAD file")
     except Exception:
         log.exception("CAD upload-and-inspect failed")

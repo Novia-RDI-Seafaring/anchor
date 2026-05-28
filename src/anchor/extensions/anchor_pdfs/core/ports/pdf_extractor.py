@@ -10,4 +10,5 @@ from typing import Any, Protocol
 
 
 class PdfExtractor(Protocol):
-    async def extract(self, pdf_path: Path) -> dict[str, Any]: ...
+    async def extract(self, pdf_path: Path) -> dict[str, Any]:
+        raise NotImplementedError

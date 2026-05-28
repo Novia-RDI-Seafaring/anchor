@@ -31,7 +31,6 @@ from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.services import IngestService
 from anchor.extensions.anchor_sysml import mcp_handlers as sysml_handlers
 from anchor.extensions.anchor_sysml.core.services import SysmlService
-from anchor.extensions.anchor_pdfs.core.services import SynopsisService as SynopsisServiceT
 
 
 # ── Server instructions ────────────────────────────────────────────────────
@@ -126,7 +125,7 @@ def build_mcp_server(
     fmu: FmuService | None = None,
     cad: CadService | None = None,
     sysml: SysmlService | None = None,
-    synopsis: "SynopsisServiceT | None" = None,
+    synopsis: Any | None = None,
     name: str = "anchor",
 ) -> Server:
     app = Server(name, instructions=INSTRUCTIONS)

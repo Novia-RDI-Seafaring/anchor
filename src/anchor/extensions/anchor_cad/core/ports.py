@@ -17,18 +17,24 @@ class CadInspector(Protocol):
     land.
     """
 
-    async def inspect(self, cad_path: Path, *, kind: str | None = None) -> CadModel: ...
+    async def inspect(self, cad_path: Path, *, kind: str | None = None) -> CadModel:
+        raise NotImplementedError
 
 
 class CadStore(Protocol):
     """Persist CAD bronze (raw model files) + parsed model summaries."""
 
-    async def stash_cad(self, cad_bytes: bytes, filename: str) -> Path: ...
+    async def stash_cad(self, cad_bytes: bytes, filename: str) -> Path:
+        raise NotImplementedError
 
-    async def get_cad_path(self, slug: str) -> Path | None: ...
+    async def get_cad_path(self, slug: str) -> Path | None:
+        raise NotImplementedError
 
-    async def list_cads(self) -> list[CadModel]: ...
+    async def list_cads(self) -> list[CadModel]:
+        raise NotImplementedError
 
-    async def write_model_summary(self, slug: str, model: CadModel) -> Path: ...
+    async def write_model_summary(self, slug: str, model: CadModel) -> Path:
+        raise NotImplementedError
 
-    async def get_model(self, slug: str) -> CadModel | None: ...
+    async def get_model(self, slug: str) -> CadModel | None:
+        raise NotImplementedError

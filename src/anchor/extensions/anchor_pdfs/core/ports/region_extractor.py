@@ -14,4 +14,4 @@ class RegionExtractor(Protocol):
         model: str,
     ) -> list[dict[str, Any]]:
         """Return a list of region dicts with kind, bbox (approx), title, description, etc."""
-        ...
+        raise NotImplementedError

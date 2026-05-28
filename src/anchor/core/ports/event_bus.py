@@ -7,8 +7,9 @@ from anchor.core.events.envelope import DomainEvent
 
 
 class EventBus(Protocol):
-    async def publish(self, event: DomainEvent) -> None: ...
+    async def publish(self, event: DomainEvent) -> None:
+        raise NotImplementedError
 
     def subscribe(self, workspace_id: str | None = None) -> AsyncIterator[DomainEvent]:
         """Iterate events. None = global firehose; otherwise per-workspace."""
-        ...
+        raise NotImplementedError
