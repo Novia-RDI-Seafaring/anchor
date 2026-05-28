@@ -9,8 +9,8 @@ Harnesses that look for `CLAUDE.md` find a one-line pointer that
 lands back here. Single source of truth.
 
 Read [`README.md`](./README.md) for the user-facing intro and
-[`docs/01-architecture.md`](./docs/01-architecture.md) for the deep
-architecture.
+[`docs/concepts/architecture.md`](./docs/concepts/architecture.md)
+for the deep architecture.
 
 ## What this app does
 
@@ -59,7 +59,7 @@ tests/           — function-based pytest
 | `document` | PDF / document card with cover image |
 | `spec` | Parameter / spec table with row-level source refs |
 | `fmu` | FMU model node with inputs/outputs/parameters |
-| `cad` | Parametric CAD (jscad/scad) viewer |
+| `cad:model` | Parametric CAD (jscad/scad) viewer |
 | `canvas` | Sub-canvas tile linking to another workspace |
 | `concept`, `entity`, `fact`, `area`, `funnel`, `image`, `plot`, etc. | General shapes |
 

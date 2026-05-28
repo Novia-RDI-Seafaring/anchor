@@ -337,7 +337,7 @@ pnpm --dir web test                       # ~180 web tests (Vitest)
 pnpm --dir web exec tsc --noEmit          # web typecheck
 ```
 
-The test seam is function-based pytest (matches the legacy `backend/tests/` style) with in-memory implementations of every port. Real I/O tests use `tmp_path`. The frontend tests cover canvas primitives, the SSE event store, and the inline-edit hooks.
+The test seam is function-based pytest with in-memory implementations of every port. Real I/O tests use `tmp_path`. The frontend tests cover canvas primitives, the SSE event store, and the inline-edit hooks.
 
 ---
 
