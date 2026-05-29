@@ -56,6 +56,11 @@ data/
 # MkDocs build output
 /site/
 /public/
+
+# Local design proposals and working notes. Keep public-facing docs in
+# docs/concepts, docs/guides, or docs/reference instead.
+/docs/proposals/
+
 /mydata/
 /uploads/
 /tmp/
