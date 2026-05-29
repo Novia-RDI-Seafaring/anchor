@@ -34,6 +34,13 @@ class AnchorConfig(BaseSettings):
     region_model: str = "gpt-5.4"
     dpi: int = 150
 
+    # Docling accelerator device for the bronze extraction stage. Defaults
+    # to CPU: docling's MPS path raises "Cannot convert a MPS Tensor to
+    # float64" on Apple Silicon, which otherwise breaks ingestion on every
+    # Mac. Set ANCHOR_DOCLING_DEVICE=cuda|mps|auto where another backend is
+    # faster and known-good.
+    docling_device: str = "cpu"
+
     log_level: str = "INFO"
 
     @property
