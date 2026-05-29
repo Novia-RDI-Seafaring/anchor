@@ -15,7 +15,13 @@ from anchor.adapters.cli.install import install_app
 # `anchor ingest` invocations aligned. Override with `--data-dir`.
 DEFAULT_DATA_DIR = Path.home() / "anchor-data"
 
-app = typer.Typer(help="Anchor - agent-first knowledge canvas.")
+# pretty_exceptions_show_locals=False: rendering locals dumps the full
+# pydantic-core validator repr for docling's input union (~tens of KB) on a
+# ConversionError, burying the actionable cause. Keep tracebacks lean.
+app = typer.Typer(
+    help="Anchor - agent-first knowledge canvas.",
+    pretty_exceptions_show_locals=False,
+)
 canvas_app = typer.Typer(help="Manage workspaces (canvases).")
 sysml_app = typer.Typer(help="Render and export SysML v2 diagrams.")
 fmu_app = typer.Typer(help="Inspect and simulate FMU models.")
@@ -78,7 +84,7 @@ def _build_real_services(data_dir: Path, *, base_url: str = "http://localhost:80
     )
     ingest = IngestService(
         doc_store, bus,
-        extractor=DoclingPdfExtractor(),
+        extractor=DoclingPdfExtractor(device=config.docling_device),
         renderer=PymupdfPdfRenderer(),
         polisher=OpenAIPageMdPolisher(api_key=api_key, base_url=openai_base_url) if has_openai else None,
         region_extractor=OpenAIRegionExtractor(api_key=api_key, base_url=openai_base_url) if has_openai else None,
@@ -217,7 +223,19 @@ def ingest(
             dpi=config.dpi,
         )
 
-    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+    try:
+        result = asyncio.run(run())
+    except Exception as exc:  # noqa: BLE001 - surface a clean line, not a stack
+        typer.echo(f"Ingest failed for {pdf_path.name}: {exc}", err=True)
+        if "MPS" in str(exc) or "float64" in str(exc):
+            typer.echo(
+                "Hint: this looks like a docling accelerator issue. Set "
+                "ANCHOR_DOCLING_DEVICE=cpu and retry.",
+                err=True,
+            )
+        raise typer.Exit(code=1) from None
+
+    typer.echo(json.dumps(result, indent=2))
 
 
 @app.command("list")
