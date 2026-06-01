@@ -41,14 +41,17 @@ facts remain linked to document pages or extracted regions.
 For supported MCP-capable clients:
 
 ```bash
-anchor install claude-code --data-dir ~/anchor-data
-# or
+claude mcp add --transport stdio --scope user anchor -- \
+  anchor-mcp --data-dir ~/anchor-data --base-url http://localhost:8002
 anchor install cursor --data-dir ~/anchor-data
 ```
 
 Restart the client after installation. An agent can enumerate workspaces,
 search ingested documents, add evidence-backed nodes, and organize a canvas
 through the MCP tools.
+
+See [Agent configuration](agent-configuration.md) for Codex, OpenCode, and
+generic stdio examples.
 
 ## 5. Work without an LLM key
 
