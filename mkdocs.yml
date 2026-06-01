@@ -18,7 +18,7 @@ copyright: Copyright &copy; 2026 Novia University of Applied Sciences. MIT licen
 docs_dir: docs
 
 # Files that live under docs/ for editor convenience but aren't part of
-# the published site — internal design proposals, drafts, etc.
+# the published site: internal design proposals, drafts, etc.
 exclude_docs: |
   proposals/*
 
@@ -33,7 +33,7 @@ theme:
     text: Inter
     code: JetBrains Mono
   palette:
-    # Light mode — monochrome to match the architecture diagrams.
+    # Light mode: monochrome to match the architecture diagrams.
     - media: "(prefers-color-scheme: light)"
       scheme: default
       primary: black
@@ -41,7 +41,7 @@ theme:
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
-    # Dark mode — inverted, white on near-black.
+    # Dark mode: inverted, white on near-black.
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
       primary: black
@@ -110,6 +110,7 @@ nav:
   - Guides:
     - Working with documents and canvases: guides/documents-and-canvases.md
     - Agent setup: guides/agent-setup.md
+    - Agent configuration: guides/agent-configuration.md
   - Concepts:
     - Architecture: concepts/architecture.md
     - Data and events: concepts/data-and-events.md

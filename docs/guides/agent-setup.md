@@ -38,11 +38,11 @@ It is unauthenticated, so bind to a network interface only behind an
 authentication layer.
 
 Data defaults to `~/anchor-data`. Keep `anchor serve`, `anchor ingest`, and
-agent registration on the same data directory:
+agent configuration on the same data directory:
 
 ```bash
 anchor ingest /path/to/datasheet.pdf --data-dir ~/anchor-data
-anchor install claude-code --data-dir ~/anchor-data
+anchor serve --data-dir ~/anchor-data
 ```
 
 `anchor demo` creates a `demo` workspace and placeholder nodes. It ingests an
@@ -51,11 +51,18 @@ ship a vendor PDF. In normal use, ingest a PDF you are allowed to process.
 
 ## 2. Agent harness setup
 
-ANCHOR exposes MCP tools through the `anchor-mcp` stdio executable. Supported
-one-command installers are:
+ANCHOR exposes MCP tools through the `anchor-mcp` stdio executable. For Claude
+Code, register the local server with:
 
 ```bash
-anchor install claude-code --data-dir ~/anchor-data
+claude mcp add --transport stdio --scope user anchor -- \
+  anchor-mcp --data-dir ~/anchor-data --base-url http://localhost:8002
+claude mcp list
+```
+
+ANCHOR also provides a Cursor helper:
+
+```bash
 anchor install cursor --data-dir ~/anchor-data
 ```
 
@@ -63,18 +70,8 @@ Restart the harness and verify that `anchor` appears in its MCP server list.
 The set of tools depends on available optional extensions, such as the FMU
 runtime.
 
-For another MCP-stdio harness, use an equivalent local server configuration:
-
-```json
-{
-  "mcpServers": {
-    "anchor": {
-      "command": "anchor-mcp",
-      "args": ["--data-dir", "/home/you/anchor-data"]
-    }
-  }
-}
-```
+See [Agent configuration](agent-configuration.md) for verified Codex, OpenCode,
+Cursor, Claude Code, and generic stdio examples.
 
 `anchor serve` exposes the browser UI, HTTP API, and browser SSE updates. It
 does not expose an authenticated remote-MCP HTTP endpoint. A hosted or remote

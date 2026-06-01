@@ -43,6 +43,9 @@ anchor canvas --help
 | `anchor fmu` | Inspect and simulate FMUs when the optional runtime is installed. |
 | `anchor cad` | Inspect supported CAD models and alter parameters. |
 | `anchor extensions` | List and inspect OIP producer manifests. |
-| `anchor install` | Register ANCHOR with Claude Code or Cursor. |
+| `anchor install` | Register ANCHOR with Cursor or inspect the available compatibility helpers. |
 
 Run `anchor <group> --help` for option-level detail.
+
+For current Claude Code, Codex, OpenCode, Cursor, and generic stdio setup
+instructions, see [Agent configuration](../guides/agent-configuration.md).
