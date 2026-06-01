@@ -35,10 +35,13 @@ class AnchorConfig(BaseSettings):
     dpi: int = 150
 
     # Docling accelerator device for the bronze extraction stage. Defaults
-    # to CPU: docling's MPS path raises "Cannot convert a MPS Tensor to
-    # float64" on Apple Silicon, which otherwise breaks ingestion on every
-    # Mac. Set ANCHOR_DOCLING_DEVICE=cuda|mps|auto where another backend is
-    # faster and known-good.
+    # to CPU: docling's AUTO device resolves to MPS when torch exposes it,
+    # and MPS cannot allocate float64 tensors ("Cannot convert a MPS Tensor
+    # to float64"). That crashes ingestion on Macs where torch has MPS and
+    # the document exercises the float64 model path (e.g. table structure).
+    # CPU sidesteps that class of error everywhere, at some speed cost on
+    # large docs. Set ANCHOR_DOCLING_DEVICE=cuda|mps|auto where another
+    # backend is faster and known-good.
     docling_device: str = "cpu"
 
     log_level: str = "INFO"

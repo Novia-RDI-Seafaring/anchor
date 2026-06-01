@@ -27,10 +27,11 @@ def _extract_sync(pdf_path: Path, device: str = "cpu") -> dict[str, Any]:
     )
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
-    # Default CPU. Docling's MPS path raises "Cannot convert a MPS Tensor to
-    # float64" on Apple Silicon (PYTORCH_ENABLE_MPS_FALLBACK does not help —
-    # the tensor is allocated float64, not an unsupported op), which would
-    # break ingestion on every Mac.
+    # Default CPU. Docling's AUTO device resolves to MPS when torch exposes
+    # it, and MPS cannot hold float64 ("Cannot convert a MPS Tensor to
+    # float64"). PYTORCH_ENABLE_MPS_FALLBACK does not help — the tensor is
+    # allocated float64, not an unsupported op. CPU avoids this class of
+    # error on any Mac, at some speed cost on large docs.
     accel_device = {
         "cpu": AcceleratorDevice.CPU,
         "cuda": AcceleratorDevice.CUDA,
