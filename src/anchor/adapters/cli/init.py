@@ -133,8 +133,10 @@ def init(
 
     has_key = bool(resolved.openai_api_key) or bool(os.environ.get("OPENAI_API_KEY"))
     typer.echo(f"Wrote {config_path}")
-    typer.echo("Resolved configuration:")
-    typer.echo(f"  data dir       : {resolved.data_dir}")
+    # These fields are read by the CLI, server, and anchor-mcp automatically
+    # (they are not passed explicitly by any adapter), so the value below is
+    # what those processes will actually use.
+    typer.echo("Applied automatically (CLI, server, anchor-mcp):")
     typer.echo(f"  embed model    : {resolved.embed_model}  (local)")
     if want_remote:
         endpoint = resolved.openai_base_url or "api.openai.com"
@@ -145,7 +147,16 @@ def init(
         typer.echo("  vision model   : local-only (no document content leaves this host)")
     typer.echo(f"  docling device : {resolved.docling_device}")
     typer.echo("")
+    # Honesty: data_dir is written to the toml but the CLI/MCP commands still
+    # default --data-dir themselves and override it, so it is NOT yet applied
+    # automatically. Surface that rather than imply otherwise (tracked in #45).
+    typer.echo(f"Recorded but not yet auto-applied: data_dir = {resolved.data_dir}")
     typer.echo(
-        "Other tools pick this up by running inside this folder, or set "
-        f"ANCHOR_CONFIG={config_path} for an agent-launched anchor-mcp."
+        f"  Until per-command data-dir resolution lands, pass --data-dir {resolved.data_dir} "
+        "(e.g. `anchor serve --data-dir ...`)."
+    )
+    typer.echo("")
+    typer.echo(
+        "Adapters pick up the applied fields by running inside this folder, or "
+        f"set ANCHOR_CONFIG={config_path} for an agent-launched anchor-mcp."
     )
