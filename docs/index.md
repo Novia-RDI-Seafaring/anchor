@@ -58,6 +58,7 @@ Windows; verify browser and PDF workflows on your target platform.
 - **[Many interfaces](concepts/interfaces.md)** - HTTP, MCP, CLI, and the parity rule
 - **[Extensions and OIP](concepts/extensions-and-oip.md)** - how third-party producers plug in
 - **[Agent setup](guides/agent-setup.md)** - connect MCP clients and optional local models
+- **[Agent configuration](guides/agent-configuration.md)** - configure Claude Code, Codex, Cursor, OpenCode, and generic stdio clients
 - **[Reference](reference/cli.md)** - CLI, MCP tool families, and configuration
 - **[Citation and acknowledgments](reference/citation.md)** - citing ANCHOR and project funding
 

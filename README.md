@@ -135,17 +135,16 @@ That's the whole loop. Every PDF you ingest becomes a structured set of regions 
 
 ---
 
-## Using ANCHOR with an AI agent (Claude Code, Cursor, your own)
+## Using ANCHOR with an AI agent
 
-ANCHOR exposes its tools over **MCP** (Model Context Protocol). One command registers it with Claude Code:
+ANCHOR exposes its tools over **MCP** (Model Context Protocol). For Claude
+Code, register the local stdio server with:
 
 ```bash
-anchor install claude-code --data-dir ~/anchor-data
+claude mcp add --transport stdio --scope user anchor -- \
+  anchor-mcp --data-dir ~/anchor-data --base-url http://localhost:8002
+claude mcp list
 ```
-
-This writes:
-- `~/.claude/mcp.json` — the MCP server entry pointing at your `anchor-mcp` binary
-- `~/.claude/skills/anchor/SKILL.md` — a skill description so Claude knows when to invoke ANCHOR
 
 **Restart Claude Code** (Cmd+Q, reopen). In any conversation, run `/mcp`
 and you should see `anchor` listed with its available tools. The exact list
@@ -157,13 +156,14 @@ depends on optional extensions such as FMU support. Then talk normally:
 
 Claude calls the MCP tools directly. Your browser tab on `localhost:8002/c/pump-analysis`, if open, sees nodes appear live via SSE. Multi-client real-time sync between agents and humans is the default.
 
-For Cursor or any other MCP-speaking harness:
+For Cursor:
 
 ```bash
 anchor install cursor --data-dir ~/anchor-data
-# or print the install plan without writing anything:
-anchor install print
 ```
+
+See the [agent configuration guide](./docs/guides/agent-configuration.md) for
+Codex, OpenCode, Cursor, Claude Code, and generic stdio examples.
 
 ---
 
@@ -199,7 +199,7 @@ variables configure processing and browser access:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ANCHOR_OPENAI_API_KEY` | (unset) | Optional — enables LLM polish + region extraction in the gold layer |
+| `ANCHOR_OPENAI_API_KEY` | (unset) | Optional: enables LLM polish + region extraction in the gold layer |
 | `ANCHOR_OPENAI_BASE_URL` | (unset) | Override the OpenAI-compatible endpoint. For Azure OpenAI v1 use `https://<resource>.openai.azure.com/openai/v1/`; for Ollama use `http://localhost:11434/v1`. |
 | `ANCHOR_POLISH_MODEL` | `gpt-5.4` | Model name for page-MD polishing |
 | `ANCHOR_REGION_MODEL` | `gpt-5.4` | Model name for region extraction |
@@ -207,7 +207,7 @@ variables configure processing and browser access:
 | `ANCHOR_DPI` | `150` | Render DPI for page images |
 | `ANCHOR_CORS_ORIGINS` | (unset) | Comma-separated additional origins permitted by the HTTP server |
 
-If you don't set `ANCHOR_OPENAI_API_KEY`, ingest still produces silver (deterministic Docling extraction + per-page markdown). Gold extraction (LLM-driven structured regions) is skipped. The system stays useful without an API key — silver is the workable substrate; gold is the polish.
+If you don't set `ANCHOR_OPENAI_API_KEY`, ingest still produces silver (deterministic Docling extraction + per-page markdown). Gold extraction (LLM-driven structured regions) is skipped. The system stays useful without an API key: silver is the workable substrate; gold is the polish.
 
 ### Enable gold region extraction
 
@@ -293,6 +293,10 @@ anchor extensions  schema
 anchor version
 ```
 
+For new Claude Code setups, use the client-native `claude mcp add` command
+shown above. The `anchor install claude-code` helper remains in the CLI but is
+not the recommended setup path for current Claude Code releases.
+
 `anchor-mcp [--data-dir DIR]` runs the MCP server over stdio (used by Claude Code's MCP harness; you don't normally invoke it yourself).
 
 ---
@@ -305,7 +309,7 @@ ANCHOR is a **hexagonal modular monolith**. Pure domain code in `core/` (no I/O,
 
 ## Extensions and the Open Ingestion Protocol
 
-ANCHOR's canvas is one **OIP consumer**. PDF ingestion is one **OIP producer**, bundled with this build. The protocol — specified at [github.com/Novia-RDI-Seafaring/OIP](https://github.com/Novia-RDI-Seafaring/OIP) — is governance-neutral: any tool that produces ingested knowledge in OIP shape can plug in, and any OIP-aware consumer can read its output. A transcription tool, a code-region extractor, a web crawler, your own ingestion logic — none of them need to import ANCHOR; they just ship an OIP manifest at a known location and ANCHOR picks them up.
+ANCHOR's canvas is one **OIP consumer**. PDF ingestion is one **OIP producer**, bundled with this build. The protocol, specified at [github.com/Novia-RDI-Seafaring/OIP](https://github.com/Novia-RDI-Seafaring/OIP), is governance-neutral: any tool that produces ingested knowledge in OIP shape can plug in, and any OIP-aware consumer can read its output. A transcription tool, a code-region extractor, a web crawler, or your own ingestion logic does not need to import ANCHOR. It only needs to ship an OIP manifest at a known location.
 
 The CLI surfaces this:
 
@@ -318,12 +322,12 @@ anchor extensions info anchor-pdfs            # full manifest for one producer
 ```
 
 Discovery, in priority order:
-1. **Per-data-dir** — `<data-dir>/.oip/producers.d/*.json` (highest priority; bound to a specific workspace tree)
-2. **System-wide** — `~/.config/oip/producers.d/*.json` (any installer can drop a manifest here; visible to every OIP consumer on the machine)
-3. **Bundled** — compiled into this ANCHOR wheel (`anchor-pdfs`, `anchor-fmus`,
+1. **Per-data-dir**: `<data-dir>/.oip/producers.d/*.json` (highest priority; bound to a specific workspace tree)
+2. **System-wide**: `~/.config/oip/producers.d/*.json` (any installer can drop a manifest here; visible to every OIP consumer on the machine)
+3. **Bundled**: compiled into this ANCHOR wheel (`anchor-pdfs`, `anchor-fmus`,
    and `anchor-cad`; SysML tools are also exposed by the bundled MCP server)
 
-For implementation status: today, an OIP-registered producer is *visible* in `extensions list` but ANCHOR doesn't yet *spawn* external producer MCP servers and proxy their tools. That's the next engineering lift — see the [OIP repo](https://github.com/Novia-RDI-Seafaring/OIP) for the spec and `EXTENSIONS.md` for ANCHOR's host-side roadmap.
+For implementation status: today, an OIP-registered producer is *visible* in `extensions list` but ANCHOR doesn't yet *spawn* external producer MCP servers and proxy their tools. That's the next engineering lift. See the [OIP repo](https://github.com/Novia-RDI-Seafaring/OIP) for the spec and `EXTENSIONS.md` for ANCHOR's host-side roadmap.
 
 ---
 
@@ -353,7 +357,7 @@ The test seam is function-based pytest with in-memory implementations of every p
 
 ---
 
-## Security model — read before exposing
+## Security model: read before exposing
 
 ANCHOR's HTTP server is **unauthenticated by design**. It edits local
 engineering data (workspaces, documents, FMU files) and is meant to run
@@ -364,7 +368,7 @@ on your own machine.
 - CORS is restricted to the dev Vite origin (`localhost:5173`); set
   `ANCHOR_CORS_ORIGINS=https://your-host` for explicit overrides.
 - Workspace slugs and upload filenames are policy-checked and
-  containment-asserted before they hit disk — the v2 codebase does not
+  containment-asserted before they hit disk. The v2 codebase does not
   trust client-supplied paths.
 
 If you want to share an ANCHOR instance on a network, **add your own
@@ -376,20 +380,20 @@ basic-auth nginx, ...). Don't expose the unauthenticated port directly.
 These extensions are intentionally rough; we ship them so you can see
 the shape and contribute, not as finished features:
 
-- **`anchor_cad`** — parametric-CAD producer (jscad/openSCAD) ships as a
+- **`anchor_cad`**: parametric-CAD producer (jscad/openSCAD) ships as a
   proof of concept; full feature parity with STEP/STL viewing is on the
   roadmap. SVG export still has a known font-handling bug.
-- **`anchor_sysml`** — SysML import (BSD-3-Clause fixtures from the OMG
+- **`anchor_sysml`**: SysML import (BSD-3-Clause fixtures from the OMG
   reference) and export to SVG/markdown are experimental; we'll swap
   the hand-rolled IR for the official Pydantic model when that lands.
-- **`anchor_fmus`** — FMU simulation requires `fmpy` (install via
+- **`anchor_fmus`**: FMU simulation requires `fmpy` (install via
   `uv tool install 'anchor-kb[fmus]'`). Without it the extension fails
   closed; set `ANCHOR_FMU_DEMO=1` to use the synthetic-output runtime
   (every result is stamped `synthetic=true` so the UI can warn you).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).
 
 ## Citation
 

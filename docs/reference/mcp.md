@@ -7,23 +7,13 @@ tools; optional FMU behavior depends on installed/runtime configuration.
 ## Connect an agent harness
 
 ```bash
-anchor install claude-code --data-dir ~/anchor-data
-# or
+claude mcp add --transport stdio --scope user anchor -- \
+  anchor-mcp --data-dir ~/anchor-data --base-url http://localhost:8002
 anchor install cursor --data-dir ~/anchor-data
 ```
 
-For another stdio-compatible MCP client:
-
-```json
-{
-  "mcpServers": {
-    "anchor": {
-      "command": "anchor-mcp",
-      "args": ["--data-dir", "/home/you/anchor-data"]
-    }
-  }
-}
-```
+See [Agent configuration](../guides/agent-configuration.md) for Codex,
+OpenCode, and generic stdio client examples.
 
 ## Tool families
 
