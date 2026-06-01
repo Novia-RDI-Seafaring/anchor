@@ -1,15 +1,53 @@
 """AnchorConfig — single source of truth for runtime config.
 
-Env-var prefix: `ANCHOR_`. Loaded once in CLI / __main__; passed into
-adapter builders. Core code never sees AnchorConfig — services receive
+Resolution order (highest precedence first): explicit constructor args,
+`ANCHOR_*` environment variables, a `.env` file, a project `anchor.toml`,
+then field defaults. The `anchor.toml` is discovered by walking up from
+the current directory (or pointed at directly via `ANCHOR_CONFIG`), so a
+project's configuration is honored regardless of which directory a process
+— including an agent-launched `anchor-mcp` — starts in.
+
+Secrets (the OpenAI/Azure key) are intentionally NOT part of the toml: keep
+them in `ANCHOR_OPENAI_API_KEY` / `.env` so a committable config never
+carries credentials. Core code never sees AnchorConfig — services receive
 the resolved port instances built from the config.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+    TomlConfigSettingsSource,
+)
+
+#: Filename for the project-local, non-secret configuration.
+CONFIG_FILENAME = "anchor.toml"
+
+
+def discover_config_file() -> Path | None:
+    """Locate the active `anchor.toml`.
+
+    `ANCHOR_CONFIG` (an absolute or ~-relative path) wins when set and points
+    at a real file. Otherwise walk up from the current working directory and
+    return the first `anchor.toml` found, so any process started anywhere
+    inside a project tree resolves the same config. Returns None when nothing
+    is found.
+    """
+    explicit = os.environ.get("ANCHOR_CONFIG")
+    if explicit:
+        path = Path(explicit).expanduser()
+        return path if path.is_file() else None
+    cwd = Path.cwd()
+    for directory in (cwd, *cwd.parents):
+        candidate = directory / CONFIG_FILENAME
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 class AnchorConfig(BaseSettings):
@@ -45,6 +83,33 @@ class AnchorConfig(BaseSettings):
     docling_device: str = "cpu"
 
     log_level: str = "INFO"
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Insert the discovered `anchor.toml` below env/.env in precedence.
+
+        Order returned is highest-precedence first: constructor args, then
+        `ANCHOR_*` env, then `.env`, then `anchor.toml`, then secret files.
+        Keeping env above the toml means an operator's `ANCHOR_*` override
+        always wins over a committed project default.
+        """
+        sources: list[PydanticBaseSettingsSource] = [
+            init_settings,
+            env_settings,
+            dotenv_settings,
+        ]
+        toml_path = discover_config_file()
+        if toml_path is not None:
+            sources.append(TomlConfigSettingsSource(settings_cls, toml_file=toml_path))
+        sources.append(file_secret_settings)
+        return tuple(sources)
 
     @property
     def bronze_dir(self) -> Path:
