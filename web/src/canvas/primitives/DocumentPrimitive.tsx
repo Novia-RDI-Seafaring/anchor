@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom";
 
 import { BACKEND_URL } from "@/api/client";
 import { documents, type DocumentIndex, type Region } from "@/api/documents";
+import { bboxToImageRect } from "@/lib/bbox";
 import { useUiStore } from "@/stores/uiStore";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -186,18 +187,17 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
               means no hit-test ambiguity. */}
           {canScale && imgSize && slug
             ? regions.map((r, idx) => {
-                const bbox = r.bbox;
-                if (!bbox || bbox.length < 4) return null;
-                // Docling bbox = [left, top, right, bottom] in BOTTOM-LEFT
-                // origin (top has larger y than bottom).
-                const [l, t, rt, b] = bbox;
-                if (l === undefined || b === undefined || rt === undefined || t === undefined) return null;
-                const sx = imgSize.w / pageW;
-                const sy = imgSize.h / pageH;
-                const xpc = (l * sx) / imgSize.w * 100;
-                const ypc = ((pageH - t) * sy) / imgSize.h * 100;
-                const wpc = ((rt - l) * sx) / imgSize.w * 100;
-                const hpc = ((t - b) * sy) / imgSize.h * 100;
+                // Order-independent bbox → image rect (see lib/bbox). The
+                // gold extractor's 4-tuple ordering is not guaranteed, so we
+                // never assume bbox[1] is the top edge.
+                const rect = bboxToImageRect(r.bbox, pageW, pageH, imgSize.w, imgSize.h);
+                if (!rect) return null;
+                const xpc = (rect.x / imgSize.w) * 100;
+                const ypc = (rect.y / imgSize.h) * 100;
+                const wpc = (rect.w / imgSize.w) * 100;
+                const hpc = (rect.h / imgSize.h) * 100;
+                // rect is non-null only when bbox has ≥4 valid numbers.
+                const bbox = r.bbox as number[];
                 const rid = (r as { id?: string }).id ?? `r${idx}`;
                 const isLocal = hoveredLocal === rid;
                 const isExternal = externalHighlightId === rid;
