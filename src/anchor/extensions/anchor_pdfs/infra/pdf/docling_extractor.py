@@ -11,14 +11,39 @@ from typing import Any
 
 
 class DoclingPdfExtractor:
+    def __init__(self, device: str = "cpu") -> None:
+        self._device = device
+
     async def extract(self, pdf_path: Path) -> dict[str, Any]:
-        return await asyncio.to_thread(_extract_sync, pdf_path)
+        return await asyncio.to_thread(_extract_sync, pdf_path, self._device)
 
 
-def _extract_sync(pdf_path: Path) -> dict[str, Any]:
-    from docling.document_converter import DocumentConverter
+def _extract_sync(pdf_path: Path, device: str = "cpu") -> dict[str, Any]:
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import (
+        AcceleratorDevice,
+        AcceleratorOptions,
+        PdfPipelineOptions,
+    )
+    from docling.document_converter import DocumentConverter, PdfFormatOption
 
-    converter = DocumentConverter()
+    # Default CPU. Docling's AUTO device resolves to MPS when torch exposes
+    # it, and MPS cannot hold float64 ("Cannot convert a MPS Tensor to
+    # float64"). PYTORCH_ENABLE_MPS_FALLBACK does not help — the tensor is
+    # allocated float64, not an unsupported op. CPU avoids this class of
+    # error on any Mac, at some speed cost on large docs.
+    accel_device = {
+        "cpu": AcceleratorDevice.CPU,
+        "cuda": AcceleratorDevice.CUDA,
+        "mps": AcceleratorDevice.MPS,
+        "auto": AcceleratorDevice.AUTO,
+    }.get(device.lower(), AcceleratorDevice.CPU)
+
+    pipeline_options = PdfPipelineOptions()
+    pipeline_options.accelerator_options = AcceleratorOptions(device=accel_device)
+    converter = DocumentConverter(
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+    )
     result = converter.convert(str(pdf_path))
     return _flatten(result.document)
 

@@ -16,7 +16,13 @@ from anchor.adapters.cli.serve import serve
 from anchor.adapters.cli.services import _build_real_services
 from anchor.adapters.cli.sysml import sysml_app
 
-app = typer.Typer(help="Anchor - agent-first knowledge canvas.")
+# pretty_exceptions_show_locals=False: rendering locals dumps the full
+# pydantic-core validator repr for docling's input union (~tens of KB) on a
+# ConversionError, burying the actionable cause. Keep tracebacks lean.
+app = typer.Typer(
+    help="Anchor - agent-first knowledge canvas.",
+    pretty_exceptions_show_locals=False,
+)
 
 app.command()(serve)
 register_document_commands(app)

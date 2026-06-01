@@ -57,7 +57,7 @@ def _build_ingest_service(config: AnchorConfig, bus: EventBus, doc_store: DocSto
     return IngestService(
         doc_store,
         bus,
-        extractor=DoclingPdfExtractor(),
+        extractor=DoclingPdfExtractor(device=config.docling_device),
         renderer=PymupdfPdfRenderer(),
         polisher=OpenAIPageMdPolisher(api_key=api_key, base_url=openai_base_url)
         if has_openai

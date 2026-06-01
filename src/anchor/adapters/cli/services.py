@@ -58,7 +58,7 @@ def _build_real_services(data_dir: Path, *, base_url: str = "http://localhost:80
     ingest = IngestService(
         doc_store,
         bus,
-        extractor=DoclingPdfExtractor(),
+        extractor=DoclingPdfExtractor(device=config.docling_device),
         renderer=PymupdfPdfRenderer(),
         polisher=OpenAIPageMdPolisher(api_key=api_key, base_url=openai_base_url)
         if has_openai

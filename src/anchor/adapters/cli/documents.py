@@ -35,7 +35,18 @@ def ingest(
             dpi=config.dpi,
         )
 
-    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+    try:
+        result = asyncio.run(run())
+    except Exception as exc:  # noqa: BLE001 - surface a clean line, not a stack
+        typer.echo(f"Ingest failed for {pdf_path.name}: {exc}", err=True)
+        if "MPS" in str(exc) or "float64" in str(exc):
+            typer.echo(
+                "Hint: this looks like a docling accelerator issue. Set "
+                "ANCHOR_DOCLING_DEVICE=cpu and retry.",
+                err=True,
+            )
+        raise typer.Exit(code=1) from None
+    typer.echo(json.dumps(result, indent=2))
 
 
 def list_documents(
