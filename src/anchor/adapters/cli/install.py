@@ -1,5 +1,8 @@
 """`anchor install <target>` — register Anchor with an AI harness.
 
+This command does not install the ANCHOR tool itself. Install the tool with
+`uv tool install anchor-kb` first.
+
 Targets:
     claude-code   Add MCP server entry to ~/.claude/mcp.json and write a
                   skill file at ~/.claude/skills/anchor/SKILL.md so Claude
@@ -23,7 +26,12 @@ import typer
 
 from anchor.adapters.skills import compose_skill_md, discover_third_party_manifests
 
-install_app = typer.Typer(help="Register Anchor with an AI harness.")
+install_app = typer.Typer(
+    help=(
+        "Register Anchor with an AI harness. "
+        "To install the tool itself, run `uv tool install anchor-kb`."
+    )
+)
 
 
 # ── target descriptions ────────────────────────────────────────────────

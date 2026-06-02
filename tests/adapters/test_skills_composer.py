@@ -34,6 +34,14 @@ def test_includes_core_skill_section():
     assert "When to use" in out
 
 
+def test_core_skill_explains_tool_installation():
+    out = compose_skill_md()
+    assert "uv tool install anchor-kb" in out
+    assert "pipx install anchor-kb" in out
+    assert "`anchor install <harness>` registers" in out
+    assert "ANCHOR_OPENAI_API_KEY" in out
+
+
 def test_includes_canvas_section():
     out = compose_skill_md()
     # canvas.md contributes the workspace + node tool reference.
@@ -79,7 +87,7 @@ import json  # noqa: E402  (intentional — block-scoped to third-party tests)
 from anchor.adapters.skills import discover_third_party_manifests  # noqa: E402
 
 
-def _write_manifest(dir_: "object", **agent_overrides):  # type: ignore[no-untyped-def]
+def _write_manifest(dir_: object, **agent_overrides):  # type: ignore[no-untyped-def]
     """Helper: write a minimal OIP 0.2 manifest.json with an agent block."""
     from pathlib import Path
 
