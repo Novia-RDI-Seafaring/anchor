@@ -19,11 +19,11 @@ import { useUiStore } from "@/stores/uiStore";
 import { TablePrimitive } from "./TablePrimitive";
 
 beforeEach(() => {
-  useUiStore.setState({ hoveredSourceRef: null });
+  useUiStore.setState({ hoveredSourceRef: null, pdfViewer: null });
 });
 
 afterEach(() => {
-  useUiStore.setState({ hoveredSourceRef: null });
+  useUiStore.setState({ hoveredSourceRef: null, pdfViewer: null });
 });
 
 async function renderTable(data: Record<string, unknown>) {
@@ -123,5 +123,47 @@ describe("TablePrimitive row handles", () => {
     expect(hovered).not.toBeNull();
     expect(hovered!.page).toBe(3);
     expect(hovered!.region_id).toBe("r9");
+  });
+
+  it("uses the row source slug when the spec has no node-level source document", async () => {
+    await renderTable({
+      label: "Spec-Config",
+      rows: [
+        {
+          key: "min temp",
+          value: "-10 C",
+          source_ref: { slug: "alfa-laval-lkh", page: 2, region_id: "r9" },
+        },
+      ],
+    });
+    const row = screen.getByText("min temp").closest("tr");
+    await act(async () => {
+      fireEvent.mouseEnter(row!);
+    });
+    expect(useUiStore.getState().hoveredSourceRef).toEqual({
+      slug: "alfa-laval-lkh",
+      page: 2,
+      region_id: "r9",
+      bbox: undefined,
+    });
+  });
+
+  it("opens the row source page and region when the row page button is clicked", async () => {
+    await renderTable({
+      label: "Spec-Config",
+      rows: [
+        {
+          key: "min temp",
+          value: "-10 C",
+          source_ref: { slug: "alfa-laval-lkh", page: 2, region_id: "r9" },
+        },
+      ],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "p2" }));
+    expect(useUiStore.getState().pdfViewer).toMatchObject({
+      slug: "alfa-laval-lkh",
+      page: 2,
+      highlightRegionId: "r9",
+    });
   });
 });
