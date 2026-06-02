@@ -23,10 +23,16 @@ export type Region = {
   description?: string;
   page?: number;
   bbox?: number[];
+  approximate_bbox?: number[];
   [key: string]: unknown;
 };
 
 type RegionsResponse = { slug: string; pages: Record<string, Region[]> };
+
+function normaliseRegion(region: Region): Region {
+  if (region.bbox || !region.approximate_bbox) return region;
+  return { ...region, bbox: region.approximate_bbox };
+}
 
 export const documents = {
   list: () => api.get<DocumentSummary[]>("/api/documents"),
@@ -34,9 +40,9 @@ export const documents = {
   regions: async (slug: string, page?: number): Promise<Region[]> => {
     const q = page !== undefined ? `?page=${page}` : "";
     const rsp = await api.get<RegionsResponse>(`/api/documents/${slug}/regions${q}`);
-    if (page !== undefined) return rsp.pages?.[String(page)] ?? [];
+    if (page !== undefined) return (rsp.pages?.[String(page)] ?? []).map(normaliseRegion);
     // No page filter: flatten all pages.
-    return Object.values(rsp.pages ?? {}).flat();
+    return Object.values(rsp.pages ?? {}).flat().map(normaliseRegion);
   },
   goldMap: (slug: string) => api.get<Record<string, unknown>>(`/api/documents/${slug}/gold-map`),
   pageText: (slug: string, page: number) =>

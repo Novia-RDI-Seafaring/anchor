@@ -20,10 +20,10 @@ type Row = {
   // node flips to that page and highlights the matching region, and any
   // evidence edge whose data.source_ref matches snaps from node-to-node
   // floating to row-handle↔region-handle anchored mode.
-  source_ref?: { page: number; region_id?: string; bbox?: number[] };
+  source_ref?: { slug?: string; page: number; region_id?: string; bbox?: number[] };
 };
 
-type SourceRef = { kind?: string; page?: number; bbox?: number[] };
+type SourceRef = { kind?: string; slug?: string; page?: number; region_id?: string; bbox?: number[] };
 
 /**
  * TablePrimitive — `spec` node renderer.
@@ -130,13 +130,13 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
    *  is what drives the document node's page-flip + region-highlight, and
    *  via pickEdgeMode the evidence edge's floating→anchored swap. */
   const broadcastRowHover = (row: Row) => {
-    if (!d.source_doc_slug) return;
     const ref = row.source_ref ?? d.source_ref;
-    if (!ref?.page) return;
+    const slug = ref?.slug ?? d.source_doc_slug;
+    if (!slug || !ref?.page) return;
     setHoveredSourceRef({
-      slug: d.source_doc_slug,
+      slug,
       page: ref.page,
-      region_id: row.source_ref?.region_id ?? d.source_region_id,
+      region_id: ref.region_id ?? d.source_region_id,
       bbox: ref.bbox,
     });
   };
@@ -153,27 +153,29 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   // document; resolve it either from the spec's stored source_doc_node_id
   // or, as a fallback for older nodes that don't carry it, by looking up
   // the matching document node in the canvas store by slug.
-  const openSource = () => {
-    if (!d.source_doc_slug || !d.source_ref?.page) return;
+  const openSourceRef = (ref?: SourceRef) => {
+    const slug = ref?.slug ?? d.source_doc_slug;
+    if (!slug || !ref?.page) return;
     let docNodeId = d.source_doc_node_id;
     if (!docNodeId) {
       const nodes = useCanvasStore.getState().nodes;
       for (const n of Object.values(nodes)) {
         const nd = n.data as { slug?: string } | undefined;
-        if (n.node_type === "document" && nd?.slug === d.source_doc_slug) {
+        if (n.node_type === "document" && nd?.slug === slug) {
           docNodeId = n.id;
           break;
         }
       }
     }
-    openPdf(d.source_doc_slug, {
-      page: d.source_ref.page,
+    openPdf(slug, {
+      page: ref.page,
       workspaceSlug,
       documentNodeId: docNodeId,
-      highlightRegionId: d.source_region_id,
-      highlightBbox: d.source_ref.bbox,
+      highlightRegionId: ref.region_id ?? d.source_region_id,
+      highlightBbox: ref.bbox,
     });
   };
+  const openSource = () => openSourceRef(d.source_ref);
 
   const cropUrl =
     d.source_doc_slug && d.source_region_id && d.source_ref?.page
@@ -340,7 +342,20 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                     />
                   </td>
                   <td className="relative px-2 text-xs text-neutral-400">
-                    {r.source_ref?.page ? `p${r.source_ref.page}` : ""}
+                    {r.source_ref?.page ? (
+                      <button
+                        type="button"
+                        className="nodrag nopan rounded px-1 py-0.5 text-[10px] text-sky-700 hover:bg-sky-100 hover:text-sky-900"
+                        title={`Open page ${r.source_ref.page} in viewer`}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openSourceRef(r.source_ref);
+                        }}
+                      >
+                        p{r.source_ref.page}
+                      </button>
+                    ) : null}
                     {/* Per-row source handle. Default state is a 2px grey
                         dot tucked against the row's right edge — visible
                         on hover, hit-target stays clickable for drag-to-
