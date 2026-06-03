@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -27,8 +28,8 @@ router = APIRouter(prefix="/api/workspaces", tags=["upload"])
 # Server-side cap. 200 MB is enough for the largest catalogue PDFs we've
 # seen in industry datasheets; uploads above this almost always indicate
 # a misclick (video, archive) or an exploit. The check happens after the
-# body is read — FastAPI / Starlette buffer to disk, so memory is not
-# exhausted, but we still reject before parsing.
+# body is read. FastAPI / Starlette buffer to disk, so memory is not exhausted,
+# but we still reject before parsing.
 _MAX_PDF_BYTES = 200 * 1024 * 1024
 
 
@@ -51,6 +52,7 @@ async def upload(
     doc_slug = slugify(Path(filename).stem)
     job_id = new_event_id()
     node_id = new_id()
+    queued_at = time.time()
 
     await workspace.add_node(
         slug,
@@ -64,23 +66,49 @@ async def upload(
             "filename": filename,
             "status": "pending",
             "job_id": job_id,
+            "ingest_stage": "queued",
+            "ingest_stage_label": "queued",
+            "ingest_progress": 0,
+            "ingest_started_at": queued_at,
+            "ingest_updated_at": queued_at,
         },
     )
 
     async def _run() -> None:
         try:
-            await workspace.update_node(slug, node_id, {"status": "ingesting"})
+            started_at = time.time()
+            await workspace.update_node(slug, node_id, {
+                "status": "ingesting",
+                "ingest_stage": "starting",
+                "ingest_stage_label": "starting ingest",
+                "ingest_progress": 1,
+                "ingest_started_at": started_at,
+                "ingest_updated_at": started_at,
+            })
             summary = await ingest.ingest_pdf(pdf_bytes, filename, slug=doc_slug, workspace_id=slug)
+            finished_at = time.time()
             await workspace.update_node(slug, node_id, {
                 "status": "ready",
                 "page_count": summary.get("page_count", 0),
                 "region_count": summary.get("region_count", 0),
+                "embedded_count": summary.get("embedded_count", 0),
+                "ingest_stage": "complete",
+                "ingest_stage_label": "complete",
+                "ingest_progress": 100,
+                "ingest_updated_at": finished_at,
+                "ingest_finished_at": finished_at,
             })
         except Exception as exc:
             log.exception("upload-and-ingest failed")
             try:
+                finished_at = time.time()
                 await workspace.update_node(slug, node_id, {
-                    "status": "failed", "error": str(exc),
+                    "status": "failed",
+                    "error": str(exc),
+                    "ingest_stage": "failed",
+                    "ingest_stage_label": "failed",
+                    "ingest_updated_at": finished_at,
+                    "ingest_finished_at": finished_at,
                 })
             except Exception:
                 # The ingest error is already logged; a best-effort status

@@ -25,6 +25,22 @@ const STATUS_LABELS: Record<string, string> = {
   ready: "ready",
 };
 
+function formatElapsed(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0s";
+  const whole = Math.floor(seconds);
+  const minutes = Math.floor(whole / 60);
+  const secs = whole % 60;
+  if (minutes <= 0) return `${secs}s`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours <= 0) return `${minutes}m ${secs.toString().padStart(2, "0")}s`;
+  return `${hours}h ${mins.toString().padStart(2, "0")}m`;
+}
+
+function numericSeconds(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 type PageMeta = { width: number; height: number };
 
 // Default DPI used by anchor_pdfs when rendering page PNGs. Matches
@@ -34,7 +50,7 @@ const RENDER_DPI = 150;
 const POINTS_PER_INCH = 72;
 
 /**
- * DocumentPrimitive — a paginated document viewport on the canvas.
+ * DocumentPrimitive: a paginated document viewport on the canvas.
  *
  * Phase A:
  *   - Renders the current page as a PNG with prev/next pagination.
@@ -62,6 +78,9 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     ingest_stage_label?: string;
     ingest_current?: number;
     ingest_total?: number;
+    ingest_started_at?: number;
+    ingest_updated_at?: number;
+    ingest_finished_at?: number;
     error?: string;
     workspace_slug?: string;
   };
@@ -82,7 +101,14 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   const [pageMeta, setPageMeta] = useState<Record<number, PageMeta>>({});
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [hoveredLocal, setHoveredLocal] = useState<string | null>(null);
+  const [nowSeconds, setNowSeconds] = useState(() => Date.now() / 1000);
   const imgRef = useRef<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    if (isReady) return;
+    const timer = window.setInterval(() => setNowSeconds(Date.now() / 1000), 1000);
+    return () => window.clearInterval(timer);
+  }, [isReady]);
 
   // Fetch index + page metadata once per slug.
   useEffect(() => {
@@ -143,12 +169,22 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     ? Math.max(0, Math.min(100, Math.round(d.ingest_progress)))
     : status === "pending"
       ? 0
-      : null;
+      : (status === "ingesting" || status === "searching")
+        ? 1
+        : null;
   const ingestLabel = d.ingest_stage_label
     ?? (d.ingest_stage ? d.ingest_stage.replaceAll("_", " ") : STATUS_LABELS[status] ?? status);
   const ingestDetail = d.ingest_total && d.ingest_total > 1
     ? `${d.ingest_current ?? 0}/${d.ingest_total}`
     : null;
+  const ingestStartedAt = numericSeconds(d.ingest_started_at);
+  const ingestFinishedAt = numericSeconds(d.ingest_finished_at);
+  const elapsedSeconds = ingestStartedAt === null
+    ? null
+    : Math.max(0, (ingestFinishedAt ?? nowSeconds) - ingestStartedAt);
+  const elapsedLabel = elapsedSeconds === null
+    ? status === "pending" ? "waiting" : "running"
+    : `elapsed ${formatElapsed(elapsedSeconds)}`;
 
   const externalHighlightId = useMemo(() => {
     if (!hoveredSourceRef || !slug) return null;
@@ -167,9 +203,9 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
           Image renders at natural aspect ratio (no maxHeight, no object-fit
           contain), so the wrapper's dimensions exactly equal the rendered
           image's rectangle. The SVG overlay then aligns precisely with the
-          image's pixel grid — bbox overlays land where they should.
+          image's pixel grid, so bbox overlays land where they should.
 
-          The wrapper itself does NOT opt out of node-drag — that way the
+          The wrapper itself does NOT opt out of node-drag. That way the
           user can grab the empty space between regions (or the image
           background) to move the whole document node. Each region
           rendered inside this wrapper has its own `nodrag` so the
@@ -198,7 +234,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
           {/* Single-layer region overlay: each region is one absolutely-
               positioned div that handles styling, hover, click AND drag.
               Collapses what used to be three stacked layers (SVG hover,
-              vector overlay, transparent drag layer) — those overlapped
+              vector overlay, transparent drag layer). Those overlapped
               imperfectly and made HTML5 drag flaky. One element per region
               means no hit-test ambiguity. */}
           {canScale && imgSize && slug
@@ -367,7 +403,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
         </div>
         <div className="flex items-center justify-between text-xs text-neutral-500">
           <span>
-            {total ? `${total} ${total === 1 ? "page" : "pages"}` : "—"}
+            {total ? `${total} ${total === 1 ? "page" : "pages"}` : "-"}
             {d.region_count ? ` · ${d.region_count} regions` : null}
             {d.embedded_count ? ` · ${d.embedded_count} embedded` : null}
           </span>
@@ -383,8 +419,8 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
             <div className="flex items-center justify-between gap-2 text-[10px] text-neutral-600">
               <span className="truncate capitalize">{ingestLabel}</span>
               <span className="shrink-0 tabular-nums">
-                {ingestDetail ? `${ingestDetail} pages, ` : null}
-                {ingestProgress}%
+                {ingestProgress}% · {elapsedLabel}
+                {ingestDetail ? ` · ${ingestDetail} pages` : null}
               </span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-neutral-200">

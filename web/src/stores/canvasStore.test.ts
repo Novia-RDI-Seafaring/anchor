@@ -179,6 +179,8 @@ describe("canvasStore.applyEvent", () => {
       ingest_total: 4,
       ingest_progress: 70,
     });
+    expect(typeof s.nodes["doc1"]!.data?.ingest_started_at).toBe("number");
+    expect(typeof s.nodes["doc1"]!.data?.ingest_updated_at).toBe("number");
   });
 
   it("DocIngested marks the matching document ready without changing version", () => {
@@ -215,6 +217,7 @@ describe("canvasStore.applyEvent", () => {
       embedded_count: 12,
       ingest_progress: 100,
     });
+    expect(typeof s.nodes["doc1"]!.data?.ingest_finished_at).toBe("number");
   });
 
   it("EdgeRemoved drops the edge", () => {
@@ -265,7 +268,7 @@ describe("canvasStore.applyEvent", () => {
     );
     // Unknown type still falls through and updates version because the
     // switch ends in `return { ...state, nodes, edges, version: evt.version }`.
-    // That's intentional — we don't want a stale version that blocks future
+    // That's intentional. We don't want a stale version that blocks future
     // legitimate events. Pinned here so future refactors are explicit.
     expect(useCanvasStore.getState().version).toBe(99);
   });
