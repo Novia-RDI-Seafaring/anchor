@@ -37,8 +37,9 @@ ANCHOR serves the UI and HTTP API at `http://127.0.0.1:8002` by default.
 It is unauthenticated, so bind to a network interface only behind an
 authentication layer.
 
-Data defaults to `~/anchor-data`. Keep `anchor serve`, `anchor ingest`, and
-agent configuration on the same data directory:
+Data defaults to `~/anchor-data`. Set `ANCHOR_DATA_DIR` to change that default,
+or pass `--data-dir` explicitly. Keep `anchor serve`, `anchor ingest`, and agent
+configuration on the same data directory:
 
 ```bash
 anchor ingest /path/to/datasheet.pdf --data-dir ~/anchor-data

@@ -16,7 +16,8 @@ The `anchor` command exposes the user-facing local application surface.
 | `anchor synopsis SLUG --entity ENTITY` | Compose an entity-scoped synopsis. |
 
 Most document commands accept `--data-dir DIR`; use the same data directory
-as the running server.
+as the running server. Set `ANCHOR_DATA_DIR` to change the default for CLI and
+MCP commands. An explicit `--data-dir` takes priority.
 
 ## Canvas commands
 

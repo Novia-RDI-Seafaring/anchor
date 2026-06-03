@@ -57,9 +57,9 @@ pnpm --dir web dev
 # → backend on :8002, Vite HMR on :5173
 ```
 
-Commands default `--data-dir` to `~/anchor-data`. Use the same explicit
-`--data-dir` for server, ingest and agent registration when you keep project
-data elsewhere.
+Commands default `--data-dir` to `~/anchor-data`. Set `ANCHOR_DATA_DIR` to
+change the default for CLI and MCP commands. An explicit `--data-dir` takes
+priority. Use the same path for server, ingest, and agent registration.
 
 ## Configure gold extraction
 

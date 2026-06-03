@@ -96,3 +96,13 @@ def test_install_print_target_emits_plans(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert "claude-code" in result.output
     assert "cursor" in result.output
+
+
+def test_install_print_uses_anchor_data_dir_when_flag_is_omitted(tmp_path, monkeypatch):
+    data_dir = tmp_path / "env-data"
+    monkeypatch.setenv("ANCHOR_DATA_DIR", str(data_dir))
+
+    result = CliRunner().invoke(install_app, ["print"])
+
+    assert result.exit_code == 0, result.output
+    assert str(data_dir.resolve()) in result.output
