@@ -46,7 +46,7 @@ uv sync --extra dev          # adds pytest, ruff, import-linter
 pnpm --dir web install
 ```
 
-Dev mode runs two processes — one for the backend, one for the frontend with hot-reload:
+Dev mode runs two processes: one for the backend, one for the frontend with hot-reload.
 
 ```bash
 # terminal 1
@@ -61,6 +61,65 @@ Commands default `--data-dir` to `~/anchor-data`. Set `ANCHOR_DATA_DIR` to
 change the default for CLI and MCP commands. An explicit `--data-dir` takes
 priority. Use the same path for server, ingest, and agent registration.
 
+## Reinstall or upgrade
+
+Use `--force` when replacing an installed ANCHOR tool with a newer wheel or a
+local source checkout:
+
+=== "PyPI"
+
+    ```bash
+    uv tool install --force anchor-kb
+    ```
+
+=== "Local checkout"
+
+    ```bash
+    uv tool install --force .
+    ```
+
+On Windows, reinstall can fail if an agent harness is still running
+`anchor-mcp.exe`:
+
+```text
+failed to copy ... anchor-mcp.exe: The process cannot access the file because it is being used by another process
+```
+
+Close the MCP client first (Claude Code, Cursor, Codex, OpenCode, or another
+client that registered ANCHOR). Then check for leftover ANCHOR processes:
+
+```powershell
+Get-Process anchor-mcp -ErrorAction SilentlyContinue |
+  Select-Object Id,ProcessName,Path
+
+Get-Process python -ErrorAction SilentlyContinue |
+  Where-Object { $_.Path -like '*\uv\tools\anchor-kb\*' } |
+  Select-Object Id,ProcessName,Path
+```
+
+If those processes are still present after the client is closed, stop only
+those ANCHOR tool processes:
+
+```powershell
+Get-Process anchor-mcp -ErrorAction SilentlyContinue | Stop-Process
+
+Get-Process python -ErrorAction SilentlyContinue |
+  Where-Object { $_.Path -like '*\uv\tools\anchor-kb\*' } |
+  Stop-Process
+```
+
+Then reinstall:
+
+```powershell
+uv tool uninstall anchor-kb
+uv tool install --force .
+```
+
+If `uv tool uninstall anchor-kb` reports `Access is denied`, a process is still
+holding a file inside the uv tool directory. Repeat the process check above
+before trying again. Do not remove `AppData\Roaming\uv\tools\anchor-kb` by hand
+while `anchor-mcp.exe` or its Python process is still running.
+
 ## Configure gold extraction
 
 The bronze and silver layers run locally without any external service. The gold layer (structured region extraction) uses an OpenAI-compatible vision model. To enable it, create a `.env` file with your provider details:
@@ -72,7 +131,8 @@ ANCHOR_REGION_MODEL=gpt-5.4
 ANCHOR_POLISH_MODEL=gpt-5.4
 ```
 
-Without these, `anchor serve` still works — you get silver-layer extraction (page text + page PNGs + Docling structure) but gold regions are skipped.
+Without these, `anchor serve` still works. You get silver-layer extraction
+(page text, page PNGs, and Docling structure), but gold regions are skipped.
 
 !!! tip "Where the `.env` is read from"
     `pydantic-settings` loads `.env` from the working directory at boot. For globally-installed `anchor`, run the server from the directory containing your `.env`, or set the variables in your shell.
