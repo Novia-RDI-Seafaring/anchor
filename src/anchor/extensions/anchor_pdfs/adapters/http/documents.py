@@ -108,7 +108,7 @@ async def synopsis_data(
     try:
         data = await svc.compose(slug=slug, entity=entity)
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(404, str(e))
+        raise HTTPException(404, str(e)) from e
     return asdict(data)
 
 
@@ -123,7 +123,7 @@ async def synopsis_pdf(
     try:
         pdf_bytes = await svc.render_pdf(slug=slug, entity=entity)
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(404, str(e))
+        raise HTTPException(404, str(e)) from e
     return Response(
         pdf_bytes,
         media_type="application/pdf",
@@ -145,7 +145,7 @@ async def synopsis_md(
     try:
         md = await svc.render_markdown(slug=slug, entity=entity, crop_url_base=crop_url_base)
     except Exception as e:  # noqa: BLE001
-        raise HTTPException(404, str(e))
+        raise HTTPException(404, str(e)) from e
     return PlainTextResponse(md, media_type="text/markdown")
 
 
@@ -178,16 +178,17 @@ async def search_documents(
 ):
     """Semantic search across every embedded document.
 
-    Returns `{query, embed_model, k, doc_count, hits: [...]}` so callers
-    can verify the model before consuming hits. `embed_model` lets the
-    browser pick the matching WASM bundle.
+    Returns `{query, embed_model, k, doc_count, hits: [...], skipped: [...]}`
+    so callers can verify the model before consuming hits. `skipped`
+    names embedded documents ignored because their stored embed_model
+    does not match the query embedder.
     """
     if ingest.embedder is None:
         raise HTTPException(503, "no embedder wired")
     try:
         return await ingest.search(q, k=k)
     except RuntimeError as e:
-        raise HTTPException(500, str(e))
+        raise HTTPException(500, str(e)) from e
 
 
 @router.get("/{slug}/embeddings/meta")

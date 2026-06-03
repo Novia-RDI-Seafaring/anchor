@@ -44,6 +44,7 @@ def test_mcp_applies_openai_compatible_pipeline_configuration(tmp_path):
         data_dir=tmp_path,
         openai_api_key="test-key",
         openai_base_url="http://models.test/v1",
+        embed_model="text-embedding-3-large",
         polish_model="configured-polish",
         region_model="configured-regions",
         dpi=222,
@@ -62,3 +63,17 @@ def test_mcp_applies_openai_compatible_pipeline_configuration(tmp_path):
     assert ingest.default_polish_model == "configured-polish"
     assert ingest.default_region_model == "configured-regions"
     assert ingest.default_dpi == 222
+
+
+def test_mcp_openai_key_does_not_override_configured_local_embedder(tmp_path):
+    config = AnchorConfig(
+        data_dir=tmp_path,
+        openai_api_key="test-key",
+        embed_model="local/test-model",
+        _env_file=None,
+    )
+
+    ingest = _build_ingest_service(config, MemoryEventBus(), MemoryDocStore())
+
+    assert isinstance(ingest.embedder, LocalSentenceTransformerEmbedder)
+    assert ingest.embed_model_id == "local/test-model"
