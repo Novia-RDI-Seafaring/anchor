@@ -37,6 +37,18 @@ def test_create_and_list_workspaces():
     assert entry["referenced_by"] == []
 
 
+def test_delete_workspace_removes_it_from_list():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "scratch"})
+    rsp = client.delete("/api/workspaces/scratch")
+    assert rsp.status_code == 200
+    assert rsp.json() == {"slug": "scratch", "deleted": True}
+    slugs = {w["slug"] for w in client.get("/api/workspaces").json()}
+    assert "scratch" not in slugs
+    missing = client.delete("/api/workspaces/scratch")
+    assert missing.status_code == 404
+
+
 def test_list_workspaces_envelope_reflects_sub_canvas_link():
     """After create_sub_canvas, parent.references and child.referenced_by line up."""
     client, _ = _client()

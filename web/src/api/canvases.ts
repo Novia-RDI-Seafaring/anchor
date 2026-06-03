@@ -38,6 +38,8 @@ export const canvases = {
   list: () => api.get<WorkspaceListEntry[]>("/api/workspaces"),
   create: (slug: string, title = "") =>
     api.post<WorkspaceMeta>("/api/workspaces", { slug, title }),
+  delete: (slug: string) =>
+    api.del<{ slug: string; deleted: boolean }>(`/api/workspaces/${slug}`),
   /** Rename the workspace's display title. Slug is immutable. */
   rename: (slug: string, title: string) =>
     api.patch<WorkspaceMeta>(`/api/workspaces/${slug}`, { title }),

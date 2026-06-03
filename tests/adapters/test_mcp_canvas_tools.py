@@ -87,6 +87,24 @@ def test_tool_definitions_have_required_fields():
     assert "canvas_organize_subtree" in names
 
 
+def test_canvas_delete_workspace_tool_is_registered_and_removes_workspace():
+    names = {d["name"] for d in handlers_canvas.tool_definitions()}
+    assert "canvas_delete_workspace" in names
+
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("scratch")
+        body = await handlers_canvas.call_tool(
+            s.workspace,
+            "canvas_delete_workspace",
+            {"workspace_slug": "scratch"},
+        )
+        assert json.loads(body) == {"slug": "scratch", "deleted": True}
+        assert await s.workspace.list_workspaces() == []
+
+    asyncio.run(run())
+
+
 def test_tool_definitions_include_align_and_distribute():
     names = {d["name"] for d in handlers_canvas.tool_definitions()}
     assert "canvas_align" in names

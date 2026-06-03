@@ -14,6 +14,9 @@ class WorkspaceStore(Protocol):
     async def create(self, slug: str, title: str = "") -> WorkspaceMeta:
         raise NotImplementedError
 
+    async def delete(self, slug: str) -> None:
+        raise NotImplementedError
+
     async def load(self, slug: str) -> Workspace:
         raise NotImplementedError
 

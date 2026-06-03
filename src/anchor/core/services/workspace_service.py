@@ -149,6 +149,11 @@ class WorkspaceService:
         meta = await self.store.create(slug, title=title)
         return meta.model_dump()
 
+    async def delete_workspace(self, slug: str) -> dict[str, Any]:
+        async with self.locks.lock(slug):
+            await self.store.delete(slug)
+        return {"slug": slug, "deleted": True}
+
     async def rename_workspace(self, slug: str, *, title: str) -> dict[str, Any]:
         """Update the workspace's display title in meta + state. Slug is
         immutable. Idempotent."""
