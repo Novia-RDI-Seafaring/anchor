@@ -172,6 +172,8 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": (
                 "Semantic search across every gold-extracted, embedded document. "
                 "Returns top-k {slug, page, region_id, text, score} grounded hits. "
+                "Also returns skipped documents when their stored embed_model "
+                "does not match the query embedder. "
                 "Use the returned (slug, page, region_id) with get_crop or "
                 "canvas.add_node to surface evidence on the canvas."
             ),

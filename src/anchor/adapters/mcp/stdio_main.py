@@ -15,7 +15,7 @@ from anchor.core.services.workspace_service import WorkspaceService
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.services import IngestService
 from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
-from anchor.extensions.anchor_pdfs.infra.llm.openai_embedder import OpenAIEmbedder
+from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
 from anchor.extensions.anchor_pdfs.infra.llm.openai_md_polisher import OpenAIPageMdPolisher
 from anchor.extensions.anchor_pdfs.infra.llm.openai_region_extractor import OpenAIRegionExtractor
 from anchor.extensions.anchor_pdfs.infra.pdf.docling_extractor import DoclingPdfExtractor
@@ -26,33 +26,14 @@ from anchor.infra.snapshot.headless_chromium_snapshotter import HeadlessChromium
 from anchor.infra.stores.fs_workspace_store import FsWorkspaceStore
 
 
-def _build_embedder(
-    api_key: str | None,
-    *,
-    base_url: str | None = None,
-    local_model: str = "BAAI/bge-small-en-v1.5",
-):
-    """Select the available semantic-search embedder for MCP document tools."""
-    if api_key:
-        return OpenAIEmbedder(api_key=api_key, base_url=base_url)
-    try:
-        from anchor.extensions.anchor_pdfs.infra.llm.local_sentence_transformer_embedder import (
-            LocalSentenceTransformerEmbedder,
-        )
-
-        return LocalSentenceTransformerEmbedder(model=local_model)
-    except ImportError:
-        return None
-
-
 def _build_ingest_service(config: AnchorConfig, bus: EventBus, doc_store: DocStore) -> IngestService:
     api_key = config.openai_api_key.get_secret_value() if config.openai_api_key else None
     has_openai = bool(api_key) or bool(os.environ.get("OPENAI_API_KEY"))
     openai_base_url = (config.openai_base_url or "").strip() or None
-    embedder = _build_embedder(
-        api_key if has_openai else None,
+    embedder = build_embedder(
+        model=config.embed_model,
+        api_key=api_key,
         base_url=openai_base_url,
-        local_model=config.embed_model,
     )
     return IngestService(
         doc_store,

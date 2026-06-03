@@ -17,6 +17,7 @@ class MemoryDocStore:
         self._gold_maps: dict[str, dict[str, Any]] = {}
         self._crops: dict[tuple[str, str], bytes] = {}
         self._bronze: dict[str, bytes] = {}
+        self._embeddings: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
 
     async def list_documents(self) -> list[dict[str, Any]]:
@@ -92,6 +93,26 @@ class MemoryDocStore:
         async with self._lock:
             self._regions[(slug, page)] = list(regions)
         return Path(f"memory://gold/{slug}/{page}.regions.json")
+
+    async def write_embeddings(self, slug: str, payload: dict[str, Any]) -> Path:
+        async with self._lock:
+            self._embeddings[slug] = dict(payload)
+        return Path(f"memory://gold/{slug}/embeddings.json")
+
+    async def get_embeddings(self, slug: str) -> dict[str, Any] | None:
+        payload = self._embeddings.get(slug)
+        return dict(payload) if payload is not None else None
+
+    async def list_embeddings(self) -> list[dict[str, Any]]:
+        return [
+            {
+                "slug": slug,
+                "embed_model": payload.get("embed_model", ""),
+                "dim": int(payload.get("dim", 0)),
+                "vector_count": len(payload.get("vectors", [])),
+            }
+            for slug, payload in sorted(self._embeddings.items())
+        ]
 
     # Test helpers
     def seed_document(self, slug: str, *, filename: str = "", title: str = "", page_count: int = 0) -> None:

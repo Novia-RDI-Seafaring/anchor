@@ -7,9 +7,9 @@ from pathlib import Path
 
 def _build_real_services(data_dir: Path, *, base_url: str = "http://localhost:8002"):
     """Wire concrete adapters. Polish/region-extract are OpenAI-only and become
-    no-ops if the user hasn't provided ANCHOR_OPENAI_API_KEY — silver still
-    builds, gold simply skips. Embeddings default to a local sentence-
-    transformer model; OpenAI is opt-in via ANCHOR_OPENAI_API_KEY.
+    no-ops if the user hasn't provided ANCHOR_OPENAI_API_KEY, silver still
+    builds, gold simply skips. Embeddings follow ANCHOR_EMBED_MODEL; the
+    local default stays local even when an OpenAI key is present.
 
     `base_url` is where the wired SnapshotPort points headless chromium.
     Default matches `anchor serve --port 8002`; override when serving on a
@@ -50,10 +50,12 @@ def _build_real_services(data_dir: Path, *, base_url: str = "http://localhost:80
     # treated the same as None so a stray env var doesn't break stock
     # OpenAI usage.
     openai_base_url = (config.openai_base_url or "").strip() or None
-    embedder = _build_embedder(
-        api_key if has_openai else None,
+    from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
+
+    embedder = build_embedder(
+        model=config.embed_model,
+        api_key=api_key,
         base_url=openai_base_url,
-        local_model=config.embed_model,
     )
     ingest = IngestService(
         doc_store,
@@ -73,30 +75,3 @@ def _build_real_services(data_dir: Path, *, base_url: str = "http://localhost:80
         default_dpi=config.dpi,
     )
     return config, bus, workspace, ingest, doc_store
-
-
-def _build_embedder(
-    api_key: str | None,
-    *,
-    base_url: str | None = None,
-    local_model: str = "BAAI/bge-small-en-v1.5",
-):
-    """Local-first: sentence-transformers if installed, OpenAI as fallback.
-
-    Returning None is fine — the embedder is only used when query/embed
-    commands run; absence is a soft failure, not a hard one."""
-    if api_key:
-        try:
-            from anchor.extensions.anchor_pdfs.infra.llm.openai_embedder import OpenAIEmbedder
-
-            return OpenAIEmbedder(api_key=api_key, base_url=base_url)
-        except ImportError:
-            pass
-    try:
-        from anchor.extensions.anchor_pdfs.infra.llm.local_sentence_transformer_embedder import (
-            LocalSentenceTransformerEmbedder,
-        )
-
-        return LocalSentenceTransformerEmbedder(model=local_model)
-    except ImportError:
-        return None
