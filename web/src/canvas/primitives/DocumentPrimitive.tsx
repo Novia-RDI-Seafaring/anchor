@@ -56,6 +56,12 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     status?: string;
     page_count?: number;
     region_count?: number;
+    embedded_count?: number;
+    ingest_progress?: number;
+    ingest_stage?: string;
+    ingest_stage_label?: string;
+    ingest_current?: number;
+    ingest_total?: number;
     error?: string;
     workspace_slug?: string;
   };
@@ -133,6 +139,16 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   const pageH = explicitH > 0 ? explicitH : derivedH;
   const canScale = imgSize && pageW > 0 && pageH > 0;
   const coverUrl = isReady && slug ? documents.pageImageUrl(slug, page) : null;
+  const ingestProgress = typeof d.ingest_progress === "number"
+    ? Math.max(0, Math.min(100, Math.round(d.ingest_progress)))
+    : status === "pending"
+      ? 0
+      : null;
+  const ingestLabel = d.ingest_stage_label
+    ?? (d.ingest_stage ? d.ingest_stage.replaceAll("_", " ") : STATUS_LABELS[status] ?? status);
+  const ingestDetail = d.ingest_total && d.ingest_total > 1
+    ? `${d.ingest_current ?? 0}/${d.ingest_total}`
+    : null;
 
   const externalHighlightId = useMemo(() => {
     if (!hoveredSourceRef || !slug) return null;
@@ -353,6 +369,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
           <span>
             {total ? `${total} ${total === 1 ? "page" : "pages"}` : "—"}
             {d.region_count ? ` · ${d.region_count} regions` : null}
+            {d.embedded_count ? ` · ${d.embedded_count} embedded` : null}
           </span>
           {!isReady ? (
             <span className="inline-flex items-center gap-1 rounded border border-current px-1.5 py-0.5 text-[9px] uppercase">
@@ -361,6 +378,23 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
             </span>
           ) : null}
         </div>
+        {!isReady && ingestProgress !== null ? (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-2 text-[10px] text-neutral-600">
+              <span className="truncate capitalize">{ingestLabel}</span>
+              <span className="shrink-0 tabular-nums">
+                {ingestDetail ? `${ingestDetail} pages, ` : null}
+                {ingestProgress}%
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-neutral-200">
+              <div
+                className={status === "failed" ? "h-full bg-red-500" : "h-full bg-sky-500"}
+                style={{ width: `${ingestProgress}%` }}
+              />
+            </div>
+          </div>
+        ) : null}
         {status === "failed" && d.error ? (
           <div className="truncate text-[10px] text-red-700" title={d.error}>
             {d.error}

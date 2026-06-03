@@ -88,6 +88,16 @@ type StoreNode = {
   data?: Record<string, unknown>;
 };
 
+type UploadJob = {
+  id: string;
+  filename: string;
+  percent: number;
+  status: "uploading" | "starting_ingest" | "failed";
+  left: number;
+  top: number;
+  error?: string;
+};
+
 /**
  * Tiny 8-char base36 id — used to seed unique child-canvas slugs when a
  * user drops a sub-canvas tile. Collision-safe enough for human-driven
@@ -196,6 +206,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   const armedTool = useUiStore((s) => s.armedTool);
   const disarmTool = useUiStore((s) => s.disarmTool);
   const navigate = useNavigate();
+  const rootRef = useRef<HTMLDivElement | null>(null);
   // Pointer-down origin for armed-tool drag-to-size. Lives in a ref so
   // pointermove handlers can update the in-flight ghost rect without
   // re-rendering ReactFlow on every pixel — only the ghost state below
@@ -206,6 +217,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   // armed tool's silhouette via `PaintGhost` so the user sees exactly the
   // shape they're about to drop.
   const [paintRect, setPaintRect] = useState<PaintRect | null>(null);
+  const [uploadJobs, setUploadJobs] = useState<Record<string, UploadJob>>({});
 
   // ReactFlow needs to own the per-frame drag position. We seed its internal
   // node list from the Zustand store and re-seed whenever the store changes
@@ -709,15 +721,89 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
     // Path 2 — OS files: drop-to-ingest for PDFs.
     if (event.dataTransfer.files?.length) {
       event.preventDefault();
-      for (const file of Array.from(event.dataTransfer.files)) {
-        if (!file.name.toLowerCase().endsWith(".pdf")) continue;
+      const rootRect = rootRef.current?.getBoundingClientRect();
+      const dropLeft = rootRect ? event.clientX - rootRect.left : event.clientX;
+      const dropTop = rootRect ? event.clientY - rootRect.top : event.clientY;
+      const pdfs = Array.from(event.dataTransfer.files)
+        .filter((file) => file.name.toLowerCase().endsWith(".pdf"));
+
+      await Promise.all(pdfs.map(async (file, index) => {
+        const uploadId = `upload-${Date.now()}-${index}-${shortId()}`;
+        const yOffset = index * 36;
+        setUploadJobs((jobs) => ({
+          ...jobs,
+          [uploadId]: {
+            id: uploadId,
+            filename: file.name,
+            percent: 0,
+            status: "uploading",
+            left: dropLeft,
+            top: dropTop + yOffset,
+          },
+        }));
         try {
-          await canvases.uploadFile(slug, file, flowPos.x, flowPos.y);
+          await canvases.uploadFile(
+            slug,
+            file,
+            flowPos.x,
+            flowPos.y + yOffset,
+            {
+              onProgress: (progress) => {
+                setUploadJobs((jobs) => {
+                  const job = jobs[uploadId];
+                  if (!job) return jobs;
+                  return {
+                    ...jobs,
+                    [uploadId]: {
+                      ...job,
+                      percent: progress.percent,
+                    },
+                  };
+                });
+              },
+            },
+          );
+          setUploadJobs((jobs) => {
+            const job = jobs[uploadId];
+            if (!job) return jobs;
+            return {
+              ...jobs,
+              [uploadId]: {
+                ...job,
+                percent: 100,
+                status: "starting_ingest",
+              },
+            };
+          });
+          window.setTimeout(() => {
+            setUploadJobs((jobs) => {
+              const { [uploadId]: _done, ...rest } = jobs;
+              return rest;
+            });
+          }, 1500);
         } catch (err) {
           // eslint-disable-next-line no-console
           console.error("upload failed", err);
+          setUploadJobs((jobs) => {
+            const job = jobs[uploadId];
+            if (!job) return jobs;
+            return {
+              ...jobs,
+              [uploadId]: {
+                ...job,
+                status: "failed",
+                error: err instanceof Error ? err.message : String(err),
+              },
+            };
+          });
+          window.setTimeout(() => {
+            setUploadJobs((jobs) => {
+              const { [uploadId]: _failed, ...rest } = jobs;
+              return rest;
+            });
+          }, 6000);
         }
-      }
+      }));
     }
   }, [slug, screenToFlowPosition]);
 
@@ -889,6 +975,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   // change emitted by the rest of the system shows up live.
   return (
     <div
+      ref={rootRef}
       className={`relative h-full w-full ${armedTool ? "cursor-crosshair" : ""}`}
       {...(readOnly
         ? {}
@@ -1133,6 +1220,35 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         <Controls showInteractive={!readOnly} />
         <MiniMap pannable zoomable />
       </ReactFlow>
+      {Object.values(uploadJobs).map((job) => {
+        const isFailed = job.status === "failed";
+        const label = job.status === "starting_ingest"
+          ? "Upload complete, starting ingest"
+          : isFailed
+            ? "Upload failed"
+            : `Uploading ${job.percent}%`;
+        return (
+          <div
+            key={job.id}
+            className={`pointer-events-none absolute z-40 w-64 -translate-x-1/2 -translate-y-full rounded-md border bg-white/95 px-3 py-2 text-xs shadow-lg backdrop-blur ${
+              isFailed ? "border-red-300 text-red-800" : "border-sky-200 text-neutral-700"
+            }`}
+            style={{ left: job.left, top: job.top }}
+          >
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <span className="truncate font-medium">{job.filename}</span>
+              <span className="shrink-0 tabular-nums">{job.percent}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-neutral-200">
+              <div
+                className={isFailed ? "h-full bg-red-500" : "h-full bg-sky-500"}
+                style={{ width: `${Math.max(0, Math.min(100, job.percent))}%` }}
+              />
+            </div>
+            <div className="mt-1 truncate text-[10px]">{job.error ?? label}</div>
+          </div>
+        );
+      })}
       {/* Mini-toolbar above the selection and the right-click context menu.
           Hidden in readOnly canvases (snapshotter, monitor route). Both
           read selection from ReactFlow's per-node `selected` flag via

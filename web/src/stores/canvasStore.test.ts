@@ -112,6 +112,111 @@ describe("canvasStore.applyEvent", () => {
     });
   });
 
+  it("NodeUpdated stores unknown fields in node data", () => {
+    const apply = useCanvasStore.getState().applyEvent;
+    apply(evt({
+      type: "NodeAdded",
+      version: 1,
+      payload: {
+        id: "doc1",
+        node_type: "document",
+        label: "Pump.pdf",
+        data: { slug: "pump" },
+      },
+    }));
+    apply(evt({
+      type: "NodeUpdated",
+      version: 2,
+      payload: {
+        id: "doc1",
+        fields: {
+          status: "ingesting",
+          page_count: 4,
+        },
+      },
+    }));
+
+    const node = useCanvasStore.getState().nodes["doc1"]!;
+    expect(node.data).toEqual({
+      slug: "pump",
+      status: "ingesting",
+      page_count: 4,
+    });
+    expect((node as unknown as { status?: string }).status).toBeUndefined();
+  });
+
+  it("IngestProgress updates document data even when the event is live-only", () => {
+    const apply = useCanvasStore.getState().applyEvent;
+    apply(evt({
+      type: "NodeAdded",
+      version: 5,
+      payload: {
+        id: "doc1",
+        node_type: "document",
+        label: "Pump.pdf",
+        data: { slug: "pump", status: "pending" },
+      },
+    }));
+    apply(evt({
+      type: "IngestProgress",
+      version: 0,
+      payload: {
+        slug: "pump",
+        stage: "gold_regions",
+        current: 2,
+        total: 4,
+      },
+    }));
+
+    const s = useCanvasStore.getState();
+    expect(s.version).toBe(5);
+    expect(s.nodes["doc1"]!.data).toMatchObject({
+      slug: "pump",
+      status: "ingesting",
+      ingest_stage: "gold_regions",
+      ingest_stage_label: "extracting gold data",
+      ingest_current: 2,
+      ingest_total: 4,
+      ingest_progress: 70,
+    });
+  });
+
+  it("DocIngested marks the matching document ready without changing version", () => {
+    const apply = useCanvasStore.getState().applyEvent;
+    apply(evt({
+      type: "NodeAdded",
+      version: 5,
+      payload: {
+        id: "doc1",
+        node_type: "document",
+        label: "Pump.pdf",
+        data: { slug: "pump", status: "ingesting" },
+      },
+    }));
+    apply(evt({
+      type: "DocIngested",
+      version: 0,
+      payload: {
+        slug: "pump",
+        summary: {
+          page_count: 4,
+          region_count: 12,
+          embedded_count: 12,
+        },
+      },
+    }));
+
+    const s = useCanvasStore.getState();
+    expect(s.version).toBe(5);
+    expect(s.nodes["doc1"]!.data).toMatchObject({
+      status: "ready",
+      page_count: 4,
+      region_count: 12,
+      embedded_count: 12,
+      ingest_progress: 100,
+    });
+  });
+
   it("EdgeRemoved drops the edge", () => {
     const apply = useCanvasStore.getState().applyEvent;
     apply(evt({ type: "NodeAdded", version: 1, payload: { id: "a" } }));
