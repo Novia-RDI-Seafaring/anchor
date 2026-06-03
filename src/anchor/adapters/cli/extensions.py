@@ -16,6 +16,8 @@ from typing import Any
 
 import typer
 
+from anchor.adapters.cli.common import DEFAULT_DATA_DIR
+
 extensions_app = typer.Typer(help="Inspect and manage canvas extensions (OIP producers).")
 
 
@@ -133,7 +135,7 @@ def _discover(data_dir: Path | None) -> dict[str, list[dict[str, Any]]]:
 
 @extensions_app.command("list")
 def extensions_list(
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
 ) -> None:
     """List every OIP producer this Anchor install can see.
@@ -177,7 +179,7 @@ def extensions_list(
 @extensions_app.command("info")
 def extensions_info(
     name: str,
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Print the full manifest for one producer."""
     discovered = _discover(data_dir if data_dir.exists() else None)
@@ -201,7 +203,7 @@ def extensions_info(
 def extensions_add(
     manifest_path: Path,
     scope: str = typer.Option("system", "--scope", "-s", help="system | project"),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
     force: bool = typer.Option(False, "--force", "-f"),
 ) -> None:
     """Register an OIP producer's manifest.
@@ -238,7 +240,7 @@ def extensions_add(
 def extensions_remove(
     name: str,
     scope: str = typer.Option("system", "--scope", "-s", help="system | project"),
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Unregister a producer (deletes its manifest file)."""
     target_dir = _project_producers_dir(data_dir) if scope == "project" else _system_producers_dir()
@@ -252,7 +254,7 @@ def extensions_remove(
 
 @extensions_app.command("discover")
 def extensions_discover(
-    data_dir: Path = typer.Option(Path("./data"), "--data-dir", "-d"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Show where Anchor looks for producer manifests.
 

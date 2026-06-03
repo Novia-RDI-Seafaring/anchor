@@ -19,6 +19,7 @@ deployment layer.
 
 | Variable | Purpose |
 | --- | --- |
+| `ANCHOR_DATA_DIR` | Default storage root for CLI and MCP commands. An explicit `--data-dir` takes priority. |
 | `ANCHOR_OPENAI_API_KEY` | Credential for an OpenAI-compatible endpoint used by LLM-backed extraction. |
 | `ANCHOR_OPENAI_BASE_URL` | OpenAI-compatible endpoint base URL, including local services. |
 | `ANCHOR_POLISH_MODEL` | Vision-capable model used for markdown polishing. |

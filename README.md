@@ -93,8 +93,9 @@ corepack pnpm@10 --dir web dev
 ```
 
 Document, canvas, and server commands default `--data-dir` to
-`~/anchor-data`. Pass `--data-dir` explicitly when registering agents or
-working with extension manifests so every surface addresses the same store.
+`~/anchor-data`. Set `ANCHOR_DATA_DIR` to change the default for CLI and MCP
+commands. An explicit `--data-dir` takes priority. Use the same path when
+registering agents or working with extension manifests.
 
 Releases are tag-driven: pushing a `v*` tag triggers the
 [release workflow](./.github/workflows/release.yml), which publishes
@@ -195,10 +196,11 @@ This layout is **the contract**. You can hand-edit JSON files, copy a canvas fol
 
 Select the data directory and server bind address with the CLI flags
 `--data-dir`, `--host`, and `--port`. The following `ANCHOR_` environment
-variables configure processing and browser access:
+variables configure storage, processing, and browser access:
 
 | Variable | Default | Purpose |
 |---|---|---|
+| `ANCHOR_DATA_DIR` | `~/anchor-data` | Default storage root for CLI and MCP commands. An explicit `--data-dir` takes priority. |
 | `ANCHOR_OPENAI_API_KEY` | (unset) | Optional: enables LLM polish + region extraction in the gold layer |
 | `ANCHOR_OPENAI_BASE_URL` | (unset) | Override the OpenAI-compatible endpoint. For Azure OpenAI v1 use `https://<resource>.openai.azure.com/openai/v1/`; for Ollama use `http://localhost:11434/v1`. |
 | `ANCHOR_POLISH_MODEL` | `gpt-5.4` | Model name for page-MD polishing |

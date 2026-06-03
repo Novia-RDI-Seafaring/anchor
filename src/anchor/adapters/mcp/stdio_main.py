@@ -14,14 +14,14 @@ from anchor.core.ports.event_bus import EventBus
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.services import IngestService
-from anchor.infra.bus.memory_bus import MemoryEventBus
-from anchor.infra.config import AnchorConfig
+from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
 from anchor.extensions.anchor_pdfs.infra.llm.openai_embedder import OpenAIEmbedder
 from anchor.extensions.anchor_pdfs.infra.llm.openai_md_polisher import OpenAIPageMdPolisher
 from anchor.extensions.anchor_pdfs.infra.llm.openai_region_extractor import OpenAIRegionExtractor
 from anchor.extensions.anchor_pdfs.infra.pdf.docling_extractor import DoclingPdfExtractor
 from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
-from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
+from anchor.infra.bus.memory_bus import MemoryEventBus
+from anchor.infra.config import AnchorConfig
 from anchor.infra.snapshot.headless_chromium_snapshotter import HeadlessChromiumSnapshotter
 from anchor.infra.stores.fs_workspace_store import FsWorkspaceStore
 
@@ -73,8 +73,16 @@ def _build_ingest_service(config: AnchorConfig, bus: EventBus, doc_store: DocSto
     )
 
 
-async def _run(data_dir: Path, base_url: str = "http://localhost:8002") -> None:
-    config = AnchorConfig(data_dir=data_dir)
+def _config_for_data_dir(data_dir: Path | None) -> AnchorConfig:
+    """Use an explicit MCP flag when present, otherwise defer to AnchorConfig."""
+    if data_dir is not None:
+        return AnchorConfig(data_dir=data_dir)
+    return AnchorConfig()
+
+
+async def _run(data_dir: Path | None, base_url: str = "http://localhost:8002") -> None:
+    config = _config_for_data_dir(data_dir)
+    data_dir = config.data_dir
     bus = MemoryEventBus()
     workspace_store = FsWorkspaceStore(config.canvases_dir)
     doc_store = FsDocStore(config.data_dir)
@@ -111,7 +119,8 @@ async def _run(data_dir: Path, base_url: str = "http://localhost:8002") -> None:
     # Wire synopsis service so MCP clients can compose entity-scoped PDFs/decks.
     from anchor.extensions.anchor_pdfs.core.services import SynopsisService
     from anchor.extensions.anchor_pdfs.infra.synopsis_renderers import (
-        MarpSynopsisRenderer, PymupdfSynopsisRenderer,
+        MarpSynopsisRenderer,
+        PymupdfSynopsisRenderer,
     )
     synopsis = SynopsisService(
         doc_store,
@@ -129,7 +138,13 @@ async def _run(data_dir: Path, base_url: str = "http://localhost:8002") -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Anchor v2 MCP (stdio)")
-    parser.add_argument("--data-dir", "-d", default="./data")
+    parser.add_argument(
+        "--data-dir",
+        "-d",
+        type=Path,
+        default=None,
+        help="Storage root. Defaults to ANCHOR_DATA_DIR or ~/anchor-data.",
+    )
     parser.add_argument(
         "--base-url",
         default="http://localhost:8002",
@@ -139,7 +154,7 @@ def main() -> None:
     args = parser.parse_args()
     if args.verbose:
         logging.basicConfig(level=logging.INFO)
-    asyncio.run(_run(Path(args.data_dir), base_url=args.base_url))
+    asyncio.run(_run(args.data_dir, base_url=args.base_url))
 
 
 if __name__ == "__main__":

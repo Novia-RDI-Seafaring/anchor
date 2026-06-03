@@ -6,9 +6,18 @@ from pathlib import Path
 
 import typer
 
-# Canonical data dir. ``~/anchor-data`` keeps fresh ``anchor serve`` and
-# ``anchor ingest`` invocations aligned. Override with ``--data-dir``.
-DEFAULT_DATA_DIR = Path.home() / "anchor-data"
+from anchor.infra.config import AnchorConfig
+
+
+def default_data_dir() -> Path:
+    """Resolve the default storage root, including ``ANCHOR_DATA_DIR``."""
+    return AnchorConfig().data_dir
+
+
+# Typer evaluates option defaults while importing the CLI. Resolve through
+# AnchorConfig so every CLI subcommand honors ANCHOR_DATA_DIR unless the user
+# passes an explicit --data-dir.
+DEFAULT_DATA_DIR = default_data_dir()
 
 
 def _emit_bytes(path: Path | None, *, copy_to: Path | None, out: str | None, label: str) -> None:

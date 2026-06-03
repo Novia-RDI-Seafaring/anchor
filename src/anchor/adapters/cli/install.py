@@ -24,6 +24,7 @@ from typing import Any
 
 import typer
 
+from anchor.adapters.cli.common import default_data_dir
 from anchor.adapters.skills import compose_skill_md, discover_third_party_manifests
 
 install_app = typer.Typer(
@@ -123,7 +124,7 @@ def install_claude_code(
 ) -> None:
     """Register Anchor as MCP server + skill in Claude Code."""
     if data_dir is None:
-        data_dir = Path.home() / "anchor-data"
+        data_dir = default_data_dir()
     mcp_config_path, skill_dir = _claude_code_paths()
     config_path, entry = _install_mcp(mcp_config_path, data_dir, dry_run=dry_run)
     skill_path = _install_skill(skill_dir, data_dir, dry_run=dry_run)
@@ -150,7 +151,7 @@ def install_cursor(
 ) -> None:
     """Register Anchor as MCP server in Cursor."""
     if data_dir is None:
-        data_dir = Path.home() / "anchor-data"
+        data_dir = default_data_dir()
     config_path, entry = _install_mcp(_cursor_paths(), data_dir, dry_run=dry_run)
     if not dry_run and not data_dir.exists():
         data_dir.mkdir(parents=True, exist_ok=True)
@@ -167,7 +168,7 @@ def install_print(
 ) -> None:
     """Print the install plan for every supported target without writing."""
     if data_dir is None:
-        data_dir = Path.home() / "anchor-data"
+        data_dir = default_data_dir()
     typer.echo("=== claude-code ===")
     install_claude_code(data_dir=data_dir, dry_run=True)
     typer.echo("")

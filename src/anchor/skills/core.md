@@ -65,7 +65,11 @@ commands per workspace, so you don't need to coordinate with the browser.
 
 ## Where things live
 
-Configured at install time. Default `~/anchor-data/`:
+Default `~/anchor-data/`. Set `ANCHOR_DATA_DIR` to change the default for
+CLI and MCP commands. An explicit `--data-dir <path>` takes priority and must
+be repeated for each CLI subcommand that uses a different storage root.
+`anchor install <harness> --data-dir <path>` pins that path in the harness MCP
+configuration. The HTTP adapter uses the path passed to `anchor serve`.
 
 - `bronze/` — raw PDFs
 - `silver/<slug>/` — per-page markdown + page PNGs

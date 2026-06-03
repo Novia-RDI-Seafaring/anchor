@@ -1,7 +1,7 @@
 """MCP stdio assembly keeps document-search configuration usable."""
 from __future__ import annotations
 
-from anchor.adapters.mcp.stdio_main import _build_ingest_service
+from anchor.adapters.mcp.stdio_main import _build_ingest_service, _config_for_data_dir
 from anchor.extensions.anchor_pdfs.infra.llm.local_sentence_transformer_embedder import (
     LocalSentenceTransformerEmbedder,
 )
@@ -11,6 +11,21 @@ from anchor.extensions.anchor_pdfs.infra.llm.openai_region_extractor import Open
 from anchor.extensions.anchor_pdfs.infra.memory_doc_store import MemoryDocStore
 from anchor.infra.bus.memory_bus import MemoryEventBus
 from anchor.infra.config import AnchorConfig
+
+
+def test_mcp_data_dir_defaults_to_anchor_data_dir(tmp_path, monkeypatch):
+    data_dir = tmp_path / "env-data"
+    monkeypatch.setenv("ANCHOR_DATA_DIR", str(data_dir))
+
+    assert _config_for_data_dir(None).data_dir == data_dir
+
+
+def test_mcp_explicit_data_dir_overrides_environment(tmp_path, monkeypatch):
+    env_data_dir = tmp_path / "env-data"
+    explicit_data_dir = tmp_path / "explicit-data"
+    monkeypatch.setenv("ANCHOR_DATA_DIR", str(env_data_dir))
+
+    assert _config_for_data_dir(explicit_data_dir).data_dir == explicit_data_dir
 
 
 def test_mcp_wires_configured_local_embedder_without_openai_key(tmp_path, monkeypatch):
