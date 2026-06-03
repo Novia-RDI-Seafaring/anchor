@@ -97,6 +97,29 @@ def canvas_create(
     typer.echo(json.dumps(asyncio.run(ws.create_workspace(slug, title=title)), indent=2))
 
 
+@canvas_app.command("delete")
+def canvas_delete(
+    slug: str,
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Confirm deletion of the workspace folder.",
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Delete a workspace folder and its saved canvas state."""
+    if not yes:
+        typer.echo("Refusing to delete without --yes; pass -y to confirm.", err=True)
+        raise typer.Exit(code=2)
+    _, _, ws, _, _ = _build_real_services(data_dir)
+    try:
+        typer.echo(json.dumps(asyncio.run(ws.delete_workspace(slug)), indent=2))
+    except FileNotFoundError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(code=1) from e
+
+
 # ── Canvas mutations ────────────────────────────────────────────────────────
 #
 # Every command below is a thin wrapper around the same `WorkspaceService`

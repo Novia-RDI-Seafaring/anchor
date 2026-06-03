@@ -258,6 +258,20 @@ def test_list_workspaces_dedupes_repeated_canvas_links():
     asyncio.run(run())
 
 
+def test_delete_workspace_removes_it_from_list():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("scratch")
+        await s.workspace.add_node("scratch", id="a", label="A")
+        out = await s.workspace.delete_workspace("scratch")
+        assert out == {"slug": "scratch", "deleted": True}
+        assert await s.workspace.list_workspaces() == []
+        with pytest.raises(FileNotFoundError):
+            await s.workspace.delete_workspace("scratch")
+
+    asyncio.run(run())
+
+
 def test_reparent_node_emits_reparented_event_and_persists():
     """`reparent_node` updates the top-level `Node.parent` field, emits
     `NodeReparented`, and the change survives a store reload + replay."""

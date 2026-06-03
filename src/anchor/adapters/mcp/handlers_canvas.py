@@ -207,6 +207,18 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "canvas_delete_workspace",
+            "description": (
+                "Delete a workspace folder and its saved canvas state. "
+                "Canvas-link nodes in other workspaces are not removed."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {"workspace_slug": {"type": "string"}},
+                "required": ["workspace_slug"],
+            },
+        },
+        {
             "name": "canvas_list_workspaces",
             "description": (
                 "List all workspaces with node/edge counts and the canvas "
@@ -384,6 +396,8 @@ async def call_tool(svc: WorkspaceService, name: str, args: dict[str, Any]) -> s
             return json.dumps(await svc.get_state(args["workspace_slug"]))
         if name == "canvas_create_workspace":
             return json.dumps(await svc.create_workspace(args["slug"], title=args.get("title", "")))
+        if name == "canvas_delete_workspace":
+            return json.dumps(await svc.delete_workspace(args["workspace_slug"]))
         if name == "canvas_list_workspaces":
             return json.dumps(await svc.list_workspaces())
         if name == "canvas_add_node":

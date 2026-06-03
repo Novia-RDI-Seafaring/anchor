@@ -21,6 +21,8 @@ export function CanvasListPage() {
   const [items, setItems] = useState<WorkspaceListEntry[]>([]);
   const [slug, setSlug] = useState("");
   const [busy, setBusy] = useState(false);
+  const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
+  const [error, setError] = useState("");
   const navigate = useNavigate();
 
   const refresh = () => canvases.list().then(setItems).catch(() => {});
@@ -32,11 +34,32 @@ export function CanvasListPage() {
   const create = async () => {
     if (!slug.trim()) return;
     setBusy(true);
+    setError("");
     try {
       const meta = await canvases.create(slug.trim());
       navigate(`/c/${meta.slug}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create canvas");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const deleteCanvas = async (item: WorkspaceListEntry) => {
+    const title = item.title || item.slug;
+    const confirmed = window.confirm(
+      `Delete canvas "${title}"?\n\nThis removes the workspace and its saved nodes. Links from other canvases will show as missing.`,
+    );
+    if (!confirmed) return;
+    setDeletingSlug(item.slug);
+    setError("");
+    try {
+      await canvases.delete(item.slug);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete canvas");
+    } finally {
+      setDeletingSlug(null);
     }
   };
 
@@ -71,9 +94,14 @@ export function CanvasListPage() {
           + New canvas
         </button>
       </div>
+      {error ? (
+        <p className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </p>
+      ) : null}
 
       <div className="mt-10">
-        <CanvasTree items={items} />
+        <CanvasTree items={items} onDelete={deleteCanvas} deletingSlug={deletingSlug} />
       </div>
     </main>
   );

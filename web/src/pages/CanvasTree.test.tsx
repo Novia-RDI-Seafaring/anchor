@@ -9,8 +9,9 @@
  *     cycle` chip and stops recursing.
  */
 import { render, screen, within, fireEvent } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { WorkspaceListEntry } from "@/api/canvases";
 
@@ -33,10 +34,10 @@ function entry(
   };
 }
 
-function renderTree(items: WorkspaceListEntry[]) {
+function renderTree(items: WorkspaceListEntry[], props: Partial<ComponentProps<typeof CanvasTree>> = {}) {
   return render(
     <MemoryRouter>
-      <CanvasTree items={items} />
+      <CanvasTree items={items} {...props} />
     </MemoryRouter>,
   );
 }
@@ -136,6 +137,14 @@ describe("CanvasTree", () => {
     const { container } = renderTree([entry("xyz", [], [], { title: "X" })]);
     const link = within(container).getByRole("link", { name: /X/ });
     expect(link.getAttribute("href")).toBe("/c/xyz");
+  });
+
+  it("calls onDelete when the delete button is clicked", () => {
+    const onDelete = vi.fn();
+    const item = entry("scratch", [], [], { title: "Scratch" });
+    renderTree([item], { onDelete });
+    fireEvent.click(screen.getByRole("button", { name: "Delete canvas scratch" }));
+    expect(onDelete).toHaveBeenCalledWith(item);
   });
 
   it("shows an empty state when there are no canvases", () => {

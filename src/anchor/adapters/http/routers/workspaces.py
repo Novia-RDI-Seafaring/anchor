@@ -47,6 +47,15 @@ async def create_workspace(req: CreateWorkspaceRequest, svc: WorkspaceService = 
     return await svc.create_workspace(req.slug, title=req.title)
 
 
+@router.delete("/{slug}")
+async def delete_workspace(slug: str, svc: WorkspaceService = Depends(get_workspace_service)):
+    _check_slug(slug)
+    try:
+        return await svc.delete_workspace(slug)
+    except FileNotFoundError:
+        raise HTTPException(404, f"workspace {slug!r} not found")
+
+
 @router.patch("/{slug}")
 async def rename_workspace(
     slug: str,
