@@ -199,12 +199,14 @@ class IngestService:
                     )
                     snapped: list[dict[str, Any]] = []
                     for r in raw_regions:
-                        bbox_any = r.get("bbox")
+                        bbox_any = r.get("bbox") or r.get("approximate_bbox")
                         bbox_list: list[float] = list(bbox_any) if isinstance(bbox_any, list) else []
                         if len(bbox_list) == 4:
                             snap_bbox, _ = snap_to_docling_items(docling, page, bbox_list)
                             if snap_bbox:
                                 r = {**r, "bbox": snap_bbox}
+                            elif "bbox" not in r:
+                                r = {**r, "bbox": bbox_list}
                         snapped.append(r)
                     await self.store.write_gold_region_file(slug, page, snapped)
                     region_count += len(snapped)
