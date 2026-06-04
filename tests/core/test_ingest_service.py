@@ -2,11 +2,18 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from anchor.extensions.anchor_pdfs.core.services import IngestService
+from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
 from anchor.extensions.anchor_pdfs.infra.memory_doc_store import MemoryDocStore
 from anchor.infra.bus.memory_bus import MemoryEventBus
-from tests.fixtures.fakes import FakePdfExtractor, FakePdfRenderer
+from tests.fixtures.fakes import (
+    FakePdfExtractor,
+    FakePdfRenderer,
+    FakePolisher,
+    FakeRegionExtractor,
+)
 from tests.fixtures.services import make_in_memory_services
 
 
@@ -194,6 +201,46 @@ def test_ingest_promotes_approximate_bbox_before_storing_gold_regions():
         region = regions["pages"][1][0]
         assert region["approximate_bbox"] == [0, 720, 210, 570]
         assert region["bbox"] == [0, 720, 200, 580]
+
+    asyncio.run(run())
+
+
+def test_ingest_writes_timing_report_to_silver(tmp_path):
+    async def run():
+        store = FsDocStore(tmp_path)
+        ingest = IngestService(
+            store,
+            MemoryEventBus(),
+            extractor=FakePdfExtractor(),
+            renderer=FakePdfRenderer(page_count=1),
+            polisher=FakePolisher(),
+            region_extractor=FakeRegionExtractor(),
+            embedder=StaticEmbedder(),
+        )
+
+        summary = await ingest.ingest_pdf(b"%PDF-fake", "timed.pdf")
+
+        report_path = tmp_path / "silver" / "timed" / "ingest-report.json"
+        assert report_path.is_file()
+        assert summary["timing_report_path"] == str(report_path)
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        assert report["slug"] == "timed"
+        assert report["status"] == "success"
+        assert report["page_count"] == 1
+        assert report["region_count"] == 1
+        assert report["embedded_count"] == 1
+        assert isinstance(report["duration_seconds"], (float, int))
+        stage_names = [stage["stage"] for stage in report["stages"]]
+        assert stage_names == [
+            "bronze",
+            "silver_extract",
+            "silver_index",
+            "silver_render_pages",
+            "silver_polish",
+            "gold_regions",
+            "embed",
+        ]
+        assert report["stages"][-1]["embed_model"] == "model-a"
 
     asyncio.run(run())
 
