@@ -59,6 +59,25 @@ def test_write_and_read_gold_regions(store):
     asyncio.run(run())
 
 
+def test_gold_regions_add_bbox_alias_for_approximate_bbox(store):
+    async def run():
+        await store.write_gold_region_file("demo", 1, [
+            {
+                "id": "r1",
+                "kind": "text",
+                "title": "x",
+                "description": "y",
+                "approximate_bbox": [0, 100, 50, 0],
+            },
+        ])
+        regs = await store.get_regions("demo")
+        region = regs["pages"][1][0]
+        assert region["approximate_bbox"] == [0, 100, 50, 0]
+        assert region["bbox"] == [0.0, 100.0, 50.0, 0.0]
+
+    asyncio.run(run())
+
+
 def test_get_page_text_prefers_polished_over_raw(store):
     async def run():
         await store.write_silver_artifact("demo", "pages/1.raw.md", "raw content")

@@ -6,6 +6,23 @@ from pathlib import Path
 from typing import Any
 
 
+def _with_bbox_alias(region: dict[str, Any]) -> dict[str, Any]:
+    if "bbox" in region or "approximate_bbox" not in region:
+        return region
+    bbox = region.get("approximate_bbox")
+    if not (
+        isinstance(bbox, list)
+        and len(bbox) == 4
+        and all(isinstance(v, (int, float)) for v in bbox)
+    ):
+        return region
+    return {**region, "bbox": [float(v) for v in bbox]}
+
+
+def _normalise_regions(regions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [_with_bbox_alias(r) for r in regions]
+
+
 class MemoryDocStore:
     def __init__(self) -> None:
         self._docs: dict[str, dict[str, Any]] = {}
@@ -42,7 +59,7 @@ class MemoryDocStore:
                 continue
             if page is not None and p != page:
                 continue
-            pages[p] = regions
+            pages[p] = _normalise_regions(regions)
         return {"slug": slug, "pages": pages}
 
     async def get_gold_map(self, slug: str) -> dict[str, Any] | None:
@@ -91,7 +108,7 @@ class MemoryDocStore:
 
     async def write_gold_region_file(self, slug: str, page: int, regions: list[dict[str, Any]]) -> Path:
         async with self._lock:
-            self._regions[(slug, page)] = list(regions)
+            self._regions[(slug, page)] = _normalise_regions(regions)
         return Path(f"memory://gold/{slug}/{page}.regions.json")
 
     async def write_embeddings(self, slug: str, payload: dict[str, Any]) -> Path:

@@ -75,7 +75,8 @@ local source checkout:
 === "Local checkout"
 
     ```bash
-    uv tool install --force .
+    corepack pnpm@10 --dir web build
+    uv tool install --force --reinstall --refresh .
     ```
 
 On Windows, reinstall can fail if an agent harness is still running
@@ -112,7 +113,8 @@ Then reinstall:
 
 ```powershell
 uv tool uninstall anchor-kb
-uv tool install --force .
+corepack pnpm@10 --dir web build
+uv tool install --force --reinstall --refresh .
 ```
 
 If `uv tool uninstall anchor-kb` reports `Access is denied`, a process is still
