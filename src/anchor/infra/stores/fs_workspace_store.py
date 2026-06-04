@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import time
 from pathlib import Path
 
@@ -62,6 +63,17 @@ class FsWorkspaceStore:
         )
         (d / "events.jsonl").touch()
         return meta
+
+    async def delete(self, slug: str) -> None:
+        d = self._slug_dir(slug)
+        async with self._lock:
+            meta_path = d / "meta.json"
+            if not meta_path.exists():
+                raise FileNotFoundError(f"workspace {slug!r} does not exist")
+            resolved = assert_within(d, self.root)
+            shutil.rmtree(resolved)
+            self._versions.pop(slug, None)
+            self._seen_ids.pop(slug, None)
 
     async def load(self, slug: str) -> Workspace:
         d = self._slug_dir(slug)

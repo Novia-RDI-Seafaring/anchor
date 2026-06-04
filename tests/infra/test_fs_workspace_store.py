@@ -93,6 +93,20 @@ def test_list_workspaces(root):
     asyncio.run(run())
 
 
+def test_delete_removes_workspace_folder(root):
+    async def run():
+        store = FsWorkspaceStore(root)
+        await store.create("scratch")
+        assert (root / "scratch" / "meta.json").is_file()
+        await store.delete("scratch")
+        assert not (root / "scratch").exists()
+        assert await store.list_workspaces() == []
+        with pytest.raises(FileNotFoundError):
+            await store.delete("scratch")
+
+    asyncio.run(run())
+
+
 def test_events_jsonl_is_append_only(root):
     async def run():
         store = FsWorkspaceStore(root)

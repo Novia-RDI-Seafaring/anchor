@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { canvases } from "@/api/canvases";
 import { documents, type DocumentIndex, type Region } from "@/api/documents";
+import { bboxToImageRect } from "@/lib/bbox";
 import { useUiStore } from "@/stores/uiStore";
 
 /**
@@ -205,20 +206,10 @@ export function PageWithBboxViewer() {
                 preserveAspectRatio="none"
               >
                 {regions.map((r, idx) => {
-                  const bbox = r.bbox;
-                  if (!bbox || bbox.length < 4) return null;
-                  // Docling: BOTTOMLEFT origin (left, bottom, right, top in points).
-                  // Image: TOPLEFT origin (pixels). Convert.
-                  // Docling bbox = [left, top, right, bottom] in BOTTOM-LEFT
-                  // origin (top has larger y than bottom).
-                  const [l, t, rt, b] = bbox;
-                  if (l === undefined || b === undefined || rt === undefined || t === undefined) return null;
-                  const sx = imgSize.w / pageW;
-                  const sy = imgSize.h / pageH;
-                  const x = l * sx;
-                  const y = (pageH - t) * sy;
-                  const w = (rt - l) * sx;
-                  const h = (t - b) * sy;
+                  // Order-independent bbox → image rect (see lib/bbox).
+                  const rect = bboxToImageRect(r.bbox, pageW, pageH, imgSize.w, imgSize.h);
+                  if (!rect) return null;
+                  const { x, y, w, h } = rect;
                   const rid = r.id ?? `r${idx}`;
                   const isActive = activeRegion === rid;
                   return (
@@ -254,15 +245,9 @@ export function PageWithBboxViewer() {
                   // skip the inner emphasis (the parent rect already covers it).
                   const parent = active?.bbox;
                   if (parent && parent.length === 4 && parent.every((v, i) => v === sub[i])) return null;
-                  // sub = [left, top, right, bottom] BL origin (top > bottom).
-                  const [l, t, rt, b] = sub as [number, number, number, number];
-                  if (l === undefined || b === undefined || rt === undefined || t === undefined) return null;
-                  const sx = imgSize.w / pageW;
-                  const sy = imgSize.h / pageH;
-                  const x = l * sx;
-                  const y = (pageH - t) * sy;
-                  const w = (rt - l) * sx;
-                  const h = (t - b) * sy;
+                  const rect = bboxToImageRect(sub, pageW, pageH, imgSize.w, imgSize.h);
+                  if (!rect) return null;
+                  const { x, y, w, h } = rect;
                   return (
                     <rect
                       x={x}

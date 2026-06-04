@@ -3,7 +3,18 @@ from __future__ import annotations
 
 import asyncio
 
+from anchor.extensions.anchor_pdfs.core.services import IngestService
+from anchor.extensions.anchor_pdfs.infra.memory_doc_store import MemoryDocStore
+from anchor.infra.bus.memory_bus import MemoryEventBus
+from tests.fixtures.fakes import FakePdfExtractor, FakePdfRenderer
 from tests.fixtures.services import make_in_memory_services
+
+
+class StaticEmbedder:
+    model_id = "model-a"
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[1.0, 0.0] for _ in texts]
 
 
 def test_ingest_pdf_emits_full_event_chain_and_persists_silver():
@@ -33,6 +44,65 @@ def test_ingest_pdf_emits_full_event_chain_and_persists_silver():
         assert summary["slug"] == "demo"
         # silver artifacts present
         assert (await s.doc_store.get_index("demo")) is not None
+
+    asyncio.run(run())
+
+
+def test_search_reports_skipped_docs_with_incompatible_embed_model():
+    async def run():
+        store = MemoryDocStore()
+        ingest = IngestService(
+            store,
+            MemoryEventBus(),
+            extractor=FakePdfExtractor(),
+            renderer=FakePdfRenderer(),
+            embedder=StaticEmbedder(),
+        )
+        await store.write_embeddings(
+            "compatible",
+            {
+                "embed_model": "model-a",
+                "dim": 2,
+                "embedded_at": 1.0,
+                "vectors": [
+                    {
+                        "page": 2,
+                        "region_id": "r1",
+                        "text": "Compatible hit",
+                        "vector": [1.0, 0.0],
+                    }
+                ],
+            },
+        )
+        await store.write_embeddings(
+            "incompatible",
+            {
+                "embed_model": "model-b",
+                "dim": 2,
+                "embedded_at": 1.0,
+                "vectors": [
+                    {
+                        "page": 3,
+                        "region_id": "r2",
+                        "text": "Wrong embedding space",
+                        "vector": [1.0, 0.0],
+                    }
+                ],
+            },
+        )
+
+        result = await ingest.search("temperature", k=5)
+
+        assert result["doc_count"] == 1
+        assert [hit["slug"] for hit in result["hits"]] == ["compatible"]
+        assert result["skipped"] == [
+            {
+                "slug": "incompatible",
+                "stored_model": "model-b",
+                "query_model": "model-a",
+                "reason": "embed_model_mismatch",
+            }
+        ]
 
     asyncio.run(run())
 

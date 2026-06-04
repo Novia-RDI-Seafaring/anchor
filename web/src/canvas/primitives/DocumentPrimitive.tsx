@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom";
 
 import { BACKEND_URL } from "@/api/client";
 import { documents, type DocumentIndex, type Region } from "@/api/documents";
+import { bboxToImageRect } from "@/lib/bbox";
 import { useUiStore } from "@/stores/uiStore";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -24,6 +25,22 @@ const STATUS_LABELS: Record<string, string> = {
   ready: "ready",
 };
 
+function formatElapsed(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0s";
+  const whole = Math.floor(seconds);
+  const minutes = Math.floor(whole / 60);
+  const secs = whole % 60;
+  if (minutes <= 0) return `${secs}s`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (hours <= 0) return `${minutes}m ${secs.toString().padStart(2, "0")}s`;
+  return `${hours}h ${mins.toString().padStart(2, "0")}m`;
+}
+
+function numericSeconds(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 type PageMeta = { width: number; height: number };
 
 // Default DPI used by anchor_pdfs when rendering page PNGs. Matches
@@ -33,7 +50,7 @@ const RENDER_DPI = 150;
 const POINTS_PER_INCH = 72;
 
 /**
- * DocumentPrimitive — a paginated document viewport on the canvas.
+ * DocumentPrimitive: a paginated document viewport on the canvas.
  *
  * Phase A:
  *   - Renders the current page as a PNG with prev/next pagination.
@@ -55,6 +72,15 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     status?: string;
     page_count?: number;
     region_count?: number;
+    embedded_count?: number;
+    ingest_progress?: number;
+    ingest_stage?: string;
+    ingest_stage_label?: string;
+    ingest_current?: number;
+    ingest_total?: number;
+    ingest_started_at?: number;
+    ingest_updated_at?: number;
+    ingest_finished_at?: number;
     error?: string;
     workspace_slug?: string;
   };
@@ -75,7 +101,14 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   const [pageMeta, setPageMeta] = useState<Record<number, PageMeta>>({});
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [hoveredLocal, setHoveredLocal] = useState<string | null>(null);
+  const [nowSeconds, setNowSeconds] = useState(() => Date.now() / 1000);
   const imgRef = useRef<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    if (isReady) return;
+    const timer = window.setInterval(() => setNowSeconds(Date.now() / 1000), 1000);
+    return () => window.clearInterval(timer);
+  }, [isReady]);
 
   // Fetch index + page metadata once per slug.
   useEffect(() => {
@@ -132,6 +165,26 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   const pageH = explicitH > 0 ? explicitH : derivedH;
   const canScale = imgSize && pageW > 0 && pageH > 0;
   const coverUrl = isReady && slug ? documents.pageImageUrl(slug, page) : null;
+  const ingestProgress = typeof d.ingest_progress === "number"
+    ? Math.max(0, Math.min(100, Math.round(d.ingest_progress)))
+    : status === "pending"
+      ? 0
+      : (status === "ingesting" || status === "searching")
+        ? 1
+        : null;
+  const ingestLabel = d.ingest_stage_label
+    ?? (d.ingest_stage ? d.ingest_stage.replaceAll("_", " ") : STATUS_LABELS[status] ?? status);
+  const ingestDetail = d.ingest_total && d.ingest_total > 1
+    ? `${d.ingest_current ?? 0}/${d.ingest_total}`
+    : null;
+  const ingestStartedAt = numericSeconds(d.ingest_started_at);
+  const ingestFinishedAt = numericSeconds(d.ingest_finished_at);
+  const elapsedSeconds = ingestStartedAt === null
+    ? null
+    : Math.max(0, (ingestFinishedAt ?? nowSeconds) - ingestStartedAt);
+  const elapsedLabel = elapsedSeconds === null
+    ? status === "pending" ? "waiting" : "running"
+    : `elapsed ${formatElapsed(elapsedSeconds)}`;
 
   const externalHighlightId = useMemo(() => {
     if (!hoveredSourceRef || !slug) return null;
@@ -150,9 +203,9 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
           Image renders at natural aspect ratio (no maxHeight, no object-fit
           contain), so the wrapper's dimensions exactly equal the rendered
           image's rectangle. The SVG overlay then aligns precisely with the
-          image's pixel grid — bbox overlays land where they should.
+          image's pixel grid, so bbox overlays land where they should.
 
-          The wrapper itself does NOT opt out of node-drag — that way the
+          The wrapper itself does NOT opt out of node-drag. That way the
           user can grab the empty space between regions (or the image
           background) to move the whole document node. Each region
           rendered inside this wrapper has its own `nodrag` so the
@@ -181,23 +234,22 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
           {/* Single-layer region overlay: each region is one absolutely-
               positioned div that handles styling, hover, click AND drag.
               Collapses what used to be three stacked layers (SVG hover,
-              vector overlay, transparent drag layer) — those overlapped
+              vector overlay, transparent drag layer). Those overlapped
               imperfectly and made HTML5 drag flaky. One element per region
               means no hit-test ambiguity. */}
           {canScale && imgSize && slug
             ? regions.map((r, idx) => {
-                const bbox = r.bbox;
-                if (!bbox || bbox.length < 4) return null;
-                // Docling bbox = [left, top, right, bottom] in BOTTOM-LEFT
-                // origin (top has larger y than bottom).
-                const [l, t, rt, b] = bbox;
-                if (l === undefined || b === undefined || rt === undefined || t === undefined) return null;
-                const sx = imgSize.w / pageW;
-                const sy = imgSize.h / pageH;
-                const xpc = (l * sx) / imgSize.w * 100;
-                const ypc = ((pageH - t) * sy) / imgSize.h * 100;
-                const wpc = ((rt - l) * sx) / imgSize.w * 100;
-                const hpc = ((t - b) * sy) / imgSize.h * 100;
+                // Order-independent bbox → image rect (see lib/bbox). The
+                // gold extractor's 4-tuple ordering is not guaranteed, so we
+                // never assume bbox[1] is the top edge.
+                const rect = bboxToImageRect(r.bbox, pageW, pageH, imgSize.w, imgSize.h);
+                if (!rect) return null;
+                const xpc = (rect.x / imgSize.w) * 100;
+                const ypc = (rect.y / imgSize.h) * 100;
+                const wpc = (rect.w / imgSize.w) * 100;
+                const hpc = (rect.h / imgSize.h) * 100;
+                // rect is non-null only when bbox has ≥4 valid numbers.
+                const bbox = r.bbox as number[];
                 const rid = (r as { id?: string }).id ?? `r${idx}`;
                 const isLocal = hoveredLocal === rid;
                 const isExternal = externalHighlightId === rid;
@@ -351,8 +403,9 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
         </div>
         <div className="flex items-center justify-between text-xs text-neutral-500">
           <span>
-            {total ? `${total} ${total === 1 ? "page" : "pages"}` : "—"}
+            {total ? `${total} ${total === 1 ? "page" : "pages"}` : "-"}
             {d.region_count ? ` · ${d.region_count} regions` : null}
+            {d.embedded_count ? ` · ${d.embedded_count} embedded` : null}
           </span>
           {!isReady ? (
             <span className="inline-flex items-center gap-1 rounded border border-current px-1.5 py-0.5 text-[9px] uppercase">
@@ -361,6 +414,23 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
             </span>
           ) : null}
         </div>
+        {!isReady && ingestProgress !== null ? (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-2 text-[10px] text-neutral-600">
+              <span className="truncate capitalize">{ingestLabel}</span>
+              <span className="shrink-0 tabular-nums">
+                {ingestProgress}% · {elapsedLabel}
+                {ingestDetail ? ` · ${ingestDetail} pages` : null}
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-neutral-200">
+              <div
+                className={status === "failed" ? "h-full bg-red-500" : "h-full bg-sky-500"}
+                style={{ width: `${ingestProgress}%` }}
+              />
+            </div>
+          </div>
+        ) : null}
         {status === "failed" && d.error ? (
           <div className="truncate text-[10px] text-red-700" title={d.error}>
             {d.error}

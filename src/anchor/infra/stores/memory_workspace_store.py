@@ -32,6 +32,16 @@ class MemoryWorkspaceStore:
             self._seen_ids[slug] = {}
             return meta
 
+    async def delete(self, slug: str) -> None:
+        async with self._lock:
+            if slug not in self._meta:
+                raise FileNotFoundError(f"workspace {slug!r} does not exist")
+            self._meta.pop(slug, None)
+            self._snapshots.pop(slug, None)
+            self._events.pop(slug, None)
+            self._versions.pop(slug, None)
+            self._seen_ids.pop(slug, None)
+
     async def load(self, slug: str) -> Workspace:
         if slug not in self._snapshots:
             await self.create(slug)

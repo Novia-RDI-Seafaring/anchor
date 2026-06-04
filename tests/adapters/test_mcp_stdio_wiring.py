@@ -1,7 +1,7 @@
 """MCP stdio assembly keeps document-search configuration usable."""
 from __future__ import annotations
 
-from anchor.adapters.mcp.stdio_main import _build_ingest_service
+from anchor.adapters.mcp.stdio_main import _build_ingest_service, _config_for_data_dir
 from anchor.extensions.anchor_pdfs.infra.llm.local_sentence_transformer_embedder import (
     LocalSentenceTransformerEmbedder,
 )
@@ -11,6 +11,21 @@ from anchor.extensions.anchor_pdfs.infra.llm.openai_region_extractor import Open
 from anchor.extensions.anchor_pdfs.infra.memory_doc_store import MemoryDocStore
 from anchor.infra.bus.memory_bus import MemoryEventBus
 from anchor.infra.config import AnchorConfig
+
+
+def test_mcp_data_dir_defaults_to_anchor_data_dir(tmp_path, monkeypatch):
+    data_dir = tmp_path / "env-data"
+    monkeypatch.setenv("ANCHOR_DATA_DIR", str(data_dir))
+
+    assert _config_for_data_dir(None).data_dir == data_dir
+
+
+def test_mcp_explicit_data_dir_overrides_environment(tmp_path, monkeypatch):
+    env_data_dir = tmp_path / "env-data"
+    explicit_data_dir = tmp_path / "explicit-data"
+    monkeypatch.setenv("ANCHOR_DATA_DIR", str(env_data_dir))
+
+    assert _config_for_data_dir(explicit_data_dir).data_dir == explicit_data_dir
 
 
 def test_mcp_wires_configured_local_embedder_without_openai_key(tmp_path, monkeypatch):
@@ -29,6 +44,7 @@ def test_mcp_applies_openai_compatible_pipeline_configuration(tmp_path):
         data_dir=tmp_path,
         openai_api_key="test-key",
         openai_base_url="http://models.test/v1",
+        embed_model="text-embedding-3-large",
         polish_model="configured-polish",
         region_model="configured-regions",
         dpi=222,
@@ -47,3 +63,17 @@ def test_mcp_applies_openai_compatible_pipeline_configuration(tmp_path):
     assert ingest.default_polish_model == "configured-polish"
     assert ingest.default_region_model == "configured-regions"
     assert ingest.default_dpi == 222
+
+
+def test_mcp_openai_key_does_not_override_configured_local_embedder(tmp_path):
+    config = AnchorConfig(
+        data_dir=tmp_path,
+        openai_api_key="test-key",
+        embed_model="local/test-model",
+        _env_file=None,
+    )
+
+    ingest = _build_ingest_service(config, MemoryEventBus(), MemoryDocStore())
+
+    assert isinstance(ingest.embedder, LocalSentenceTransformerEmbedder)
+    assert ingest.embed_model_id == "local/test-model"

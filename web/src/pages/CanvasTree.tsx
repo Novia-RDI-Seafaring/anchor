@@ -31,6 +31,8 @@ import type { WorkspaceListEntry } from "@/api/canvases";
 
 export type CanvasTreeProps = {
   items: WorkspaceListEntry[];
+  onDelete?: (entry: WorkspaceListEntry) => void;
+  deletingSlug?: string | null;
 };
 
 /** Build the slug → entry index once per render. */
@@ -96,9 +98,11 @@ type RowProps = {
   ancestors: ReadonlySet<string>;
   expanded: Set<string>;
   toggle: (slug: string) => void;
+  onDelete?: (entry: WorkspaceListEntry) => void;
+  deletingSlug?: string | null;
 };
 
-function Row({ slug, index, level, ancestors, expanded, toggle }: RowProps) {
+function Row({ slug, index, level, ancestors, expanded, toggle, onDelete, deletingSlug }: RowProps) {
   const entry = index.get(slug);
   if (!entry) {
     // Dangling reference (target canvas was deleted). Render a tombstone
@@ -178,6 +182,17 @@ function Row({ slug, index, level, ancestors, expanded, toggle }: RowProps) {
         <span className="ml-auto shrink-0 text-xs text-neutral-500">
           {entry.node_count} nodes &middot; {entry.edge_count} edges
         </span>
+        {onDelete ? (
+          <button
+            type="button"
+            className="ml-2 rounded border border-red-200 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={deletingSlug === entry.slug}
+            onClick={() => onDelete(entry)}
+            aria-label={`Delete canvas ${entry.slug}`}
+          >
+            {deletingSlug === entry.slug ? "Deleting..." : "Delete"}
+          </button>
+        ) : null}
       </div>
       {hasChildren && isOpen ? (
         <ul role="group">
@@ -190,6 +205,8 @@ function Row({ slug, index, level, ancestors, expanded, toggle }: RowProps) {
               ancestors={childAncestors}
               expanded={expanded}
               toggle={toggle}
+              onDelete={onDelete}
+              deletingSlug={deletingSlug}
             />
           ))}
         </ul>
@@ -198,7 +215,7 @@ function Row({ slug, index, level, ancestors, expanded, toggle }: RowProps) {
   );
 }
 
-export function CanvasTree({ items }: CanvasTreeProps) {
+export function CanvasTree({ items, onDelete, deletingSlug = null }: CanvasTreeProps) {
   const index = useMemo(() => indexBySlug(items), [items]);
   const roots = useMemo(() => pickRoots(items), [items]);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -231,6 +248,8 @@ export function CanvasTree({ items }: CanvasTreeProps) {
           ancestors={new Set()}
           expanded={expanded}
           toggle={toggle}
+          onDelete={onDelete}
+          deletingSlug={deletingSlug}
         />
       ))}
     </ul>

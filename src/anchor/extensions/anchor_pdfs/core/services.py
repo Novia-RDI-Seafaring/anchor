@@ -11,21 +11,19 @@ from typing import Any
 
 from anchor.core.clock import Clock, SystemClock
 from anchor.core.events.envelope import DomainEvent
+from anchor.core.ids import new_event_id, slugify
+from anchor.core.ports.event_bus import EventBus
 from anchor.extensions.anchor_pdfs.core.events import (
     DocBronzed,
     DocGoldExtracted,
-    DocIngestFailed,
     DocIngested,
+    DocIngestFailed,
     DocPolished,
     DocSilvered,
     IngestProgress,
 )
-from anchor.core.ids import new_event_id, slugify
-from anchor.extensions.anchor_pdfs.core.search import search as _search_topk
-from anchor.extensions.anchor_pdfs.core.silver import build_index, build_pages_meta, render_pages_md, snap_to_docling_items
-from anchor.extensions.anchor_pdfs.core.ports.embedder import Embedder
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
-from anchor.core.ports.event_bus import EventBus
+from anchor.extensions.anchor_pdfs.core.ports.embedder import Embedder
 from anchor.extensions.anchor_pdfs.core.ports.md_polisher import PageMdPolisher
 from anchor.extensions.anchor_pdfs.core.ports.pdf_extractor import PdfExtractor
 from anchor.extensions.anchor_pdfs.core.ports.pdf_renderer import PdfRenderer
@@ -33,6 +31,13 @@ from anchor.extensions.anchor_pdfs.core.ports.region_extractor import RegionExtr
 from anchor.extensions.anchor_pdfs.core.ports.synopsis_renderer import (
     MarkdownSynopsisRenderer,
     PdfSynopsisRenderer,
+)
+from anchor.extensions.anchor_pdfs.core.search import search as _search_topk
+from anchor.extensions.anchor_pdfs.core.silver import (
+    build_index,
+    build_pages_meta,
+    render_pages_md,
+    snap_to_docling_items,
 )
 from anchor.extensions.anchor_pdfs.core.synopsis import SynopsisData, compose_synopsis
 
@@ -300,25 +305,45 @@ class IngestService:
         the embedder instance), pulls all embeddings.json on demand, and
         delegates to the pure-core ``search`` function for cosine top-k.
 
-        Returns a small envelope so consumers can verify the model is
-        what they expected before consuming hits:
+        Returns a small envelope so consumers can verify the query model
+        before consuming hits. Documents embedded with another model are
+        reported in ``skipped`` instead of being dropped silently:
 
             { "query": str, "embed_model": str, "k": int,
-              "hits": [{"slug","page","region_id","text","score"}] }
+              "hits": [{"slug","page","region_id","text","score"}],
+              "skipped": [{"slug","stored_model","query_model","reason"}] }
         """
         if self.embedder is None:
             raise RuntimeError("IngestService.search called but no embedder wired")
         # bge-style models don't need a prefix; e5-style ones do. We leave
         # this to the embedder impl to handle (LocalSentenceTransformer
         # currently passes through).
+        query_model = self.embed_model_id or "unknown"
         vecs = await self.embedder.embed([query])
         if not vecs:
-            return {"query": query, "embed_model": self.embed_model_id, "k": k, "hits": []}
+            return {
+                "query": query,
+                "embed_model": query_model,
+                "k": k,
+                "hits": [],
+                "doc_count": 0,
+                "skipped": [],
+            }
         qv = vecs[0]
         # Pull every doc's embeddings file. For the POC this is fine; we
         # can cache in memory once the doc count grows.
         manifest = await self.store.list_embeddings()
-        compatible = [m for m in manifest if m.get("embed_model") == self.embed_model_id]
+        compatible = [m for m in manifest if m.get("embed_model") == query_model]
+        skipped = [
+            {
+                "slug": m.get("slug", ""),
+                "stored_model": m.get("embed_model") or "unknown",
+                "query_model": query_model,
+                "reason": "embed_model_mismatch",
+            }
+            for m in manifest
+            if m.get("embed_model") != query_model
+        ]
         docs: list[tuple[str, dict]] = []
         for m in compatible:
             payload = await self.store.get_embeddings(m["slug"])
@@ -327,10 +352,11 @@ class IngestService:
         hits = _search_topk(query_vector=qv, docs=docs, k=k)
         return {
             "query": query,
-            "embed_model": self.embed_model_id,
+            "embed_model": query_model,
             "k": k,
             "hits": hits,
             "doc_count": len(docs),
+            "skipped": skipped,
         }
 
     async def _publish(self, evt: Any, workspace_id: str | None = None) -> None:

@@ -10,8 +10,8 @@ type Node = {
   y: number;
   /**
    * Parent node id (for area/container nesting). When set, ReactFlow
-   * treats this node as a child of `parent` — moving the parent moves
-   * the child, and the child's position becomes parent-relative.
+   * treats this node as a child of `parent`. Moving the parent moves the child,
+   * and the child's position becomes parent-relative.
    * Mirrors the backend `Node.parent` top-level field.
    */
   parent?: string | null;
@@ -27,6 +27,58 @@ type Edge = {
   targetHandle?: string | null;
   data?: Record<string, unknown>;
 };
+
+const INGEST_STAGE_LABELS: Record<string, string> = {
+  queued: "queued",
+  starting: "starting ingest",
+  silver_extract: "reading PDF",
+  silver_polish: "polishing pages",
+  gold_regions: "extracting gold data",
+  embed: "embedding regions",
+  silvered: "silver ready",
+  gold_extracted: "gold data ready",
+};
+
+const INGEST_STAGE_RANGE: Record<string, { base: number; span: number }> = {
+  silver_extract: { base: 5, span: 20 },
+  silver_polish: { base: 25, span: 30 },
+  gold_regions: { base: 55, span: 30 },
+  embed: { base: 85, span: 10 },
+};
+
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function stageProgress(stage: string, current: number, total: number): number {
+  const range = INGEST_STAGE_RANGE[stage] ?? { base: 10, span: 80 };
+  const fraction = total > 0 ? current / total : 0;
+  return clampPercent(range.base + range.span * fraction);
+}
+
+function patchDocumentNodes(
+  nodes: Record<string, Node>,
+  docSlug: string,
+  dataPatch: Record<string, unknown> | ((data: Record<string, unknown>) => Record<string, unknown>),
+): Record<string, Node> {
+  let changed = false;
+  const next = { ...nodes };
+  for (const [id, node] of Object.entries(nodes)) {
+    const data = node.data ?? {};
+    if (node.node_type !== "document" || data.slug !== docSlug) continue;
+    const patch = typeof dataPatch === "function" ? dataPatch(data) : dataPatch;
+    next[id] = {
+      ...node,
+      data: {
+        ...data,
+        ...patch,
+      },
+    };
+    changed = true;
+  }
+  return changed ? next : nodes;
+}
 
 // Snapshot mirrors the wire shape from `GET /api/workspaces/{slug}/state`.
 // Field types are loose dicts because the wire is JSON; the store narrows to
@@ -119,6 +171,10 @@ function describeEvent(
     }
     case "CanvasCleared":
       return "cleared canvas";
+    case "DocIngested":
+      return `ingested ${p.slug as string}`;
+    case "DocIngestFailed":
+      return `ingest failed ${p.slug as string}`;
     default:
       return evt.type;
   }
@@ -155,6 +211,96 @@ export const useCanvasStore = create<State>((set) => ({
     activity: [],
   }),
   applyEvent: (evt) => set((state) => {
+    if (evt.type === "IngestProgress") {
+      const p = evt.payload as Record<string, unknown>;
+      const docSlug = p.slug as string | undefined;
+      if (!docSlug) return state;
+      const stage = (p.stage as string | undefined) ?? "ingesting";
+      const current = Number(p.current ?? 0);
+      const total = Number(p.total ?? 0);
+      const now = Date.now() / 1000;
+      const nodes = patchDocumentNodes(state.nodes, docSlug, (data) => ({
+        status: "ingesting",
+        ingest_stage: stage,
+        ingest_stage_label: INGEST_STAGE_LABELS[stage] ?? stage,
+        ingest_current: current,
+        ingest_total: total,
+        ingest_progress: stageProgress(stage, current, total),
+        ingest_started_at: typeof data.ingest_started_at === "number" ? data.ingest_started_at : now,
+        ingest_updated_at: now,
+      }));
+      if (nodes === state.nodes) return state;
+      return {
+        ...state,
+        nodes,
+      };
+    }
+    if (evt.type === "DocSilvered") {
+      const p = evt.payload as Record<string, unknown>;
+      const docSlug = p.slug as string | undefined;
+      if (!docSlug) return state;
+      const now = Date.now() / 1000;
+      const nodes = patchDocumentNodes(state.nodes, docSlug, (data) => ({
+        status: "ingesting",
+        page_count: p.page_count,
+        ingest_stage: "silvered",
+        ingest_stage_label: INGEST_STAGE_LABELS.silvered,
+        ingest_progress: 35,
+        ingest_started_at: typeof data.ingest_started_at === "number" ? data.ingest_started_at : now,
+        ingest_updated_at: now,
+      }));
+      return nodes === state.nodes ? state : { ...state, nodes };
+    }
+    if (evt.type === "DocGoldExtracted") {
+      const p = evt.payload as Record<string, unknown>;
+      const docSlug = p.slug as string | undefined;
+      if (!docSlug) return state;
+      const now = Date.now() / 1000;
+      const nodes = patchDocumentNodes(state.nodes, docSlug, (data) => ({
+        status: "ingesting",
+        region_count: p.region_count,
+        ingest_stage: "gold_extracted",
+        ingest_stage_label: INGEST_STAGE_LABELS.gold_extracted,
+        ingest_progress: 90,
+        ingest_started_at: typeof data.ingest_started_at === "number" ? data.ingest_started_at : now,
+        ingest_updated_at: now,
+      }));
+      return nodes === state.nodes ? state : { ...state, nodes };
+    }
+    if (evt.type === "DocIngested") {
+      const p = evt.payload as Record<string, unknown>;
+      const docSlug = p.slug as string | undefined;
+      if (!docSlug) return state;
+      const summary = (p.summary as Record<string, unknown> | undefined) ?? {};
+      const now = Date.now() / 1000;
+      const nodes = patchDocumentNodes(state.nodes, docSlug, {
+        status: "ready",
+        page_count: summary.page_count,
+        region_count: summary.region_count,
+        embedded_count: summary.embedded_count,
+        ingest_stage: "complete",
+        ingest_stage_label: "complete",
+        ingest_progress: 100,
+        ingest_updated_at: now,
+        ingest_finished_at: now,
+      });
+      return nodes === state.nodes ? state : { ...state, nodes };
+    }
+    if (evt.type === "DocIngestFailed") {
+      const p = evt.payload as Record<string, unknown>;
+      const docSlug = p.slug as string | undefined;
+      if (!docSlug) return state;
+      const now = Date.now() / 1000;
+      const nodes = patchDocumentNodes(state.nodes, docSlug, {
+        status: "failed",
+        error: p.error,
+        ingest_stage: p.stage,
+        ingest_stage_label: "failed",
+        ingest_updated_at: now,
+        ingest_finished_at: now,
+      });
+      return nodes === state.nodes ? state : { ...state, nodes };
+    }
     if (state.version >= evt.version) return state;
     const text = describeEvent(evt, state.nodes, state.edges);
     const nodes = { ...state.nodes };
@@ -196,7 +342,22 @@ export const useCanvasStore = create<State>((set) => ({
       case "NodeUpdated": {
         const id = p.id as string;
         if (nodes[id]) {
-          nodes[id] = { ...nodes[id], ...(p.fields as Record<string, unknown>) };
+          const cur = nodes[id];
+          const fields = (p.fields as Record<string, unknown>) ?? {};
+          const known = new Set(["node_type", "label", "x", "y", "parent", "data"]);
+          const next: Node = { ...cur };
+          const data: Record<string, unknown> = { ...(cur.data ?? {}) };
+          for (const [k, v] of Object.entries(fields)) {
+            if (k === "data" && v && typeof v === "object") {
+              Object.assign(next, { data: { ...(v as Record<string, unknown>) } });
+            } else if (known.has(k)) {
+              Object.assign(next, { [k]: v });
+            } else {
+              data[k] = v;
+            }
+          }
+          if (!("data" in fields)) next.data = data;
+          nodes[id] = next;
         }
         break;
       }
@@ -223,7 +384,7 @@ export const useCanvasStore = create<State>((set) => ({
         // Mirror the backend reducer: top-level known fields are
         // overwritten directly; unknown keys merge into `data`. The
         // server sends the fields dict it received from the HTTP/MCP
-        // patch — passing `data` as a whole dict replaces it, just like
+        // patch. Passing `data` as a whole dict replaces it, just like
         // the canonical reducer's `setattr(e, k, v)` path.
         const id = p.id as string;
         const fields = (p.fields as Record<string, unknown>) ?? {};
@@ -234,7 +395,7 @@ export const useCanvasStore = create<State>((set) => ({
           const data: Record<string, unknown> = { ...(cur.data ?? {}) };
           for (const [k, v] of Object.entries(fields)) {
             if (k === "data" && v && typeof v === "object") {
-              // Replace whole data dict — matches `setattr(e, "data", v)`.
+              // Replace whole data dict, matching `setattr(e, "data", v)`.
               Object.assign(next, { data: { ...(v as Record<string, unknown>) } });
             } else if (known.has(k)) {
               Object.assign(next, { [k]: v });

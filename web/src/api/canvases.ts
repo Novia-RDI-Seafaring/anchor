@@ -1,4 +1,4 @@
-import { api, BACKEND_URL } from "./client";
+import { api, BACKEND_URL, type UploadProgress } from "./client";
 
 export type WorkspaceMeta = {
   slug: string;
@@ -38,6 +38,8 @@ export const canvases = {
   list: () => api.get<WorkspaceListEntry[]>("/api/workspaces"),
   create: (slug: string, title = "") =>
     api.post<WorkspaceMeta>("/api/workspaces", { slug, title }),
+  delete: (slug: string) =>
+    api.del<{ slug: string; deleted: boolean }>(`/api/workspaces/${slug}`),
   /** Rename the workspace's display title. Slug is immutable. */
   rename: (slug: string, title: string) =>
     api.patch<WorkspaceMeta>(`/api/workspaces/${slug}`, { title }),
@@ -121,7 +123,13 @@ export const canvases = {
       event_count: number;
       state: CanvasState;
     }>(`/api/workspaces/${slug}/distribute`, { ids, axis }),
-  uploadFile: (slug: string, file: File, x: number, y: number) => {
+  uploadFile: (
+    slug: string,
+    file: File,
+    x: number,
+    y: number,
+    options?: { onProgress?: (progress: UploadProgress) => void },
+  ) => {
     const fd = new FormData();
     fd.append("file", file);
     fd.append("x", String(x));
@@ -129,6 +137,7 @@ export const canvases = {
     return api.upload<{ slug: string; job_id: string; status: string }>(
       `/api/workspaces/${slug}/upload`,
       fd,
+      options?.onProgress,
     );
   },
   /**

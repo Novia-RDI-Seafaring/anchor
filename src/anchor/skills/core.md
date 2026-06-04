@@ -17,6 +17,23 @@ ANCHOR turns a folder of engineering documents into a structured,
 source-grounded knowledge base you can drive over MCP. Every value the
 agent quotes points back to a specific page region.
 
+## Install ANCHOR
+
+Install the tool before using this skill:
+
+```bash
+uv tool install anchor-kb
+# Fallback:
+pipx install anchor-kb
+```
+
+`anchor install <harness>` registers an installed ANCHOR tool with an AI
+harness. It does not install the tool itself.
+
+Bronze and silver extraction run locally. Gold extraction requires
+`ANCHOR_OPENAI_API_KEY`; set the other `ANCHOR_OPENAI_*` variables for your
+provider as needed.
+
 ## When to use
 
 - The user drops a PDF datasheet, leaflet, or manual and wants it readable.
@@ -48,7 +65,11 @@ commands per workspace, so you don't need to coordinate with the browser.
 
 ## Where things live
 
-Configured at install time. Default `~/anchor-data/`:
+Default `~/anchor-data/`. Set `ANCHOR_DATA_DIR` to change the default for
+CLI and MCP commands. An explicit `--data-dir <path>` takes priority and must
+be repeated for each CLI subcommand that uses a different storage root.
+`anchor install <harness> --data-dir <path>` pins that path in the harness MCP
+configuration. The HTTP adapter uses the path passed to `anchor serve`.
 
 - `bronze/` — raw PDFs
 - `silver/<slug>/` — per-page markdown + page PNGs

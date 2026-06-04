@@ -64,7 +64,8 @@ def search(
 ) -> None:
     """Semantic search across every gold-extracted, embedded document.
 
-    Returns top-k grounded hits with (slug, page, region_id, text, score).
+    Returns top-k grounded hits with (slug, page, region_id, text, score)
+    plus skipped documents whose stored embed_model does not match.
     Requires that documents have been embedded first via `anchor embed`.
     """
     _, _, _, ingest_svc, _ = _build_real_services(data_dir)

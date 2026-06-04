@@ -16,7 +16,8 @@ The `anchor` command exposes the user-facing local application surface.
 | `anchor synopsis SLUG --entity ENTITY` | Compose an entity-scoped synopsis. |
 
 Most document commands accept `--data-dir DIR`; use the same data directory
-as the running server.
+as the running server. Set `ANCHOR_DATA_DIR` to change the default for CLI and
+MCP commands. An explicit `--data-dir` takes priority.
 
 ## Canvas commands
 
@@ -43,6 +44,9 @@ anchor canvas --help
 | `anchor fmu` | Inspect and simulate FMUs when the optional runtime is installed. |
 | `anchor cad` | Inspect supported CAD models and alter parameters. |
 | `anchor extensions` | List and inspect OIP producer manifests. |
-| `anchor install` | Register ANCHOR with Claude Code or Cursor. |
+| `anchor install` | Register ANCHOR with Cursor or inspect the available compatibility helpers. |
 
 Run `anchor <group> --help` for option-level detail.
+
+For current Claude Code, Codex, OpenCode, Cursor, and generic stdio setup
+instructions, see [Agent configuration](../guides/agent-configuration.md).
