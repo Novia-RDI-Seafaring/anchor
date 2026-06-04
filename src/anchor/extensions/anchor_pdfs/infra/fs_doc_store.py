@@ -25,6 +25,25 @@ import aiofiles
 from anchor.core.upload_safety import UnsafeUploadError, assert_within, safe_upload_name
 
 
+def _with_bbox_alias(region: dict[str, Any]) -> dict[str, Any]:
+    if "bbox" in region or "approximate_bbox" not in region:
+        return region
+    bbox = region.get("approximate_bbox")
+    if not (
+        isinstance(bbox, list)
+        and len(bbox) == 4
+        and all(isinstance(v, (int, float)) for v in bbox)
+    ):
+        return region
+    return {**region, "bbox": [float(v) for v in bbox]}
+
+
+def _normalise_regions(regions: Any) -> Any:
+    if not isinstance(regions, list):
+        return regions
+    return [_with_bbox_alias(r) if isinstance(r, dict) else r for r in regions]
+
+
 class FsDocStore:
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = Path(data_dir)
@@ -94,7 +113,8 @@ class FsDocStore:
             pg = int(data.get("page", rf.stem.rstrip(".regions")))
             if page is not None and pg != page:
                 continue
-            result["pages"][pg] = data.get("regions", data) if isinstance(data, dict) else data
+            regions = data.get("regions", data) if isinstance(data, dict) else data
+            result["pages"][pg] = _normalise_regions(regions)
         return result
 
     async def get_gold_map(self, slug: str) -> dict[str, Any] | None:
@@ -166,8 +186,9 @@ class FsDocStore:
     async def write_gold_region_file(self, slug: str, page: int, regions: list[dict[str, Any]]) -> Path:
         target = self.gold / slug / "pages" / f"{page}.regions.json"
         target.parent.mkdir(parents=True, exist_ok=True)
+        normalised = _normalise_regions(regions)
         async with aiofiles.open(target, "w", encoding="utf-8") as f:
-            await f.write(json.dumps({"page": page, "regions": list(regions)}, indent=2))
+            await f.write(json.dumps({"page": page, "regions": normalised}, indent=2))
         return target
 
     async def write_embeddings(self, slug: str, payload: dict[str, Any]) -> Path:

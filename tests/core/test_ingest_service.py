@@ -164,6 +164,40 @@ def test_ingest_uses_service_level_pipeline_defaults():
     asyncio.run(run())
 
 
+def test_ingest_promotes_approximate_bbox_before_storing_gold_regions():
+    async def run():
+        s = make_in_memory_services(page_count=1)
+        s.extractor.docling = {
+            "items": [
+                {"label": "title", "text": "Demo Doc", "page": 1, "bbox": [0, 720, 200, 700]},
+                {"label": "section_header", "text": "Section A", "page": 1, "bbox": [0, 620, 100, 600]},
+                {"label": "text", "text": "First paragraph.", "page": 1, "bbox": [0, 595, 200, 580]},
+            ],
+        }
+
+        async def extract_page(*, page_image, page_no, docling_items, model):
+            return [
+                {
+                    "id": "r1",
+                    "kind": "text",
+                    "title": "approx region",
+                    "description": "x",
+                    "approximate_bbox": [0, 720, 210, 570],
+                },
+            ]
+
+        s.region_extractor.extract_page = extract_page  # type: ignore[method-assign]
+
+        await s.ingest.ingest_pdf(b"%PDF-fake", "approx.pdf")
+
+        regions = await s.doc_store.get_regions("approx")
+        region = regions["pages"][1][0]
+        assert region["approximate_bbox"] == [0, 720, 210, 570]
+        assert region["bbox"] == [0, 720, 200, 580]
+
+    asyncio.run(run())
+
+
 def test_ingest_failure_emits_failed_event():
     async def run():
         s = make_in_memory_services()
