@@ -160,6 +160,7 @@ def _report(config_path: Path, target: Path, prov: Provider) -> None:
     # These fields are read by every adapter without being passed explicitly,
     # so the values below are what those processes will actually use.
     typer.echo("Applied automatically (CLI, server, anchor-mcp):")
+    typer.echo(f"  data dir       : {cfg.data_dir}")
     typer.echo(f"  embed model    : {cfg.embed_model}  (local)")
     if prov.does_vision:
         typer.echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com'}")
@@ -170,11 +171,9 @@ def _report(config_path: Path, target: Path, prov: Provider) -> None:
         typer.echo("  vision model   : none — no document content leaves this host")
     typer.echo(f"  docling device : {cfg.docling_device}")
     typer.echo("")
-    # data_dir is written but the CLI/MCP commands still default --data-dir and
-    # override it, so it is NOT yet applied automatically (tracked in #45).
-    typer.echo(f"Recorded but not yet auto-applied: data_dir = {cfg.data_dir}")
-    typer.echo(f"  Until per-command data-dir resolution lands, pass --data-dir {cfg.data_dir}.")
-    typer.echo("")
+    # The CLI/server resolve --data-dir from this config (common.default_data_dir);
+    # a standalone anchor-mcp launched elsewhere needs ANCHOR_CONFIG to find it.
     typer.echo(
-        f"Adapters read this by running inside {target}, or set ANCHOR_CONFIG={config_path}."
+        f"The CLI and server read this by running inside {target}; for an "
+        f"agent-launched anchor-mcp set ANCHOR_CONFIG={config_path}."
     )
