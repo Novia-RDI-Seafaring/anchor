@@ -1,71 +1,91 @@
-"""`anchor init` writes a non-secret project anchor.toml."""
+"""`anchor init` — provider picker writes a non-secret project anchor.toml."""
 from __future__ import annotations
 
 from typer.testing import CliRunner
 
 from anchor.adapters.cli.main import app
 
+runner = CliRunner()
 
-def test_init_local_only_writes_secret_free_toml(tmp_path):
-    runner = CliRunner()
+
+def test_local_provider_is_egress_free(tmp_path):
     result = runner.invoke(
-        app,
-        ["init", str(tmp_path), "--yes", "--local-only", "--data-dir", str(tmp_path / "data")],
+        app, ["init", str(tmp_path), "--yes", "--provider", "local", "--data-dir", str(tmp_path / "d")]
     )
     assert result.exit_code == 0, result.output
-
     toml = (tmp_path / "anchor.toml").read_text()
-    assert "data_dir" in toml
-    assert "embed_model" in toml
-    # local-only: no remote endpoint recorded, and never a secret assignment
-    # (the env-var name may appear in the guidance comment, but never `= "..."`).
+    assert 'provider = "local"' in toml
     assert "openai_base_url" not in toml
+    assert "polish_model" not in toml  # no vision stage at all
     assert "api_key =" not in toml.lower()
-    assert "local-only" in result.output
+    assert "nothing leaves the network" in result.output
 
 
-def test_init_remote_records_endpoint_not_key(tmp_path, monkeypatch):
-    monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    runner = CliRunner()
+def test_ollama_defaults_to_local_endpoint(tmp_path):
+    result = runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "ollama"])
+    assert result.exit_code == 0, result.output
+    toml = (tmp_path / "anchor.toml").read_text()
+    assert 'provider = "ollama"' in toml
+    assert "http://localhost:11434/v1" in toml
+    assert "polish_model" in toml
+    assert "no internet egress" in result.output
+
+
+def test_azure_requires_base_url(tmp_path):
+    result = runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "azure"])
+    assert result.exit_code != 0
+    assert "base-url" in result.output.lower()
+    assert not (tmp_path / "anchor.toml").exists()
+
+
+def test_azure_records_flagged_config(tmp_path):
     result = runner.invoke(
         app,
         [
             "init",
             str(tmp_path),
             "--yes",
-            "--openai-base-url",
-            "https://example.openai.azure.com/v1",
-            "--polish-model",
-            "gpt-deployment-a",
-            "--region-model",
+            "--provider",
+            "azure",
+            "--base-url",
+            "https://x.openai.azure.com/v1",
+            "--vision-model",
             "gpt-deployment-a",
         ],
     )
     assert result.exit_code == 0, result.output
-
     toml = (tmp_path / "anchor.toml").read_text()
-    assert "https://example.openai.azure.com/v1" in toml
+    assert 'provider = "azure"' in toml
+    assert "https://x.openai.azure.com/v1" in toml
     assert "gpt-deployment-a" in toml
     assert "api_key =" not in toml.lower()
-    # readback warns the key is absent rather than inventing one.
-    assert "example.openai.azure.com" in result.output
-    assert "ANCHOR_OPENAI_API_KEY" in result.output
+    # offered but flagged as not-yet-functional
+    assert "#48" in result.output
+    assert "your Azure tenant / region" in result.output
 
 
-def test_init_refuses_overwrite_without_force(tmp_path):
-    (tmp_path / "anchor.toml").write_text('data_dir = "x"\n')
-    runner = CliRunner()
-    result = runner.invoke(app, ["init", str(tmp_path), "--yes"])
+def test_custom_requires_base_url(tmp_path):
+    result = runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "custom"])
+    assert result.exit_code != 0
+
+
+def test_unknown_provider_errors(tmp_path):
+    result = runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "banana"])
+    assert result.exit_code != 0
+    assert "banana" in result.output
+
+
+def test_refuses_overwrite_without_force(tmp_path):
+    (tmp_path / "anchor.toml").write_text('provider = "local"\n')
+    result = runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "local"])
     assert result.exit_code == 1
     assert "force" in result.output.lower()
 
 
-def test_init_force_overwrites(tmp_path):
-    (tmp_path / "anchor.toml").write_text('data_dir = "old"\n')
-    runner = CliRunner()
+def test_force_overwrites(tmp_path):
+    (tmp_path / "anchor.toml").write_text('provider = "local"\n')
     result = runner.invoke(
-        app, ["init", str(tmp_path), "--yes", "--local-only", "--force", "--embed-model", "new-embed"]
+        app, ["init", str(tmp_path), "--yes", "--provider", "openai", "--force", "--vision-model", "gpt-x"]
     )
     assert result.exit_code == 0, result.output
-    assert "new-embed" in (tmp_path / "anchor.toml").read_text()
+    assert "gpt-x" in (tmp_path / "anchor.toml").read_text()

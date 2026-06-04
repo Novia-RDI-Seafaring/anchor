@@ -61,6 +61,11 @@ class AnchorConfig(BaseSettings):
     http_host: str = "127.0.0.1"
     http_port: int = 8002
 
+    # The provider chosen by `anchor init` (see anchor.infra.providers). Purely
+    # a record of intent: it does not change wiring on its own — the endpoint /
+    # models below do — but it lets the status surface name the active data zone.
+    provider: str | None = None
+
     openai_api_key: SecretStr | None = None
     # Override `openai_base_url` to point at any OpenAI-compatible
     # endpoint: Azure OpenAI, Ollama (`http://localhost:11434/v1`), vLLM,

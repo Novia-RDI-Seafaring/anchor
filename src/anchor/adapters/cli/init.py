@@ -1,12 +1,14 @@
-"""``anchor init`` — scaffold a project-local ``anchor.toml``.
+"""``anchor init`` — choose an AI provider (and thus a data zone) for a project.
 
-Writes the non-secret configuration (data dir, models, endpoint, accelerator)
-that every adapter resolves via :func:`anchor.infra.config.discover_config_file`.
-The API key is never written here — it stays in ``ANCHOR_OPENAI_API_KEY`` / a
-``.env`` so a committed config never carries credentials.
+The provider choice IS the data-boundary choice: ``local``/``ollama`` keep
+document content on your network, ``azure``/``custom`` send it only to the
+endpoint you name, ``openai`` is public. init writes those choices to a
+non-secret ``anchor.toml`` that the CLI, server, and an agent-launched
+``anchor-mcp`` all resolve. The API key is never written here — it stays in
+``ANCHOR_OPENAI_API_KEY`` / a gitignored ``.env``.
 
-Interactive by default; ``--yes`` (or a non-interactive stdin) accepts defaults
-and flag values without prompting, so an agent or CI can call it unattended.
+Interactive on a tty; unattended under ``--yes`` or a non-interactive stdin
+(an agent passes ``--provider`` + flags), so it never blocks.
 """
 from __future__ import annotations
 
@@ -18,6 +20,7 @@ import typer
 
 from anchor.adapters.cli.common import DEFAULT_DATA_DIR
 from anchor.infra.config import CONFIG_FILENAME, AnchorConfig
+from anchor.infra.providers import PROVIDERS, Provider, get_provider
 
 
 def _toml_escape(value: str) -> str:
@@ -36,127 +39,142 @@ def _render_toml(fields: dict[str, str]) -> str:
 
 
 def _ask(label: str, default: str, *, interactive: bool) -> str:
-    if not interactive:
-        return default
-    return typer.prompt(label, default=default)
+    return typer.prompt(label, default=default) if interactive else default
 
 
-def _confirm(label: str, default: bool, *, interactive: bool) -> bool:
+def _default(field: str) -> str:
+    return str(AnchorConfig.model_fields[field].default)
+
+
+def _resolve_provider(flag: str | None, *, interactive: bool) -> Provider:
+    """Pick a provider from the flag, an interactive menu, or the safe default."""
+    if flag:
+        provider = get_provider(flag)
+        if provider is None:
+            valid = ", ".join(p.key for p in PROVIDERS)
+            typer.echo(f"Unknown provider '{flag}'. Choose one of: {valid}", err=True)
+            raise typer.Exit(code=2)
+        return provider
     if not interactive:
-        return default
-    return typer.confirm(label, default=default)
+        # Default to the zero-egress option when nothing is specified.
+        return get_provider("local")  # type: ignore[return-value]
+    typer.echo("Where may document content go? Choose an AI provider:")
+    for i, p in enumerate(PROVIDERS, start=1):
+        tag = "" if p.available else "   (config only — endpoint client pending)"
+        typer.echo(f"  {i}. {p.label} — {p.zone}{tag}")
+    while True:
+        raw = typer.prompt(f"Provider [1-{len(PROVIDERS)}]", default="1")
+        try:
+            idx = int(raw)
+        except ValueError:
+            idx = 0
+        if 1 <= idx <= len(PROVIDERS):
+            return PROVIDERS[idx - 1]
+        typer.echo("Enter a number from the list.")
 
 
 def init(
-    directory: Path = typer.Argument(
-        Path("."), help="Project folder to write anchor.toml into."
-    ),
+    directory: Path = typer.Argument(Path("."), help="Project folder to write anchor.toml into."),
+    provider: str = typer.Option(None, "--provider", help="local|ollama|openai|azure|custom."),
     data_dir: str = typer.Option(None, "--data-dir", help="Where bronze/silver/gold/canvases live."),
-    embed_model: str = typer.Option(None, "--embed-model", help="Embedding model id."),
-    openai_base_url: str = typer.Option(
-        None, "--openai-base-url", help="OpenAI-compatible endpoint for polish/region extraction."
+    embed_model: str = typer.Option(None, "--embed-model", help="Local embedding model id."),
+    base_url: str = typer.Option(None, "--base-url", help="Endpoint for the chosen provider."),
+    vision_model: str = typer.Option(
+        None, "--vision-model", help="Model / deployment for polish + region extraction."
     ),
-    polish_model: str = typer.Option(None, "--polish-model"),
-    region_model: str = typer.Option(None, "--region-model"),
     docling_device: str = typer.Option(None, "--docling-device", help="cpu|cuda|mps|auto."),
-    local_only: bool = typer.Option(
-        False, "--local-only", help="No remote vision model: bronze/silver + local embeddings only."
-    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Accept defaults, no prompts."),
     force: bool = typer.Option(False, "--force", help="Overwrite an existing anchor.toml."),
 ) -> None:
-    """Create a project-local anchor.toml the CLI, server, and MCP all resolve."""
+    """Choose an AI provider/data-zone for this project and write anchor.toml."""
     target = directory.expanduser().resolve()
     config_path = target / CONFIG_FILENAME
     if config_path.exists() and not force:
         typer.echo(f"{config_path} already exists. Re-run with --force to overwrite.", err=True)
         raise typer.Exit(code=1)
 
-    defaults = AnchorConfig.model_fields
-    # Prompt only on a real terminal and when the caller didn't pass --yes;
-    # otherwise run unattended off flags + defaults.
+    # Prompt only on a real terminal without --yes; otherwise run off flags.
     interactive = not yes and sys.stdin.isatty()
-
-    data_dir_val = data_dir or _ask(
-        "Data directory", str(DEFAULT_DATA_DIR), interactive=interactive
-    )
-    embed_val = embed_model or _ask(
-        "Embedding model", str(defaults["embed_model"].default), interactive=interactive
-    )
-    device_val = docling_device or _ask(
-        "Docling accelerator device (cpu|cuda|mps|auto)",
-        str(defaults["docling_device"].default),
-        interactive=interactive,
-    )
+    prov = _resolve_provider(provider, interactive=interactive)
 
     fields: dict[str, str] = {
-        "data_dir": data_dir_val,
-        "embed_model": embed_val,
-        "docling_device": device_val,
+        "provider": prov.key,
+        "data_dir": data_dir or _ask("Data directory", str(DEFAULT_DATA_DIR), interactive=interactive),
+        "embed_model": embed_model
+        or _ask("Embedding model (local)", _default("embed_model"), interactive=interactive),
+        "docling_device": docling_device
+        or _ask("Docling device (cpu|cuda|mps|auto)", _default("docling_device"), interactive=interactive),
     }
 
-    # Vision-model (polish + region extraction) is the only network egress for
-    # document content. Default off when --local-only; otherwise offer it.
-    want_remote = not local_only and _confirm(
-        "Use a remote vision model for polish + region extraction?",
-        default=bool(openai_base_url or polish_model or region_model),
-        interactive=interactive,
-    )
-    if want_remote:
-        base_val = openai_base_url if openai_base_url is not None else _ask(
-            "OpenAI-compatible base URL (blank = api.openai.com)", "", interactive=interactive
+    if prov.does_vision:
+        if prov.base_url_required:
+            resolved_url = base_url or _ask(
+                f"{prov.label} endpoint base URL", "", interactive=interactive
+            )
+            if not resolved_url:
+                typer.echo(
+                    f"Provider '{prov.key}' needs an endpoint — pass --base-url <url>.", err=True
+                )
+                raise typer.Exit(code=2)
+        else:
+            resolved_url = base_url if base_url is not None else (prov.default_base_url or "")
+        if resolved_url:
+            fields["openai_base_url"] = resolved_url
+        chosen_model = vision_model or _ask(
+            "Vision model / deployment (polish + regions)",
+            prov.default_vision_model or _default("polish_model"),
+            interactive=interactive,
         )
-        if base_val:
-            fields["openai_base_url"] = base_val
-        fields["polish_model"] = polish_model or _ask(
-            "Polish model / deployment", str(defaults["polish_model"].default), interactive=interactive
-        )
-        fields["region_model"] = region_model or _ask(
-            "Region model / deployment", str(defaults["region_model"].default), interactive=interactive
-        )
+        # polish and region default to the same model; advanced users split in the toml.
+        fields["polish_model"] = chosen_model
+        fields["region_model"] = chosen_model
 
     target.mkdir(parents=True, exist_ok=True)
     config_path.write_text(_render_toml(fields))
+    _report(config_path, target, prov)
 
-    # Echo what every adapter will now resolve from this file. Load with
-    # ANCHOR_CONFIG pinned so the readback reflects the file we just wrote,
-    # not some other anchor.toml above the current directory.
+
+def _report(config_path: Path, target: Path, prov: Provider) -> None:
+    """Echo the recorded config, honestly distinguishing applied vs not-yet."""
+    # Pin ANCHOR_CONFIG so the readback reflects the file we just wrote.
     prev = os.environ.get("ANCHOR_CONFIG")
     os.environ["ANCHOR_CONFIG"] = str(config_path)
     try:
-        resolved = AnchorConfig()
+        cfg = AnchorConfig()
     finally:
         if prev is None:
             os.environ.pop("ANCHOR_CONFIG", None)
         else:
             os.environ["ANCHOR_CONFIG"] = prev
 
-    has_key = bool(resolved.openai_api_key) or bool(os.environ.get("OPENAI_API_KEY"))
+    has_key = bool(cfg.openai_api_key) or bool(os.environ.get("OPENAI_API_KEY"))
     typer.echo(f"Wrote {config_path}")
-    # These fields are read by the CLI, server, and anchor-mcp automatically
-    # (they are not passed explicitly by any adapter), so the value below is
-    # what those processes will actually use.
+    typer.echo("")
+    typer.echo(f"Provider : {prov.label}")
+    typer.echo(f"Data zone: {prov.zone}")
+    if prov.note:
+        typer.echo(f"Note     : {prov.note}")
+    if not prov.available:
+        typer.echo("  ! Endpoint client not implemented yet — recorded but won't run until #48.")
+    typer.echo("")
+    # These fields are read by every adapter without being passed explicitly,
+    # so the values below are what those processes will actually use.
     typer.echo("Applied automatically (CLI, server, anchor-mcp):")
-    typer.echo(f"  embed model    : {resolved.embed_model}  (local)")
-    if want_remote:
-        endpoint = resolved.openai_base_url or "api.openai.com"
-        typer.echo(f"  vision endpoint: {endpoint}")
-        typer.echo(f"  polish/region  : {resolved.polish_model} / {resolved.region_model}")
-        typer.echo(f"  api key in env : {'yes' if has_key else 'NO — set ANCHOR_OPENAI_API_KEY'}")
+    typer.echo(f"  embed model    : {cfg.embed_model}  (local)")
+    if prov.does_vision:
+        typer.echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com'}")
+        typer.echo(f"  vision model   : {cfg.polish_model}")
+        if prov.key != "ollama":
+            typer.echo(f"  api key in env : {'yes' if has_key else 'not set — export ANCHOR_OPENAI_API_KEY'}")
     else:
-        typer.echo("  vision model   : local-only (no document content leaves this host)")
-    typer.echo(f"  docling device : {resolved.docling_device}")
+        typer.echo("  vision model   : none — no document content leaves this host")
+    typer.echo(f"  docling device : {cfg.docling_device}")
     typer.echo("")
-    # Honesty: data_dir is written to the toml but the CLI/MCP commands still
-    # default --data-dir themselves and override it, so it is NOT yet applied
-    # automatically. Surface that rather than imply otherwise (tracked in #45).
-    typer.echo(f"Recorded but not yet auto-applied: data_dir = {resolved.data_dir}")
-    typer.echo(
-        f"  Until per-command data-dir resolution lands, pass --data-dir {resolved.data_dir} "
-        "(e.g. `anchor serve --data-dir ...`)."
-    )
+    # data_dir is written but the CLI/MCP commands still default --data-dir and
+    # override it, so it is NOT yet applied automatically (tracked in #45).
+    typer.echo(f"Recorded but not yet auto-applied: data_dir = {cfg.data_dir}")
+    typer.echo(f"  Until per-command data-dir resolution lands, pass --data-dir {cfg.data_dir}.")
     typer.echo("")
     typer.echo(
-        "Adapters pick up the applied fields by running inside this folder, or "
-        f"set ANCHOR_CONFIG={config_path} for an agent-launched anchor-mcp."
+        f"Adapters read this by running inside {target}, or set ANCHOR_CONFIG={config_path}."
     )
