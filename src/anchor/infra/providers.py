@@ -88,3 +88,37 @@ PROVIDERS_BY_KEY: dict[str, Provider] = {p.key: p for p in PROVIDERS}
 def get_provider(key: str) -> Provider | None:
     """Look up a provider by key, case-insensitively. None when unknown."""
     return PROVIDERS_BY_KEY.get(key.strip().lower())
+
+
+@dataclass(frozen=True)
+class EmbedOption:
+    model: str
+    label: str
+    #: True when embedding *text* is sent to the provider endpoint (egress).
+    remote: bool
+
+
+# Local stays a single bge model on purpose: the in-browser query embedder is
+# fixed to bge-small, so a different local model would silently break browser
+# search (vector-space mismatch — see #41). The meaningful choice is local-vs-
+# remote, surfaced only when an endpoint exists.
+LOCAL_EMBED_OPTIONS: tuple[EmbedOption, ...] = (
+    EmbedOption("BAAI/bge-small-en-v1.5", "bge-small · 384d · local, no egress", remote=False),
+)
+
+REMOTE_EMBED_OPTIONS: tuple[EmbedOption, ...] = (
+    EmbedOption("text-embedding-3-small", "text-embedding-3-small · 1536d · sent to your endpoint", remote=True),
+    EmbedOption("text-embedding-3-large", "text-embedding-3-large · 3072d · sent to your endpoint", remote=True),
+)
+
+
+def embed_options_for(provider: Provider) -> tuple[EmbedOption, ...]:
+    """Embedding choices for a provider.
+
+    The local sentence-transformer model always applies (no egress). Remote
+    embeddings are offered only when there is an OpenAI-compatible endpoint to
+    send vectors to; ``local``/``ollama`` keep embeddings on the host.
+    """
+    if provider.key in ("openai", "azure", "custom"):
+        return LOCAL_EMBED_OPTIONS + REMOTE_EMBED_OPTIONS
+    return LOCAL_EMBED_OPTIONS

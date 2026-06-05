@@ -19,7 +19,7 @@ from pathlib import Path
 import typer
 
 from anchor.infra.config import CONFIG_FILENAME, AnchorConfig
-from anchor.infra.providers import PROVIDERS, Provider, get_provider
+from anchor.infra.providers import PROVIDERS, Provider, embed_options_for, get_provider
 
 
 def _toml_escape(value: str) -> str:
@@ -50,6 +50,43 @@ def _provider_choice_label(p: Provider) -> str:
     return f"{p.label} — {p.zone}{tag}"
 
 
+def _choose(message: str, items: list, render, *, interactive: bool):
+    """Arrow-key select one of ``items`` (questionary), with a numbered fallback.
+
+    ``render(item) -> str`` produces each label. Returns the chosen item.
+    """
+    if not interactive:
+        return items[0]
+    try:
+        import questionary
+    except ImportError:
+        questionary = None
+    if questionary is not None:
+        answer = questionary.select(
+            message,
+            choices=[questionary.Choice(title=render(it), value=i) for i, it in enumerate(items)],
+            instruction="(↑/↓ to move, Enter to choose)",
+            qmark="▍",
+            pointer="❯",
+        ).ask()
+        if answer is None:  # Ctrl-C / no tty
+            raise typer.Exit(code=1)
+        return items[answer]
+    # Plain numbered fallback.
+    typer.echo(message)
+    for i, it in enumerate(items, start=1):
+        typer.echo(f"  {i}. {render(it)}")
+    while True:
+        raw = typer.prompt(f"[1-{len(items)}]", default="1")
+        try:
+            idx = int(raw)
+        except ValueError:
+            idx = 0
+        if 1 <= idx <= len(items):
+            return items[idx - 1]
+        typer.echo("Enter a number from the list.")
+
+
 def _resolve_provider(flag: str | None, *, interactive: bool) -> Provider:
     """Pick a provider from the flag, an interactive menu, or the safe default."""
     if flag:
@@ -62,44 +99,27 @@ def _resolve_provider(flag: str | None, *, interactive: bool) -> Provider:
     if not interactive:
         # Default to the zero-egress option when nothing is specified.
         return get_provider("local")  # type: ignore[return-value]
-    arrowed = _select_provider_arrows()
-    return arrowed if arrowed is not None else _select_provider_numbered()
+    return _choose("Where may document content go?", list(PROVIDERS), _provider_choice_label,
+                   interactive=interactive)
 
 
-def _select_provider_arrows() -> Provider | None:
-    """Arrow-key picker (questionary). Returns None to fall back to numbers."""
-    try:
-        import questionary
-    except ImportError:
-        return None
-    answer = questionary.select(
-        "Where may document content go?",
-        choices=[
-            questionary.Choice(title=_provider_choice_label(p), value=p.key) for p in PROVIDERS
-        ],
-        instruction="(↑/↓ to move, Enter to choose)",
-        qmark="▍",
-        pointer="❯",
-    ).ask()
-    if answer is None:  # Ctrl-C / no tty
-        raise typer.Exit(code=1)
-    return get_provider(answer)
+def _resolve_embed_model(flag: str | None, provider: Provider, *, interactive: bool) -> str:
+    """Pick the embedding model, with options that depend on the provider.
 
-
-def _select_provider_numbered() -> Provider:
-    """Plain numbered fallback when questionary is unavailable."""
-    typer.echo("Where may document content go? Choose an AI provider:")
-    for i, p in enumerate(PROVIDERS, start=1):
-        typer.echo(f"  {i}. {_provider_choice_label(p)}")
-    while True:
-        raw = typer.prompt(f"Provider [1-{len(PROVIDERS)}]", default="1")
-        try:
-            idx = int(raw)
-        except ValueError:
-            idx = 0
-        if 1 <= idx <= len(PROVIDERS):
-            return PROVIDERS[idx - 1]
-        typer.echo("Enter a number from the list.")
+    Local providers keep vectors on-host (single bge option). Endpoint
+    providers additionally offer remote embeddings, which send text out.
+    """
+    if flag:
+        return flag
+    options = embed_options_for(provider)
+    if len(options) == 1 or not interactive:
+        return options[0].model
+    return _choose(
+        "Embedding model — where do the vectors compute?",
+        list(options),
+        lambda o: o.label,
+        interactive=interactive,
+    ).model
 
 
 def init(
@@ -134,8 +154,7 @@ def init(
     fields: dict[str, str] = {
         "provider": prov.key,
         "data_dir": data_dir or _ask("Data directory", default_data_dir, interactive=interactive),
-        "embed_model": embed_model
-        or _ask("Embedding model (local)", _default("embed_model"), interactive=interactive),
+        "embed_model": _resolve_embed_model(embed_model, prov, interactive=interactive),
         "docling_device": docling_device
         or _ask("Docling device (cpu|cuda|mps|auto)", _default("docling_device"), interactive=interactive),
     }
@@ -193,9 +212,11 @@ def _report(config_path: Path, target: Path, prov: Provider) -> None:
     typer.echo("")
     # These fields are read by every adapter without being passed explicitly,
     # so the values below are what those processes will actually use.
+    embed_remote = cfg.embed_model.startswith("text-embedding-")
+    embed_tag = "remote — vectors computed at your endpoint" if embed_remote else "local, no egress"
     typer.echo("Applied automatically (CLI, server, anchor-mcp):")
     typer.echo(f"  data dir       : {cfg.data_dir}")
-    typer.echo(f"  embed model    : {cfg.embed_model}  (local)")
+    typer.echo(f"  embed model    : {cfg.embed_model}  ({embed_tag})")
     if prov.does_vision:
         typer.echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com'}")
         typer.echo(f"  vision model   : {cfg.polish_model}")

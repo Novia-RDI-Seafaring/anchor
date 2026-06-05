@@ -40,6 +40,18 @@ def test_ollama_defaults_to_local_endpoint(tmp_path):
     assert "no internet egress" in result.output
 
 
+def test_remote_embed_model_flag_is_recorded(tmp_path):
+    result = runner.invoke(
+        app,
+        ["init", str(tmp_path), "--yes", "--provider", "openai",
+         "--embed-model", "text-embedding-3-large", "--vision-model", "gpt-x"],
+    )
+    assert result.exit_code == 0, result.output
+    toml = (tmp_path / "anchor.toml").read_text()
+    assert 'embed_model = "text-embedding-3-large"' in toml
+    assert "remote" in result.output  # readback flags the egress
+
+
 def test_azure_requires_base_url(tmp_path):
     result = runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "azure"])
     assert result.exit_code != 0
