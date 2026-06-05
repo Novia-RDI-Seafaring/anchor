@@ -21,6 +21,15 @@ def test_local_provider_is_egress_free(tmp_path):
     assert "nothing leaves the network" in result.output
 
 
+def test_data_dir_defaults_into_the_project(tmp_path):
+    # No --data-dir: it should land in this folder, not global ~/anchor-data.
+    result = runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "local"])
+    assert result.exit_code == 0, result.output
+    toml = (tmp_path / "anchor.toml").read_text()
+    expected = str((tmp_path / "anchor-data").resolve())
+    assert f'data_dir = "{expected}"' in toml
+
+
 def test_ollama_defaults_to_local_endpoint(tmp_path):
     result = runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "ollama"])
     assert result.exit_code == 0, result.output

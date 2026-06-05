@@ -18,7 +18,6 @@ from pathlib import Path
 
 import typer
 
-from anchor.adapters.cli.common import DEFAULT_DATA_DIR
 from anchor.infra.config import CONFIG_FILENAME, AnchorConfig
 from anchor.infra.providers import PROVIDERS, Provider, get_provider
 
@@ -97,9 +96,14 @@ def init(
     interactive = not yes and sys.stdin.isatty()
     prov = _resolve_provider(provider, interactive=interactive)
 
+    # Default the data dir into THIS project, not the global ~/anchor-data —
+    # `init` scaffolds a self-contained folder, so its knowledge base lives
+    # alongside it (absolute, so an agent-launched anchor-mcp resolves it from
+    # anywhere via the toml). Override at the prompt or with --data-dir.
+    default_data_dir = str(target / "anchor-data")
     fields: dict[str, str] = {
         "provider": prov.key,
-        "data_dir": data_dir or _ask("Data directory", str(DEFAULT_DATA_DIR), interactive=interactive),
+        "data_dir": data_dir or _ask("Data directory", default_data_dir, interactive=interactive),
         "embed_model": embed_model
         or _ask("Embedding model (local)", _default("embed_model"), interactive=interactive),
         "docling_device": docling_device
