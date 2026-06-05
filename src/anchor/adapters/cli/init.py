@@ -45,6 +45,11 @@ def _default(field: str) -> str:
     return str(AnchorConfig.model_fields[field].default)
 
 
+def _provider_choice_label(p: Provider) -> str:
+    tag = "" if p.available else "   (config only — endpoint client pending)"
+    return f"{p.label} — {p.zone}{tag}"
+
+
 def _resolve_provider(flag: str | None, *, interactive: bool) -> Provider:
     """Pick a provider from the flag, an interactive menu, or the safe default."""
     if flag:
@@ -57,10 +62,35 @@ def _resolve_provider(flag: str | None, *, interactive: bool) -> Provider:
     if not interactive:
         # Default to the zero-egress option when nothing is specified.
         return get_provider("local")  # type: ignore[return-value]
+    arrowed = _select_provider_arrows()
+    return arrowed if arrowed is not None else _select_provider_numbered()
+
+
+def _select_provider_arrows() -> Provider | None:
+    """Arrow-key picker (questionary). Returns None to fall back to numbers."""
+    try:
+        import questionary
+    except ImportError:
+        return None
+    answer = questionary.select(
+        "Where may document content go?",
+        choices=[
+            questionary.Choice(title=_provider_choice_label(p), value=p.key) for p in PROVIDERS
+        ],
+        instruction="(↑/↓ to move, Enter to choose)",
+        qmark="▍",
+        pointer="❯",
+    ).ask()
+    if answer is None:  # Ctrl-C / no tty
+        raise typer.Exit(code=1)
+    return get_provider(answer)
+
+
+def _select_provider_numbered() -> Provider:
+    """Plain numbered fallback when questionary is unavailable."""
     typer.echo("Where may document content go? Choose an AI provider:")
     for i, p in enumerate(PROVIDERS, start=1):
-        tag = "" if p.available else "   (config only — endpoint client pending)"
-        typer.echo(f"  {i}. {p.label} — {p.zone}{tag}")
+        typer.echo(f"  {i}. {_provider_choice_label(p)}")
     while True:
         raw = typer.prompt(f"Provider [1-{len(PROVIDERS)}]", default="1")
         try:
