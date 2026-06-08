@@ -11,6 +11,7 @@ from anchor.adapters.cli.demo import _DEMO_PLACEHOLDER_HINTS, _find_sample_pdf, 
 from anchor.adapters.cli.documents import register_document_commands
 from anchor.adapters.cli.extensions import extensions_app
 from anchor.adapters.cli.fmu import fmu_app
+from anchor.adapters.cli.init import init
 from anchor.adapters.cli.install import install_app
 from anchor.adapters.cli.serve import serve
 from anchor.adapters.cli.services import _build_real_services
@@ -24,6 +25,7 @@ app = typer.Typer(
     pretty_exceptions_show_locals=False,
 )
 
+app.command()(init)
 app.command()(serve)
 register_document_commands(app)
 app.command()(demo)
@@ -41,6 +43,7 @@ __all__ = [
     "_build_real_services",
     "_find_sample_pdf",
     "app",
+    "init",
 ]
 
 

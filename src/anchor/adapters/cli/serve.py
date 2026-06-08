@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+import socket
 from pathlib import Path
 
 import typer
 
 from anchor.adapters.cli.common import DEFAULT_DATA_DIR
 from anchor.adapters.cli.services import _build_real_services
+
+
+def _find_free_port(host: str, start: int, *, limit: int = 20) -> int:
+    """First bindable port at or after `start`. Raises OSError if none in range."""
+    for candidate in range(start, start + limit):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind((host, candidate))
+                return candidate
+            except OSError:
+                continue
+    raise OSError(f"no free port in {start}..{start + limit - 1}")
 
 
 def serve(
@@ -21,12 +34,25 @@ def serve(
             "your LAN - you are responsible for fronting it with auth."
         ),
     ),
-    port: int = typer.Option(8002, "--port", "-p"),
+    port: int = typer.Option(
+        8002, "--port", "-p", help="Preferred port; if taken, the next free port is used."
+    ),
 ) -> None:
     """Run the HTTP adapter (FastAPI + SSE) and serve the frontend bundle."""
     import uvicorn
 
     from anchor.adapters.http.app import build_app
+
+    # If the requested port is taken (e.g. another `anchor serve` for a
+    # different project), fall through to the next free one rather than failing
+    # to bind. Resolve before base_url so the snapshotter loops back to *this*
+    # server's actual port.
+    requested_port = port
+    try:
+        port = _find_free_port(host, port)
+    except OSError as exc:
+        typer.echo(f"[anchor serve] {exc}", err=True)
+        raise typer.Exit(code=1) from None
 
     # The snapshotter points at the same server we're about to start so
     # snapshots taken via CLI / MCP loop back to this process.
@@ -89,5 +115,10 @@ def serve(
         fmu_service=fmu_service,
         canvases_dir=data_dir / "canvases",
     )
-    typer.echo(f"[anchor serve] data_dir={data_dir} {host}:{port}")
+    if port != requested_port:
+        typer.echo(
+            f"[anchor serve] port {requested_port} is in use — serving on {port} instead.",
+            err=True,
+        )
+    typer.echo(f"[anchor serve] data_dir={data_dir}  ->  http://{host}:{port}")
     uvicorn.run(app_, host=host, port=port)

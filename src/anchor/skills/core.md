@@ -63,13 +63,27 @@ The canvas has SSE. If a browser tab is open at the same time, the user
 sees your changes appear live. The server is authoritative and serialises
 commands per workspace, so you don't need to coordinate with the browser.
 
+## Projects: a folder is the unit
+
+A folder containing an `anchor.toml` (created by `anchor init`) is an Anchor
+project. It declares the data dir, the AI provider/data-zone, and the models.
+**Run Anchor from inside that folder** and every adapter resolves the project
+automatically — the CLI and `anchor serve` walk up from the working directory
+to find `anchor.toml`; `anchor-mcp` does the same, or name it explicitly with
+`anchor-mcp --project <folder>`. So a single MCP registration
+(`anchor install claude-code`, no `--data-dir`) works for *every* project: open
+the agent in the project folder and it targets that project — no reinstall.
+
+If you are unsure which project is active, run `anchor` from the folder you mean
+(or pass `--project`/`ANCHOR_CONFIG`). Don't pass `--data-dir ~/anchor-data`
+unless you specifically want the global default rather than the current project.
+
 ## Where things live
 
-Default `~/anchor-data/`. Set `ANCHOR_DATA_DIR` to change the default for
-CLI and MCP commands. An explicit `--data-dir <path>` takes priority and must
-be repeated for each CLI subcommand that uses a different storage root.
-`anchor install <harness> --data-dir <path>` pins that path in the harness MCP
-configuration. The HTTP adapter uses the path passed to `anchor serve`.
+Each project's data lives in its own `data_dir` (default `<project>/anchor-data/`
+from `anchor init`, or the global `~/anchor-data/` when no project is found).
+`ANCHOR_DATA_DIR` or an explicit `--data-dir <path>` override it; the HTTP
+adapter uses the path passed to `anchor serve`.
 
 - `bronze/` — raw PDFs
 - `silver/<slug>/` — per-page markdown + page PNGs

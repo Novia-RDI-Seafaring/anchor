@@ -38,6 +38,25 @@ def test_install_claude_code_writes_mcp_entry_and_skill(tmp_path, monkeypatch):
     assert data_dir.is_dir()
 
 
+def test_install_claude_code_default_is_folder_resolving(tmp_path, monkeypatch):
+    # No --data-dir: register a folder-resolving entry (no baked path) so one
+    # registration works for every `anchor init` project.
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.delenv("ANCHOR_DATA_DIR", raising=False)
+
+    result = CliRunner().invoke(install_app, ["claude-code"])
+    assert result.exit_code == 0, result.output
+
+    cfg = json.loads((home / ".claude" / "mcp.json").read_text())
+    assert cfg["mcpServers"]["anchor"]["args"] == []  # no --data-dir baked in
+    assert "resolved per project" in result.output
+    # Skill still installed.
+    assert (home / ".claude" / "skills" / "anchor" / "SKILL.md").exists()
+
+
 def test_install_idempotent(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
@@ -98,11 +117,14 @@ def test_install_print_target_emits_plans(tmp_path, monkeypatch):
     assert "cursor" in result.output
 
 
-def test_install_print_uses_anchor_data_dir_when_flag_is_omitted(tmp_path, monkeypatch):
-    data_dir = tmp_path / "env-data"
-    monkeypatch.setenv("ANCHOR_DATA_DIR", str(data_dir))
+def test_install_print_default_is_folder_resolving(tmp_path, monkeypatch):
+    # With no --data-dir, `print` shows the folder-resolving default (no baked
+    # path) for each target — not a pinned dir.
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+    monkeypatch.delenv("ANCHOR_DATA_DIR", raising=False)
 
     result = CliRunner().invoke(install_app, ["print"])
 
     assert result.exit_code == 0, result.output
-    assert str(data_dir.resolve()) in result.output
+    assert "resolved per project" in result.output

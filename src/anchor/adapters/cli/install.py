@@ -74,17 +74,24 @@ def _resolve_anchor_mcp() -> str:
     return str(Path(sys.executable).parent / "anchor-mcp")
 
 
-def _build_mcp_entry(data_dir: Path) -> dict[str, Any]:
-    return {
-        "command": _resolve_anchor_mcp(),
-        "args": ["--data-dir", str(data_dir.resolve())],
-    }
+def _build_mcp_entry(data_dir: Path, *, pin: bool = False) -> dict[str, Any]:
+    # Default to a folder-resolving entry (no baked --data-dir). The server
+    # resolves the project from its working directory — the folder the agent is
+    # launched in — so a single registration serves every `anchor init` project
+    # with no per-project reinstall. Pass pin=True (an explicit --data-dir) to
+    # hard-wire one project's data dir instead.
+    entry: dict[str, Any] = {"command": _resolve_anchor_mcp(), "args": []}
+    if pin:
+        entry["args"] = ["--data-dir", str(data_dir.resolve())]
+    return entry
 
 
-def _install_mcp(config_path: Path, data_dir: Path, *, dry_run: bool) -> tuple[Path, dict[str, Any]]:
+def _install_mcp(
+    config_path: Path, data_dir: Path, *, pin: bool, dry_run: bool
+) -> tuple[Path, dict[str, Any]]:
     cfg = _load_json(config_path)
     cfg.setdefault("mcpServers", {})
-    cfg["mcpServers"]["anchor"] = _build_mcp_entry(data_dir)
+    cfg["mcpServers"]["anchor"] = _build_mcp_entry(data_dir, pin=pin)
     if not dry_run:
         _write_json(config_path, cfg)
     return config_path, cfg["mcpServers"]["anchor"]
@@ -119,23 +126,35 @@ def _install_skill(skill_dir: Path, data_dir: Path, *, dry_run: bool) -> Path:
 
 @install_app.command("claude-code")
 def install_claude_code(
-    data_dir: Path = typer.Option(None, "--data-dir", "-d"),
+    data_dir: Path = typer.Option(
+        None,
+        "--data-dir",
+        "-d",
+        help="Pin one project's data dir. Omit (default) to register a "
+        "folder-resolving entry that works for every `anchor init` project "
+        "— no reinstall when you switch projects.",
+    ),
     dry_run: bool = typer.Option(False, "--dry-run"),
 ) -> None:
     """Register Anchor as MCP server + skill in Claude Code."""
+    pin = data_dir is not None
     if data_dir is None:
         data_dir = default_data_dir()
     mcp_config_path, skill_dir = _claude_code_paths()
-    config_path, entry = _install_mcp(mcp_config_path, data_dir, dry_run=dry_run)
+    config_path, entry = _install_mcp(mcp_config_path, data_dir, pin=pin, dry_run=dry_run)
     skill_path = _install_skill(skill_dir, data_dir, dry_run=dry_run)
-    if not dry_run and not data_dir.exists():
+    if not dry_run and pin and not data_dir.exists():
         data_dir.mkdir(parents=True, exist_ok=True)
 
     typer.echo(("[dry-run] " if dry_run else "") + f"MCP entry -> {config_path}")
     typer.echo(f"          command: {entry['command']}")
     typer.echo(f"          args:    {entry['args']}")
     typer.echo(("[dry-run] " if dry_run else "") + f"Skill    -> {skill_path}")
-    typer.echo(("[dry-run] " if dry_run else "") + f"Data dir -> {data_dir}")
+    if pin:
+        typer.echo(("[dry-run] " if dry_run else "") + f"Data dir -> {data_dir} (pinned)")
+    else:
+        typer.echo("Data dir -> resolved per project from the folder you run Claude Code in")
+        typer.echo("           (run `anchor init` in a project, then start Claude Code there)")
     if not dry_run:
         typer.echo("")
         typer.echo("Next:")
@@ -146,20 +165,30 @@ def install_claude_code(
 
 @install_app.command("cursor")
 def install_cursor(
-    data_dir: Path = typer.Option(None, "--data-dir", "-d"),
+    data_dir: Path = typer.Option(
+        None,
+        "--data-dir",
+        "-d",
+        help="Pin one project's data dir. Omit (default) to register a "
+        "folder-resolving entry that works for every `anchor init` project.",
+    ),
     dry_run: bool = typer.Option(False, "--dry-run"),
 ) -> None:
     """Register Anchor as MCP server in Cursor."""
+    pin = data_dir is not None
     if data_dir is None:
         data_dir = default_data_dir()
-    config_path, entry = _install_mcp(_cursor_paths(), data_dir, dry_run=dry_run)
-    if not dry_run and not data_dir.exists():
+    config_path, entry = _install_mcp(_cursor_paths(), data_dir, pin=pin, dry_run=dry_run)
+    if not dry_run and pin and not data_dir.exists():
         data_dir.mkdir(parents=True, exist_ok=True)
 
     typer.echo(("[dry-run] " if dry_run else "") + f"MCP entry -> {config_path}")
     typer.echo(f"          command: {entry['command']}")
     typer.echo(f"          args:    {entry['args']}")
-    typer.echo(("[dry-run] " if dry_run else "") + f"Data dir -> {data_dir}")
+    if pin:
+        typer.echo(("[dry-run] " if dry_run else "") + f"Data dir -> {data_dir} (pinned)")
+    else:
+        typer.echo("Data dir -> resolved per project from the folder Cursor runs the server in")
 
 
 @install_app.command("print")
@@ -167,8 +196,8 @@ def install_print(
     data_dir: Path = typer.Option(None, "--data-dir", "-d"),
 ) -> None:
     """Print the install plan for every supported target without writing."""
-    if data_dir is None:
-        data_dir = default_data_dir()
+    # Pass data_dir through unchanged (None when not given) so each target
+    # reflects the real default — a folder-resolving entry, not a pinned one.
     typer.echo("=== claude-code ===")
     install_claude_code(data_dir=data_dir, dry_run=True)
     typer.echo("")
