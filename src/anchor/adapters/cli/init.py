@@ -22,6 +22,18 @@ from anchor.infra.config import CONFIG_FILENAME, AnchorConfig
 from anchor.infra.providers import PROVIDERS, Provider, embed_options_for, get_provider
 
 
+def _is_readable_toml(path: Path) -> bool:
+    """True when the file parses as TOML; False for missing/corrupt files."""
+    import tomllib
+
+    try:
+        with path.open("rb") as handle:
+            tomllib.load(handle)
+        return True
+    except Exception:  # noqa: BLE001 - any read/parse failure means "replace it"
+        return False
+
+
 def _toml_escape(value: str) -> str:
     # Drop control characters first (e.g. a stray ANSI escape captured when a
     # user presses an arrow key at a text prompt). They are illegal in a TOML
@@ -143,8 +155,11 @@ def init(
     target = directory.expanduser().resolve()
     config_path = target / CONFIG_FILENAME
     if config_path.exists() and not force:
-        typer.echo(f"{config_path} already exists. Re-run with --force to overwrite.", err=True)
-        raise typer.Exit(code=1)
+        if _is_readable_toml(config_path):
+            typer.echo(f"{config_path} already exists. Re-run with --force to overwrite.", err=True)
+            raise typer.Exit(code=1)
+        # A corrupt config is not worth protecting — replace it without --force.
+        typer.echo(f"Replacing unreadable {config_path} (it does not parse).", err=True)
 
     # Prompt only on a real terminal without --yes; otherwise run off flags.
     interactive = not yes and sys.stdin.isatty()
@@ -230,9 +245,14 @@ def _report(config_path: Path, target: Path, prov: Provider) -> None:
         typer.echo("  vision model   : none — no document content leaves this host")
     typer.echo(f"  docling device : {cfg.docling_device}")
     typer.echo("")
-    # The CLI/server resolve --data-dir from this config (common.default_data_dir);
-    # a standalone anchor-mcp launched elsewhere needs ANCHOR_CONFIG to find it.
+    typer.echo("Next steps (run inside this folder):")
+    typer.echo("  anchor ingest <file.pdf>     add a document to the knowledge base")
+    typer.echo(f"  anchor serve                 open the canvas at http://localhost:{cfg.http_port}")
+    typer.echo("  anchor install claude-code   let an agent drive Anchor over MCP   (optional)")
+    typer.echo("")
+    # The CLI/server resolve config by running inside this folder; a standalone
+    # anchor-mcp launched elsewhere needs ANCHOR_CONFIG to find it.
     typer.echo(
-        f"The CLI and server read this by running inside {target}; for an "
-        f"agent-launched anchor-mcp set ANCHOR_CONFIG={config_path}."
+        f"Other tools read this config when run inside {target}; an agent-launched "
+        f"anchor-mcp needs ANCHOR_CONFIG={config_path}."
     )

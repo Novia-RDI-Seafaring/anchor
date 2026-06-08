@@ -30,6 +30,14 @@ def test_data_dir_defaults_into_the_project(tmp_path):
     assert f'data_dir = "{expected}"' in toml
 
 
+def test_shows_next_steps(tmp_path):
+    result = runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "local"])
+    assert result.exit_code == 0, result.output
+    assert "Next steps" in result.output
+    assert "anchor ingest" in result.output
+    assert "anchor serve" in result.output
+
+
 def test_ollama_defaults_to_local_endpoint(tmp_path):
     result = runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "ollama"])
     assert result.exit_code == 0, result.output
@@ -101,6 +109,17 @@ def test_refuses_overwrite_without_force(tmp_path):
     result = runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "local"])
     assert result.exit_code == 1
     assert "force" in result.output.lower()
+
+
+def test_replaces_unreadable_toml_without_force(tmp_path):
+    # A corrupt config (stray ANSI escape) should be replaced, not protected.
+    (tmp_path / "anchor.toml").write_bytes(b'embed_model = "bad\x1bval"\n')
+    result = runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "local"])
+    assert result.exit_code == 0, result.output
+    assert "unreadable" in result.output.lower()
+    import tomllib
+
+    tomllib.loads((tmp_path / "anchor.toml").read_text())  # rewritten clean
 
 
 def test_force_overwrites(tmp_path):
