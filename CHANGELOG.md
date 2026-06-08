@@ -9,7 +9,48 @@ next version section on tag.
 
 ## [Unreleased]
 
-## [0.2.0] — 2026-05-25
+## [0.2.1] - 2026-06-08
+
+Patch release for the first public testing round after `v0.2.0`.
+
+### Added
+
+- MkDocs documentation site, including installation, document/canvas workflow,
+  MCP client configuration, citation, and architecture pages.
+- Public release notes page explaining the difference between `0.2.0` and
+  `0.2.1`.
+- Source checkout install guidance for testers when the published PyPI wheel is
+  behind `main`.
+- Gemini CLI MCP configuration example.
+- Canvas ingestion progress feedback and per-document timing reports under the
+  silver document folder.
+- Canvas workspace deletion from the web workspace list.
+- Diagnostics for embedding model mismatches during document search.
+
+### Changed
+
+- Documentation and public metadata now use the ANCHOR expansion
+  "Agent-Native Canvas to Help Organize Resources".
+- CLI entrypoint split into smaller command modules for maintainability.
+- `ANCHOR_DATA_DIR` is honoured consistently by CLI defaults.
+- Docling dependency updated to 2.94.0 and Vitest updated to 4.1.0.
+- Security policy, contribution notes, and agent setup guidance tightened for
+  public repository use.
+
+### Fixed
+
+- Windows PDF ingest now writes text and JSON artifacts as UTF-8, avoiding
+  `charmap` failures when extracted PDF text contains Unicode characters.
+- Document node region overlays and source links render correctly when region
+  bbox data arrives in either supported shape.
+- Region extraction now exposes a normalized `bbox` for approximate regions.
+- Upload and ingest progress states are visible on the canvas while document
+  processing is running.
+- CodeQL alerts from the first public scan were addressed.
+- Static documentation diagrams and branding assets render without Mermaid
+  syntax failures.
+
+## [0.2.0] - 2026-05-25
 
 First public release. The v2 hexagonal-modular-monolith codebase moved
 from `v2/` to the repo root, the legacy v1 stack (Next.js +
@@ -53,7 +94,7 @@ flagged by the pre-release review.
 - FMU runtime resolution: silent fallback to `FakeFmuRuntime` is
   replaced by a fail-closed `FmuRuntimeUnavailableError`. The previous
   behaviour could return synthetic sinusoids that looked like real
-  simulation output — unsafe for an engineering tool.
+  simulation output, which is unsafe for an engineering tool.
 - `FsDocStore.get_crop_path()` now resolves the candidate and asserts
   it stays under the document's gold-pages root, replacing an ad-hoc
   `re.sub(r"\.\.+", ".", …)` substitution that did not handle Windows
@@ -82,5 +123,6 @@ flagged by the pre-release review.
 - Snapshot output paths and the SPA static catch-all both apply
   resolve-and-contain checks.
 
-[Unreleased]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Novia-RDI-Seafaring/anchor/releases/tag/v0.2.0

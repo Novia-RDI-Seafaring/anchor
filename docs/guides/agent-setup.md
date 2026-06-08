@@ -75,8 +75,8 @@ If reinstalling ANCHOR fails on Windows because `anchor-mcp.exe` is in use,
 close the MCP client and follow the reinstall steps in
 [Install](../getting-started/installation.md#reinstall-or-upgrade).
 
-See [Agent configuration](agent-configuration.md) for verified Codex, OpenCode,
-Cursor, Claude Code, and generic stdio examples.
+See [Agent configuration](agent-configuration.md) for verified Claude Code,
+Codex, Gemini CLI, OpenCode, Cursor, and generic stdio examples.
 
 `anchor serve` exposes the browser UI, HTTP API, and browser SSE updates. It
 does not expose an authenticated remote-MCP HTTP endpoint. A hosted or remote
