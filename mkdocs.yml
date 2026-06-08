@@ -122,4 +122,5 @@ nav:
     - CLI: reference/cli.md
     - MCP tools: reference/mcp.md
     - Configuration: reference/configuration.md
+    - Releases: reference/releases.md
     - Citation and acknowledgments: reference/citation.md

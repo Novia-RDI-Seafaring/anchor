@@ -198,8 +198,8 @@ Without these, `anchor serve` still works. You get silver-layer extraction
 ## Verify the install
 
 ```bash
-anchor version          # → 0.2.0
-anchor canvas list      # → your existing canvases (empty on a fresh install)
+anchor version          # -> 0.2.1
+anchor canvas list      # -> your existing canvases (empty on a fresh install)
 ```
 
 ## Canvas snapshots
