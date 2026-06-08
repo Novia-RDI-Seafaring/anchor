@@ -75,8 +75,63 @@ local source checkout:
 === "Local checkout"
 
     ```bash
-    corepack pnpm@10 --dir web build
+    pnpm --dir web install
+    pnpm --dir web build
     uv tool install --force --reinstall --refresh .
+    ```
+
+If the published PyPI wheel is behind `main`, install from a local checkout
+instead of running `uv tool install anchor-kb`. The local wheel build includes
+the React frontend, so build the frontend first:
+
+=== "Windows PowerShell"
+
+    ```powershell
+    cd C:\path\to\anchor
+
+    pnpm --dir web install
+    pnpm --dir web build
+
+    uv tool install --force --reinstall --refresh .
+    anchor serve
+    ```
+
+=== "Corepack"
+
+    ```bash
+    corepack pnpm@10 --dir web install
+    corepack pnpm@10 --dir web build
+
+    uv tool install --force --reinstall --refresh .
+    anchor serve
+    ```
+
+If Corepack fails with a permission error, install pnpm through npm and run the
+same local checkout build:
+
+```powershell
+npm install -g pnpm@10
+pnpm --dir web install
+pnpm --dir web build
+
+uv tool install --force --reinstall --refresh .
+anchor serve
+```
+
+If global npm installs are blocked by Windows permissions, use a user-local npm
+prefix:
+
+```powershell
+mkdir $env:USERPROFILE\.npm-global
+npm config set prefix "$env:USERPROFILE\.npm-global"
+$env:Path = "$env:USERPROFILE\.npm-global;$env:Path"
+
+npm install -g pnpm@10
+pnpm --dir web install
+pnpm --dir web build
+
+uv tool install --force --reinstall --refresh .
+anchor serve
     ```
 
 On Windows, reinstall can fail if an agent harness is still running
@@ -113,7 +168,8 @@ Then reinstall:
 
 ```powershell
 uv tool uninstall anchor-kb
-corepack pnpm@10 --dir web build
+pnpm --dir web install
+pnpm --dir web build
 uv tool install --force --reinstall --refresh .
 ```
 

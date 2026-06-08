@@ -116,6 +116,47 @@ into it. Verify the connection with:
 opencode mcp list
 ```
 
+## Gemini CLI
+
+Gemini CLI can register ANCHOR as a local stdio MCP server:
+
+```bash
+gemini mcp add --scope user anchor anchor-mcp -- \
+  --data-dir ~/anchor-data --base-url http://localhost:8002
+gemini mcp list
+```
+
+On Windows PowerShell, use the Windows data path:
+
+```powershell
+gemini mcp add --scope user anchor anchor-mcp -- --data-dir C:\Users\you\anchor-data --base-url http://localhost:8002
+gemini mcp list
+```
+
+Alternatively, add ANCHOR manually to `~/.gemini/settings.json` on Linux or
+macOS, or `%USERPROFILE%\.gemini\settings.json` on Windows:
+
+```json
+{
+  "mcpServers": {
+    "anchor": {
+      "command": "anchor-mcp",
+      "args": [
+        "--data-dir",
+        "/home/you/anchor-data",
+        "--base-url",
+        "http://localhost:8002"
+      ],
+      "timeout": 600000
+    }
+  }
+}
+```
+
+If the file already exists, merge only the `mcpServers.anchor` entry. Gemini
+CLI also supports project-local `.gemini/settings.json` files when the MCP
+server should apply only to one project.
+
 ## Cursor
 
 ANCHOR provides a Cursor helper:
@@ -170,5 +211,6 @@ configuration.
 
 - [Claude Code MCP setup](https://code.claude.com/docs/en/mcp)
 - [Codex MCP setup](https://developers.openai.com/codex/mcp)
+- [Gemini CLI MCP servers](https://google-gemini.github.io/gemini-cli/docs/tools/mcp-server.html)
 - [OpenCode MCP servers](https://opencode.ai/docs/mcp-servers/)
 - [OpenCode configuration](https://opencode.ai/docs/config/)
