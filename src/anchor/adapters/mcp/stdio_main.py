@@ -61,6 +61,31 @@ def _config_for_data_dir(data_dir: Path | None) -> AnchorConfig:
     return AnchorConfig()
 
 
+def _apply_project(project: Path | None) -> None:
+    """Point config resolution at an `anchor init` folder.
+
+    Any agent can use a project's Anchor by naming the folder — no per-project
+    reinstall. ``--project`` sets ANCHOR_CONFIG so the whole config (data dir,
+    models, data zone) resolves from that folder's anchor.toml, even when the
+    server's working directory is elsewhere. A bare ``anchor-mcp`` launched
+    inside the folder already resolves it via walk-up; this is the explicit
+    handle for when it isn't.
+    """
+    if project is None:
+        return
+    import sys
+
+    config_file = project.expanduser() / "anchor.toml"
+    if config_file.is_file():
+        os.environ["ANCHOR_CONFIG"] = str(config_file)
+    else:
+        print(
+            f"Warning: anchor-mcp: no anchor.toml in {project} — run `anchor init` there. "
+            "Falling back to environment / defaults.",
+            file=sys.stderr,
+        )
+
+
 async def _run(data_dir: Path | None, base_url: str = "http://localhost:8002") -> None:
     config = _config_for_data_dir(data_dir)
     data_dir = config.data_dir
@@ -120,11 +145,19 @@ async def _run(data_dir: Path | None, base_url: str = "http://localhost:8002") -
 def main() -> None:
     parser = argparse.ArgumentParser(description="Anchor v2 MCP (stdio)")
     parser.add_argument(
+        "--project",
+        type=Path,
+        default=None,
+        help="An `anchor init` folder; use its anchor.toml (data dir, models, zone). "
+        "Lets any agent use a project's Anchor by naming the folder — no reinstall.",
+    )
+    parser.add_argument(
         "--data-dir",
         "-d",
         type=Path,
         default=None,
-        help="Storage root. Defaults to ANCHOR_DATA_DIR or ~/anchor-data.",
+        help="Storage root. Defaults to the resolved config (--project / anchor.toml / "
+        "ANCHOR_DATA_DIR), else ~/anchor-data.",
     )
     parser.add_argument(
         "--base-url",
@@ -133,6 +166,7 @@ def main() -> None:
     )
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
+    _apply_project(args.project)
     if args.verbose:
         logging.basicConfig(level=logging.INFO)
     asyncio.run(_run(args.data_dir, base_url=args.base_url))
