@@ -23,7 +23,11 @@ from anchor.infra.providers import PROVIDERS, Provider, embed_options_for, get_p
 
 
 def _toml_escape(value: str) -> str:
-    return value.replace("\\", "\\\\").replace('"', '\\"')
+    # Drop control characters first (e.g. a stray ANSI escape captured when a
+    # user presses an arrow key at a text prompt). They are illegal in a TOML
+    # basic string, so leaving them in would write a file that won't parse back.
+    cleaned = "".join(ch for ch in value if ch >= " " and ch != "\x7f")
+    return cleaned.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def _render_toml(fields: dict[str, str]) -> str:

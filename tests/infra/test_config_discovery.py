@@ -54,8 +54,18 @@ def test_anchor_config_env_points_at_explicit_file(tmp_path, monkeypatch):
     assert AnchorConfig().docling_device == "cuda"
 
 
+def test_malformed_toml_is_ignored_not_fatal(tmp_path, monkeypatch):
+    # Reproduces the field-with-ANSI-escape corruption: an unparseable
+    # anchor.toml must warn and fall back, never crash the CLI at import.
+    _clean_env(monkeypatch)
+    (tmp_path / "anchor.toml").write_text('embed_model = "bad\x1bvalue"\n')
+    monkeypatch.chdir(tmp_path)
+    cfg = AnchorConfig()  # must not raise
+    assert cfg.embed_model == "BAAI/bge-small-en-v1.5"  # fell back to default
+
+
 def test_missing_config_falls_back_to_defaults(tmp_path, monkeypatch):
     _clean_env(monkeypatch)
     monkeypatch.chdir(tmp_path)
     assert discover_config_file() is None
-    assert AnchorConfig().docling_device == "cpu"
+    assert AnchorConfig().docling_device == "auto"

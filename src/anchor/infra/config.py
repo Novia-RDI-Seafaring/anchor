@@ -110,7 +110,16 @@ class AnchorConfig(BaseSettings):
         ]
         toml_path = discover_config_file()
         if toml_path is not None:
-            sources.append(TomlConfigSettingsSource(settings_cls, toml_file=toml_path))
+            try:
+                sources.append(TomlConfigSettingsSource(settings_cls, toml_file=toml_path))
+            except Exception as exc:  # noqa: BLE001
+                # A malformed project anchor.toml must never brick the CLI:
+                # DEFAULT_DATA_DIR is computed at import time, so a parse error
+                # here would crash every command (including `init --force` that
+                # would fix it). Warn and fall back to env / defaults instead.
+                import sys
+
+                print(f"Warning: ignoring unreadable {toml_path}: {exc}", file=sys.stderr)
         sources.append(file_secret_settings)
         return tuple(sources)
 
