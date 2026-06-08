@@ -142,16 +142,38 @@ class IngestService:
         dpi = self.default_dpi if dpi is None else dpi
         slug = slug or slugify(Path(filename).stem)
         publish_workspace_id = workspace_id or self._gid
+        ingest_started_at = self.clock.now()
+        stages: list[dict[str, Any]] = []
+
+        def finish_stage(stage: str, started_at: float, **fields: Any) -> None:
+            finished_at = self.clock.now()
+            stages.append({
+                "stage": stage,
+                "started_at": started_at,
+                "finished_at": finished_at,
+                "duration_seconds": round(max(0.0, finished_at - started_at), 3),
+                **fields,
+            })
+
         try:
+            stage_started_at = self.clock.now()
             bronze_path = await self.store.stash_bronze(pdf_bytes, filename)
+            finish_stage("bronze", stage_started_at, output_path=str(bronze_path))
             await self._publish(DocBronzed(slug=slug, bronze_path=str(bronze_path)), publish_workspace_id)
 
             await self._publish(IngestProgress(slug=slug, stage="silver_extract", current=0, total=1), publish_workspace_id)
+            stage_started_at = self.clock.now()
             docling = await self.extractor.extract(bronze_path)
+            finish_stage(
+                "silver_extract",
+                stage_started_at,
+                item_count=len(docling.get("items", [])),
+            )
             page_count = max(
                 (int(it["page"]) for it in docling.get("items", []) if isinstance(it.get("page"), (int, float))),
                 default=0,
             )
+            stage_started_at = self.clock.now()
             index = build_index(docling, filename=filename)
             pages_md = render_pages_md(docling)
             pages_meta = build_pages_meta(docling)
@@ -159,21 +181,37 @@ class IngestService:
             await self.store.write_silver_artifact(slug, "pages.meta.json", json.dumps(pages_meta))
             for page, md in pages_md.items():
                 await self.store.write_silver_artifact(slug, f"pages/{page}.raw.md", md)
+            finish_stage(
+                "silver_index",
+                stage_started_at,
+                page_count=page_count,
+                page_markdown_count=len(pages_md),
+            )
 
             page_pngs: dict[int, bytes] = {}
             items_by_page: dict[int, list[dict[str, Any]]] = {}
             if page_count:
+                stage_started_at = self.clock.now()
                 page_pngs = await self.renderer.render_pages(bronze_path, dpi=dpi)
                 for page, png in page_pngs.items():
                     await self.store.write_silver_artifact(slug, f"pages/{page}.png", png)
                 for it in docling.get("items", []):
                     if isinstance(it.get("page"), (int, float)):
                         items_by_page.setdefault(int(it["page"]), []).append(it)
+                finish_stage(
+                    "silver_render_pages",
+                    stage_started_at,
+                    page_count=len(page_pngs),
+                    dpi=dpi,
+                )
             await self._publish(DocSilvered(slug=slug, page_count=page_count), publish_workspace_id)
 
             polished_pages: list[int] = []
             if polish and self.polisher and page_count:
+                stage_started_at = self.clock.now()
+                page_timings: list[dict[str, Any]] = []
                 for page, png in page_pngs.items():
+                    page_started_at = self.clock.now()
                     polished = await self.polisher.polish_page(
                         page_image=png,
                         page_no=page,
@@ -183,14 +221,31 @@ class IngestService:
                     )
                     await self.store.write_silver_artifact(slug, f"pages/{page}.md", polished)
                     polished_pages.append(page)
+                    page_finished_at = self.clock.now()
+                    page_timings.append({
+                        "page": page,
+                        "started_at": page_started_at,
+                        "finished_at": page_finished_at,
+                        "duration_seconds": round(max(0.0, page_finished_at - page_started_at), 3),
+                    })
                     await self._publish(IngestProgress(
                         slug=slug, stage="silver_polish", current=page, total=page_count,
                     ), publish_workspace_id)
+                finish_stage(
+                    "silver_polish",
+                    stage_started_at,
+                    page_count=len(polished_pages),
+                    model=polish_model,
+                    pages=page_timings,
+                )
                 await self._publish(DocPolished(slug=slug, polished_pages=polished_pages), publish_workspace_id)
 
             region_count = 0
             if regions and self.region_extractor and page_count:
+                stage_started_at = self.clock.now()
+                page_timings: list[dict[str, Any]] = []
                 for page, png in page_pngs.items():
+                    page_started_at = self.clock.now()
                     raw_regions = await self.region_extractor.extract_page(
                         page_image=png,
                         page_no=page,
@@ -199,25 +254,78 @@ class IngestService:
                     )
                     snapped: list[dict[str, Any]] = []
                     for r in raw_regions:
-                        bbox_any = r.get("bbox")
+                        bbox_any = r.get("bbox") or r.get("approximate_bbox")
                         bbox_list: list[float] = list(bbox_any) if isinstance(bbox_any, list) else []
                         if len(bbox_list) == 4:
                             snap_bbox, _ = snap_to_docling_items(docling, page, bbox_list)
                             if snap_bbox:
                                 r = {**r, "bbox": snap_bbox}
+                            elif "bbox" not in r:
+                                r = {**r, "bbox": bbox_list}
                         snapped.append(r)
                     await self.store.write_gold_region_file(slug, page, snapped)
                     region_count += len(snapped)
+                    page_finished_at = self.clock.now()
+                    page_timings.append({
+                        "page": page,
+                        "region_count": len(snapped),
+                        "started_at": page_started_at,
+                        "finished_at": page_finished_at,
+                        "duration_seconds": round(max(0.0, page_finished_at - page_started_at), 3),
+                    })
                     await self._publish(IngestProgress(
                         slug=slug, stage="gold_regions", current=page, total=page_count,
                     ), publish_workspace_id)
+                finish_stage(
+                    "gold_regions",
+                    stage_started_at,
+                    page_count=len(page_timings),
+                    region_count=region_count,
+                    model=region_model,
+                    pages=page_timings,
+                )
                 await self._publish(DocGoldExtracted(slug=slug, region_count=region_count), publish_workspace_id)
 
             embedded_count = 0
             if self.embedder is not None:
+                stage_started_at = self.clock.now()
                 embedded_count = await self.embed_document(
                     slug, publish_workspace_id=publish_workspace_id,
                 )
+                finish_stage(
+                    "embed",
+                    stage_started_at,
+                    embedded_count=embedded_count,
+                    embed_model=self.embed_model_id,
+                )
+
+            ingest_finished_at = self.clock.now()
+            timing_report = {
+                "slug": slug,
+                "filename": filename,
+                "status": "success",
+                "started_at": ingest_started_at,
+                "finished_at": ingest_finished_at,
+                "duration_seconds": round(max(0.0, ingest_finished_at - ingest_started_at), 3),
+                "page_count": page_count,
+                "polished_page_count": len(polished_pages),
+                "region_count": region_count,
+                "embedded_count": embedded_count,
+                "options": {
+                    "polish": polish,
+                    "regions": regions,
+                    "polish_model": polish_model if polish and self.polisher else None,
+                    "region_model": region_model if regions and self.region_extractor else None,
+                    "dpi": dpi,
+                    "embed_model": self.embed_model_id if embedded_count else None,
+                },
+                "stages": stages,
+            }
+            timing_report_path = await self.store.write_silver_artifact(
+                slug,
+                "ingest-report.json",
+                json.dumps(timing_report, indent=2),
+            )
 
             summary = {
                 "slug": slug,
@@ -227,6 +335,8 @@ class IngestService:
                 "region_count": region_count,
                 "embedded_count": embedded_count,
                 "embed_model": self.embed_model_id if embedded_count else None,
+                "timing_report_path": str(timing_report_path),
+                "duration_seconds": timing_report["duration_seconds"],
             }
             await self._publish(DocIngested(slug=slug, summary=summary), publish_workspace_id)
             return summary

@@ -26,6 +26,11 @@ Bronze data stores the original input, silver data contains page extraction,
 and gold data contains structured regions when an LLM-backed extractor is
 configured.
 
+Each completed ingest writes a timing report at
+`<data-dir>/silver/<slug>/ingest-report.json`. The report records total
+duration, stage duration, per-page polish timing, per-page gold extraction
+timing, and embedding time. Use it when comparing slow and fast runs.
+
 ## 3. Create a canvas
 
 ```bash
