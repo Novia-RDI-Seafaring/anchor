@@ -77,12 +77,12 @@ class AnchorConfig(BaseSettings):
     region_model: str = "gpt-5.4"
     dpi: int = 150
 
-    # Docling accelerator device for the bronze extraction stage. "auto"
-    # prefers a GPU when present (CUDA, then MPS) and automatically retries on
-    # CPU if the accelerator errors — notably docling's MPS path raising
-    # "Cannot convert a MPS Tensor to float64" on Apple Silicon, which the
-    # retry recovers from. Pin a backend with ANCHOR_DOCLING_DEVICE=cpu|cuda|mps;
-    # an explicitly-pinned GPU still falls back to CPU on an accelerator error.
+    # Docling accelerator device for the bronze extraction stage. "auto" uses
+    # CUDA when present, else CPU — it deliberately skips MPS, because docling's
+    # layout model needs float64 (which MPS can't do), so MPS fails for every
+    # document on Apple Silicon. Pin a backend with ANCHOR_DOCLING_DEVICE=
+    # cpu|cuda|mps; an explicitly-pinned GPU still falls back to CPU on an
+    # accelerator error.
     docling_device: str = "auto"
 
     log_level: str = "INFO"

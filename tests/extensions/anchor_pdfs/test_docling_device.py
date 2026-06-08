@@ -13,6 +13,16 @@ def _clear_fallback():
     dx._FELL_BACK.clear()
 
 
+def test_auto_never_selects_mps():
+    # docling's layout model needs float64 (MPS can't), so auto must avoid mps
+    # even on a Mac where torch exposes it.
+    assert dx._resolve_device("auto") in ("cuda", "cpu")
+
+
+def test_explicit_mps_is_passed_through():
+    assert dx._resolve_device("mps") == "mps"
+
+
 def test_explicit_device_is_passed_through(monkeypatch):
     seen = {}
     monkeypatch.setattr(dx, "_convert", lambda p, d: seen.setdefault("device", d) or {"items": []})

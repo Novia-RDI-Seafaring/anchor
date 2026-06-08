@@ -25,10 +25,15 @@ class DoclingPdfExtractor:
 
 
 def _resolve_device(requested: str) -> str:
-    """Resolve "auto" to the best available accelerator (CUDA > MPS > CPU).
+    """Resolve "auto" to the best *usable* accelerator: CUDA, else CPU.
 
-    A non-"auto" value is returned as-is. Any failure to probe torch is treated
-    as "CPU" so device selection never blocks extraction.
+    Auto deliberately does NOT pick MPS. Docling's layout model (rt_detr_v2)
+    builds a float64 positional embedding for every page, and MPS cannot hold
+    float64 — so MPS fails for *every* document on Apple Silicon, noisily and
+    after a wasted model load. CPU is the right auto choice there. Explicit
+    `mps` is still honored (with the CPU fallback below) for anyone who wants
+    to try a future fixed docling/torch. A non-"auto" value is returned as-is;
+    any torch probe failure falls back to CPU so selection never blocks.
     """
     if requested != "auto":
         return requested
@@ -37,9 +42,6 @@ def _resolve_device(requested: str) -> str:
 
         if torch.cuda.is_available():
             return "cuda"
-        mps = getattr(torch.backends, "mps", None)
-        if mps is not None and mps.is_available():
-            return "mps"
     except Exception:  # noqa: BLE001 - torch missing / probe error -> CPU
         return "cpu"
     return "cpu"
