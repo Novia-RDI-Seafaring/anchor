@@ -6,19 +6,73 @@ import cost. Output shape matches the dict consumed by `core/ingest/silver.py`.
 from __future__ import annotations
 
 import asyncio
+import sys
 from pathlib import Path
 from typing import Any
 
+# Accelerators that errored this process; once a backend has fallen back we
+# skip straight to CPU for the rest of the run instead of re-attempting a
+# doomed device per document.
+_FELL_BACK: set[str] = set()
+
 
 class DoclingPdfExtractor:
-    def __init__(self, device: str = "cpu") -> None:
+    def __init__(self, device: str = "auto") -> None:
         self._device = device
 
     async def extract(self, pdf_path: Path) -> dict[str, Any]:
         return await asyncio.to_thread(_extract_sync, pdf_path, self._device)
 
 
-def _extract_sync(pdf_path: Path, device: str = "cpu") -> dict[str, Any]:
+def _resolve_device(requested: str) -> str:
+    """Resolve "auto" to the best available accelerator (CUDA > MPS > CPU).
+
+    A non-"auto" value is returned as-is. Any failure to probe torch is treated
+    as "CPU" so device selection never blocks extraction.
+    """
+    if requested != "auto":
+        return requested
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return "cuda"
+        mps = getattr(torch.backends, "mps", None)
+        if mps is not None and mps.is_available():
+            return "mps"
+    except Exception:  # noqa: BLE001 - torch missing / probe error -> CPU
+        return "cpu"
+    return "cpu"
+
+
+def _is_accelerator_error(exc: Exception) -> bool:
+    """True for failures that a CPU retry is likely to recover from."""
+    msg = str(exc).lower()
+    return any(s in msg for s in ("mps", "float64", "cuda", "out of memory", "cublas"))
+
+
+def _extract_sync(pdf_path: Path, device: str = "auto") -> dict[str, Any]:
+    # Prefer a GPU when asked ("auto" picks the best one), but never let an
+    # accelerator failure break ingestion: docling's MPS path raises "Cannot
+    # convert a MPS Tensor to float64" on Apple Silicon, and a CPU retry
+    # recovers from it. The same fallback covers CUDA OOM and similar.
+    candidate = _resolve_device((device or "auto").lower())
+    if candidate != "cpu" and candidate in _FELL_BACK:
+        candidate = "cpu"
+    try:
+        return _convert(pdf_path, candidate)
+    except Exception as exc:  # noqa: BLE001 - inspect, then retry on CPU or re-raise
+        if candidate != "cpu" and _is_accelerator_error(exc):
+            _FELL_BACK.add(candidate)
+            print(
+                f"Warning: docling {candidate} backend failed ({exc}); retrying on CPU.",
+                file=sys.stderr,
+            )
+            return _convert(pdf_path, "cpu")
+        raise
+
+
+def _convert(pdf_path: Path, device: str) -> dict[str, Any]:
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.pipeline_options import (
         AcceleratorDevice,
@@ -27,17 +81,11 @@ def _extract_sync(pdf_path: Path, device: str = "cpu") -> dict[str, Any]:
     )
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
-    # Default CPU. Docling's AUTO device resolves to MPS when torch exposes
-    # it, and MPS cannot hold float64 ("Cannot convert a MPS Tensor to
-    # float64"). PYTORCH_ENABLE_MPS_FALLBACK does not help — the tensor is
-    # allocated float64, not an unsupported op. CPU avoids this class of
-    # error on any Mac, at some speed cost on large docs.
     accel_device = {
         "cpu": AcceleratorDevice.CPU,
         "cuda": AcceleratorDevice.CUDA,
         "mps": AcceleratorDevice.MPS,
-        "auto": AcceleratorDevice.AUTO,
-    }.get(device.lower(), AcceleratorDevice.CPU)
+    }.get(device, AcceleratorDevice.CPU)
 
     pipeline_options = PdfPipelineOptions()
     pipeline_options.accelerator_options = AcceleratorOptions(device=accel_device)
