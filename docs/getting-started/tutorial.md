@@ -29,6 +29,13 @@ pipx install anchor-kb           # isolated CLI install
 pip install anchor-kb            # in your active virtualenv
 ```
 
+!!! tip "Quick demo vs. a real project"
+    This tutorial uses `anchor demo`, which works out of the box in the default
+    `~/anchor-data`. For your own work, run `anchor init` in a project folder
+    first — it picks the AI provider / data zone and writes `anchor.toml`, and
+    every command run from that folder then uses it. See
+    [Configuration](../reference/configuration.md).
+
 ## 2. Run `anchor demo`
 
 ```bash
@@ -81,9 +88,13 @@ flips to the dashed-sky look. Pick `Clear placeholder` to revert.
 In a second terminal:
 
 ```bash
-claude mcp add --transport stdio --scope user anchor -- \
-  anchor-mcp --data-dir ~/anchor-data --base-url http://localhost:8002
+anchor install claude-code
 ```
+
+This writes a **folder-resolving** MCP entry plus the skill: one registration
+works for every project, because the server resolves the project from the folder
+you open the agent in (and falls back to `~/anchor-data`, where `anchor demo`
+lives, when there's no project `anchor.toml`).
 
 Restart Claude Code. In any conversation, `/mcp` should now show `anchor` with
 its available tools. For Codex, Cursor, OpenCode, and generic stdio clients,

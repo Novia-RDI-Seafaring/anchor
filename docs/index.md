@@ -9,7 +9,7 @@ Drop a PDF onto a canvas. The agent reads it and pulls the values you need into 
 
 Drop FMU simulation models onto the same canvas and wire the extracted values into their parameters.
 
-It runs on your laptop. Data lives under `~/anchor-data`. Agents talk to it over MCP, so it works with Claude Code, Cursor, or any MCP client. There's an HTTP API and a CLI too.
+It runs on your laptop. Run `anchor init` in a folder to make it a project — that is where you choose the AI provider (and therefore where your documents may go) and where data lives. Agents talk to it over MCP, so it works with Claude Code, Cursor, or any MCP client. There's an HTTP API and a CLI too.
 
 ---
 
@@ -38,6 +38,10 @@ It runs on your laptop. Data lives under `~/anchor-data`. Agents talk to it over
 
 Then open <http://127.0.0.1:8002> in your browser.
 
+For your own work, configure a project first: `cd my-project && anchor init`
+picks the AI provider / data zone and writes `anchor.toml`. See
+[Projects](concepts/projects.md).
+
 Requires Python 3.12+. CI tests Linux and runs CLI smoke checks on macOS and
 Windows; verify browser and PDF workflows on your target platform.
 
@@ -51,6 +55,7 @@ Windows; verify browser and PDF workflows on your target platform.
 - **[Tutorial](getting-started/tutorial.md)** - first day, from install to "agent fills in my engineering specs"
 - **[Install](getting-started/installation.md)** - paths for end users and contributors, plus optional extras
 - **[Usage](guides/documents-and-canvases.md)** - ingest documents, create canvases, and connect an agent
+- **[Projects](concepts/projects.md)** - a folder is a project; providers, data zones, and how every adapter finds it
 - **[Architecture](concepts/architecture.md)** - the hexagonal monolith, ports + adapters
 - **[Data and events](concepts/data-and-events.md)** - workspace state model, event log, real-time sync
 - **[On-disk substrate](concepts/on-disk-substrate.md)** - what every folder under `~/anchor-data/` means

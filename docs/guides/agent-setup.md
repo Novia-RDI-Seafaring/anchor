@@ -37,14 +37,20 @@ ANCHOR serves the UI and HTTP API at `http://127.0.0.1:8002` by default.
 It is unauthenticated, so bind to a network interface only behind an
 authentication layer.
 
-Data defaults to `~/anchor-data`. Set `ANCHOR_DATA_DIR` to change that default,
-or pass `--data-dir` explicitly. Keep `anchor serve`, `anchor ingest`, and agent
-configuration on the same data directory:
+The recommended setup is one project folder. Run `anchor init` in it to choose
+the AI provider / data zone and write `anchor.toml`; the data dir defaults to
+`<project>/anchor-data`. Every command run from inside the folder — `serve`,
+`ingest`, and an agent's `anchor-mcp` — then shares that project automatically:
 
 ```bash
-anchor ingest /path/to/datasheet.pdf --data-dir ~/anchor-data
-anchor serve --data-dir ~/anchor-data
+cd ~/my-project
+anchor init
+anchor ingest /path/to/datasheet.pdf
+anchor serve
 ```
+
+Without a project, commands default to `ANCHOR_DATA_DIR`, then `~/anchor-data`;
+an explicit `--data-dir` overrides everything.
 
 `anchor demo` creates a `demo` workspace and placeholder nodes. It ingests an
 optional local sample PDF when one is present, but the public package does not
@@ -52,19 +58,21 @@ ship a vendor PDF. In normal use, ingest a PDF you are allowed to process.
 
 ## 2. Agent harness setup
 
-ANCHOR exposes MCP tools through the `anchor-mcp` stdio executable. For Claude
-Code, register the local server with:
+ANCHOR exposes MCP tools through the `anchor-mcp` stdio executable. Register it
+once with the folder-resolving installer:
 
 ```bash
-claude mcp add --transport stdio --scope user anchor -- \
-  anchor-mcp --data-dir ~/anchor-data --base-url http://localhost:8002
-claude mcp list
+anchor install claude-code      # MCP entry + skill
+anchor install cursor
 ```
 
-ANCHOR also provides a Cursor helper:
+The entry has no baked data dir, so one registration serves every project: open
+the agent inside a project folder (one with an `anchor.toml`) and the tools
+target that project. To name a project explicitly — when the server's working
+directory is not the project — pass `--project`:
 
 ```bash
-anchor install cursor --data-dir ~/anchor-data
+anchor-mcp --project /path/to/project
 ```
 
 Restart the harness and verify that `anchor` appears in its MCP server list.
