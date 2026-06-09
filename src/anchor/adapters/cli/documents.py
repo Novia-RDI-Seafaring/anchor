@@ -22,6 +22,12 @@ def ingest(
     if not pdf_path.exists():
         typer.echo(f"PDF not found: {pdf_path}", err=True)
         raise typer.Exit(code=1)
+    # A clean run is now quiet (docling/OCR noise is suppressed), so say what is
+    # happening — a multi-page extract can take ~30s and should not look hung.
+    typer.echo(
+        f"Ingesting {pdf_path.name} … bronze (layout + OCR) → silver (pages) → gold (regions)",
+        err=True,
+    )
     config, _, _, ingest_svc, _ = _build_real_services(data_dir)
 
     async def run() -> dict:
