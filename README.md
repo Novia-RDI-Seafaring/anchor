@@ -1,7 +1,7 @@
 # ANCHOR
 
-**AN**ything **C**an **H**ave **O**rder and **R**eason<br>
-*Agent-First Knowledge Canvas with Source-Grounded Provenance*
+**A**gent-**N**ative **C**anvas to **H**elp **O**rganize **R**esources<br>
+*Source-Grounded Knowledge Canvas for Traceable Engineering Document Extraction*
 
 [![PyPI version](https://img.shields.io/pypi/v/anchor-kb.svg)](https://pypi.org/project/anchor-kb/)
 [![Python versions](https://img.shields.io/pypi/pyversions/anchor-kb.svg)](https://pypi.org/project/anchor-kb/)
@@ -404,7 +404,7 @@ If you use ANCHOR, please cite the software repository:
 ```bibtex
 @misc{ANCHOR,
   author       = {Lamin Jatta and Christoffer Bj{\"o}rkskog},
-  title        = {ANCHOR: Agent-First Knowledge Canvas with Source-Grounded Provenance},
+  title        = {ANCHOR: Agent-Native Canvas to Help Organize Resources for Traceable Engineering Document Extraction},
   year         = {2026},
   howpublished = {\url{https://github.com/Novia-RDI-Seafaring/anchor}},
 }

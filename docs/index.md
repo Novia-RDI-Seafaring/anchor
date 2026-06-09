@@ -1,7 +1,7 @@
 # ANCHOR
 
-**AN**ything **C**an **H**ave **O**rder and **R**eason<br>
-*Agent-First Knowledge Canvas with Source-Grounded Provenance*
+**A**gent-**N**ative **C**anvas to **H**elp **O**rganize **R**esources<br>
+*Source-Grounded Knowledge Canvas for Traceable Engineering Document Extraction*
 
 ANCHOR is a tool that lets you and your agent work with engineering documents.
 

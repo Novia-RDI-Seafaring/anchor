@@ -8,7 +8,7 @@ software repository:
 ```bibtex
 @misc{ANCHOR,
   author       = {Lamin Jatta and Christoffer Bj{\"o}rkskog},
-  title        = {ANCHOR: Agent-First Knowledge Canvas with Source-Grounded Provenance},
+  title        = {ANCHOR: Agent-Native Canvas to Help Organize Resources for Traceable Engineering Document Extraction},
   year         = {2026},
   howpublished = {\url{https://github.com/Novia-RDI-Seafaring/anchor}},
 }

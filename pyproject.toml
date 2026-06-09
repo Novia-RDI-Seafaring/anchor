@@ -11,7 +11,7 @@ build-backend = "hatchling.build"
 # meta-package depending on those, the same pattern ``langchain`` uses.
 name = "anchor-kb"
 version = "0.2.1"
-description = "ANCHOR - agent-first knowledge canvas with PDF ingest, FMU simulation, and source-grounded provenance"
+description = "ANCHOR, Agent-Native Canvas to Help Organize Resources with PDF ingest, FMU simulation, and source-grounded provenance"
 requires-python = ">=3.12"
 authors = [
     {name = "Christoffer Björkskog"},
