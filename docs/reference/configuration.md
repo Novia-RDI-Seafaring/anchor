@@ -106,6 +106,30 @@ cannot provide, so MPS fails on every document on Apple Silicon. Set `cuda` or
 `mps` explicitly to force a backend; an explicitly-pinned GPU still falls back
 to CPU on an accelerator error.
 
+## Azure OpenAI
+
+Azure OpenAI works through its **v1 (OpenAI-compatible)** surface — point ANCHOR
+at it like any OpenAI-compatible endpoint. In `anchor init`, choose `azure` (or
+`custom`) and paste your `/openai/v1/` URL when prompted; the resulting
+`anchor.toml`:
+
+```toml
+provider        = "azure"
+openai_base_url = "https://<resource-name>.openai.azure.com/openai/v1/"
+polish_model    = "<vision-capable-deployment-name>"
+region_model    = "<vision-capable-deployment-name>"
+```
+
+```bash
+export ANCHOR_OPENAI_API_KEY=<your-azure-key>   # never written to anchor.toml
+```
+
+Use the **deployment name** (not the base model name) as `polish_model` /
+`region_model`. Content stays inside your Azure tenant / region — the "my zone"
+posture. Validate with a one-page PDF before relying on extracted values; if your
+resource does not expose the v1 surface, front it with an OpenAI-compatible proxy
+(for example LiteLLM) and use that URL with the `custom` provider.
+
 ## Example: OpenAI-compatible extraction
 
 ```bash
