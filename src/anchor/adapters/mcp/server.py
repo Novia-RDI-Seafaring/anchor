@@ -54,6 +54,21 @@ Source-grounding (load-bearing):
   pointing back at its origin (page+bbox for PDFs, region_id for
   gold-extracted regions). Spec rows carry their own per-row
   source_ref. This is the project's primary trust mechanism.
+- Source refs inside node data are enough for grounding. Visual edges
+  are optional wiring, not a required part of every grounded answer.
+
+Canvas editing policy:
+- Treat plain content requests as content-only. Examples: "populate the
+  table", "fill this note", "what are the pump specs?", "update this
+  card". Use `canvas_update_node` on existing nodes when possible.
+- Preserve existing canvas wiring by default. Do not add, remove, or
+  reroute edges unless the user clearly asks for wiring changes.
+- Edge changes are allowed for explicit wiring language such as
+  "connect", "wire", "link", "trace with edges", "show source edges",
+  or "make the provenance visible as edges".
+- If no suitable node exists, you may create a new content node with
+  source_ref data. Still do not add edges unless the user asked for
+  wiring or visual provenance edges.
 
 When the user asks you to populate placeholders:
 1. `canvas_list_placeholders(workspace_slug)` returns the ones flagged.
@@ -62,7 +77,8 @@ When the user asks you to populate placeholders:
 3. Replace the placeholder by writing real data via
    `canvas_update_node({id, label, data: {placeholder: false,
    source_ref: ..., rows: [...]}})`.
-4. Optionally call `canvas_organize_subtree` to tidy the result.
+4. Preserve existing edges and layout unless the user asked you to
+   connect, wire, trace, or reorganize the canvas.
 
 If you're producing a snapshot of the canvas, use `canvas_snapshot(...,
 format: "inline")` so the host renders the image inline.
@@ -79,6 +95,7 @@ Canvas tools:
 - canvas_list_workspaces / canvas_create_workspace / canvas_get_state
 - canvas_add_node / canvas_update_node / canvas_remove_node
 - canvas_add_edge / canvas_update_edge / canvas_remove_edge
+  (explicit wiring only; do not use for ordinary content updates)
 - canvas_clear / canvas_organize_subtree / canvas_align / canvas_distribute
 - canvas_create_sub_canvas — nest a child canvas inside a node
 - canvas_list_placeholders — your "what to fill" entrypoint
@@ -101,7 +118,9 @@ sky-blue outline + hint chip. Agent: enumerate via
 `canvas_list_placeholders`, fill via `canvas_update_node({id, data: {
 placeholder: false, source_ref: {slug, page, bbox, region_id?}, rows: [
 {key, value, source_ref}, ... ]}})`. Keep `placeholder_hint` in `data`
-even after filling — it's useful audit history.
+even after filling. It is useful audit history. Do not add evidence
+edges while filling placeholders unless the user explicitly asks for
+edge wiring.
 
 ── Where data lives ───────────────────────────────────────────────────────
 
