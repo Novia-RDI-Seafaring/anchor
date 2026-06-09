@@ -229,7 +229,7 @@ skipped.
 ## Verify the install
 
 ```bash
-anchor version          # -> 0.2.1
+anchor version          # -> 0.2.2
 anchor canvas list      # -> your existing canvases (empty on a fresh install)
 ```
 

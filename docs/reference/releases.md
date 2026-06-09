@@ -14,8 +14,19 @@ release.
 
 | Version | Date | Main difference |
 | --- | --- | --- |
+| `0.2.2` | 2026-06-09 | Onboarding release. `anchor init` configures a project folder (AI provider / data zone, models, data dir) and writes `anchor.toml`; one MCP registration serves every project. Azure OpenAI works via its v1 endpoint; docling auto-selects CUDA or CPU; `anchor serve` falls through to a free port. |
 | `0.2.1` | 2026-06-08 | Patch release for public testing. It includes the Windows Unicode ingest fix, canvas ingest progress feedback, timing reports, canvas deletion, improved region overlays and updated MCP setup docs. |
 | `0.2.0` | 2026-05-25 | First public release of the v2 local canvas, PDF ingestion, MCP server, CLI, HTTP API and bundled web UI. |
+
+## Why `0.2.2` matters
+
+`0.2.2` is the recommended version for new users. It adds `anchor init`, which
+configures a project folder in one step — pick the AI provider (and therefore
+the data zone: local, Ollama, OpenAI, Azure, or any OpenAI-compatible endpoint),
+and ANCHOR writes `anchor.toml`. The CLI, server, and an agent's `anchor-mcp`
+all resolve that project, so a single `anchor install` works for every project.
+Azure OpenAI users point ANCHOR at their `/openai/v1/` endpoint — see
+[Configuration](configuration.md#azure-openai).
 
 ## Why `0.2.1` matters
 
