@@ -47,6 +47,12 @@ for a data-egress edge case.
   the Azure/custom endpoint the user configured.
 - `anchor version` now reports the installed distribution version. It was
   hardcoded and read `0.2.0` through the 0.2.1 and 0.2.2 releases.
+- `anchor ingest` is now idempotent, matching its documented contract: if the
+  slug already has gold it returns `{skipped: true}` instead of silently
+  re-running the billed bronze→silver→gold→embed pipeline and overwriting the
+  gold. Pass `--force` (MCP/HTTP `force`) to recompute. Surfaced by an
+  agent-experience test that re-ingested a document and got an unexpected ~190s
+  Azure recompute.
 - HuggingFace and docling no longer leak progress bars and log chatter (the
   "Loading weights" bar, the "unauthenticated requests to the HF Hub" notice,
   RapidOCR INFO lines) into the output of `anchor search` / `embed` / `ingest`.

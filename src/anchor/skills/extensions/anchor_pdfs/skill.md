@@ -5,8 +5,10 @@ regions tagged with the page number and bounding box they came from.
 
 ### Tools
 
-- `ingest_pdf(pdf_path, slug?, skip_polish?, skip_regions?)` — runs the
-  full pipeline; idempotent if the slug already exists.
+- `ingest_pdf(pdf_path, slug?, skip_polish?, skip_regions?, force?)` — runs the
+  full pipeline. **Idempotent:** if the slug already has gold it returns
+  `{skipped: true}` without recomputing (the gold stage is billed). Pass
+  `force=true` (CLI `--force`) to re-ingest and overwrite.
 - `search_documents(query, k?)` — **semantic search** across every
   embedded gold region. Returns ranked hits with `slug, page, region_id,
   text, score`. This is how you "find stuff" in the documents by meaning,
