@@ -141,10 +141,10 @@ def tool_definitions() -> list[dict[str, Any]]:
         {
             "name": "canvas_add_edge",
             "description": (
-                "Explicitly wire two nodes. Use only when the user asks to connect, "
-                "wire, link, trace, or show provenance as edges. Do not use for "
-                "ordinary table, note, or card population; source_ref data is enough "
-                "for grounding."
+                "Explicitly wire two nodes. Use only when the user's main intent is "
+                "to change wiring, relationships, provenance visualization, layout "
+                "connections, or graph structure. Do not use for ordinary content "
+                "updates; source_ref data is enough for grounding."
             ),
             "inputSchema": {
                 "type": "object",
@@ -176,8 +176,9 @@ def tool_definitions() -> list[dict[str, Any]]:
         {
             "name": "canvas_update_edge",
             "description": (
-                "Patch an existing edge's fields. Use only for explicit wiring or "
-                "routing changes; preserve edges during ordinary content updates."
+                "Patch an existing edge's fields. Use only when the user's main "
+                "intent is a wiring, routing, relationship, provenance-visualization, "
+                "or graph-structure change."
             ),
             "inputSchema": {
                 "type": "object",
