@@ -6,6 +6,7 @@ import typer
 
 from anchor.adapters.cli.cad import cad_app
 from anchor.adapters.cli.canvas import canvas_app
+from anchor.adapters.cli.check import check
 from anchor.adapters.cli.common import DEFAULT_DATA_DIR
 from anchor.adapters.cli.demo import _DEMO_PLACEHOLDER_HINTS, _find_sample_pdf, demo
 from anchor.adapters.cli.documents import register_document_commands
@@ -26,6 +27,7 @@ app = typer.Typer(
 )
 
 app.command()(init)
+app.command()(check)
 app.command()(serve)
 register_document_commands(app)
 app.command()(demo)

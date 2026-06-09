@@ -65,9 +65,9 @@ commands per workspace, so you don't need to coordinate with the browser.
 
 ## Projects: a folder is the unit
 
-A folder containing an `anchor.toml` (created by `anchor init`) is an Anchor
+A folder containing an `anchor.toml` (created by `anchor init`) is an ANCHOR
 project. It declares the data dir, the AI provider/data-zone, and the models.
-**Run Anchor from inside that folder** and every adapter resolves the project
+**Run ANCHOR from inside that folder** and every adapter resolves the project
 automatically — the CLI and `anchor serve` walk up from the working directory
 to find `anchor.toml`; `anchor-mcp` does the same, or name it explicitly with
 `anchor-mcp --project <folder>`. So a single MCP registration
@@ -77,6 +77,33 @@ the agent in the project folder and it targets that project — no reinstall.
 If you are unsure which project is active, run `anchor` from the folder you mean
 (or pass `--project`/`ANCHOR_CONFIG`). Don't pass `--data-dir ~/anchor-data`
 unless you specifically want the global default rather than the current project.
+
+### Set up a project (agent-drivable, like `npm init` / `uv init`)
+
+You can scaffold ANCHOR in any folder non-interactively — `anchor init` accepts
+every choice as a flag, so no prompt blocks you:
+
+```bash
+# local-only (no document egress): no key, no endpoint
+anchor init . --yes --provider local
+
+# a named endpoint (Azure shown): the deployment name is the model
+anchor init . --yes --provider azure \
+  --base-url https://<resource>.openai.azure.com/openai/v1/ \
+  --vision-model <deployment> --embed-model text-embedding-3-small
+```
+
+`init` self-corrects an Azure URL that is missing `/openai/v1/`. The API key is
+never written to `anchor.toml` — set `ANCHOR_OPENAI_API_KEY` in the environment
+or a gitignored `.env` in the folder. Then **verify before ingesting**:
+
+```bash
+anchor check            # offline: prints the data zone, repairs a bad endpoint
+anchor check --probe    # also makes one tiny call to confirm deployment + key
+```
+
+`anchor check` exits non-zero when something would break a real ingest, so you
+can gate on it. Register the MCP once with `anchor install claude-code`.
 
 ## Where things live
 

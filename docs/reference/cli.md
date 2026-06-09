@@ -6,12 +6,17 @@ The `anchor` command exposes the user-facing local application surface.
 
 | Command | Purpose |
 | --- | --- |
-| `anchor init` | Configure the current folder as a project: pick an AI provider / data zone, embedding model, and data dir; write `anchor.toml`. |
+| `anchor init` | Configure the current folder as a project: pick an AI provider / data zone, embedding model, and data dir; write `anchor.toml`. Self-corrects an Azure endpoint missing `/openai/v1/` and offers to save the key to a gitignored `.env`. |
+| `anchor check` | Verify the resolved data zone before ingesting: prints provider / endpoint / data dir / models / key-present, repairs a malformed endpoint (`--fix`), and with `--probe` makes one tiny call to confirm the deployment + key work. Exits non-zero when something would break. |
 | `anchor serve` | Serve the web UI and HTTP/SSE API. If the port is taken, the next free port is used. |
 
-`anchor init` is the recommended first step. After it, run other commands from
-inside the folder and they resolve the project automatically — no per-command
-`--data-dir`. See [Configuration](configuration.md) for `anchor.toml` and zones.
+`anchor init` is the recommended first step, then `anchor check` to confirm the
+zone. After that, run other commands from inside the folder and they resolve the
+project automatically — no per-command `--data-dir`. Every flag of `anchor init`
+is scriptable (`--yes --provider … --base-url … --vision-model …`), so an agent
+can scaffold a project the way it runs `npm init` or `uv init`. See
+[Configuration](configuration.md) for `anchor.toml` and zones, and the
+[Azure OpenAI test-drive](../guides/azure-test-drive.md) for the full Azure flow.
 
 ## Core document commands
 

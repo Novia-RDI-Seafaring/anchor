@@ -90,6 +90,29 @@ def get_provider(key: str) -> Provider | None:
     return PROVIDERS_BY_KEY.get(key.strip().lower())
 
 
+def normalize_base_url(provider_key: str | None, url: str) -> str:
+    """Repair a pasted endpoint so it points at the right API surface.
+
+    Azure's OpenAI-compatible API lives under ``/openai/v1/``; users routinely
+    paste the bare resource URL from the portal, which would 404 every call.
+    Append the missing suffix instead of expecting the user to know it. Other
+    providers pass through untouched. Shared by ``anchor init`` (at write time)
+    and ``anchor check`` (as a repair), so the rule lives in one place.
+    """
+    url = (url or "").strip()
+    if not url or (provider_key or "").lower() != "azure":
+        return url
+    trimmed = url.rstrip("/")
+    if trimmed.endswith("/openai/v1"):
+        return trimmed + "/"
+    if trimmed.endswith("/openai"):
+        return trimmed + "/v1/"
+    if trimmed.endswith("/v1"):
+        # Bare ``/v1`` is OpenAI muscle memory; Azure serves it under /openai/v1.
+        return trimmed[: -len("/v1")] + "/openai/v1/"
+    return trimmed + "/openai/v1/"
+
+
 @dataclass(frozen=True)
 class EmbedOption:
     model: str

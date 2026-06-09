@@ -111,6 +111,7 @@ nav:
     - Working with documents and canvases: guides/documents-and-canvases.md
     - Agent setup: guides/agent-setup.md
     - Agent configuration: guides/agent-configuration.md
+    - Azure OpenAI test-drive: guides/azure-test-drive.md
   - Concepts:
     - Projects: concepts/projects.md
     - Architecture: concepts/architecture.md
