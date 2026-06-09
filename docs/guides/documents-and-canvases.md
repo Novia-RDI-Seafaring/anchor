@@ -46,10 +46,12 @@ facts remain linked to document pages or extracted regions.
 For supported MCP-capable clients:
 
 ```bash
-claude mcp add --transport stdio --scope user anchor -- \
-  anchor-mcp --data-dir ~/anchor-data --base-url http://localhost:8002
-anchor install cursor --data-dir ~/anchor-data
+anchor install claude-code   # MCP entry + skill (folder-resolving)
+anchor install cursor
 ```
+
+These register a server that resolves the project from the folder you open the
+agent in — no baked data dir, no reinstall per project.
 
 Restart the client after installation. An agent can enumerate workspaces,
 search ingested documents, add evidence-backed nodes, and organize a canvas

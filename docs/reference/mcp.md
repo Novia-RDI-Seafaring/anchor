@@ -6,10 +6,21 @@ tools; optional FMU behavior depends on installed/runtime configuration.
 
 ## Connect an agent harness
 
+The simplest path registers a **folder-resolving** server once — it works for
+every `anchor init` project, because it resolves the project from the directory
+the agent is launched in:
+
 ```bash
-claude mcp add --transport stdio --scope user anchor -- \
-  anchor-mcp --data-dir ~/anchor-data --base-url http://localhost:8002
-anchor install cursor --data-dir ~/anchor-data
+anchor install claude-code   # writes the MCP entry + skill, no baked data dir
+anchor install cursor
+```
+
+Then open the agent inside a project folder (one with an `anchor.toml`) and the
+tools target that project. To name a project explicitly — for example when the
+server's working directory is elsewhere — pass `--project`:
+
+```bash
+anchor-mcp --project /path/to/project
 ```
 
 See [Agent configuration](../guides/agent-configuration.md) for Codex,

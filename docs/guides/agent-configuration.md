@@ -10,16 +10,31 @@ task needs project data.
 
 ## Before connecting an agent
 
-Install ANCHOR and use one data directory consistently:
+Install ANCHOR and configure a project:
 
 ```bash
 uv tool install anchor-kb
-anchor serve --data-dir ~/anchor-data
+cd ~/my-project
+anchor init        # pick provider / data zone; writes anchor.toml
+anchor serve
 ```
 
 `anchor-mcp` can run as a local stdio process without exposing a network MCP
 endpoint. Keep `anchor serve` running when you want the browser UI, live canvas
 updates, or canvas snapshots.
+
+## Project resolution (no baked data dir)
+
+Register `anchor-mcp` **without** a `--data-dir`. The server resolves the active
+project — its data dir, models, and data zone — from `anchor.toml`, discovered by
+walking up from the directory the agent launches it in. So one registration works
+for every `anchor init` project: open the agent in a project folder and the tools
+target that project (falling back to `~/anchor-data` when no `anchor.toml` is
+found).
+
+To name a project explicitly — when the server's working directory is not the
+project — add `--project <folder>` to the args. The examples below use the
+folder-resolving form.
 
 ## Optional project instruction
 
@@ -43,11 +58,18 @@ to encode every possible workflow.
 
 ## Claude Code
 
-Claude Code can register a local stdio MCP server with its CLI:
+The simplest path is the bundled installer, which writes the MCP entry **and**
+the ANCHOR skill:
+
+```bash
+anchor install claude-code
+```
+
+Or register the server manually with the CLI:
 
 ```bash
 claude mcp add --transport stdio --scope user anchor -- \
-  anchor-mcp --data-dir ~/anchor-data --base-url http://localhost:8002
+  anchor-mcp --base-url http://localhost:8002
 claude mcp list
 ```
 
@@ -67,7 +89,7 @@ ANCHOR with:
 
 ```bash
 codex mcp add anchor -- \
-  anchor-mcp --data-dir ~/anchor-data --base-url http://localhost:8002
+  anchor-mcp --base-url http://localhost:8002
 codex mcp list
 ```
 
@@ -76,7 +98,7 @@ Alternatively, add this to `~/.codex/config.toml`:
 ```toml
 [mcp_servers.anchor]
 command = "anchor-mcp"
-args = ["--data-dir", "/home/you/anchor-data", "--base-url", "http://localhost:8002"]
+args = ["--base-url", "http://localhost:8002"]
 ```
 
 A trusted project can use `.codex/config.toml` instead. Put the optional
@@ -97,8 +119,6 @@ Add:
       "type": "local",
       "command": [
         "anchor-mcp",
-        "--data-dir",
-        "/home/you/anchor-data",
         "--base-url",
         "http://localhost:8002"
       ],
@@ -122,14 +142,14 @@ Gemini CLI can register ANCHOR as a local stdio MCP server:
 
 ```bash
 gemini mcp add --scope user anchor anchor-mcp -- \
-  --data-dir ~/anchor-data --base-url http://localhost:8002
+  --base-url http://localhost:8002
 gemini mcp list
 ```
 
-On Windows PowerShell, use the Windows data path:
+On Windows PowerShell:
 
 ```powershell
-gemini mcp add --scope user anchor anchor-mcp -- --data-dir C:\Users\you\anchor-data --base-url http://localhost:8002
+gemini mcp add --scope user anchor anchor-mcp -- --base-url http://localhost:8002
 gemini mcp list
 ```
 
@@ -142,8 +162,6 @@ macOS, or `%USERPROFILE%\.gemini\settings.json` on Windows:
     "anchor": {
       "command": "anchor-mcp",
       "args": [
-        "--data-dir",
-        "/home/you/anchor-data",
         "--base-url",
         "http://localhost:8002"
       ],
@@ -162,7 +180,7 @@ server should apply only to one project.
 ANCHOR provides a Cursor helper:
 
 ```bash
-anchor install cursor --data-dir ~/anchor-data
+anchor install cursor
 ```
 
 Restart Cursor after registration and confirm that the `anchor` MCP server is
@@ -178,8 +196,6 @@ For another MCP client that accepts `mcpServers` JSON:
     "anchor": {
       "command": "anchor-mcp",
       "args": [
-        "--data-dir",
-        "/home/you/anchor-data",
         "--base-url",
         "http://localhost:8002"
       ]
