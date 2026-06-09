@@ -62,6 +62,37 @@ def test_check_ready_when_key_present(tmp_path, monkeypatch):
     assert "Ready" in result.output
 
 
+def test_probe_sends_no_token_cap_param(tmp_path, monkeypatch):
+    # gpt-5.x / o-series reject max_tokens; older endpoints reject
+    # max_completion_tokens. The probe must send neither (matching ingestion).
+    recorded: dict = {}
+
+    class _Completions:
+        def create(self, **kw):
+            recorded.update(kw)
+            return object()
+
+    class _Chat:
+        completions = _Completions()
+
+    class _Fake:
+        chat = _Chat()
+
+    from anchor.extensions.anchor_pdfs.infra.llm import openai_client as oc
+
+    monkeypatch.setattr(oc, "make_openai_client", lambda *a, **k: _Fake())
+    (tmp_path / "anchor.toml").write_text(
+        'provider = "openai"\n'
+        f'data_dir = "{tmp_path / "d"}"\n'
+        'region_model = "gpt-5.4"\nembed_model = "BAAI/bge-small-en-v1.5"\n'
+    )
+    result = _run_check(tmp_path, "--probe", env={"ANCHOR_OPENAI_API_KEY": "k"})
+    assert result.exit_code == 0, result.output
+    assert "max_tokens" not in recorded
+    assert "max_completion_tokens" not in recorded
+    assert recorded.get("model") == "gpt-5.4"
+
+
 def test_check_local_provider_needs_no_key(tmp_path, monkeypatch):
     monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
     runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "local"])

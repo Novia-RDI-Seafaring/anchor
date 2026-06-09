@@ -138,10 +138,14 @@ def _probe(cfg: AnchorConfig, embed_remote: bool, problems: list[str]) -> None:
     key = cfg.openai_api_key.get_secret_value() if cfg.openai_api_key else None
     client = make_openai_client(key, cfg.openai_base_url)
     try:
+        # No token-cap parameter: it isn't portable. Newer models (gpt-5.x,
+        # o-series) reject ``max_tokens`` and want ``max_completion_tokens``,
+        # while older models and some OpenAI-compatible endpoints only accept
+        # ``max_tokens``. The ingestion path sends neither, so the probe matches
+        # it; a "ping" response is tiny regardless.
         client.chat.completions.create(
             model=cfg.region_model,
             messages=[{"role": "user", "content": "ping"}],
-            max_tokens=1,
         )
         typer.echo(f"  chat deployment '{cfg.region_model}' : reachable ✓")
     except Exception as exc:  # noqa: BLE001 - surface the endpoint's own error
