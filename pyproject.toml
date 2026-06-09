@@ -35,6 +35,7 @@ dependencies = [
     "trimesh>=4.0",
     "playwright>=1.59.0",
     "sentence-transformers>=5.4.1",
+    "questionary>=2.1.1",
 ]
 
 [project.optional-dependencies]
