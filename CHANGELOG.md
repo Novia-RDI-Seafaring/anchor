@@ -9,6 +9,45 @@ next version section on tag.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-06-09
+
+Onboarding and configuration release. A folder is now a project, configured once
+with `anchor init`, and usable by any agent without a per-project reinstall.
+
+### Added
+
+- `anchor init`: an interactive command that configures a project folder. It
+  asks where document content may go — the **AI provider**, which is also the
+  **data zone** (`local`, `ollama`, `openai`, `azure`, or any OpenAI-compatible
+  `custom` endpoint) — then picks the embedding model and data directory and
+  writes a non-secret `anchor.toml`. The API key is never written to the toml.
+- Project configuration via `anchor.toml`, discovered by walking up from the
+  working directory or via `ANCHOR_CONFIG`. The CLI, server, and `anchor-mcp`
+  all resolve the same project.
+- `anchor-mcp --project <folder>` to target a project explicitly.
+- Arrow-key provider and embedding-model pickers in `anchor init`.
+- Documentation: a Projects concept page, an Azure OpenAI recipe, and the
+  folder-as-project model across getting-started, guides, and reference pages.
+
+### Changed
+
+- `anchor install <harness>` registers a folder-resolving MCP entry by default
+  (no baked `--data-dir`): one registration serves every project, with no
+  reinstall when switching. Pass `--data-dir` to pin a single project.
+- The `docling` accelerator defaults to `auto`: CUDA when present, otherwise
+  CPU, automatically avoiding the Apple-Silicon MPS float64 crash.
+- `anchor serve` falls through to the next free port when the requested one is
+  taken, and prints the chosen URL.
+
+### Fixed
+
+- Azure OpenAI works through its OpenAI-compatible v1 endpoint; `anchor init`
+  no longer flags the provider as unavailable.
+- Gold region extraction retries without JSON mode when an endpoint (some Azure
+  deployments, some local servers) rejects `response_format`.
+- A malformed `anchor.toml` is ignored with a warning instead of crashing the
+  CLI, and `anchor init` replaces an unreadable config without `--force`.
+
 ## [0.2.1] - 2026-06-08
 
 Patch release for the first public testing round after `v0.2.0`.

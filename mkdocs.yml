@@ -112,6 +112,7 @@ nav:
     - Agent setup: guides/agent-setup.md
     - Agent configuration: guides/agent-configuration.md
   - Concepts:
+    - Projects: concepts/projects.md
     - Architecture: concepts/architecture.md
     - Data and events: concepts/data-and-events.md
     - Extensions and OIP: concepts/extensions-and-oip.md

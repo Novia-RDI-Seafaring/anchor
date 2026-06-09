@@ -31,6 +31,21 @@ Two paths, depending on whether you want to *use* ANCHOR or *hack on it*.
 Requires Python 3.12+. CI tests Linux and runs CLI smoke checks on macOS and
 Windows; verify browser and PDF workflows on your target platform.
 
+### First run
+
+Configure a project, then serve it:
+
+```bash
+cd ~/my-project
+anchor init               # pick an AI provider / data zone; writes anchor.toml
+anchor serve              # http://127.0.0.1:8002
+```
+
+`anchor init` is the recommended starting point — it sets the data dir, the
+provider (and therefore the data zone), and the models for this folder. See
+[Configuration](../reference/configuration.md). To make ANCHOR available to an
+agent here, run `anchor install claude-code` and open the agent in the folder.
+
 ## Optional extras
 
 | Extra | Install | Adds |
@@ -57,9 +72,10 @@ pnpm --dir web dev
 # → backend on :8002, Vite HMR on :5173
 ```
 
-Commands default `--data-dir` to `~/anchor-data`. Set `ANCHOR_DATA_DIR` to
-change the default for CLI and MCP commands. An explicit `--data-dir` takes
-priority. Use the same path for server, ingest, and agent registration.
+Run commands from inside a project folder (one with an `anchor.toml` from
+`anchor init`) and they share that project's data dir automatically. Otherwise
+they fall back to `ANCHOR_DATA_DIR`, then `~/anchor-data`; an explicit
+`--data-dir` overrides everything.
 
 ## Reinstall or upgrade
 
@@ -180,7 +196,18 @@ while `anchor-mcp.exe` or its Python process is still running.
 
 ## Configure gold extraction
 
-The bronze and silver layers run locally without any external service. The gold layer (structured region extraction) uses an OpenAI-compatible vision model. To enable it, create a `.env` file with your provider details:
+The bronze and silver layers run locally without any external service. The gold
+layer (structured region extraction) uses an OpenAI-compatible vision model.
+
+The easiest way to configure it is `anchor init` — choose the `openai`, `azure`,
+or `custom` provider and it writes the endpoint and models into `anchor.toml`.
+Then supply the key (never stored in the toml):
+
+```bash
+export ANCHOR_OPENAI_API_KEY=sk-...
+```
+
+Or set everything by hand in a `.env` or your shell:
 
 ```bash
 ANCHOR_OPENAI_API_KEY=sk-...
@@ -189,16 +216,20 @@ ANCHOR_REGION_MODEL=gpt-5.4
 ANCHOR_POLISH_MODEL=gpt-5.4
 ```
 
-Without these, `anchor serve` still works. You get silver-layer extraction
-(page text, page PNGs, and Docling structure), but gold regions are skipped.
+Without a vision endpoint, `anchor serve` still works. You get silver-layer
+extraction (page text, page PNGs, and Docling structure), but gold regions are
+skipped.
 
-!!! tip "Where the `.env` is read from"
-    `pydantic-settings` loads `.env` from the working directory at boot. For globally-installed `anchor`, run the server from the directory containing your `.env`, or set the variables in your shell.
+!!! tip "Where config is read from"
+    Run ANCHOR from inside the project folder: `anchor.toml` and `.env` are
+    discovered by walking up from the working directory. For a globally-installed
+    `anchor`, `cd` into the project first, or set `ANCHOR_CONFIG` / the
+    `ANCHOR_*` variables in your shell.
 
 ## Verify the install
 
 ```bash
-anchor version          # -> 0.2.1
+anchor version          # -> 0.2.2
 anchor canvas list      # -> your existing canvases (empty on a fresh install)
 ```
 

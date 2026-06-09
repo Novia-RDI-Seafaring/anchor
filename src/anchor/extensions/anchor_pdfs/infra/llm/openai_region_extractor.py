@@ -35,17 +35,25 @@ class OpenAIRegionExtractor:
             "tags[], entities[]. Return JSON with key 'regions'.\n"
             f"\nDocling items:\n{json.dumps(items)[:8000]}"
         )
-        rsp = client.chat.completions.create(
-            model=model,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
-                ],
-            }],
-            response_format={"type": "json_object"},
-        )
+        messages = [{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+            ],
+        }]
+        try:
+            rsp = client.chat.completions.create(
+                model=model, messages=messages, response_format={"type": "json_object"},
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Some OpenAI-compatible endpoints — older Azure deployments, some
+            # local servers — reject response_format=json_object. Retry without
+            # it: the prompt still asks for JSON and we extract it below.
+            if "response_format" in str(exc).lower() or getattr(exc, "status_code", None) == 400:
+                rsp = client.chat.completions.create(model=model, messages=messages)
+            else:
+                raise
         body = rsp.choices[0].message.content or "{}"
         try:
             return list(json.loads(body).get("regions", []))
