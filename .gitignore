@@ -51,6 +51,7 @@ data/
 /packages/
 /paperx/
 /paper/
+/ax-paper/
 /posters/
 /arxiv-paper-axux/
 # MkDocs build output

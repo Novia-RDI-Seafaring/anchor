@@ -25,6 +25,10 @@ for a data-egress edge case.
 - An Azure OpenAI test-drive guide, led by a "create & verify your deployment"
   prerequisite, plus a "set up a project" section in the agent skill so an agent
   can scaffold ANCHOR non-interactively (`anchor init --yes --provider …`).
+- `anchor --version` flag (alias of `anchor version`) and `anchor canvas url
+  <slug>`, which prints the deep link `http://<host>:<port>/c/<slug>`; `anchor
+  canvas create` now also prints that URL. Surfaced by an agent-experience test
+  session that otherwise had to reverse-engineer the canvas route.
 
 ### Changed
 
@@ -43,6 +47,11 @@ for a data-egress edge case.
   the Azure/custom endpoint the user configured.
 - `anchor version` now reports the installed distribution version. It was
   hardcoded and read `0.2.0` through the 0.2.1 and 0.2.2 releases.
+- HuggingFace and docling no longer leak progress bars and log chatter (the
+  "Loading weights" bar, the "unauthenticated requests to the HF Hub" notice,
+  RapidOCR INFO lines) into the output of `anchor search` / `embed` / `ingest`.
+  Dependency logging is quieted once at startup, leaving `stdout` pure;
+  `ANCHOR_LOG_LEVEL=DEBUG` restores the full stream.
 
 ## [0.2.2] - 2026-06-09
 

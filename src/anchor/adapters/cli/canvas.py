@@ -14,6 +14,20 @@ from anchor.adapters.cli.services import _build_real_services
 canvas_app = typer.Typer(help="Manage workspaces (canvases).")
 
 
+def _canvas_url(slug: str) -> str:
+    """The web URL a canvas is viewed at: ``http://<host>:<port>/c/<slug>``.
+
+    Uses the configured HTTP host/port (the default ``anchor serve`` target). If
+    ``serve`` fell through to another port because the default was taken, swap the
+    port for the one it printed.
+    """
+    from anchor.infra.config import AnchorConfig
+
+    cfg = AnchorConfig()
+    host = cfg.http_host if cfg.http_host not in ("0.0.0.0", "::") else "127.0.0.1"
+    return f"http://{host}:{cfg.http_port}/c/{slug}"
+
+
 @canvas_app.command("list")
 def canvas_list(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
@@ -95,6 +109,21 @@ def canvas_create(
     """Create a new workspace folder."""
     _, _, ws, _, _ = _build_real_services(data_dir)
     typer.echo(json.dumps(asyncio.run(ws.create_workspace(slug, title=title)), indent=2))
+    # Tell the user where to view it (stderr keeps stdout pure JSON for agents).
+    typer.echo(f"View this canvas at {_canvas_url(slug)}  (run `anchor serve`)", err=True)
+
+
+@canvas_app.command("url")
+def canvas_url(
+    slug: str,
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Print the web URL for a canvas (``http://<host>:<port>/c/<slug>``).
+
+    Needs a running ``anchor serve``. If serve chose a different port because the
+    default was taken, use the port it printed.
+    """
+    typer.echo(_canvas_url(slug))
 
 
 @canvas_app.command("delete")
