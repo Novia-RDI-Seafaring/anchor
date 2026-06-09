@@ -3,6 +3,7 @@ import {
   EdgeText,
   Position,
   getBezierPath,
+  useInternalNode,
   type EdgeProps,
 } from "@xyflow/react";
 
@@ -13,6 +14,14 @@ import {
   resolveEdgeUserStyle,
   userMarkerUrls,
 } from "./edge-style";
+import {
+  EdgeEndpointSockets,
+  EvidencePathUnderlay,
+  evidenceStroke,
+  isActiveEvidence,
+  isEvidenceEdge,
+} from "./edge-visuals";
+import { getEdgePosition, getNodeIntersectionFromPoint } from "./floatingGeometry";
 
 /**
  * AnchoredEdge — same dispatch as FloatingEdge but attached to specific
@@ -47,6 +56,9 @@ export function AnchoredEdge(props: EdgeProps) {
     data,
     style,
     selected,
+    sourceHandleId,
+    targetHandleId,
+    target,
   } = props;
 
   const d = (data ?? {}) as AnchoredEdgeData;
@@ -55,6 +67,9 @@ export function AnchoredEdge(props: EdgeProps) {
   const fallback: EdgeMarker = "interface-connection";
   const sysml = arrowheadFor(d.marker ?? fallback);
   const user = resolveEdgeUserStyle(d);
+  const evidence = isEvidenceEdge(d);
+  const activeEvidence = isActiveEvidence(d);
+  const targetNode = useInternalNode(target);
 
   const hasUserCaps = "start_marker" in d || "end_marker" in d;
   const hasUserStrokeStyle = "stroke_style" in d;
@@ -83,38 +98,66 @@ export function AnchoredEdge(props: EdgeProps) {
       : sysml.labelOverride
     : userLabel;
 
+  const shouldFloatTarget =
+    !evidence
+    && !!sourceHandleId?.startsWith("row:")
+    && !targetHandleId
+    && !!targetNode;
+
+  const targetPoint = shouldFloatTarget && targetNode
+    ? getNodeIntersectionFromPoint(targetNode, { x: sourceX, y: sourceY })
+    : { x: targetX, y: targetY };
+  const resolvedTargetPosition = shouldFloatTarget && targetNode
+    ? getEdgePosition(targetNode, targetPoint)
+    : targetPosition;
+
   const [path, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
     sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
+    targetX: targetPoint.x,
+    targetY: targetPoint.y,
+    targetPosition: resolvedTargetPosition,
   });
 
-  const baseStroke = hasUserStrokeColor ? user.strokeColor : DEFAULT_EDGE_STROKE;
+  const baseStroke = hasUserStrokeColor
+    ? user.strokeColor
+    : evidence
+      ? evidenceStroke(d)
+      : DEFAULT_EDGE_STROKE;
   const baseDasharray = hasUserStrokeStyle ? user.strokeDasharray : (sysml.strokeDasharray || undefined);
   const composedStyle: React.CSSProperties = {
     stroke: baseStroke,
-    strokeWidth: 1.5,
+    strokeWidth: evidence ? (activeEvidence ? 2.5 : 2) : 1.5,
     ...(style ?? {}),
     strokeDasharray: baseDasharray,
     color: baseStroke,
   };
   if (selected) {
-    composedStyle.stroke = SELECTED_EDGE_STROKE;
-    composedStyle.color = SELECTED_EDGE_STROKE;
+    const selectedStroke = evidence ? evidenceStroke({ ...d, active: true }) : SELECTED_EDGE_STROKE;
+    composedStyle.stroke = selectedStroke;
+    composedStyle.color = selectedStroke;
     composedStyle.strokeWidth = Number(composedStyle.strokeWidth ?? 1.5) + 0.5;
   }
 
   return (
     <>
+      <EvidencePathUnderlay path={path} evidence={evidence} />
       <BaseEdge
         id={id}
         path={path}
         markerStart={markerStart}
         markerEnd={markerEnd}
         style={composedStyle}
+      />
+      <EdgeEndpointSockets
+        sourceX={sourceX}
+        sourceY={sourceY}
+        targetX={targetPoint.x}
+        targetY={targetPoint.y}
+        stroke={String(composedStyle.stroke ?? baseStroke)}
+        evidence={evidence}
+        active={activeEvidence || !!selected}
       />
       {labelText ? (
         <EdgeText
