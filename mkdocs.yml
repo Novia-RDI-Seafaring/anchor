@@ -114,6 +114,7 @@ nav:
     - Azure OpenAI test-drive: guides/azure-test-drive.md
   - Concepts:
     - Projects: concepts/projects.md
+    - Agent Experience (AX): concepts/agent-experience.md
     - Architecture: concepts/architecture.md
     - Data and events: concepts/data-and-events.md
     - Extensions and OIP: concepts/extensions-and-oip.md
