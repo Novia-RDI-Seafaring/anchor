@@ -10,7 +10,7 @@ build-backend = "hatchling.build"
 # + ``anchor-canvas-fmus`` etc. ``anchor-kb`` then becomes a thin
 # meta-package depending on those, the same pattern ``langchain`` uses.
 name = "anchor-kb"
-version = "0.2.1"
+version = "0.2.2"
 description = "ANCHOR, Agent-Native Canvas to Help Organize Resources with PDF ingest, FMU simulation, and source-grounded provenance"
 requires-python = ">=3.12"
 authors = [
