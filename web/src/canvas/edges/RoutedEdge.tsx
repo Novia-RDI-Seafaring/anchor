@@ -33,11 +33,19 @@ import {
   userMarkerUrls,
   type Waypoint,
 } from "./edge-style";
+import {
+  EdgeEndpointSockets,
+  EvidencePathUnderlay,
+  evidenceStroke,
+  isActiveEvidence,
+  isEvidenceEdge,
+} from "./edge-visuals";
 
 type RoutedKind = "smooth" | "step" | "straight";
 
 type RoutedEdgeData = {
   label?: string | null;
+  kind?: string | null;
 } & Record<string, unknown>;
 
 function buildPath(
@@ -125,6 +133,8 @@ function makeRoutedEdge(kind: RoutedKind) {
 
     const d = (data ?? {}) as RoutedEdgeData;
     const user = resolveEdgeUserStyle(d);
+    const evidence = isEvidenceEdge(d);
+    const activeEvidence = isActiveEvidence(d);
     // `step` is "smooth with zero borderRadius"; explicit user override
     // (data.borderRadius) wins so the EdgeContextToolbar can let the
     // user pick a custom corner radius later.
@@ -165,18 +175,23 @@ function makeRoutedEdge(kind: RoutedKind) {
       markerEnd = urls.markerEnd;
     }
 
-    const baseStroke = hasUserStrokeColor ? user.strokeColor : DEFAULT_EDGE_STROKE;
+    const baseStroke = hasUserStrokeColor
+      ? user.strokeColor
+      : evidence
+        ? evidenceStroke(d)
+        : DEFAULT_EDGE_STROKE;
     const baseDasharray = hasUserStrokeStyle ? user.strokeDasharray : undefined;
     const composedStyle: React.CSSProperties = {
       stroke: baseStroke,
-      strokeWidth: 1.5,
+      strokeWidth: evidence ? (activeEvidence ? 2.5 : 2) : 1.5,
       ...(style ?? {}),
       strokeDasharray: baseDasharray,
       color: baseStroke,
     };
     if (selected) {
-      composedStyle.stroke = SELECTED_EDGE_STROKE;
-      composedStyle.color = SELECTED_EDGE_STROKE;
+      const selectedStroke = evidence ? evidenceStroke({ ...d, active: true }) : SELECTED_EDGE_STROKE;
+      composedStyle.stroke = selectedStroke;
+      composedStyle.color = selectedStroke;
       composedStyle.strokeWidth = Number(composedStyle.strokeWidth ?? 1.5) + 0.5;
     }
 
@@ -184,12 +199,22 @@ function makeRoutedEdge(kind: RoutedKind) {
 
     return (
       <>
+        <EvidencePathUnderlay path={path} evidence={evidence} />
         <BaseEdge
           id={id}
           path={path}
           markerStart={markerStart}
           markerEnd={markerEnd}
           style={composedStyle}
+        />
+        <EdgeEndpointSockets
+          sourceX={sourceX}
+          sourceY={sourceY}
+          targetX={targetX}
+          targetY={targetY}
+          stroke={String(composedStyle.stroke ?? baseStroke)}
+          evidence={evidence}
+          active={activeEvidence || !!selected}
         />
         {userLabel ? (
           <EdgeText

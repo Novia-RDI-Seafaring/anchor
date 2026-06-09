@@ -197,7 +197,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     <div
       className={`w-80 rounded-lg border-2 text-sm shadow-sm transition ${cls} hover:shadow-md`}
     >
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={Position.Left} className="canvas-node-socket" />
 
       {/* Page viewport with overlay.
           Image renders at natural aspect ratio (no maxHeight, no object-fit
@@ -271,10 +271,10 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                       width: `${wpc}%`,
                       height: `${hpc}%`,
                       background: active
-                        ? "rgba(14, 165, 233, 0.18)"
+                        ? "rgba(16, 185, 129, 0.18)"
                         : "rgba(14, 165, 233, 0.04)",
                       outline: active
-                        ? "2px solid #0369A1"
+                        ? "2px solid #059669"
                         : "1px solid rgba(14, 165, 233, 0.55)",
                       outlineOffset: "-1px",
                     }}
@@ -344,9 +344,9 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                       type="target"
                       position={Position.Left}
                       id={`region:${rid}`}
-                      className={`!min-w-0 !min-h-0 !border ${
+                      className={`canvas-region-socket !min-w-0 !min-h-0 !border ${
                         active
-                          ? "!h-2.5 !w-2.5 !border-sky-700 !bg-sky-400 opacity-100"
+                          ? "!h-2.5 !w-2.5 !border-emerald-700 !bg-emerald-400 opacity-100"
                           : "!h-2 !w-2 !border-neutral-400 !bg-white opacity-30"
                       }`}
                       style={{ left: -4, top: "50%" }}
@@ -454,7 +454,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
         ) : null}
       </div>
 
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={Position.Right} className="canvas-node-socket" />
     </div>
   );
 }
