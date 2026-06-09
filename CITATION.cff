@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use ANCHOR, please cite this software."
-title: "ANCHOR: Agent-First Knowledge Canvas with Source-Grounded Provenance"
+title: "ANCHOR: Agent-Native Canvas to Help Organize Resources for Traceable Engineering Document Extraction"
 type: software
 authors:
   - family-names: Jatta

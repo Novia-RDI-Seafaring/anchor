@@ -1,4 +1,4 @@
-# ANCHOR — agent-first knowledge canvas (v2)
+# ANCHOR, Agent-Native Canvas to Help Organize Resources (v2)
 
 This file is the at-a-glance briefing for any agent (Claude Code,
 Cursor, Codex, anything else) working on this repo. The conventions
