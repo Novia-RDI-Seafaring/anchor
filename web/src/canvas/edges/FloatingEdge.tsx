@@ -13,6 +13,13 @@ import {
   resolveEdgeUserStyle,
   userMarkerUrls,
 } from "./edge-style";
+import {
+  EdgeEndpointSockets,
+  EvidencePathUnderlay,
+  evidenceStroke,
+  isActiveEvidence,
+  isEvidenceEdge,
+} from "./edge-visuals";
 import { getFloatingEdgeParams } from "./floatingGeometry";
 
 /**
@@ -60,6 +67,8 @@ export function FloatingEdge(props: EdgeProps) {
   const d = (data ?? {}) as FloatingEdgeData;
   const sysml = arrowheadFor(d.marker);
   const user = resolveEdgeUserStyle(d);
+  const evidence = isEvidenceEdge(d);
+  const activeEvidence = isActiveEvidence(d);
 
   // A user pick is "explicit" iff the corresponding `data.*` field exists
   // (not just the default fallback). Resolved values always have a non-
@@ -107,11 +116,15 @@ export function FloatingEdge(props: EdgeProps) {
   //   - user-picked `stroke_color` → that colour.
   //   - else → caller-provided style.stroke or the default.
   // For dasharray, user pick beats SysML dispatch (user pick is explicit).
-  const baseStroke = hasUserStrokeColor ? user.strokeColor : DEFAULT_EDGE_STROKE;
+  const baseStroke = hasUserStrokeColor
+    ? user.strokeColor
+    : evidence
+      ? evidenceStroke(d)
+      : DEFAULT_EDGE_STROKE;
   const baseDasharray = hasUserStrokeStyle ? user.strokeDasharray : (sysml.strokeDasharray || undefined);
   const composedStyle: React.CSSProperties = {
     stroke: baseStroke,
-    strokeWidth: 1.5,
+    strokeWidth: evidence ? (activeEvidence ? 2.5 : 2) : 1.5,
     ...(style ?? {}),
     strokeDasharray: baseDasharray,
     // `color` is what the `currentColor`-based user markers pick up. We
@@ -120,19 +133,30 @@ export function FloatingEdge(props: EdgeProps) {
     color: baseStroke,
   };
   if (selected) {
-    composedStyle.stroke = SELECTED_EDGE_STROKE;
-    composedStyle.color = SELECTED_EDGE_STROKE;
+    const selectedStroke = evidence ? evidenceStroke({ ...d, active: true }) : SELECTED_EDGE_STROKE;
+    composedStyle.stroke = selectedStroke;
+    composedStyle.color = selectedStroke;
     composedStyle.strokeWidth = Number(composedStyle.strokeWidth ?? 1.5) + 0.5;
   }
 
   return (
     <>
+      <EvidencePathUnderlay path={path} evidence={evidence} />
       <BaseEdge
         id={id}
         path={path}
         markerStart={markerStart}
         markerEnd={markerEnd}
         style={composedStyle}
+      />
+      <EdgeEndpointSockets
+        sourceX={sx}
+        sourceY={sy}
+        targetX={tx}
+        targetY={ty}
+        stroke={String(composedStyle.stroke ?? baseStroke)}
+        evidence={evidence}
+        active={activeEvidence || !!selected}
       />
       {labelText ? (
         <EdgeText

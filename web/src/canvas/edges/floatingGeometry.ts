@@ -15,28 +15,22 @@ import { Position, type InternalNode, type Node } from "@xyflow/react";
 
 type XY = { x: number; y: number };
 
-/**
- * Find where the segment from node A's centre to node B's centre crosses
- * node A's bounding box. Returns absolute coordinates.
- */
-export function getNodeIntersection(
+function boxIntersectionToPoint(
   intersectionNode: InternalNode<Node>,
-  targetNode: InternalNode<Node>,
+  point: XY,
 ): XY {
   const w = intersectionNode.measured?.width ?? 0;
   const h = intersectionNode.measured?.height ?? 0;
   const ip = intersectionNode.internals.positionAbsolute;
-  const tp = targetNode.internals.positionAbsolute;
-  const tw = targetNode.measured?.width ?? 0;
-  const th = targetNode.measured?.height ?? 0;
 
   const w2 = w / 2;
   const h2 = h / 2;
-
   const x2 = ip.x + w2;
   const y2 = ip.y + h2;
-  const x1 = tp.x + tw / 2;
-  const y1 = tp.y + th / 2;
+  const x1 = point.x;
+  const y1 = point.y;
+
+  if (w2 === 0 || h2 === 0) return { x: x2, y: y2 };
 
   const xx1 = (x1 - x2) / (2 * w2) - (y1 - y2) / (2 * h2);
   const yy1 = (x1 - x2) / (2 * w2) + (y1 - y2) / (2 * h2);
@@ -46,6 +40,35 @@ export function getNodeIntersection(
   const x = w2 * (xx3 + yy3) + x2;
   const y = h2 * (-xx3 + yy3) + y2;
   return { x, y };
+}
+
+/**
+ * Find where the segment from node A's centre to node B's centre crosses
+ * node A's bounding box. Returns absolute coordinates.
+ */
+export function getNodeIntersection(
+  intersectionNode: InternalNode<Node>,
+  targetNode: InternalNode<Node>,
+): XY {
+  const tp = targetNode.internals.positionAbsolute;
+  const tw = targetNode.measured?.width ?? 0;
+  const th = targetNode.measured?.height ?? 0;
+  return boxIntersectionToPoint(intersectionNode, {
+    x: tp.x + tw / 2,
+    y: tp.y + th / 2,
+  });
+}
+
+/**
+ * Find where a segment from an arbitrary point to a node's centre crosses
+ * the node box. Useful for mixed edges where one end is a row or port
+ * handle and the other end should still float to the nearest node side.
+ */
+export function getNodeIntersectionFromPoint(
+  intersectionNode: InternalNode<Node>,
+  point: XY,
+): XY {
+  return boxIntersectionToPoint(intersectionNode, point);
 }
 
 /**
