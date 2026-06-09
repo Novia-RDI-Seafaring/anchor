@@ -88,8 +88,9 @@ def test_azure_records_flagged_config(tmp_path):
     assert "https://x.openai.azure.com/v1" in toml
     assert "gpt-deployment-a" in toml
     assert "api_key =" not in toml.lower()
-    # offered but flagged as not-yet-functional
-    assert "#48" in result.output
+    # Azure works via its OpenAI-compatible v1 surface — no "not implemented" flag.
+    assert "#48" not in result.output
+    assert "not implemented" not in result.output.lower()
     assert "your Azure tenant / region" in result.output
 
 
