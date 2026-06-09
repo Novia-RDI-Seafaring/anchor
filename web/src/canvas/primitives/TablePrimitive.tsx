@@ -233,7 +233,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         {...resizeHandlers}
       />
       {ph.active ? <PlaceholderChip hint={ph.hint} /> : null}
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={Position.Left} className="canvas-node-socket" />
       <div
         className="flex items-center justify-between border-b border-neutral-200 px-3 py-2 gap-2"
       >
@@ -367,7 +367,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                       type="source"
                       position={Position.Right}
                       id={hid}
-                      className="!h-2 !w-2 !min-w-0 !min-h-0 !border !border-neutral-400 !bg-white opacity-30 transition group-hover/tr:opacity-100 hover:!opacity-100 hover:!border-sky-500 hover:!bg-sky-400"
+                      className="canvas-row-socket !h-2 !w-2 !min-w-0 !min-h-0 !border !border-neutral-400 !bg-white opacity-30 transition group-hover/tr:opacity-100 hover:!opacity-100 hover:!border-emerald-600 hover:!bg-emerald-400"
                       style={{ right: -4 }}
                     />
                   </td>
@@ -412,7 +412,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         </div>
       ) : null}
 
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={Position.Right} className="canvas-node-socket" />
     </div>
   );
 }

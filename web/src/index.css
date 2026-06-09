@@ -65,3 +65,26 @@
 .react-flow__resize-control.line.right {
   width: 8px !important;
 }
+
+/* Default connection handles should not compete with document regions or
+   evidence rows. Keep them as small sockets that become clear on hover or
+   while the user is trying to connect nodes. */
+.react-flow__handle:not(.canvas-row-socket):not(.canvas-region-socket) {
+  width: 8px;
+  height: 8px;
+  min-width: 8px;
+  min-height: 8px;
+  border: 1px solid rgb(148 163 184);
+  background: rgb(255 255 255);
+  opacity: 0.18;
+  transition: opacity 120ms ease, border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.react-flow__node:hover .react-flow__handle:not(.canvas-row-socket):not(.canvas-region-socket),
+.react-flow__handle:not(.canvas-row-socket):not(.canvas-region-socket):hover,
+.react-flow__handle.connectionindicator:not(.canvas-row-socket):not(.canvas-region-socket) {
+  border-color: rgb(5 150 105);
+  background: rgb(236 253 245);
+  box-shadow: 0 0 0 3px rgb(16 185 129 / 0.14);
+  opacity: 0.9;
+}

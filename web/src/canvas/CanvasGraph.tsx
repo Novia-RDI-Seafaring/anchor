@@ -325,6 +325,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
     setRfEdges(Object.values(edges).map((e) => {
       const type = typePicks[e.id] ?? "floating";
       const dimmed = dimmedEvidence.has(e.id);
+      const active = activeEdgeId === e.id;
       const isSelected = selectedEdgeId === e.id;
       return {
         id: e.id,
@@ -334,7 +335,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         targetHandle: e.targetHandle ?? undefined,
         label: e.label,
         type,
-        data: { ...(e.data ?? {}), label: e.label || undefined },
+        data: { ...(e.data ?? {}), label: e.label || undefined, active, dimmed },
         style: dimmed ? { opacity: 0.3 } : undefined,
         selected: isSelected,
       } satisfies RfEdge;
