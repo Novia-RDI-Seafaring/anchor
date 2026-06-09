@@ -69,8 +69,8 @@ PROVIDERS: tuple[Provider, ...] = (
         zone="your Azure tenant / region",
         does_vision=True,
         base_url_required=True,
-        available=False,
-        note="Config is recorded now; the Azure endpoint client lands in #48.",
+        note="Use your Azure OpenAI v1 endpoint (https://<resource>.openai.azure.com/openai/v1/) "
+        "and the deployment name as the model.",
     ),
     Provider(
         key="custom",
