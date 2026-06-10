@@ -26,9 +26,9 @@ class OpenAIPageMdPolisher:
         )
 
     def _polish_sync(self, page_image, page_no, det_md, items, model):
-        from openai import OpenAI
+        from .openai_client import make_openai_client
 
-        client = OpenAI(api_key=self.api_key, base_url=self.base_url) if self.api_key else OpenAI()
+        client = make_openai_client(self.api_key, self.base_url)
         b64 = base64.b64encode(page_image).decode()
         prompt = (
             "You are polishing a per-page markdown rendering. Use the page image "

@@ -85,13 +85,27 @@ def test_azure_records_flagged_config(tmp_path):
     assert result.exit_code == 0, result.output
     toml = (tmp_path / "anchor.toml").read_text()
     assert 'provider = "azure"' in toml
-    assert "https://x.openai.azure.com/v1" in toml
+    # init self-corrects a bare resource/v1 URL to the Azure /openai/v1/ surface.
+    assert 'openai_base_url = "https://x.openai.azure.com/openai/v1/"' in toml
     assert "gpt-deployment-a" in toml
     assert "api_key =" not in toml.lower()
     # Azure works via its OpenAI-compatible v1 surface — no "not implemented" flag.
     assert "#48" not in result.output
     assert "not implemented" not in result.output.lower()
     assert "your Azure tenant / region" in result.output
+
+
+def test_azure_endpoint_normalized_from_bare_resource_url(tmp_path):
+    # The common case: user pastes the portal resource URL with no API path.
+    result = runner.invoke(
+        app,
+        ["init", str(tmp_path), "--yes", "--provider", "azure",
+         "--base-url", "https://x.openai.azure.com/", "--vision-model", "gpt-deployment-a"],
+    )
+    assert result.exit_code == 0, result.output
+    toml = (tmp_path / "anchor.toml").read_text()
+    assert 'openai_base_url = "https://x.openai.azure.com/openai/v1/"' in toml
+    assert "Adjusted endpoint" in result.output
 
 
 def test_custom_requires_base_url(tmp_path):
@@ -121,6 +135,48 @@ def test_replaces_unreadable_toml_without_force(tmp_path):
     import tomllib
 
     tomllib.loads((tmp_path / "anchor.toml").read_text())  # rewritten clean
+
+
+def test_setup_api_key_writes_gitignored_env(tmp_path, monkeypatch):
+    # Interactive key capture can't run through CliRunner (its stdin is not a tty,
+    # so init's interactive gate is False). Drive the helper directly: a pasted
+    # key lands in a gitignored .env and never in the toml.
+    from anchor.adapters.cli import init as init_mod
+    from anchor.infra.providers import get_provider
+
+    monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(init_mod.typer, "prompt", lambda *a, **k: "az-secret-key")
+
+    (tmp_path / "anchor.toml").write_text('provider = "azure"\n')  # a project exists
+    init_mod._setup_api_key(tmp_path, get_provider("azure"), interactive=True)
+
+    assert "ANCHOR_OPENAI_API_KEY=az-secret-key" in (tmp_path / ".env").read_text()
+    assert ".env" in (tmp_path / ".gitignore").read_text()
+    assert "az-secret-key" not in (tmp_path / "anchor.toml").read_text()
+
+
+def test_setup_api_key_skips_when_key_left_blank(tmp_path, monkeypatch):
+    from anchor.adapters.cli import init as init_mod
+    from anchor.infra.providers import get_provider
+
+    monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(init_mod.typer, "prompt", lambda *a, **k: "")  # user skips
+    init_mod._setup_api_key(tmp_path, get_provider("azure"), interactive=True)
+    assert not (tmp_path / ".env").exists()
+
+
+def test_azure_init_warns_when_only_personal_key_present(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-personal")
+    result = runner.invoke(
+        app,
+        ["init", str(tmp_path), "--yes", "--provider", "azure",
+         "--base-url", "https://x.openai.azure.com/", "--vision-model", "gpt-dep"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "not the right credential" in result.output.lower()
 
 
 def test_force_overwrites(tmp_path):

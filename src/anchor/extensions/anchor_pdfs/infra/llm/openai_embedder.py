@@ -15,8 +15,8 @@ class OpenAIEmbedder:
         return await asyncio.to_thread(self._sync, texts)
 
     def _sync(self, texts: list[str]) -> list[list[float]]:
-        from openai import OpenAI
+        from .openai_client import make_openai_client
 
-        client = OpenAI(api_key=self.api_key, base_url=self.base_url) if self.api_key else OpenAI()
+        client = make_openai_client(self.api_key, self.base_url)
         rsp = client.embeddings.create(model=self.model, input=texts)
         return [d.embedding for d in rsp.data]

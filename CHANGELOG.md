@@ -9,6 +9,56 @@ next version section on tag.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-06-09
+
+Azure-onboarding hardening. Found by walking a fresh-folder Azure test-drive end
+to end: a self-correcting `anchor init`, a `anchor check` preflight, and a fix
+for a data-egress edge case.
+
+### Added
+
+- `anchor check`: verify the resolved data zone before ingesting. Prints the
+  provider, endpoint, data dir, models, and whether the key is present; repairs
+  a malformed Azure endpoint (`--fix`); and with `--probe` makes one tiny call
+  (no document content) to confirm the deployment resolves and the key
+  authenticates. Exits non-zero when something would break a real ingest.
+- An Azure OpenAI test-drive guide, led by a "create & verify your deployment"
+  prerequisite, plus a "set up a project" section in the agent skill so an agent
+  can scaffold ANCHOR non-interactively (`anchor init --yes --provider …`).
+- `anchor --version` flag (alias of `anchor version`) and `anchor canvas url
+  <slug>`, which prints the deep link `http://<host>:<port>/c/<slug>`; `anchor
+  canvas create` now also prints that URL. Surfaced by an agent-experience test
+  session that otherwise had to reverse-engineer the canvas route.
+
+### Changed
+
+- `anchor init` self-corrects an Azure endpoint that is missing `/openai/v1/`
+  (the common bare-resource-URL paste), and offers to save the API key to a
+  gitignored `.env` (never the committed `anchor.toml`). The readback now
+  reports key state honestly and warns when only a personal `OPENAI_API_KEY` is
+  present for a named (Azure/custom) endpoint, where it is the wrong credential.
+
+### Fixed
+
+- **Data-boundary leak:** the OpenAI clients now always honor the configured
+  `base_url`. Previously, a missing `ANCHOR_OPENAI_API_KEY` built a bare
+  `OpenAI()` that dropped the endpoint and sent document pages to public
+  `api.openai.com` (using any `OPENAI_API_KEY` in the environment) instead of
+  the Azure/custom endpoint the user configured.
+- `anchor version` now reports the installed distribution version. It was
+  hardcoded and read `0.2.0` through the 0.2.1 and 0.2.2 releases.
+- `anchor ingest` is now idempotent, matching its documented contract: if the
+  slug already has gold it returns `{skipped: true}` instead of silently
+  re-running the billed bronze→silver→gold→embed pipeline and overwriting the
+  gold. Pass `--force` (MCP/HTTP `force`) to recompute. Surfaced by an
+  agent-experience test that re-ingested a document and got an unexpected ~190s
+  Azure recompute.
+- HuggingFace and docling no longer leak progress bars and log chatter (the
+  "Loading weights" bar, the "unauthenticated requests to the HF Hub" notice,
+  RapidOCR INFO lines) into the output of `anchor search` / `embed` / `ingest`.
+  Dependency logging is quieted once at startup, leaving `stdout` pure;
+  `ANCHOR_LOG_LEVEL=DEBUG` restores the full stream.
+
 ## [0.2.2] - 2026-06-09
 
 Onboarding and configuration release. A folder is now a project, configured once
@@ -162,6 +212,8 @@ flagged by the pre-release review.
 - Snapshot output paths and the SPA static catch-all both apply
   resolve-and-contain checks.
 
-[Unreleased]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Novia-RDI-Seafaring/anchor/releases/tag/v0.2.0

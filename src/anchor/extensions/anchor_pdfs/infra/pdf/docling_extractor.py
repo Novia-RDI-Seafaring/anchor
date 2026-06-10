@@ -6,6 +6,7 @@ import cost. Output shape matches the dict consumed by `core/ingest/silver.py`.
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,66 @@ from typing import Any
 # skip straight to CPU for the rest of the run instead of re-attempting a
 # doomed device per document.
 _FELL_BACK: set[str] = set()
+
+_QUIETED = False
+
+
+class _DropBelow(logging.Filter):
+    """Drop log records under ``level`` regardless of the logger's own level.
+
+    RapidOCR rebuilds its logger and calls ``setLevel(INFO)`` every time docling
+    constructs it (mid-``convert``), so a one-shot ``setLevel`` is overwritten.
+    A filter sticks: ``Logger.__init__`` never clears filters, and the filter is
+    consulted before handlers, so INFO records are dropped however the level is
+    later reset.
+    """
+
+    def __init__(self, level: int) -> None:
+        super().__init__()
+        self._level = level
+
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: A003 - logging API
+        return record.levelno >= self._level
+
+
+def _quiet_dependency_logs() -> None:
+    """Tame third-party ingest chatter so the output reads as ANCHOR working.
+
+    docling and RapidOCR log a wall of INFO lines (model paths, "Using CPU
+    device") plus a "RapidOCR returned empty result!" warning for born-digital
+    pages with nothing to OCR. That noise looks like the tool is hand-rolling
+    OCR — it misleads users *and* agents. Quiet it by default; restore the full
+    stream with ``ANCHOR_LOG_LEVEL=DEBUG``.
+    """
+    global _QUIETED
+    import os
+
+    if _QUIETED or os.environ.get("ANCHOR_LOG_LEVEL", "").upper() == "DEBUG":
+        return
+    # docling uses standard module loggers that don't fight back; a level is enough.
+    logging.getLogger("docling").setLevel(logging.WARNING)
+    # The empty-result warning fires per born-digital page — noise, not an error.
+    logging.getLogger("docling.models.stages.ocr.rapid_ocr_model").setLevel(logging.ERROR)
+    # RapidOCR re-asserts INFO whenever docling rebuilds its logger, so a filter
+    # (not just a level) is what holds. Force its log module to import first so
+    # the logger + its own handler exist, then attach the filter.
+    for module in ("rapidocr.utils.log", "rapidocr"):
+        try:
+            __import__(module)
+            break
+        except Exception:  # noqa: BLE001 - rapidocr optional / layout varies
+            continue
+    rapid = logging.getLogger("RapidOCR")
+    rapid.setLevel(logging.ERROR)
+    rapid.addFilter(_DropBelow(logging.ERROR))
+    # The "Loading weights" tqdm bars come from huggingface model loads.
+    try:
+        from huggingface_hub.utils import disable_progress_bars
+
+        disable_progress_bars()
+    except Exception:  # noqa: BLE001 - best effort; absent in some installs
+        pass
+    _QUIETED = True
 
 
 class DoclingPdfExtractor:
@@ -58,6 +119,7 @@ def _extract_sync(pdf_path: Path, device: str = "auto") -> dict[str, Any]:
     # accelerator failure break ingestion: docling's MPS path raises "Cannot
     # convert a MPS Tensor to float64" on Apple Silicon, and a CPU retry
     # recovers from it. The same fallback covers CUDA OOM and similar.
+    _quiet_dependency_logs()
     candidate = _resolve_device((device or "auto").lower())
     if candidate != "cpu" and candidate in _FELL_BACK:
         candidate = "cpu"

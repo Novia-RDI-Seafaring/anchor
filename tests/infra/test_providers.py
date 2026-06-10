@@ -1,7 +1,40 @@
 """Provider registry invariants."""
 from __future__ import annotations
 
-from anchor.infra.providers import PROVIDERS, embed_options_for, get_provider
+import pytest
+
+from anchor.infra.providers import (
+    PROVIDERS,
+    embed_options_for,
+    get_provider,
+    normalize_base_url,
+)
+
+
+@pytest.mark.parametrize(
+    "given,expected",
+    [
+        # The portal resource URL (the overwhelmingly common paste).
+        ("https://x.openai.azure.com/", "https://x.openai.azure.com/openai/v1/"),
+        ("https://x.openai.azure.com", "https://x.openai.azure.com/openai/v1/"),
+        # Already-correct stays put (idempotent), trailing slash normalized.
+        ("https://x.openai.azure.com/openai/v1/", "https://x.openai.azure.com/openai/v1/"),
+        ("https://x.openai.azure.com/openai/v1", "https://x.openai.azure.com/openai/v1/"),
+        # Partial paths get completed.
+        ("https://x.openai.azure.com/openai", "https://x.openai.azure.com/openai/v1/"),
+        # OpenAI muscle-memory /v1 → Azure's /openai/v1.
+        ("https://x.openai.azure.com/v1", "https://x.openai.azure.com/openai/v1/"),
+    ],
+)
+def test_normalize_azure_endpoint(given, expected):
+    assert normalize_base_url("azure", given) == expected
+
+
+def test_normalize_is_noop_for_non_azure():
+    # Custom/openai endpoints are passed through verbatim — we don't know their shape.
+    assert normalize_base_url("custom", "https://llm.internal/v1") == "https://llm.internal/v1"
+    assert normalize_base_url("openai", "") == ""
+    assert normalize_base_url(None, "https://x/y") == "https://x/y"
 
 
 def test_expected_providers_present():

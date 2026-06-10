@@ -24,9 +24,9 @@ class OpenAIRegionExtractor:
         return await asyncio.to_thread(self._sync, page_image, page_no, docling_items, model)
 
     def _sync(self, page_image, page_no, items, model):
-        from openai import OpenAI
+        from .openai_client import make_openai_client
 
-        client = OpenAI(api_key=self.api_key, base_url=self.base_url) if self.api_key else OpenAI()
+        client = make_openai_client(self.api_key, self.base_url)
         b64 = base64.b64encode(page_image).decode()
         prompt = (
             f"List the visual regions on page {page_no} of this engineering PDF. "

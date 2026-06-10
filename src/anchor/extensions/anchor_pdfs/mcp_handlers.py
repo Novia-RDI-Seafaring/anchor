@@ -54,7 +54,11 @@ def tool_definitions() -> list[dict[str, Any]]:
     return [
         {
             "name": "ingest_pdf",
-            "description": "Ingest a PDF through bronze → silver → gold. Returns summary.",
+            "description": (
+                "Ingest a PDF through bronze → silver → gold. Returns a summary. "
+                "Idempotent: if the slug already has gold it returns {skipped: true} "
+                "without recomputing; pass force=true to re-ingest and overwrite."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -62,6 +66,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "slug": {"type": "string"},
                     "skip_polish": {"type": "boolean"},
                     "skip_regions": {"type": "boolean"},
+                    "force": {"type": "boolean"},
                 },
                 "required": ["pdf_path"],
             },
@@ -245,6 +250,7 @@ async def call_tool(
             slug=args.get("slug"),
             polish=not args.get("skip_polish", False),
             regions=not args.get("skip_regions", False),
+            force=args.get("force", False),
         )
         return json.dumps(summary)
     if name == "list_documents":

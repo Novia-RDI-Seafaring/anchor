@@ -19,7 +19,13 @@ from pathlib import Path
 import typer
 
 from anchor.infra.config import CONFIG_FILENAME, AnchorConfig
-from anchor.infra.providers import PROVIDERS, Provider, embed_options_for, get_provider
+from anchor.infra.providers import (
+    PROVIDERS,
+    Provider,
+    embed_options_for,
+    get_provider,
+    normalize_base_url,
+)
 
 
 def _is_readable_toml(path: Path) -> bool:
@@ -55,6 +61,83 @@ def _render_toml(fields: dict[str, str]) -> str:
 
 def _ask(label: str, default: str, *, interactive: bool) -> str:
     return typer.prompt(label, default=default) if interactive else default
+
+
+# Providers that authenticate against an endpoint and therefore need an API key.
+_KEYED_PROVIDERS = ("openai", "azure", "custom")
+
+
+def _anchor_key_present(target: Path) -> bool:
+    """True when ANCHOR_OPENAI_API_KEY is already available (env or this .env)."""
+    if os.environ.get("ANCHOR_OPENAI_API_KEY"):
+        return True
+    env_file = target / ".env"
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            stripped = line.strip()
+            if stripped.startswith("ANCHOR_OPENAI_API_KEY=") and stripped.split("=", 1)[1].strip():
+                return True
+    return False
+
+
+def _ensure_gitignored(target: Path, entry: str) -> None:
+    """Make sure ``entry`` is in this folder's .gitignore (create if needed)."""
+    gi = target / ".gitignore"
+    existing = gi.read_text().splitlines() if gi.exists() else []
+    if entry in (line.strip() for line in existing):
+        return
+    with gi.open("a") as handle:
+        if existing and existing[-1].strip():
+            handle.write("\n")
+        handle.write(f"{entry}\n")
+
+
+def _write_env_key(target: Path, key: str) -> Path:
+    """Append ANCHOR_OPENAI_API_KEY to a gitignored .env, return its path."""
+    env_file = target / ".env"
+    line = f"ANCHOR_OPENAI_API_KEY={key}"
+    prior = env_file.read_text() if env_file.exists() else ""
+    sep = "" if (not prior or prior.endswith("\n")) else "\n"
+    with env_file.open("a") as handle:
+        handle.write(f"{sep}{line}\n")
+    _ensure_gitignored(target, ".env")
+    # Reflect it in-process so the readback below shows the key as detected.
+    os.environ["ANCHOR_OPENAI_API_KEY"] = key
+    return env_file
+
+
+def _setup_api_key(target: Path, prov: Provider, *, interactive: bool) -> None:
+    """Help the user get a key in place — the one thing init can't put in the toml.
+
+    Offers to capture the key into a gitignored .env (never the committed toml).
+    Warns when only a personal ``OPENAI_API_KEY`` is set, since that is the wrong
+    credential for an Azure/custom endpoint and would otherwise look fine.
+    """
+    if prov.key not in _KEYED_PROVIDERS or _anchor_key_present(target):
+        return
+    personal = bool(os.environ.get("OPENAI_API_KEY"))
+    # For public OpenAI, OPENAI_API_KEY is the correct credential — nothing to do.
+    if prov.key == "openai" and personal:
+        return
+    # For a named endpoint, a personal key is the WRONG credential and would
+    # otherwise look fine until the first call fails. Say so.
+    if prov.key in ("azure", "custom") and personal:
+        typer.echo(
+            "  ! A personal OPENAI_API_KEY is set, but it is NOT the right "
+            f"credential for {prov.label} — ANCHOR uses ANCHOR_OPENAI_API_KEY here."
+        )
+    if not interactive:
+        return
+    key = typer.prompt(
+        f"Paste your {prov.label} API key to save it to a gitignored .env "
+        "(or press Enter to set it yourself later)",
+        default="",
+        hide_input=True,
+        show_default=False,
+    ).strip()
+    if key:
+        env_file = _write_env_key(target, key)
+        typer.echo(f"  Saved your key to {env_file} (.env is gitignored).")
 
 
 def _default(field: str) -> str:
@@ -190,8 +273,11 @@ def init(
                 raise typer.Exit(code=2)
         else:
             resolved_url = base_url if base_url is not None else (prov.default_base_url or "")
-        if resolved_url:
-            fields["openai_base_url"] = resolved_url
+        normalized_url = normalize_base_url(prov.key, resolved_url)
+        if normalized_url and normalized_url != resolved_url.strip():
+            typer.echo(f"  Adjusted endpoint to {normalized_url} (Azure serves the API under /openai/v1/).")
+        if normalized_url:
+            fields["openai_base_url"] = normalized_url
         chosen_model = vision_model or _ask(
             "Vision model / deployment (polish + regions)",
             prov.default_vision_model or _default("polish_model"),
@@ -203,6 +289,7 @@ def init(
 
     target.mkdir(parents=True, exist_ok=True)
     config_path.write_text(_render_toml(fields))
+    _setup_api_key(target, prov, interactive=interactive)
     _report(config_path, target, prov)
 
 
@@ -219,7 +306,9 @@ def _report(config_path: Path, target: Path, prov: Provider) -> None:
         else:
             os.environ["ANCHOR_CONFIG"] = prev
 
-    has_key = bool(cfg.openai_api_key) or bool(os.environ.get("OPENAI_API_KEY"))
+    # Only ANCHOR_OPENAI_API_KEY (env or .env) is actually used for the endpoint;
+    # a stray personal OPENAI_API_KEY is NOT, so don't count it as "set".
+    has_anchor_key = bool(cfg.openai_api_key)
     typer.echo(f"Wrote {config_path}")
     typer.echo("")
     typer.echo(f"Provider : {prov.label}")
@@ -236,19 +325,37 @@ def _report(config_path: Path, target: Path, prov: Provider) -> None:
     typer.echo("Applied automatically (CLI, server, anchor-mcp):")
     typer.echo(f"  data dir       : {cfg.data_dir}")
     typer.echo(f"  embed model    : {cfg.embed_model}  ({embed_tag})")
+    needs_key = prov.key in _KEYED_PROVIDERS
+    # OPENAI_API_KEY is the right credential for public OpenAI, but the wrong one
+    # for a named (azure/custom) endpoint — only ANCHOR_OPENAI_API_KEY counts there.
+    personal = bool(os.environ.get("OPENAI_API_KEY"))
+    key_ok = has_anchor_key or (prov.key == "openai" and personal)
     if prov.does_vision:
         typer.echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com'}")
         typer.echo(f"  vision model   : {cfg.polish_model}")
-        if prov.key != "ollama":
-            typer.echo(f"  api key in env : {'yes' if has_key else 'not set — export ANCHOR_OPENAI_API_KEY'}")
+        if needs_key:
+            if has_anchor_key:
+                key_state = "ANCHOR_OPENAI_API_KEY detected ✓"
+            elif prov.key == "openai" and personal:
+                key_state = "using OPENAI_API_KEY ✓"
+            else:
+                key_state = "NOT set — required (see below)"
+            typer.echo(f"  api key        : {key_state}")
     else:
         typer.echo("  vision model   : none — no document content leaves this host")
     typer.echo(f"  docling device : {cfg.docling_device}")
     typer.echo("")
     typer.echo("Next steps (run inside this folder):")
+    if needs_key and not key_ok:
+        typer.echo("  1. Set your API key (never written to anchor.toml):")
+        typer.echo("       echo 'ANCHOR_OPENAI_API_KEY=…' >> .env     # gitignored, this folder")
+        typer.echo("     Then verify the endpoint, deployment, and key:")
+        typer.echo("       anchor check --probe")
+    else:
+        typer.echo("  anchor check                 verify the data zone + config")
     typer.echo("  anchor ingest <file.pdf>     add a document to the knowledge base")
     typer.echo(f"  anchor serve                 open the canvas at http://localhost:{cfg.http_port}")
-    typer.echo("  anchor install claude-code   let an agent drive Anchor over MCP   (optional)")
+    typer.echo("  anchor install claude-code   let an agent drive ANCHOR over MCP   (optional)")
     typer.echo("")
     # The CLI/server resolve config by running inside this folder; a standalone
     # anchor-mcp launched elsewhere needs ANCHOR_CONFIG to find it.

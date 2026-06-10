@@ -17,11 +17,24 @@ def ingest(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
     skip_polish: bool = typer.Option(False, "--skip-polish"),
     skip_regions: bool = typer.Option(False, "--skip-regions"),
+    force: bool = typer.Option(
+        False, "--force", help="Re-ingest even if the slug already has gold (overwrites it)."
+    ),
 ) -> None:
-    """Run a PDF through the bronze -> silver -> gold pipeline."""
+    """Run a PDF through the bronze -> silver -> gold pipeline.
+
+    Idempotent by default: if the slug is already gold-extracted it is skipped.
+    Pass ``--force`` to recompute and overwrite (re-runs the billed gold stage).
+    """
     if not pdf_path.exists():
         typer.echo(f"PDF not found: {pdf_path}", err=True)
         raise typer.Exit(code=1)
+    # A clean run is now quiet (docling/OCR noise is suppressed), so say what is
+    # happening — a multi-page extract can take ~30s and should not look hung.
+    typer.echo(
+        f"Ingesting {pdf_path.name} … bronze (layout + OCR) → silver (pages) → gold (regions)",
+        err=True,
+    )
     config, _, _, ingest_svc, _ = _build_real_services(data_dir)
 
     async def run() -> dict:
@@ -30,6 +43,7 @@ def ingest(
             pdf_path.name,
             polish=not skip_polish,
             regions=not skip_regions,
+            force=force,
             polish_model=config.polish_model,
             region_model=config.region_model,
             dpi=config.dpi,

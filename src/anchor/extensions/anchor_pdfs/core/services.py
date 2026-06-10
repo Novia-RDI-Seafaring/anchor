@@ -133,6 +133,7 @@ class IngestService:
         workspace_id: str | None = None,
         polish: bool = True,
         regions: bool = True,
+        force: bool = False,
         polish_model: str | None = None,
         region_model: str | None = None,
         dpi: int | None = None,
@@ -141,6 +142,18 @@ class IngestService:
         region_model = region_model or self.default_region_model
         dpi = self.default_dpi if dpi is None else dpi
         slug = slug or slugify(Path(filename).stem)
+
+        # Idempotent by contract: if this slug is already gold-extracted, skip the
+        # whole (billed, overwriting) pipeline unless the caller forces a fresh
+        # pass. Matches the skill's "don't re-ingest unless asked for a fresh pass".
+        if not force and await self.store.get_gold_map(slug) is not None:
+            return {
+                "slug": slug,
+                "filename": filename,
+                "skipped": True,
+                "reason": "already ingested (gold exists); pass force=True / --force to "
+                "re-ingest and overwrite",
+            }
         publish_workspace_id = workspace_id or self._gid
         ingest_started_at = self.clock.now()
         stages: list[dict[str, Any]] = []

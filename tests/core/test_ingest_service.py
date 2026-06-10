@@ -114,6 +114,21 @@ def test_search_reports_skipped_docs_with_incompatible_embed_model():
     asyncio.run(run())
 
 
+def test_ingest_is_idempotent_unless_forced():
+    async def run():
+        s = make_in_memory_services(page_count=1)
+        first = await s.ingest.ingest_pdf(b"%PDF-fake", "demo.pdf")
+        assert not first.get("skipped")
+        # Re-ingesting the same slug short-circuits instead of recomputing.
+        second = await s.ingest.ingest_pdf(b"%PDF-fake", "demo.pdf")
+        assert second["skipped"] is True
+        # force=True recomputes.
+        forced = await s.ingest.ingest_pdf(b"%PDF-fake", "demo.pdf", force=True)
+        assert not forced.get("skipped")
+
+    asyncio.run(run())
+
+
 def test_ingest_skips_polish_and_regions_when_disabled():
     async def run():
         s = make_in_memory_services(page_count=1)
