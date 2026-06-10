@@ -1,6 +1,6 @@
-"""HTTP routes for the FMU extension — peers of the `fmu.*` MCP tools.
+"""HTTP routes for the FMU extension, peers of the `fmu_` MCP tools.
 
-Mirrors every `fmu.*` MCP operation so a non-MCP client (the web canvas,
+Mirrors every `fmu_` MCP operation so a non-MCP client (the web canvas,
 curl scripts, custom voice agents) can run simulations, inspect models,
 and pull results. Same FmuService methods; the adapter is a thin
 translation layer.

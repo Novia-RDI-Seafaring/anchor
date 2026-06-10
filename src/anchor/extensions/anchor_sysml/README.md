@@ -47,7 +47,7 @@ canvas nodes/edges, and emit a stub for round-trip export.
 - `infra/parser.py` — recursive-descent grammar.
 - `infra/canvas_mapper.py` — IR → canvas batch projection.
 - `adapters/http/sysml_routes.py` — `POST /api/sysml/render`, `GET /api/sysml/export`.
-- `mcp_handlers.py` — `sysml.render`, `sysml.export`.
+- `mcp_handlers.py` exposes `sysml_render` and `sysml_export` for MCP clients.
 
 ## Test fixtures
 

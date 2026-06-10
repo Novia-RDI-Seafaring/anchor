@@ -159,7 +159,7 @@ def test_mcp_inspect_tool(tmp_path):
         fake = tmp_path / "fake.fmu"
         fake.write_bytes(b"FAKE")
         svc = _service(MemoryFmuStore())
-        body = await mcp_handlers.call_tool(svc, "fmu.inspect", {"fmu_path": str(fake)})
+        body = await mcp_handlers.call_tool(svc, "fmu_inspect", {"fmu_path": str(fake)})
         out = json.loads(body)
         assert out["slug"] == "fake"
         assert any(v["name"] == "temp_out" for v in out["variables"])
@@ -172,12 +172,12 @@ def test_mcp_simulate_then_get_results(tmp_path):
         fake = tmp_path / "p.fmu"
         fake.write_bytes(b"FAKE")
         svc = _service(MemoryFmuStore())
-        await mcp_handlers.call_tool(svc, "fmu.inspect", {"fmu_path": str(fake)})
-        sim_body = await mcp_handlers.call_tool(svc, "fmu.simulate", {
+        await mcp_handlers.call_tool(svc, "fmu_inspect", {"fmu_path": str(fake)})
+        sim_body = await mcp_handlers.call_tool(svc, "fmu_simulate", {
             "slug": "p", "stop_time": 0.5, "output_interval": 0.1,
         })
         sim_id = json.loads(sim_body)["id"]
-        results_body = await mcp_handlers.call_tool(svc, "fmu.get_results", {
+        results_body = await mcp_handlers.call_tool(svc, "fmu_get_results", {
             "simulation_id": sim_id,
         })
         results = json.loads(results_body)
@@ -189,7 +189,7 @@ def test_mcp_simulate_then_get_results(tmp_path):
 def test_mcp_unknown_tool_returns_json_error():
     async def run():
         svc = _service(MemoryFmuStore())
-        body = await mcp_handlers.call_tool(svc, "fmu.nope", {})
+        body = await mcp_handlers.call_tool(svc, "fmu_nope", {})
         assert "error" in json.loads(body)
 
     asyncio.run(run())
@@ -200,8 +200,8 @@ def test_mcp_list_models_includes_inspected(tmp_path):
         fake = tmp_path / "x.fmu"
         fake.write_bytes(b"FAKE")
         svc = _service(MemoryFmuStore())
-        await mcp_handlers.call_tool(svc, "fmu.inspect", {"fmu_path": str(fake)})
-        body = await mcp_handlers.call_tool(svc, "fmu.list_models", {})
+        await mcp_handlers.call_tool(svc, "fmu_inspect", {"fmu_path": str(fake)})
+        body = await mcp_handlers.call_tool(svc, "fmu_list_models", {})
         models = json.loads(body)
         assert any(m["slug"] == "x" for m in models)
 
@@ -212,9 +212,21 @@ def test_mcp_tool_definitions_have_required_fields():
     defs = mcp_handlers.tool_definitions()
     assert all("name" in d and "description" in d and "inputSchema" in d for d in defs)
     names = {d["name"] for d in defs}
-    assert {"fmu.inspect", "fmu.simulate", "fmu.list_models"} <= names
-    # Every name is namespaced under "fmu."
-    assert all(name.startswith("fmu.") for name in names)
+    assert {"fmu_inspect", "fmu_simulate", "fmu_list_models"} <= names
+    assert all("." not in name for name in names)
+    assert all(name.startswith("fmu_") for name in names)
+
+
+def test_mcp_accepts_legacy_dotted_names(tmp_path):
+    async def run():
+        fake = tmp_path / "legacy.fmu"
+        fake.write_bytes(b"FAKE")
+        svc = _service(MemoryFmuStore())
+        body = await mcp_handlers.call_tool(svc, "fmu.inspect", {"fmu_path": str(fake)})
+        out = json.loads(body)
+        assert out["slug"] == "legacy"
+
+    asyncio.run(run())
 
 
 # ── synthetic flag plumbing ─────────────────────────────────────────────

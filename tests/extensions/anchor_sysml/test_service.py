@@ -5,6 +5,7 @@ import asyncio
 from pathlib import Path
 
 from anchor.core.services.workspace_service import WorkspaceService
+from anchor.extensions.anchor_sysml import mcp_handlers
 from anchor.extensions.anchor_sysml.core.services import SysmlService
 from anchor.extensions.anchor_sysml.infra.canvas_mapper import SysmlCanvasMapper
 from anchor.extensions.anchor_sysml.infra.parser import SysmlTextParser
@@ -103,6 +104,29 @@ def test_export_returns_phase1_stub_text():
     text = asyncio.run(run())
     assert "Phase 1 stub" in text
     assert "TODO" in text
+
+
+def test_mcp_tool_definitions_use_safe_names():
+    defs = mcp_handlers.tool_definitions()
+    names = {d["name"] for d in defs}
+    assert {"sysml_render", "sysml_export"} <= names
+    assert all("." not in name for name in names)
+    assert all(name.startswith("sysml_") for name in names)
+
+
+def test_mcp_accepts_legacy_dotted_names():
+    svc, workspace = _make_service()
+
+    async def run():
+        await workspace.create_workspace("legacy", title="legacy")
+        body = await mcp_handlers.call_tool(
+            svc,
+            "sysml.render",
+            {"workspace_slug": "legacy", "text": "package T {}"},
+        )
+        assert "node_ids" in body
+
+    asyncio.run(run())
 
 
 def test_render_drone_fixture_end_to_end():

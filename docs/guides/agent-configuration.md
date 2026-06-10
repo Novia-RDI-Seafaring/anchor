@@ -82,6 +82,13 @@ Restart Claude Code after registration. Within a Claude Code session, run:
 The `anchor` server should appear with its available tools. Put the optional
 project instruction in `CLAUDE.md` when a repository needs it.
 
+Claude Desktop is a different client. `anchor install claude-code` does not
+write Claude Desktop's `claude_desktop_config.json`. For Claude Desktop, add an
+`mcpServers.anchor` entry that runs `anchor-mcp` as a local stdio command, then
+restart Claude Desktop. If the client reports a tool-name validation error, use
+an ANCHOR version whose MCP tools use underscore names such as `sysml_render`
+and `fmu_simulate`.
+
 ## Codex
 
 Codex CLI and the Codex IDE extension share the same MCP configuration. Add
