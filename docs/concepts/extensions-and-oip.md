@@ -126,12 +126,12 @@ same slug, so artefacts are content-addressable.
 
 | Stage  | What it does                                        | Tool           |
 | ------ | --------------------------------------------------- | -------------- |
-| bronze | store raw PDF bytes                                 | `pdf.ingest_pdf` |
-| silver | Docling extraction → page index, items, bboxes      | `pdf.get_document_index` |
-| gold   | OpenAI vision polish + region extraction            | `pdf.get_gold_regions` |
+| bronze | store raw PDF bytes                                 | `ingest_pdf` |
+| silver | Docling extraction → page index, items, bboxes      | `get_document_index` |
+| gold   | OpenAI vision polish + region extraction            | `get_gold_regions` |
 
-Five MCP tools (`ingest_pdf`, `list_documents`, `get_document_index`,
-`get_gold_regions`, `get_page_text`), namespaced `pdf.*`. Two node
+MCP tools include `ingest_pdf`, `list_documents`, `get_document_index`,
+`get_gold_regions` and `get_page_text`. Two node
 types declared (`pdf:document`, `pdf:spec_table`). One source-ref kind
 (`pdf-page-bbox`).
 
@@ -139,12 +139,12 @@ types declared (`pdf:document`, `pdf:spec_table`). One source-ref kind
 
 | Action               | Tool                                  |
 | -------------------- | ------------------------------------- |
-| inspect a fresh FMU  | `fmu.inspect`                         |
-| list parsed models   | `fmu.list_models`                     |
-| run simulation       | `fmu.simulate`                        |
-| fetch result series  | `fmu.get_results`                     |
+| inspect a fresh FMU  | `fmu_inspect`                         |
+| list parsed models   | `fmu_list_models`                     |
+| run simulation       | `fmu_simulate`                        |
+| fetch result series  | `fmu_get_results`                     |
 
-Six MCP tools, namespaced `fmu.*`. Three node types
+Six MCP tools use the `fmu_` prefix. Three node types
 (`fmu:model`, `fmu:variable`, `fmu:plot`). Two source-ref kinds
 (`fmu-variable`, `fmu-simulation-time`). Falls back to a fake runtime
 if FMPy isn't installed, so the demo works on any machine.

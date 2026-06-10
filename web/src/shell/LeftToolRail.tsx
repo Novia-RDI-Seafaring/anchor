@@ -554,7 +554,7 @@ function ProducerUploadDialog({
 
           {kind === "sysml" ? (
             <div className="mt-4 rounded border border-dashed border-neutral-300 px-3 py-4 text-xs italic text-neutral-500">
-              Use <code className="font-mono">sysml.render</code> via MCP, or
+              Use <code className="font-mono">sysml_render</code> via MCP, or
               the <code className="font-mono">/api/sysml/render</code> HTTP
               route, to materialise SysML on this canvas. A direct upload
               endpoint hasn't shipped yet.

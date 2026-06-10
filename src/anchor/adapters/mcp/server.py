@@ -3,7 +3,7 @@
 Tool dispatch routes by handler ownership: each tool name comes from one
 of the per-extension `tool_definitions()` lists, and `call_tool` routes
 to whichever handler claimed it. PDF tools (`ingest_pdf`, `list_documents`,
-...) live in `anchor_pdfs.mcp_handlers`; FMU tools (`fmu.inspect`, ...) in
+...) live in `anchor_pdfs.mcp_handlers`; FMU tools (`fmu_inspect`, ...) in
 `anchor_fmus.mcp_handlers`; CAD tools (`inspect`, `list_models`, ...) in
 `anchor_cad.mcp_handlers`. Canvas tools live in `handlers_canvas`.
 
@@ -107,9 +107,9 @@ PDF tools (extension anchor_pdfs):
 - search_documents — semantic search across embedded gold regions
 - get_gold_regions / get_page_text / get_page_image / get_crop / get_pdf
 
-FMU tools (anchor_fmus, optional): fmu.inspect / fmu.list / fmu.simulate / ...
+FMU tools (anchor_fmus, optional): fmu_inspect / fmu_list_models / fmu_simulate / ...
 CAD tools (anchor_cad): inspect / list_models / set_parameter / ...
-SysML tools (anchor_sysml): sysml.render / sysml.export
+SysML tools (anchor_sysml): sysml_render / sysml_export
 
 ── Placeholder protocol ───────────────────────────────────────────────────
 
@@ -181,9 +181,9 @@ def build_mcp_server(
         return [Tool(**d) for d in [*canvas_defs, *pdf_defs, *fmu_defs, *cad_defs, *sysml_defs]]
 
     canvas_names = {d["name"] for d in canvas_defs}
-    fmu_names = {d["name"] for d in fmu_defs}
+    fmu_names = {d["name"] for d in fmu_defs} | getattr(fmu_handlers, "LEGACY_TOOL_NAMES", set())
     cad_names = {d["name"] for d in cad_defs}
-    sysml_names = {d["name"] for d in sysml_defs}
+    sysml_names = {d["name"] for d in sysml_defs} | getattr(sysml_handlers, "LEGACY_TOOL_NAMES", set())
 
     @app.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | ImageContent]:

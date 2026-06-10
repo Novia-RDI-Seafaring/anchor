@@ -1,8 +1,7 @@
-"""MCP tools exposed by anchor-sysml: namespaced ``sysml.*``.
+"""MCP tools exposed by anchor-sysml.
 
-Two tools today: ``sysml.render`` (text → canvas batch) and ``sysml.export``
-(canvas state → text — Phase 1 stub). Tool names mirror the FMU/CAD
-extensions' style with the ``sysml.`` prefix already baked in.
+Tool names use underscores because Claude Desktop rejects dots in MCP tool
+names. Dotted names are still accepted as legacy aliases by ``call_tool``.
 """
 from __future__ import annotations
 
@@ -12,11 +11,16 @@ from typing import Any
 
 from anchor.extensions.anchor_sysml.core.services import SysmlService
 
+LEGACY_TOOL_ALIASES = {
+    "sysml.render": "sysml_render",
+    "sysml.export": "sysml_export",
+}
+
 
 def tool_definitions() -> list[dict[str, Any]]:
     return [
         {
-            "name": "sysml.render",
+            "name": "sysml_render",
             "description": (
                 "Parse a SysML v2 textual document and place its packages, "
                 "blocks (part def / part), and requirements onto the canvas. "
@@ -36,7 +40,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
-            "name": "sysml.export",
+            "name": "sysml_export",
             "description": (
                 "Reconstruct SysML v2 text from the workspace's sysml:* nodes. "
                 "Phase 1 returns a stub header; faithful round-trip lands "
@@ -54,8 +58,9 @@ def tool_definitions() -> list[dict[str, Any]]:
 
 
 async def call_tool(svc: SysmlService, name: str, args: dict[str, Any]) -> str:
+    name = LEGACY_TOOL_ALIASES.get(name, name)
     try:
-        if name == "sysml.render":
+        if name == "sysml_render":
             text = args.get("text")
             if text is None and args.get("path"):
                 p = Path(args["path"])
@@ -72,7 +77,7 @@ async def call_tool(svc: SysmlService, name: str, args: dict[str, Any]) -> str:
                 filename=args.get("filename") or (args.get("path") and Path(args["path"]).name),
             )
             return result.model_dump_json()
-        if name == "sysml.export":
+        if name == "sysml_export":
             text = await svc.export(workspace_slug=args["workspace_slug"])
             return json.dumps({"text": text})
     except Exception as exc:
