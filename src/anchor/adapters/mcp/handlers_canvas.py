@@ -140,7 +140,12 @@ def tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "canvas_add_edge",
-            "description": "Connect two nodes (source, target, label, edge_type, sourceHandle, targetHandle, data).",
+            "description": (
+                "Explicitly wire two nodes. Use only when the user's main intent is "
+                "to change wiring, relationships, provenance visualization, layout "
+                "connections, or graph structure. Do not use for ordinary content "
+                "updates; source_ref data is enough for grounding."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -170,7 +175,11 @@ def tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "canvas_update_edge",
-            "description": "Patch an edge's fields (label, edge_type, source/target handle, data).",
+            "description": (
+                "Patch an existing edge's fields. Use only when the user's main "
+                "intent is a wiring, routing, relationship, provenance-visualization, "
+                "or graph-structure change."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
