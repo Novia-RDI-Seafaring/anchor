@@ -15,7 +15,6 @@ LEGACY_TOOL_ALIASES = {
     "sysml.render": "sysml_render",
     "sysml.export": "sysml_export",
 }
-LEGACY_TOOL_NAMES = set(LEGACY_TOOL_ALIASES)
 
 
 def tool_definitions() -> list[dict[str, Any]]:
