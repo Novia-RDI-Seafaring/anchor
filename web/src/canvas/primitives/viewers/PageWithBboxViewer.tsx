@@ -33,6 +33,10 @@ export function PageWithBboxViewer() {
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [activeRegion, setActiveRegion] = useState<string | null>(null);
   const [sending, setSending] = useState<string | null>(null);
+  const viewerSlug = viewer?.slug;
+  const viewerPage = viewer?.page;
+  const viewerHighlightRegionId = viewer?.highlightRegionId;
+  const viewerHighlightPage = viewer?.highlightPage;
 
   async function sendRegionToCanvas(region: Region & { description?: string }) {
     if (!viewer?.workspaceSlug || !viewer?.documentNodeId) return;
@@ -81,15 +85,15 @@ export function PageWithBboxViewer() {
   }
 
   useEffect(() => {
-    if (!viewer) return;
+    if (!viewerSlug) return;
     let cancel = false;
     setIndex(null);
     setRegions([]);
     setActiveRegion(null);
-    documents.index(viewer.slug).then((idx) => {
+    documents.index(viewerSlug).then((idx) => {
       if (!cancel) setIndex(idx);
     }).catch(() => {});
-    fetch(`${(import.meta.env.VITE_BACKEND_URL as string | undefined) ?? ""}/api/documents/${viewer.slug}/gold-map`)
+    fetch(`${(import.meta.env.VITE_BACKEND_URL as string | undefined) ?? ""}/api/documents/${viewerSlug}/gold-map`)
       .then((r) => r.ok ? r.json() : null)
       .then((map) => {
         if (cancel || !map) return;
@@ -104,23 +108,26 @@ export function PageWithBboxViewer() {
     return () => {
       cancel = true;
     };
-  }, [viewer?.slug]);
+  }, [viewerSlug]);
 
   useEffect(() => {
-    if (!viewer) return;
+    if (!viewerSlug || viewerPage == null) return;
     let cancel = false;
     setRegions([]);
     setImgSize(null);
-    // Preserve activeRegion when openPdf supplied a highlightRegionId; that
-    // way the viewer opens already focused on the deep-link region.
-    setActiveRegion(viewer.highlightRegionId ?? null);
-    documents.regions(viewer.slug, viewer.page).then((rs) => {
+    // Preserve activeRegion only on the page that owns the deep-link.
+    // Otherwise the same id or bbox can appear highlighted while browsing
+    // unrelated pages.
+    setActiveRegion(
+      viewerHighlightPage === viewerPage ? viewerHighlightRegionId ?? null : null,
+    );
+    documents.regions(viewerSlug, viewerPage).then((rs) => {
       if (!cancel) setRegions(rs);
     }).catch(() => setRegions([]));
     return () => {
       cancel = true;
     };
-  }, [viewer?.slug, viewer?.page, viewer?.highlightRegionId]);
+  }, [viewerSlug, viewerPage, viewerHighlightRegionId, viewerHighlightPage]);
 
   useEffect(() => {
     if (!viewer) return;
@@ -147,6 +154,7 @@ export function PageWithBboxViewer() {
   const pageW = explicitW > 0 ? explicitW : derivedW;
   const pageH = explicitH > 0 ? explicitH : derivedH;
   const canScale = imgSize && pageW > 0 && pageH > 0;
+  const highlightAppliesToPage = viewer.highlightPage === viewer.page;
 
   return (
     <div
@@ -236,7 +244,7 @@ export function PageWithBboxViewer() {
                     active region's bbox, draw an inner emphasis box on the
                     sub-region (e.g. a row inside a spec_block table). */}
                 {(() => {
-                  const sub = viewer.highlightBbox;
+                  const sub = highlightAppliesToPage ? viewer.highlightBbox : undefined;
                   if (!sub || sub.length < 4) return null;
                   const active = regions.find(
                     (rr) => ((rr as { id?: string }).id ?? "") === activeRegion,

@@ -8,6 +8,7 @@ type PdfViewerState = {
   /** When set, the viewer should focus this region and ride a deep-highlight on its bbox. */
   highlightRegionId?: string;
   highlightBbox?: number[];
+  highlightPage?: number;
 };
 
 /**
@@ -165,6 +166,9 @@ export const useUiStore = create<UiState>((set) => ({
         documentNodeId: options?.documentNodeId,
         highlightRegionId: options?.highlightRegionId,
         highlightBbox: options?.highlightBbox,
+        highlightPage: options?.highlightRegionId || options?.highlightBbox
+          ? options?.page ?? 1
+          : undefined,
       },
     }),
   closePdf: () => set({ pdfViewer: null }),

@@ -164,6 +164,7 @@ describe("TablePrimitive row handles", () => {
       slug: "alfa-laval-lkh",
       page: 2,
       highlightRegionId: "r9",
+      highlightPage: 2,
     });
   });
 });
