@@ -154,6 +154,47 @@ pnpm --dir web test
 pnpm --dir web exec tsc --noEmit
 ```
 
+## AX testing (Agent Experience)
+
+AX testing is usability testing with an agent as the subject. You drive
+Anchor the way a user would and file a report the moment its contract
+(the skill, `--help`, the MCP tool list, command output, a verdict) does
+not match reality. The instrument is the `ax-testing` skill set:
+[github.com/Novia-RDI-Seafaring/ax-testing](https://github.com/Novia-RDI-Seafaring/ax-testing).
+
+Install it (global, Claude Code), then restart the agent:
+
+```bash
+npx skills add Novia-RDI-Seafaring/ax-testing -a claude-code -g -y
+```
+
+How to test Anchor:
+
+- **Stay on the user surface.** Use only the `anchor` CLI and its
+  `--help`, the MCP tools, the skill, and the public docs. Do **not**
+  read Anchor's source, its installed package, or its tests. A real user
+  cannot, and it hides the friction you are testing for. If you find
+  yourself wanting to read the implementation, that wanting is itself a
+  finding: file it and continue from the surface.
+- **Do real tasks, file when tripped.** Ingest a PDF, find a spec, place
+  it on a canvas with provenance. The instant something makes you pause
+  (you cleaned noise out of output, retried, guessed a flag, wrote glue
+  code, a check failed while the real operation worked, the docs omitted
+  a tool that exists), file friction before moving on. The workaround is
+  the evidence; under-reporting is the failure mode.
+- **Where reports go: GitHub issues.** When AX-testing Anchor, the
+  destination for every finding is a **GitHub issue in this repo**, filed
+  with the **AX report** template (it applies the `ax-report` label) or via
+  `gh issue create --label ax-report`, with the report JSON in a `json`
+  code block. That issue is the report of record. The skill's local
+  `~/.claude/ax-reports/anchor/` corpus is a scratch/fallback, not the
+  destination. Triage (`is:issue label:ax-report`) promotes real findings
+  into normal issues.
+
+The heuristics (contract truth, pure machine output, honest verdicts,
+affordance completeness, and the rest) and the full method live in the
+`ax-testing` repo.
+
 ## Legacy code
 
 The pre-v2 codebase (Next.js + CopilotKit frontend, FastAPI + asyncpg +

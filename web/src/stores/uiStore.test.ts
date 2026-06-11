@@ -120,6 +120,39 @@ describe("uiStore.pendingInlineRenameNodeId", () => {
   });
 });
 
+describe("uiStore PDF source highlights", () => {
+  it("records the page that owns a source-ref bbox highlight", () => {
+    useUiStore.getState().openPdf("lkh", {
+      page: 2,
+      highlightBbox: [10, 20, 30, 40],
+    });
+
+    expect(useUiStore.getState().pdfViewer).toMatchObject({
+      slug: "lkh",
+      page: 2,
+      highlightBbox: [10, 20, 30, 40],
+      highlightPage: 2,
+    });
+  });
+
+  it("keeps the source highlight tied to its original page while browsing", () => {
+    useUiStore.getState().openPdf("lkh", {
+      page: 2,
+      highlightRegionId: "r4",
+      highlightBbox: [10, 20, 30, 40],
+    });
+
+    useUiStore.getState().setPdfPage(3);
+
+    expect(useUiStore.getState().pdfViewer).toMatchObject({
+      page: 3,
+      highlightRegionId: "r4",
+      highlightBbox: [10, 20, 30, 40],
+      highlightPage: 2,
+    });
+  });
+});
+
 describe("uiStore.selectedEdgeId — Miro-style edge editor selection", () => {
   it("defaults to null", () => {
     expect(useUiStore.getState().selectedEdgeId).toBeNull();

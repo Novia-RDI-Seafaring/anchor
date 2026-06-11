@@ -1,0 +1,62 @@
+name: AX report
+description: File an Agent Experience (AX) friction report from an ax-report JSON
+title: "ax: "
+labels: ["ax-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For friction an agent hit while using Anchor, captured with the
+        `ax-report` skill. Paste the JSON the skill wrote (it lives under
+        `~/.claude/ax-reports/anchor/...`); its path and fields carry the
+        tool, kind, severity, heuristic, and the evidence. A human triages
+        from here. One report per issue.
+
+  - type: textarea
+    id: report-json
+    attributes:
+      label: AX report JSON
+      description: Paste the contents of the ax-report file verbatim.
+      render: json
+      placeholder: |
+        {
+          "schema_version": "0.1",
+          "id": "8c2f1d44",
+          "session_id": "a1b2c3d4",
+          "tool": "anchor",
+          "surface": "anchor check --probe",
+          "kind": "friction",
+          "heuristic": "honest_verdicts",
+          "severity": "high",
+          "task": "verify the setup before ingesting",
+          "expected": "the probe passes iff a real ingest would work",
+          "actual": "probe failed on a param the model rejects; ingest worked",
+          "workaround": "ignored the probe and ran ingest, which succeeded",
+          "agent": "claude-opus-4-8"
+        }
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity (from the JSON, for quick triage)
+      description: Optional. Mirrors the `severity` field so the queue is sortable at a glance.
+      options:
+        - critical
+        - high
+        - medium
+        - low
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything to add
+      description: Optional. Harness, OS, or context the JSON does not capture.
+      placeholder: |
+        - Harness: Claude Code (desktop app), Windows 11
+        - anchor-kb 0.2.4
+    validations:
+      required: false

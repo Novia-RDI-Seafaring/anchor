@@ -42,12 +42,42 @@ function numericSeconds(value: unknown): number | null {
 }
 
 type PageMeta = { width: number; height: number };
+type RegionHighlight = { regionId?: string; bbox?: number[] };
 
 // Default DPI used by anchor_pdfs when rendering page PNGs. Matches
 // AnchorConfig.dpi. If the producer is reconfigured to a different DPI,
 // gold-map should expose it explicitly; for now we assume the default.
 const RENDER_DPI = 150;
 const POINTS_PER_INCH = 72;
+
+function normalizedBbox(bbox: number[] | undefined): [number, number, number, number] | null {
+  if (!bbox || bbox.length < 4) return null;
+  const [a, b, c, d] = bbox;
+  if (a === undefined || b === undefined || c === undefined || d === undefined) return null;
+  return [
+    Math.min(a, c),
+    Math.min(b, d),
+    Math.max(a, c),
+    Math.max(b, d),
+  ];
+}
+
+function sameBbox(a: number[] | undefined, b: number[] | undefined): boolean {
+  const left = normalizedBbox(a);
+  const right = normalizedBbox(b);
+  if (!left || !right) return false;
+  return left.every((value, index) => Math.abs(value - right[index]!) <= 0.5);
+}
+
+function matchesExternalHighlight(
+  highlight: RegionHighlight | null,
+  rid: string,
+  bbox: number[],
+): boolean {
+  if (!highlight) return false;
+  if (highlight.regionId) return highlight.regionId === rid;
+  return sameBbox(highlight.bbox, bbox);
+}
 
 /**
  * DocumentPrimitive: a paginated document viewport on the canvas.
@@ -186,11 +216,11 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     ? status === "pending" ? "waiting" : "running"
     : `elapsed ${formatElapsed(elapsedSeconds)}`;
 
-  const externalHighlightId = useMemo(() => {
+  const externalHighlight = useMemo<RegionHighlight | null>(() => {
     if (!hoveredSourceRef || !slug) return null;
     if (hoveredSourceRef.slug !== slug) return null;
     if (hoveredSourceRef.page !== page) return null;
-    return hoveredSourceRef.region_id ?? null;
+    return { regionId: hoveredSourceRef.region_id, bbox: hoveredSourceRef.bbox };
   }, [hoveredSourceRef, slug, page]);
 
   return (
@@ -252,7 +282,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                 const bbox = r.bbox as number[];
                 const rid = (r as { id?: string }).id ?? `r${idx}`;
                 const isLocal = hoveredLocal === rid;
-                const isExternal = externalHighlightId === rid;
+                const isExternal = matchesExternalHighlight(externalHighlight, rid, bbox);
                 const active = isLocal || isExternal;
                 const crops = (r as { crops?: { svg?: string | null } }).crops;
                 const svgRel = crops?.svg;
@@ -272,10 +302,10 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                       height: `${hpc}%`,
                       background: active
                         ? "rgba(16, 185, 129, 0.18)"
-                        : "rgba(14, 165, 233, 0.04)",
+                        : "transparent",
                       outline: active
                         ? "2px solid #059669"
-                        : "1px solid rgba(14, 165, 233, 0.55)",
+                        : "1px solid transparent",
                       outlineOffset: "-1px",
                     }}
                     data-region-handle-id={`region:${rid}`}
@@ -347,7 +377,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                       className={`canvas-region-socket !min-w-0 !min-h-0 !border ${
                         active
                           ? "!h-2.5 !w-2.5 !border-emerald-700 !bg-emerald-400 opacity-100"
-                          : "!h-2 !w-2 !border-neutral-400 !bg-white opacity-30"
+                          : "!h-2 !w-2 !border-neutral-400 !bg-white opacity-0"
                       }`}
                       style={{ left: -4, top: "50%" }}
                     />

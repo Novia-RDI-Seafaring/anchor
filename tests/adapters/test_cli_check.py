@@ -99,3 +99,22 @@ def test_check_local_provider_needs_no_key(tmp_path, monkeypatch):
     result = _run_check(tmp_path)
     assert result.exit_code == 0, result.output
     assert "no egress" in result.output
+
+
+def test_check_flags_nonexistent_data_dir(tmp_path, monkeypatch):
+    # check must not imply a data dir exists when it does not (issue #90).
+    monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
+    runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "local"])
+    missing = tmp_path / "no-such-dir" / "anchor-data"
+    result = _run_check(tmp_path, env={"ANCHOR_DATA_DIR": str(missing)})
+    assert str(missing) in result.output
+    assert "does not exist yet" in result.output
+
+
+def test_check_no_note_when_data_dir_exists(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
+    runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "local"])
+    present = tmp_path / "data"
+    present.mkdir()
+    result = _run_check(tmp_path, env={"ANCHOR_DATA_DIR": str(present)})
+    assert "does not exist yet" not in result.output
