@@ -88,11 +88,11 @@ commands per workspace, so you don't need to coordinate with the browser.
 A folder containing an `anchor.toml` (created by `anchor init`) is an ANCHOR
 project. It declares the data dir, the AI provider/data-zone, and the models.
 **Run ANCHOR from inside that folder** and every adapter resolves the project
-automatically — the CLI and `anchor serve` walk up from the working directory
-to find `anchor.toml`; `anchor-mcp` does the same, or name it explicitly with
+automatically. The CLI and `anchor serve` walk up from the working directory to
+find `anchor.toml`; `anchor-mcp` does the same, or name it explicitly with
 `anchor-mcp --project <folder>`. So a single MCP registration
 (`anchor install claude-code`, no `--data-dir`) works for *every* project: open
-the agent in the project folder and it targets that project — no reinstall.
+the agent in the project folder and it targets that project, with no reinstall.
 
 If you are unsure which project is active, run `anchor` from the folder you mean
 (or pass `--project`/`ANCHOR_CONFIG`). Don't pass `--data-dir ~/anchor-data`
@@ -100,7 +100,7 @@ unless you specifically want the global default rather than the current project.
 
 ### Set up a project (agent-drivable, like `npm init` / `uv init`)
 
-You can scaffold ANCHOR in any folder non-interactively — `anchor init` accepts
+You can scaffold ANCHOR in any folder non-interactively. `anchor init` accepts
 every choice as a flag, so no prompt blocks you:
 
 ```bash
@@ -114,7 +114,7 @@ anchor init . --yes --provider azure \
 ```
 
 `init` self-corrects an Azure URL that is missing `/openai/v1/`. The API key is
-never written to `anchor.toml` — set `ANCHOR_OPENAI_API_KEY` in the environment
+never written to `anchor.toml`. Set `ANCHOR_OPENAI_API_KEY` in the environment
 or a gitignored `.env` in the folder. Then **verify before ingesting**:
 
 ```bash

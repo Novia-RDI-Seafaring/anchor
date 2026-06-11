@@ -30,9 +30,9 @@ can scaffold a project the way it runs `npm init` or `uv init`. See
 | `anchor search QUERY` | Search embedded gold regions. |
 | `anchor synopsis SLUG --entity ENTITY` | Compose an entity-scoped synopsis. |
 
-Commands resolve the data dir from the project (`anchor.toml`) found by walking
-up from the working directory, then `ANCHOR_DATA_DIR`, then `~/anchor-data`. An
-explicit `--data-dir DIR` overrides all of them.
+Commands resolve the data dir from, in order: explicit `--data-dir DIR`,
+`ANCHOR_DATA_DIR` or `.env`, the project `anchor.toml` found by walking up from
+the working directory, then `~/anchor-data`.
 
 ## Canvas commands
 

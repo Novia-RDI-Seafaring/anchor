@@ -13,7 +13,7 @@ hard requirement for new uploads since 2024). Sign in at
 <https://pypi.org/account/login/>.
 
 From this repo root, with the working tree clean and on the tag you
-want to release (start with `v0.2.0`):
+want to release:
 
 ```bash
 # Build the frontend bundle (the wheel force-includes it)
@@ -22,8 +22,8 @@ pnpm --dir web build
 
 # Build wheel + sdist
 uv build
-# → dist/anchor_kb-0.2.0-py3-none-any.whl
-# → dist/anchor_kb-0.2.0.tar.gz
+# → dist/anchor_kb-0.2.4-py3-none-any.whl
+# → dist/anchor_kb-0.2.4.tar.gz
 
 # Publish. uv will prompt for a PyPI API token.
 # Create one at: https://pypi.org/manage/account/token/
@@ -31,6 +31,8 @@ uv build
 # "Project: anchor-kb" for subsequent ones.
 uv publish
 ```
+
+If `pnpm` is not on PATH, prefix the frontend commands with `corepack pnpm@10`.
 
 After the first publish, `pip install anchor-kb` and `uv tool install
 anchor-kb` both work globally.
@@ -125,14 +127,14 @@ Once the setup above is done, releases are tag-driven:
 # 1. Update version in pyproject.toml + CHANGELOG.md
 # 2. Commit those changes
 git add pyproject.toml CHANGELOG.md
-git commit -m "release: v0.2.1"
+git commit -m "release: v0.2.4"
 
 # 3. Tag the commit
-git tag v0.2.1 -m "v0.2.1"
+git tag v0.2.4 -m "v0.2.4"
 
 # 4. Push the commit + tag
 git push origin main
-git push origin v0.2.1
+git push origin v0.2.4
 ```
 
 The `release.yml` workflow picks up the tag push, runs the full test
@@ -150,10 +152,10 @@ open https://pypi.org/project/anchor-kb/
 
 # Fresh install from a throwaway venv works
 uv run --isolated --with anchor-kb anchor version
-# → 0.2.1
+# → 0.2.4
 
 # GitHub Release shows up
-gh release view v0.2.1
+gh release view v0.2.4
 ```
 
 ## Rolling back
@@ -164,10 +166,10 @@ and ship a patch:
 
 ```bash
 # Yank the bad version
-twine yank anchor-kb 0.2.1 --reason "broken frontend bundle"
+twine yank anchor-kb 0.2.4 --reason "broken frontend bundle"
 
 # Ship a patch
-# Bump pyproject.toml to 0.2.2, update CHANGELOG, tag v0.2.2, push.
+# Bump pyproject.toml to the next patch version, update CHANGELOG, tag, push.
 ```
 
 Hard-deletion is only available within 72 hours of upload via the PyPI

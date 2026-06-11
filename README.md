@@ -83,19 +83,14 @@ pnpm --dir web dev
 Open `http://localhost:5173` for the development UI. The backend remains on
 `http://127.0.0.1:8002`.
 
-Source development requires Node.js 20+ and pnpm 10. If `pnpm` is not
-installed globally, run the frontend commands through Corepack instead:
+Source development requires Node.js 20+ and pnpm 10. If `pnpm` is not installed
+globally, use the Corepack form instead: `corepack pnpm@10 --dir web install`
+and `corepack pnpm@10 --dir web dev`.
 
-```bash
-corepack pnpm@10 --dir web install
-# Run this in the second terminal after starting the backend.
-corepack pnpm@10 --dir web dev
-```
-
-Document, canvas, and server commands default `--data-dir` to
-`~/anchor-data`. Set `ANCHOR_DATA_DIR` to change the default for CLI and MCP
-commands. An explicit `--data-dir` takes priority. Use the same path when
-registering agents or working with extension manifests.
+For normal use, run `anchor init` in a project folder and leave
+`ANCHOR_DATA_DIR` unset. Commands then share the project's `anchor.toml`.
+Configuration precedence is: explicit flags, `ANCHOR_*` environment variables,
+`.env`, project `anchor.toml`, then built-in defaults.
 
 Releases are tag-driven: pushing a `v*` tag triggers the
 [release workflow](./.github/workflows/release.yml), which publishes
@@ -118,14 +113,17 @@ anchor demo
 
 # Or step by step:
 
-# 1. Pick a folder for your data; create your first canvas
-anchor canvas create my-first-canvas --data-dir ~/anchor-data
+# 1. Configure a project folder and create your first canvas
+mkdir my-anchor-project
+cd my-anchor-project
+anchor init
+anchor canvas create my-first-canvas
 
 # 2. Start the server (serves the canvas UI, HTTP API, and browser SSE updates)
-anchor serve --data-dir ~/anchor-data
+anchor serve
 
 # 3. (in another terminal) Ingest a PDF
-anchor ingest /path/to/datasheet.pdf --data-dir ~/anchor-data
+anchor ingest /path/to/datasheet.pdf
 
 # 4. Open http://localhost:8002/c/my-first-canvas in your browser
 ```
@@ -142,14 +140,13 @@ ANCHOR exposes its tools over **MCP** (Model Context Protocol). For Claude
 Code, register the local stdio server with:
 
 ```bash
-claude mcp add --transport stdio --scope user anchor -- \
-  anchor-mcp --data-dir ~/anchor-data --base-url http://localhost:8002
-claude mcp list
+anchor install claude-code
 ```
 
-**Restart Claude Code** (Cmd+Q, reopen). In any conversation, run `/mcp`
-and you should see `anchor` listed with its available tools. The exact list
-depends on optional extensions such as FMU support. Then talk normally:
+Open Claude Code inside a folder configured with `anchor init`. In any
+conversation, run `/mcp` and you should see `anchor` listed with its available
+tools. The exact list depends on optional extensions such as FMU support. Then
+talk normally:
 
 > "Ingest the PDF at ~/Downloads/lkh-pump.pdf and create a canvas called pump-analysis with a document node for it."
 >
@@ -160,7 +157,7 @@ Claude calls the MCP tools directly. Your browser tab on `localhost:8002/c/pump-
 For Cursor:
 
 ```bash
-anchor install cursor --data-dir ~/anchor-data
+anchor install cursor
 ```
 
 See the [agent configuration guide](./docs/guides/agent-configuration.md) for
@@ -194,13 +191,14 @@ This layout is **the contract**. You can hand-edit JSON files, copy a canvas fol
 
 ## Configuration
 
-Select the data directory and server bind address with the CLI flags
-`--data-dir`, `--host`, and `--port`. The following `ANCHOR_` environment
-variables configure storage, processing, and browser access:
+Configure a project with `anchor init`; it writes non-secret settings to
+`anchor.toml`. Select the data directory and server bind address with the CLI
+flags `--data-dir`, `--host`, and `--port`. The following `ANCHOR_`
+environment variables override project settings:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ANCHOR_DATA_DIR` | `~/anchor-data` | Default storage root for CLI and MCP commands. An explicit `--data-dir` takes priority. |
+| `ANCHOR_DATA_DIR` | `~/anchor-data` | Storage root override for CLI and MCP commands. An explicit `--data-dir` takes priority. |
 | `ANCHOR_OPENAI_API_KEY` | (unset) | Optional: enables LLM polish + region extraction in the gold layer |
 | `ANCHOR_OPENAI_BASE_URL` | (unset) | Override the OpenAI-compatible endpoint. For Azure OpenAI v1 use `https://<resource>.openai.azure.com/openai/v1/`; for Ollama use `http://localhost:11434/v1`. |
 | `ANCHOR_POLISH_MODEL` | `gpt-5.4` | Model name for page-MD polishing |
@@ -218,10 +216,10 @@ LLM endpoint before uploading a document or running `anchor ingest`. Documents
 already ingested as silver-only are not backfilled automatically; ingest them
 again after enabling a provider.
 
-ANCHOR reads `.env` from the directory where you start `anchor serve`,
-`anchor demo`, or `anchor ingest`. For users installed with
-`uv tool install anchor-kb`, create that `.env` file in your chosen launch
-directory before the first upload.
+ANCHOR reads `.env` from the project folder where you run `anchor init`, then
+start `anchor serve`, `anchor demo`, or `anchor ingest`. For users installed
+with `uv tool install anchor-kb`, create that `.env` file in your chosen
+project directory before the first upload.
 
 For OpenAI, create `.env` containing:
 
@@ -353,7 +351,7 @@ The test seam is function-based pytest with in-memory implementations of every p
 
 **Near-term:** complete remaining node renderer and asset workflows, then stabilise the extension registration surface.
 
-**Mid-term:** split the canvas primitive (`anchor-canvas`) and PDF extension (`anchor-canvas-pdfs`) into separately-publishable packages, formal extension contract for third-party authors, and per-project `anchor.toml` for declarative extension sets.
+**Mid-term:** split the canvas primitive (`anchor-canvas`) and PDF extension (`anchor-canvas-pdfs`) into separately-publishable packages, and stabilise the extension contract for third-party authors.
 
 **Longer term:** other ingestion extensions (audio/video transcription, code, web), shared org docs / personal canvases topology, optional Postgres event store for very large workspaces.
 

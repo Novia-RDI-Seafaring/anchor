@@ -48,8 +48,8 @@ data zone before ingesting) and `anchor canvas url`.
 
 ## Why `0.2.2` matters
 
-`0.2.2` is the recommended version for new users. It adds `anchor init`, which
-configures a project folder in one step — pick the AI provider (and therefore
+`0.2.2` added `anchor init`, which configures a project folder in one step:
+pick the AI provider (and therefore
 the data zone: local, Ollama, OpenAI, Azure, or any OpenAI-compatible endpoint),
 and ANCHOR writes `anchor.toml`. The CLI, server, and an agent's `anchor-mcp`
 all resolve that project, so a single `anchor install` works for every project.
@@ -78,7 +78,7 @@ uv tool install anchor-kb
 Specific version:
 
 ```bash
-uv tool install anchor-kb==0.2.1
+uv tool install anchor-kb==0.2.4
 ```
 
 Upgrade an existing install:
