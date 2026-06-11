@@ -53,7 +53,13 @@ def check(
         typer.echo(f"  provider       : {prov.label} — {prov.zone}")
     elif cfg.provider:
         typer.echo(f"  provider       : {cfg.provider}")
-    typer.echo(f"  data dir       : {cfg.data_dir}")
+    # Be honest when the resolved data dir is not on disk yet: a fresh project
+    # has none until first ingest, but a bare path here reads as "all set" and
+    # has masked a misconfigured zone before. Say so rather than imply it exists.
+    data_dir_note = (
+        "" if cfg.data_dir.exists() else "  (does not exist yet, created on first ingest)"
+    )
+    typer.echo(f"  data dir       : {cfg.data_dir}{data_dir_note}")
     embed_remote = cfg.embed_model.startswith("text-embedding-")
     typer.echo(
         f"  embed model    : {cfg.embed_model}  "

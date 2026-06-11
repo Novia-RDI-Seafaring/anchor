@@ -182,10 +182,13 @@ How to test Anchor:
   code, a check failed while the real operation worked, the docs omitted
   a tool that exists), file friction before moving on. The workaround is
   the evidence; under-reporting is the failure mode.
-- **Where reports go.** The skill writes one JSON file per finding under
-  `~/.claude/ax-reports/anchor/`. To surface one in this repo, open a
-  GitHub issue with the **AX report** template (it applies the
-  `ax-report` label) and paste the JSON. Triage promotes real findings
+- **Where reports go: GitHub issues.** When AX-testing Anchor, the
+  destination for every finding is a **GitHub issue in this repo**, filed
+  with the **AX report** template (it applies the `ax-report` label) or via
+  `gh issue create --label ax-report`, with the report JSON in a `json`
+  code block. That issue is the report of record. The skill's local
+  `~/.claude/ax-reports/anchor/` corpus is a scratch/fallback, not the
+  destination. Triage (`is:issue label:ax-report`) promotes real findings
   into normal issues.
 
 The heuristics (contract truth, pure machine output, honest verdicts,
