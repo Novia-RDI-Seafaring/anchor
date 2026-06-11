@@ -9,6 +9,25 @@ next version section on tag.
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-06-11
+
+Config robustness for cross-platform onboarding. Two fixes that stopped a
+project's `anchor.toml` from being honored, both found while testing a fresh
+setup (one on Windows).
+
+### Fixed
+
+- `data_dir` with a leading `~` (in `anchor.toml`, `ANCHOR_DATA_DIR`, or
+  `--data-dir`) was taken literally, creating a `./~` folder inside the project
+  and reading from the wrong place. It now expands `~` and `$VAR` from every
+  config source.
+- On Windows, `anchor init` wrote `anchor.toml` in the default locale encoding
+  (cp1252), so a non-ASCII character became a byte the UTF-8 reader rejected and
+  the whole config was silently dropped in favor of the global data dir. The
+  writer now forces UTF-8 (and keeps the template ASCII); the reader decodes
+  `utf-8-sig` then falls back to cp1252, so an already-corrupted file still
+  loads. No re-`init` needed after upgrading.
+
 ## [0.2.3] - 2026-06-09
 
 Azure-onboarding hardening. Found by walking a fresh-folder Azure test-drive end

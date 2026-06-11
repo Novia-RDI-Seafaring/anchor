@@ -15,18 +15,52 @@ the resolved port instances built from the config.
 from __future__ import annotations
 
 import os
+import sys
+import tomllib
 from pathlib import Path
+from typing import Any
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
     SettingsConfigDict,
-    TomlConfigSettingsSource,
 )
 
 #: Filename for the project-local, non-secret configuration.
 CONFIG_FILENAME = "anchor.toml"
+
+
+def _load_toml_tolerant(path: Path) -> dict[str, Any]:
+    """Parse an ``anchor.toml``, tolerating a non-UTF-8 (legacy Windows) write.
+
+    TOML mandates UTF-8, but ``anchor init`` run under a Windows locale once
+    wrote the file as cp1252 (e.g. an em-dash saved as byte ``0x97``), which a
+    strict UTF-8 parse rejects — silently dropping the project's whole config
+    and falling back to the global default data dir. Decode ``utf-8-sig``
+    first (this also strips a BOM some editors add), fall back to cp1252, so
+    such a file still loads instead of being ignored.
+    """
+    raw = path.read_bytes()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("cp1252")
+    return tomllib.loads(text)
+
+
+class _MappingSettingsSource(PydanticBaseSettingsSource):
+    """Feed an already-parsed toml mapping into settings as one source."""
+
+    def __init__(self, settings_cls: type[BaseSettings], values: dict[str, Any]) -> None:
+        super().__init__(settings_cls)
+        self._values = values
+
+    def get_field_value(self, field: Any, field_name: str) -> tuple[Any, str, bool]:
+        return self._values.get(field_name), field_name, False
+
+    def __call__(self) -> dict[str, Any]:
+        return dict(self._values)
 
 
 def discover_config_file() -> Path | None:
@@ -54,6 +88,21 @@ class AnchorConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ANCHOR_", env_file=".env", extra="ignore")
 
     data_dir: Path = Field(default_factory=lambda: Path.home() / "anchor-data")
+
+    @field_validator("data_dir", mode="after")
+    @classmethod
+    def _expand_data_dir(cls, value: Path) -> Path:
+        """Expand ``~`` and ``$VAR`` in ``data_dir``, from whatever source.
+
+        A ``data_dir`` written as ``~/anchor-data`` or ``$HOME/anchor-data``
+        in ``anchor.toml`` (or ``ANCHOR_DATA_DIR`` / ``--data-dir``) parses
+        into a literal ``Path`` with no expansion, so a leading ``~`` silently
+        becomes a real ``./~`` folder inside the project and every store reads
+        from the wrong place. Every source funnels through this validator, so
+        expanding here fixes the tilde once for all adapters rather than at
+        each call site.
+        """
+        return Path(os.path.expandvars(str(value))).expanduser()
     # Loopback by default: the HTTP server is unauthenticated and edits
     # local engineering data. Users who want LAN access can opt in via
     # ``ANCHOR_HTTP_HOST=0.0.0.0`` or ``--host 0.0.0.0``, and at that
@@ -111,14 +160,13 @@ class AnchorConfig(BaseSettings):
         toml_path = discover_config_file()
         if toml_path is not None:
             try:
-                sources.append(TomlConfigSettingsSource(settings_cls, toml_file=toml_path))
+                values = _load_toml_tolerant(toml_path)
+                sources.append(_MappingSettingsSource(settings_cls, values))
             except Exception as exc:  # noqa: BLE001
                 # A malformed project anchor.toml must never brick the CLI:
                 # DEFAULT_DATA_DIR is computed at import time, so a parse error
                 # here would crash every command (including `init --force` that
                 # would fix it). Warn and fall back to env / defaults instead.
-                import sys
-
                 print(f"Warning: ignoring unreadable {toml_path}: {exc}", file=sys.stderr)
         sources.append(file_secret_settings)
         return tuple(sources)

@@ -14,14 +14,28 @@ release.
 
 | Version | Date | Main difference |
 | --- | --- | --- |
+| `0.2.4` | 2026-06-11 | Config robustness for cross-platform onboarding. A `data_dir` with a leading `~` now expands to `$HOME` instead of creating a literal `./~` folder. On Windows, `anchor init` no longer writes `anchor.toml` in a non-UTF-8 locale encoding that the reader then rejected and silently ignored; the reader also recovers an already-corrupted file. Recommended for anyone on Windows or using a `~`-relative `data_dir`. |
 | `0.2.3` | 2026-06-10 | Azure + agent-experience hardening. `anchor version` / `--version` report the real installed version (was stuck at `0.2.0`). `anchor ingest` is idempotent (skips when gold exists; `--force` to recompute). New `anchor canvas url` and `anchor check`; HuggingFace/docling noise no longer pollutes `search` / `ingest` output. Fixes a data-egress edge case where a missing key could route document pages to public OpenAI, and `anchor init` self-corrects an Azure endpoint. |
 | `0.2.2` | 2026-06-09 | Onboarding release. `anchor init` configures a project folder (AI provider / data zone, models, data dir) and writes `anchor.toml`; one MCP registration serves every project. Azure OpenAI works via its v1 endpoint; docling auto-selects CUDA or CPU; `anchor serve` falls through to a free port. |
 | `0.2.1` | 2026-06-08 | Patch release for public testing. It includes the Windows Unicode ingest fix, canvas ingest progress feedback, timing reports, canvas deletion, improved region overlays and updated MCP setup docs. |
 | `0.2.0` | 2026-05-25 | First public release of the v2 local canvas, PDF ingestion, MCP server, CLI, HTTP API and bundled web UI. |
 
+## Why `0.2.4` matters
+
+`0.2.4` is the recommended version, especially on Windows. It fixes two ways a
+project's `anchor.toml` could be quietly ignored. A `data_dir` written with a
+leading `~` (such as `~/anchor-data`) was taken literally and created a `./~`
+folder inside the project instead of expanding to your home directory; it now
+expands `~` and `$VAR` from every source. On Windows, `anchor init` wrote
+`anchor.toml` in the system's legacy encoding (cp1252) rather than UTF-8, so a
+single non-ASCII character corrupted the file for the UTF-8 reader, which then
+fell back to the global data dir without using your project config. The writer
+now always uses UTF-8, and the reader recovers a file that was already written
+the old way, so upgrading is enough. No re-`init` required.
+
 ## Why `0.2.3` matters
 
-`0.2.3` is the recommended version. Upgrade from `0.2.2` if you tested it: that
+`0.2.3` upgrade from `0.2.2` if you tested it: that
 wheel reported its version as `0.2.0` (`anchor version` read a hardcoded string),
 which `0.2.3` fixes by reading the installed package metadata. `0.2.3` also makes
 `anchor ingest` honor its documented idempotency — re-running on an
