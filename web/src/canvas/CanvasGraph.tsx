@@ -1015,6 +1015,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         // they share a modifier.
         multiSelectionKeyCode="Shift"
         selectionKeyCode="Shift"
+        deleteKeyCode={readOnly ? null : ["Backspace", "Delete"]}
         // Edge hover broadcasts the edge's source_ref so the corresponding
         // document node can highlight the region. Used by evidence edges
         // (spec node → document node).
