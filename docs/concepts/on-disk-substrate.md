@@ -99,7 +99,7 @@ document.json
       "source_kind": "application/pdf",
       "source_path": "../../bronze/alfa-laval-lkh/original.pdf",
       "ingested_at": "2026-04-30T08:14:22Z",
-      "ingested_by": "anchor-pdfs/0.2.0",
+      "ingested_by": "anchor-pdfs/0.2.3",
       "size_units": {"page_count": 4, "item_count": 187}
     }
 

@@ -43,7 +43,7 @@ consumer invokes it. Verbatim from `anchor_fmus`:
   "producer": {
     "name": "anchor-fmus",
     "display_name": "ANCHOR FMUs",
-    "version": "0.2.0",
+    "version": "0.2.3",
     "homepage": "https://github.com/Novia-RDI-Seafaring/anchor"
   },
   "kind": "bundled-in-tree",

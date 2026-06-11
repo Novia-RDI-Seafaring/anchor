@@ -26,14 +26,16 @@ updates, or canvas snapshots.
 ## Project resolution (no baked data dir)
 
 Register `anchor-mcp` **without** a `--data-dir`. The server resolves the active
-project — its data dir, models, and data zone — from `anchor.toml`, discovered by
-walking up from the directory the agent launches it in. So one registration works
-for every `anchor init` project: open the agent in a project folder and the tools
-target that project (falling back to `~/anchor-data` when no `anchor.toml` is
-found).
+project from `anchor.toml`, discovered by walking up from the directory the
+agent launches it in. So one registration works for every `anchor init` project:
+open the agent in a project folder and the tools target that project.
 
-To name a project explicitly — when the server's working directory is not the
-project — add `--project <folder>` to the args. The examples below use the
+The effective data dir still follows ANCHOR's normal precedence: explicit args,
+`ANCHOR_*` environment variables or `.env`, project `anchor.toml`, then
+`~/anchor-data`.
+
+To name a project explicitly, when the server's working directory is not the
+project, add `--project <folder>` to the args. The examples below use the
 folder-resolving form.
 
 ## Optional project instruction

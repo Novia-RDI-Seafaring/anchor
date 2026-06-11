@@ -30,11 +30,13 @@ It also picks the embedding model (local `bge-small`, or a remote
 `text-embedding-3-*` when an endpoint is configured) and the data directory
 (defaults to `<project>/anchor-data`).
 
-Every adapter — the `anchor` CLI, `anchor serve`, and an agent-launched
-`anchor-mcp` — resolves `anchor.toml` by walking up from its working directory.
-So you configure once and run ANCHOR from inside the project folder. Name a
-project explicitly with `anchor-mcp --project <folder>` or by setting
-`ANCHOR_CONFIG` to the file's path.
+Every adapter resolves configuration the same way. The `anchor` CLI,
+`anchor serve`, and an agent-launched `anchor-mcp` walk up from the working
+directory to find `anchor.toml`, unless an explicit flag or `ANCHOR_*`
+environment variable overrides it. So you normally configure once and run
+ANCHOR from inside the project folder. Name a project explicitly with
+`anchor-mcp --project <folder>` or by setting `ANCHOR_CONFIG` to the file's
+path.
 
 !!! warning "Secrets stay out of `anchor.toml`"
     The API key is never written to `anchor.toml`. Put it in
@@ -58,7 +60,7 @@ A malformed `anchor.toml` is ignored with a warning — it never crashes the CLI
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `--data-dir DIR` | resolved from config, else `~/anchor-data` | Storage root. Omit it to use the project resolved from the working directory. |
+| `--data-dir DIR` | resolved from config, else `~/anchor-data` | Storage root. Omit it to use the resolved project or environment configuration. |
 | `--host HOST` | `127.0.0.1` | HTTP bind address for `anchor serve`. |
 | `--port PORT` | `8002` | Preferred HTTP port. If it is in use, `anchor serve` binds the next free port and prints the chosen URL. |
 
@@ -70,7 +72,7 @@ deployment layer.
 | Variable | Purpose |
 | --- | --- |
 | `ANCHOR_CONFIG` | Absolute path to an `anchor.toml` to use; overrides walk-up discovery. |
-| `ANCHOR_DATA_DIR` | Default storage root. An explicit `--data-dir` or a project `anchor.toml` takes priority. |
+| `ANCHOR_DATA_DIR` | Storage root override. An explicit `--data-dir` takes priority; otherwise this beats the `data_dir` in `anchor.toml`. |
 | `ANCHOR_OPENAI_API_KEY` | Credential for an OpenAI-compatible endpoint used by LLM-backed extraction. |
 | `ANCHOR_OPENAI_BASE_URL` | OpenAI-compatible endpoint base URL, including local services. |
 | `ANCHOR_POLISH_MODEL` | Vision-capable model used for markdown polishing. |

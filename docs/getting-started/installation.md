@@ -73,9 +73,10 @@ pnpm --dir web dev
 ```
 
 Run commands from inside a project folder (one with an `anchor.toml` from
-`anchor init`) and they share that project's data dir automatically. Otherwise
-they fall back to `ANCHOR_DATA_DIR`, then `~/anchor-data`; an explicit
-`--data-dir` overrides everything.
+`anchor init`) and they share that project's data dir automatically, unless an
+`ANCHOR_*` environment variable overrides it. The full precedence is: explicit
+flags, `ANCHOR_*` environment variables, `.env`, project `anchor.toml`, then
+built-in defaults.
 
 ## Reinstall or upgrade
 
@@ -100,7 +101,7 @@ If the published PyPI wheel is behind `main`, install from a local checkout
 instead of running `uv tool install anchor-kb`. The local wheel build includes
 the React frontend, so build the frontend first:
 
-=== "Windows PowerShell"
+=== "pnpm on PATH"
 
     ```powershell
     cd C:\path\to\anchor
