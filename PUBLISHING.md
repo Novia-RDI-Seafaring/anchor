@@ -22,8 +22,8 @@ pnpm --dir web build
 
 # Build wheel + sdist
 uv build
-# → dist/anchor_kb-0.2.3-py3-none-any.whl
-# → dist/anchor_kb-0.2.3.tar.gz
+# → dist/anchor_kb-0.2.4-py3-none-any.whl
+# → dist/anchor_kb-0.2.4.tar.gz
 
 # Publish. uv will prompt for a PyPI API token.
 # Create one at: https://pypi.org/manage/account/token/
@@ -127,14 +127,14 @@ Once the setup above is done, releases are tag-driven:
 # 1. Update version in pyproject.toml + CHANGELOG.md
 # 2. Commit those changes
 git add pyproject.toml CHANGELOG.md
-git commit -m "release: v0.2.3"
+git commit -m "release: v0.2.4"
 
 # 3. Tag the commit
-git tag v0.2.3 -m "v0.2.3"
+git tag v0.2.4 -m "v0.2.4"
 
 # 4. Push the commit + tag
 git push origin main
-git push origin v0.2.3
+git push origin v0.2.4
 ```
 
 The `release.yml` workflow picks up the tag push, runs the full test
@@ -152,10 +152,10 @@ open https://pypi.org/project/anchor-kb/
 
 # Fresh install from a throwaway venv works
 uv run --isolated --with anchor-kb anchor version
-# → 0.2.3
+# → 0.2.4
 
 # GitHub Release shows up
-gh release view v0.2.3
+gh release view v0.2.4
 ```
 
 ## Rolling back
@@ -166,7 +166,7 @@ and ship a patch:
 
 ```bash
 # Yank the bad version
-twine yank anchor-kb 0.2.3 --reason "broken frontend bundle"
+twine yank anchor-kb 0.2.4 --reason "broken frontend bundle"
 
 # Ship a patch
 # Bump pyproject.toml to the next patch version, update CHANGELOG, tag, push.

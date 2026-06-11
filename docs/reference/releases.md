@@ -78,7 +78,7 @@ uv tool install anchor-kb
 Specific version:
 
 ```bash
-uv tool install anchor-kb==0.2.3
+uv tool install anchor-kb==0.2.4
 ```
 
 Upgrade an existing install:
