@@ -129,10 +129,11 @@ no second copy of the business logic. An agent moving a node and a
 human dragging a node go through the same code path, hit the same
 event log, and notify the same SSE subscribers.
 
-The MCP server hosts both canvas tools (9: `canvas_get_state`,
-`canvas_add_node`, ...) and extension tools (5 for PDFs, 6 for FMUs).
-The extension tools are namespaced (`pdf.ingest_pdf`, `fmu.simulate`)
-so they can coexist with anyone else's OIP-compliant tools.
+The MCP server hosts both canvas tools (`canvas_get_state`,
+`canvas_add_node`, ...) and extension tools for PDFs, FMUs, CAD and
+SysML. Extension tool names use safe prefixes such as `ingest_pdf`,
+`fmu_simulate` and `sysml_render` so they can coexist with other tools
+and pass MCP client name validation.
 
 ---
 

@@ -15,6 +15,10 @@ anchor install claude-code   # writes the MCP entry + skill, no baked data dir
 anchor install cursor
 ```
 
+`anchor install claude-code` targets Claude Code. Claude Desktop reads a
+separate `claude_desktop_config.json`, so configure that client with an
+`mcpServers.anchor` entry that runs `anchor-mcp`.
+
 Then open the agent inside a project folder (one with an `anchor.toml`) and the
 tools target that project. To name a project explicitly — for example when the
 server's working directory is elsewhere — pass `--project`:
