@@ -4,9 +4,10 @@ This command does not install the ANCHOR tool itself. Install the tool with
 `uv tool install anchor-kb` first.
 
 Targets:
-    claude-code   Add MCP server entry to ~/.claude/mcp.json and write a
-                  skill file at ~/.claude/skills/anchor/SKILL.md so Claude
-                  Code knows when to use Anchor's tools.
+    claude-code   Add MCP server entry to ~/.claude.json (the file Claude
+                  Code actually reads) and write a skill file at
+                  ~/.claude/skills/anchor/SKILL.md so Claude Code knows when
+                  to use Anchor's tools.
     cursor        Add MCP server entry to ~/.cursor/mcp.json.
     print         Print what would be installed without writing anything.
 
@@ -17,6 +18,7 @@ can change it later by editing the config or by re-running `anchor install`.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -39,8 +41,12 @@ install_app = typer.Typer(
 
 
 def _claude_code_paths() -> tuple[Path, Path]:
+    # MCP servers for Claude Code live in ~/.claude.json (the dotfile in
+    # $HOME), NOT ~/.claude/mcp.json, which Claude Code never reads. Writing
+    # to the latter silently registers nothing. Skills do live under
+    # ~/.claude/skills/, so only the MCP path moves.
     home = Path.home()
-    return (home / ".claude" / "mcp.json", home / ".claude" / "skills" / "anchor")
+    return (home / ".claude.json", home / ".claude" / "skills" / "anchor")
 
 
 def _cursor_paths() -> Path:
@@ -62,7 +68,16 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    # ~/.claude.json also holds unrelated Claude Code state, so guard the
+    # write: back the file up once before the first overwrite, and write
+    # atomically (temp + os.replace) so a crash mid-write cannot truncate it.
+    if path.exists():
+        backup = path.parent / (path.name + ".anchorbak")
+        if not backup.exists():
+            backup.write_bytes(path.read_bytes())
+    tmp = path.parent / (path.name + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def _resolve_anchor_mcp() -> str:
