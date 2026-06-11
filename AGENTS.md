@@ -118,7 +118,16 @@ defence-in-depth. See `src/anchor/core/upload_safety.py` and
 - **Row-level provenance.** Each spec-table row carries its own
   `source_ref` (doc_id, filename, page, bbox). Source edges are visible.
 - **One table per extraction.** When extracting operating/spec data,
-  produce one grounded table — don't split into many small nodes.
+  produce one grounded table, not many small nodes.
+- **No em-dashes; stay ASCII in generated files.** Do not write em-dashes
+  (or other non-ASCII punctuation: en-dash, curly quotes, ellipsis) into
+  files the tool generates or that agents author: `anchor.toml`, code,
+  comments, configs, and docs. Two reasons. First, on Windows the default
+  locale (cp1252) writes an em-dash as byte `0x97`, which the UTF-8 reader
+  rejects, and a config can silently fail to load. Second, em-dashes read
+  as an AI tell in prose. Use a plain hyphen `-`, a comma, or two
+  sentences with periods. Always open files for writing with
+  `encoding="utf-8"`.
 
 ## Development
 
