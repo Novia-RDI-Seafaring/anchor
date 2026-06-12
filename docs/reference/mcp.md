@@ -34,11 +34,25 @@ OpenCode, and generic stdio client examples.
 
 | Family | Representative operations |
 | --- | --- |
+| Status | `anchor_status` |
 | Canvas | `canvas_list_workspaces`, `canvas_get_state`, `canvas_add_node`, `canvas_update_node`, `canvas_add_edge`, `canvas_snapshot` |
 | Documents | `ingest_pdf`, `list_documents`, `get_document_index`, `get_gold_regions`, `search_documents`, `get_crop` |
 | CAD | `inspect`, `list_models`, `set_parameter` |
 | SysML | `sysml_render`, `sysml_export` |
 | FMU | Inspection and simulation tools when enabled by the bundled FMU extension. |
+
+## Status check
+
+Use `anchor_status` when an MCP client appears connected but sees the wrong
+documents or an empty canvas list. It reports:
+
+- the process working directory
+- the resolved `anchor.toml`, if one was found
+- the active data directory
+- document, embedding, and workspace counts
+
+If the paths do not match the project you intended, restart the client from the
+project folder or configure `anchor-mcp --project /path/to/project`.
 
 ## Source-grounded workflow
 

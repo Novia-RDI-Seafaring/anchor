@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 
 from anchor.adapters.mcp import handlers_canvas
+from anchor.adapters.mcp.server import STATUS_TOOL_DEFINITION
 from anchor.extensions.anchor_cad import mcp_handlers as cad_handlers
 from anchor.extensions.anchor_fmus import mcp_handlers as fmu_handlers
 from anchor.extensions.anchor_pdfs import mcp_handlers as pdf_handlers
@@ -12,6 +13,7 @@ from anchor.extensions.anchor_sysml import mcp_handlers as sysml_handlers
 
 def test_all_exported_mcp_tool_names_are_client_safe():
     definitions = [
+        STATUS_TOOL_DEFINITION,
         *handlers_canvas.tool_definitions(),
         *pdf_handlers.tool_definitions(),
         *fmu_handlers.tool_definitions(),

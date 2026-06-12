@@ -137,11 +137,26 @@ That's the whole loop. Every PDF you ingest becomes a structured set of regions 
 ## Using ANCHOR with an AI agent
 
 ANCHOR exposes its tools over **MCP** (Model Context Protocol). For Claude
-Code, register the local stdio server with:
+Code, the quickest path is the plugin marketplace. It needs no prior
+install of the `anchor` CLI, only [uv](https://docs.astral.sh/uv/):
+
+```text
+/plugin marketplace add Novia-RDI-Seafaring/anchor
+/plugin install anchor@anchor
+```
+
+The plugin registers the MCP server (via `uvx --from anchor-kb anchor-mcp`)
+and the anchor skill in one step. See the
+[Claude Code plugin guide](./docs/guides/claude-plugin.md) for details.
+
+Alternatively, with the CLI already installed, register the local stdio
+server with:
 
 ```bash
 anchor install claude-code
 ```
+
+Pick one of the two paths, not both.
 
 Open Claude Code inside a folder configured with `anchor init`. In any
 conversation, run `/mcp` and you should see `anchor` listed with its available
