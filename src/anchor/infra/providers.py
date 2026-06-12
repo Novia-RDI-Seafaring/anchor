@@ -46,6 +46,16 @@ PROVIDERS: tuple[Provider, ...] = (
         note="Bronze/silver + local-embedding search. No gold regions (those need a vision model).",
     ),
     Provider(
+        key="harness",
+        label="Harness agent (no API key)",
+        zone="on-host - pages are read by the agent harness you are already running",
+        does_vision=False,
+        base_url_required=False,
+        note="Gold extraction runs through your agent (Claude Code, Codex, ...) via "
+        "ingest sessions; where the harness sends page content is governed by the "
+        "harness's own provider agreement. No key, no new egress paths.",
+    ),
+    Provider(
         key="ollama",
         label="Ollama (self-hosted)",
         zone="your machine / LAN · no internet egress",

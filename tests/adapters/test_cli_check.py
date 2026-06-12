@@ -118,3 +118,45 @@ def test_check_no_note_when_data_dir_exists(tmp_path, monkeypatch):
     present.mkdir()
     result = _run_check(tmp_path, env={"ANCHOR_DATA_DIR": str(present)})
     assert "does not exist yet" not in result.output
+
+
+def test_check_harness_mode_is_ready_without_key(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    r = runner.invoke(
+        app, ["init", str(tmp_path), "--yes", "--provider", "harness",
+              "--data-dir", str(tmp_path / "d")],
+    )
+    assert r.exit_code == 0, r.output
+    result = _run_check(tmp_path)
+    assert result.exit_code == 0, result.output
+    assert "agent harness" in result.output
+    assert "not needed" in result.output
+    assert "Harness ingest sessions" in result.output
+    assert "none open" in result.output
+    assert "Ready" in result.output
+
+
+def test_check_harness_mode_lists_open_sessions(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    data_dir = tmp_path / "d"
+    r = runner.invoke(
+        app, ["init", str(tmp_path), "--yes", "--provider", "harness",
+              "--data-dir", str(data_dir)],
+    )
+    assert r.exit_code == 0, r.output
+    session_dir = data_dir / "staging" / "ingest" / "ing-abc123"
+    session_dir.mkdir(parents=True)
+    (session_dir / "session.json").write_text(json.dumps({
+        "session_id": "ing-abc123", "slug": "demo", "state": "open",
+        "page_count": 3,
+        "pages": {"1": {"status": "submitted"}, "2": {"status": "pending"},
+                  "3": {"status": "pending"}},
+    }), encoding="utf-8")
+    result = _run_check(tmp_path)
+    assert result.exit_code == 0, result.output
+    assert "ing-abc123" in result.output
+    assert "1/3 pages submitted" in result.output
