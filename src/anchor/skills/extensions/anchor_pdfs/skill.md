@@ -9,6 +9,16 @@ regions tagged with the page number and bounding box they came from.
   full pipeline. **Idempotent:** if the slug already has gold it returns
   `{skipped: true}` without recomputing (the gold stage is billed). Pass
   `force=true` (CLI `--force`) to re-ingest and overwrite.
+
+  There are TWO ingestion pathways; do not conflate them. `ingest_pdf`
+  (CLI `anchor ingest`) is the BUILT-IN pipeline: Anchor's own configured
+  LLM does the polish and region extraction, which needs an API key. The
+  HARNESS-DRIVEN session protocol (`ingest_begin` through
+  `ingest_finalize`, described below) is the no-key pathway where you,
+  the agent, do that extraction work yourself. If the user asks for
+  "harness ingestion", "agent-driven ingestion", or "no-key ingestion"
+  by name, use the session protocol; calling `anchor ingest` is not the
+  harness pathway.
 - `search_documents(query, k?)` — **semantic search** across every
   embedded gold region. Returns ranked hits with `slug, page, region_id,
   text, score`. This is how you "find stuff" in the documents by meaning,
@@ -52,11 +62,14 @@ When the user drops a PDF and asks for specs on the canvas:
   provider `harness` this is expected for `ingest_pdf` - use the
   harness-driven session protocol below instead.
 
-### Harness-driven ingestion (provider = "harness", no API key)
+### Harness-driven ingestion (you are the extraction model, no API key)
 
-When the project's provider is `harness` (check `anchor_status` or
-`anchor check`), YOU are the extraction model. `ingest_pdf` will not
-produce gold; drive the session protocol instead:
+Use this protocol when EITHER applies: the project's provider is
+`harness` (check `anchor_status` or `anchor check`), OR the user
+explicitly asks for harness/agent-driven/no-key ingestion, regardless
+of the configured provider. YOU are the extraction model. Under
+provider `harness`, `ingest_pdf` will not produce gold; drive the
+session protocol:
 
 1. `ingest_begin(pdf_path)` - Anchor runs docling + page images and
    returns `{session_id, page_count, pages[]}`. If it returns
