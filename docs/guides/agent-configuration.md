@@ -38,6 +38,20 @@ To name a project explicitly, when the server's working directory is not the
 project, add `--project <folder>` to the args. The examples below use the
 folder-resolving form.
 
+## Confirm the resolved project
+
+If an agent can see ANCHOR tools but reports no documents or canvases, ask it to
+call:
+
+```text
+anchor_status
+```
+
+The result shows the MCP server's working directory, resolved `anchor.toml`,
+data directory, and current document and canvas counts. Compare those paths
+with the project you expected. If they point somewhere else, restart the client
+from the project folder or add `--project <folder>` to the `anchor-mcp` args.
+
 ## Optional project instruction
 
 MCP clients expose ANCHOR's tool names and schemas to the model. A short project
@@ -53,6 +67,9 @@ reference when available.
 
 For canvas questions, inspect the workspace state before editing it. Preserve
 existing nodes and edges unless the user asks to remove them.
+
+If ANCHOR appears empty, call `anchor_status` and compare the resolved data
+directory with the project folder before assuming there is no data.
 ```
 
 Keep this instruction short. It should guide tool selection without attempting
