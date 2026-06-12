@@ -39,8 +39,9 @@ authentication layer.
 
 The recommended setup is one project folder. Run `anchor init` in it to choose
 the AI provider / data zone and write `anchor.toml`; the data dir defaults to
-`<project>/anchor-data`. Every command run from inside the folder — `serve`,
-`ingest`, and an agent's `anchor-mcp` — then shares that project automatically:
+`<project>/anchor-data`. Every command run from inside the folder, including
+`serve`, `ingest`, and an agent's `anchor-mcp`, then shares that project
+automatically:
 
 ```bash
 cd ~/my-project
@@ -68,8 +69,8 @@ anchor install cursor
 
 The entry has no baked data dir, so one registration serves every project: open
 the agent inside a project folder (one with an `anchor.toml`) and the tools
-target that project. To name a project explicitly — when the server's working
-directory is not the project — pass `--project`:
+target that project. To name a project explicitly, when the server's working
+directory is not the project, pass `--project`:
 
 ```bash
 anchor-mcp --project /path/to/project
@@ -137,6 +138,11 @@ ANCHOR_OPENAI_BASE_URL=https://<resource-name>.openai.azure.com/openai/v1/
 ANCHOR_POLISH_MODEL=<vision-capable-deployment-name>
 ANCHOR_REGION_MODEL=<vision-capable-deployment-name>
 ```
+
+For Azure, `ANCHOR_OPENAI_API_KEY` must be the Azure resource key. A personal
+`OPENAI_API_KEY` in your shell is not proof that the Azure project is
+configured. The model values must be Azure deployment names, not base model
+names.
 
 An Ollama or other local OpenAI-compatible server can use the same wiring:
 
