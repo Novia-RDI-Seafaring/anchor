@@ -1,6 +1,7 @@
 """Runtime status summary shared by HTTP and MCP adapters."""
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -8,6 +9,8 @@ from typing import Any
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.infra.config import AnchorConfig, discover_config_file
+
+logger = logging.getLogger(__name__)
 
 
 async def build_status_summary(
@@ -77,21 +80,24 @@ async def _safe_list_workspaces(
     try:
         return await workspace.list_workspaces(), None
     except Exception as exc:  # noqa: BLE001
-        return [], str(exc)
+        logger.exception("Failed to list workspaces for status summary.", exc_info=exc)
+        return [], "Unable to list workspaces"
 
 
 async def _safe_list_documents(doc_store: DocStore) -> tuple[list[dict[str, Any]], str | None]:
     try:
         return await doc_store.list_documents(), None
     except Exception as exc:  # noqa: BLE001
-        return [], str(exc)
+        logger.exception("Failed to list documents for status summary.", exc_info=exc)
+        return [], "Unable to list documents"
 
 
 async def _safe_list_embeddings(doc_store: DocStore) -> tuple[list[dict[str, Any]], str | None]:
     try:
         return await doc_store.list_embeddings(), None
     except Exception as exc:  # noqa: BLE001
-        return [], str(exc)
+        logger.exception("Failed to list embeddings for status summary.", exc_info=exc)
+        return [], "Unable to list embeddings"
 
 
 def _dir_status(path: Path) -> dict[str, Any]:
