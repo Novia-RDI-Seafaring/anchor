@@ -191,3 +191,32 @@ def test_memory_store_mirrors_completeness_semantics():
         assert await s.doc_store.get_gold_map("demo") is not None
 
     asyncio.run(run())
+
+
+def test_forced_reingest_crash_does_not_resurrect_stale_gold(tmp_path):
+    """clear_gold_complete runs before the gold loop, so a crash during a
+    forced re-ingest leaves the doc invisible-as-gold even though the old
+    (successful) ingest report is still on disk."""
+    async def run():
+        store, ingest = _fs_ingest(tmp_path)
+        await ingest.ingest_pdf(b"%PDF-fake", "demo.pdf")
+        assert await store.has_gold("demo") is True
+
+        class Boom:
+            async def extract_page(self, **_kw):
+                raise RuntimeError("crash mid-gold")
+
+        ingest.region_extractor = Boom()
+        try:
+            await ingest.ingest_pdf(b"%PDF-fake", "demo.pdf", force=True)
+        except RuntimeError:
+            pass
+        assert await store.has_gold("demo") is False
+        assert await store.get_gold_map("demo") is None
+        # A plain re-ingest (no force) runs and completes the document.
+        ingest.region_extractor = FakeRegionExtractor()
+        out = await ingest.ingest_pdf(b"%PDF-fake", "demo.pdf")
+        assert not out.get("skipped")
+        assert await store.has_gold("demo") is True
+
+    asyncio.run(run())
