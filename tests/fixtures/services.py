@@ -4,11 +4,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from anchor.core.clock import FixedClock
+from anchor.extensions.anchor_pdfs.core.ingest.session import IngestSessionService
 from anchor.extensions.anchor_pdfs.core.services import IngestService
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.infra.bus.memory_bus import MemoryEventBus
 from anchor.infra.stores.memory_stores import MemoryWorkspaceStore
 from anchor.extensions.anchor_pdfs.infra.memory_doc_store import MemoryDocStore
+from anchor.extensions.anchor_pdfs.infra.memory_session_store import (
+    MemoryIngestSessionStore,
+)
 
 from tests.fixtures.fakes import (
     FakeEmbedder,
@@ -32,6 +36,8 @@ class Services:
     region_extractor: FakeRegionExtractor
     embedder: FakeEmbedder
     clock: FixedClock
+    session_store: MemoryIngestSessionStore
+    ingest_session: IngestSessionService
 
 
 def make_in_memory_services(*, page_count: int = 1) -> Services:
@@ -51,9 +57,17 @@ def make_in_memory_services(*, page_count: int = 1) -> Services:
         polisher=polisher, region_extractor=region_extractor,
         clock=clock,
     )
+    session_store = MemoryIngestSessionStore()
+    ingest_session = IngestSessionService(
+        doc_store, session_store, bus,
+        extractor=extractor, renderer=renderer,
+        embedder=embedder, embed_model_id="fake-embedder",
+        clock=clock,
+    )
     return Services(
         workspace_store=workspace_store, doc_store=doc_store, bus=bus,
         workspace=workspace, ingest=ingest,
         extractor=extractor, renderer=renderer, polisher=polisher,
         region_extractor=region_extractor, embedder=embedder, clock=clock,
+        session_store=session_store, ingest_session=ingest_session,
     )

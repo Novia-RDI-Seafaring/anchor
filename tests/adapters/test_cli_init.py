@@ -186,3 +186,19 @@ def test_force_overwrites(tmp_path):
     )
     assert result.exit_code == 0, result.output
     assert "gpt-x" in (tmp_path / "anchor.toml").read_text()
+
+
+def test_harness_provider_needs_no_key_and_no_endpoint(tmp_path):
+    result = runner.invoke(
+        app, ["init", str(tmp_path), "--yes", "--provider", "harness",
+              "--data-dir", str(tmp_path / "d")],
+    )
+    assert result.exit_code == 0, result.output
+    toml = (tmp_path / "anchor.toml").read_text()
+    assert 'provider = "harness"' in toml
+    assert "openai_base_url" not in toml
+    assert "api_key =" not in toml.lower()
+    # The readback is honest: ingestion happens through the agent, no key.
+    assert "not needed" in result.output
+    assert "agent" in result.output
+    assert "ingest-session" in result.output

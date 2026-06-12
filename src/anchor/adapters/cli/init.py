@@ -344,6 +344,9 @@ def _report(config_path: Path, target: Path, prov: Provider) -> None:
             else:
                 key_state = "NOT set — required (see below)"
             typer.echo(f"  api key        : {key_state}")
+    elif prov.key == "harness":
+        typer.echo("  vision model   : your agent harness (declared per ingest session)")
+        typer.echo("  api key        : not needed — ingestion happens through the agent")
     else:
         typer.echo("  vision model   : none — no document content leaves this host")
     typer.echo(f"  docling device : {cfg.docling_device}")
@@ -356,6 +359,10 @@ def _report(config_path: Path, target: Path, prov: Provider) -> None:
         typer.echo("       anchor check --probe")
     else:
         typer.echo("  anchor check                 verify the data zone + config")
+    if prov.key == "harness":
+        typer.echo("  Ask your agent to ingest documents (it drives the ingest-session")
+        typer.echo("  protocol: begin -> per-page submit -> finalize). From a shell:")
+        typer.echo("  anchor ingest-session begin <file.pdf>")
     typer.echo("  anchor ingest <file.pdf>     add a document to the knowledge base")
     typer.echo(f"  anchor serve                 open the canvas at http://localhost:{cfg.http_port}")
     typer.echo("  anchor install claude-code   let an agent drive ANCHOR over MCP   (optional)")

@@ -65,16 +65,20 @@ def check(
         f"  embed model    : {cfg.embed_model}  "
         f"({'remote — sent to your endpoint' if embed_remote else 'local, no egress'})"
     )
-    typer.echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com (public)'}")
-    typer.echo(f"  vision model   : {cfg.region_model}")
+    provider_key = (cfg.provider or "").lower()
+    if provider_key == "harness":
+        typer.echo("  vision         : your agent harness — gold extraction runs through")
+        typer.echo("                   ingest sessions (begin → submit pages → finalize)")
+    else:
+        typer.echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com (public)'}")
+        typer.echo(f"  vision model   : {cfg.region_model}")
 
     problems: list[str] = []
-    provider_key = (cfg.provider or "").lower()
     personal = bool(os.environ.get("OPENAI_API_KEY"))
-    # local/ollama keep content on-host → no key. openai accepts a personal
-    # OPENAI_API_KEY. azure/custom (and any configured endpoint) need the
-    # endpoint's own key in ANCHOR_OPENAI_API_KEY — a personal key is wrong there.
-    if provider_key in ("local", "ollama"):
+    # local/ollama/harness keep content on-host → no key. openai accepts a
+    # personal OPENAI_API_KEY. azure/custom (and any configured endpoint) need
+    # the endpoint's own key in ANCHOR_OPENAI_API_KEY — a personal key is wrong there.
+    if provider_key in ("local", "ollama", "harness"):
         needs_key = False
         key_ok = True
     elif provider_key == "openai":
@@ -98,8 +102,26 @@ def check(
                 "API key missing — set ANCHOR_OPENAI_API_KEY in your environment or a .env "
                 "(e.g. echo 'ANCHOR_OPENAI_API_KEY=…' >> .env)."
             )
+    elif provider_key == "harness":
+        typer.echo("  api key        : not needed — ingestion happens through the agent")
     else:
         typer.echo("  api key        : not needed (no egress)")
+
+    # Harness mode: surface in-flight ingest sessions so a half-submitted
+    # document is visible and actionable, not silently parked in staging.
+    if provider_key == "harness":
+        open_sessions = _open_ingest_sessions(cfg)
+        typer.echo("")
+        typer.echo("Harness ingest sessions")
+        if not open_sessions:
+            typer.echo("  none open — ready for `ingest_begin` (agent) or "
+                       "`anchor ingest-session begin <pdf>`")
+        for entry in open_sessions:
+            typer.echo(
+                f"  {entry['session_id']}  {entry['slug']}: "
+                f"{entry['submitted']}/{entry['page_count']} pages submitted "
+                f"({entry['state']}) — resume with ingest_status / finalize"
+            )
 
     # Endpoint shape — repair an Azure URL that is missing /openai/v1/.
     if cfg.openai_base_url:
@@ -135,6 +157,34 @@ def check(
             typer.echo(f"  - {p}")
         raise typer.Exit(code=1)
     typer.echo("Ready ✓  config resolves and the data zone is what you expect.")
+
+
+def _open_ingest_sessions(cfg: AnchorConfig) -> list[dict]:
+    """Open/finalizing harness sessions from <data_dir>/staging/ingest/."""
+    import json
+
+    staging = cfg.data_dir / "staging" / "ingest"
+    if not staging.is_dir():
+        return []
+    out: list[dict] = []
+    for session_file in sorted(staging.glob("*/session.json")):
+        try:
+            session = json.loads(session_file.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            continue
+        if session.get("state") not in ("open", "finalizing"):
+            continue
+        pages = session.get("pages") or {}
+        out.append({
+            "session_id": session.get("session_id", session_file.parent.name),
+            "slug": session.get("slug", "?"),
+            "state": session.get("state"),
+            "page_count": session.get("page_count", len(pages)),
+            "submitted": sum(
+                1 for info in pages.values() if info.get("status") == "submitted"
+            ),
+        })
+    return out
 
 
 def _probe(cfg: AnchorConfig, embed_remote: bool, problems: list[str]) -> None:

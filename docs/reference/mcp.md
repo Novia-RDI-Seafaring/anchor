@@ -37,6 +37,7 @@ OpenCode, and generic stdio client examples.
 | Status | `anchor_status` |
 | Canvas | `canvas_list_workspaces`, `canvas_get_state`, `canvas_add_node`, `canvas_update_node`, `canvas_add_edge`, `canvas_snapshot` |
 | Documents | `ingest_pdf`, `list_documents`, `get_document_index`, `get_gold_regions`, `search_documents`, `get_crop` |
+| Harness ingestion | `ingest_begin`, `ingest_get_page`, `ingest_submit_page`, `ingest_status`, `ingest_finalize`, `ingest_abort` - the agent performs polish + region grouping page by page (provider `harness`, no API key); CLI parity via `anchor ingest-session` |
 | CAD | `inspect`, `list_models`, `set_parameter` |
 | SysML | `sysml_render`, `sysml_export` |
 | FMU | Inspection and simulation tools when enabled by the bundled FMU extension. |

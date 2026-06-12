@@ -12,6 +12,7 @@ from anchor.adapters.cli.demo import _DEMO_PLACEHOLDER_HINTS, _find_sample_pdf, 
 from anchor.adapters.cli.documents import register_document_commands
 from anchor.adapters.cli.extensions import extensions_app
 from anchor.adapters.cli.fmu import fmu_app
+from anchor.adapters.cli.ingest_session import ingest_session_app
 from anchor.adapters.cli.init import init
 from anchor.adapters.cli.install import install_app
 from anchor.adapters.cli.serve import serve
@@ -58,6 +59,7 @@ app.command()(serve)
 register_document_commands(app)
 app.command()(demo)
 
+app.add_typer(ingest_session_app, name="ingest-session")
 app.add_typer(canvas_app, name="canvas")
 app.add_typer(sysml_app, name="sysml")
 app.add_typer(fmu_app, name="fmu")

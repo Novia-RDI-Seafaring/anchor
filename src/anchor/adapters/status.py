@@ -62,6 +62,12 @@ async def build_status_summary(
         },
         "provider": {
             "name": config.provider,
+            # Harness mode is honest about how gold happens: the agent
+            # performs polish + regions through ingest sessions; no key,
+            # no Anchor-side vision endpoint.
+            "harness_mode": (config.provider or "").lower() == "harness",
+            "key_required": (config.provider or "").lower()
+            not in ("local", "ollama", "harness", ""),
             "openai_base_url": config.openai_base_url or "api.openai.com",
             "embed_model": config.embed_model,
             "polish_model": config.polish_model,
@@ -71,6 +77,7 @@ async def build_status_summary(
             "anchor_openai_api_key": config.openai_api_key is not None,
             "openai_api_key": bool(os.environ.get("OPENAI_API_KEY")),
         },
+        "ingest_sessions": _ingest_session_counts(config.data_dir),
     }
 
 
@@ -98,6 +105,36 @@ async def _safe_list_embeddings(doc_store: DocStore) -> tuple[list[dict[str, Any
     except Exception as exc:  # noqa: BLE001
         logger.exception("Failed to list embeddings for status summary.")
         return [], "Unable to list embeddings"
+
+
+def _ingest_session_counts(data_dir: Path) -> dict[str, Any]:
+    """Harness ingest sessions by state, plus the open ones (resume surface)."""
+    import json
+
+    staging = data_dir / "staging" / "ingest"
+    counts: dict[str, int] = {}
+    open_sessions: list[dict[str, Any]] = []
+    if staging.is_dir():
+        for session_file in sorted(staging.glob("*/session.json")):
+            try:
+                session = json.loads(session_file.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                continue
+            state = str(session.get("state", "unknown"))
+            counts[state] = counts.get(state, 0) + 1
+            if state in ("open", "finalizing"):
+                pages = session.get("pages") or {}
+                open_sessions.append({
+                    "session_id": session.get("session_id", session_file.parent.name),
+                    "slug": session.get("slug"),
+                    "state": state,
+                    "page_count": session.get("page_count", len(pages)),
+                    "submitted_pages": sum(
+                        1 for info in pages.values()
+                        if info.get("status") == "submitted"
+                    ),
+                })
+    return {"counts": counts, "open": open_sessions}
 
 
 def _dir_status(path: Path) -> dict[str, Any]:
