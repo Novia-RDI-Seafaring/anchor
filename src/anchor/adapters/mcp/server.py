@@ -31,6 +31,8 @@ from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.services import IngestService
 from anchor.extensions.anchor_sysml import mcp_handlers as sysml_handlers
 from anchor.extensions.anchor_sysml.core.services import SysmlService
+from anchor.infra.config import AnchorConfig
+from anchor.infra.status import build_status_summary
 
 
 # ── Server instructions ────────────────────────────────────────────────────
@@ -85,6 +87,13 @@ If you're producing a snapshot of the canvas, use `canvas_snapshot(...,
 format: "inline")` so the host renders the image inline.
 
 Stuck? Read the `anchor://help` resource for the deeper tour.
+
+Project resolution check:
+- If the tool list or visible data looks wrong, call `anchor_status` before
+  assuming the project is empty. Compare `process.cwd`, `config.path`, and
+  `data_dir.path` with the project the user expects.
+- If it resolved the wrong project, restart the harness from the project
+  folder or configure `anchor-mcp --project <folder>`.
 """
 
 
@@ -101,6 +110,9 @@ Canvas tools:
 - canvas_create_sub_canvas — nest a child canvas inside a node
 - canvas_list_placeholders — your "what to fill" entrypoint
 - canvas_snapshot — PNG of the live canvas; pass format='inline'
+
+Status tools:
+- anchor_status: show cwd, config path, data dir, and document/canvas counts
 
 PDF tools (extension anchor_pdfs):
 - ingest_pdf / list_documents / get_document_index
@@ -137,11 +149,27 @@ def _error_result(exc: Exception) -> str:
     return _json.dumps({"error": str(exc)})
 
 
+STATUS_TOOL_DEFINITION = {
+    "name": "anchor_status",
+    "description": (
+        "Show ANCHOR's resolved project config, data directory, and document "
+        "and canvas counts. Use this when an agent appears to be connected "
+        "to the wrong project or an empty data zone."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+}
+
+
 def build_mcp_server(
     *,
     workspace: WorkspaceService,
     ingest: IngestService,
     doc_store: DocStore,
+    config: AnchorConfig | None = None,
     fmu: FmuService | None = None,
     cad: CadService | None = None,
     sysml: SysmlService | None = None,
@@ -175,11 +203,23 @@ def build_mcp_server(
     fmu_defs = fmu_handlers.tool_definitions() if fmu is not None else []
     cad_defs = cad_handlers.TOOL_DEFINITIONS if cad is not None else []
     sysml_defs = sysml_handlers.tool_definitions() if sysml is not None else []
+    status_defs = [STATUS_TOOL_DEFINITION]
 
     @app.list_tools()
     async def list_tools() -> list[Tool]:
-        return [Tool(**d) for d in [*canvas_defs, *pdf_defs, *fmu_defs, *cad_defs, *sysml_defs]]
+        return [
+            Tool(**d)
+            for d in [
+                *status_defs,
+                *canvas_defs,
+                *pdf_defs,
+                *fmu_defs,
+                *cad_defs,
+                *sysml_defs,
+            ]
+        ]
 
+    status_names = {d["name"] for d in status_defs}
     canvas_names = {d["name"] for d in canvas_defs}
     fmu_names = {d["name"] for d in fmu_defs} | getattr(fmu_handlers, "LEGACY_TOOL_NAMES", set())
     cad_names = {d["name"] for d in cad_defs}
@@ -188,7 +228,14 @@ def build_mcp_server(
     @app.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
         try:
-            if name in canvas_names:
+            if name in status_names:
+                summary = await build_status_summary(
+                    config=config or AnchorConfig(),
+                    workspace=workspace,
+                    doc_store=doc_store,
+                )
+                text = _json.dumps(summary)
+            elif name in canvas_names:
                 text = await handlers_canvas.call_tool(workspace, name, dict(arguments))
             elif name in fmu_names and fmu is not None:
                 text = await fmu_handlers.call_tool(fmu, name, dict(arguments))
