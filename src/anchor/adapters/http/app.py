@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from anchor.adapters.http.routers import edges, nodes, sse, workspaces
+from anchor.adapters.http.routers import edges, nodes, sse, status, workspaces
 from anchor.core.ids import InvalidWorkspaceSlugError
 from anchor.core.ports.event_bus import EventBus
 from anchor.core.services.workspace_service import WorkspaceService
@@ -22,6 +22,7 @@ from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.services import IngestService
 from anchor.extensions.anchor_sysml.adapters.http import sysml_routes
 from anchor.extensions.anchor_sysml.core.services import SysmlService
+from anchor.infra.config import AnchorConfig
 
 
 def build_app(
@@ -36,6 +37,7 @@ def build_app(
     synopsis_service: object | None = None,
     fmu_service: FmuService | None = None,
     canvases_dir: Path | None = None,
+    config: AnchorConfig | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Anchor v2", version="0.2.0")
     app.state.workspace_service = workspace_service
@@ -45,6 +47,7 @@ def build_app(
     app.state.cad_service = cad_service
     app.state.sysml_service = sysml_service
     app.state.synopsis_service = synopsis_service
+    app.state.anchor_config = config
 
     # Bridge cross-process writes (CLI / MCP-stdio in another process) into
     # this app's bus by tailing each workspace's events.jsonl. SSE router
@@ -96,6 +99,7 @@ def build_app(
     app.include_router(documents.router)
     app.include_router(upload.router)
     app.include_router(sse.router)
+    app.include_router(status.router)
     if cad_service is not None:
         app.dependency_overrides[cad_routes.get_cad_service] = lambda: cad_service
         app.include_router(cad_routes.router)
