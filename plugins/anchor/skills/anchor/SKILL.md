@@ -231,4 +231,42 @@ When the user drops a PDF and asks for specs on the canvas:
 - `404 / unknown slug` → run `list_documents()` to see what's available.
 - `400 / file is not a PDF` → ANCHOR only ingests PDFs in this extension.
 - `gold extraction skipped` in the status → no `ANCHOR_OPENAI_API_KEY`
-  set; silver is still queryable but regions aren't structured.
+  set; silver is still queryable but regions aren't structured. With
+  provider `harness` this is expected for `ingest_pdf` - use the
+  harness-driven session protocol below instead.
+
+### Harness-driven ingestion (provider = "harness", no API key)
+
+When the project's provider is `harness` (check `anchor_status` or
+`anchor check`), YOU are the extraction model. `ingest_pdf` will not
+produce gold; drive the session protocol instead:
+
+1. `ingest_begin(pdf_path)` - Anchor runs docling + page images and
+   returns `{session_id, page_count, pages[]}`. If it returns
+   `resumed: true`, some pages are already done - check `pages[].status`.
+2. Per page: `ingest_get_page(session_id, page)` gives the page image
+   (read the returned path with your file tools), the raw markdown, and
+   `candidates` (docling boxes with stable ids). Follow the returned
+   `instructions`. Then `ingest_submit_page(session_id, page,
+   polished_md, regions)`.
+   - Name region geometry with `member_item_ids: ["p3-i0", "p3-i1"]`;
+     the server computes the bbox. Use `approx_bbox` only when no
+     candidate covers a visual.
+   - A rejection returns `errors` naming the bad fields; fix and
+     resubmit (resubmitting a page replaces it).
+3. For documents over ~4 pages, fan out: spawn subagents, each given
+   the `session_id` and a contiguous batch of 3-5 pages, returning only
+   the submit verdicts. Pages are independent; submits are idempotent.
+4. When `ingest_status(session_id)` shows nothing remaining, call
+   `ingest_finalize(session_id, declared_model="<your model id>")` -
+   Anchor embeds locally and publishes gold atomically.
+5. Interrupted or fresh context? `ingest_status(slug="<doc>")` shows
+   pages done/remaining; continue from there. `ingest_abort` discards
+   staging.
+
+Write descriptions that would rank well in semantic search: name the
+quantities and entities ("Max flow, head and motor sizes for LKH-5 to
+LKH-90"), not vague labels ("a table with numbers").
+
+CLI parity for shell-only harnesses: `anchor ingest-session
+begin|get-page|submit-page|status|finalize|abort` (JSON in/out).
