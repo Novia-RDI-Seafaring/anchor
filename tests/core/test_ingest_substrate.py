@@ -210,6 +210,8 @@ def test_forced_reingest_crash_does_not_resurrect_stale_gold(tmp_path):
         try:
             await ingest.ingest_pdf(b"%PDF-fake", "demo.pdf", force=True)
         except RuntimeError:
+            # Expected: this test asserts on the on-disk state the crash
+            # leaves behind, not on the exception itself.
             pass
         assert await store.has_gold("demo") is False
         assert await store.get_gold_map("demo") is None

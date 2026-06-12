@@ -1,8 +1,8 @@
 """Harness ingest sessions over HTTP - parity with the MCP/CLI protocol.
 
-JSON in, JSON out, loopback-only like the rest of the server. The PDF is
-named by path (the server and the harness share a host); off-machine
-agents should drive the MCP surface with format=base64 instead.
+JSON in, JSON out, loopback-only like the rest of the server. `begin`
+takes a multipart PDF upload (same shape as the drop-to-ingest route);
+the server never reads a client-named filesystem path.
 """
 from __future__ import annotations
 
@@ -10,10 +10,15 @@ import base64
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 
+from anchor.core.upload_safety import UnsafeUploadError, safe_upload_name
+
 router = APIRouter(prefix="/api/ingest/sessions", tags=["ingest-sessions"])
+
+# Mirrors the drop-to-ingest upload cap (see adapters/http/upload.py).
+_MAX_PDF_BYTES = 200 * 1024 * 1024
 
 
 def _svc(request: Request):
@@ -21,13 +26,6 @@ def _svc(request: Request):
     if svc is None:
         raise HTTPException(503, "harness ingest sessions not configured")
     return svc
-
-
-class BeginSessionBody(BaseModel):
-    pdf_path: str
-    slug: str | None = None
-    dpi: int | None = None
-    force: bool = False
 
 
 class SubmitPageBody(BaseModel):
@@ -42,15 +40,22 @@ class FinalizeBody(BaseModel):
 
 
 @router.post("", status_code=201)
-async def begin_session(body: BeginSessionBody, request: Request):
+async def begin_session(
+    request: Request,
+    file: UploadFile = File(...),
+    slug: str | None = Form(None),
+    dpi: int | None = Form(None),
+    force: bool = Form(False),
+):
     svc = _svc(request)
-    path = Path(body.pdf_path).expanduser()
-    if not path.is_file():
-        raise HTTPException(404, f"PDF not found: {path}")
-    return await svc.ingest_begin(
-        path.read_bytes(), path.name,
-        slug=body.slug, dpi=body.dpi, force=body.force,
-    )
+    try:
+        filename = safe_upload_name(file.filename, allowed_extensions={".pdf"})
+    except UnsafeUploadError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    pdf_bytes = await file.read()
+    if len(pdf_bytes) > _MAX_PDF_BYTES:
+        raise HTTPException(413, f"PDF exceeds {_MAX_PDF_BYTES // (1024 * 1024)} MB cap")
+    return await svc.ingest_begin(pdf_bytes, filename, slug=slug, dpi=dpi, force=force)
 
 
 @router.get("")

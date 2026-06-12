@@ -19,12 +19,17 @@ def _client(*, with_sessions: bool = True):
     return TestClient(app), s
 
 
-def test_full_session_loop_over_http(tmp_path):
-    client, _s = _client()
-    pdf = tmp_path / "demo.pdf"
-    pdf.write_bytes(b"%PDF-fake")
+def _begin(client, name="demo.pdf"):
+    return client.post(
+        "/api/ingest/sessions",
+        files={"file": (name, b"%PDF-fake", "application/pdf")},
+    )
 
-    rsp = client.post("/api/ingest/sessions", json={"pdf_path": str(pdf)})
+
+def test_full_session_loop_over_http():
+    client, _s = _client()
+
+    rsp = _begin(client)
     assert rsp.status_code == 201, rsp.text
     order = rsp.json()
     sid = order["session_id"]
@@ -54,11 +59,9 @@ def test_full_session_loop_over_http(tmp_path):
     assert isinstance(docs, list)
 
 
-def test_rejected_submission_returns_verdict_not_5xx(tmp_path):
+def test_rejected_submission_returns_verdict_not_5xx():
     client, _s = _client()
-    pdf = tmp_path / "demo.pdf"
-    pdf.write_bytes(b"%PDF-fake")
-    sid = client.post("/api/ingest/sessions", json={"pdf_path": str(pdf)}).json()["session_id"]
+    sid = _begin(client).json()["session_id"]
     rsp = client.put(f"/api/ingest/sessions/{sid}/pages/1", json={
         "regions": [{"kind": "text", "title": "no geometry"}],
     })
@@ -68,22 +71,22 @@ def test_rejected_submission_returns_verdict_not_5xx(tmp_path):
     assert body["errors"]
 
 
-def test_unknown_session_is_404_and_abort_works(tmp_path):
+def test_unknown_session_is_404_and_abort_works():
     client, _s = _client()
-    assert client.get("/api/ingest/sessions/ing-nope").status_code == 404
-    assert client.delete("/api/ingest/sessions/ing-nope").status_code == 404
-    pdf = tmp_path / "demo.pdf"
-    pdf.write_bytes(b"%PDF-fake")
-    sid = client.post("/api/ingest/sessions", json={"pdf_path": str(pdf)}).json()["session_id"]
+    unknown_status = client.get("/api/ingest/sessions/ing-nope")
+    assert unknown_status.status_code == 404
+    unknown_abort = client.delete("/api/ingest/sessions/ing-nope")
+    assert unknown_abort.status_code == 404
+    sid = _begin(client).json()["session_id"]
     rsp = client.delete(f"/api/ingest/sessions/{sid}")
     assert rsp.status_code == 200
     assert rsp.json()["aborted"] is True
 
 
-def test_missing_pdf_is_404():
+def test_unsafe_upload_name_is_400():
     client, _s = _client()
-    rsp = client.post("/api/ingest/sessions", json={"pdf_path": "/nope/missing.pdf"})
-    assert rsp.status_code == 404
+    rsp = _begin(client, name="../../evil.pdf")
+    assert rsp.status_code == 400
 
 
 def test_unwired_session_service_is_503():
