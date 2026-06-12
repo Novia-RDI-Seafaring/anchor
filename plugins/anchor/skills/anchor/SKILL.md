@@ -283,3 +283,7 @@ LKH-90"), not vague labels ("a table with numbers").
 
 CLI parity for shell-only harnesses: `anchor ingest-session
 begin|get-page|submit-page|status|finalize|abort` (JSON in/out).
+Always pass `--data-dir <data_dir from the begin work order>` on every
+command: the default resolves from the directory you invoke from, so a
+`cd` between sibling commands silently switches projects and the session
+appears unknown.

@@ -124,6 +124,27 @@ class IngestSessionService:
 
     # ── Session persistence helpers ─────────────────────────────────────
 
+    def _staging_root(self) -> str | None:
+        root = getattr(self.sessions, "root", None)
+        return str(root) if root is not None else None
+
+    def _unknown_session(self, session_id: str) -> str:
+        """Honest miss: say where we looked and how to fix a data-dir mismatch.
+
+        The CLI default data dir depends on the invoking directory, so an
+        agent that changes cwd between sibling commands resolves a different
+        project and the session 'disappears'. Naming the searched root turns
+        that from a dead end into a one-flag fix.
+        """
+        where = self._staging_root()
+        looked = f" (searched {where})" if where else ""
+        return (
+            f"unknown session: {session_id}{looked}. Sessions live under "
+            "<data_dir>/staging/ingest; if this session was created in a "
+            "different project, pass --data-dir from the begin work order "
+            "or run from that project folder."
+        )
+
     async def _load_session(self, session_id: str) -> dict[str, Any] | None:
         raw = await self.sessions.read_text(session_id, "session.json")
         if raw is None:
@@ -175,6 +196,11 @@ class IngestSessionService:
                 (session.get("pages") or {}).items(), key=lambda kv: int(kv[0]),
             )
         ]
+        # The data dir pins every follow-up call to the same project: the CLI
+        # default is resolved from the invoking directory, so an agent that
+        # changes cwd between sibling commands would otherwise lose the session.
+        staging = self._staging_root()
+        data_dir = str(Path(staging).parent.parent) if staging else None
         return {
             "session_id": session["session_id"],
             "slug": session["slug"],
@@ -183,10 +209,14 @@ class IngestSessionService:
             "page_count": session.get("page_count", len(pages)),
             "pages": pages,
             "resumed": resumed,
+            "data_dir": data_dir,
             "instructions": (
                 "Per page: ingest_get_page -> read the image -> "
                 "ingest_submit_page. When every page is submitted, call "
-                "ingest_finalize. Resume any time via ingest_status."
+                "ingest_finalize. Resume any time via ingest_status. "
+                "CLI callers: pass --data-dir <data_dir from this work order> "
+                "on every ingest-session command; the default depends on the "
+                "directory you invoke from."
             ),
         }
 
@@ -278,7 +308,7 @@ class IngestSessionService:
         """Work item for one page: image path, raw markdown, candidate boxes."""
         session = await self._load_session(session_id)
         if session is None:
-            return {"error": f"unknown session: {session_id}"}
+            return {"error": self._unknown_session(session_id)}
         if session.get("state") not in ("open", "finalizing"):
             return {"error": f"session {session_id} is {session.get('state')}; not readable"}
         page_info = (session.get("pages") or {}).get(str(page))
@@ -313,7 +343,7 @@ class IngestSessionService:
         """Validate + stage one page. Idempotent: resubmitting replaces it."""
         session = await self._load_session(session_id)
         if session is None:
-            return {"accepted": False, "errors": [_err(0, "", f"unknown session: {session_id}")]}
+            return {"accepted": False, "errors": [_err(0, "", self._unknown_session(session_id))]}
         if session.get("state") != "open":
             return {"accepted": False, "errors": [_err(
                 0, "", f"session is {session.get('state')}; only open sessions accept pages",
@@ -527,7 +557,7 @@ class IngestSessionService:
         """Completeness check, embeddings, atomic publish to gold."""
         session = await self._load_session(session_id)
         if session is None:
-            return {"finalized": False, "error": f"unknown session: {session_id}"}
+            return {"finalized": False, "error": self._unknown_session(session_id)}
         if session.get("state") == "published":
             return {"finalized": False, "error": "session already published"}
         if session.get("state") == "aborted":
@@ -657,7 +687,7 @@ class IngestSessionService:
         """Discard staging. Bronze/silver stay (deterministic, cheap)."""
         session = await self._load_session(session_id)
         if session is None:
-            return {"aborted": False, "error": f"unknown session: {session_id}"}
+            return {"aborted": False, "error": self._unknown_session(session_id)}
         if session.get("state") == "published":
             return {"aborted": False, "error": "session already published; nothing to abort"}
         await self.sessions.delete_staged(session_id)
