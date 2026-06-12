@@ -52,7 +52,7 @@ async def events(
         finally:
             next_event.cancel()
             with suppress(asyncio.CancelledError, StopAsyncIteration):
-                await next_event
+                _ = await next_event
             aclose = getattr(events, "aclose", None)
             if aclose is not None:
                 await aclose()
