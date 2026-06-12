@@ -1,0 +1,29 @@
+{
+  "name": "anchor",
+  "owner": {
+    "name": "Novia RDI Seafaring"
+  },
+  "description": "Plugin marketplace for ANCHOR, the agent-native engineering knowledge canvas.",
+  "plugins": [
+    {
+      "name": "anchor",
+      "source": "./plugins/anchor",
+      "description": "Source-grounded engineering knowledge canvas. Ingest PDF datasheets, query the structured contents, and build canvases where every value points back to its source page and bbox. Bundles the anchor MCP server and the anchor skill.",
+      "author": {
+        "name": "Novia RDI Seafaring"
+      },
+      "homepage": "https://novia-rdi-seafaring.github.io/anchor/",
+      "repository": "https://github.com/Novia-RDI-Seafaring/anchor",
+      "license": "MIT",
+      "category": "knowledge",
+      "keywords": [
+        "mcp",
+        "pdf",
+        "ingestion",
+        "canvas",
+        "provenance",
+        "engineering"
+      ]
+    }
+  ]
+}
