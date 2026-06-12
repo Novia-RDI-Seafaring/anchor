@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "anchor": {
+      "command": "uvx",
+      "args": ["--from", "anchor-kb", "anchor-mcp"]
+    }
+  }
+}
