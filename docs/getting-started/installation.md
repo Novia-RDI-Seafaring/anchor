@@ -41,7 +41,7 @@ anchor init               # pick an AI provider / data zone; writes anchor.toml
 anchor serve              # http://127.0.0.1:8002
 ```
 
-`anchor init` is the recommended starting point — it sets the data dir, the
+`anchor init` is the recommended starting point. It sets the data dir, the
 provider (and therefore the data zone), and the models for this folder. See
 [Configuration](../reference/configuration.md). To make ANCHOR available to an
 agent here, run `anchor install claude-code` and open the agent in the folder.
@@ -69,7 +69,7 @@ uv run anchor serve
 
 # terminal 2
 pnpm --dir web dev
-# → backend on :8002, Vite HMR on :5173
+# -> backend on :8002, Vite HMR on :5173
 ```
 
 Run commands from inside a project folder (one with an `anchor.toml` from
@@ -200,7 +200,7 @@ while `anchor-mcp.exe` or its Python process is still running.
 The bronze and silver layers run locally without any external service. The gold
 layer (structured region extraction) uses an OpenAI-compatible vision model.
 
-The easiest way to configure it is `anchor init` — choose the `openai`, `azure`,
+The easiest way to configure it is `anchor init`. Choose the `openai`, `azure`,
 or `custom` provider and it writes the endpoint and models into `anchor.toml`.
 Then supply the key (never stored in the toml):
 
@@ -216,6 +216,34 @@ ANCHOR_OPENAI_BASE_URL=https://api.openai.com/v1   # or your Azure / Ollama URL
 ANCHOR_REGION_MODEL=gpt-5.4
 ANCHOR_POLISH_MODEL=gpt-5.4
 ```
+
+For Azure OpenAI, the simplest working setup is:
+
+```bash
+anchor init . --provider azure \
+  --base-url https://<resource>.openai.azure.com/ \
+  --vision-model <vision-deployment-name>
+
+echo 'ANCHOR_OPENAI_API_KEY=<your-azure-key>' >> .env
+anchor check --probe
+anchor ingest path/to/file.pdf --force
+```
+
+`anchor init` rewrites a bare Azure resource URL to
+`https://<resource>.openai.azure.com/openai/v1/`. The model value is the Azure
+deployment name, not the base model name. The key must be supplied through
+`ANCHOR_OPENAI_API_KEY`; a personal `OPENAI_API_KEY` is not proof that the
+Azure project is configured.
+
+After ingest, verify the gold layer:
+
+```bash
+anchor list
+anchor gold-map <slug>
+```
+
+The document should show `"has_gold": true` in `anchor list`. If it does not,
+check the key, endpoint, and deployment name before retrying with `--force`.
 
 Without a vision endpoint, `anchor serve` still works. You get silver-layer
 extraction (page text, page PNGs, and Docling structure), but gold regions are
