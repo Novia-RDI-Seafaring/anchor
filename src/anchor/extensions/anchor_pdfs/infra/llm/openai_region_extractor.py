@@ -4,8 +4,11 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import re
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAIRegionExtractor:
@@ -66,4 +69,14 @@ class OpenAIRegionExtractor:
                     # Fall through to an empty extraction when the model
                     # returned neither direct JSON nor an embedded object.
                     pass
+            # Do not swallow malformed output silently: a page that ends up
+            # with zero regions because the model returned non-JSON is a
+            # quality problem the operator should be able to see. The
+            # caller also reports per-page region counts in the ingest
+            # result, so this page shows up as region_count=0 there.
+            logger.warning(
+                "region extraction on page %s (model %s) returned non-JSON output; "
+                "persisting zero regions for this page. First 200 chars: %r",
+                page_no, model, body[:200],
+            )
             return []

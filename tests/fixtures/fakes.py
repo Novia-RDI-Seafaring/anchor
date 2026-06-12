@@ -14,11 +14,13 @@ class FakePdfExtractor:
     """Returns a pre-canned docling dict, ignoring the PDF entirely."""
 
     def __init__(self, docling: dict[str, Any] | None = None) -> None:
+        # Bboxes are BOTTOMLEFT [left, top, right, bottom] with top > bottom,
+        # matching the convention docling and core/silver.py use.
         self.docling = docling or {
             "items": [
-                {"label": "title", "text": "Demo Doc", "page": 1, "bbox": [0, 700, 200, 720]},
-                {"label": "section_header", "text": "Section A", "page": 1, "bbox": [0, 600, 100, 620]},
-                {"label": "text", "text": "First paragraph.", "page": 1, "bbox": [0, 580, 200, 595]},
+                {"label": "title", "text": "Demo Doc", "page": 1, "bbox": [0, 720, 200, 700]},
+                {"label": "section_header", "text": "Section A", "page": 1, "bbox": [0, 620, 100, 600]},
+                {"label": "text", "text": "First paragraph.", "page": 1, "bbox": [0, 595, 200, 580]},
             ],
         }
 

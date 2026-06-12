@@ -35,6 +35,9 @@ class MemoryDocStore:
         self._crops: dict[tuple[str, str], bytes] = {}
         self._bronze: dict[str, bytes] = {}
         self._embeddings: dict[str, dict[str, Any]] = {}
+        self._candidates: dict[tuple[str, int], list[dict[str, Any]]] = {}
+        # Gold completeness markers: slug -> marker dict ({"complete": bool, ...}).
+        self._gold_markers: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
 
     async def list_documents(self) -> list[dict[str, Any]]:
@@ -66,6 +69,10 @@ class MemoryDocStore:
         explicit = self._gold_maps.get(slug)
         if explicit is not None:
             return explicit
+        # Keyed on completeness, mirroring FsDocStore: silver-only or
+        # partially golded documents have no gold map.
+        if not await self.has_gold(slug):
+            return None
         index = self._indexes.get(slug)
         if index is None:
             return None
@@ -77,6 +84,26 @@ class MemoryDocStore:
             "pages": regions.get("pages", {}),
             "pages_meta": self._pages_meta.get(slug, {}),
         }
+
+    async def has_gold(self, slug: str) -> bool:
+        if slug in self._gold_maps:
+            # Explicitly seeded gold maps count as complete (test helper).
+            return True
+        marker = self._gold_markers.get(slug)
+        return bool(marker and marker.get("complete"))
+
+    async def mark_gold_complete(self, slug: str, meta: dict[str, Any]) -> Path:
+        async with self._lock:
+            self._gold_markers[slug] = {"complete": True, **meta}
+        return Path(f"memory://gold/{slug}/.complete.json")
+
+    async def clear_gold_complete(self, slug: str) -> None:
+        async with self._lock:
+            self._gold_markers[slug] = {"complete": False}
+
+    async def get_page_candidates(self, slug: str, page: int) -> list[dict[str, Any]] | None:
+        candidates = self._candidates.get((slug, page))
+        return [dict(c) for c in candidates] if candidates is not None else None
 
     async def get_crop_path(self, slug: str, rel_path: str) -> Path | None:
         return None
@@ -98,12 +125,19 @@ class MemoryDocStore:
 
     async def write_silver_artifact(self, slug: str, name: str, payload: bytes | str) -> Path:
         # In-memory store dispatches to specific keys based on filename convention.
+        import json
+        import re
         if name == "index.json":
-            import json
             self._indexes[slug] = json.loads(payload) if isinstance(payload, str) else json.loads(payload.decode())
         elif name == "pages.meta.json":
-            import json
             self._pages_meta[slug] = json.loads(payload) if isinstance(payload, str) else json.loads(payload.decode())
+        elif (m := re.fullmatch(r"pages/(\d+)\.candidates\.json", name)):
+            data = json.loads(payload) if isinstance(payload, str) else json.loads(payload.decode())
+            self._candidates[(slug, int(m.group(1)))] = data
+        elif (m := re.fullmatch(r"pages/(\d+)\.md", name)) and isinstance(payload, str):
+            self._page_text[(slug, int(m.group(1)))] = payload
+        elif (m := re.fullmatch(r"pages/(\d+)\.raw\.md", name)) and isinstance(payload, str):
+            self._page_text.setdefault((slug, int(m.group(1))), payload)
         return Path(f"memory://silver/{slug}/{name}")
 
     async def write_gold_region_file(self, slug: str, page: int, regions: list[dict[str, Any]]) -> Path:

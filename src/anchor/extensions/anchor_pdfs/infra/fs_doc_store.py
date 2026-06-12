@@ -17,12 +17,20 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Any
 
 import aiofiles
 
 from anchor.core.upload_safety import UnsafeUploadError, assert_within, safe_upload_name
+
+#: Gold completeness marker filename, written atomically as the commit
+#: point of a gold pass (keyed pipeline or harness finalize). Content is
+#: `{"complete": bool, ...meta}` - an explicit `complete: false` is left
+#: behind by `clear_gold_complete` so a crashed overwrite never resurrects
+#: stale gold through the legacy fallback.
+GOLD_COMPLETE_MARKER = ".complete.json"
 
 
 def _with_bbox_alias(region: dict[str, Any]) -> dict[str, Any]:
@@ -72,17 +80,90 @@ class FsDocStore:
                 page_count = int(doc.get("page_count", 0))
                 title = doc.get("title", slug)
                 filename = doc.get("filename", "")
-            has_gold = (self.gold / slug / "pages").is_dir()
+            has_gold = self._gold_complete(slug)
             region_count = 0
             if has_gold:
                 for rf in (self.gold / slug / "pages").glob("*.regions.json"):
                     rdata = json.loads(rf.read_text())
                     region_count += len(rdata if isinstance(rdata, list) else rdata.get("regions", []))
-            out.append({
+            entry = {
                 "slug": slug, "title": title, "filename": filename,
                 "page_count": page_count, "has_gold": has_gold, "region_count": region_count,
-            })
+            }
+            marker = self._read_gold_marker(slug)
+            if has_gold and marker:
+                if marker.get("mode"):
+                    entry["gold_mode"] = marker["mode"]
+                model = marker.get("declared_model") or marker.get("model")
+                if model:
+                    entry["gold_model"] = model
+            out.append(entry)
         return out
+
+    # ── Gold completeness ────────────────────────────────────────────────
+    #
+    # `has_gold` used to be `(gold/<slug>/pages).is_dir()`, which reported
+    # a crash-interrupted gold pass (or a multi-turn harness session) as a
+    # complete document. Completeness is now an explicit marker committed
+    # atomically at the end of a gold pass. Legacy docs ingested before the
+    # marker existed fall back to the ingest report: a successful keyed run
+    # wrote it as its very last step, so its presence with regions implies
+    # the gold loop finished.
+
+    def _read_gold_marker(self, slug: str) -> dict[str, Any] | None:
+        p = self.gold / slug / GOLD_COMPLETE_MARKER
+        if not p.is_file():
+            return None
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return None
+        return data if isinstance(data, dict) else None
+
+    def _gold_complete(self, slug: str) -> bool:
+        marker = self._read_gold_marker(slug)
+        if marker is not None:
+            return bool(marker.get("complete"))
+        # Legacy fallback (pre-marker docs): the keyed pipeline wrote
+        # ingest-report.json after the whole gold loop, so a success report
+        # with regions means gold completed. A crashed run has no report.
+        report_path = self.silver / slug / "ingest-report.json"
+        if not report_path.is_file():
+            return False
+        try:
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return False
+        return (
+            isinstance(report, dict)
+            and report.get("status") == "success"
+            and int(report.get("region_count") or 0) > 0
+        )
+
+    async def has_gold(self, slug: str) -> bool:
+        return self._gold_complete(slug)
+
+    async def mark_gold_complete(self, slug: str, meta: dict[str, Any]) -> Path:
+        target = self.gold / slug / GOLD_COMPLETE_MARKER
+        target.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps({"complete": True, **meta}, indent=2)
+        # Atomic commit: write a sibling temp file, then rename over the
+        # marker. A crash leaves either the old marker or the new one.
+        tmp = target.with_name(GOLD_COMPLETE_MARKER + ".tmp")
+        async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
+            await f.write(payload)
+        os.replace(tmp, target)
+        return target
+
+    async def clear_gold_complete(self, slug: str) -> None:
+        target = self.gold / slug / GOLD_COMPLETE_MARKER
+        if not target.parent.is_dir():
+            return
+        payload = json.dumps({"complete": False})
+        tmp = target.with_name(GOLD_COMPLETE_MARKER + ".tmp")
+        async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
+            await f.write(payload)
+        os.replace(tmp, target)
 
     async def get_index(self, slug: str) -> dict[str, Any] | None:
         p = self.silver / slug / "index.json"
@@ -103,6 +184,16 @@ class FsDocStore:
         p = self.silver / slug / "pages" / f"{page}.png"
         return p if p.exists() else None
 
+    async def get_page_candidates(self, slug: str, page: int) -> list[dict[str, Any]] | None:
+        p = self.silver / slug / "pages" / f"{page}.candidates.json"
+        if not p.is_file():
+            return None
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return None
+        return data if isinstance(data, list) else None
+
     async def get_regions(self, slug: str, page: int | None = None) -> dict[str, Any]:
         result: dict[str, Any] = {"slug": slug, "pages": {}}
         d = self.gold / slug / "pages"
@@ -118,6 +209,10 @@ class FsDocStore:
         return result
 
     async def get_gold_map(self, slug: str) -> dict[str, Any] | None:
+        # Keyed on actual gold completeness: silver-only documents and
+        # crash-interrupted (partial) gold passes have no gold map.
+        if not self._gold_complete(slug):
+            return None
         index = await self.get_index(slug)
         regions = await self.get_regions(slug)
         pages_meta = await self.get_pages_meta(slug)

@@ -22,6 +22,7 @@ from anchor.extensions.anchor_pdfs.core.events import (
     DocSilvered,
     IngestProgress,
 )
+from anchor.extensions.anchor_pdfs.core.ingest.validation import validate_regions
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.ports.embedder import Embedder
 from anchor.extensions.anchor_pdfs.core.ports.md_polisher import PageMdPolisher
@@ -35,6 +36,7 @@ from anchor.extensions.anchor_pdfs.core.ports.synopsis_renderer import (
 from anchor.extensions.anchor_pdfs.core.search import search as _search_topk
 from anchor.extensions.anchor_pdfs.core.silver import (
     build_index,
+    build_page_candidates,
     build_pages_meta,
     render_pages_md,
     snap_to_docling_items,
@@ -146,7 +148,10 @@ class IngestService:
         # Idempotent by contract: if this slug is already gold-extracted, skip the
         # whole (billed, overwriting) pipeline unless the caller forces a fresh
         # pass. Matches the skill's "don't re-ingest unless asked for a fresh pass".
-        if not force and await self.store.get_gold_map(slug) is not None:
+        # Keyed on actual gold completeness (the marker), not silver presence:
+        # a crash-interrupted run or a --skip-regions pass is NOT "already
+        # ingested" and re-running it completes the document.
+        if not force and await self.store.has_gold(slug):
             return {
                 "slug": slug,
                 "filename": filename,
@@ -190,10 +195,19 @@ class IngestService:
             index = build_index(docling, filename=filename)
             pages_md = render_pages_md(docling)
             pages_meta = build_pages_meta(docling)
+            page_candidates = build_page_candidates(docling)
             await self.store.write_silver_artifact(slug, "index.json", json.dumps(index))
             await self.store.write_silver_artifact(slug, "pages.meta.json", json.dumps(pages_meta))
             for page, md in pages_md.items():
                 await self.store.write_silver_artifact(slug, f"pages/{page}.raw.md", md)
+            # Persist the per-page docling candidate items (id, label, bbox,
+            # text). They power region grouping in the harness protocol and
+            # make a session survivable across a crash; until now they only
+            # existed in memory during this call.
+            for page, candidates in page_candidates.items():
+                await self.store.write_silver_artifact(
+                    slug, f"pages/{page}.candidates.json", json.dumps(candidates),
+                )
             finish_stage(
                 "silver_index",
                 stage_started_at,
@@ -254,9 +268,16 @@ class IngestService:
                 await self._publish(DocPolished(slug=slug, polished_pages=polished_pages), publish_workspace_id)
 
             region_count = 0
+            invalid_region_count = 0
+            region_errors: list[dict[str, Any]] = []
+            gold_completed = False
             if regions and self.region_extractor and page_count:
                 stage_started_at = self.clock.now()
                 page_timings: list[dict[str, Any]] = []
+                # Mark gold incomplete before the (overwriting) loop so a
+                # crash mid-loop leaves the document invisible-as-gold
+                # instead of a partial blend that reads as complete.
+                await self.store.clear_gold_complete(slug)
                 for page, png in page_pngs.items():
                     page_started_at = self.clock.now()
                     raw_regions = await self.region_extractor.extract_page(
@@ -267,6 +288,9 @@ class IngestService:
                     )
                     snapped: list[dict[str, Any]] = []
                     for r in raw_regions:
+                        if not isinstance(r, dict):
+                            snapped.append(r)
+                            continue
                         bbox_any = r.get("bbox") or r.get("approximate_bbox")
                         bbox_list: list[float] = list(bbox_any) if isinstance(bbox_any, list) else []
                         if len(bbox_list) == 4:
@@ -276,12 +300,20 @@ class IngestService:
                             elif "bbox" not in r:
                                 r = {**r, "bbox": bbox_list}
                         snapped.append(r)
-                    await self.store.write_gold_region_file(slug, page, snapped)
-                    region_count += len(snapped)
+                    # Shared schema gate: only valid regions reach gold.
+                    # Invalid ones are dropped and reported instead of
+                    # silently persisted (or silently swallowed upstream).
+                    valid, page_errors = validate_regions(snapped)
+                    if page_errors:
+                        invalid_region_count += len(snapped) - len(valid)
+                        region_errors.extend({**e, "page": page} for e in page_errors)
+                    await self.store.write_gold_region_file(slug, page, valid)
+                    region_count += len(valid)
                     page_finished_at = self.clock.now()
                     page_timings.append({
                         "page": page,
-                        "region_count": len(snapped),
+                        "region_count": len(valid),
+                        "invalid_region_count": len(snapped) - len(valid),
                         "started_at": page_started_at,
                         "finished_at": page_finished_at,
                         "duration_seconds": round(max(0.0, page_finished_at - page_started_at), 3),
@@ -294,9 +326,19 @@ class IngestService:
                     stage_started_at,
                     page_count=len(page_timings),
                     region_count=region_count,
+                    invalid_region_count=invalid_region_count,
                     model=region_model,
                     pages=page_timings,
                 )
+                # Commit point: gold becomes visible (has_gold/get_gold_map/
+                # list_documents) only once the marker lands, atomically.
+                await self.store.mark_gold_complete(slug, {
+                    "mode": "keyed",
+                    "model": region_model,
+                    "region_count": region_count,
+                    "completed_at": self.clock.now(),
+                })
+                gold_completed = True
                 await self._publish(DocGoldExtracted(slug=slug, region_count=region_count), publish_workspace_id)
 
             embedded_count = 0
@@ -323,6 +365,10 @@ class IngestService:
                 "page_count": page_count,
                 "polished_page_count": len(polished_pages),
                 "region_count": region_count,
+                "invalid_region_count": invalid_region_count,
+                "region_errors": region_errors,
+                "gold_complete": gold_completed,
+                "mode": "keyed",
                 "embedded_count": embedded_count,
                 "options": {
                     "polish": polish,
@@ -346,6 +392,7 @@ class IngestService:
                 "page_count": page_count,
                 "polished_pages": polished_pages,
                 "region_count": region_count,
+                "invalid_region_count": invalid_region_count,
                 "embedded_count": embedded_count,
                 "embed_model": self.embed_model_id if embedded_count else None,
                 "timing_report_path": str(timing_report_path),

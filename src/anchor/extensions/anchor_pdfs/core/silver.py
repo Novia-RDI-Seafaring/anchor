@@ -269,6 +269,53 @@ def build_pages_meta(docling: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# Cap candidate text so a dense page does not balloon the persisted
+# candidates file or the harness work-item payload. The agent reads the
+# page image and raw markdown for the full content; candidate text is a
+# grouping aid, not the content channel.
+_CANDIDATE_TEXT_MAX = 800
+
+
+def build_page_candidates(docling: dict[str, Any]) -> dict[int, list[dict[str, Any]]]:
+    """Per-page docling candidate items: `{page: [{id, label, bbox, text}]}`.
+
+    Ids reuse the stable `p{page}-i{idx}` scheme `build_pages_meta` mints,
+    with `idx` being the item's position within its page (docling order),
+    so the two artifacts always agree. Table items additionally carry a
+    `cells_preview` so an agent can group a table without reading cells.
+    """
+    items = docling.get("items")
+    if not isinstance(items, list):
+        items = []
+
+    by_page: dict[int, list[dict[str, Any]]] = {}
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        page = it.get("page")
+        if not isinstance(page, (int, float)):
+            continue
+        by_page.setdefault(int(page), []).append(it)
+
+    out: dict[int, list[dict[str, Any]]] = {}
+    for page in sorted(by_page):
+        candidates: list[dict[str, Any]] = []
+        for idx, it in enumerate(by_page[page]):
+            text = (it.get("text") or "").strip()
+            candidate: dict[str, Any] = {
+                "id": f"p{page}-i{idx}",
+                "label": it.get("label") or "unknown",
+                "bbox": _clean_bbox(it.get("bbox")),
+                "text": text[:_CANDIDATE_TEXT_MAX],
+            }
+            if it.get("label") == "table":
+                header_row, _, shape = _summarize_table_cells(it.get("cells"))
+                candidate["cells_preview"] = {"shape": shape, "header_row": header_row}
+            candidates.append(candidate)
+        out[page] = candidates
+    return out
+
+
 # ── Bbox helpers ─────────────────────────────────────────────────────────────
 
 
