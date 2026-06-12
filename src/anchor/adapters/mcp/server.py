@@ -32,7 +32,7 @@ from anchor.extensions.anchor_pdfs.core.services import IngestService
 from anchor.extensions.anchor_sysml import mcp_handlers as sysml_handlers
 from anchor.extensions.anchor_sysml.core.services import SysmlService
 from anchor.infra.config import AnchorConfig
-from anchor.infra.status import build_status_summary
+from anchor.adapters.status import build_status_summary
 
 
 # ── Server instructions ────────────────────────────────────────────────────

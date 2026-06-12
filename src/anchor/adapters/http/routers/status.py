@@ -7,7 +7,7 @@ from anchor.adapters.http.deps import get_doc_store, get_workspace_service
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.infra.config import AnchorConfig
-from anchor.infra.status import build_status_summary
+from anchor.adapters.status import build_status_summary
 
 
 router = APIRouter(prefix="/api", tags=["status"])
