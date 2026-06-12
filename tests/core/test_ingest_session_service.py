@@ -352,3 +352,36 @@ def test_abort_discards_staging_and_leaves_doc_ingestable():
         assert fresh["session_id"] != sid
 
     asyncio.run(run())
+
+
+def test_unknown_session_error_names_searched_root_and_remedy():
+    # Issue #106: a cwd change between sibling CLI commands resolves a
+    # different data dir and the session "disappears". The miss must say
+    # where it looked and how to repair, not just "unknown session".
+    async def run():
+        s = _services()
+        out = await s.ingest_session.ingest_submit_page("ing-missing", 1, regions=[])
+        assert out["accepted"] is False
+        msg = out["errors"][0]["message"]
+        assert "unknown session: ing-missing" in msg
+        assert "--data-dir" in msg
+        status = await s.ingest_session.ingest_get_page("ing-missing", 1)
+        assert "--data-dir" in status["error"]
+
+    asyncio.run(run())
+
+
+def test_work_order_carries_data_dir_when_store_has_root(tmp_path):
+    async def run():
+        from anchor.extensions.anchor_pdfs.infra.fs_session_store import (
+            FsIngestSessionStore,
+        )
+
+        s = _services()
+        s.ingest_session.sessions = FsIngestSessionStore(tmp_path / "anchor-data")
+        s.session_store = s.ingest_session.sessions
+        order = await _begin(s)
+        assert order["data_dir"] == str(tmp_path / "anchor-data")
+        assert "--data-dir" in order["instructions"]
+
+    asyncio.run(run())
