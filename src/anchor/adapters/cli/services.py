@@ -75,3 +75,44 @@ def _build_real_services(data_dir: Path, *, base_url: str = "http://localhost:80
         default_dpi=config.dpi,
     )
     return config, bus, workspace, ingest, doc_store
+
+
+def _build_ingest_session_service(config, bus, doc_store):
+    """Wire the harness ingest-session service against an existing doc store.
+
+    No polisher / region extractor here on purpose: in harness mode the
+    agent is the vision model. Embeddings stay local (or follow
+    ANCHOR_EMBED_MODEL) exactly like the keyed pipeline."""
+    from anchor.extensions.anchor_pdfs.core.ingest.session import IngestSessionService
+    from anchor.extensions.anchor_pdfs.infra.fs_session_store import FsIngestSessionStore
+    from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
+    from anchor.extensions.anchor_pdfs.infra.pdf.docling_extractor import DoclingPdfExtractor
+    from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
+
+    api_key = config.openai_api_key.get_secret_value() if config.openai_api_key else None
+    openai_base_url = (config.openai_base_url or "").strip() or None
+    embedder = build_embedder(
+        model=config.embed_model, api_key=api_key, base_url=openai_base_url,
+    )
+    return IngestSessionService(
+        doc_store,
+        FsIngestSessionStore(config.data_dir),
+        bus,
+        extractor=DoclingPdfExtractor(device=config.docling_device),
+        renderer=PymupdfPdfRenderer(),
+        embedder=embedder,
+        embed_model_id=getattr(embedder, "model_id", None),
+        default_dpi=config.dpi,
+    )
+
+
+def _build_session_services(data_dir: Path):
+    """Standalone wiring for the `anchor ingest-session` commands."""
+    from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
+    from anchor.infra.bus.memory_bus import MemoryEventBus
+    from anchor.infra.config import AnchorConfig
+
+    config = AnchorConfig(data_dir=data_dir)
+    bus = MemoryEventBus()
+    doc_store = FsDocStore(config.data_dir)
+    return config, _build_ingest_session_service(config, bus, doc_store)

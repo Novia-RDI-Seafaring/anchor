@@ -398,6 +398,10 @@ class IngestSessionService:
                 ))
                 continue
 
+            # Geometry resolution. On a geometry error we still run the
+            # shape checks below (with a placeholder bbox) so the agent
+            # learns about every problem in one verdict, not one per
+            # resubmission round trip.
             member_ids = raw.get("member_item_ids")
             approx = raw.get("approx_bbox")
             bbox: list[float] = []
@@ -409,38 +413,38 @@ class IngestSessionService:
                         i, "member_item_ids",
                         f"unknown candidate ids on page {page}: {missing}",
                     ))
-                    continue
-                bbox = union_bbox([
-                    list(by_id[m].get("bbox") or []) for m in member_ids
-                ])
-                if not bbox:
-                    errors.append(_err(
-                        i, "member_item_ids",
-                        "named candidates have no usable bboxes; send approx_bbox instead",
-                    ))
-                    continue
-                geometry = "members"
+                else:
+                    bbox = union_bbox([
+                        list(by_id[m].get("bbox") or []) for m in member_ids
+                    ])
+                    if bbox:
+                        geometry = "members"
+                    else:
+                        errors.append(_err(
+                            i, "member_item_ids",
+                            "named candidates have no usable bboxes; send approx_bbox instead",
+                        ))
             elif approx is not None:
                 msg = bbox_error(approx)
                 if msg:
                     errors.append(_err(i, "approx_bbox", msg))
-                    continue
-                approx_f = [float(v) for v in approx]
-                snapped, _idx = snap_to_docling_items(docling_view, page, approx_f)
-                if snapped:
-                    bbox = snapped
-                    geometry = "snapped"
                 else:
-                    # Docling saw nothing under the box (full-bleed chart,
-                    # scanned drawing). Keep the coarse box and say so.
-                    bbox = approx_f
-                    geometry = "coarse"
+                    approx_f = [float(v) for v in approx]
+                    snapped, _idx = snap_to_docling_items(docling_view, page, approx_f)
+                    if snapped:
+                        bbox = snapped
+                        geometry = "snapped"
+                    else:
+                        # Docling saw nothing under the box (full-bleed
+                        # chart, scanned drawing). Keep the coarse box and
+                        # say so.
+                        bbox = approx_f
+                        geometry = "coarse"
             else:
                 errors.append(_err(
                     i, "member_item_ids",
                     "region needs geometry: member_item_ids (preferred) or approx_bbox",
                 ))
-                continue
 
             region: dict[str, Any] = {
                 "id": raw.get("id") or f"r{i + 1}",
@@ -448,19 +452,21 @@ class IngestSessionService:
                 "title": raw.get("title"),
                 "description": raw.get("description") or "",
                 "page": page,
-                "bbox": bbox,
+                "bbox": bbox or [0.0, 0.0, 0.0, 0.0],  # placeholder when geometry failed
                 "geometry": geometry,
                 "tags": raw.get("tags") or [],
                 "entities": raw.get("entities") or [],
             }
             if geometry == "members":
                 region["member_item_ids"] = list(member_ids)
-            elif approx is not None:
+            elif geometry in ("snapped", "coarse"):
                 region["approx_bbox"] = [float(v) for v in approx]
             shape_errors = validate_region(region, index=i)
             if shape_errors:
                 errors.extend(shape_errors)
                 continue
+            if not geometry:
+                continue  # geometry error already recorded
             resolved.append(region)
 
         # Duplicate ids within one page would silently overwrite each other

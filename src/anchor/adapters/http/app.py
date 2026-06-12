@@ -17,7 +17,7 @@ from anchor.extensions.anchor_cad.adapters.http import cad_routes
 from anchor.extensions.anchor_cad.core.services import CadService
 from anchor.extensions.anchor_fmus.adapters.http import fmu_routes
 from anchor.extensions.anchor_fmus.core.services import FmuService
-from anchor.extensions.anchor_pdfs.adapters.http import documents, upload
+from anchor.extensions.anchor_pdfs.adapters.http import documents, ingest_sessions, upload
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.services import IngestService
 from anchor.extensions.anchor_sysml.adapters.http import sysml_routes
@@ -35,6 +35,7 @@ def build_app(
     cad_service: CadService | None = None,
     sysml_service: SysmlService | None = None,
     synopsis_service: object | None = None,
+    ingest_session_service: object | None = None,
     fmu_service: FmuService | None = None,
     canvases_dir: Path | None = None,
     config: AnchorConfig | None = None,
@@ -47,6 +48,7 @@ def build_app(
     app.state.cad_service = cad_service
     app.state.sysml_service = sysml_service
     app.state.synopsis_service = synopsis_service
+    app.state.ingest_session_service = ingest_session_service
     app.state.anchor_config = config
 
     # Bridge cross-process writes (CLI / MCP-stdio in another process) into
@@ -97,6 +99,7 @@ def build_app(
     app.include_router(nodes.router)
     app.include_router(edges.router)
     app.include_router(documents.router)
+    app.include_router(ingest_sessions.router)
     app.include_router(upload.router)
     app.include_router(sse.router)
     app.include_router(status.router)

@@ -119,6 +119,13 @@ PDF tools (extension anchor_pdfs):
 - search_documents — semantic search across embedded gold regions
 - get_gold_regions / get_page_text / get_page_image / get_crop / get_pdf
 
+Harness ingestion (provider = harness, no API key):
+- ingest_begin / ingest_get_page / ingest_submit_page
+- ingest_status (resume by slug) / ingest_finalize / ingest_abort
+You (the agent) polish each page and group regions by candidate item
+ids; the server validates, computes bboxes, embeds, and publishes
+atomically on finalize.
+
 FMU tools (anchor_fmus, optional): fmu_inspect / fmu_list_models / fmu_simulate / ...
 CAD tools (anchor_cad): inspect / list_models / set_parameter / ...
 SysML tools (anchor_sysml): sysml_render / sysml_export
@@ -169,6 +176,7 @@ def build_mcp_server(
     workspace: WorkspaceService,
     ingest: IngestService,
     doc_store: DocStore,
+    ingest_session: Any | None = None,
     config: AnchorConfig | None = None,
     fmu: FmuService | None = None,
     cad: CadService | None = None,
@@ -247,6 +255,7 @@ def build_mcp_server(
                 text = await pdf_handlers.call_tool(
                     ingest, doc_store, name, dict(arguments),
                     synopsis=synopsis,
+                    ingest_session=ingest_session,
                 )
         except Exception as exc:  # noqa: BLE001  - surface to caller as JSON
             text = _error_result(exc)

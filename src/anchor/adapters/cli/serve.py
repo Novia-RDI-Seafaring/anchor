@@ -8,7 +8,7 @@ from pathlib import Path
 import typer
 
 from anchor.adapters.cli.common import DEFAULT_DATA_DIR
-from anchor.adapters.cli.services import _build_real_services
+from anchor.adapters.cli.services import _build_ingest_session_service, _build_real_services
 
 
 def _find_free_port(host: str, start: int, *, limit: int = 20) -> int:
@@ -104,11 +104,14 @@ def serve(
     except Exception as exc:  # noqa: BLE001
         typer.echo(f"Warning: FMU extension failed to start: {exc}", err=True)
 
+    ingest_session_service = _build_ingest_session_service(config, bus, doc_store)
+
     app_ = build_app(
         workspace_service=workspace,
         ingest_service=ingest,
         doc_store=doc_store,
         bus=bus,
+        ingest_session_service=ingest_session_service,
         static_dir=static_dir if static_dir.is_dir() else None,
         cad_service=cad_service,
         sysml_service=sysml_service,

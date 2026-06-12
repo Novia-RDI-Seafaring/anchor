@@ -7,6 +7,7 @@ import mimetypes
 from pathlib import Path
 from typing import Any
 
+from anchor.extensions.anchor_pdfs.core.ingest.session import IngestSessionService
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
 
@@ -69,6 +70,111 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "force": {"type": "boolean"},
                 },
                 "required": ["pdf_path"],
+            },
+        },
+        # ── Harness-driven ingestion protocol (no API key needed) ───────
+        # The agent itself performs polish + region grouping, page by page,
+        # against a journaled staging session. Mechanical steps (docling,
+        # PNGs, embeddings, validation, atomic publish) stay server-side.
+        {
+            "name": "ingest_begin",
+            "description": (
+                "Open a harness ingest session: runs the mechanical front half "
+                "(bronze, docling, silver, page images, candidate boxes) and "
+                "returns a work order {session_id, page_count, pages[]}. "
+                "Idempotent: published gold returns {skipped: true} unless "
+                "force; an open session for the slug is resumed."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pdf_path": {"type": "string"},
+                    "slug": {"type": "string"},
+                    "dpi": {"type": "integer"},
+                    "force": {"type": "boolean"},
+                },
+                "required": ["pdf_path"],
+            },
+        },
+        {
+            "name": "ingest_get_page",
+            "description": (
+                "Work item for one page of a harness ingest session: page image "
+                "(path by default; format='base64' from off-machine agents), raw "
+                "markdown, candidate boxes {id, label, bbox, text}, and the "
+                "per-page instructions."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string"},
+                    "page": {"type": "integer"},
+                    "format": {"type": "string", "enum": ["path", "base64"], "default": "path"},
+                },
+                "required": ["session_id", "page"],
+            },
+        },
+        {
+            "name": "ingest_submit_page",
+            "description": (
+                "Submit one polished page to the staging session. Each region: "
+                "{kind, title, description?, member_item_ids: [candidate ids], "
+                "tags?, entities?} - the server computes bbox from the members; "
+                "send approx_bbox [l,t,r,b] (BOTTOMLEFT) only when no candidate "
+                "covers the visual. Idempotent per page (resubmit replaces). "
+                "Returns {accepted, errors?} - repair named fields and resubmit."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string"},
+                    "page": {"type": "integer"},
+                    "regions": {"type": "array", "items": {"type": "object"}},
+                    "polished_md": {"type": "string"},
+                    "protocol_version": {"type": "integer"},
+                },
+                "required": ["session_id", "page", "regions"],
+            },
+        },
+        {
+            "name": "ingest_status",
+            "description": (
+                "Resume surface for harness ingest: pages done/remaining and the "
+                "session state, by session_id or by slug ('continue ingesting X')."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string"},
+                    "slug": {"type": "string"},
+                },
+            },
+        },
+        {
+            "name": "ingest_finalize",
+            "description": (
+                "Finalize a harness ingest session: verifies every page is "
+                "submitted (or listed in allow_missing_pages), embeds regions "
+                "locally, and publishes staging to gold atomically. Pass "
+                "declared_model with your own model id for the ingest report."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string"},
+                    "allow_missing_pages": {"type": "array", "items": {"type": "integer"}},
+                    "declared_model": {"type": "string"},
+                },
+                "required": ["session_id"],
+            },
+        },
+        {
+            "name": "ingest_abort",
+            "description": "Abort a harness ingest session and discard its staged pages.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {"session_id": {"type": "string"}},
+                "required": ["session_id"],
             },
         },
         {
@@ -235,10 +341,69 @@ def tool_definitions() -> list[dict[str, Any]]:
     ]
 
 
+_SESSION_TOOL_NAMES = {
+    "ingest_begin", "ingest_get_page", "ingest_submit_page",
+    "ingest_status", "ingest_finalize", "ingest_abort",
+}
+
+
+async def _call_session_tool(
+    ingest_session: IngestSessionService, name: str, args: dict[str, Any],
+) -> str:
+    if name == "ingest_begin":
+        path = Path(args["pdf_path"])
+        if not path.exists():
+            return json.dumps({"error": f"PDF not found: {path}"})
+        order = await ingest_session.ingest_begin(
+            path.read_bytes(), path.name,
+            slug=args.get("slug"),
+            dpi=args.get("dpi"),
+            force=args.get("force", False),
+        )
+        return json.dumps(order)
+    if name == "ingest_get_page":
+        item = await ingest_session.ingest_get_page(args["session_id"], int(args["page"]))
+        if "error" in item:
+            return json.dumps(item)
+        image_path = item.pop("image_path", None)
+        item["image"] = json.loads(_byte_envelope(
+            Path(image_path) if image_path else None,
+            fmt=args.get("format", "path"),
+            fallback_ext=".png",
+        ))
+        return json.dumps(item)
+    if name == "ingest_submit_page":
+        verdict = await ingest_session.ingest_submit_page(
+            args["session_id"], int(args["page"]),
+            regions=args.get("regions") or [],
+            polished_md=args.get("polished_md"),
+            protocol_version=args.get("protocol_version"),
+        )
+        return json.dumps(verdict)
+    if name == "ingest_status":
+        return json.dumps(await ingest_session.ingest_status(
+            args.get("session_id"), slug=args.get("slug"),
+        ))
+    if name == "ingest_finalize":
+        return json.dumps(await ingest_session.ingest_finalize(
+            args["session_id"],
+            allow_missing_pages=args.get("allow_missing_pages"),
+            declared_model=args.get("declared_model"),
+        ))
+    if name == "ingest_abort":
+        return json.dumps(await ingest_session.ingest_abort(args["session_id"]))
+    return json.dumps({"error": f"unknown session tool: {name}"})
+
+
 async def call_tool(
     ingest: IngestService, store: DocStore, name: str, args: dict[str, Any],
     *, synopsis: SynopsisService | None = None,
+    ingest_session: IngestSessionService | None = None,
 ) -> str:
+    if name in _SESSION_TOOL_NAMES:
+        if ingest_session is None:
+            return json.dumps({"error": "harness ingest sessions not wired on this server"})
+        return await _call_session_tool(ingest_session, name, args)
     if name == "ingest_pdf":
         from pathlib import Path
         path = Path(args["pdf_path"])
