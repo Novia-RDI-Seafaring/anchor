@@ -57,7 +57,8 @@ def serve(
     # The snapshotter points at the same server we're about to start so
     # snapshots taken via CLI / MCP loop back to this process.
     base_url = f"http://localhost:{port}"
-    _, bus, workspace, ingest, doc_store = _build_real_services(data_dir, base_url=base_url)
+    config, bus, workspace, ingest, doc_store = _build_real_services(data_dir, base_url=base_url)
+    data_dir = config.data_dir
     static_dir = Path(__file__).resolve().parents[2] / "_web_dist"
     if not static_dir.is_dir():
         # development: walk up to web/dist in the repository checkout
@@ -114,6 +115,7 @@ def serve(
         synopsis_service=synopsis_service,
         fmu_service=fmu_service,
         canvases_dir=data_dir / "canvases",
+        config=config,
     )
     if port != requested_port:
         typer.echo(

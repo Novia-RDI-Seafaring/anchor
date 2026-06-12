@@ -136,7 +136,7 @@ async def _run(data_dir: Path | None, base_url: str = "http://localhost:8002") -
 
     server = build_mcp_server(
         workspace=workspace, ingest=ingest, doc_store=doc_store,
-        fmu=fmu, cad=cad, sysml=sysml, synopsis=synopsis,
+        config=config, fmu=fmu, cad=cad, sysml=sysml, synopsis=synopsis,
     )
     async with stdio_server() as (read, write):
         await server.run(read, write, server.create_initialization_options())
