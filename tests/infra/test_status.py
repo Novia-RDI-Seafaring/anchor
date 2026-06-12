@@ -8,7 +8,9 @@ from tests.fixtures.services import make_in_memory_services
 
 
 @pytest.mark.asyncio
-async def test_status_summary_reports_project_and_counts(tmp_path):
+async def test_status_summary_reports_project_and_counts(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     services = make_in_memory_services()
     await services.workspace.create_workspace("w1")
     services.doc_store.seed_document("pump", filename="pump.pdf", page_count=4)
@@ -21,7 +23,7 @@ async def test_status_summary_reports_project_and_counts(tmp_path):
         },
     )
 
-    config = AnchorConfig(data_dir=tmp_path / "anchor-data")
+    config = AnchorConfig(data_dir=tmp_path / "anchor-data", openai_api_key=None)
     status = await build_status_summary(
         config=config,
         workspace=services.workspace,
@@ -39,5 +41,8 @@ async def test_status_summary_reports_project_and_counts(tmp_path):
         "documents": None,
         "embeddings": None,
     }
-    assert status["api_keys"]["anchor_openai_api_key"] is False
+    assert status["api_keys"] == {
+        "anchor_openai_api_key": False,
+        "openai_api_key": False,
+    }
     assert "cwd" in status["process"]
