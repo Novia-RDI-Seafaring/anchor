@@ -79,6 +79,19 @@ class DocStore(Protocol):
     async def write_gold_region_file(self, slug: str, page: int, regions: list[dict[str, Any]]) -> Path:
         raise NotImplementedError
 
+    async def add_derived_region(self, slug: str, region: dict[str, Any]) -> Path:
+        """Append one derived region to an existing document's gold.
+
+        A region producer (e.g. a chart digitizer) enriches an already-gold
+        document: it consumes one region and writes a new one back into the
+        same gold tree. The page is taken from ``region['source_ref']['page']``
+        (a derived region inherits its parent's source_ref) or
+        ``region['page']``. Replaces any existing region with the same ``id``
+        so re-deriving is idempotent. Search picks the new region up on the
+        next ``embed`` pass; this method does not embed.
+        """
+        raise NotImplementedError
+
     async def write_embeddings(self, slug: str, payload: dict[str, Any]) -> Path:
         """Write gold/<slug>/embeddings.json with the per-region vector payload.
 

@@ -52,6 +52,16 @@ def _normalise_regions(regions: Any) -> Any:
     return [_with_bbox_alias(r) if isinstance(r, dict) else r for r in regions]
 
 
+def _derived_page(region: dict[str, Any]) -> int | None:
+    """Resolve the gold page a derived region belongs on."""
+    sref = region.get("source_ref")
+    if isinstance(sref, dict) and isinstance(sref.get("page"), int):
+        return sref["page"]
+    if isinstance(region.get("page"), int):
+        return region["page"]
+    return None
+
+
 class FsDocStore:
     def __init__(self, data_dir: Path) -> None:
         self.data_dir = Path(data_dir)
@@ -285,6 +295,26 @@ class FsDocStore:
         async with aiofiles.open(target, "w", encoding="utf-8") as f:
             await f.write(json.dumps({"page": page, "regions": normalised}, indent=2))
         return target
+
+    async def add_derived_region(self, slug: str, region: dict[str, Any]) -> Path:
+        page = _derived_page(region)
+        if page is None:
+            raise ValueError(
+                "add_derived_region: cannot resolve page from region.source_ref.page "
+                "or region.page"
+            )
+        async with self._lock:
+            target = self.gold / slug / "pages" / f"{page}.regions.json"
+            existing: list[dict[str, Any]] = []
+            if target.is_file():
+                data = json.loads(target.read_text())
+                raw = data.get("regions", data) if isinstance(data, dict) else data
+                if isinstance(raw, list):
+                    existing = [r for r in raw if isinstance(r, dict)]
+            rid = region.get("id")
+            kept = [r for r in existing if r.get("id") != rid] if rid else existing
+            kept.append(region)
+            return await self.write_gold_region_file(slug, page, kept)
 
     async def write_embeddings(self, slug: str, payload: dict[str, Any]) -> Path:
         target = self.gold / slug / "embeddings.json"
