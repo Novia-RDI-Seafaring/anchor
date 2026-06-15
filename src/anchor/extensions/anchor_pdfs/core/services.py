@@ -529,6 +529,52 @@ class IngestService:
             "skipped": skipped,
         }
 
+    async def derive_region(
+        self, slug: str, parent_region_id: str, region: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Persist a region derived from an existing gold region.
+
+        The generic consumer side of an OIP region producer: a producer
+        (e.g. the chart digitizer) hands back a new region derived from one
+        it consumed; this links it to its parent and stores it durably. The
+        derived region keeps the parent's ``source_ref`` (so provenance
+        points at the same page and bbox) and records ``derived_from``.
+        Producer-agnostic: the only chart-specific knowledge lives in the
+        producer, not here.
+
+        Visible immediately via ``get_regions`` / ``get_gold_map``;
+        searchable after the next ``embed`` pass. Raises ``ValueError`` if
+        the parent region does not exist.
+        """
+        regions = await self.store.get_regions(slug)
+        parent: dict[str, Any] | None = None
+        for _page, regs in (regions.get("pages") or {}).items():
+            for r in regs:
+                if isinstance(r, dict) and r.get("id") == parent_region_id:
+                    parent = r
+                    break
+            if parent is not None:
+                break
+        if parent is None:
+            raise ValueError(
+                f"derive_region: parent region {parent_region_id!r} not found in {slug!r}"
+            )
+
+        derived = dict(region)
+        derived["derived_from"] = parent_region_id
+        # Inherit the parent's provenance unless the producer set its own.
+        if not derived.get("source_ref") and parent.get("source_ref"):
+            derived["source_ref"] = parent["source_ref"]
+
+        path = await self.store.add_derived_region(slug, derived)
+        return {
+            "slug": slug,
+            "region_id": derived.get("id"),
+            "kind": derived.get("kind"),
+            "derived_from": parent_region_id,
+            "path": str(path),
+        }
+
     async def _publish(self, evt: Any, workspace_id: str | None = None) -> None:
         await self.bus.publish(DomainEvent(
             id=new_event_id(),
