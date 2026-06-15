@@ -106,11 +106,20 @@ Built and verified:
 - Contract: OIP 0.3 `consumes` / `derived_from` / `chart` token (RFC 0001).
 - Consumer: discovery + skill composition (no per-producer code), and the
   `chart` render token (`ChartPrimitive`) with source provenance.
+- Durable persistence: `derive_region` stores the `chart_series` beside the
+  chart region it came from, inheriting the parent's `source_ref` and
+  recording `derived_from`. Reachable on all three adapters (MCP
+  `derive_region`, CLI `anchor derive-region`, HTTP
+  `POST /api/documents/{slug}/derived-regions`). Run `anchor embed <slug>`
+  to make it searchable. This helper is generic: any region producer reuses
+  it, not just the chart digitizer.
+
+To store the series durably (so `search_documents` finds "LKH-85 max head"),
+after tracing call `derive_region(slug, <chart region id>, <chart_series
+region>)` instead of only placing a canvas node, then re-embed.
 
 Next:
 
-- Durable gold persistence: store the `chart_series` region in the document's
-  gold layer so it is searchable, not only a canvas node.
 - Canvas point-collection for the human-click path.
-- A generic "run a region producer on this region" helper, keyed on the
-  manifest `consumes` / `produces`, reused by every future region producer.
+- Auto-place a `chart` canvas node from a stored `chart_series` (today the
+  agent adds the node; the data already lives in gold).
