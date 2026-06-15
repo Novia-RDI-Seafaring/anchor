@@ -139,7 +139,7 @@ def test_invalid_regions_are_rejected_and_reported(tmp_path):
             {"id": "bad-kind", "kind": "banner", "title": "nope",
              "bbox": [10, 600, 200, 580]},
             {"id": "bad-bbox", "kind": "text", "title": "inverted box",
-             "bbox": [10, 580, 200, 600]},
+             "bbox": [200, 600, 10, 580]},
             {"id": "no-title", "kind": "text", "bbox": [10, 600, 200, 580]},
         ])
         store, ingest = _fs_ingest(tmp_path, region_extractor=bad_regions)
