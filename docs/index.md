@@ -62,6 +62,7 @@ Windows; verify browser and PDF workflows on your target platform.
 - **[Canvas](concepts/canvas.md)** - node types, edges, sub-canvases
 - **[Many interfaces](concepts/interfaces.md)** - HTTP, MCP, CLI, and the parity rule
 - **[Extensions and OIP](concepts/extensions-and-oip.md)** - how third-party producers plug in
+- **[Chart ingestion](guides/chart-ingestion.md)** - digitize a chart into a data series via an external OIP producer
 - **[Agent setup](guides/agent-setup.md)** - connect MCP clients and optional local models
 - **[Agent configuration](guides/agent-configuration.md)** - configure Claude Code, Codex, Cursor, OpenCode, and generic stdio clients
 - **[Reference](reference/cli.md)** - CLI, MCP tool families, and configuration
