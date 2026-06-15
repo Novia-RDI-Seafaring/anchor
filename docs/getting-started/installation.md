@@ -149,7 +149,7 @@ pnpm --dir web build
 
 uv tool install --force --reinstall --refresh .
 anchor serve
-    ```
+```
 
 On Windows, reinstall can fail if an agent harness is still running
 `anchor-mcp.exe`:
