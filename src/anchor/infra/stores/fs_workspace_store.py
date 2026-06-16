@@ -103,7 +103,7 @@ class FsWorkspaceStore:
             event.version = self._versions[slug]
             event.workspace_id = slug
             line = event.model_dump_json() + "\n"
-            async with aiofiles.open(d / "events.jsonl", "a") as f:
+            async with aiofiles.open(d / "events.jsonl", "a", encoding="utf-8") as f:
                 await f.write(line)
             seen[event.id] = event.version
             return event.version
@@ -142,7 +142,7 @@ class FsWorkspaceStore:
     async def _atomic_write_text(self, path: Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")
-        async with aiofiles.open(tmp, "w") as f:
+        async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
             await f.write(content)
         os.replace(tmp, path)
 
@@ -152,7 +152,7 @@ class FsWorkspaceStore:
             return 0
         # last line's version
         last_version = 0
-        with events_path.open() as f:
+        with events_path.open(encoding="utf-8", errors="replace") as f:
             for line in f:
                 if not line.strip():
                     continue
@@ -164,7 +164,7 @@ class FsWorkspaceStore:
         seen: dict[str, int] = {}
         if not events_path.exists():
             return seen
-        with events_path.open() as f:
+        with events_path.open(encoding="utf-8", errors="replace") as f:
             for line in f:
                 if not line.strip():
                     continue

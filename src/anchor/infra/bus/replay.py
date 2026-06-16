@@ -44,7 +44,7 @@ def replay_from_events(state: Workspace, events_path: Path) -> Workspace:
         return state
     new = state
     base_version = state.version
-    with events_path.open() as f:
+    with events_path.open(encoding="utf-8", errors="replace") as f:
         for raw in f:
             if not raw.strip():
                 continue
