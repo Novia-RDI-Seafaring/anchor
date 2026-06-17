@@ -34,7 +34,7 @@ def sysml_render(
     async def run():
         return await svc.render(
             workspace_slug=workspace_slug,
-            text=sysml_path.read_text(),
+            text=sysml_path.read_text(encoding="utf-8"),
             x_offset=x_offset,
             y_offset=y_offset,
             filename=sysml_path.name,
