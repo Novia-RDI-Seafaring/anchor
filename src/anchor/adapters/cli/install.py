@@ -53,6 +53,18 @@ def _cursor_paths() -> Path:
     return Path.home() / ".cursor" / "mcp.json"
 
 
+def _claude_desktop_config_path() -> Path:
+    """The claude_desktop_config.json location for the current platform."""
+    home = Path.home()
+    if sys.platform == "darwin":
+        return home / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json"
+    if sys.platform.startswith("win"):
+        base = os.environ.get("APPDATA")
+        root = Path(base) if base else home / "AppData" / "Roaming"
+        return root / "Claude" / "claude_desktop_config.json"
+    return home / ".config" / "Claude" / "claude_desktop_config.json"
+
+
 
 # ── installer impl ─────────────────────────────────────────────────────
 
@@ -206,6 +218,95 @@ def install_cursor(
         typer.echo("Data dir -> resolved per project from the folder Cursor runs the server in")
 
 
+def _env_pointer_entry(env_dir: Path) -> dict[str, Any]:
+    """A pointer MCP entry: the server resolves settings from the env config."""
+    return {"command": _resolve_anchor_mcp(), "args": ["--env", str(env_dir)]}
+
+
+def _environment_zone(env_dir: Path) -> tuple[bool, str]:
+    """Return (initialized, egress-zone label) for an environment directory."""
+    from anchor.infra.environment import DEFAULT_PROJECT, resolve_environment, resolve_project_config
+    from anchor.infra.providers import get_provider
+
+    env = resolve_environment(env_dir)
+    if not env.initialized:
+        return False, "not set up yet (the agent will create it on first use)"
+    cfg = resolve_project_config(env, DEFAULT_PROJECT)
+    provider = get_provider(cfg.provider or "local")
+    return True, provider.zone if provider else "unknown"
+
+
+@install_app.command("claude-desktop")
+def install_claude_desktop(
+    env: Path = typer.Option(
+        None, "--env", help="Environment to point at (default: ~/.anchor)."
+    ),
+    name: str = typer.Option(
+        "anchor", "--name", help="MCP server entry name (use a distinct name per environment)."
+    ),
+    create: bool = typer.Option(
+        False, "--create", help="Initialize the environment now instead of on first use."
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Repoint an existing entry of this name at a different environment."
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the egress-zone confirmation."),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+) -> None:
+    """Register an Anchor environment as a named MCP server in Claude Desktop.
+
+    The entry is a pointer (``anchor-mcp --env <dir>``): settings live in the
+    environment's config, so the CLI and MCP always resolve the same thing.
+    Additive and collision-safe — other servers are preserved, and an existing
+    name pointing at a different environment is refused (pass ``--name`` to add
+    a second, or ``--force`` to repoint).
+    """
+    from anchor.infra.environment import GLOBAL_ENV_DIR, init_environment
+
+    env_dir = (env or GLOBAL_ENV_DIR).expanduser()
+    if create and not dry_run:
+        init_environment(env_dir)
+
+    config_path = _claude_desktop_config_path()
+    cfg = _load_json(config_path)
+    servers = cfg.setdefault("mcpServers", {})
+
+    existing = servers.get(name)
+    desired = _env_pointer_entry(env_dir)
+    if existing is not None and existing.get("args") != desired["args"] and not force:
+        typer.echo(
+            f"MCP server '{name}' already points at {existing.get('args')}. "
+            f"Use --name <other> to add a second environment, or --force to repoint.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    initialized, zone = _environment_zone(env_dir)
+    typer.echo(f"Environment: {env_dir}")
+    typer.echo(f"Egress zone: {zone}")
+    if not dry_run and not yes:
+        if not typer.confirm(
+            f"Documents in this environment may be sent to: {zone}. "
+            f"Add MCP server '{name}'?",
+            default=initialized,
+        ):
+            raise typer.Exit(code=1)
+
+    servers[name] = desired
+    if not dry_run:
+        _write_json(config_path, cfg)
+
+    typer.echo(("[dry-run] " if dry_run else "") + f"MCP entry '{name}' -> {config_path}")
+    typer.echo(f"          command: {desired['command']}")
+    typer.echo(f"          args:    {desired['args']}")
+    if not dry_run:
+        typer.echo("")
+        typer.echo("Next:")
+        typer.echo("  1. Restart Claude Desktop (the MCP server list reloads on startup).")
+        typer.echo("  2. Ask it to create a project: 'make an Anchor project for my pumps'.")
+        typer.echo("  3. Then ingest a PDF and build a canvas — all in chat, no terminal.")
+
+
 @install_app.command("print")
 def install_print(
     data_dir: Path = typer.Option(None, "--data-dir", "-d"),
@@ -215,6 +316,11 @@ def install_print(
     # reflects the real default — a folder-resolving entry, not a pinned one.
     typer.echo("=== claude-code ===")
     install_claude_code(data_dir=data_dir, dry_run=True)
+    typer.echo("")
+    typer.echo("=== claude-desktop ===")
+    install_claude_desktop(
+        env=None, name="anchor", create=False, force=False, yes=True, dry_run=True
+    )
     typer.echo("")
     typer.echo("=== cursor ===")
     install_cursor(data_dir=data_dir, dry_run=True)
