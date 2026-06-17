@@ -45,7 +45,7 @@ class FsWorkspaceStore:
     async def list_workspaces(self) -> list[WorkspaceMeta]:
         out: list[WorkspaceMeta] = []
         for p in sorted(self.root.glob("*/meta.json")):
-            data = json.loads(p.read_text())
+            data = json.loads(p.read_text(encoding="utf-8"))
             out.append(WorkspaceMeta(**data))
         return out
 
@@ -53,7 +53,7 @@ class FsWorkspaceStore:
         d = self._slug_dir(slug)
         meta_path = d / "meta.json"
         if meta_path.exists():
-            return WorkspaceMeta(**json.loads(meta_path.read_text()))
+            return WorkspaceMeta(**json.loads(meta_path.read_text(encoding="utf-8")))
         d.mkdir(parents=True, exist_ok=True)
         meta = WorkspaceMeta(slug=slug, title=title or slug, created_at=time.time())
         await self._atomic_write_text(meta_path, meta.model_dump_json(indent=2))
@@ -80,7 +80,7 @@ class FsWorkspaceStore:
         if not (d / "meta.json").exists():
             await self.create(slug)
         snap_path = d / "state.json"
-        ws = Workspace.model_validate_json(snap_path.read_text())
+        ws = Workspace.model_validate_json(snap_path.read_text(encoding="utf-8"))
         # Replay any events newer than the snapshot.
         events_path = d / "events.jsonl"
         if events_path.exists():
@@ -123,7 +123,7 @@ class FsWorkspaceStore:
         meta_path = d / "meta.json"
         if not meta_path.exists():
             raise FileNotFoundError(f"workspace {slug!r} does not exist")
-        meta = WorkspaceMeta(**json.loads(meta_path.read_text()))
+        meta = WorkspaceMeta(**json.loads(meta_path.read_text(encoding="utf-8")))
         if meta.title == title:
             return meta
         meta = WorkspaceMeta(slug=meta.slug, title=title, created_at=meta.created_at)
@@ -132,7 +132,7 @@ class FsWorkspaceStore:
         # without a replay. Don't touch state.json's nodes/edges/version.
         snap_path = d / "state.json"
         if snap_path.exists():
-            ws = Workspace.model_validate_json(snap_path.read_text())
+            ws = Workspace.model_validate_json(snap_path.read_text(encoding="utf-8"))
             if ws.title != title:
                 ws.title = title
                 await self._atomic_write_text(snap_path, ws.model_dump_json(indent=2))

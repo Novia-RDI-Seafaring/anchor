@@ -57,7 +57,7 @@ class FsCadStore:
             mp = d / "model.json"
             if mp.is_file():
                 try:
-                    out.append(CadModel.model_validate_json(mp.read_text()))
+                    out.append(CadModel.model_validate_json(mp.read_text(encoding="utf-8")))
                 except Exception:  # malformed model.json; skip
                     continue
         return out
@@ -65,7 +65,7 @@ class FsCadStore:
     async def write_model_summary(self, slug: str, model: CadModel) -> Path:
         out = self._model_path(slug)
         out.parent.mkdir(parents=True, exist_ok=True)
-        async with aiofiles.open(out, "w") as f:
+        async with aiofiles.open(out, "w", encoding="utf-8") as f:
             await f.write(model.model_dump_json(indent=2))
         return out
 
@@ -74,6 +74,6 @@ class FsCadStore:
         if not mp.is_file():
             return None
         try:
-            return CadModel.model_validate_json(mp.read_text())
+            return CadModel.model_validate_json(mp.read_text(encoding="utf-8"))
         except Exception:
             return None
