@@ -10,7 +10,7 @@ runner = CliRunner()
 
 def test_local_provider_is_egress_free(tmp_path):
     result = runner.invoke(
-        app, ["init", str(tmp_path), "--yes", "--provider", "local", "--data-dir", str(tmp_path / "d")]
+        app, ["init", str(tmp_path), "--yes", "--provider", "local"]
     )
     assert result.exit_code == 0, result.output
     toml = (tmp_path / "anchor.toml").read_text()
@@ -21,13 +21,15 @@ def test_local_provider_is_egress_free(tmp_path):
     assert "nothing leaves the network" in result.output
 
 
-def test_data_dir_defaults_into_the_project(tmp_path):
-    # No --data-dir: it should land in this folder, not global ~/anchor-data.
+def test_init_creates_environment_with_default_project(tmp_path):
+    # No data_dir key: the environment folder is the storage root, and the
+    # default project is scaffolded under projects/default/.
     result = runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "local"])
     assert result.exit_code == 0, result.output
     toml = (tmp_path / "anchor.toml").read_text()
-    expected = str((tmp_path / "anchor-data").resolve())
-    assert f'data_dir = "{expected}"' in toml
+    assert "data_dir" not in toml
+    for sub in ("bronze", "silver", "gold", "canvases"):
+        assert (tmp_path / "projects" / "default" / sub).is_dir()
 
 
 def test_shows_next_steps(tmp_path):
@@ -190,8 +192,7 @@ def test_force_overwrites(tmp_path):
 
 def test_harness_provider_needs_no_key_and_no_endpoint(tmp_path):
     result = runner.invoke(
-        app, ["init", str(tmp_path), "--yes", "--provider", "harness",
-              "--data-dir", str(tmp_path / "d")],
+        app, ["init", str(tmp_path), "--yes", "--provider", "harness"],
     )
     assert result.exit_code == 0, result.output
     toml = (tmp_path / "anchor.toml").read_text()

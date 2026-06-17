@@ -1,6 +1,7 @@
 """`anchor check` — verify the data zone, repair the endpoint, gate on readiness."""
 from __future__ import annotations
 
+import shutil
 import tomllib
 
 from typer.testing import CliRunner
@@ -19,11 +20,12 @@ def _init_azure(tmp_path, base_url="https://x.openai.azure.com/"):
 
 
 def _run_check(tmp_path, *args, env=None):
-    # check resolves config from ANCHOR_CONFIG; pass an explicit, key-free env.
-    base_env = {"ANCHOR_CONFIG": str(tmp_path / "anchor.toml")}
-    if env:
-        base_env.update(env)
-    return runner.invoke(app, ["check", *args], env=base_env)
+    # check targets an environment explicitly via --env (no cwd dependency).
+    return runner.invoke(app, ["check", "--env", str(tmp_path), *args], env=env or {})
+
+
+def _default_dir(tmp_path):
+    return tmp_path / "projects" / "default"
 
 
 def test_check_reports_zone_and_flags_missing_key(tmp_path, monkeypatch):
@@ -43,7 +45,6 @@ def test_check_fix_repairs_endpoint_in_toml(tmp_path, monkeypatch):
     # Write a config with a bare (wrong) Azure endpoint directly.
     (tmp_path / "anchor.toml").write_text(
         'provider = "azure"\n'
-        f'data_dir = "{tmp_path / "d"}"\n'
         'embed_model = "BAAI/bge-small-en-v1.5"\n'
         'openai_base_url = "https://x.openai.azure.com/"\n'
         'polish_model = "gpt-dep"\nregion_model = "gpt-dep"\n'
@@ -83,7 +84,6 @@ def test_probe_sends_no_token_cap_param(tmp_path, monkeypatch):
     monkeypatch.setattr(oc, "make_openai_client", lambda *a, **k: _Fake())
     (tmp_path / "anchor.toml").write_text(
         'provider = "openai"\n'
-        f'data_dir = "{tmp_path / "d"}"\n'
         'region_model = "gpt-5.4"\nembed_model = "BAAI/bge-small-en-v1.5"\n'
     )
     result = _run_check(tmp_path, "--probe", env={"ANCHOR_OPENAI_API_KEY": "k"})
@@ -101,32 +101,27 @@ def test_check_local_provider_needs_no_key(tmp_path, monkeypatch):
     assert "no egress" in result.output
 
 
-def test_check_flags_nonexistent_data_dir(tmp_path, monkeypatch):
-    # check must not imply a data dir exists when it does not (issue #90).
+def test_check_flags_nonexistent_project_dir(tmp_path, monkeypatch):
+    # check must not imply the project dir exists when it does not (issue #90).
     monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
     runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "local"])
-    missing = tmp_path / "no-such-dir" / "anchor-data"
-    result = _run_check(tmp_path, env={"ANCHOR_DATA_DIR": str(missing)})
-    assert str(missing) in result.output
-    assert "does not exist yet" in result.output
+    shutil.rmtree(_default_dir(tmp_path))  # remove the scaffolded project
+    result = _run_check(tmp_path)
+    assert str(_default_dir(tmp_path)) in result.output
+    assert "created on first ingest" in result.output
 
 
-def test_check_no_note_when_data_dir_exists(tmp_path, monkeypatch):
+def test_check_no_note_when_project_exists(tmp_path, monkeypatch):
     monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
     runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "local"])
-    present = tmp_path / "data"
-    present.mkdir()
-    result = _run_check(tmp_path, env={"ANCHOR_DATA_DIR": str(present)})
-    assert "does not exist yet" not in result.output
+    result = _run_check(tmp_path)  # init scaffolds projects/default
+    assert "created on first ingest" not in result.output
 
 
 def test_check_harness_mode_is_ready_without_key(tmp_path, monkeypatch):
     monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    r = runner.invoke(
-        app, ["init", str(tmp_path), "--yes", "--provider", "harness",
-              "--data-dir", str(tmp_path / "d")],
-    )
+    r = runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "harness"])
     assert r.exit_code == 0, r.output
     result = _run_check(tmp_path)
     assert result.exit_code == 0, result.output
@@ -142,13 +137,9 @@ def test_check_harness_mode_lists_open_sessions(tmp_path, monkeypatch):
 
     monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    data_dir = tmp_path / "d"
-    r = runner.invoke(
-        app, ["init", str(tmp_path), "--yes", "--provider", "harness",
-              "--data-dir", str(data_dir)],
-    )
+    r = runner.invoke(app, ["init", str(tmp_path), "--yes", "--provider", "harness"])
     assert r.exit_code == 0, r.output
-    session_dir = data_dir / "staging" / "ingest" / "ing-abc123"
+    session_dir = _default_dir(tmp_path) / "staging" / "ingest" / "ing-abc123"
     session_dir.mkdir(parents=True)
     (session_dir / "session.json").write_text(json.dumps({
         "session_id": "ing-abc123", "slug": "demo", "state": "open",

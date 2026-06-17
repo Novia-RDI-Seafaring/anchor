@@ -11,6 +11,7 @@ would break a real ingest, so an agent or script can gate on it.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import typer
 
@@ -38,28 +39,40 @@ def check(
     fix: bool = typer.Option(
         False, "--fix", help="Apply any safe endpoint repair without prompting."
     ),
+    env: Path = typer.Option(
+        None, "--env", help="Environment to check (default: resolved by walk-up / ~/.anchor)."
+    ),
 ) -> None:
-    """Verify the resolved data zone + config for this project."""
-    config_path = discover_config_file()
-    cfg = AnchorConfig()
+    """Verify the resolved data zone + config for this environment."""
+    from anchor.infra.environment import (
+        DEFAULT_PROJECT,
+        resolve_environment,
+        resolve_project_config,
+    )
+
+    env = resolve_environment(env)
+    cfg = resolve_project_config(env, DEFAULT_PROJECT)
+    config_path = env.config_path or discover_config_file()
+    default_dir = env.project_dir(DEFAULT_PROJECT)
     prov = get_provider(cfg.provider) if cfg.provider else None
 
     typer.echo("Data zone")
     if config_path:
+        typer.echo(f"  environment    : {env.root}")
         typer.echo(f"  config         : {config_path}")
     else:
-        typer.echo("  config         : (none found — using ANCHOR_* env + defaults)")
+        typer.echo("  environment    : (none — global default ~/.anchor + ANCHOR_* env)")
     if prov:
         typer.echo(f"  provider       : {prov.label} — {prov.zone}")
     elif cfg.provider:
         typer.echo(f"  provider       : {cfg.provider}")
-    # Be honest when the resolved data dir is not on disk yet: a fresh project
-    # has none until first ingest, but a bare path here reads as "all set" and
-    # has masked a misconfigured zone before. Say so rather than imply it exists.
+    # Be honest when the project dir is not on disk yet: a fresh project has
+    # none until first ingest, but a bare path here reads as "all set" and has
+    # masked a misconfigured zone before. Say so rather than imply it exists.
     data_dir_note = (
-        "" if cfg.data_dir.exists() else "  (does not exist yet, created on first ingest)"
+        "" if default_dir.exists() else "  (created on first ingest)"
     )
-    typer.echo(f"  data dir       : {cfg.data_dir}{data_dir_note}")
+    typer.echo(f"  default project: {default_dir}{data_dir_note}")
     embed_remote = cfg.embed_model.startswith("text-embedding-")
     typer.echo(
         f"  embed model    : {cfg.embed_model}  "
@@ -72,6 +85,15 @@ def check(
     else:
         typer.echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com (public)'}")
         typer.echo(f"  vision model   : {cfg.region_model}")
+
+    # Lean one-time awareness: an existing ~/anchor-data with no environment yet
+    # keeps working as the global default's `default` project, but the user
+    # should know they can fold it into ~/.anchor.
+    if env.config_path is None and env.legacy_data_dir is not None and env.legacy_data_dir.is_dir():
+        typer.echo("")
+        typer.echo(f"  note           : using legacy {env.legacy_data_dir}.")
+        typer.echo("                   Run `anchor migrate` to adopt it as "
+                   "~/.anchor/projects/default.")
 
     problems: list[str] = []
     personal = bool(os.environ.get("OPENAI_API_KEY"))
@@ -136,7 +158,8 @@ def check(
             )
             if apply and config_path and _rewrite_base_url(config_path, cfg.openai_base_url, fixed):
                 typer.echo("    fixed.")
-                cfg = AnchorConfig()  # reload so the probe uses the repaired URL
+                # Reload so the probe uses the repaired URL.
+                cfg = resolve_project_config(resolve_environment(env.root), DEFAULT_PROJECT)
             else:
                 problems.append("Azure endpoint is missing the /openai/v1/ suffix.")
 
