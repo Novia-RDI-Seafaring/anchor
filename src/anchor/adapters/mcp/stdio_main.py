@@ -137,7 +137,7 @@ def main() -> None:
         "--env",
         type=Path,
         default=None,
-        help="An Anchor environment dir (config.toml + projects/). Serves every "
+        help="An Anchor environment dir (anchor.toml + projects/). Serves every "
         "project in it; name the project per call. The #120 multiproject model.",
     )
     parser.add_argument(

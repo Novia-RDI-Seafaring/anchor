@@ -116,7 +116,7 @@ def test_router_create_environment(tmp_path):
     target = tmp_path / "newenv"
     router = ProjectRouter(env_arg=None)
     result = router.create_environment(str(target), provider="local", description="test env")
-    assert (target / "config.toml").is_file()
+    assert (target / "anchor.toml").is_file()
     assert result["environment"] == str(target)
     # router now points at the created environment
     router.create_project("pumps")

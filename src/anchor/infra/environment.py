@@ -8,7 +8,7 @@ inside an environment that owns its own *documents* (bronze/silver/gold) and
 
 ```
 <environment>/                 # `anchor init`, or the global default ~/.anchor
-├── config.toml                # single source of truth: provider, models, env metadata
+├── anchor.toml                # single source of truth: provider, models, env metadata
 └── projects/
     └── <name>/                # a project: its own documents + canvases
         ├── project.toml        # optional: metadata + rare config overrides
@@ -21,12 +21,12 @@ layered :class:`~anchor.infra.config.AnchorConfig`. The existing stores already
 take a single ``data_dir`` root, so a project is simply that root pointed at
 ``projects/<name>/`` — no store changes needed.
 
-**Back-compat.** A legacy ``anchor init`` directory (marked by an
-``anchor.toml`` rather than a ``config.toml``) is treated as an environment with
-one implicit ``default`` project whose documents live at the ``data_dir`` the
-old config named. The global default ``~/.anchor`` falls back to today's
-``~/anchor-data`` as its ``default`` project until the user migrates, so an
-existing install keeps working with no action.
+**Back-compat.** A pre-projects ``anchor init`` directory is still an
+environment: its ``anchor.toml`` carries a ``data_dir`` key, which becomes the
+implicit ``default`` project's location (unless a ``projects/default/`` exists).
+The global default ``~/.anchor`` falls back to today's ``~/anchor-data`` as its
+``default`` project until the user migrates, so an existing install keeps
+working with no action.
 """
 from __future__ import annotations
 
@@ -46,8 +46,10 @@ from anchor.infra.config import (
 #: given and no environment is found by walking up from the current directory.
 GLOBAL_ENV_DIR = Path.home() / ".anchor"
 
-#: An environment is marked by this file at its root.
-ENV_CONFIG_FILENAME = "config.toml"
+#: An environment is marked by ``anchor.toml`` at its root (the same filename
+#: the CLI has always written — the two-level model is the structure under it,
+#: not a new file name).
+ENV_CONFIG_FILENAME = CONFIG_FILENAME
 
 #: A project's optional per-project config / metadata file.
 PROJECT_CONFIG_FILENAME = "project.toml"
@@ -117,21 +119,26 @@ class Meta:
 class Environment:
     """A resolved environment: the trust boundary that holds projects.
 
-    ``config_path`` is the file that marks it (``config.toml`` for a #120
-    environment, or a legacy ``anchor.toml``); ``None`` means the directory is
-    not an initialized environment. ``legacy`` / ``legacy_data_dir`` carry the
-    back-compat single ``default`` project.
+    ``config_path`` is the ``anchor.toml`` that marks it, or ``None`` when the
+    directory is not an initialized environment. ``legacy_data_dir`` is the
+    single-corpus location carried by a pre-projects ``anchor.toml`` (its
+    ``data_dir`` key) or the global default's ``~/anchor-data``; it becomes the
+    ``default`` project's location until a ``projects/default/`` exists.
     """
 
     root: Path
     config_path: Path | None = None
-    legacy: bool = False
     legacy_data_dir: Path | None = None
 
     @property
     def initialized(self) -> bool:
-        """True when the directory is a real environment (has a config file)."""
+        """True when the directory is a real environment (has an anchor.toml)."""
         return self.config_path is not None
+
+    @property
+    def legacy(self) -> bool:
+        """True when a single-corpus ``default`` project is in play."""
+        return self.legacy_data_dir is not None
 
     @property
     def projects_dir(self) -> Path:
@@ -140,8 +147,10 @@ class Environment:
     def project_dir(self, name: str) -> Path:
         """The storage root for ``name`` (where its bronze/.../canvases live)."""
         validate_project_name(name)
-        if self.legacy and name == DEFAULT_PROJECT and self.legacy_data_dir is not None:
-            return self.legacy_data_dir
+        if name == DEFAULT_PROJECT and self.legacy_data_dir is not None:
+            # The pre-projects corpus stays put until a projects/default exists.
+            if not (self.projects_dir / DEFAULT_PROJECT).is_dir():
+                return self.legacy_data_dir
         return self.projects_dir / name
 
     def project_exists(self, name: str) -> bool:
@@ -153,7 +162,11 @@ class Environment:
     def list_project_names(self) -> list[str]:
         """Enumerate projects from disk (no registry). Sorted, deduplicated."""
         names: list[str] = []
-        if self.legacy and self.legacy_data_dir is not None and self.legacy_data_dir.is_dir():
+        if (
+            self.legacy_data_dir is not None
+            and self.legacy_data_dir.is_dir()
+            and not (self.projects_dir / DEFAULT_PROJECT).is_dir()
+        ):
             names.append(DEFAULT_PROJECT)
         if self.projects_dir.is_dir():
             for child in sorted(self.projects_dir.iterdir()):
@@ -192,32 +205,29 @@ def _expand(value: Any) -> Path:
 
 
 def _load_environment(root: Path) -> Environment:
-    """Inspect ``root`` and classify it as a #120 / legacy / uninitialized env."""
+    """Inspect ``root`` and classify it as an initialized / uninitialized env.
+
+    An ``anchor.toml`` marks the environment. A ``data_dir`` key in it (the
+    pre-projects layout) becomes the implicit ``default`` project's location.
+    """
     root = _expand(root)
-    cfg = root / ENV_CONFIG_FILENAME
-    legacy_cfg = root / CONFIG_FILENAME  # anchor.toml
+    cfg = root / CONFIG_FILENAME  # anchor.toml
     if cfg.is_file():
-        return Environment(root=root, config_path=cfg)
-    if legacy_cfg.is_file():
-        data = _safe_toml(legacy_cfg)
+        data = _safe_toml(cfg)
         raw = data.get("data_dir")
-        legacy_dir = _expand(raw) if raw else root / "anchor-data"
-        return Environment(
-            root=root, config_path=legacy_cfg, legacy=True, legacy_data_dir=legacy_dir
-        )
+        legacy_dir = _expand(raw) if raw else None
+        return Environment(root=root, config_path=cfg, legacy_data_dir=legacy_dir)
     if root == GLOBAL_ENV_DIR and LEGACY_DATA_DIR.is_dir():
         # An existing user with ~/anchor-data but no ~/.anchor yet keeps it as
         # the global default's `default` project until `anchor migrate` runs.
-        return Environment(
-            root=root, config_path=None, legacy=True, legacy_data_dir=LEGACY_DATA_DIR
-        )
+        return Environment(root=root, config_path=None, legacy_data_dir=LEGACY_DATA_DIR)
     return Environment(root=root, config_path=None)
 
 
 def _walk_up_for_env() -> Path | None:
     cwd = Path.cwd()
     for directory in (cwd, *cwd.parents):
-        if (directory / ENV_CONFIG_FILENAME).is_file() or (directory / CONFIG_FILENAME).is_file():
+        if (directory / CONFIG_FILENAME).is_file():
             return directory
     return None
 
@@ -226,8 +236,8 @@ def resolve_environment(env: Path | str | None = None) -> Environment:
     """Resolve the active environment.
 
     Precedence: explicit ``env`` (the ``--env`` flag) > ``ANCHOR_ENV`` >
-    walk-up from the current directory to a ``config.toml`` / legacy
-    ``anchor.toml`` > the global default ``~/.anchor``.
+    walk-up from the current directory to an ``anchor.toml`` > the global
+    default ``~/.anchor``.
     """
     if env is not None:
         return _load_environment(Path(env))
@@ -244,10 +254,10 @@ def _flat_settings(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def resolve_project_config(env: Environment, project: str) -> AnchorConfig:
-    """Layer the config for ``project``: env config.toml < project.toml < env/flags.
+    """Layer the config for ``project``: env anchor.toml < project.toml < env/flags.
 
     ``data_dir`` is forced to the resolved project directory — storage location
-    is structural, not a setting a stray ``ANCHOR_DATA_DIR`` should move.
+    is structural, decided by the environment, not by an ``ANCHOR_DATA_DIR``.
     """
     data_dir = env.project_dir(project)
     layers: dict[str, Any] = {}
@@ -258,6 +268,27 @@ def resolve_project_config(env: Environment, project: str) -> AnchorConfig:
         layers.update(_flat_settings(_safe_toml(project_toml)))
     layers.pop("data_dir", None)
     return AnchorConfig.from_layers(layer_values=layers, data_dir=data_dir)
+
+
+def config_for_data_dir(data_dir: Path | str) -> AnchorConfig:
+    """Layer config for a ``data_dir`` that is a project under an environment.
+
+    A project's storage dir is structurally ``<env>/projects/<name>``. When
+    ``data_dir`` matches that shape and the environment is initialized, return
+    the layered project config (env ``anchor.toml`` < project ``project.toml``).
+    Otherwise — an explicit external dir, or a legacy single data dir — return a
+    plain :class:`AnchorConfig` pinned to ``data_dir`` (which still honors an
+    ``anchor.toml`` discovered by walk-up). This lets every CLI command keep
+    passing a bare ``data_dir`` while environments resolve their provider/models
+    correctly.
+    """
+    dd = _expand(data_dir)
+    parent = dd.parent
+    if parent.name == PROJECTS_DIRNAME:
+        env = _load_environment(parent.parent)
+        if env.initialized:
+            return resolve_project_config(env, dd.name)
+    return AnchorConfig(data_dir=dd)
 
 
 def resolve_project(
@@ -368,7 +399,7 @@ def init_environment(
     settings: dict[str, Any] | None = None,
     meta: Meta | None = None,
 ) -> Environment:
-    """Create an environment at ``root`` (writes ``config.toml`` + ``projects/``)."""
+    """Create an environment at ``root`` (writes ``anchor.toml`` + ``projects/``)."""
     env_root = _expand(root)
     env_root.mkdir(parents=True, exist_ok=True)
     (env_root / PROJECTS_DIRNAME).mkdir(exist_ok=True)
@@ -434,6 +465,7 @@ __all__ = [
     "resolve_environment",
     "resolve_project",
     "resolve_project_config",
+    "config_for_data_dir",
     "environment_meta",
     "project_meta",
     "init_environment",

@@ -214,6 +214,26 @@ def test_resolve_project_default_in_legacy_env(tmp_path):
     assert rp.data_dir == data_dir
 
 
+def test_config_for_data_dir_layers_project(tmp_path):
+    from anchor.infra.environment import config_for_data_dir
+
+    root = tmp_path / "env"
+    env = init_environment(root, settings={"provider": "azure", "embed_model": "env-model"})
+    create_project(env, "pumps")
+    cfg = config_for_data_dir(root / "projects" / "pumps")
+    assert cfg.provider == "azure"  # layered from the environment anchor.toml
+    assert cfg.data_dir == root / "projects" / "pumps"
+
+
+def test_config_for_data_dir_external_is_plain(tmp_path, monkeypatch):
+    from anchor.infra.environment import config_for_data_dir
+
+    monkeypatch.delenv("ANCHOR_DATA_DIR", raising=False)
+    external = tmp_path / "scratch-data"
+    cfg = config_for_data_dir(external)
+    assert cfg.data_dir == external
+
+
 def test_direct_anchorconfig_unaffected_by_resolver(tmp_path, monkeypatch):
     # AnchorConfig() with no active layers keeps the legacy walk-up behavior.
     from anchor.infra.config import AnchorConfig

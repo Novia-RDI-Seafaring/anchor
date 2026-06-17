@@ -105,7 +105,7 @@ def test_create_initializes_environment(_paths, tmp_path):
         app, ["install", "claude-desktop", "--env", str(env_dir), "--create", "--yes"]
     )
     assert result.exit_code == 0, result.output
-    assert (env_dir / "config.toml").is_file()
+    assert (env_dir / "anchor.toml").is_file()
 
 
 def test_privacy_zone_is_echoed(_paths, tmp_path):

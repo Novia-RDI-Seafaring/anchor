@@ -54,7 +54,7 @@ def migrate(
     typer.echo("Migration plan:")
     typer.echo(
         f"  environment : {target_root}"
-        + ("  (already initialized)" if already_env else "  (will create config.toml)")
+        + ("  (already initialized)" if already_env else "  (will create anchor.toml)")
     )
     if will_move:
         typer.echo(f"  move        : {legacy}  ->  {default_dir}")
