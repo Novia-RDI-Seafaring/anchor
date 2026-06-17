@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  protobufjs: '>=7.5.6'
+  protobufjs: '>=8.4.1'
   minimatch@10>brace-expansion: '>=5.0.6'
   ws: '>=8.20.1'
 
@@ -2322,8 +2322,8 @@ packages:
   promise-worker-transferable@1.0.4:
     resolution: {integrity: sha512-bN+0ehEnrXfxV2ZQvU2PetO0n4gqBD4ulq3MI1WOPLgr7/Mg9yRQkX5+0v1vagr74ZTsl7XtzlaYDo2EuCeYJw==}
 
-  protobufjs@8.3.0:
-    resolution: {integrity: sha512-JpJpFaR7yKNb6WqKvJJ1MLbiuIQWQnbUUb06nDtf2/i8YWYYLEfP6xf9BwSJoJQg1wAy61EQB8dssQg64oX4aA==}
+  protobufjs@8.6.4:
+    resolution: {integrity: sha512-/+XMv9JalknuncEJSwsyEVlwcxVLKx2iaoSUXFZA86MJkdqyOdfrlB1sB7S6aKyUk9tl20YY+SgQe5J2sJHTcg==}
     engines: {node: '>=12.0.0'}
 
   pump@3.0.4:
@@ -4854,7 +4854,7 @@ snapshots:
 
   onnx-proto@4.0.4:
     dependencies:
-      protobufjs: 8.3.0
+      protobufjs: 8.6.4
 
   onnxruntime-common@1.14.0: {}
 
@@ -4947,7 +4947,7 @@ snapshots:
       is-promise: 2.2.2
       lie: 3.3.0
 
-  protobufjs@8.3.0:
+  protobufjs@8.6.4:
     dependencies:
       long: 5.3.2
 

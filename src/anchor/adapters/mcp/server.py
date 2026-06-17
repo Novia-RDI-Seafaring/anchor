@@ -29,6 +29,7 @@ from anchor.extensions.anchor_fmus.core.services import FmuService
 from anchor.extensions.anchor_pdfs import mcp_handlers as pdf_handlers
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.services import IngestService
+from anchor.extensions.anchor_pdfs.core.value_provenance import enrich_spec_row_source_refs
 from anchor.extensions.anchor_sysml import mcp_handlers as sysml_handlers
 from anchor.extensions.anchor_sysml.core.services import SysmlService
 from anchor.infra.config import AnchorConfig
@@ -224,7 +225,17 @@ def build_mcp_server(
                 )
                 text = _json.dumps(summary)
             elif name in canvas_names:
-                text = await handlers_canvas.call_tool(workspace, name, dict(arguments))
+                async def enrich_fields(fields: dict[str, Any]) -> dict[str, Any]:
+                    if "data" not in fields:
+                        return fields
+                    return {**fields, "data": await enrich_spec_row_source_refs(fields["data"], doc_store)}
+
+                text = await handlers_canvas.call_tool(
+                    workspace,
+                    name,
+                    dict(arguments),
+                    enrich_node_fields=enrich_fields,
+                )
             elif name in fmu_names and fmu is not None:
                 text = await fmu_handlers.call_tool(fmu, name, dict(arguments))
             elif name in cad_names and cad is not None:

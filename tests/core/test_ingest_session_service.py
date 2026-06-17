@@ -13,7 +13,10 @@ _TWO_PAGE_DOCLING = {
         {"label": "section_header", "text": "Specs", "page": 1, "bbox": [0, 620, 100, 600]},
         {"label": "text", "text": "First paragraph.", "page": 1, "bbox": [0, 595, 200, 580]},
         {"label": "table", "text": "", "page": 2, "bbox": [0, 700, 500, 400],
-         "cells": [{"row": 0, "col": 0, "text": "Flow"}, {"row": 0, "col": 1, "text": "50 Hz"}]},
+         "cells": [
+             {"row": 0, "col": 0, "text": "Field", "bbox": [10, 690, 80, 660]},
+             {"row": 0, "col": 1, "text": "Value", "bbox": [100, 690, 180, 660]},
+         ]},
         {"label": "text", "text": "Footnote.", "page": 2, "bbox": [0, 100, 200, 80]},
     ],
 }
@@ -225,6 +228,13 @@ def test_status_is_the_resume_surface_by_id_and_slug():
         await s.ingest_session.ingest_submit_page(sid, 2, regions=[
             {"kind": "table", "title": "Flow table", "member_item_ids": ["p2-i0"]},
         ])
+        staged = json.loads(
+            await s.session_store.read_text(sid, "gold/pages/2.regions.json")
+        )
+        assert staged["regions"][0]["cells"] == [
+            {"row": 0, "col": 0, "text": "Field", "bbox": [10.0, 690.0, 80.0, 660.0]},
+            {"row": 0, "col": 1, "text": "Value", "bbox": [100.0, 690.0, 180.0, 660.0]},
+        ]
         by_slug = await s.ingest_session.ingest_status(slug="demo")
         assert by_slug["session_id"] == sid
         assert by_slug["state"] == "open"

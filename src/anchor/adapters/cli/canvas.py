@@ -10,6 +10,7 @@ import typer
 
 from anchor.adapters.cli.common import DEFAULT_DATA_DIR
 from anchor.adapters.cli.services import _build_real_services
+from anchor.extensions.anchor_pdfs.core.value_provenance import enrich_spec_row_source_refs
 
 canvas_app = typer.Typer(help="Manage workspaces (canvases).")
 
@@ -260,7 +261,7 @@ def canvas_update_node(
     if parent is not None and parent == node_id:
         typer.echo("node cannot be its own parent", err=True)
         raise typer.Exit(code=2)
-    _, _, ws, _, _ = _build_real_services(data_dir)
+    _, _, ws, _, doc_store = _build_real_services(data_dir)
     fields: dict = {}
     if label is not None:
         fields["label"] = label
@@ -291,6 +292,8 @@ def canvas_update_node(
             state, env = await ws.reparent_node(slug, node_id, parent_val)
         else:
             if fields:
+                if "data" in fields:
+                    fields["data"] = await enrich_spec_row_source_refs(fields["data"], doc_store)
                 state, env = await ws.update_node(slug, node_id, fields)
             if parent_op:
                 state, env = await ws.reparent_node(slug, node_id, parent_val)
