@@ -1,6 +1,8 @@
 """Docling device resolution + CPU fallback (no real docling/torch needed)."""
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from anchor.extensions.anchor_pdfs.infra.pdf import docling_extractor as dx
@@ -68,3 +70,44 @@ def test_non_accelerator_error_is_not_retried(monkeypatch):
     with pytest.raises(ValueError):
         dx._extract_sync("x.pdf", device="auto")
     assert calls == ["cuda"]            # no pointless CPU retry for content errors
+
+
+class _Box:
+    def __init__(self, l, t, r, b):
+        self.l = l
+        self.t = t
+        self.r = r
+        self.b = b
+
+    def to_bottom_left_origin(self, page_height):
+        return _Box(self.l, page_height - self.t, self.r, page_height - self.b)
+
+
+def test_flatten_preserves_table_cell_bbox_as_bottom_left():
+    doc = SimpleNamespace(
+        texts=[],
+        pictures=[],
+        pages={1: SimpleNamespace(size=SimpleNamespace(height=100))},
+        tables=[
+            SimpleNamespace(
+                prov=[SimpleNamespace(page_no=1, bbox=_Box(0, 90, 80, 10))],
+                data=SimpleNamespace(table_cells=[
+                    SimpleNamespace(
+                        start_row_offset_idx=1,
+                        start_col_offset_idx=1,
+                        text="cell value",
+                        bbox=_Box(10, 20, 30, 40),
+                    ),
+                ]),
+            ),
+        ],
+    )
+
+    out = dx._flatten(doc)
+
+    assert out["tables"][0]["cells"][0] == {
+        "row": 1,
+        "col": 1,
+        "text": "cell value",
+        "bbox": [10.0, 80.0, 30.0, 60.0],
+    }

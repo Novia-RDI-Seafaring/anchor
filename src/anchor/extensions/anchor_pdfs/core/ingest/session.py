@@ -57,6 +57,8 @@ from anchor.extensions.anchor_pdfs.core.silver import (
     needs_polish,
     render_pages_md,
     snap_to_docling_items,
+    table_bbox_from_items,
+    table_cells_from_items,
     union_bbox,
 )
 
@@ -436,6 +438,7 @@ class IngestSessionService:
             approx = raw.get("approx_bbox")
             bbox: list[float] = []
             geometry = ""
+            cells: list[dict[str, Any]] = []
             if isinstance(member_ids, list) and member_ids:
                 missing = [m for m in member_ids if m not in by_id]
                 if missing:
@@ -449,6 +452,7 @@ class IngestSessionService:
                     ])
                     if bbox:
                         geometry = "members"
+                        cells = table_cells_from_items([by_id[m] for m in member_ids])
                     else:
                         errors.append(_err(
                             i, "member_item_ids",
@@ -460,10 +464,22 @@ class IngestSessionService:
                     errors.append(_err(i, "approx_bbox", msg))
                 else:
                     approx_f = [float(v) for v in approx]
-                    snapped, _idx = snap_to_docling_items(docling_view, page, approx_f)
+                    snapped, item_indexes = snap_to_docling_items(docling_view, page, approx_f)
                     if snapped:
                         bbox = snapped
                         geometry = "snapped"
+                        cells = table_cells_from_items(
+                            docling_view["items"],
+                            item_indexes,
+                            region_bbox=approx_f,
+                        )
+                        table_bbox = table_bbox_from_items(
+                            docling_view["items"],
+                            item_indexes,
+                            region_bbox=approx_f,
+                        )
+                        if table_bbox and raw.get("kind") == "table":
+                            bbox = table_bbox
                     else:
                         # Docling saw nothing under the box (full-bleed
                         # chart, scanned drawing). Keep the coarse box and
@@ -491,6 +507,8 @@ class IngestSessionService:
                 region["member_item_ids"] = list(member_ids)
             elif geometry in ("snapped", "coarse"):
                 region["approx_bbox"] = [float(v) for v in approx]
+            if cells and region.get("kind") in {"table", "spec_block"}:
+                region["cells"] = cells
             shape_errors = validate_region(region, index=i)
             if shape_errors:
                 errors.extend(shape_errors)

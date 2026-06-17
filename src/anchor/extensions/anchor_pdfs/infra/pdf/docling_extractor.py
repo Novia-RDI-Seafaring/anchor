@@ -164,6 +164,7 @@ def _flatten(doc: Any) -> dict[str, Any]:
     """Mirrors the v1 anchor_ingest.bronze._flatten_docling logic."""
     items: list[dict[str, Any]] = []
     tables: list[dict[str, Any]] = []
+    page_heights = _page_heights(doc)
 
     for it in getattr(doc, "texts", []) or []:
         prov = (it.prov or [None])[0] if hasattr(it, "prov") else None
@@ -183,11 +184,15 @@ def _flatten(doc: Any) -> dict[str, Any]:
         cells = []
         if hasattr(tbl, "data") and hasattr(tbl.data, "table_cells"):
             for cell in tbl.data.table_cells:
-                cells.append({
+                cell_data = {
                     "row": getattr(cell, "start_row_offset_idx", None),
                     "col": getattr(cell, "start_col_offset_idx", None),
                     "text": getattr(cell, "text", ""),
-                })
+                }
+                cell_bbox = _bbox_from_cell(cell, page_heights.get(page))
+                if cell_bbox:
+                    cell_data["bbox"] = cell_bbox
+                cells.append(cell_data)
         items.append({
             "label": "table",
             "text": "",
@@ -211,3 +216,27 @@ def _bbox_from_prov(prov: Any) -> list[float]:
         return []
     bb = prov.bbox
     return [float(bb.l), float(bb.t), float(bb.r), float(bb.b)]
+
+
+def _bbox_from_cell(cell: Any, page_height: float | None) -> list[float]:
+    bb = getattr(cell, "bbox", None)
+    if bb is None:
+        return []
+    if page_height is not None and hasattr(bb, "to_bottom_left_origin"):
+        bb = bb.to_bottom_left_origin(page_height)
+    elif "BOTTOMLEFT" not in str(getattr(bb, "coord_origin", "")).upper():
+        return []
+    return [float(bb.l), float(bb.t), float(bb.r), float(bb.b)]
+
+
+def _page_heights(doc: Any) -> dict[int, float]:
+    pages = getattr(doc, "pages", None)
+    if not isinstance(pages, dict):
+        return {}
+    out: dict[int, float] = {}
+    for page_no, page in pages.items():
+        size = getattr(page, "size", None)
+        height = getattr(size, "height", None)
+        if isinstance(page_no, int) and isinstance(height, (int, float)):
+            out[page_no] = float(height)
+    return out

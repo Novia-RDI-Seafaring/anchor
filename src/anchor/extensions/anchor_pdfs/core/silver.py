@@ -58,6 +58,7 @@ def build_index(docling: dict[str, Any], *, filename: str = "", title: str = "")
                 "shape": shape,
                 "header_row": header_row,
                 "first_column_values": first_col,
+                "cells": _clean_table_cells(it.get("cells")),
             })
 
         elif label == "picture":
@@ -116,6 +117,99 @@ def _summarize_table_cells(cells: Any) -> tuple[list[str], list[str], dict[str, 
     header_row = [row_0[c] for c in sorted(row_0)]
     first_column_values = [col_0[r] for r in sorted(col_0)]
     return header_row, first_column_values, {"rows": rows, "cols": cols}
+
+
+def _clean_table_cells(cells: Any) -> list[dict[str, Any]]:
+    if not isinstance(cells, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for cell in cells:
+        if not isinstance(cell, dict):
+            continue
+        row = cell.get("row")
+        col = cell.get("col")
+        if not isinstance(row, int) or not isinstance(col, int):
+            continue
+        clean: dict[str, Any] = {
+            "row": row,
+            "col": col,
+            "text": cell.get("text") if isinstance(cell.get("text"), str) else "",
+        }
+        bbox = _clean_bbox(cell.get("bbox"))
+        if bbox:
+            clean["bbox"] = bbox
+        out.append(clean)
+    return out
+
+
+def table_cells_from_items(
+    items: Any,
+    indexes: list[int] | None = None,
+    region_bbox: list[float] | None = None,
+) -> list[dict[str, Any]]:
+    table = table_item_from_items(items, indexes, region_bbox=region_bbox)
+    if not table:
+        return []
+    return _clean_table_cells(table.get("cells"))
+
+
+def table_bbox_from_items(
+    items: Any,
+    indexes: list[int] | None = None,
+    region_bbox: list[float] | None = None,
+) -> list[float]:
+    table = table_item_from_items(items, indexes, region_bbox=region_bbox)
+    if not table:
+        return []
+    return _clean_bbox(table.get("bbox"))
+
+
+def table_item_from_items(
+    items: Any,
+    indexes: list[int] | None = None,
+    *,
+    region_bbox: list[float] | None = None,
+) -> dict[str, Any] | None:
+    if not isinstance(items, list):
+        return None
+    selected = items
+    if indexes is not None:
+        selected = [items[i] for i in indexes if 0 <= i < len(items)]
+    tables = [
+        it for it in selected
+        if isinstance(it, dict)
+        and it.get("label") == "table"
+        and _clean_table_cells(it.get("cells"))
+    ]
+    if not tables:
+        return None
+    if region_bbox:
+        return max(
+            tables,
+            key=lambda it: (
+                _bbox_overlap_area(_clean_bbox(it.get("bbox")), region_bbox),
+                _bbox_area(_clean_bbox(it.get("bbox"))),
+            ),
+        )
+    return tables[0]
+
+
+def _bbox_area(bbox: list[float]) -> float:
+    if len(bbox) != 4:
+        return 0.0
+    return abs((bbox[2] - bbox[0]) * (bbox[1] - bbox[3]))
+
+
+def _bbox_overlap_area(a: list[float], b: list[float]) -> float:
+    if len(a) != 4 or len(b) != 4:
+        return 0.0
+    left = max(min(a[0], a[2]), min(b[0], b[2]))
+    right = min(max(a[0], a[2]), max(b[0], b[2]))
+    bottom = max(min(a[1], a[3]), min(b[1], b[3]))
+    top = min(max(a[1], a[3]), max(b[1], b[3]))
+    if right <= left or top <= bottom:
+        return 0.0
+    return (right - left) * (top - bottom)
 
 
 # ── Per-page markdown rendering ──────────────────────────────────────────────
@@ -311,6 +405,9 @@ def build_page_candidates(docling: dict[str, Any]) -> dict[int, list[dict[str, A
             if it.get("label") == "table":
                 header_row, _, shape = _summarize_table_cells(it.get("cells"))
                 candidate["cells_preview"] = {"shape": shape, "header_row": header_row}
+                cells = _clean_table_cells(it.get("cells"))
+                if cells:
+                    candidate["cells"] = cells
             candidates.append(candidate)
         out[page] = candidates
     return out
@@ -367,11 +464,12 @@ def bbox_center(bbox: list[float]) -> tuple[float, float] | None:
 
 
 def point_in_bbox(point: tuple[float, float], bbox: list[float]) -> bool:
-    """BOTTOMLEFT containment: bbox = [left, top, right, bottom] with top > bottom."""
+    """BOTTOMLEFT containment. Tolerates either Y ordering."""
     if len(bbox) != 4:
         return False
     x, y = point
-    left, top, right, bottom = bbox
+    left, right = min(bbox[0], bbox[2]), max(bbox[0], bbox[2])
+    bottom, top = min(bbox[1], bbox[3]), max(bbox[1], bbox[3])
     return left <= x <= right and bottom <= y <= top
 
 
