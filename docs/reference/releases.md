@@ -14,15 +14,28 @@ release.
 
 | Version | Date | Main difference |
 | --- | --- | --- |
+| `0.2.5` | 2026-06-17 | Grounding and harness-ingest release. Preserves table-cell provenance when Docling supplies cell coordinates, restores row source buttons on populated spec tables, adds the harness-driven gold-ingest path, improves live canvas event sync, warms the local embedding model before the first search, fixes Claude Code MCP registration, and includes the frontend `protobufjs` audit override. Recommended for anyone using `anchor init`, row-level provenance, local embedding search, or agent-driven PDF ingest. |
 | `0.2.4` | 2026-06-11 | Config robustness for cross-platform onboarding. A `data_dir` with a leading `~` now expands to `$HOME` instead of creating a literal `./~` folder. On Windows, `anchor init` no longer writes `anchor.toml` in a non-UTF-8 locale encoding that the reader then rejected and silently ignored; the reader also recovers an already-corrupted file. Recommended for anyone on Windows or using a `~`-relative `data_dir`. |
 | `0.2.3` | 2026-06-10 | Azure + agent-experience hardening. `anchor version` / `--version` report the real installed version (was stuck at `0.2.0`). `anchor ingest` is idempotent (skips when gold exists; `--force` to recompute). New `anchor canvas url` and `anchor check`; HuggingFace/docling noise no longer pollutes `search` / `ingest` output. Fixes a data-egress edge case where a missing key could route document pages to public OpenAI, and `anchor init` self-corrects an Azure endpoint. |
 | `0.2.2` | 2026-06-09 | Onboarding release. `anchor init` configures a project folder (AI provider / data zone, models, data dir) and writes `anchor.toml`; one MCP registration serves every project. Azure OpenAI works via its v1 endpoint; docling auto-selects CUDA or CPU; `anchor serve` falls through to a free port. |
 | `0.2.1` | 2026-06-08 | Patch release for public testing. It includes the Windows Unicode ingest fix, canvas ingest progress feedback, timing reports, canvas deletion, improved region overlays and updated MCP setup docs. |
 | `0.2.0` | 2026-05-25 | First public release of the v2 local canvas, PDF ingestion, MCP server, CLI, HTTP API and bundled web UI. |
 
+## Why `0.2.5` matters
+
+`0.2.5` is the recommended version for current testers. It includes the
+project setup fixes from `0.2.4` and adds the recent provenance and harness
+ingest work. If Docling exposes table-cell coordinates, ANCHOR keeps them
+through ingest so row-level source buttons can highlight the selected value,
+not just the page or table. The release also restores row source buttons on
+agent-populated spec tables, adds the harness-driven ingest path for projects
+where the agent performs vision extraction, fixes live canvas event updates,
+warms the local embedding model before the first search, and registers Claude
+Code MCP config in the file Claude Code reads.
+
 ## Why `0.2.4` matters
 
-`0.2.4` is the recommended version, especially on Windows. It fixes two ways a
+`0.2.4` was the Windows configuration fix release. It fixes two ways a
 project's `anchor.toml` could be quietly ignored. A `data_dir` written with a
 leading `~` (such as `~/anchor-data`) was taken literally and created a `./~`
 folder inside the project instead of expanding to your home directory; it now
@@ -78,7 +91,7 @@ uv tool install anchor-kb
 Specific version:
 
 ```bash
-uv tool install anchor-kb==0.2.4
+uv tool install anchor-kb==0.2.5
 ```
 
 Upgrade an existing install:
