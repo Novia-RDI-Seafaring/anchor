@@ -30,6 +30,7 @@ from anchor.infra.environment import (
     project_meta,
     resolve_environment,
     resolve_project_config,
+    set_project_description,
 )
 
 
@@ -141,6 +142,15 @@ class ProjectRouter:
         self.env_arg = str(env.root)
         self._cache.clear()
         return {"environment": str(env.root), "config": str(env.config_path)}
+
+    def update_project(self, name: str, description: str) -> dict[str, Any]:
+        env = self.environment()
+        if not env.initialized:
+            raise NoEnvironmentError(env.root)
+        if not env.project_exists(name):
+            raise NoProjectError(name, env.list_project_names())
+        set_project_description(env, name, description)
+        return {"updated": name, "description": description}
 
     def open_project(self, name: str) -> dict[str, Any]:
         env = self.environment()

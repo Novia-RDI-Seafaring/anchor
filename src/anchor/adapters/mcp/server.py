@@ -219,6 +219,21 @@ LIFECYCLE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "update_project",
+        "description": (
+            "Update a project's description (peer of `anchor project "
+            "set-description`). Preserves any config overrides."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+            },
+            "required": ["name", "description"],
+        },
+    },
+    {
         "name": "open_project",
         "description": (
             "Set the session default project so later calls may omit `project`. "
@@ -270,6 +285,8 @@ def _handle_lifecycle(router: ProjectRouter, name: str, args: dict[str, Any]) ->
                 description=args.get("description"),
             )
         )
+    if name == "update_project":
+        return _json.dumps(router.update_project(args["name"], args.get("description", "")))
     if name == "open_project":
         return _json.dumps(router.open_project(args["name"]))
     raise RuntimeError(f"unknown lifecycle tool {name!r}")

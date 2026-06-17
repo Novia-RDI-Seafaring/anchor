@@ -182,4 +182,28 @@ def test_build_mcp_server_router_mode_constructs(tmp_path):
 
 def test_lifecycle_tools_present():
     names = {d["name"] for d in LIFECYCLE_TOOL_DEFINITIONS}
-    assert names == {"list_projects", "create_project", "create_environment", "open_project"}
+    assert names == {
+        "list_projects",
+        "create_project",
+        "create_environment",
+        "update_project",
+        "open_project",
+    }
+
+
+def test_router_update_project(tmp_path):
+    root = tmp_path / "env"
+    env = init_environment(root)
+    create_project(env, "pumps")
+    result = _router(root).update_project("pumps", "new desc")
+    assert result == {"updated": "pumps", "description": "new desc"}
+    from anchor.infra.environment import project_meta
+
+    assert project_meta(env, "pumps").description == "new desc"
+
+
+def test_router_update_unknown_project_raises(tmp_path):
+    root = tmp_path / "env"
+    init_environment(root)
+    with pytest.raises(NoProjectError):
+        _router(root).update_project("ghost", "x")
