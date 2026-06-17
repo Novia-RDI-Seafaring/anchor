@@ -12,6 +12,7 @@ the MCP-proxy work documented in OIP.md as the next major feature.
 """
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 import json as _json
@@ -21,17 +22,13 @@ from mcp.types import ImageContent, Resource, TextContent, Tool
 from pydantic import AnyUrl
 
 from anchor.adapters.mcp import handlers_canvas
-from anchor.core.services.workspace_service import WorkspaceService
-from anchor.extensions.anchor_cad.core.services import CadService
+from anchor.adapters.mcp.services import ServiceBundle, fmu_tools_available
+from anchor.adapters.mcp.router import ProjectRouter
 from anchor.extensions.anchor_cad import mcp_handlers as cad_handlers
 from anchor.extensions.anchor_fmus import mcp_handlers as fmu_handlers
-from anchor.extensions.anchor_fmus.core.services import FmuService
 from anchor.extensions.anchor_pdfs import mcp_handlers as pdf_handlers
-from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
-from anchor.extensions.anchor_pdfs.core.services import IngestService
 from anchor.extensions.anchor_sysml import mcp_handlers as sysml_handlers
-from anchor.extensions.anchor_sysml.core.services import SysmlService
-from anchor.infra.config import AnchorConfig
+from anchor.infra.environment import NoEnvironmentError, NoProjectError
 from anchor.adapters.status import build_status_summary
 
 
@@ -171,20 +168,136 @@ STATUS_TOOL_DEFINITION = {
 }
 
 
+_PROJECT_ARG_DESC = (
+    "The project (a corpus inside this environment) to act on. Omit to use the "
+    "environment's default project. A named project must already exist — create "
+    "it with create_project, or call list_projects to see the options."
+)
+
+
+LIFECYCLE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
+    {
+        "name": "list_projects",
+        "description": (
+            "List the projects in this Anchor environment (name + description). "
+            "Use it to pick the right project before a project-scoped call."
+        ),
+        "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
+    {
+        "name": "create_project",
+        "description": (
+            "Create a new project (its own documents + canvases) in this "
+            "environment. Suggest a short description from the user's first "
+            "documents; the user can edit it later."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "create_environment",
+        "description": (
+            "Initialize a new Anchor environment — the trust / egress boundary "
+            "that holds projects. Ask whether documents are processed on the "
+            "user's machine or via an API before choosing a provider."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "directory": {"type": "string"},
+                "provider": {"type": "string"},
+                "base_url": {"type": "string"},
+                "embed_model": {"type": "string"},
+                "description": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "open_project",
+        "description": (
+            "Set the session default project so later calls may omit `project`. "
+            "The project must already exist."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"],
+        },
+    },
+]
+
+
+def _with_project_arg(defs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Advertise an optional ``project`` on each project-scoped tool."""
+    out: list[dict[str, Any]] = []
+    for definition in defs:
+        copied = copy.deepcopy(definition)
+        schema = copied.setdefault("inputSchema", {"type": "object"})
+        props = schema.setdefault("properties", {})
+        props.setdefault("project", {"type": "string", "description": _PROJECT_ARG_DESC})
+        out.append(copied)
+    return out
+
+
+def _resolution_error(exc: NoProjectError | NoEnvironmentError) -> str:
+    if isinstance(exc, NoProjectError):
+        return _json.dumps(
+            {"error": "no_project", "message": str(exc), "available": exc.available}
+        )
+    return _json.dumps(
+        {"error": "no_environment", "message": str(exc), "environment": str(exc.root)}
+    )
+
+
+def _handle_lifecycle(router: ProjectRouter, name: str, args: dict[str, Any]) -> str:
+    if name == "list_projects":
+        return _json.dumps(router.list_projects())
+    if name == "create_project":
+        return _json.dumps(router.create_project(args["name"], args.get("description", "")))
+    if name == "create_environment":
+        return _json.dumps(
+            router.create_environment(
+                args.get("directory"),
+                provider=args.get("provider"),
+                base_url=args.get("base_url"),
+                embed_model=args.get("embed_model"),
+                description=args.get("description"),
+            )
+        )
+    if name == "open_project":
+        return _json.dumps(router.open_project(args["name"]))
+    raise RuntimeError(f"unknown lifecycle tool {name!r}")
+
+
 def build_mcp_server(
     *,
-    workspace: WorkspaceService,
-    ingest: IngestService,
-    doc_store: DocStore,
-    ingest_session: Any | None = None,
-    config: AnchorConfig | None = None,
-    fmu: FmuService | None = None,
-    cad: CadService | None = None,
-    sysml: SysmlService | None = None,
-    synopsis: Any | None = None,
+    bundle: ServiceBundle | None = None,
+    router: ProjectRouter | None = None,
     name: str = "anchor",
 ) -> Server:
+    """Build the MCP server.
+
+    Pass a ``router`` for the #120 multiproject model (one server, projects by
+    per-call name, lifecycle tools, self-correcting resolution errors), or a
+    single ``bundle`` for legacy single-project mode (no ``project`` arg, no
+    lifecycle tools).
+    """
+    if bundle is None and router is None:
+        raise ValueError("build_mcp_server requires either a bundle or a router")
+    multiproject = router is not None
     app = Server(name, instructions=INSTRUCTIONS)
+
+    def get_bundle(project: str | None) -> ServiceBundle:
+        if router is not None:
+            return router.bundle_for(project)
+        assert bundle is not None
+        return bundle
 
     @app.list_resources()
     async def list_resources() -> list[Resource]:
@@ -208,26 +321,28 @@ def build_mcp_server(
 
     canvas_defs = handlers_canvas.tool_definitions()
     pdf_defs = pdf_handlers.tool_definitions()
-    fmu_defs = fmu_handlers.tool_definitions() if fmu is not None else []
-    cad_defs = cad_handlers.TOOL_DEFINITIONS if cad is not None else []
-    sysml_defs = sysml_handlers.tool_definitions() if sysml is not None else []
+    fmu_present = fmu_tools_available() if multiproject else (bundle.fmu is not None)
+    fmu_defs = fmu_handlers.tool_definitions() if fmu_present else []
+    cad_defs = cad_handlers.TOOL_DEFINITIONS if (multiproject or bundle.cad is not None) else []
+    sysml_defs = (
+        sysml_handlers.tool_definitions() if (multiproject or bundle.sysml is not None) else []
+    )
     status_defs = [STATUS_TOOL_DEFINITION]
+    lifecycle_defs = LIFECYCLE_TOOL_DEFINITIONS if multiproject else []
+
+    project_scoped = [
+        *status_defs, *canvas_defs, *pdf_defs, *fmu_defs, *cad_defs, *sysml_defs,
+    ]
+    advertised = (
+        [*lifecycle_defs, *_with_project_arg(project_scoped)] if multiproject else project_scoped
+    )
 
     @app.list_tools()
     async def list_tools() -> list[Tool]:
-        return [
-            Tool(**d)
-            for d in [
-                *status_defs,
-                *canvas_defs,
-                *pdf_defs,
-                *fmu_defs,
-                *cad_defs,
-                *sysml_defs,
-            ]
-        ]
+        return [Tool(**d) for d in advertised]
 
     status_names = {d["name"] for d in status_defs}
+    lifecycle_names = {d["name"] for d in lifecycle_defs}
     canvas_names = {d["name"] for d in canvas_defs}
     fmu_names = {d["name"] for d in fmu_defs} | getattr(fmu_handlers, "LEGACY_TOOL_NAMES", set())
     cad_names = {d["name"] for d in cad_defs}
@@ -235,28 +350,43 @@ def build_mcp_server(
 
     @app.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
+        args = dict(arguments)
         try:
-            if name in status_names:
+            if name in lifecycle_names:
+                text = _handle_lifecycle(router, name, args)  # type: ignore[arg-type]
+            elif name in status_names:
+                b = get_bundle(args.pop("project", None))
                 summary = await build_status_summary(
-                    config=config or AnchorConfig(),
-                    workspace=workspace,
-                    doc_store=doc_store,
+                    config=b.config, workspace=b.workspace, doc_store=b.doc_store,
                 )
                 text = _json.dumps(summary)
             elif name in canvas_names:
-                text = await handlers_canvas.call_tool(workspace, name, dict(arguments))
-            elif name in fmu_names and fmu is not None:
-                text = await fmu_handlers.call_tool(fmu, name, dict(arguments))
-            elif name in cad_names and cad is not None:
-                text = await cad_handlers.call_tool(name, dict(arguments), service=cad)
-            elif name in sysml_names and sysml is not None:
-                text = await sysml_handlers.call_tool(sysml, name, dict(arguments))
+                b = get_bundle(args.pop("project", None))
+                text = await handlers_canvas.call_tool(b.workspace, name, args)
+            elif name in fmu_names:
+                b = get_bundle(args.pop("project", None))
+                if b.fmu is None:
+                    raise RuntimeError("FMU tools are not available in this install")
+                text = await fmu_handlers.call_tool(b.fmu, name, args)
+            elif name in cad_names:
+                b = get_bundle(args.pop("project", None))
+                if b.cad is None:
+                    raise RuntimeError("CAD tools are not available")
+                text = await cad_handlers.call_tool(name, args, service=b.cad)
+            elif name in sysml_names:
+                b = get_bundle(args.pop("project", None))
+                if b.sysml is None:
+                    raise RuntimeError("SysML tools are not available")
+                text = await sysml_handlers.call_tool(b.sysml, name, args)
             else:
+                b = get_bundle(args.pop("project", None))
                 text = await pdf_handlers.call_tool(
-                    ingest, doc_store, name, dict(arguments),
-                    synopsis=synopsis,
-                    ingest_session=ingest_session,
+                    b.ingest, b.doc_store, name, args,
+                    synopsis=b.synopsis,
+                    ingest_session=b.ingest_session,
                 )
+        except (NoProjectError, NoEnvironmentError) as exc:
+            text = _resolution_error(exc)
         except Exception as exc:  # noqa: BLE001  - surface to caller as JSON
             text = _error_result(exc)
         # Promote inline-image envelopes (`{"_mcp_image_b64": ..., "_mcp_mime": ...}`)
