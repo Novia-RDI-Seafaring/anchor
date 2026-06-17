@@ -9,6 +9,55 @@ next version section on tag.
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-06-17
+
+Grounding, harness ingest, and agent onboarding release. This is the wheel to
+publish after the recent canvas provenance, gold-ingest, and `anchor init`
+follow-up fixes.
+
+### Added
+
+- Harness-driven PDF ingestion across MCP, HTTP, and CLI. This lets an agent
+  run the staged gold-ingest workflow without storing a project API key in
+  ANCHOR itself, while still publishing a complete gold layer atomically.
+- A `harness` provider option in `anchor init` for projects where the agent
+  performs the vision extraction.
+- In-repo Claude Code plugin metadata so ANCHOR can be installed through the
+  Claude Code plugin flow as well as by `anchor install claude-code`.
+- AX report issue templates and agent guidance for filing usability findings
+  as GitHub issues instead of leaving them in local notes.
+
+### Changed
+
+- Table-cell provenance is preserved through the silver and gold layers when
+  Docling provides cell coordinates, so row source buttons can point at the
+  selected value rather than only the enclosing table region.
+- Gold ingest now uses a transactional staging substrate with a completeness
+  marker and shared region validation before publishing.
+- `anchor check` reports the resolved data dir more clearly, including the
+  case where the directory does not exist yet.
+- The MCP harness skill now triggers ingestion from user intent, not only from
+  provider configuration.
+
+### Fixed
+
+- Restored row-level source buttons on populated spec tables after the
+  row-provenance guidance regressed to node-level references.
+- External canvas events now stream live to connected clients.
+- `anchor install claude-code` writes the MCP registration to the Claude Code
+  config file that Claude Code actually reads.
+- Harness ingest begin now accepts a multipart upload over HTTP instead of a
+  local filesystem path.
+- Unknown ingest-session errors now include a clearer diagnostic and the
+  session work order includes the resolved data dir.
+- Invalid region and cell bboxes are rejected instead of being drawn on the
+  wrong part of the page.
+
+### Security
+
+- The web lockfile now pins a patched `protobufjs` through the pnpm override
+  used by the frontend supply-chain audit.
+
 ## [0.2.4] - 2026-06-11
 
 Config robustness for cross-platform onboarding. Two fixes that stopped a
@@ -231,7 +280,9 @@ flagged by the pre-release review.
 - Snapshot output paths and the SPA static catch-all both apply
   resolve-and-contain checks.
 
-[Unreleased]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.5...HEAD
+[0.2.5]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.4...v0.2.5
+[0.2.4]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.0...v0.2.1
