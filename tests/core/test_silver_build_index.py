@@ -139,3 +139,4 @@ def test_table_cells_from_items_prefers_best_geometric_fit():
 def test_point_in_bbox_tolerates_reversed_y_order():
     assert point_in_bbox((5, 5), [0, 0, 10, 10]) is True
     assert point_in_bbox((5, 5), [0, 10, 10, 0]) is True
+    assert point_in_bbox((5, 5), [10, 10, 0, 0]) is False

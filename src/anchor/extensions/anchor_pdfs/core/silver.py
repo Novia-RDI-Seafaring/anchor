@@ -468,7 +468,9 @@ def point_in_bbox(point: tuple[float, float], bbox: list[float]) -> bool:
     if len(bbox) != 4:
         return False
     x, y = point
-    left, right = min(bbox[0], bbox[2]), max(bbox[0], bbox[2])
+    if bbox[0] > bbox[2]:
+        return False
+    left, right = bbox[0], bbox[2]
     bottom, top = min(bbox[1], bbox[3]), max(bbox[1], bbox[3])
     return left <= x <= right and bottom <= y <= top
 
