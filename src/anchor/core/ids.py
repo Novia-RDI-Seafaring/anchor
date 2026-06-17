@@ -57,6 +57,30 @@ def validate_workspace_slug(slug: str) -> str:
     return slug
 
 
+class InvalidProjectNameError(ValueError):
+    """Raised when a project name fails the identifier policy."""
+
+
+def validate_project_name(name: str) -> str:
+    """Return ``name`` unchanged or raise :class:`InvalidProjectNameError`.
+
+    A project name becomes a directory under ``<environment>/projects/``, so it
+    follows the same filesystem-safe policy as a workspace slug: 1-63 chars,
+    no path separators, no traversal tokens, no leading dot. Validated at every
+    boundary (CLI, MCP, HTTP) so the resolver never builds a path from a
+    client-controlled name that escapes the environment.
+    """
+    if not isinstance(name, str) or not name:
+        raise InvalidProjectNameError("project name missing or not a string")
+    if name in {".", ".."}:
+        raise InvalidProjectNameError("project name must not be '.' or '..'")
+    if not _WORKSPACE_SLUG_RE.fullmatch(name):
+        raise InvalidProjectNameError(
+            f"project name {name!r} must match {_WORKSPACE_SLUG_RE.pattern}"
+        )
+    return name
+
+
 def new_id() -> str:
     """8-char uuid4 fragment, matches the existing canvas convention."""
     return str(uuid.uuid4())[:8]
