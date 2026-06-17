@@ -52,6 +52,9 @@ follow-up fixes.
   session work order includes the resolved data dir.
 - Invalid region and cell bboxes are rejected instead of being drawn on the
   wrong part of the page.
+- The local `sentence-transformers` embedder now starts loading its model when
+  the embedder is constructed, so the first `search_documents` call after a
+  server restart is less likely to hit an MCP client timeout.
 
 ### Security
 

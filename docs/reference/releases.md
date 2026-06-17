@@ -14,7 +14,7 @@ release.
 
 | Version | Date | Main difference |
 | --- | --- | --- |
-| `0.2.5` | 2026-06-17 | Grounding and harness-ingest release. Preserves table-cell provenance when Docling supplies cell coordinates, restores row source buttons on populated spec tables, adds the harness-driven gold-ingest path, improves live canvas event sync, fixes Claude Code MCP registration, and includes the frontend `protobufjs` audit override. Recommended for anyone using `anchor init`, row-level provenance, or agent-driven PDF ingest. |
+| `0.2.5` | 2026-06-17 | Grounding and harness-ingest release. Preserves table-cell provenance when Docling supplies cell coordinates, restores row source buttons on populated spec tables, adds the harness-driven gold-ingest path, improves live canvas event sync, warms the local embedding model before the first search, fixes Claude Code MCP registration, and includes the frontend `protobufjs` audit override. Recommended for anyone using `anchor init`, row-level provenance, local embedding search, or agent-driven PDF ingest. |
 | `0.2.4` | 2026-06-11 | Config robustness for cross-platform onboarding. A `data_dir` with a leading `~` now expands to `$HOME` instead of creating a literal `./~` folder. On Windows, `anchor init` no longer writes `anchor.toml` in a non-UTF-8 locale encoding that the reader then rejected and silently ignored; the reader also recovers an already-corrupted file. Recommended for anyone on Windows or using a `~`-relative `data_dir`. |
 | `0.2.3` | 2026-06-10 | Azure + agent-experience hardening. `anchor version` / `--version` report the real installed version (was stuck at `0.2.0`). `anchor ingest` is idempotent (skips when gold exists; `--force` to recompute). New `anchor canvas url` and `anchor check`; HuggingFace/docling noise no longer pollutes `search` / `ingest` output. Fixes a data-egress edge case where a missing key could route document pages to public OpenAI, and `anchor init` self-corrects an Azure endpoint. |
 | `0.2.2` | 2026-06-09 | Onboarding release. `anchor init` configures a project folder (AI provider / data zone, models, data dir) and writes `anchor.toml`; one MCP registration serves every project. Azure OpenAI works via its v1 endpoint; docling auto-selects CUDA or CPU; `anchor serve` falls through to a free port. |
@@ -30,7 +30,8 @@ through ingest so row-level source buttons can highlight the selected value,
 not just the page or table. The release also restores row source buttons on
 agent-populated spec tables, adds the harness-driven ingest path for projects
 where the agent performs vision extraction, fixes live canvas event updates,
-and registers Claude Code MCP config in the file Claude Code reads.
+warms the local embedding model before the first search, and registers Claude
+Code MCP config in the file Claude Code reads.
 
 ## Why `0.2.4` matters
 
