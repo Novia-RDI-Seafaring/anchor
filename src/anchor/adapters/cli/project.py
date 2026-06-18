@@ -24,7 +24,10 @@ from anchor.infra.environment import (
 )
 from anchor.infra.providers import get_provider
 
-project_app = typer.Typer(help="Manage projects inside an Anchor environment.")
+project_app = typer.Typer(
+    help="Manage projects inside an Anchor environment.",
+    no_args_is_help=True,
+)
 
 
 def _require_initialized(env: Environment) -> None:

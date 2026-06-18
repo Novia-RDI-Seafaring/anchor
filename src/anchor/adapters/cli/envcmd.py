@@ -24,7 +24,10 @@ from anchor.infra.environment import (
 )
 from anchor.infra.providers import get_provider
 
-env_app = typer.Typer(help="Manage Anchor environments (named config profiles).")
+env_app = typer.Typer(
+    help="Manage Anchor environments (named config profiles).",
+    no_args_is_help=True,
+)
 
 
 def _zone(env_name: str) -> str:
