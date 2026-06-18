@@ -316,8 +316,9 @@ def init(
     if config_path.exists() and not force:
         if _is_readable_toml(config_path):
             typer.echo(
-                f"Environment {env_name!r} already exists ({config_path}). "
-                "Re-run with --force to overwrite.",
+                f"Environment {env_name!r} already exists.\n"
+                f"  - To add a project to it:  anchor project create <name> --env {env_name}\n"
+                f"  - To reconfigure the environment itself:  anchor init {env_name} --force",
                 err=True,
             )
             raise typer.Exit(code=1)
