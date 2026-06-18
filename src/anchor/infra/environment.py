@@ -535,6 +535,21 @@ def ensure_project(env: Environment, name: str) -> Path:
     return project_dir
 
 
+def set_environment_description(env: Environment, description: str) -> None:
+    """Update an environment's description (what it is for / its trust context).
+
+    This is the highest-value piece of env metadata: the MCP server announces it
+    so the agent knows which environment it is talking to and routes correctly
+    across multiple environments.
+    """
+    if not env.initialized:
+        raise NoEnvironmentError(env.name)
+    settings = _flat_settings(_safe_toml(env.config_path))
+    existing = _meta_from_toml(env.config_path)
+    meta = Meta(name=existing.name or env.name, description=description, tags=existing.tags)
+    _write_toml(env.config_path, settings, meta)
+
+
 def set_project_description(env: Environment, name: str, description: str) -> None:
     """Update a project's description, preserving its other config/metadata."""
     validate_project_name(name)
@@ -600,5 +615,6 @@ __all__ = [
     "create_project",
     "ensure_project",
     "set_project_description",
+    "set_environment_description",
     "move_project",
 ]

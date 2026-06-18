@@ -297,6 +297,44 @@ def _handle_lifecycle(router: ProjectRouter, name: str, args: dict[str, Any]) ->
     raise RuntimeError(f"unknown lifecycle tool {name!r}")
 
 
+def _env_identity(router: ProjectRouter) -> str:
+    """A short header announcing which environment this server serves.
+
+    Prepended to the MCP instructions so the agent knows, on connect, the
+    environment name, its data zone, and what it is for. This is also how the
+    agent routes correctly when several environments are wired as separate
+    named servers.
+    """
+    from anchor.infra.environment import (
+        DEFAULT_PROJECT,
+        environment_meta,
+        resolve_project_config,
+    )
+    from anchor.infra.providers import get_provider
+
+    try:
+        env = router.environment()
+    except Exception:  # noqa: BLE001 — never let the header break startup
+        return ""
+    lines = [f"Active environment: '{env.name}'."]
+    if env.initialized:
+        cfg = resolve_project_config(env, DEFAULT_PROJECT)
+        prov = get_provider(cfg.provider or "local")
+        if prov:
+            lines.append(f"- Data zone: {prov.zone} (where this environment's documents may go).")
+        desc = environment_meta(env).description
+        if desc:
+            lines.append(f"- About: {desc}")
+    else:
+        lines.append("- Not set up yet. Create it with create_environment before ingesting.")
+    lines.append(
+        "- This server serves ONLY this environment. It holds projects (corpuses); "
+        "name one with the per-call `project` argument, or call list_projects. You "
+        "cannot reach another environment from here."
+    )
+    return "\n".join(lines) + "\n\n"
+
+
 def build_mcp_server(
     *,
     bundle: ServiceBundle | None = None,
@@ -313,7 +351,8 @@ def build_mcp_server(
     if bundle is None and router is None:
         raise ValueError("build_mcp_server requires either a bundle or a router")
     multiproject = router is not None
-    app = Server(name, instructions=INSTRUCTIONS)
+    instructions = (_env_identity(router) + INSTRUCTIONS) if multiproject else INSTRUCTIONS
+    app = Server(name, instructions=instructions)
 
     def get_bundle(project: str | None) -> ServiceBundle:
         if router is not None:

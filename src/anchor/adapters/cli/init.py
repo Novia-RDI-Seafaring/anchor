@@ -277,6 +277,9 @@ def init(
         None, "--vision-model", help="Model / deployment for polish + region extraction."
     ),
     docling_device: str = typer.Option(None, "--docling-device", help="cpu|cuda|mps|auto."),
+    description: str = typer.Option(
+        "", "--description", help="What this environment is for (announced to agents)."
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Accept defaults, no prompts."),
     force: bool = typer.Option(False, "--force", help="Overwrite an existing environment."),
 ) -> None:
@@ -291,6 +294,7 @@ def init(
         envs_dir,
         resolve_environment,
         set_default_env,
+        set_environment_description,
     )
 
     env_name = name or env
@@ -342,6 +346,8 @@ def init(
     # Scaffold the default project so `anchor ingest` works with no project
     # naming needed, and make the first environment the default.
     ensure_project(env, DEFAULT_PROJECT)
+    if description:
+        set_environment_description(env, description)
     if not (ANCHOR_HOME / DEFAULT_ENV_FILE).exists():
         set_default_env(env_name)
     _setup_api_key(env_root, prov, interactive=interactive)

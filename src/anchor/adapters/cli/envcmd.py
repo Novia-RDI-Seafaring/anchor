@@ -47,6 +47,9 @@ def env_create(
     base_url: str = typer.Option(None, "--base-url", help="Endpoint for the chosen provider."),
     vision_model: str = typer.Option(None, "--vision-model", help="Polish + region model/deployment."),
     docling_device: str = typer.Option(None, "--docling-device", help="cpu|cuda|mps|auto."),
+    description: str = typer.Option(
+        "", "--description", help="What this environment is for (announced to agents)."
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Accept defaults, no prompts."),
     force: bool = typer.Option(False, "--force", help="Overwrite an existing environment."),
 ) -> None:
@@ -64,9 +67,26 @@ def env_create(
         base_url=base_url,
         vision_model=vision_model,
         docling_device=docling_device,
+        description=description,
         yes=yes,
         force=force,
     )
+
+
+@env_app.command("set-description")
+def env_set_description(
+    name: str = typer.Argument(..., help="Environment name."),
+    description: str = typer.Argument(..., help="What this environment is for."),
+) -> None:
+    """Set an environment's description (announced to agents for routing)."""
+    from anchor.infra.environment import set_environment_description
+
+    env = resolve_environment(name)
+    if not env.initialized:
+        typer.echo(f"Environment {name!r} is not set up.", err=True)
+        raise typer.Exit(code=1)
+    set_environment_description(env, description)
+    typer.echo(f"Updated description for environment {name!r}.")
 
 
 @env_app.command("list")
