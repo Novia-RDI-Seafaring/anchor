@@ -9,7 +9,7 @@ Drop a PDF onto a canvas. The agent reads it and pulls the values you need into 
 
 Drop FMU simulation models onto the same canvas and wire the extracted values into their parameters.
 
-It runs on your laptop. Run `anchor init` in a folder to make it a project — that is where you choose the AI provider (and therefore where your documents may go) and where data lives. Agents talk to it over MCP, so it works with Claude Code, Cursor, or any MCP client. There's an HTTP API and a CLI too.
+It runs on your laptop. Run `anchor init` to create an environment — a named profile where you choose the AI provider (and therefore where your documents may go). Projects (corpuses) live inside it. Agents talk to it over MCP, so it works with Claude Code, Cursor, Claude Desktop, or any MCP client. There's an HTTP API and a CLI too.
 
 ---
 
@@ -38,9 +38,9 @@ It runs on your laptop. Run `anchor init` in a folder to make it a project — t
 
 Then open <http://127.0.0.1:8002> in your browser.
 
-For your own work, configure a project first: `cd my-project && anchor init`
-picks the AI provider / data zone and writes `anchor.toml`. See
-[Projects](concepts/projects.md).
+For your own work, create an environment first: `anchor init` picks the AI
+provider / data zone. See
+[Environments and projects](concepts/projects.md).
 
 Requires Python 3.12+. CI tests Linux and runs CLI smoke checks on macOS and
 Windows; verify browser and PDF workflows on your target platform.
@@ -58,7 +58,7 @@ Windows; verify browser and PDF workflows on your target platform.
 - **[Projects](concepts/projects.md)** - a folder is a project; providers, data zones, and how every adapter finds it
 - **[Architecture](concepts/architecture.md)** - the hexagonal monolith, ports + adapters
 - **[Data and events](concepts/data-and-events.md)** - workspace state model, event log, real-time sync
-- **[On-disk substrate](concepts/on-disk-substrate.md)** - what every folder under `~/anchor-data/` means
+- **[On-disk substrate](concepts/on-disk-substrate.md)** - what every folder under a project means
 - **[Canvas](concepts/canvas.md)** - node types, edges, sub-canvases
 - **[Many interfaces](concepts/interfaces.md)** - HTTP, MCP, CLI, and the parity rule
 - **[Extensions and OIP](concepts/extensions-and-oip.md)** - how third-party producers plug in
