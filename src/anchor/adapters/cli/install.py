@@ -213,7 +213,10 @@ def install_claude_desktop(
         None, "--env", help="Environment NAME to point at (default: the default env)."
     ),
     name: str = typer.Option(
-        "anchor", "--name", help="MCP server entry name (use a distinct name per environment)."
+        None,
+        "--name",
+        help="MCP server entry name. Default: 'anchor' for the default environment, "
+        "else 'anchor-<env>' so multiple environments never collide.",
     ),
     create: bool = typer.Option(
         False, "--create", help="Create the environment now instead of on first use."
@@ -234,7 +237,12 @@ def install_claude_desktop(
     """
     from anchor.infra.environment import create_env, default_env_name
 
-    env_name = env or default_env_name()
+    default_name = default_env_name()
+    env_name = env or default_name
+    if name is None:
+        # Clean 'anchor' for the default environment; 'anchor-<env>' otherwise,
+        # so wiring one server per environment never produces a name collision.
+        name = "anchor" if env_name == default_name else f"anchor-{env_name}"
     if create and not dry_run:
         create_env(env_name)
 
@@ -288,7 +296,7 @@ def install_print(
     typer.echo("")
     typer.echo("=== claude-desktop ===")
     install_claude_desktop(
-        env=env, name="anchor", create=False, force=False, yes=True, dry_run=True
+        env=env, name=None, create=False, force=False, yes=True, dry_run=True
     )
     typer.echo("")
     typer.echo("=== cursor ===")

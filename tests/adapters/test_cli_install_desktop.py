@@ -46,11 +46,25 @@ def test_install_is_additive(_paths):
     assert "anchor" in servers
 
 
-def test_collision_refused_without_force(_paths):
-    create_env("local")
+def test_distinct_envs_get_distinct_names(_paths):
+    # No --name: default env -> 'anchor', others -> 'anchor-<env>'. No collision.
+    create_env("local")  # default env in tests
     create_env("work")
     runner.invoke(app, ["install", "claude-desktop", "--env", "local", "--yes"])
-    clash = runner.invoke(app, ["install", "claude-desktop", "--env", "work", "--yes"])
+    runner.invoke(app, ["install", "claude-desktop", "--env", "work", "--yes"])
+    servers = _servers(_paths)
+    assert servers["anchor"]["args"] == ["--env", "local"]
+    assert servers["anchor-work"]["args"] == ["--env", "work"]
+
+
+def test_collision_refused_without_force(_paths):
+    # Forcing the SAME name onto two different envs is refused.
+    create_env("local")
+    create_env("work")
+    runner.invoke(app, ["install", "claude-desktop", "--env", "local", "--name", "anchor", "--yes"])
+    clash = runner.invoke(
+        app, ["install", "claude-desktop", "--env", "work", "--name", "anchor", "--yes"]
+    )
     assert clash.exit_code == 1
     assert "already points at" in clash.output
     assert _servers(_paths)["anchor"]["args"] == ["--env", "local"]
@@ -59,9 +73,9 @@ def test_collision_refused_without_force(_paths):
 def test_force_repoints(_paths):
     create_env("local")
     create_env("work")
-    runner.invoke(app, ["install", "claude-desktop", "--env", "local", "--yes"])
+    runner.invoke(app, ["install", "claude-desktop", "--env", "local", "--name", "anchor", "--yes"])
     repoint = runner.invoke(
-        app, ["install", "claude-desktop", "--env", "work", "--force", "--yes"]
+        app, ["install", "claude-desktop", "--env", "work", "--name", "anchor", "--force", "--yes"]
     )
     assert repoint.exit_code == 0, repoint.output
     assert _servers(_paths)["anchor"]["args"] == ["--env", "work"]
