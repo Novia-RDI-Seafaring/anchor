@@ -1,4 +1,4 @@
-"""CLI peers for #120 projects + migration."""
+"""CLI: anchor env / project / migrate in the named-environment model."""
 from __future__ import annotations
 
 import pytest
@@ -6,106 +6,136 @@ from typer.testing import CliRunner
 
 from anchor.adapters.cli.main import app
 from anchor.infra import environment as env_mod
-from anchor.infra.environment import init_environment, resolve_environment
+from anchor.infra.environment import create_env, create_project, project_meta, resolve_environment
 
 runner = CliRunner()
 
-_CLEAR = ("ANCHOR_ENV", "ANCHOR_CONFIG", "ANCHOR_DATA_DIR")
-
 
 @pytest.fixture(autouse=True)
-def _clean(monkeypatch, tmp_path):
-    for name in _CLEAR:
+def _home(monkeypatch, tmp_path):
+    for name in ("ANCHOR_ENV", "ANCHOR_PROJECT", "ANCHOR_DATA_DIR"):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(env_mod, "GLOBAL_ENV_DIR", tmp_path / "_global_unused")
+    monkeypatch.setattr(env_mod, "ANCHOR_HOME", tmp_path / ".anchor")
     monkeypatch.setattr(env_mod, "LEGACY_DATA_DIR", tmp_path / "_legacy_unused")
 
 
+# -- env group --------------------------------------------------------------- #
+def test_env_list_marks_default(tmp_path):
+    create_env("local")
+    create_env("work")
+    from anchor.infra.environment import set_default_env
+
+    set_default_env("local")
+    result = runner.invoke(app, ["env", "list"])
+    assert result.exit_code == 0, result.output
+    assert "local" in result.output
+    assert "work" in result.output
+    assert "*" in result.output  # default marker
+
+
+def test_env_default_switches(tmp_path):
+    create_env("local")
+    create_env("work")
+    result = runner.invoke(app, ["env", "default", "work"])
+    assert result.exit_code == 0, result.output
+    from anchor.infra.environment import default_env_name
+
+    assert default_env_name() == "work"
+
+
+def test_use_sets_session_selection(tmp_path):
+    env = create_env("work")
+    create_project(env, "pumps")
+    result = runner.invoke(app, ["use", "work", "pumps"])
+    assert result.exit_code == 0, result.output
+    assert resolve_environment().name == "work"
+
+
+# -- project group ----------------------------------------------------------- #
 def test_project_create_and_list(tmp_path):
-    root = tmp_path / "env"
-    init_environment(root)
+    create_env("local")
     created = runner.invoke(
-        app, ["project", "create", "pumps", "--env", str(root), "--description", "LKH pumps"]
+        app, ["project", "create", "pumps", "--env", "local", "--description", "LKH pumps"]
     )
     assert created.exit_code == 0, created.output
-    assert (root / "projects" / "pumps" / "bronze").is_dir()
+    assert (tmp_path / ".anchor" / "envs" / "local" / "projects" / "pumps" / "bronze").is_dir()
 
-    listed = runner.invoke(app, ["project", "list", "--env", str(root)])
-    assert listed.exit_code == 0, listed.output
+    listed = runner.invoke(app, ["project", "list", "--env", "local"])
     assert "pumps" in listed.output
     assert "LKH pumps" in listed.output
 
 
+def test_project_create_requires_env(tmp_path):
+    result = runner.invoke(app, ["project", "create", "pumps", "--env", "ghost"])
+    assert result.exit_code == 1
+    assert "not set up" in result.output
+
+
 def test_project_create_rejects_bad_name(tmp_path):
-    root = tmp_path / "env"
-    init_environment(root)
-    result = runner.invoke(app, ["project", "create", "../escape", "--env", str(root)])
+    create_env("local")
+    result = runner.invoke(app, ["project", "create", "../escape", "--env", "local"])
     assert result.exit_code == 2
 
 
-def test_project_create_requires_environment(tmp_path):
-    bare = tmp_path / "bare"
-    result = runner.invoke(app, ["project", "create", "pumps", "--env", str(bare)])
-    assert result.exit_code == 1
-    assert "No Anchor environment" in result.output
-
-
 def test_project_set_description(tmp_path):
-    root = tmp_path / "env"
-    env = init_environment(root)
-    runner.invoke(app, ["project", "create", "pumps", "--env", str(root)])
+    env = create_env("local")
+    runner.invoke(app, ["project", "create", "pumps", "--env", "local"])
     result = runner.invoke(
-        app, ["project", "set-description", "pumps", "new desc", "--env", str(root)]
+        app, ["project", "set-description", "pumps", "new desc", "--env", "local"]
     )
     assert result.exit_code == 0, result.output
-    from anchor.infra.environment import project_meta
-
     assert project_meta(env, "pumps").description == "new desc"
 
 
-def test_migrate_moves_legacy_data_dir(tmp_path):
+def test_project_move_same_zone_no_prompt(tmp_path):
+    local = create_env("local", settings={"provider": "local"})
+    create_env("local2", settings={"provider": "local"})
+    create_project(local, "pumps")
+    result = runner.invoke(
+        app, ["project", "move", "pumps", "--to", "local2", "--env", "local"]
+    )
+    assert result.exit_code == 0, result.output
+    assert resolve_environment("local2").project_exists("pumps")
+    assert not resolve_environment("local").project_exists("pumps")
+
+
+def test_project_move_zone_change_needs_confirm(tmp_path):
+    local = create_env("local", settings={"provider": "local"})
+    create_env("cloud", settings={"provider": "openai"})
+    create_project(local, "pumps")
+    # decline the zone-change confirmation
+    declined = runner.invoke(
+        app, ["project", "move", "pumps", "--to", "cloud", "--env", "local"], input="n\n"
+    )
+    assert declined.exit_code == 1
+    assert resolve_environment("local").project_exists("pumps")  # not moved
+    # accept with --yes
+    ok = runner.invoke(
+        app, ["project", "move", "pumps", "--to", "cloud", "--env", "local", "--yes"]
+    )
+    assert ok.exit_code == 0, ok.output
+    assert resolve_environment("cloud").project_exists("pumps")
+
+
+# -- migrate ----------------------------------------------------------------- #
+def test_migrate_moves_legacy_data_dir(tmp_path, monkeypatch):
     legacy = tmp_path / "anchor-data"
     (legacy / "bronze").mkdir(parents=True)
     (legacy / "bronze" / "doc.pdf").write_text("x")
-    target = tmp_path / ".anchor"
+    monkeypatch.setattr(env_mod, "LEGACY_DATA_DIR", legacy)
 
-    result = runner.invoke(
-        app, ["migrate", "--env", str(target), "--from", str(legacy), "--yes"]
-    )
+    result = runner.invoke(app, ["migrate", "--yes"])
     assert result.exit_code == 0, result.output
-    moved = target / "projects" / "default" / "bronze" / "doc.pdf"
+    moved = tmp_path / ".anchor" / "envs" / "local" / "projects" / "default" / "bronze" / "doc.pdf"
     assert moved.is_file()
     assert not legacy.exists()
-    env = resolve_environment(target)
-    assert "default" in env.list_project_names()
 
 
-def test_migrate_dry_run_changes_nothing(tmp_path):
+def test_migrate_dry_run_changes_nothing(tmp_path, monkeypatch):
     legacy = tmp_path / "anchor-data"
     (legacy / "bronze").mkdir(parents=True)
-    target = tmp_path / ".anchor"
-    result = runner.invoke(
-        app, ["migrate", "--env", str(target), "--from", str(legacy), "--dry-run"]
-    )
+    monkeypatch.setattr(env_mod, "LEGACY_DATA_DIR", legacy)
+    result = runner.invoke(app, ["migrate", "--dry-run"])
     assert result.exit_code == 0, result.output
-    assert not target.exists()
+    assert not (tmp_path / ".anchor" / "envs" / "local").exists()
     assert legacy.exists()
-
-
-def test_migrate_refuses_to_clobber_existing_default(tmp_path):
-    legacy = tmp_path / "anchor-data"
-    (legacy / "bronze").mkdir(parents=True)
-    (legacy / "bronze" / "old.pdf").write_text("old")
-    target = tmp_path / ".anchor"
-    existing = target / "projects" / "default" / "bronze"
-    existing.mkdir(parents=True)
-    (existing / "keep.pdf").write_text("keep")
-
-    result = runner.invoke(
-        app, ["migrate", "--env", str(target), "--from", str(legacy), "--yes"]
-    )
-    assert result.exit_code == 0, result.output
-    # both left in place; nothing overwritten
-    assert (existing / "keep.pdf").is_file()
-    assert (legacy / "bronze" / "old.pdf").is_file()

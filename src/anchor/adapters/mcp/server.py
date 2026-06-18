@@ -203,14 +203,15 @@ LIFECYCLE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "create_environment",
         "description": (
-            "Initialize a new Anchor environment — the trust / egress boundary "
-            "that holds projects. Ask whether documents are processed on the "
-            "user's machine or via an API before choosing a provider."
+            "Create a new Anchor environment — a named profile that is the "
+            "trust / egress boundary holding projects. Ask whether documents "
+            "are processed on the user's machine or via an API before choosing "
+            "a provider. `name` is a short identifier (e.g. 'local', 'work')."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "directory": {"type": "string"},
+                "name": {"type": "string"},
                 "provider": {"type": "string"},
                 "base_url": {"type": "string"},
                 "embed_model": {"type": "string"},
@@ -266,7 +267,7 @@ def _resolution_error(exc: NoProjectError | NoEnvironmentError) -> str:
             {"error": "no_project", "message": str(exc), "available": exc.available}
         )
     return _json.dumps(
-        {"error": "no_environment", "message": str(exc), "environment": str(exc.root)}
+        {"error": "no_environment", "message": str(exc), "environment": exc.name}
     )
 
 
@@ -278,7 +279,7 @@ def _handle_lifecycle(router: ProjectRouter, name: str, args: dict[str, Any]) ->
     if name == "create_environment":
         return _json.dumps(
             router.create_environment(
-                args.get("directory"),
+                args.get("name"),
                 provider=args.get("provider"),
                 base_url=args.get("base_url"),
                 embed_model=args.get("embed_model"),

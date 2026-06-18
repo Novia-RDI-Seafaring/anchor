@@ -1,243 +1,247 @@
-"""Environment + project resolution and config layering (anchor#120)."""
+"""Named-environment + contained-project resolution and config layering."""
 from __future__ import annotations
-
-from pathlib import Path
 
 import pytest
 
-from anchor.core.ids import InvalidProjectNameError
+from anchor.core.ids import InvalidEnvNameError, InvalidProjectNameError
 from anchor.infra import environment as env_mod
 from anchor.infra.environment import (
+    DEFAULT_ENV,
     DEFAULT_PROJECT,
-    Environment,
     NoEnvironmentError,
     NoProjectError,
+    Meta,
+    config_for_data_dir,
+    create_env,
     create_project,
+    default_env_name,
     environment_meta,
-    init_environment,
+    list_env_names,
+    move_project,
     project_meta,
     resolve_environment,
     resolve_project,
     resolve_project_config,
+    set_default_env,
     set_project_description,
+    set_use,
 )
 
 _CLEAR = (
     "ANCHOR_ENV",
+    "ANCHOR_PROJECT",
     "ANCHOR_CONFIG",
     "ANCHOR_DATA_DIR",
     "ANCHOR_EMBED_MODEL",
-    "ANCHOR_POLISH_MODEL",
     "ANCHOR_PROVIDER",
-    "ANCHOR_DOCLING_DEVICE",
+    "ANCHOR_OPENAI_API_KEY",
 )
 
 
 @pytest.fixture(autouse=True)
-def _clean(monkeypatch, tmp_path):
+def _home(monkeypatch, tmp_path):
     for name in _CLEAR:
         monkeypatch.delenv(name, raising=False)
-    # Keep walk-up and the global-default fallback off real $HOME during tests.
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(env_mod, "GLOBAL_ENV_DIR", tmp_path / "_global_unused")
+    monkeypatch.setattr(env_mod, "ANCHOR_HOME", tmp_path / ".anchor")
     monkeypatch.setattr(env_mod, "LEGACY_DATA_DIR", tmp_path / "_legacy_unused")
 
 
 # --------------------------------------------------------------------------- #
-# Resolution
+# Environments
 # --------------------------------------------------------------------------- #
-def test_explicit_env_with_config_is_initialized(tmp_path):
-    root = tmp_path / "envA"
-    init_environment(root, settings={"provider": "local"})
-    env = resolve_environment(root)
+def test_create_and_resolve_env(tmp_path):
+    create_env("local", settings={"provider": "local"})
+    env = resolve_environment("local")
     assert env.initialized
-    assert not env.legacy
-    assert env.root == root
-    assert env.projects_dir == root / "projects"
+    assert env.name == "local"
+    assert env.root == tmp_path / ".anchor" / "envs" / "local"
 
 
-def test_walk_up_finds_environment(tmp_path, monkeypatch):
-    root = tmp_path / "envB"
-    init_environment(root)
-    nested = root / "projects" / "deep"
-    nested.mkdir(parents=True)
-    monkeypatch.chdir(nested)
-    env = resolve_environment()
-    assert env.root == root
-    assert env.initialized
+def test_default_env_name_and_set(tmp_path):
+    assert default_env_name() == DEFAULT_ENV  # "local" fallback
+    create_env("work")
+    set_default_env("work")
+    assert default_env_name() == "work"
+    assert resolve_environment().name == "work"  # no arg -> default
 
 
-def test_anchor_env_var_pins_environment(tmp_path, monkeypatch):
-    root = tmp_path / "envC"
-    init_environment(root)
-    monkeypatch.setenv("ANCHOR_ENV", str(root))
-    assert resolve_environment().root == root
+def test_env_precedence_envvar_and_use(tmp_path, monkeypatch):
+    create_env("a")
+    create_env("b")
+    monkeypatch.setenv("ANCHOR_ENV", "b")
+    assert resolve_environment().name == "b"  # env var wins over default
+    monkeypatch.delenv("ANCHOR_ENV")
+    set_use("a")
+    assert resolve_environment().name == "a"  # use selection
 
 
-def test_uninitialized_env_is_reported(tmp_path):
-    env = resolve_environment(tmp_path / "nope")
-    assert not env.initialized
-    assert not env.legacy
+def test_list_env_names(tmp_path):
+    create_env("local")
+    create_env("work")
+    assert list_env_names() == ["local", "work"]
 
 
-def test_legacy_anchor_toml_env(tmp_path):
-    root = tmp_path / "legacy"
-    root.mkdir()
-    data_dir = tmp_path / "legacy-data"
-    (root / "anchor.toml").write_text(f'data_dir = "{data_dir}"\nprovider = "local"\n')
-    env = resolve_environment(root)
-    assert env.initialized
-    assert env.legacy
-    assert env.project_dir(DEFAULT_PROJECT) == data_dir
-
-
-def test_global_default_falls_back_to_legacy_data_dir(tmp_path, monkeypatch):
-    legacy = tmp_path / "anchor-data"
-    legacy.mkdir()
-    monkeypatch.setattr(env_mod, "GLOBAL_ENV_DIR", tmp_path / ".anchor")
-    monkeypatch.setattr(env_mod, "LEGACY_DATA_DIR", legacy)
-    env = resolve_environment()  # nothing pinned, no walk-up hit
-    assert env.legacy
-    assert env.project_dir(DEFAULT_PROJECT) == legacy
-    assert env.list_project_names() == [DEFAULT_PROJECT]
+def test_invalid_env_name_rejected(tmp_path):
+    with pytest.raises(InvalidEnvNameError):
+        create_env("../escape")
 
 
 # --------------------------------------------------------------------------- #
-# Projects
+# Projects (contained)
 # --------------------------------------------------------------------------- #
 def test_create_and_list_projects(tmp_path):
-    root = tmp_path / "env"
-    env = init_environment(root)
+    env = create_env("local")
     create_project(env, "pumps", description="LKH pump datasheets")
     create_project(env, "paper")
-    env = resolve_environment(root)  # reload from disk
+    env = resolve_environment("local")
     assert env.list_project_names() == ["paper", "pumps"]
     for sub in ("bronze", "silver", "gold", "canvases"):
-        assert (root / "projects" / "pumps" / sub).is_dir()
+        assert (env.root / "projects" / "pumps" / sub).is_dir()
 
 
-def test_project_metadata_roundtrip(tmp_path):
-    root = tmp_path / "env"
-    env = init_environment(root)
-    create_project(env, "pumps", description="LKH pump datasheets", tags=("pumps",))
-    meta = project_meta(env, "pumps")
-    assert meta.description == "LKH pump datasheets"
-    assert meta.tags == ("pumps",)
-
-
-def test_set_project_description_preserves_settings(tmp_path):
-    root = tmp_path / "env"
-    env = init_environment(root)
+def test_project_dir_is_contained(tmp_path):
+    env = create_env("local")
     create_project(env, "pumps")
-    # hand-write an override setting alongside metadata
-    (root / "projects" / "pumps" / "project.toml").write_text(
-        'embed_model = "custom-embed"\n\n[meta]\ndescription = "old"\n'
-    )
-    set_project_description(env, "pumps", "new description")
-    assert project_meta(env, "pumps").description == "new description"
-    assert resolve_project_config(env, "pumps").embed_model == "custom-embed"
+    assert env.project_dir("pumps") == env.root / "projects" / "pumps"
 
 
-def test_environment_metadata(tmp_path):
-    root = tmp_path / "env"
-    init_environment(
-        root,
-        settings={"provider": "azure"},
-        meta=env_mod.Meta(description="Company Azure tenant, confidential"),
-    )
-    env = resolve_environment(root)
-    assert environment_meta(env).description == "Company Azure tenant, confidential"
-
-
-def test_invalid_project_name_rejected(tmp_path):
-    env = init_environment(tmp_path / "env")
-    with pytest.raises(InvalidProjectNameError):
-        env.project_dir("../escape")
-    with pytest.raises(InvalidProjectNameError):
-        create_project(env, "..")
-
-
-def test_create_project_requires_initialized_env(tmp_path):
-    env = resolve_environment(tmp_path / "bare")  # not initialized
+def test_create_project_requires_env(tmp_path):
+    env = resolve_environment("ghost")  # not created
     with pytest.raises(NoEnvironmentError):
         create_project(env, "pumps")
 
 
-# --------------------------------------------------------------------------- #
-# Config layering
-# --------------------------------------------------------------------------- #
-def test_layering_env_then_project_then_envvar(tmp_path, monkeypatch):
-    root = tmp_path / "env"
-    env = init_environment(root, settings={"embed_model": "env-model", "provider": "local"})
+def test_invalid_project_name_rejected(tmp_path):
+    env = create_env("local")
+    with pytest.raises(InvalidProjectNameError):
+        env.project_dir("../escape")
+
+
+def test_project_metadata_roundtrip(tmp_path):
+    env = create_env("local")
+    create_project(env, "pumps", description="LKH datasheets", tags=("pumps",))
+    meta = project_meta(env, "pumps")
+    assert meta.description == "LKH datasheets"
+    assert meta.tags == ("pumps",)
+
+
+def test_environment_metadata(tmp_path):
+    create_env("work", settings={"provider": "azure"},
+               meta=Meta(description="Company Azure tenant"))
+    assert environment_meta(resolve_environment("work")).description == "Company Azure tenant"
+
+
+def test_set_project_description_preserves_overrides(tmp_path):
+    env = create_env("local")
     create_project(env, "pumps")
-    # project overrides the environment value
-    (root / "projects" / "pumps" / "project.toml").write_text('embed_model = "proj-model"\n')
+    (env.project_dir("pumps") / "project.toml").write_text(
+        'embed_model = "custom"\n\n[meta]\ndescription = "old"\n'
+    )
+    set_project_description(env, "pumps", "new")
+    assert project_meta(env, "pumps").description == "new"
+    assert resolve_project_config(env, "pumps").embed_model == "custom"
+
+
+# --------------------------------------------------------------------------- #
+# Move (cross-boundary)
+# --------------------------------------------------------------------------- #
+def test_move_project_between_envs(tmp_path):
+    local = create_env("local")
+    work = create_env("work")
+    create_project(local, "pumps")
+    (local.project_dir("pumps") / "bronze" / "d.pdf").write_text("x")
+
+    move_project(local, "pumps", work)
+
+    assert not local.project_exists("pumps")
+    assert work.project_exists("pumps")
+    assert (work.project_dir("pumps") / "bronze" / "d.pdf").is_file()
+
+
+def test_move_refuses_existing_target(tmp_path):
+    local = create_env("local")
+    work = create_env("work")
+    create_project(local, "pumps")
+    create_project(work, "pumps")
+    with pytest.raises(FileExistsError):
+        move_project(local, "pumps", work)
+
+
+# --------------------------------------------------------------------------- #
+# Resolution + config layering
+# --------------------------------------------------------------------------- #
+def test_resolve_project_precedence(tmp_path, monkeypatch):
+    env = create_env("local")
+    create_project(env, "pumps")
+    # explicit arg
+    assert resolve_project("local", "pumps").name == "pumps"
+    # ANCHOR_PROJECT
+    monkeypatch.setenv("ANCHOR_PROJECT", "pumps")
+    assert resolve_project("local").name == "pumps"
+    monkeypatch.delenv("ANCHOR_PROJECT")
+    # use selection
+    set_use("local", "pumps")
+    assert resolve_project().name == "pumps"
+
+
+def test_resolve_project_require_exists(tmp_path):
+    create_env("local")
+    with pytest.raises(NoProjectError):
+        resolve_project("local", "ghost", require_exists=True)
+
+
+def test_layering_env_then_project_then_envvar(tmp_path, monkeypatch):
+    env = create_env("local", settings={"embed_model": "env-model", "provider": "local"})
+    create_project(env, "pumps")
+    (env.project_dir("pumps") / "project.toml").write_text('embed_model = "proj-model"\n')
 
     cfg = resolve_project_config(env, "pumps")
     assert cfg.embed_model == "proj-model"
-    assert cfg.provider == "local"  # inherited from the environment
-    # data_dir is forced to the project directory, not the env root
-    assert cfg.data_dir == root / "projects" / "pumps"
+    assert cfg.provider == "local"
+    assert cfg.data_dir == env.project_dir("pumps")
 
-    # an ANCHOR_* env var still wins over both toml layers
     monkeypatch.setenv("ANCHOR_EMBED_MODEL", "env-var-model")
     assert resolve_project_config(env, "pumps").embed_model == "env-var-model"
 
 
-def test_data_dir_in_toml_is_ignored_for_storage(tmp_path):
-    root = tmp_path / "env"
-    env = init_environment(root, settings={"data_dir": "/somewhere/else"})
-    create_project(env, "pumps")
-    cfg = resolve_project_config(env, "pumps")
-    # storage is structural: the project dir wins over any toml data_dir
-    assert cfg.data_dir == root / "projects" / "pumps"
-
-
-def test_resolve_project_require_exists(tmp_path):
-    root = tmp_path / "env"
-    init_environment(root)
-    with pytest.raises(NoProjectError):
-        resolve_project(root, "ghost", require_exists=True)
-    # path-only resolution does not require the dir to exist yet
-    rp = resolve_project(root, "ghost")
-    assert rp.data_dir == root / "projects" / "ghost"
-
-
-def test_resolve_project_default_in_legacy_env(tmp_path):
-    root = tmp_path / "legacy"
-    root.mkdir()
-    data_dir = tmp_path / "legacy-data"
-    data_dir.mkdir()
-    (root / "anchor.toml").write_text(f'data_dir = "{data_dir}"\n')
-    # the default project always resolves in a legacy env, even with require_exists
-    rp = resolve_project(root, DEFAULT_PROJECT, require_exists=True)
-    assert rp.data_dir == data_dir
-
-
 def test_config_for_data_dir_layers_project(tmp_path):
-    from anchor.infra.environment import config_for_data_dir
-
-    root = tmp_path / "env"
-    env = init_environment(root, settings={"provider": "azure", "embed_model": "env-model"})
+    env = create_env("local", settings={"provider": "azure", "embed_model": "m"})
     create_project(env, "pumps")
-    cfg = config_for_data_dir(root / "projects" / "pumps")
-    assert cfg.provider == "azure"  # layered from the environment anchor.toml
-    assert cfg.data_dir == root / "projects" / "pumps"
+    cfg = config_for_data_dir(env.project_dir("pumps"))
+    assert cfg.provider == "azure"
+    assert cfg.data_dir == env.project_dir("pumps")
 
 
-def test_config_for_data_dir_external_is_plain(tmp_path, monkeypatch):
-    from anchor.infra.environment import config_for_data_dir
-
-    monkeypatch.delenv("ANCHOR_DATA_DIR", raising=False)
-    external = tmp_path / "scratch-data"
-    cfg = config_for_data_dir(external)
-    assert cfg.data_dir == external
+def test_config_for_data_dir_external_is_plain(tmp_path):
+    external = tmp_path / "scratch"
+    assert config_for_data_dir(external).data_dir == external
 
 
-def test_direct_anchorconfig_unaffected_by_resolver(tmp_path, monkeypatch):
-    # AnchorConfig() with no active layers keeps the legacy walk-up behavior.
-    from anchor.infra.config import AnchorConfig
+def test_env_dotenv_is_loaded(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
+    env = create_env("work", settings={"provider": "azure"})
+    (env.root / ".env").write_text("ANCHOR_OPENAI_API_KEY=secret-key\n")
+    cfg = resolve_project_config(env, DEFAULT_PROJECT)
+    assert cfg.openai_api_key is not None
+    assert cfg.openai_api_key.get_secret_value() == "secret-key"
 
-    (tmp_path / "anchor.toml").write_text('embed_model = "walkup-model"\n')
-    monkeypatch.chdir(tmp_path)
-    assert AnchorConfig().embed_model == "walkup-model"
+
+# --------------------------------------------------------------------------- #
+# Legacy ~/anchor-data shim
+# --------------------------------------------------------------------------- #
+def test_default_env_default_project_uses_legacy_data_dir(tmp_path, monkeypatch):
+    legacy = tmp_path / "anchor-data"
+    (legacy / "bronze").mkdir(parents=True)
+    monkeypatch.setattr(env_mod, "LEGACY_DATA_DIR", legacy)
+    env = resolve_environment("local")  # not created
+    assert env.project_dir(DEFAULT_PROJECT) == legacy
+    assert env.list_project_names() == [DEFAULT_PROJECT]
+
+
+def test_legacy_shim_yields_to_real_default_project(tmp_path, monkeypatch):
+    legacy = tmp_path / "anchor-data"
+    legacy.mkdir()
+    monkeypatch.setattr(env_mod, "LEGACY_DATA_DIR", legacy)
+    env = create_env("local")
+    create_project(env, DEFAULT_PROJECT)  # real projects/default now exists
+    assert env.project_dir(DEFAULT_PROJECT) == env.root / "projects" / "default"

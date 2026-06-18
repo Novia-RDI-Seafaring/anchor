@@ -109,16 +109,17 @@ def _apply_project(project: Path | None) -> None:
 
 async def _run(
     *,
-    env: Path | None = None,
+    env: str | None = None,
     data_dir: Path | None = None,
     base_url: str = "http://localhost:8002",
 ) -> None:
     """Serve MCP over stdio.
 
-    With ``env`` set, run the #120 multiproject model: one server for that
-    environment, projects addressed by per-call name, lifecycle tools, and
-    self-correcting resolution errors. Otherwise serve a single project bound
-    to the resolved ``data_dir`` (legacy ``--project`` / ``--data-dir``).
+    With ``env`` set (an environment NAME), run the multiproject model: one
+    server for that environment, projects addressed by per-call name, lifecycle
+    tools, and self-correcting resolution errors. Otherwise serve a single
+    project bound to the resolved ``data_dir`` (legacy ``--project`` /
+    ``--data-dir``).
     """
     if env is not None:
         router = ProjectRouter(env_arg=env, base_url=base_url)
@@ -135,10 +136,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Anchor v2 MCP (stdio)")
     parser.add_argument(
         "--env",
-        type=Path,
+        type=str,
         default=None,
-        help="An Anchor environment dir (anchor.toml + projects/). Serves every "
-        "project in it; name the project per call. The #120 multiproject model.",
+        help="An Anchor environment NAME (a profile under ~/.anchor/envs/). "
+        "Serves every project in it; name the project per call.",
     )
     parser.add_argument(
         "--project",

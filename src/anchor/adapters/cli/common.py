@@ -8,17 +8,17 @@ import typer
 
 
 def default_data_dir() -> Path:
-    """Resolve the default storage root: the active environment's default project.
+    """Resolve the default storage root: the active project under its environment.
 
-    Storage location comes from the environment (the config), not an
-    ``ANCHOR_DATA_DIR`` env var. Walks up to an ``anchor.toml`` or falls back to
-    the global default ``~/.anchor`` (which keeps today's ``~/anchor-data`` as
-    its ``default`` project until ``anchor migrate``). Pass an explicit
-    ``--data-dir`` to point a single command somewhere else.
+    Storage comes from the environment (the config), not an ``ANCHOR_DATA_DIR``.
+    Honors the selectors — ``ANCHOR_ENV`` / ``ANCHOR_PROJECT`` and the
+    ``anchor use`` session selection — and falls back to the default environment
+    and its ``default`` project. Pass an explicit ``--data-dir`` to point a
+    single command somewhere else.
     """
-    from anchor.infra.environment import DEFAULT_PROJECT, resolve_project
+    from anchor.infra.environment import resolve_project
 
-    return resolve_project(None, DEFAULT_PROJECT).data_dir
+    return resolve_project().data_dir
 
 
 # Typer evaluates option defaults while importing the CLI. Resolve through the

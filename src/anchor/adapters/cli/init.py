@@ -18,7 +18,7 @@ from pathlib import Path
 
 import typer
 
-from anchor.infra.config import CONFIG_FILENAME, AnchorConfig
+from anchor.infra.config import AnchorConfig
 from anchor.infra.providers import (
     PROVIDERS,
     Provider,
@@ -222,43 +222,23 @@ def _resolve_embed_model(flag: str | None, provider: Provider, *, interactive: b
     ).model
 
 
-def init(
-    directory: Path = typer.Argument(Path("."), help="Environment folder to write anchor.toml into."),
-    provider: str = typer.Option(None, "--provider", help="local|ollama|openai|azure|custom."),
-    embed_model: str = typer.Option(None, "--embed-model", help="Local embedding model id."),
-    base_url: str = typer.Option(None, "--base-url", help="Endpoint for the chosen provider."),
-    vision_model: str = typer.Option(
-        None, "--vision-model", help="Model / deployment for polish + region extraction."
-    ),
-    docling_device: str = typer.Option(None, "--docling-device", help="cpu|cuda|mps|auto."),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Accept defaults, no prompts."),
-    force: bool = typer.Option(False, "--force", help="Overwrite an existing anchor.toml."),
-) -> None:
-    """Choose an AI provider/data-zone for this environment and write anchor.toml."""
-    target = directory.expanduser().resolve()
-    config_path = target / CONFIG_FILENAME
-    if config_path.exists() and not force:
-        if _is_readable_toml(config_path):
-            typer.echo(f"{config_path} already exists. Re-run with --force to overwrite.", err=True)
-            raise typer.Exit(code=1)
-        # A corrupt config is not worth protecting — replace it without --force.
-        typer.echo(f"Replacing unreadable {config_path} (it does not parse).", err=True)
-
-    # Prompt only on a real terminal without --yes; otherwise run off flags.
-    interactive = not yes and sys.stdin.isatty()
-    prov = _resolve_provider(provider, interactive=interactive)
-
-    # No data_dir: the environment folder IS the storage root. Documents and
-    # canvases live under projects/<name>/ next to anchor.toml, so there is no
-    # pointer to keep in sync — move or back up the folder and everything goes
-    # with it.
+def _build_fields(
+    prov: Provider,
+    *,
+    embed_model: str | None,
+    base_url: str | None,
+    vision_model: str | None,
+    docling_device: str | None,
+    interactive: bool,
+) -> dict[str, str]:
+    """Build the env.toml settings for ``prov`` (no ``data_dir`` — storage is
+    structural). Shared by ``anchor init`` and ``anchor env create``."""
     fields: dict[str, str] = {
         "provider": prov.key,
         "embed_model": _resolve_embed_model(embed_model, prov, interactive=interactive),
         "docling_device": docling_device
         or _ask("Docling device (cpu|cuda|mps|auto)", _default("docling_device"), interactive=interactive),
     }
-
     if prov.does_vision:
         if prov.base_url_required:
             resolved_url = base_url or _ask(
@@ -284,39 +264,104 @@ def init(
         # polish and region default to the same model; advanced users split in the toml.
         fields["polish_model"] = chosen_model
         fields["region_model"] = chosen_model
+    return fields
 
-    target.mkdir(parents=True, exist_ok=True)
+
+def init(
+    name: str = typer.Argument(
+        None, help="Environment name to create (default: the default env, 'local')."
+    ),
+    provider: str = typer.Option(None, "--provider", help="local|ollama|openai|azure|custom."),
+    embed_model: str = typer.Option(None, "--embed-model", help="Local embedding model id."),
+    base_url: str = typer.Option(None, "--base-url", help="Endpoint for the chosen provider."),
+    vision_model: str = typer.Option(
+        None, "--vision-model", help="Model / deployment for polish + region extraction."
+    ),
+    docling_device: str = typer.Option(None, "--docling-device", help="cpu|cuda|mps|auto."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Accept defaults, no prompts."),
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing environment."),
+) -> None:
+    """Create an Anchor environment (provider / data-zone) and its default project."""
+    from anchor.core.ids import InvalidEnvNameError, validate_env_name
+    from anchor.infra.environment import (
+        ANCHOR_HOME,
+        DEFAULT_ENV,
+        DEFAULT_ENV_FILE,
+        DEFAULT_PROJECT,
+        ENV_CONFIG_FILENAME,
+        ensure_project,
+        envs_dir,
+        resolve_environment,
+        set_default_env,
+    )
+
+    env_name = name or DEFAULT_ENV
+    try:
+        validate_env_name(env_name)
+    except InvalidEnvNameError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+
+    env_root = envs_dir() / env_name
+    config_path = env_root / ENV_CONFIG_FILENAME
+    if config_path.exists() and not force:
+        if _is_readable_toml(config_path):
+            typer.echo(
+                f"Environment {env_name!r} already exists ({config_path}). "
+                "Re-run with --force to overwrite.",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        # A corrupt config is not worth protecting — replace it without --force.
+        typer.echo(f"Replacing unreadable {config_path} (it does not parse).", err=True)
+
+    # Prompt only on a real terminal without --yes; otherwise run off flags.
+    interactive = not yes and sys.stdin.isatty()
+    prov = _resolve_provider(provider, interactive=interactive)
+
+    fields = _build_fields(
+        prov,
+        embed_model=embed_model,
+        base_url=base_url,
+        vision_model=vision_model,
+        docling_device=docling_device,
+        interactive=interactive,
+    )
+
+    (env_root / "projects").mkdir(parents=True, exist_ok=True)
     # Always UTF-8: TOML mandates it, and the default locale encoding on
     # Windows (cp1252) would write a non-ASCII char such as an em-dash as a
     # byte the UTF-8 reader rejects, silently dropping the whole config.
     config_path.write_text(_render_toml(fields), encoding="utf-8")
-    # Scaffold the default project so `anchor ingest` / `anchor serve` work
-    # immediately from inside the folder, with no project naming needed.
-    from anchor.infra.environment import DEFAULT_PROJECT, ensure_project, resolve_environment
+    env = resolve_environment(env_name)
+    # Scaffold the default project so `anchor ingest` works with no project
+    # naming needed, and make the first environment the default.
+    ensure_project(env, DEFAULT_PROJECT)
+    if not (ANCHOR_HOME / DEFAULT_ENV_FILE).exists():
+        set_default_env(env_name)
+    _setup_api_key(env_root, prov, interactive=interactive)
+    _report(env_name, prov)
 
-    ensure_project(resolve_environment(target), DEFAULT_PROJECT)
-    _setup_api_key(target, prov, interactive=interactive)
-    _report(config_path, target, prov)
 
-
-def _report(config_path: Path, target: Path, prov: Provider) -> None:
+def _report(env_name: str, prov: Provider) -> None:
     """Echo the recorded config, honestly distinguishing applied vs not-yet."""
     from anchor.infra.environment import (
         DEFAULT_PROJECT,
+        ENV_CONFIG_FILENAME,
         resolve_environment,
         resolve_project_config,
     )
 
-    env = resolve_environment(target)
+    env = resolve_environment(env_name)
     cfg = resolve_project_config(env, DEFAULT_PROJECT)
     default_dir = env.project_dir(DEFAULT_PROJECT)
 
     # Only ANCHOR_OPENAI_API_KEY (env or .env) is actually used for the endpoint;
     # a stray personal OPENAI_API_KEY is NOT, so don't count it as "set".
     has_anchor_key = bool(cfg.openai_api_key)
-    typer.echo(f"Wrote {config_path}")
+    typer.echo(f"Created environment {env_name!r} ({env.config_path})")
     typer.echo("")
-    typer.echo(f"Environment : {target}")
+    typer.echo(f"Environment : {env_name}")
     typer.echo(f"Provider    : {prov.label}")
     typer.echo(f"Data zone   : {prov.zone}")
     if prov.note:
@@ -354,26 +399,24 @@ def _report(config_path: Path, target: Path, prov: Provider) -> None:
         typer.echo("  vision model   : none — no document content leaves this host")
     typer.echo(f"  docling device : {cfg.docling_device}")
     typer.echo("")
-    typer.echo("Next steps (run inside this folder):")
+    typer.echo("Next steps:")
     if needs_key and not key_ok:
-        typer.echo("  1. Set your API key (never written to anchor.toml):")
-        typer.echo("       echo 'ANCHOR_OPENAI_API_KEY=…' >> .env     # gitignored, this folder")
+        typer.echo(f"  1. Set your API key (never written to {ENV_CONFIG_FILENAME}):")
+        typer.echo(
+            f"       echo 'ANCHOR_OPENAI_API_KEY=…' >> {env.root / '.env'}   # gitignored"
+        )
         typer.echo("     Then verify the endpoint, deployment, and key:")
-        typer.echo("       anchor check --probe")
+        typer.echo(f"       anchor check --env {env_name} --probe")
     else:
-        typer.echo("  anchor check                 verify the data zone + config")
+        typer.echo(f"  anchor check --env {env_name}         verify the data zone + config")
     if prov.key == "harness":
         typer.echo("  Ask your agent to ingest documents (it drives the ingest-session")
-        typer.echo("  protocol: begin -> per-page submit -> finalize). From a shell:")
-        typer.echo("  anchor ingest-session begin <file.pdf>")
-    typer.echo("  anchor ingest <file.pdf>     add a document to the default project")
-    typer.echo("  anchor project create <name> add another project (own docs + canvases)")
+        typer.echo("  protocol: begin -> per-page submit -> finalize).")
+    typer.echo(f"  anchor project create <name> --env {env_name}   add another project")
     typer.echo(f"  anchor serve                 open the canvas at http://localhost:{cfg.http_port}")
-    typer.echo("  anchor install claude-desktop let an agent drive ANCHOR over MCP   (optional)")
+    typer.echo(f"  anchor install claude-desktop --env {env_name}  let an agent drive it (optional)")
     typer.echo("")
-    # The CLI/server resolve the environment by running inside this folder; an
-    # agent-launched anchor-mcp points at it explicitly with --env.
     typer.echo(
-        f"Other tools resolve this environment when run inside {target}; an "
-        f"agent-launched anchor-mcp points at it with: anchor-mcp --env {target}"
+        f"An agent-launched anchor-mcp serves this environment with: "
+        f"anchor-mcp --env {env_name}"
     )
