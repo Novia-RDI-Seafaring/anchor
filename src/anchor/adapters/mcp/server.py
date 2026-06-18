@@ -44,8 +44,11 @@ INSTRUCTIONS = """\
 You're connected to Anchor, a knowledge-grounded engineering canvas.
 
 What it is:
-- Three substrates live on disk under ~/anchor-data: documents (ingested
-  PDFs/CAD/FMUs), workspaces (canvases), and a per-session event bus.
+- This server serves one ENVIRONMENT (a named profile = the data zone). It
+  holds PROJECTS; each project is a corpus (documents) plus its canvases.
+- Project-scoped tools take an optional `project` argument. Omit it to use the
+  default project. Use `list_projects` to see the options, `create_project` to
+  make one. A missing/unknown project returns a self-correcting error.
 - You have HTTP/MCP/CLI parity for every operation. Pick MCP from here.
 
 Source-grounding (load-bearing):
@@ -86,11 +89,12 @@ format: "inline")` so the host renders the image inline.
 Stuck? Read the `anchor://help` resource for the deeper tour.
 
 Project resolution check:
-- If the tool list or visible data looks wrong, call `anchor_status` before
-  assuming the project is empty. Compare `process.cwd`, `config.path`, and
-  `data_dir.path` with the project the user expects.
-- If it resolved the wrong project, restart the harness from the project
-  folder or configure `anchor-mcp --project <folder>`.
+- If visible data looks wrong, call `list_projects` to see this environment's
+  projects, and pass the right one as the `project` argument. Call
+  `anchor_status` to confirm the resolved environment and data dir.
+- This server is one environment (one data zone). To use a different
+  environment, the user adds a second named MCP server (`anchor-mcp --env
+  <name>`). You cannot cross environments from here.
 """
 
 
@@ -141,7 +145,7 @@ edge wiring.
 
 ── Where data lives ───────────────────────────────────────────────────────
 
-~/anchor-data/
+~/.anchor/envs/<env>/projects/<project>/
   bronze/<filename>.pdf
   silver/<slug>/{index.json, pages/}
   gold/<slug>/{pages/<n>.regions.json, pages/<n>/<region-id>.png}

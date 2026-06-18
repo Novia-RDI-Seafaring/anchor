@@ -83,54 +83,56 @@ The canvas has SSE. If a browser tab is open at the same time, the user
 sees your changes appear live. The server is authoritative and serialises
 commands per workspace, so you don't need to coordinate with the browser.
 
-## Projects: a folder is the unit
+## Environments and projects
 
-A folder containing an `anchor.toml` (created by `anchor init`) is an ANCHOR
-project. It declares the data dir, the AI provider/data-zone, and the models.
-**Run ANCHOR from inside that folder** and every adapter resolves the project
-automatically. The CLI and `anchor serve` walk up from the working directory to
-find `anchor.toml`; `anchor-mcp` does the same, or name it explicitly with
-`anchor-mcp --project <folder>`. So a single MCP registration
-(`anchor install claude-code`, no `--data-dir`) works for *every* project: open
-the agent in the project folder and it targets that project, with no reinstall.
+An **environment** is a named config profile (provider, models, data zone) and
+the trust/egress boundary. It holds **projects**, each a corpus (documents) plus
+its canvases. Environments live under `~/.anchor/envs/<name>/`; a project is
+contained at `~/.anchor/envs/<name>/projects/<project>/` and inherits the
+environment's config.
 
-If you are unsure which project is active, run `anchor` from the folder you mean
-(or pass `--project`/`ANCHOR_CONFIG`). Don't pass `--data-dir ~/anchor-data`
-unless you specifically want the global default rather than the current project.
+Over MCP, this server serves one environment. Project-scoped tools take an
+optional `project` argument; omit it for the default project. Use
+`list_projects` to see the options and `create_project` to make one. A
+missing/unknown project returns a self-correcting error. You cannot cross to
+another environment from here; that is a separate named server.
 
-### Set up a project (agent-drivable, like `npm init` / `uv init`)
+On the CLI, select with `--env` / `--project`, or set a session default with
+`anchor use <env> <project>`. `ANCHOR_ENV` / `ANCHOR_PROJECT` also work.
 
-You can scaffold ANCHOR in any folder non-interactively. `anchor init` accepts
-every choice as a flag, so no prompt blocks you:
+### Set up an environment (agent-drivable, like `nvm install`)
+
+`anchor init` (or `anchor env create <name>`) creates an environment and its
+default project. Every choice is a flag, so no prompt blocks you:
 
 ```bash
 # local-only (no document egress): no key, no endpoint
-anchor init . --yes --provider local
+anchor init --yes --provider local
 
 # a named endpoint (Azure shown): the deployment name is the model
-anchor init . --yes --provider azure \
+anchor init work --yes --provider azure \
   --base-url https://<resource>.openai.azure.com/openai/v1/ \
   --vision-model <deployment> --embed-model text-embedding-3-small
 ```
 
-`init` self-corrects an Azure URL that is missing `/openai/v1/`. The API key is
-never written to `anchor.toml`. Set `ANCHOR_OPENAI_API_KEY` in the environment
-or a gitignored `.env` in the folder. Then **verify before ingesting**:
+`init` self-corrects an Azure URL missing `/openai/v1/`. The API key is never
+written to the profile. Set `ANCHOR_OPENAI_API_KEY` in the environment or a
+gitignored `.env` next to the profile. Then **verify before ingesting**:
 
 ```bash
-anchor check            # offline: prints the data zone, repairs a bad endpoint
-anchor check --probe    # also makes one tiny call to confirm deployment + key
+anchor check --env <name>          # offline: data zone, repairs a bad endpoint
+anchor check --env <name> --probe  # also one tiny call to confirm deployment + key
 ```
 
 `anchor check` exits non-zero when something would break a real ingest, so you
-can gate on it. Register the MCP once with `anchor install claude-code`.
+can gate on it. Register the MCP with `anchor install claude-desktop --env <name>`.
 
 ## Where things live
 
-Each project's data lives in its own `data_dir` (default `<project>/anchor-data/`
-from `anchor init`, or the global `~/anchor-data/` when no project is found).
-`ANCHOR_DATA_DIR` or an explicit `--data-dir <path>` override it; the HTTP
-adapter uses the path passed to `anchor serve`.
+A project's data lives under its environment:
+`~/.anchor/envs/<env>/projects/<project>/`. Storage is structural (no
+`data_dir` key). The default environment is in `~/.anchor/default`; a
+pre-existing `~/anchor-data/` keeps working until `anchor migrate` folds it in.
 
 - `bronze/` — raw PDFs
 - `silver/<slug>/` — per-page markdown + page PNGs
