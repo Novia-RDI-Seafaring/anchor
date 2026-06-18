@@ -111,4 +111,4 @@ def test_create_initializes_environment(_paths, tmp_path):
 def test_privacy_zone_is_echoed(_paths):
     create_env("local", settings={"provider": "local"})
     result = runner.invoke(app, ["install", "claude-desktop", "--env", "local", "--yes"])
-    assert "Egress zone:" in result.output
+    assert "Data zone" in result.output

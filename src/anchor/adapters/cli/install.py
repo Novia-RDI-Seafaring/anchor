@@ -260,12 +260,11 @@ def install_claude_desktop(
         raise typer.Exit(code=1)
 
     initialized, zone = _environment_zone(env_name)
-    typer.echo(f"Environment: {env_name}")
-    typer.echo(f"Egress zone: {zone}")
+    typer.echo(f"Environment : {env_name}")
+    typer.echo(f"Data zone   : {zone}")
     if not dry_run and not yes:
         if not typer.confirm(
-            f"Documents in this environment may be sent to: {zone}. "
-            f"Add MCP server '{name}'?",
+            f"Wire MCP server '{name}' for environment '{env_name}'?",
             default=initialized,
         ):
             raise typer.Exit(code=1)
