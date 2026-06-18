@@ -32,7 +32,7 @@ def test_install_writes_named_pointer_entry(_paths):
     create_env("local")
     result = runner.invoke(app, ["install", "claude-desktop", "--env", "local", "--yes"])
     assert result.exit_code == 0, result.output
-    entry = _servers(_paths)["anchor"]
+    entry = _servers(_paths)["anchor-local"]
     assert entry["args"] == ["--env", "local"]
     assert entry["command"].endswith("anchor-mcp")
 
@@ -43,17 +43,17 @@ def test_install_is_additive(_paths):
     runner.invoke(app, ["install", "claude-desktop", "--env", "local", "--yes"])
     servers = _servers(_paths)
     assert "other" in servers
-    assert "anchor" in servers
+    assert "anchor-local" in servers
 
 
 def test_distinct_envs_get_distinct_names(_paths):
-    # No --name: default env -> 'anchor', others -> 'anchor-<env>'. No collision.
+    # No --name: each env auto-gets 'anchor-<env>', so they never collide.
     create_env("local")  # default env in tests
     create_env("work")
     runner.invoke(app, ["install", "claude-desktop", "--env", "local", "--yes"])
     runner.invoke(app, ["install", "claude-desktop", "--env", "work", "--yes"])
     servers = _servers(_paths)
-    assert servers["anchor"]["args"] == ["--env", "local"]
+    assert servers["anchor-local"]["args"] == ["--env", "local"]
     assert servers["anchor-work"]["args"] == ["--env", "work"]
 
 
@@ -89,7 +89,7 @@ def test_second_environment_with_distinct_name(_paths):
         app, ["install", "claude-desktop", "--env", "work", "--name", "anchor-work", "--yes"]
     )
     servers = _servers(_paths)
-    assert servers["anchor"]["args"] == ["--env", "local"]
+    assert servers["anchor-local"]["args"] == ["--env", "local"]
     assert servers["anchor-work"]["args"] == ["--env", "work"]
 
 

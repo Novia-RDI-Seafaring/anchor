@@ -215,8 +215,8 @@ def install_claude_desktop(
     name: str = typer.Option(
         None,
         "--name",
-        help="MCP server entry name. Default: 'anchor' for the default environment, "
-        "else 'anchor-<env>' so multiple environments never collide.",
+        help="MCP server entry name (default: 'anchor-<env>', so the name tells you "
+        "which environment it is and multiple environments never collide).",
     ),
     create: bool = typer.Option(
         False, "--create", help="Create the environment now instead of on first use."
@@ -237,12 +237,11 @@ def install_claude_desktop(
     """
     from anchor.infra.environment import create_env, default_env_name
 
-    default_name = default_env_name()
-    env_name = env or default_name
+    env_name = env or default_env_name()
     if name is None:
-        # Clean 'anchor' for the default environment; 'anchor-<env>' otherwise,
-        # so wiring one server per environment never produces a name collision.
-        name = "anchor" if env_name == default_name else f"anchor-{env_name}"
+        # 'anchor-<env>' so the entry name tells you which environment it is and
+        # wiring one server per environment never collides on the config key.
+        name = f"anchor-{env_name}"
     if create and not dry_run:
         create_env(env_name)
 
