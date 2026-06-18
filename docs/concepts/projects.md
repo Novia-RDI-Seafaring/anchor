@@ -23,7 +23,7 @@ For the full command reference, see
 ## Create one with `anchor init`
 
 ```bash
-anchor init                     # the default environment "local"
+anchor init local               # create an environment named "local"
 anchor init work --provider azure --base-url … --vision-model …
 ```
 

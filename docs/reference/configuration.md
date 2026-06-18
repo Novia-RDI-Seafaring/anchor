@@ -11,7 +11,7 @@ The recommended way to configure ANCHOR is `anchor init`, which creates an
 project:
 
 ```bash
-anchor init                 # the default environment "local"
+anchor init local           # create an environment named "local"
 anchor init work            # a named environment
 ```
 

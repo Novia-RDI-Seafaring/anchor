@@ -37,7 +37,7 @@ def _write_env(tmp_path, body, name="local"):
 
 def _init_azure(tmp_path, base_url="https://x.openai.azure.com/"):
     r = runner.invoke(
-        app, ["init", "--yes", "--provider", "azure",
+        app, ["init", "local", "--yes", "--provider", "azure",
                "--base-url", base_url, "--vision-model", "gpt-dep"]
     )
     assert r.exit_code == 0, r.output
@@ -78,14 +78,14 @@ def test_check_ready_when_key_present(tmp_path):
 
 
 def test_check_local_provider_needs_no_key(tmp_path):
-    runner.invoke(app, ["init", "--yes", "--provider", "local"])
+    runner.invoke(app, ["init", "local", "--yes", "--provider", "local"])
     result = _run_check(tmp_path)
     assert result.exit_code == 0, result.output
     assert "no egress" in result.output
 
 
 def test_check_flags_nonexistent_project_dir(tmp_path):
-    runner.invoke(app, ["init", "--yes", "--provider", "local"])
+    runner.invoke(app, ["init", "local", "--yes", "--provider", "local"])
     shutil.rmtree(_default_dir(tmp_path))
     result = _run_check(tmp_path)
     assert str(_default_dir(tmp_path)) in result.output
@@ -93,13 +93,13 @@ def test_check_flags_nonexistent_project_dir(tmp_path):
 
 
 def test_check_no_note_when_project_exists(tmp_path):
-    runner.invoke(app, ["init", "--yes", "--provider", "local"])
+    runner.invoke(app, ["init", "local", "--yes", "--provider", "local"])
     result = _run_check(tmp_path)
     assert "created on first ingest" not in result.output
 
 
 def test_check_harness_mode_is_ready_without_key(tmp_path):
-    r = runner.invoke(app, ["init", "--yes", "--provider", "harness"])
+    r = runner.invoke(app, ["init", "local", "--yes", "--provider", "harness"])
     assert r.exit_code == 0, r.output
     result = _run_check(tmp_path)
     assert result.exit_code == 0, result.output
@@ -113,7 +113,7 @@ def test_check_harness_mode_is_ready_without_key(tmp_path):
 def test_check_harness_mode_lists_open_sessions(tmp_path):
     import json
 
-    r = runner.invoke(app, ["init", "--yes", "--provider", "harness"])
+    r = runner.invoke(app, ["init", "local", "--yes", "--provider", "harness"])
     assert r.exit_code == 0, r.output
     session_dir = _default_dir(tmp_path) / "staging" / "ingest" / "ing-abc123"
     session_dir.mkdir(parents=True)

@@ -36,7 +36,7 @@ Windows; verify browser and PDF workflows on your target platform.
 Create an environment, then serve it:
 
 ```bash
-anchor init               # pick an AI provider / data zone; creates env "local"
+anchor init local         # pick an AI provider / data zone (name it whatever you like)
 anchor serve              # http://127.0.0.1:8002
 ```
 

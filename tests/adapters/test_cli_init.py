@@ -23,7 +23,7 @@ def _env_toml(tmp_path, name="local"):
 
 
 def test_init_creates_default_env_and_project(tmp_path):
-    result = runner.invoke(app, ["init", "--yes", "--provider", "local"])
+    result = runner.invoke(app, ["init", "local", "--yes", "--provider", "local"])
     assert result.exit_code == 0, result.output
     toml = _env_toml(tmp_path)
     assert 'provider = "local"' in toml
@@ -42,7 +42,7 @@ def test_init_named_environment(tmp_path):
 
 
 def test_init_local_has_no_vision(tmp_path):
-    runner.invoke(app, ["init", "--yes", "--provider", "local"])
+    runner.invoke(app, ["init", "local", "--yes", "--provider", "local"])
     toml = _env_toml(tmp_path)
     assert "openai_base_url" not in toml
     assert "polish_model" not in toml
@@ -50,7 +50,7 @@ def test_init_local_has_no_vision(tmp_path):
 
 
 def test_ollama_defaults_to_local_endpoint(tmp_path):
-    result = runner.invoke(app, ["init", "--yes", "--provider", "ollama"])
+    result = runner.invoke(app, ["init", "local", "--yes", "--provider", "ollama"])
     assert result.exit_code == 0, result.output
     toml = _env_toml(tmp_path)
     assert 'provider = "ollama"' in toml
@@ -59,7 +59,7 @@ def test_ollama_defaults_to_local_endpoint(tmp_path):
 
 
 def test_azure_requires_base_url(tmp_path):
-    result = runner.invoke(app, ["init", "--yes", "--provider", "azure"])
+    result = runner.invoke(app, ["init", "local", "--yes", "--provider", "azure"])
     assert result.exit_code != 0
     assert "base-url" in result.output.lower()
     assert not (tmp_path / ".anchor" / "envs" / "local" / "env.toml").exists()
@@ -67,7 +67,7 @@ def test_azure_requires_base_url(tmp_path):
 
 def test_azure_normalizes_endpoint(tmp_path):
     result = runner.invoke(
-        app, ["init", "--yes", "--provider", "azure",
+        app, ["init", "local", "--yes", "--provider", "azure",
                "--base-url", "https://x.openai.azure.com/", "--vision-model", "gpt-dep"]
     )
     assert result.exit_code == 0, result.output
@@ -82,23 +82,23 @@ def test_invalid_env_name_errors(tmp_path):
 
 
 def test_refuses_overwrite_without_force(tmp_path):
-    runner.invoke(app, ["init", "--yes", "--provider", "local"])
-    result = runner.invoke(app, ["init", "--yes", "--provider", "local"])
+    runner.invoke(app, ["init", "local", "--yes", "--provider", "local"])
+    result = runner.invoke(app, ["init", "local", "--yes", "--provider", "local"])
     assert result.exit_code == 1
     assert "force" in result.output.lower()
 
 
 def test_force_overwrites(tmp_path):
-    runner.invoke(app, ["init", "--yes", "--provider", "local"])
+    runner.invoke(app, ["init", "local", "--yes", "--provider", "local"])
     result = runner.invoke(
-        app, ["init", "--yes", "--provider", "openai", "--force", "--vision-model", "gpt-x"]
+        app, ["init", "local", "--yes", "--provider", "openai", "--force", "--vision-model", "gpt-x"]
     )
     assert result.exit_code == 0, result.output
     assert "gpt-x" in _env_toml(tmp_path)
 
 
 def test_harness_provider_needs_no_key(tmp_path):
-    result = runner.invoke(app, ["init", "--yes", "--provider", "harness"])
+    result = runner.invoke(app, ["init", "local", "--yes", "--provider", "harness"])
     assert result.exit_code == 0, result.output
     toml = _env_toml(tmp_path)
     assert 'provider = "harness"' in toml
@@ -107,7 +107,7 @@ def test_harness_provider_needs_no_key(tmp_path):
 
 
 def test_shows_next_steps(tmp_path):
-    result = runner.invoke(app, ["init", "--yes", "--provider", "local"])
+    result = runner.invoke(app, ["init", "local", "--yes", "--provider", "local"])
     assert "Next steps" in result.output
     assert "anchor-mcp --env local" in result.output
 
@@ -122,3 +122,15 @@ def test_setup_api_key_writes_gitignored_env(tmp_path, monkeypatch):
     init_mod._setup_api_key(env_root, get_provider("azure"), interactive=True)
     assert "ANCHOR_OPENAI_API_KEY=az-secret-key" in (env_root / ".env").read_text()
     assert "az-secret-key" not in (env_root / "env.toml").read_text() if (env_root / "env.toml").exists() else True
+
+
+def test_init_requires_a_name(tmp_path):
+    result = runner.invoke(app, ["init", "--yes", "--provider", "local"])
+    assert result.exit_code == 2
+    assert "Name the environment" in result.output
+
+
+def test_init_accepts_env_flag(tmp_path):
+    result = runner.invoke(app, ["init", "--env", "work", "--yes", "--provider", "local"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / ".anchor" / "envs" / "work" / "env.toml").is_file()

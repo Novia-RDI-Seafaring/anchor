@@ -52,7 +52,7 @@ server resolves the active project from its working directory, so the
 normal flow is:
 
 ```bash
-anchor init        # optional: creates an environment + default project
+anchor init local  # optional: creates an environment + default project
 claude
 ```
 

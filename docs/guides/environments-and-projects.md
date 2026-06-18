@@ -69,7 +69,7 @@ per server and is never retargeted by `anchor use`.
 Environments:
 
 ```bash
-anchor init                          # create the default env (provider picker) + default project
+anchor init local                    # create an environment (provider picker) + default project
 anchor init work --provider azure …  # create a named environment
 anchor env create work --provider …  # same as `anchor init work`
 anchor env list                      # name, zone, description (* marks the default)

@@ -268,9 +268,8 @@ def _build_fields(
 
 
 def init(
-    name: str = typer.Argument(
-        None, help="Environment name to create (default: the default env, 'local')."
-    ),
+    name: str = typer.Argument(None, help="Environment name to create (required)."),
+    env: str = typer.Option(None, "--env", help="Environment name to create (same as NAME)."),
     provider: str = typer.Option(None, "--provider", help="local|ollama|openai|azure|custom."),
     embed_model: str = typer.Option(None, "--embed-model", help="Local embedding model id."),
     base_url: str = typer.Option(None, "--base-url", help="Endpoint for the chosen provider."),
@@ -285,7 +284,6 @@ def init(
     from anchor.core.ids import InvalidEnvNameError, validate_env_name
     from anchor.infra.environment import (
         ANCHOR_HOME,
-        DEFAULT_ENV,
         DEFAULT_ENV_FILE,
         DEFAULT_PROJECT,
         ENV_CONFIG_FILENAME,
@@ -295,7 +293,14 @@ def init(
         set_default_env,
     )
 
-    env_name = name or DEFAULT_ENV
+    env_name = name or env
+    if not env_name:
+        typer.echo(
+            "Name the environment, e.g. `anchor init work` (or `anchor init --env work`). "
+            "See existing ones with `anchor env list`.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
     try:
         validate_env_name(env_name)
     except InvalidEnvNameError as exc:

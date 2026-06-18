@@ -14,7 +14,7 @@ Install ANCHOR and create an environment:
 
 ```bash
 uv tool install anchor-kb
-anchor init        # pick provider / data zone; creates env "local"
+anchor init local  # pick provider / data zone (name it whatever you like)
 anchor serve
 ```
 

@@ -43,7 +43,7 @@ Commands then resolve that environment (override with `--env` / `--project` or
 `anchor use`):
 
 ```bash
-anchor init
+anchor init local
 anchor ingest /path/to/datasheet.pdf
 anchor serve
 ```
