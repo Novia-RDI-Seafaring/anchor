@@ -52,13 +52,12 @@ server resolves the active project from its working directory, so the
 normal flow is:
 
 ```bash
-cd ~/my-project
-anchor init        # optional: writes anchor.toml, picks the data dir
+anchor init        # optional: creates an environment + default project
 claude
 ```
 
 Without a project, the server falls back to `ANCHOR_DATA_DIR`, then
-`~/anchor-data`.
+the default environment's `default` project.
 
 Some harness setups spawn the MCP server outside your project folder.
 The desktop app is the known case (see
@@ -67,7 +66,7 @@ The workaround is to pin the project explicitly with a user-level MCP
 entry instead of the plugin's default one:
 
 ```bash
-claude mcp add anchor -- uvx --from anchor-kb anchor-mcp --project /path/to/project
+claude mcp add anchor -- uvx --from anchor-kb anchor-mcp --env local
 ```
 
 A user-level server named `anchor` coexists with the plugin's server;

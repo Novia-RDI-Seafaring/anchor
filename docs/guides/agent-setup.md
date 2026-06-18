@@ -37,20 +37,20 @@ ANCHOR serves the UI and HTTP API at `http://127.0.0.1:8002` by default.
 It is unauthenticated, so bind to a network interface only behind an
 authentication layer.
 
-The recommended setup is one project folder. Run `anchor init` in it to choose
-the AI provider / data zone and write `anchor.toml`; the data dir defaults to
-`<project>/anchor-data`. Every command run from inside the folder — `serve`,
-`ingest`, and an agent's `anchor-mcp` — then shares that project automatically:
+The recommended setup is one environment. Run `anchor init` to choose the AI
+provider / data zone; it creates a named environment and its `default` project.
+Commands then resolve that environment (override with `--env` / `--project` or
+`anchor use`):
 
 ```bash
-cd ~/my-project
 anchor init
 anchor ingest /path/to/datasheet.pdf
 anchor serve
 ```
 
-Without a project, commands default to `ANCHOR_DATA_DIR`, then `~/anchor-data`;
-an explicit `--data-dir` overrides everything.
+Storage is structural: each project lives under
+`~/.anchor/envs/<env>/projects/<project>/`. An explicit `--data-dir` overrides
+for a single command.
 
 `anchor demo` creates a `demo` workspace and placeholder nodes. It ingests an
 optional local sample PDF when one is present, but the public package does not
@@ -59,21 +59,18 @@ ship a vendor PDF. In normal use, ingest a PDF you are allowed to process.
 ## 2. Agent harness setup
 
 ANCHOR exposes MCP tools through the `anchor-mcp` stdio executable. Register it
-once with the folder-resolving installer:
+with the installer, which points at an environment by name:
 
 ```bash
-anchor install claude-code      # MCP entry + skill
-anchor install cursor
+anchor install claude-code               # MCP entry + skill (default env)
+anchor install claude-desktop --env work
+anchor install cursor --env work
 ```
 
-The entry has no baked data dir, so one registration serves every project: open
-the agent inside a project folder (one with an `anchor.toml`) and the tools
-target that project. To name a project explicitly — when the server's working
-directory is not the project — pass `--project`:
-
-```bash
-anchor-mcp --project /path/to/project
-```
+The entry runs `anchor-mcp --env <name>`. The server serves that one
+environment; projects inside it are addressed by a per-call `project` argument
+(`list_projects` enumerates them). A second environment is a second named
+server.
 
 Restart the harness and verify that `anchor` appears in its MCP server list.
 The set of tools depends on available optional extensions, such as the FMU

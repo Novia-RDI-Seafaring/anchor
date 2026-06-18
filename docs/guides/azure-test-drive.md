@@ -38,14 +38,13 @@ the first ingest fails with a deployment-not-found error — `anchor check
 
 ```bash
 uv tool install anchor-kb
-anchor install claude-code      # register the MCP once (folder-resolving)
+anchor install claude-code      # register the MCP for the default env
 ```
 
-## 2. Configure the project folder
+## 2. Create the environment
 
 ```bash
-cd ~/my-azure-project
-anchor init                     # interactive
+anchor init work                # interactive; creates env "work"
 ```
 
 Choose **Azure OpenAI**, paste your resource endpoint, and give your **vision
@@ -53,7 +52,7 @@ deployment name** as the model. Keep the embedding default (`bge-small`, local)
 unless you deployed an embeddings model. `anchor init`:
 
 - appends `/openai/v1/` if you pasted the bare resource URL,
-- offers to save your API key to a gitignored `.env` (never the `anchor.toml`),
+- offers to save your API key to a gitignored `.env` (never the `env.toml`),
 - prints exactly what to do next.
 
 The endpoint ANCHOR uses is Azure's OpenAI-compatible **v1 surface**

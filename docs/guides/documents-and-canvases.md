@@ -7,7 +7,7 @@ provenance.
 ## 1. Start ANCHOR
 
 ```bash
-anchor serve --data-dir ~/anchor-data
+anchor serve
 ```
 
 Open <http://127.0.0.1:8002>. The HTTP server is unauthenticated and binds to
@@ -18,8 +18,8 @@ loopback by default.
 Use the canvas upload surface, or ingest a PDF from the command line:
 
 ```bash
-anchor ingest /path/to/datasheet.pdf --data-dir ~/anchor-data
-anchor list --data-dir ~/anchor-data
+anchor ingest /path/to/datasheet.pdf
+anchor list
 ```
 
 Bronze data stores the original input, silver data contains page extraction,
@@ -34,8 +34,8 @@ timing, and embedding time. Use it when comparing slow and fast runs.
 ## 3. Create a canvas
 
 ```bash
-anchor canvas create pump-analysis --title "Pump analysis" --data-dir ~/anchor-data
-anchor canvas state pump-analysis --data-dir ~/anchor-data
+anchor canvas create pump-analysis --title "Pump analysis"
+anchor canvas state pump-analysis
 ```
 
 Canvases are event-backed workspaces. Nodes may contain `source_ref` values so
@@ -46,7 +46,7 @@ facts remain linked to document pages or extracted regions.
 For supported MCP-capable clients:
 
 ```bash
-anchor install claude-code   # MCP entry + skill (folder-resolving)
+anchor install claude-code   # MCP entry + skill (default env)
 anchor install cursor
 ```
 
