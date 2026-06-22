@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import os
 from pathlib import Path
 
 from mcp.server.stdio import stdio_server
@@ -12,67 +11,7 @@ from mcp.server.stdio import stdio_server
 from anchor.adapters.mcp.router import ProjectRouter
 from anchor.adapters.mcp.server import build_mcp_server
 from anchor.adapters.mcp.services import build_bundle
-from anchor.core.ports.event_bus import EventBus
-from anchor.extensions.anchor_pdfs.core.ingest.session import IngestSessionService
-from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
-from anchor.extensions.anchor_pdfs.core.services import IngestService
-from anchor.extensions.anchor_pdfs.infra.fs_session_store import FsIngestSessionStore
-from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
-from anchor.extensions.anchor_pdfs.infra.llm.openai_md_polisher import OpenAIPageMdPolisher
-from anchor.extensions.anchor_pdfs.infra.llm.openai_region_extractor import OpenAIRegionExtractor
-from anchor.extensions.anchor_pdfs.infra.pdf.docling_extractor import DoclingPdfExtractor
-from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
 from anchor.infra.config import AnchorConfig
-
-
-def _build_ingest_service(config: AnchorConfig, bus: EventBus, doc_store: DocStore) -> IngestService:
-    api_key = config.openai_api_key.get_secret_value() if config.openai_api_key else None
-    has_openai = bool(api_key) or bool(os.environ.get("OPENAI_API_KEY"))
-    openai_base_url = (config.openai_base_url or "").strip() or None
-    embedder = build_embedder(
-        model=config.embed_model,
-        api_key=api_key,
-        base_url=openai_base_url,
-    )
-    return IngestService(
-        doc_store,
-        bus,
-        extractor=DoclingPdfExtractor(device=config.docling_device),
-        renderer=PymupdfPdfRenderer(),
-        polisher=OpenAIPageMdPolisher(api_key=api_key, base_url=openai_base_url)
-        if has_openai
-        else None,
-        region_extractor=OpenAIRegionExtractor(api_key=api_key, base_url=openai_base_url)
-        if has_openai
-        else None,
-        embedder=embedder,
-        embed_model_id=getattr(embedder, "model_id", None),
-        default_polish_model=config.polish_model,
-        default_region_model=config.region_model,
-        default_dpi=config.dpi,
-    )
-
-
-def _build_ingest_session_service(
-    config: AnchorConfig, bus: EventBus, doc_store: DocStore,
-) -> IngestSessionService:
-    """Harness ingest sessions: the agent polishes pages + groups regions;
-    this service runs the mechanical half against the same doc store."""
-    api_key = config.openai_api_key.get_secret_value() if config.openai_api_key else None
-    openai_base_url = (config.openai_base_url or "").strip() or None
-    embedder = build_embedder(
-        model=config.embed_model, api_key=api_key, base_url=openai_base_url,
-    )
-    return IngestSessionService(
-        doc_store,
-        FsIngestSessionStore(config.data_dir),
-        bus,
-        extractor=DoclingPdfExtractor(device=config.docling_device),
-        renderer=PymupdfPdfRenderer(),
-        embedder=embedder,
-        embed_model_id=getattr(embedder, "model_id", None),
-        default_dpi=config.dpi,
-    )
 
 
 def _config_for_data_dir(data_dir: Path | None) -> AnchorConfig:

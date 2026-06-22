@@ -17,8 +17,8 @@ from typing import Any
 
 from anchor.core.ports.event_bus import EventBus
 from anchor.core.services.workspace_service import WorkspaceService
-from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.ingest.session import IngestSessionService
+from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.services import IngestService
 from anchor.infra.bus.memory_bus import MemoryEventBus
 from anchor.infra.config import AnchorConfig
@@ -52,12 +52,71 @@ def fmu_tools_available() -> bool:
     return importlib.util.find_spec("fmpy") is not None
 
 
+def _build_ingest_service(config: AnchorConfig, bus: EventBus, doc_store: DocStore) -> IngestService:
+    from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
+    from anchor.extensions.anchor_pdfs.infra.llm.openai_md_polisher import OpenAIPageMdPolisher
+    from anchor.extensions.anchor_pdfs.infra.llm.openai_region_extractor import (
+        OpenAIRegionExtractor,
+    )
+    from anchor.extensions.anchor_pdfs.infra.pdf.docling_extractor import DoclingPdfExtractor
+    from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
+
+    api_key = config.openai_api_key.get_secret_value() if config.openai_api_key else None
+    has_openai = bool(api_key) or bool(os.environ.get("OPENAI_API_KEY"))
+    openai_base_url = (config.openai_base_url or "").strip() or None
+    embedder = build_embedder(
+        model=config.embed_model,
+        api_key=api_key,
+        base_url=openai_base_url,
+    )
+    return IngestService(
+        doc_store,
+        bus,
+        extractor=DoclingPdfExtractor(device=config.docling_device),
+        renderer=PymupdfPdfRenderer(),
+        polisher=OpenAIPageMdPolisher(api_key=api_key, base_url=openai_base_url)
+        if has_openai
+        else None,
+        region_extractor=OpenAIRegionExtractor(api_key=api_key, base_url=openai_base_url)
+        if has_openai
+        else None,
+        embedder=embedder,
+        embed_model_id=getattr(embedder, "model_id", None),
+        default_polish_model=config.polish_model,
+        default_region_model=config.region_model,
+        default_dpi=config.dpi,
+    )
+
+
+def _build_ingest_session_service(
+    config: AnchorConfig, bus: EventBus, doc_store: DocStore,
+) -> IngestSessionService:
+    """Harness ingest sessions: the agent polishes pages + groups regions;
+    this service runs the mechanical half against the same doc store."""
+    from anchor.extensions.anchor_pdfs.infra.fs_session_store import FsIngestSessionStore
+    from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
+    from anchor.extensions.anchor_pdfs.infra.pdf.docling_extractor import DoclingPdfExtractor
+    from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
+
+    api_key = config.openai_api_key.get_secret_value() if config.openai_api_key else None
+    openai_base_url = (config.openai_base_url or "").strip() or None
+    embedder = build_embedder(
+        model=config.embed_model, api_key=api_key, base_url=openai_base_url,
+    )
+    return IngestSessionService(
+        doc_store,
+        FsIngestSessionStore(config.data_dir),
+        bus,
+        extractor=DoclingPdfExtractor(device=config.docling_device),
+        renderer=PymupdfPdfRenderer(),
+        embedder=embedder,
+        embed_model_id=getattr(embedder, "model_id", None),
+        default_dpi=config.dpi,
+    )
+
+
 def build_bundle(config: AnchorConfig, *, base_url: str = "http://localhost:8002") -> ServiceBundle:
     """Wire every service for one project from its resolved ``config``."""
-    from anchor.adapters.mcp.stdio_main import (
-        _build_ingest_service,
-        _build_ingest_session_service,
-    )
     from anchor.extensions.anchor_pdfs.core.services import SynopsisService
     from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
     from anchor.extensions.anchor_pdfs.infra.synopsis_renderers import (
