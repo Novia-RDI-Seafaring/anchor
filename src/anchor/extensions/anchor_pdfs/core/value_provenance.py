@@ -93,10 +93,7 @@ def _match_value_cell_bbox(cells: Any, key: Any, value: str) -> list[float]:
     value_norm = _norm(value)
     if not value_norm:
         return []
-    value_cells = [
-        cell for cell in cells
-        if isinstance(cell, dict) and _norm(cell.get("text")) == value_norm and _clean_bbox(cell.get("bbox"))
-    ]
+    value_cells = _matching_value_cells(cells, value_norm)
     if not value_cells:
         return []
 
@@ -116,6 +113,28 @@ def _match_value_cell_bbox(cells: Any, key: Any, value: str) -> list[float]:
     if len(value_cells) == 1:
         return _clean_bbox(value_cells[0].get("bbox"))
     return []
+
+
+def _matching_value_cells(cells: list[Any], value_norm: str) -> list[dict[str, Any]]:
+    exact = [
+        cell for cell in cells
+        if isinstance(cell, dict)
+        and _norm(cell.get("text")) == value_norm
+        and _clean_bbox(cell.get("bbox"))
+    ]
+    if exact:
+        return exact
+    return [
+        cell for cell in cells
+        if isinstance(cell, dict)
+        and _cell_text_is_whole_value_token(cell.get("text"), value_norm)
+        and _clean_bbox(cell.get("bbox"))
+    ]
+
+
+def _cell_text_is_whole_value_token(cell_text: Any, value_norm: str) -> bool:
+    cell_norm = _norm(cell_text)
+    return bool(cell_norm and f" {cell_norm} " in f" {value_norm} ")
 
 
 def _norm(value: Any) -> str:
