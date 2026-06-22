@@ -16,6 +16,7 @@
 export type EdgeSourceRef = {
   page?: number;
   region_id?: string;
+  source_region_id?: string;
   bbox?: number[];
 };
 
@@ -30,7 +31,13 @@ export type EdgeForMode = {
   /** What the backend persisted: usually "anchored" for evidence edges,
    *  "floating" for loose graph edges, or any custom string. */
   edge_type: string;
-  data?: { kind?: string; source_ref?: EdgeSourceRef } | undefined;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+  data?: {
+    kind?: string;
+    source_ref?: EdgeSourceRef;
+    source_region_id?: string;
+  } | undefined;
   /** Slug of the document node this edge targets. The caller resolves it
    *  from the canvas store before calling pickEdgeMode. */
   targetDocSlug?: string | undefined;
@@ -83,6 +90,17 @@ function evidenceRestState(stored: EdgeRouteType): EdgeRouteType {
   return stored === "anchored" ? "floating" : stored;
 }
 
+function evidenceRegionId(data: EdgeForMode["data"]): string | undefined {
+  return data?.source_ref?.region_id
+    ?? data?.source_region_id
+    ?? data?.source_ref?.source_region_id;
+}
+
+function hasExplicitEvidenceHandles(edge: EdgeForMode): boolean {
+  return !!edge.sourceHandle?.startsWith("row:")
+    && !!edge.targetHandle?.startsWith("region:");
+}
+
 export function pickEdgeMode(
   edge: EdgeForMode,
   hovered: HoveredSourceRef,
@@ -99,10 +117,12 @@ export function pickEdgeMode(
   if (edge.targetDocSlug && hovered.slug !== edge.targetDocSlug) return evidenceRestState(stored);
   if (ref.page !== undefined && hovered.page !== ref.page) return evidenceRestState(stored);
   // If BOTH sides claim a region_id and they disagree → no match.
+  const refRegionId = evidenceRegionId(edge.data);
   if (
-    ref.region_id !== undefined
+    refRegionId !== undefined
     && hovered.region_id !== undefined
-    && ref.region_id !== hovered.region_id
+    && refRegionId !== hovered.region_id
   ) return evidenceRestState(stored);
+  if (!hasExplicitEvidenceHandles(edge)) return evidenceRestState(stored);
   return "anchored";
 }
