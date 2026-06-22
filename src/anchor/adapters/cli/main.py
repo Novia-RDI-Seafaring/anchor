@@ -10,11 +10,14 @@ from anchor.adapters.cli.check import check
 from anchor.adapters.cli.common import DEFAULT_DATA_DIR
 from anchor.adapters.cli.demo import _DEMO_PLACEHOLDER_HINTS, _find_sample_pdf, demo
 from anchor.adapters.cli.documents import register_document_commands
+from anchor.adapters.cli.envcmd import env_app, use
 from anchor.adapters.cli.extensions import extensions_app
 from anchor.adapters.cli.fmu import fmu_app
 from anchor.adapters.cli.ingest_session import ingest_session_app
 from anchor.adapters.cli.init import init
 from anchor.adapters.cli.install import install_app
+from anchor.adapters.cli.migrate import migrate_app
+from anchor.adapters.cli.project import project_app
 from anchor.adapters.cli.serve import serve
 from anchor.adapters.cli.services import _build_real_services
 from anchor.adapters.cli.sysml import sysml_app
@@ -56,9 +59,13 @@ def _main(
 app.command()(init)
 app.command()(check)
 app.command()(serve)
+app.command()(use)
 register_document_commands(app)
 app.command()(demo)
 
+app.add_typer(env_app, name="env")
+app.add_typer(project_app, name="project")
+app.add_typer(migrate_app, name="migrate")
 app.add_typer(ingest_session_app, name="ingest-session")
 app.add_typer(canvas_app, name="canvas")
 app.add_typer(sysml_app, name="sysml")

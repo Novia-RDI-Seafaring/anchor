@@ -87,10 +87,12 @@ Source development requires Node.js 20+ and pnpm 10. If `pnpm` is not installed
 globally, use the Corepack form instead: `corepack pnpm@10 --dir web install`
 and `corepack pnpm@10 --dir web dev`.
 
-For normal use, run `anchor init` in a project folder and leave
-`ANCHOR_DATA_DIR` unset. Commands then share the project's `anchor.toml`.
-Configuration precedence is: explicit flags, `ANCHOR_*` environment variables,
-`.env`, project `anchor.toml`, then built-in defaults.
+For normal use, run `anchor init` in a project folder. It writes an
+`anchor.toml` marker and a hidden `.anchor_data/` there, and binds the project
+to an environment (the provider and data zone). Commands run inside the folder
+then resolve it automatically. Configuration precedence is: explicit flags,
+`ANCHOR_*` environment variables, the project `anchor.toml`, the environment
+`env.toml`, then built-in defaults.
 
 Releases are tag-driven: pushing a `v*` tag triggers the
 [release workflow](./.github/workflows/release.yml), which publishes
@@ -206,14 +208,19 @@ This layout is **the contract**. You can hand-edit JSON files, copy a canvas fol
 
 ## Configuration
 
-Configure a project with `anchor init`; it writes non-secret settings to
-`anchor.toml`. Select the data directory and server bind address with the CLI
-flags `--data-dir`, `--host`, and `--port`. The following `ANCHOR_`
-environment variables override project settings:
+Provider, model, and data-zone settings live in an environment's `env.toml`,
+created with `anchor env create <name>`. Run `anchor init` in a folder to start
+a project bound to an environment; it writes an `anchor.toml` marker (and a
+hidden `.anchor_data/`) there, with any per-project overrides going in that
+marker. On a fresh machine `anchor init` sets up a local, zero-egress
+environment for you. See
+[Environments and projects](./docs/guides/environments-and-projects.md) for the
+full model. Select the server bind address with the CLI flags `--host` and
+`--port`. The following `ANCHOR_` environment variables override the resolved
+settings:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ANCHOR_DATA_DIR` | `~/anchor-data` | Storage root override for CLI and MCP commands. An explicit `--data-dir` takes priority. |
 | `ANCHOR_OPENAI_API_KEY` | (unset) | Optional: enables LLM polish + region extraction in the gold layer. Required for Azure and custom endpoints. |
 | `ANCHOR_OPENAI_BASE_URL` | (unset) | Override the OpenAI-compatible endpoint. For Azure OpenAI v1 use `https://<resource>.openai.azure.com/openai/v1/`; for Ollama use `http://localhost:11434/v1`. |
 | `ANCHOR_POLISH_MODEL` | `gpt-5.4` | Model name for page-MD polishing |

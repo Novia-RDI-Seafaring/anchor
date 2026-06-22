@@ -26,13 +26,16 @@ def _build_real_services(data_dir: Path, *, base_url: str = "http://localhost:80
     from anchor.extensions.anchor_pdfs.infra.pdf.docling_extractor import DoclingPdfExtractor
     from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
     from anchor.infra.bus.memory_bus import MemoryEventBus
-    from anchor.infra.config import AnchorConfig
+    from anchor.infra.environment import config_for_data_dir
     from anchor.infra.snapshot.headless_chromium_snapshotter import (
         HeadlessChromiumSnapshotter,
     )
     from anchor.infra.stores.fs_workspace_store import FsWorkspaceStore
 
-    config = AnchorConfig(data_dir=data_dir)
+    # Layer the environment config when data_dir is a project under an
+    # environment; falls back to a plain config (with legacy anchor.toml
+    # walk-up) for an explicit external dir.
+    config = config_for_data_dir(data_dir)
     bus = MemoryEventBus()
     workspace_store = FsWorkspaceStore(config.canvases_dir)
     doc_store = FsDocStore(config.data_dir)
@@ -110,9 +113,9 @@ def _build_session_services(data_dir: Path):
     """Standalone wiring for the `anchor ingest-session` commands."""
     from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
     from anchor.infra.bus.memory_bus import MemoryEventBus
-    from anchor.infra.config import AnchorConfig
+    from anchor.infra.environment import config_for_data_dir
 
-    config = AnchorConfig(data_dir=data_dir)
+    config = config_for_data_dir(data_dir)
     bus = MemoryEventBus()
     doc_store = FsDocStore(config.data_dir)
     return config, _build_ingest_session_service(config, bus, doc_store)

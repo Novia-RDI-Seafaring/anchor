@@ -33,18 +33,30 @@ Windows; verify browser and PDF workflows on your target platform.
 
 ### First run
 
-Configure a project, then serve it:
+Initialize a project in a working folder, then serve it:
 
 ```bash
-cd ~/my-project
-anchor init               # pick an AI provider / data zone; writes anchor.toml
+cd ~/work/pumps
+anchor init               # project here, bound to the default env
 anchor serve              # http://127.0.0.1:8002
 ```
 
-`anchor init` is the recommended starting point. It sets the data dir, the
-provider (and therefore the data zone), and the models for this folder. See
-[Configuration](../reference/configuration.md). To make ANCHOR available to an
-agent here, run `anchor install claude-code` and open the agent in the folder.
+`anchor init` is the recommended starting point. Run it inside a working
+folder. It initializes a **project** there, dropping an `anchor.toml` marker
+and a hidden `.anchor_data/`, and binds it to an environment. On a fresh
+machine it self-creates the default `local` environment (zero egress), so it
+works with no setup. To bind to a non-local data zone, create that environment
+first:
+
+```bash
+anchor env create work --provider azure …   # pick an AI provider / data zone
+cd ~/work/pumps
+anchor init --env work    # bind this project to the "work" env
+```
+
+See [Environments and projects](../guides/environments-and-projects.md). To
+make ANCHOR available to an agent, run `anchor install claude-desktop --env
+local`.
 
 ## Optional extras
 
@@ -72,11 +84,12 @@ pnpm --dir web dev
 # -> backend on :8002, Vite HMR on :5173
 ```
 
-Run commands from inside a project folder (one with an `anchor.toml` from
-`anchor init`) and they share that project's data dir automatically, unless an
-`ANCHOR_*` environment variable overrides it. The full precedence is: explicit
-flags, `ANCHOR_*` environment variables, `.env`, project `anchor.toml`, then
-built-in defaults.
+Storage resolves from the active project. Run inside a project folder, or
+select by name with `--env` / `--project`, `anchor use`, or `ANCHOR_ENV` /
+`ANCHOR_PROJECT`. The config precedence is: built-in defaults, the environment
+`env.toml`, the project `anchor.toml` marker, then `ANCHOR_*` environment
+variables and flags. The API key stays in `ANCHOR_OPENAI_API_KEY` or the
+environment's gitignored `.env`, never in the profile.
 
 ## Reinstall or upgrade
 
@@ -200,9 +213,9 @@ while `anchor-mcp.exe` or its Python process is still running.
 The bronze and silver layers run locally without any external service. The gold
 layer (structured region extraction) uses an OpenAI-compatible vision model.
 
-The easiest way to configure it is `anchor init`. Choose the `openai`, `azure`,
-or `custom` provider and it writes the endpoint and models into `anchor.toml`.
-Then supply the key (never stored in the toml):
+The easiest way to configure it is `anchor env create`. Choose the `openai`,
+`azure`, or `custom` provider and it writes the endpoint and models into the
+environment's `env.toml`. Then supply the key (never stored in the profile):
 
 ```bash
 export ANCHOR_OPENAI_API_KEY=sk-...
@@ -250,10 +263,11 @@ extraction (page text, page PNGs, and Docling structure), but gold regions are
 skipped.
 
 !!! tip "Where config is read from"
-    Run ANCHOR from inside the project folder: `anchor.toml` and `.env` are
-    discovered by walking up from the working directory. For a globally-installed
-    `anchor`, `cd` into the project first, or set `ANCHOR_CONFIG` / the
-    `ANCHOR_*` variables in your shell.
+    Settings and storage come from the selected environment, not the working
+    directory. Select with `--env` / `ANCHOR_ENV` / `anchor use` (default: the
+    environment named in `~/.anchor/default`). The API key lives in
+    `ANCHOR_OPENAI_API_KEY` or a gitignored `.env` next to the profile under
+    `~/.anchor/envs/<name>/`.
 
 ## Verify the install
 
