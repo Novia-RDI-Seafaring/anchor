@@ -9,7 +9,7 @@ Drop a PDF onto a canvas. The agent reads it and pulls the values you need into 
 
 Drop FMU simulation models onto the same canvas and wire the extracted values into their parameters.
 
-It runs on your laptop. Run `anchor init` in a working folder to start a project there. A project is a folder: an `anchor.toml` marker plus a hidden `.anchor_data/` corpus, bound to an environment. An environment is the trust boundary where you choose the AI provider (and therefore where your documents may go); `anchor init` self-creates the default `local` env on a fresh machine, and `anchor env create` makes a named one. Agents talk to it over MCP, so it works with Claude Code, Cursor, Claude Desktop, or any MCP client. There's an HTTP API and a CLI too.
+It runs on your laptop. Run `anchor init` in a working folder to start a project there. A project is a folder: an `anchor.toml` marker plus a hidden `.anchor_data/` corpus, bound to an environment. An environment is the trust boundary where you choose the AI provider (and therefore where your documents may go); the first time you run `anchor init` it asks you to pick that provider (or pass `--provider`), and `anchor env create` makes a named one up front. Agents talk to it over MCP, so it works with Claude Code, Cursor, Claude Desktop, or any MCP client. There's an HTTP API and a CLI too.
 
 ---
 

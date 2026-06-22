@@ -283,6 +283,16 @@ def init(
     env: str = typer.Option(
         None, "--env", help="Environment to bind this project to (default: the default env)."
     ),
+    provider: str = typer.Option(
+        None,
+        "--provider",
+        help="Provision the environment with this provider if it does not exist "
+        "(local|ollama|openai|azure|custom|harness). Used only when the env is created.",
+    ),
+    embed_model: str = typer.Option(None, "--embed-model", help="Embedding model (with --provider)."),
+    base_url: str = typer.Option(None, "--base-url", help="Endpoint (with --provider)."),
+    vision_model: str = typer.Option(None, "--vision-model", help="Vision model (with --provider)."),
+    docling_device: str = typer.Option(None, "--docling-device", help="cpu|cuda|mps|auto."),
     description: str = typer.Option(
         "", "--description", help="One-line description (shown to agents in the project list)."
     ),
@@ -297,8 +307,11 @@ def init(
     anchor.toml marker and a hidden .anchor_data/ here, binds them to an
     environment (the provider / data-zone / trust boundary), and registers the
     project by name. Run Anchor anywhere inside this folder afterwards and it
-    resolves to this project. To create the environment itself, use
-    `anchor env create <name>`.
+    resolves to this project.
+
+    The environment is the trust boundary, so it is never invented silently. If
+    none exists yet, init prompts you to pick a provider (on a terminal), or you
+    pass `--provider`, or you create it first with `anchor env create <name>`.
     """
     from anchor.core.ids import InvalidProjectNameError, validate_project_name
     from anchor.infra.environment import (
@@ -330,7 +343,15 @@ def init(
         raise typer.Exit(code=1)
 
     env_name = env or default_env_name()
-    environment = _env_for_project_init(env_name, explicit=env is not None, yes=yes)
+    environment = _env_for_project_init(
+        env_name,
+        provider=provider,
+        embed_model=embed_model,
+        base_url=base_url,
+        vision_model=vision_model,
+        docling_device=docling_device,
+        yes=yes,
+    )
 
     if environment.project_exists(project_name) and environment.project_root(project_name) != folder:
         typer.echo(
@@ -345,44 +366,61 @@ def init(
     _report_project(environment, project_name, folder)
 
 
-def _env_for_project_init(env_name: str, *, explicit: bool, yes: bool):
-    """Resolve the environment a new project binds to, self-correcting first run.
+def _env_for_project_init(
+    env_name: str,
+    *,
+    provider: str | None,
+    embed_model: str | None,
+    base_url: str | None,
+    vision_model: str | None,
+    docling_device: str | None,
+    yes: bool,
+):
+    """Resolve the environment a new project binds to.
 
-    The implicit default ``local`` env is stood up automatically (zero egress,
-    no prompts) so ``anchor init`` works on a fresh machine. A named env that
-    does not exist is an error pointing at ``anchor env create`` — we never
-    guess a provider / data zone for a boundary the user named explicitly.
+    An environment is the trust / egress boundary, so we never invent one
+    silently. If it already exists, bind to it. If it does not:
+
+    - a ``--provider`` (with friends) provisions it directly, even unattended;
+    - otherwise, on a terminal, prompt the provider picker inline and create it;
+    - otherwise (``--yes`` or no terminal), refuse and point at the fix.
     """
-    from anchor.infra.environment import (
-        ANCHOR_HOME,
-        DEFAULT_ENV,
-        DEFAULT_ENV_FILE,
-        create_env,
-        resolve_environment,
-        set_default_env,
-    )
+    from anchor.infra.environment import resolve_environment
 
     environment = resolve_environment(env_name)
     if environment.initialized:
+        if provider is not None:
+            typer.echo(
+                f"Environment {env_name!r} already exists; ignoring --provider. "
+                f"To reconfigure it: anchor env create {env_name} --force.",
+                err=True,
+            )
         return environment
-    if env_name == DEFAULT_ENV and not explicit:
-        prov = get_provider("local")
-        fields = _build_fields(
-            prov,
-            embed_model=None,
-            base_url=None,
-            vision_model=None,
-            docling_device=None,
-            interactive=False,
+
+    interactive = not yes and sys.stdin.isatty()
+    if provider is not None or interactive:
+        if interactive and provider is None:
+            typer.echo(
+                f"No environment named {env_name!r} yet. Set one up — "
+                "choose where document content may go:"
+            )
+        env, _ = _provision_environment(
+            env_name,
+            provider=provider,
+            embed_model=embed_model,
+            base_url=base_url,
+            vision_model=vision_model,
+            docling_device=docling_device,
+            description="",
+            interactive=interactive,
         )
-        create_env(env_name, settings=fields)
-        if not (ANCHOR_HOME / DEFAULT_ENV_FILE).exists():
-            set_default_env(env_name)
-        typer.echo(f"Set up a local environment {env_name!r} (no document content leaves this host).")
-        return resolve_environment(env_name)
+        return env
+
     typer.echo(
-        f"Environment {env_name!r} is not set up. Create it first (pick a provider / data zone):\n"
+        f"Environment {env_name!r} is not set up, and there is no terminal to ask.\n"
+        f"Create it first (this picks the AI provider and data zone):\n"
         f"  anchor env create {env_name}\n"
+        f"Or provision it inline:  anchor init --provider local|openai|azure|harness\n"
         f"See existing environments with `anchor env list`.",
         err=True,
     )
@@ -409,6 +447,59 @@ def _report_project(environment, project_name: str, folder: Path) -> None:
     typer.echo(f"  anchor serve             open the canvas at http://localhost:{cfg.http_port}")
 
 
+def _provision_environment(
+    env_name: str,
+    *,
+    provider: str | None,
+    embed_model: str | None,
+    base_url: str | None,
+    vision_model: str | None,
+    docling_device: str | None,
+    description: str,
+    interactive: bool,
+):
+    """Pick a provider (the data zone) and write the environment's ``env.toml``.
+
+    Shared by ``anchor env create`` and the inline env setup in ``anchor init``.
+    Resolves the provider (interactive picker when ``interactive``), writes the
+    non-secret profile, makes it the default environment if there is none yet,
+    and helps the user place the API key. Returns ``(environment, provider)``.
+    """
+    from anchor.infra.environment import (
+        ANCHOR_HOME,
+        DEFAULT_ENV_FILE,
+        ENV_CONFIG_FILENAME,
+        envs_dir,
+        resolve_environment,
+        set_default_env,
+        set_environment_description,
+    )
+
+    env_root = envs_dir() / env_name
+    config_path = env_root / ENV_CONFIG_FILENAME
+    prov = _resolve_provider(provider, interactive=interactive)
+    fields = _build_fields(
+        prov,
+        embed_model=embed_model,
+        base_url=base_url,
+        vision_model=vision_model,
+        docling_device=docling_device,
+        interactive=interactive,
+    )
+    (env_root / "projects").mkdir(parents=True, exist_ok=True)
+    # Always UTF-8: TOML mandates it, and the default locale encoding on
+    # Windows (cp1252) would write a non-ASCII char such as an em-dash as a
+    # byte the UTF-8 reader rejects, silently dropping the whole config.
+    config_path.write_text(_render_toml(fields), encoding="utf-8")
+    env = resolve_environment(env_name)
+    if description:
+        set_environment_description(env, description)
+    if not (ANCHOR_HOME / DEFAULT_ENV_FILE).exists():
+        set_default_env(env_name)
+    _setup_api_key(env_root, prov, interactive=interactive)
+    return env, prov
+
+
 def create_environment(
     name: str = typer.Argument(None, help="Environment name to create (required)."),
     env: str = typer.Option(None, "--env", help="Environment name to create (same as NAME)."),
@@ -432,15 +523,10 @@ def create_environment(
     """
     from anchor.core.ids import InvalidEnvNameError, validate_env_name
     from anchor.infra.environment import (
-        ANCHOR_HOME,
-        DEFAULT_ENV_FILE,
         DEFAULT_PROJECT,
         ENV_CONFIG_FILENAME,
         ensure_project,
         envs_dir,
-        resolve_environment,
-        set_default_env,
-        set_environment_description,
     )
 
     env_name = name or env
@@ -473,31 +559,19 @@ def create_environment(
 
     # Prompt only on a real terminal without --yes; otherwise run off flags.
     interactive = not yes and sys.stdin.isatty()
-    prov = _resolve_provider(provider, interactive=interactive)
-
-    fields = _build_fields(
-        prov,
+    env, prov = _provision_environment(
+        env_name,
+        provider=provider,
         embed_model=embed_model,
         base_url=base_url,
         vision_model=vision_model,
         docling_device=docling_device,
+        description=description,
         interactive=interactive,
     )
-
-    (env_root / "projects").mkdir(parents=True, exist_ok=True)
-    # Always UTF-8: TOML mandates it, and the default locale encoding on
-    # Windows (cp1252) would write a non-ASCII char such as an em-dash as a
-    # byte the UTF-8 reader rejects, silently dropping the whole config.
-    config_path.write_text(_render_toml(fields), encoding="utf-8")
-    env = resolve_environment(env_name)
     # Scaffold the default project so `anchor ingest` works with no project
-    # naming needed, and make the first environment the default.
+    # naming needed.
     ensure_project(env, DEFAULT_PROJECT)
-    if description:
-        set_environment_description(env, description)
-    if not (ANCHOR_HOME / DEFAULT_ENV_FILE).exists():
-        set_default_env(env_name)
-    _setup_api_key(env_root, prov, interactive=interactive)
     _report(env_name, prov)
 
 

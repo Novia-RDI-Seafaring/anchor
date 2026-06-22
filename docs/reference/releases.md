@@ -14,6 +14,7 @@ release.
 
 | Version | Date | Main difference |
 | --- | --- | --- |
+| `0.2.7` | 2026-06-22 | Safer onboarding. `anchor init` no longer invents an environment silently. The environment is the trust boundary, so the first time you init a project, it asks you to pick a provider (your data zone) right in the terminal, accepts `--provider` to provision inline (scriptable), or points you at `anchor env create` when run unattended. Egress is always an explicit choice. Behavior change for scripts that relied on the old silent `local` default. |
 | `0.2.6` | 2026-06-22 | Environments and projects. An environment is a named configuration profile (provider, models, data zone) and the trust boundary. A project is a folder bound to one environment, with its corpus in a hidden `.anchor_data/`. `anchor env create <name>` is the provider picker; `anchor init` in a folder starts a project there and self-creates a local, zero-egress environment on a fresh machine. One MCP server serves one environment and addresses projects by a per-call name. A pre-existing `~/anchor-data` keeps working until `anchor migrate` folds it in. |
 | `0.2.5` | 2026-06-17 | Grounding and harness-ingest release. Preserves table-cell provenance when Docling supplies cell coordinates, restores row source buttons on populated spec tables, adds the harness-driven gold-ingest path, improves live canvas event sync, warms the local embedding model before the first search, fixes Claude Code MCP registration, and includes the frontend `protobufjs` audit override. Recommended for anyone using `anchor init`, row-level provenance, local embedding search, or agent-driven PDF ingest. |
 | `0.2.4` | 2026-06-11 | Config robustness for cross-platform onboarding. A `data_dir` with a leading `~` now expands to `$HOME` instead of creating a literal `./~` folder. On Windows, `anchor init` no longer writes `anchor.toml` in a non-UTF-8 locale encoding that the reader then rejected and silently ignored; the reader also recovers an already-corrupted file. Recommended for anyone on Windows or using a `~`-relative `data_dir`. |
@@ -21,6 +22,30 @@ release.
 | `0.2.2` | 2026-06-09 | Onboarding release. The init flow configures the AI provider / data zone and models, and one MCP registration serves every project. Azure OpenAI works via its v1 endpoint; docling auto-selects CUDA or CPU; `anchor serve` falls through to a free port. |
 | `0.2.1` | 2026-06-08 | Patch release for public testing. It includes the Windows Unicode ingest fix, canvas ingest progress feedback, timing reports, canvas deletion, improved region overlays and updated MCP setup docs. |
 | `0.2.0` | 2026-05-25 | First public release of the v2 local canvas, PDF ingestion, MCP server, CLI, HTTP API and bundled web UI. |
+
+## Why `0.2.7` matters
+
+`0.2.7` makes the data-zone choice explicit at the moment it matters. In `0.2.6`,
+running `anchor init` on a fresh setup quietly created a `local` environment for
+you. That was safe (nothing left your machine), but it made the most important
+decision (where may my documents go?) without asking, and it meant the silent
+default produced no LLM extraction, which surprised people.
+
+Now `anchor init` never invents a trust boundary. If no environment exists yet:
+
+- on a terminal, it prompts the provider picker (`local`, `ollama`, `openai`,
+  `azure`, `custom`, `harness`) and creates that environment before binding;
+- with `--provider` (and optional `--base-url` / `--vision-model` /
+  `--embed-model`), it provisions the environment inline, no prompt, so scripts
+  and CI stay one command;
+- unattended with neither, it stops with a clear message pointing at
+  `anchor env create <name>` or `--provider`.
+
+Migration: a script that relied on a bare `anchor init` standing up `local`
+should now pass `anchor init --provider local --yes`, or run
+`anchor env create local` once up front. Interactive users just answer one
+question. See
+[Environments and projects](../guides/environments-and-projects.md).
 
 ## Why `0.2.6` matters
 

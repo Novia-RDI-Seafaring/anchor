@@ -212,8 +212,9 @@ Provider, model, and data-zone settings live in an environment's `env.toml`,
 created with `anchor env create <name>`. Run `anchor init` in a folder to start
 a project bound to an environment; it writes an `anchor.toml` marker (and a
 hidden `.anchor_data/`) there, with any per-project overrides going in that
-marker. On a fresh machine `anchor init` sets up a local, zero-egress
-environment for you. See
+marker. The first time, if no environment exists yet, `anchor init` asks you to
+pick a provider (your data zone), or you pass `--provider`. It never picks a
+trust boundary for you silently. See
 [Environments and projects](./docs/guides/environments-and-projects.md) for the
 full model. Select the server bind address with the CLI flags `--host` and
 `--port`. The following `ANCHOR_` environment variables override the resolved
