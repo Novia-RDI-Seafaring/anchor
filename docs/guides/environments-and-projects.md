@@ -100,11 +100,15 @@ anchor use work pumps                   # session default env + project
 ```
 
 Projects. The common case is `anchor init` inside a working folder; it binds
-the folder to an environment and starts the project there:
+the folder to an environment and starts the project there. If no environment
+exists yet, init prompts you to pick a provider (your data zone) before binding;
+pass `--provider` to skip the prompt, or `--env <name>` to bind to one you
+already created:
 
 ```bash
 cd ~/work/pumps
-anchor init                             # project "pumps" here, bound to the default env
+anchor init                             # prompts for a provider the first time, then binds
+anchor init --provider local --yes      # zero egress, no prompts
 anchor init --env work --description "LKH pump datasheets"   # bind to the "work" env
 ```
 

@@ -50,8 +50,9 @@ or a gitignored `.env` next to the profile.
 `anchor init` runs inside a working folder and starts a project there. With no
 name it uses the folder's basename. It binds to an environment via `--env
 <name>`, defaulting to the default env. It drops an `anchor.toml` marker and a
-hidden `.anchor_data/`, then registers the project by name. On a fresh machine
-`anchor init` self-creates the default `local` env (zero egress) first.
+hidden `.anchor_data/`, then registers the project by name. If the target
+environment does not exist yet, init prompts you to pick a provider (or you pass
+`--provider`); it never invents a trust boundary silently.
 
 ```bash
 cd ~/work/pumps

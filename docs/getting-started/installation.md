@@ -43,15 +43,23 @@ anchor serve              # http://127.0.0.1:8002
 
 `anchor init` is the recommended starting point. Run it inside a working
 folder. It initializes a **project** there, dropping an `anchor.toml` marker
-and a hidden `.anchor_data/`, and binds it to an environment. On a fresh
-machine it self-creates the default `local` environment (zero egress), so it
-works with no setup. To bind to a non-local data zone, create that environment
-first:
+and a hidden `.anchor_data/`, and binds it to an environment. The environment
+is the trust boundary, so init never picks one for you silently. The first time,
+it asks you to choose a provider (your data zone) right in the terminal:
 
 ```bash
-anchor env create work --provider azure …   # pick an AI provider / data zone
 cd ~/work/pumps
-anchor init --env work    # bind this project to the "work" env
+anchor init                 # prompts: local | ollama | openai | azure | harness
+```
+
+Prefer to script it, or set the zone up front? Pass `--provider`, or create the
+environment first and bind to it:
+
+```bash
+anchor init --provider local --yes           # zero egress, no prompts
+# or:
+anchor env create work --provider azure …     # pick an AI provider / data zone
+cd ~/work/pumps && anchor init --env work      # bind this project to "work"
 ```
 
 See [Environments and projects](../guides/environments-and-projects.md). To
