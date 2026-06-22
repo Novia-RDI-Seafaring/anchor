@@ -159,7 +159,7 @@ describe("TablePrimitive row handles", () => {
         },
       ],
     });
-    fireEvent.click(screen.getByRole("button", { name: "p2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open source page 2" }));
     expect(useUiStore.getState().pdfViewer).toMatchObject({
       slug: "alfa-laval-lkh",
       page: 2,
