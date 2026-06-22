@@ -44,14 +44,19 @@ anchor install claude-code      # register the MCP for the default env
 ## 2. Create the environment
 
 ```bash
-anchor init work                # interactive; creates env "work"
+anchor env create work \
+  --provider azure \
+  --base-url https://<resource>.openai.azure.com/openai/v1/ \
+  --vision-model <vision-deployment-name> \
+  --embed-model text-embedding-3-small
 ```
 
-Choose **Azure OpenAI**, paste your resource endpoint, and give your **vision
-deployment name** as the model. Keep the embedding default (`bge-small`, local)
-unless you deployed an embeddings model. `anchor init`:
+This creates env "work" and its default project. Give your **vision deployment
+name** as `--vision-model`. Drop `--embed-model` to keep the embedding default
+(`bge-small`, local) unless you deployed an embeddings model. `anchor env
+create`:
 
-- appends `/openai/v1/` if you pasted the bare resource URL,
+- appends `/openai/v1/` if you pass the bare resource URL,
 - offers to save your API key to a gitignored `.env` (never the `env.toml`),
 - prints exactly what to do next.
 
@@ -61,7 +66,7 @@ client's `api_key`. This is Microsoft's documented pattern for the v1 API.
 
 ## 3. Provide the key (kept out of the committed config)
 
-If `init` did not capture it:
+If `anchor env create` did not capture it:
 
 ```bash
 echo 'ANCHOR_OPENAI_API_KEY=<your-azure-key>' >> .env
@@ -73,8 +78,8 @@ Azure and is ignored for a named endpoint — use `ANCHOR_OPENAI_API_KEY`.
 ## 4. Verify before ingesting
 
 ```bash
-anchor check            # offline: data zone, endpoint shape, key present?
-anchor check --probe    # one tiny call: confirms the deployment + key work
+anchor check --env work          # offline: data zone, endpoint shape, key present?
+anchor check --env work --probe  # one tiny call: confirms the deployment + key work
 ```
 
 `--probe` sends a one-token prompt (no document content) to confirm the chat
@@ -82,9 +87,14 @@ deployment (and the embedding deployment, if remote) resolve and authenticate.
 `anchor check` exits non-zero when something would break, so you can trust a
 clean run before sending real documents.
 
-## 5. Ingest and open the canvas
+## 5. Start a project and open the canvas
+
+Run `anchor init` inside a working folder to start a project bound to the
+**work** environment, then ingest into it:
 
 ```bash
+cd ~/work/pumps
+anchor init --env work
 anchor ingest path/to/datasheet.pdf
 anchor serve                    # open the printed http://127.0.0.1:PORT
 ```
@@ -102,7 +112,7 @@ reads and writes the same knowledge base. No per-project reinstall.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| `DeploymentNotFound` / 404 on ingest | model name ≠ a real deployment | use the deployment name; re-run `anchor check --probe` |
+| `DeploymentNotFound` / 404 on ingest | model name ≠ a real deployment | use the deployment name; re-run `anchor check --env work --probe` |
 | 401 / auth error | wrong or missing key | set `ANCHOR_OPENAI_API_KEY` (not `OPENAI_API_KEY`) |
-| calls hit `api.openai.com` | endpoint not set | `anchor check` shows the resolved endpoint; re-run `anchor init` |
-| endpoint 404 on every call | missing `/openai/v1/` | `anchor check --fix` |
+| calls hit `api.openai.com` | endpoint not set | `anchor check --env work` shows the resolved endpoint; re-run `anchor env create` |
+| endpoint 404 on every call | missing `/openai/v1/` | `anchor check --env work --fix` |

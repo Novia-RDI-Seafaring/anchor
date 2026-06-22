@@ -1,4 +1,4 @@
-"""`anchor init` — create an environment (provider picker) + default project."""
+"""`anchor env create` — provider picker; `anchor init` — folder-based project."""
 from __future__ import annotations
 
 import pytest
@@ -22,27 +22,31 @@ def _env_toml(tmp_path, name="local"):
     return (tmp_path / ".anchor" / "envs" / name / "env.toml").read_text()
 
 
-def test_init_creates_default_env_and_project(tmp_path):
-    result = runner.invoke(app, ["init", "local", "--yes", "--provider", "local"])
+# --------------------------------------------------------------------------- #
+# `anchor env create` — the provider picker (the trust boundary)
+# --------------------------------------------------------------------------- #
+def test_env_create_makes_env_and_default_project(tmp_path):
+    result = runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
     assert result.exit_code == 0, result.output
     toml = _env_toml(tmp_path)
     assert 'provider = "local"' in toml
     assert "data_dir" not in toml
+    base = tmp_path / ".anchor" / "envs" / "local" / "projects" / "default"
     for sub in ("bronze", "silver", "gold", "canvases"):
-        assert (tmp_path / ".anchor" / "envs" / "local" / "projects" / "default" / sub).is_dir()
+        assert (base / ".anchor_data" / sub).is_dir()
     # first env becomes the default
     assert (tmp_path / ".anchor" / "default").read_text().strip() == "local"
     assert "nothing leaves the network" in result.output
 
 
-def test_init_named_environment(tmp_path):
-    result = runner.invoke(app, ["init", "work", "--yes", "--provider", "local"])
+def test_env_create_named_environment(tmp_path):
+    result = runner.invoke(app, ["env", "create", "work", "--yes", "--provider", "local"])
     assert result.exit_code == 0, result.output
     assert (tmp_path / ".anchor" / "envs" / "work" / "env.toml").is_file()
 
 
-def test_init_local_has_no_vision(tmp_path):
-    runner.invoke(app, ["init", "local", "--yes", "--provider", "local"])
+def test_local_has_no_vision(tmp_path):
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
     toml = _env_toml(tmp_path)
     assert "openai_base_url" not in toml
     assert "polish_model" not in toml
@@ -50,7 +54,7 @@ def test_init_local_has_no_vision(tmp_path):
 
 
 def test_ollama_defaults_to_local_endpoint(tmp_path):
-    result = runner.invoke(app, ["init", "local", "--yes", "--provider", "ollama"])
+    result = runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "ollama"])
     assert result.exit_code == 0, result.output
     toml = _env_toml(tmp_path)
     assert 'provider = "ollama"' in toml
@@ -59,7 +63,7 @@ def test_ollama_defaults_to_local_endpoint(tmp_path):
 
 
 def test_azure_requires_base_url(tmp_path):
-    result = runner.invoke(app, ["init", "local", "--yes", "--provider", "azure"])
+    result = runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "azure"])
     assert result.exit_code != 0
     assert "base-url" in result.output.lower()
     assert not (tmp_path / ".anchor" / "envs" / "local" / "env.toml").exists()
@@ -67,7 +71,7 @@ def test_azure_requires_base_url(tmp_path):
 
 def test_azure_normalizes_endpoint(tmp_path):
     result = runner.invoke(
-        app, ["init", "local", "--yes", "--provider", "azure",
+        app, ["env", "create", "local", "--yes", "--provider", "azure",
                "--base-url", "https://x.openai.azure.com/", "--vision-model", "gpt-dep"]
     )
     assert result.exit_code == 0, result.output
@@ -77,28 +81,29 @@ def test_azure_normalizes_endpoint(tmp_path):
 
 
 def test_invalid_env_name_errors(tmp_path):
-    result = runner.invoke(app, ["init", "../escape", "--yes", "--provider", "local"])
+    result = runner.invoke(app, ["env", "create", "../escape", "--yes", "--provider", "local"])
     assert result.exit_code == 2
 
 
 def test_refuses_overwrite_without_force(tmp_path):
-    runner.invoke(app, ["init", "local", "--yes", "--provider", "local"])
-    result = runner.invoke(app, ["init", "local", "--yes", "--provider", "local"])
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
+    result = runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
     assert result.exit_code == 1
     assert "force" in result.output.lower()
 
 
 def test_force_overwrites(tmp_path):
-    runner.invoke(app, ["init", "local", "--yes", "--provider", "local"])
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
     result = runner.invoke(
-        app, ["init", "local", "--yes", "--provider", "openai", "--force", "--vision-model", "gpt-x"]
+        app,
+        ["env", "create", "local", "--yes", "--provider", "openai", "--force", "--vision-model", "gpt-x"],
     )
     assert result.exit_code == 0, result.output
     assert "gpt-x" in _env_toml(tmp_path)
 
 
 def test_harness_provider_needs_no_key(tmp_path):
-    result = runner.invoke(app, ["init", "local", "--yes", "--provider", "harness"])
+    result = runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "harness"])
     assert result.exit_code == 0, result.output
     toml = _env_toml(tmp_path)
     assert 'provider = "harness"' in toml
@@ -107,7 +112,7 @@ def test_harness_provider_needs_no_key(tmp_path):
 
 
 def test_shows_next_steps(tmp_path):
-    result = runner.invoke(app, ["init", "local", "--yes", "--provider", "local"])
+    result = runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
     assert "Next steps" in result.output
     assert "anchor-mcp --env local" in result.output
 
@@ -121,16 +126,89 @@ def test_setup_api_key_writes_gitignored_env(tmp_path, monkeypatch):
     env_root.mkdir(parents=True)
     init_mod._setup_api_key(env_root, get_provider("azure"), interactive=True)
     assert "ANCHOR_OPENAI_API_KEY=az-secret-key" in (env_root / ".env").read_text()
-    assert "az-secret-key" not in (env_root / "env.toml").read_text() if (env_root / "env.toml").exists() else True
 
 
-def test_init_requires_a_name(tmp_path):
-    result = runner.invoke(app, ["init", "--yes", "--provider", "local"])
-    assert result.exit_code == 2
-    assert "Name the environment" in result.output
+# --------------------------------------------------------------------------- #
+# `anchor init` — initialize a project in the current folder
+# --------------------------------------------------------------------------- #
+def _make_local_env():
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
 
 
-def test_init_accepts_env_flag(tmp_path):
-    result = runner.invoke(app, ["init", "--env", "work", "--yes", "--provider", "local"])
+def test_init_project_in_folder(tmp_path, monkeypatch):
+    _make_local_env()
+    folder = tmp_path / "pumps"
+    folder.mkdir()
+    monkeypatch.chdir(folder)
+    result = runner.invoke(app, ["init"])
     assert result.exit_code == 0, result.output
-    assert (tmp_path / ".anchor" / "envs" / "work" / "env.toml").is_file()
+    assert (folder / "anchor.toml").is_file()
+    assert (folder / ".anchor_data" / "bronze").is_dir()
+    # the project name defaults to the folder name and is registered in the env
+    env = env_mod.resolve_environment("local")
+    assert "pumps" in env.list_project_names()
+    assert env.project_root("pumps") == folder
+
+
+def test_init_self_creates_local_env(tmp_path, monkeypatch):
+    """On a fresh machine, `anchor init` stands up the local env automatically."""
+    folder = tmp_path / "paper"
+    folder.mkdir()
+    monkeypatch.chdir(folder)
+    result = runner.invoke(app, ["init"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / ".anchor" / "envs" / "local" / "env.toml").is_file()
+    assert (folder / "anchor.toml").is_file()
+
+
+def test_init_explicit_project_name(tmp_path, monkeypatch):
+    _make_local_env()
+    folder = tmp_path / "somedir"
+    folder.mkdir()
+    monkeypatch.chdir(folder)
+    result = runner.invoke(app, ["init", "pumps", "--description", "LKH pumps"])
+    assert result.exit_code == 0, result.output
+    env = env_mod.resolve_environment("local")
+    assert env_mod.project_meta(env, "pumps").description == "LKH pumps"
+
+
+def test_init_named_env_must_exist(tmp_path, monkeypatch):
+    folder = tmp_path / "pumps"
+    folder.mkdir()
+    monkeypatch.chdir(folder)
+    result = runner.invoke(app, ["init", "--env", "openai"])
+    assert result.exit_code == 1
+    assert "anchor env create openai" in result.output
+
+
+def test_init_binds_to_existing_named_env(tmp_path, monkeypatch):
+    runner.invoke(app, ["env", "create", "openai", "--yes", "--provider", "openai",
+                        "--vision-model", "gpt-x"])
+    folder = tmp_path / "pumps"
+    folder.mkdir()
+    monkeypatch.chdir(folder)
+    result = runner.invoke(app, ["init", "--env", "openai"])
+    assert result.exit_code == 0, result.output
+    marker = (folder / "anchor.toml").read_text()
+    assert 'env = "openai"' in marker
+
+
+def test_init_refuses_existing_project_without_force(tmp_path, monkeypatch):
+    _make_local_env()
+    folder = tmp_path / "pumps"
+    folder.mkdir()
+    monkeypatch.chdir(folder)
+    runner.invoke(app, ["init"])
+    again = runner.invoke(app, ["init"])
+    assert again.exit_code == 1
+    assert "already an Anchor project" in again.output
+
+
+def test_init_shows_next_steps(tmp_path, monkeypatch):
+    _make_local_env()
+    folder = tmp_path / "pumps"
+    folder.mkdir()
+    monkeypatch.chdir(folder)
+    result = runner.invoke(app, ["init"])
+    assert "Next steps" in result.output
+    assert "anchor ingest" in result.output

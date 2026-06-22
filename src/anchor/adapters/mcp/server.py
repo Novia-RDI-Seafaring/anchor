@@ -13,24 +13,22 @@ the MCP-proxy work documented in OIP.md as the next major feature.
 from __future__ import annotations
 
 import copy
-from typing import Any
-
 import json as _json
+from typing import Any
 
 from mcp.server import Server
 from mcp.types import ImageContent, Resource, TextContent, Tool
 from pydantic import AnyUrl
 
 from anchor.adapters.mcp import handlers_canvas
-from anchor.adapters.mcp.services import ServiceBundle, fmu_tools_available
 from anchor.adapters.mcp.router import ProjectRouter
+from anchor.adapters.mcp.services import ServiceBundle, fmu_tools_available
+from anchor.adapters.status import build_status_summary
 from anchor.extensions.anchor_cad import mcp_handlers as cad_handlers
 from anchor.extensions.anchor_fmus import mcp_handlers as fmu_handlers
 from anchor.extensions.anchor_pdfs import mcp_handlers as pdf_handlers
 from anchor.extensions.anchor_sysml import mcp_handlers as sysml_handlers
 from anchor.infra.environment import NoEnvironmentError, NoProjectError
-from anchor.adapters.status import build_status_summary
-
 
 # ── Server instructions ────────────────────────────────────────────────────
 #
@@ -145,11 +143,18 @@ edge wiring.
 
 ── Where data lives ───────────────────────────────────────────────────────
 
-~/.anchor/envs/<env>/projects/<project>/
+Each project is a folder with a hidden `.anchor_data/` holding its corpus.
+A project you create here is managed under the environment:
+
+~/.anchor/envs/<env>/projects/<project>/.anchor_data/
   bronze/<filename>.pdf
   silver/<slug>/{index.json, pages/}
   gold/<slug>/{pages/<n>.regions.json, pages/<n>/<region-id>.png}
   canvases/<slug>/{meta.json, state.json, events.jsonl}
+
+A project a human created with `anchor init` keeps the same `.anchor_data/`
+inside their working folder; the environment's `projects.toml` maps each
+project name to its folder, so you address them all by name regardless.
 """
 
 

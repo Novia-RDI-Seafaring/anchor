@@ -2,10 +2,10 @@
 
 An environment is a reusable profile (provider / models / data **zone**) and
 the trust boundary that holds projects. Environments live under
-``~/.anchor/envs/<name>/``. ``anchor env create`` is the provider picker (same
-as ``anchor init``); ``anchor env list`` / ``show`` / ``default`` manage the
-set. ``anchor use`` sets a session default so later commands can omit
-``--env`` / ``--project``.
+``~/.anchor/envs/<name>/``. ``anchor env create`` is the provider picker that
+stands up an environment; ``anchor env list`` / ``show`` / ``default`` manage
+the set. (To start a project in a folder, use ``anchor init``.) ``anchor use``
+sets a session default so later commands can omit ``--env`` / ``--project``.
 """
 from __future__ import annotations
 
@@ -55,12 +55,13 @@ def env_create(
 ) -> None:
     """Create an environment (provider / data-zone) and its default project.
 
-    Identical to ``anchor init <name>`` — both create the named environment and
-    scaffold its ``default`` project.
+    This is the provider picker — it stands up the named environment (the trust
+    boundary) and scaffolds its default project. To create a project in a
+    folder, use `anchor init` instead.
     """
-    from anchor.adapters.cli.init import init as init_cmd
+    from anchor.adapters.cli.init import create_environment
 
-    init_cmd(
+    create_environment(
         name=name,
         provider=provider,
         embed_model=embed_model,
@@ -95,7 +96,7 @@ def env_list() -> None:
     names = list_env_names()
     default = default_env_name()
     if not names:
-        typer.echo("(no environments yet — create one with `anchor init` or `anchor env create`)")
+        typer.echo("(no environments yet — create one with `anchor env create <name>`)")
         return
     for name in names:
         marker = " *" if name == default else "  "

@@ -1,4 +1,4 @@
-"""MCP multiproject router + server wiring (env by name, contained projects)."""
+"""MCP multiproject router + server wiring (env by name, managed projects)."""
 from __future__ import annotations
 
 import json
@@ -74,7 +74,7 @@ def test_router_lifecycle(tmp_path):
     assert listing["environment"] == "local"
     assert any(p["name"] == "pumps" and p["description"] == "LKH" for p in listing["projects"])
     assert router.open_project("pumps")["session_default"] == "pumps"
-    assert router.bundle_for(None).config.data_dir.name == "pumps"
+    assert router.bundle_for(None).config.data_dir.parent.name == "pumps"
 
 
 def test_router_update_project(tmp_path):

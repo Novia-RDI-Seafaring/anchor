@@ -8,8 +8,9 @@ both, shows where things live on disk, and lists the commands.
 | Term | Definition |
 | --- | --- |
 | **environment** (env) | A named, reusable configuration profile: the AI provider, the models, and the data **zone**. An environment is the trust and egress boundary. It decides where a corpus's content may go. Environments live under `~/.anchor/envs/<name>/`. |
-| **project** | One corpus (its ingested documents) plus its canvases. A project is contained inside one environment and inherits that environment's configuration. |
-| **documents** | A project's ingested corpus on disk: the bronze, silver, and gold stages. |
+| **project** | One corpus (its ingested documents) plus its canvases. A project is a *folder*: it carries an `anchor.toml` marker that binds it to an environment, and keeps its corpus in a hidden `.anchor_data/` subfolder. It is registered by name in its environment's `projects.toml`. A project inherits its environment's configuration. |
+| **project marker** (`anchor.toml`) | The file in a project folder that names its environment (`env`), its name, and any rare config overrides. Running Anchor inside a project folder resolves it automatically. |
+| **documents** | A project's ingested corpus on disk (under `.anchor_data/`): the bronze, silver, and gold stages. |
 | **canvas** | A board inside a project. |
 | **zone** | The data egress and privacy boundary (on-host, public cloud, your tenant). A property of the environment, inherited by its projects. |
 | **default environment / default project** | Used when a command names neither. The default environment is recorded in `~/.anchor/default` (falls back to `local`). The default project is `default`. |
@@ -22,6 +23,11 @@ deliberate act.
 
 ## On disk
 
+A project is a folder with an `anchor.toml` marker and a hidden `.anchor_data/`
+holding its corpus. The environment keeps a `projects.toml` registry mapping
+each project name to its folder, so projects are addressable by name wherever
+they live.
+
 ```
 ~/.anchor/
 ├── default                      # the default environment's name (one line)
@@ -30,73 +36,99 @@ deliberate act.
     └── <env>/
         ├── env.toml             # the profile: provider, models, zone, [meta]
         ├── .env                 # gitignored API key (never the profile)
-        └── projects/
-            └── <project>/        # documents + canvases, inherits the env config
-                ├── project.toml   # optional: metadata and rare overrides
-                ├── bronze/ silver/ gold/
-                └── canvases/<slug>/
+        ├── projects.toml        # registry: project name -> folder path
+        └── projects/            # managed projects (agent/CLI created)
+            └── <project>/
+                ├── anchor.toml   # marker: env, name, [meta], rare overrides
+                └── .anchor_data/
+                    ├── bronze/ silver/ gold/
+                    └── canvases/<slug>/
+
+~/work/pumps/                    # a project created with `anchor init` here
+├── anchor.toml                  # env = "<env>", name = "pumps", [meta]
+└── .anchor_data/
+    ├── bronze/ silver/ gold/
+    └── canvases/<slug>/
 ```
 
-The environment's `projects/` directory is the project list. There is no
-separate registry. Storage location is structural (the project directory), so
-there is no `data_dir` pointer to keep in sync. The API key stays in
-`ANCHOR_OPENAI_API_KEY` or the gitignored `.env`, never in the profile.
+A project has two possible homes, both registered the same way. A human runs
+`anchor init` in a working folder and the project lives there. An agent (or
+`anchor project create`) has no working folder, so its project is *managed*
+under `envs/<env>/projects/<name>/`. Either way the corpus sits in
+`.anchor_data/` and the env's `projects.toml` maps the name to the folder.
+Storage is structural (no `data_dir` pointer to keep in sync). The API key
+stays in `ANCHOR_OPENAI_API_KEY` or the gitignored `.env`, never in the profile.
 
 ## Configuration layering
 
 ```
-built-in defaults  <  env.toml  <  project.toml  <  ANCHOR_* env vars / flags
+built-in defaults  <  env.toml  <  project anchor.toml  <  ANCHOR_* env vars / flags
 ```
 
 Settings live in the environment's `env.toml`. A project usually has none and
-inherits. A project overrides a value by writing its own `project.toml`. The
-CLI and the MCP server resolve the same layered config, so `anchor check` can
-audit the active provider and zone.
+inherits. A project overrides a value by adding it to its own `anchor.toml`
+marker (alongside the `env` and `name` keys). The CLI and the MCP server
+resolve the same layered config, so `anchor check` can audit the active
+provider and zone.
 
 ## Selecting an environment and project
 
 ```
-env name : --env  >  ANCHOR_ENV  >  anchor use  >  the default environment
-project  : --project  >  ANCHOR_PROJECT  >  anchor use  >  "default"
+project marker : run inside a project folder -> its anchor.toml (corpus + env)
+env name       : --env  >  ANCHOR_ENV  >  anchor use  >  the default environment
+project        : --project  >  ANCHOR_PROJECT  >  anchor use  >  "default"
 ```
 
+When you run Anchor inside a project folder (or any subfolder of it) without
+`--env` / `--project`, it walks up to the nearest `anchor.toml` and resolves
+that project — no flags needed. Otherwise it resolves by name.
 `anchor use <env> [project]` records a session default so later commands can
 omit the flags. It only affects the human CLI. The agent (MCP) path is pinned
 per server and is never retargeted by `anchor use`.
 
 ## CLI
 
-Environments:
+Environments (the provider / data-zone picker):
 
 ```bash
-anchor init local                    # create an environment (provider picker) + default project
-anchor init work --provider azure …  # create a named environment
-anchor env create work --provider …  # same as `anchor init work`
-anchor env list                      # name, zone, description (* marks the default)
-anchor env show work                 # the profile and its projects
-anchor env default work              # set the default environment
-anchor use work pumps                # session default env + project
+anchor env create local                 # create an environment + its default project
+anchor env create work --provider azure … # create a named environment
+anchor env list                         # name, zone, description (* marks the default)
+anchor env show work                    # the profile and its projects
+anchor env default work                 # set the default environment
+anchor use work pumps                   # session default env + project
 ```
 
-Projects:
+Projects. The common case is `anchor init` inside a working folder; it binds
+the folder to an environment and starts the project there:
 
 ```bash
-anchor project create pumps --env work --description "LKH pump datasheets"
+cd ~/work/pumps
+anchor init                             # project "pumps" here, bound to the default env
+anchor init --env work --description "LKH pump datasheets"   # bind to the "work" env
+```
+
+`anchor project create` makes a *managed* project (folder under the env) for
+when you have no working folder, and the rest manage the set by name:
+
+```bash
+anchor project create paper --env work  # managed project under envs/work/projects/
 anchor project list --env work
 anchor project set-description pumps "Centrifugal pump family" --env work
 anchor project move pumps --to local --env work     # deliberate, zone-confirmed
 ```
 
-Documents and canvases follow the selected project:
+Documents and canvases follow the project. Inside a project folder you need no
+flags at all:
 
 ```bash
-anchor use work pumps
-anchor ingest datasheet.pdf          # into work/pumps
-anchor serve                         # open the canvas for work/pumps
+cd ~/work/pumps
+anchor ingest datasheet.pdf             # into this folder's .anchor_data/
+anchor serve                            # open this project's canvas
 ```
 
 `anchor migrate` folds a pre-existing `~/anchor-data` into
-`envs/local/projects/default/`.
+`envs/local/projects/default/.anchor_data/`.
 
 ## Moving a project across environments
 
@@ -107,9 +139,11 @@ content may go, so it is a deliberate operation:
 anchor project move pumps --to azure-work --env local
 ```
 
-The command relocates the corpus and confirms the zone change before doing so
-(for example "this changes the data zone from on-host to your Azure tenant.
-Proceed?"). Editing a file will not move a project across a boundary.
+The command confirms the zone change before doing so (for example "this changes
+the data zone from on-host to your Azure tenant. Proceed?"). A managed project's
+folder is relocated into the new environment; a project you created in your own
+folder stays put and only its marker and registry entry are rebound. Editing a
+file by hand will not move a project across a boundary.
 
 ## MCP (the agent path)
 
@@ -166,4 +200,4 @@ pointing at a different environment is refused, use `--name` to add a second or
 
 A pre-existing `~/anchor-data` keeps working as the default environment's
 `default` project until you run `anchor migrate`, which folds it into
-`envs/local/projects/default/`. Nothing breaks in the meantime.
+`envs/local/projects/default/.anchor_data/`. Nothing breaks in the meantime.

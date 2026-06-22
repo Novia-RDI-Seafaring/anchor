@@ -1,9 +1,11 @@
 """``anchor migrate`` — fold today's ~/anchor-data into the default environment.
 
-Pre-rework, a single ``~/anchor-data`` held everything. The model now puts
-documents and canvases under ``~/.anchor/envs/<env>/projects/<project>/``. This
-command creates the default environment (``local``) and moves the existing
-``~/anchor-data`` in as its ``default`` project. It is explicit and
+Pre-rework, a single ``~/anchor-data`` held everything. The model now puts each
+project's corpus in a hidden ``.anchor_data/`` folder, with managed (agent-made)
+projects under ``~/.anchor/envs/<env>/projects/<project>/``. This command
+creates the default environment (``local``) and folds the existing
+``~/anchor-data`` in as its ``default`` project's ``.anchor_data/``. It is
+explicit and
 non-destructive: it never overwrites an existing ``default`` project, and
 reports exactly what it will move.
 """
@@ -16,9 +18,11 @@ import typer
 
 from anchor.infra import environment as env_mod
 from anchor.infra.environment import (
+    DATA_DIRNAME,
     DEFAULT_PROJECT,
     create_env,
     default_env_name,
+    ensure_project,
     resolve_environment,
 )
 
@@ -44,7 +48,10 @@ def migrate(
     env_name = env or default_env_name()
     legacy = (source or env_mod.LEGACY_DATA_DIR).expanduser()
     environment = resolve_environment(env_name)
-    default_dir = environment.projects_dir / DEFAULT_PROJECT
+    # The default project is managed (lives under the env), with its corpus in
+    # the hidden .anchor_data/ subfolder — fold the legacy tree straight in.
+    default_root = environment.projects_dir / DEFAULT_PROJECT
+    default_dir = default_root / DATA_DIRNAME
 
     already_env = environment.initialized
     will_move = _has_payload(legacy) and not _has_payload(default_dir)
@@ -77,6 +84,9 @@ def migrate(
         typer.echo(f"Moved {legacy} -> {default_dir}")
 
     environment = resolve_environment(env_name)
+    # Drop the project marker + register the default project so it resolves by
+    # name (and the cwd walk-up finds it inside its own folder).
+    ensure_project(environment, DEFAULT_PROJECT)
     typer.echo("")
     typer.echo(f"Environment ready: {environment.name}")
     typer.echo(f"Projects: {environment.list_project_names() or '(none)'}")

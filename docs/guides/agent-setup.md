@@ -37,20 +37,23 @@ ANCHOR serves the UI and HTTP API at `http://127.0.0.1:8002` by default.
 It is unauthenticated, so bind to a network interface only behind an
 authentication layer.
 
-The recommended setup is one environment. Run `anchor init` to choose the AI
-provider / data zone; it creates a named environment and its `default` project.
-Commands then resolve that environment (override with `--env` / `--project` or
-`anchor use`):
+The recommended setup is one environment with a project inside it. Run
+`anchor env create` to choose the AI provider / data zone; it creates a named
+environment and its default project. Then run `anchor init` inside a working
+folder to start a project bound to that environment:
 
 ```bash
-anchor init local
+anchor env create local
+cd ~/work/pumps
+anchor init
 anchor ingest /path/to/datasheet.pdf
 anchor serve
 ```
 
-Storage is structural: each project lives under
-`~/.anchor/envs/<env>/projects/<project>/`. An explicit `--data-dir` overrides
-for a single command.
+Storage is structural. A project is a folder with an `anchor.toml` marker and a
+hidden `.anchor_data/` holding its corpus. A managed project lives under
+`~/.anchor/envs/<env>/projects/<project>/`. The environment keeps a
+`projects.toml` registry mapping each project name to its folder.
 
 `anchor demo` creates a `demo` workspace and placeholder nodes. It ingests an
 optional local sample PDF when one is present, but the public package does not
@@ -156,7 +159,7 @@ use.
 
 | Step | Local without a hosted API? | Notes |
 |---|---|---|
-| Store source PDF and render pages | Yes | Files stay under the selected `--data-dir`. |
+| Store source PDF and render pages | Yes | Files stay under the project's `.anchor_data/`. |
 | Silver extraction | Yes | Docling and local rendering. |
 | Gold extraction and page polish | Conditional | Requires a configured vision endpoint; this may be local. |
 | Region embeddings and search | Yes, after model availability | Local sentence-transformer default. |

@@ -29,10 +29,12 @@ pipx install anchor-kb           # isolated CLI install
 pip install anchor-kb            # in your active virtualenv
 ```
 
-!!! tip "Quick demo vs. a real environment"
+!!! tip "Quick demo vs. a real project"
     This tutorial uses `anchor demo`, which works out of the box in the default
-    environment's default project. For your own work, run `anchor init` first.
-    It picks the AI provider / data zone and creates a named **environment**.
+    environment's default project. For your own work, `cd` into a working
+    folder and run `anchor init`. It initializes a **project** there and binds
+    it to an environment (self-creating the default `local` env on a fresh
+    machine). To use a non-local data zone, run `anchor env create` first.
     See [Environments and projects](../guides/environments-and-projects.md).
 
 ## 2. Run `anchor demo`

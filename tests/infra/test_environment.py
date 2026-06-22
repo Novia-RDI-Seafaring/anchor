@@ -1,4 +1,4 @@
-"""Named-environment + contained-project resolution and config layering."""
+"""Named-environment + folder-based project resolution and config layering."""
 from __future__ import annotations
 
 import pytest
@@ -8,9 +8,9 @@ from anchor.infra import environment as env_mod
 from anchor.infra.environment import (
     DEFAULT_ENV,
     DEFAULT_PROJECT,
+    Meta,
     NoEnvironmentError,
     NoProjectError,
-    Meta,
     config_for_data_dir,
     create_env,
     create_project,
@@ -87,7 +87,7 @@ def test_invalid_env_name_rejected(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# Projects (contained)
+# Projects (folder-based; managed projects live under <env>/projects/<name>/)
 # --------------------------------------------------------------------------- #
 def test_create_and_list_projects(tmp_path):
     env = create_env("local")
@@ -96,13 +96,30 @@ def test_create_and_list_projects(tmp_path):
     env = resolve_environment("local")
     assert env.list_project_names() == ["paper", "pumps"]
     for sub in ("bronze", "silver", "gold", "canvases"):
-        assert (env.root / "projects" / "pumps" / sub).is_dir()
+        assert (env.root / "projects" / "pumps" / ".anchor_data" / sub).is_dir()
+    # the project folder carries an anchor.toml marker
+    assert (env.root / "projects" / "pumps" / "anchor.toml").is_file()
 
 
-def test_project_dir_is_contained(tmp_path):
+def test_managed_project_dir_holds_data_subfolder(tmp_path):
     env = create_env("local")
     create_project(env, "pumps")
-    assert env.project_dir("pumps") == env.root / "projects" / "pumps"
+    assert env.project_root("pumps") == env.root / "projects" / "pumps"
+    assert env.project_dir("pumps") == env.root / "projects" / "pumps" / ".anchor_data"
+
+
+def test_create_project_in_external_folder(tmp_path):
+    """`anchor init` path: a project folder anywhere, data in .anchor_data."""
+    env = create_env("local")
+    folder = tmp_path / "work" / "pumps"
+    create_project(env, "pumps", root=folder)
+    assert env.project_root("pumps") == folder
+    assert env.project_dir("pumps") == folder / ".anchor_data"
+    assert (folder / "anchor.toml").is_file()
+    assert (folder / ".anchor_data" / "bronze").is_dir()
+    # registry binds the name to the external folder
+    assert env.project_exists("pumps")
+    assert resolve_project_config(env, "pumps").data_dir == folder / ".anchor_data"
 
 
 def test_create_project_requires_env(tmp_path):
@@ -134,8 +151,9 @@ def test_environment_metadata(tmp_path):
 def test_set_project_description_preserves_overrides(tmp_path):
     env = create_env("local")
     create_project(env, "pumps")
-    (env.project_dir("pumps") / "project.toml").write_text(
-        'embed_model = "custom"\n\n[meta]\ndescription = "old"\n'
+    # overrides live in the project's anchor.toml marker (at the project root)
+    (env.project_root("pumps") / "anchor.toml").write_text(
+        'env = "local"\nname = "pumps"\nembed_model = "custom"\n\n[meta]\ndescription = "old"\n'
     )
     set_project_description(env, "pumps", "new")
     assert project_meta(env, "pumps").description == "new"
@@ -193,7 +211,9 @@ def test_resolve_project_require_exists(tmp_path):
 def test_layering_env_then_project_then_envvar(tmp_path, monkeypatch):
     env = create_env("local", settings={"embed_model": "env-model", "provider": "local"})
     create_project(env, "pumps")
-    (env.project_dir("pumps") / "project.toml").write_text('embed_model = "proj-model"\n')
+    (env.project_root("pumps") / "anchor.toml").write_text(
+        'env = "local"\nname = "pumps"\nembed_model = "proj-model"\n'
+    )
 
     cfg = resolve_project_config(env, "pumps")
     assert cfg.embed_model == "proj-model"
@@ -244,4 +264,4 @@ def test_legacy_shim_yields_to_real_default_project(tmp_path, monkeypatch):
     monkeypatch.setattr(env_mod, "LEGACY_DATA_DIR", legacy)
     env = create_env("local")
     create_project(env, DEFAULT_PROJECT)  # real projects/default now exists
-    assert env.project_dir(DEFAULT_PROJECT) == env.root / "projects" / "default"
+    assert env.project_dir(DEFAULT_PROJECT) == env.root / "projects" / "default" / ".anchor_data"

@@ -1,7 +1,7 @@
 """ProjectRouter — resolve a per-call project to its service bundle.
 
 One MCP server serves one *environment* (a named profile = the trust boundary).
-Each tool call names a *project* contained in that environment; the router
+Each tool call names a *project* registered in that environment; the router
 resolves it to a :class:`~anchor.adapters.mcp.services.ServiceBundle`, cached by
 the project's storage directory, so the running server multiplexes any number
 of projects without rebinding at startup. It also backs the lifecycle tools

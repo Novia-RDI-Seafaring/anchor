@@ -19,7 +19,7 @@ def _home(monkeypatch, tmp_path):
 
 def test_default_is_default_env_default_project(tmp_path):
     create_env("local")
-    expected = tmp_path / ".anchor" / "envs" / "local" / "projects" / "default"
+    expected = tmp_path / ".anchor" / "envs" / "local" / "projects" / "default" / ".anchor_data"
     assert default_data_dir() == expected
 
 
@@ -41,5 +41,5 @@ def test_honors_use_selection(tmp_path):
 def test_anchor_data_dir_env_var_is_ignored(tmp_path, monkeypatch):
     create_env("local")
     monkeypatch.setenv("ANCHOR_DATA_DIR", str(tmp_path / "elsewhere"))
-    expected = tmp_path / ".anchor" / "envs" / "local" / "projects" / "default"
+    expected = tmp_path / ".anchor" / "envs" / "local" / "projects" / "default" / ".anchor_data"
     assert default_data_dir() == expected

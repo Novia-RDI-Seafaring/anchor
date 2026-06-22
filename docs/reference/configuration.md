@@ -1,22 +1,23 @@
 # Configuration
 
 ANCHOR resolves configuration from, in priority order: explicit command-line
-flags, `ANCHOR_*` environment variables, a `.env` file, the project
-`project.toml`, the environment `env.toml`, then built-in defaults.
+flags, `ANCHOR_*` environment variables, the project `anchor.toml` marker, the
+environment `env.toml`, then built-in defaults. The API key is the exception:
+it stays in `ANCHOR_OPENAI_API_KEY` or a gitignored `.env`, never in a profile.
 
-## Environments: `anchor init`
+## Environments: `anchor env create`
 
-The recommended way to configure ANCHOR is `anchor init`, which creates an
+The way to configure ANCHOR is `anchor env create`, which creates an
 **environment** (a named profile that is the data zone) and its `default`
 project:
 
 ```bash
-anchor init local           # create an environment named "local"
-anchor init work            # a named environment
+anchor env create local         # create an environment named "local"
+anchor env create work          # a named environment
 ```
 
-`anchor init` asks where document content may go (the **AI provider**, which is
-also a **data zone**) and writes a non-secret `env.toml` under
+`anchor env create` asks where document content may go (the **AI provider**,
+which is also a **data zone**) and writes a non-secret `env.toml` under
 `~/.anchor/envs/<name>/`:
 
 | Provider | Data zone |
@@ -29,8 +30,16 @@ also a **data zone**) and writes a non-secret `env.toml` under
 
 It also picks the embedding model (local `bge-small`, or a remote
 `text-embedding-3-*` when an endpoint is configured). Storage is structural:
-projects live under `~/.anchor/envs/<name>/projects/<project>/`, so there is no
-data directory to set.
+each project keeps its corpus in a hidden `.anchor_data/` folder, so there is no
+data directory to set. A managed project lives under
+`~/.anchor/envs/<name>/projects/<project>/`; a project you start with `anchor
+init` lives in your own folder. Either way the environment's `projects.toml`
+maps the project name to its folder.
+
+To start a project in a working folder, run `anchor init` there. It drops an
+`anchor.toml` marker plus a `.anchor_data/`, binds the folder to an environment,
+and registers it by name. Run Anchor anywhere inside that folder afterwards and
+it resolves to the project with no flags.
 
 Every adapter resolves the same way, selecting the environment and project by
 name: `--env` / `--project`, `ANCHOR_ENV` / `ANCHOR_PROJECT`, or the `anchor
@@ -51,14 +60,16 @@ use` session selection, else the default environment and its `default` project.
 | `polish_model` / `region_model` | `gpt-5.4` | Vision model or deployment names. |
 | `docling_device` | `auto` | Bronze-stage accelerator (see below). |
 
-A project may override any of these in its own `project.toml`. A malformed
-config is ignored with a warning — it never crashes the CLI.
+A project usually has no settings of its own and inherits the environment's. A
+project overrides a value by adding it to its own `anchor.toml` marker (alongside
+the `env` and `name` keys). A malformed config is ignored with a warning. It
+never crashes the CLI.
 
 ## Command-line settings
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `--data-dir DIR` | the selected project's directory | Storage-root override for a single command. Omit it to use the selected environment + project. |
+| `--data-dir DIR` | the selected project's `.anchor_data/` | Storage-root override for a single command. Omit it to use the selected environment + project. |
 | `--env NAME` / `--project NAME` | the default env / `default` | Select the environment and project for the command. |
 | `--host HOST` | `127.0.0.1` | HTTP bind address for `anchor serve`. |
 | `--port PORT` | `8002` | Preferred HTTP port. If it is in use, `anchor serve` binds the next free port and prints the chosen URL. |
@@ -110,9 +121,9 @@ to CPU on an accelerator error.
 ## Azure OpenAI
 
 Azure OpenAI works through its **v1 (OpenAI-compatible)** surface — point ANCHOR
-at it like any OpenAI-compatible endpoint. In `anchor init`, choose `azure` (or
-`custom`) and paste your `/openai/v1/` URL when prompted; the resulting
-`env.toml`:
+at it like any OpenAI-compatible endpoint. In `anchor env create`, choose
+`azure` (or `custom`) and paste your `/openai/v1/` URL when prompted; the
+resulting `env.toml`:
 
 ```toml
 provider        = "azure"
@@ -138,6 +149,6 @@ export ANCHOR_OPENAI_API_KEY=<your-key>
 export ANCHOR_OPENAI_BASE_URL=https://api.openai.com/v1
 ```
 
-`anchor init` writes the matching `env.toml` for you. Without an API key,
+`anchor env create` writes the matching `env.toml` for you. Without an API key,
 local document storage, page rendering, search, and canvas operations still
 work; gold-region extraction is the only step that needs the vision endpoint.

@@ -58,7 +58,7 @@ def test_project_create_and_list(tmp_path):
         app, ["project", "create", "pumps", "--env", "local", "--description", "LKH pumps"]
     )
     assert created.exit_code == 0, created.output
-    assert (tmp_path / ".anchor" / "envs" / "local" / "projects" / "pumps" / "bronze").is_dir()
+    assert (tmp_path / ".anchor" / "envs" / "local" / "projects" / "pumps" / ".anchor_data" / "bronze").is_dir()
 
     listed = runner.invoke(app, ["project", "list", "--env", "local"])
     assert "pumps" in listed.output
@@ -126,7 +126,7 @@ def test_migrate_moves_legacy_data_dir(tmp_path, monkeypatch):
 
     result = runner.invoke(app, ["migrate", "--yes"])
     assert result.exit_code == 0, result.output
-    moved = tmp_path / ".anchor" / "envs" / "local" / "projects" / "default" / "bronze" / "doc.pdf"
+    moved = tmp_path / ".anchor" / "envs" / "local" / "projects" / "default" / ".anchor_data" / "bronze" / "doc.pdf"
     assert moved.is_file()
     assert not legacy.exists()
 

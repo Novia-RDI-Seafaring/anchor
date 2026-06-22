@@ -1,10 +1,13 @@
 """``anchor project`` — manage projects inside an Anchor environment.
 
-A project is a corpus (documents) plus its canvases, contained under one
-environment at ``~/.anchor/envs/<env>/projects/<project>/``. These are the CLI
-peers of the ``create_project`` / ``list_projects`` / ``update_project`` MCP
-tools. The environment is selected by name: ``--env`` > ``ANCHOR_ENV`` > the
-``anchor use`` selection > the default environment.
+A project is a corpus (documents) plus its canvases, kept in a hidden
+``.anchor_data/`` folder and registered by name in its environment's
+``projects.toml``. ``anchor project create`` makes a *managed* project (its
+folder lives under ``~/.anchor/envs/<env>/projects/<project>/``); ``anchor
+init`` makes one in any working folder. These are the CLI peers of the
+``create_project`` / ``list_projects`` / ``update_project`` MCP tools. The
+environment is selected by name: ``--env`` > ``ANCHOR_ENV`` > the ``anchor
+use`` selection > the default environment.
 
 ``anchor project move`` is the one way to cross a trust boundary, and it is
 human-only on purpose (the agent must not relocate a corpus across zones).
@@ -34,8 +37,8 @@ def _require_initialized(env: Environment) -> None:
     if env.initialized:
         return
     typer.echo(
-        f"Environment {env.name!r} is not set up. Run `anchor env create {env.name}` "
-        "(or `anchor init`), or `anchor migrate` to adopt ~/anchor-data.",
+        f"Environment {env.name!r} is not set up. Run `anchor env create {env.name}`, "
+        "or `anchor migrate` to adopt ~/anchor-data.",
         err=True,
     )
     raise typer.Exit(code=1)
@@ -51,7 +54,7 @@ def _zone_of(env: Environment) -> str:
 
 @project_app.command("create")
 def project_create(
-    name: str = typer.Argument(..., help="Project name (becomes projects/<name>/)."),
+    name: str = typer.Argument(..., help="Project name (managed at projects/<name>/)."),
     env: str = typer.Option(None, "--env", help="Environment name (default: resolved)."),
     description: str = typer.Option(
         "", "--description", help="One-line description (shown to agents in list)."

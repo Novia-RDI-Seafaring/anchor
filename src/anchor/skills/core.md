@@ -87,9 +87,12 @@ commands per workspace, so you don't need to coordinate with the browser.
 
 An **environment** is a named config profile (provider, models, data zone) and
 the trust/egress boundary. It holds **projects**, each a corpus (documents) plus
-its canvases. Environments live under `~/.anchor/envs/<name>/`; a project is
-contained at `~/.anchor/envs/<name>/projects/<project>/` and inherits the
-environment's config.
+its canvases. Environments live under `~/.anchor/envs/<name>/`. A project is a
+folder with an `anchor.toml` marker and a hidden `.anchor_data/` holding its
+corpus; the environment's `projects.toml` maps each project name to its folder.
+A project inherits its environment's config. A human creates one in any working
+folder with `anchor init`; an agent creates a *managed* one (folder under
+`~/.anchor/envs/<name>/projects/<project>/`) with `create_project`.
 
 Over MCP, this server serves one environment. Project-scoped tools take an
 optional `project` argument; omit it for the default project. Use
@@ -102,20 +105,23 @@ On the CLI, select with `--env` / `--project`, or set a session default with
 
 ### Set up an environment (agent-drivable, like `nvm install`)
 
-`anchor init` (or `anchor env create <name>`) creates an environment and its
+`anchor env create <name>` creates an environment (the trust boundary) and its
 default project. Every choice is a flag, so no prompt blocks you:
 
 ```bash
 # local-only (no document egress): no key, no endpoint
-anchor init --yes --provider local
+anchor env create local --yes --provider local
 
 # a named endpoint (Azure shown): the deployment name is the model
-anchor init work --yes --provider azure \
+anchor env create work --yes --provider azure \
   --base-url https://<resource>.openai.azure.com/openai/v1/ \
   --vision-model <deployment> --embed-model text-embedding-3-small
 ```
 
-`init` self-corrects an Azure URL missing `/openai/v1/`. The API key is never
+Then `anchor init` in a working folder starts a project bound to an environment
+(`--env <name>`, default the default env), dropping an `anchor.toml` + a hidden
+`.anchor_data/` there. `anchor env create` self-corrects an Azure URL missing
+`/openai/v1/`. The API key is never
 written to the profile. Set `ANCHOR_OPENAI_API_KEY` in the environment or a
 gitignored `.env` next to the profile. Then **verify before ingesting**:
 
@@ -129,10 +135,12 @@ can gate on it. Register the MCP with `anchor install claude-desktop --env <name
 
 ## Where things live
 
-A project's data lives under its environment:
-`~/.anchor/envs/<env>/projects/<project>/`. Storage is structural (no
-`data_dir` key). The default environment is in `~/.anchor/default`; a
-pre-existing `~/anchor-data/` keeps working until `anchor migrate` folds it in.
+A project's data lives in a hidden `.anchor_data/` inside the project folder —
+`<your-folder>/.anchor_data/` for a folder you ran `anchor init` in, or
+`~/.anchor/envs/<env>/projects/<project>/.anchor_data/` for a managed one.
+Storage is structural (no `data_dir` key). The default environment is in
+`~/.anchor/default`; a pre-existing `~/anchor-data/` keeps working until
+`anchor migrate` folds it in.
 
 - `bronze/` — raw PDFs
 - `silver/<slug>/` — per-page markdown + page PNGs

@@ -11,7 +11,6 @@ would break a real ingest, so an agent or script can gate on it.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 import typer
 
@@ -62,7 +61,7 @@ def check(
     if env.initialized:
         typer.echo(f"  config         : {env.config_path}")
     else:
-        typer.echo("  config         : (env not set up yet — defaults; `anchor init`)")
+        typer.echo("  config         : (env not set up yet — defaults; `anchor env create`)")
     if prov:
         typer.echo(f"  provider       : {prov.label} — {prov.zone}")
     elif cfg.provider:
