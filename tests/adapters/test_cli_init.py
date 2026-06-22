@@ -150,15 +150,56 @@ def test_init_project_in_folder(tmp_path, monkeypatch):
     assert env.project_root("pumps") == folder
 
 
-def test_init_self_creates_local_env(tmp_path, monkeypatch):
-    """On a fresh machine, `anchor init` stands up the local env automatically."""
+def test_init_without_env_errors_noninteractive(tmp_path, monkeypatch):
+    """No env + no terminal + no --provider: refuse, never invent a trust boundary."""
     folder = tmp_path / "paper"
     folder.mkdir()
     monkeypatch.chdir(folder)
-    result = runner.invoke(app, ["init"])
+    result = runner.invoke(app, ["init"])  # CliRunner has no tty
+    assert result.exit_code == 1
+    assert "is not set up" in result.output
+    assert "anchor env create local" in result.output
+    assert not (folder / "anchor.toml").exists()
+    assert not (tmp_path / ".anchor" / "envs" / "local" / "env.toml").exists()
+
+
+def test_init_provider_flag_provisions_env(tmp_path, monkeypatch):
+    """`anchor init --provider local` creates the env inline and binds the project."""
+    folder = tmp_path / "paper"
+    folder.mkdir()
+    monkeypatch.chdir(folder)
+    result = runner.invoke(app, ["init", "--provider", "local", "--yes"])
     assert result.exit_code == 0, result.output
     assert (tmp_path / ".anchor" / "envs" / "local" / "env.toml").is_file()
     assert (folder / "anchor.toml").is_file()
+    assert 'provider = "local"' in (tmp_path / ".anchor" / "envs" / "local" / "env.toml").read_text()
+    # the new env becomes the default (first one on the machine)
+    assert (tmp_path / ".anchor" / "default").read_text().strip() == "local"
+
+
+def test_init_provider_flag_provisions_named_env(tmp_path, monkeypatch):
+    """`--provider` works for an explicit `--env` name too."""
+    folder = tmp_path / "pumps"
+    folder.mkdir()
+    monkeypatch.chdir(folder)
+    result = runner.invoke(
+        app, ["init", "--env", "work", "--provider", "openai", "--vision-model", "gpt-x", "--yes"]
+    )
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / ".anchor" / "envs" / "work" / "env.toml").is_file()
+    assert 'env = "work"' in (folder / "anchor.toml").read_text()
+
+
+def test_init_provider_ignored_when_env_exists(tmp_path, monkeypatch):
+    _make_local_env()
+    folder = tmp_path / "pumps"
+    folder.mkdir()
+    monkeypatch.chdir(folder)
+    result = runner.invoke(app, ["init", "--provider", "openai"])
+    assert result.exit_code == 0, result.output
+    assert "ignoring --provider" in result.output
+    # bound to the existing local env, not reconfigured
+    assert 'env = "local"' in (folder / "anchor.toml").read_text()
 
 
 def test_init_explicit_project_name(tmp_path, monkeypatch):
