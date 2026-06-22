@@ -1,4 +1,5 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
+import { Anchor as AnchorIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
@@ -263,8 +264,9 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         {d.source_ref?.page ? (
           <button
             type="button"
-            className="nodrag nopan shrink-0 rounded border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 hover:bg-sky-100"
+            className="nodrag nopan grid h-6 w-6 shrink-0 place-items-center rounded border border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100"
             title={`Open page ${d.source_ref.page} in viewer`}
+            aria-label={`Open source page ${d.source_ref.page}`}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               // Stop bubbling here so the surrounding header onClick (which
@@ -273,7 +275,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
               openSource();
             }}
           >
-            p{d.source_ref.page}
+            <AnchorIcon size={12} strokeWidth={2.2} aria-hidden="true" />
           </button>
         ) : null}
       </div>
@@ -345,15 +347,16 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                     {r.source_ref?.page ? (
                       <button
                         type="button"
-                        className="nodrag nopan rounded px-1 py-0.5 text-[10px] text-sky-700 hover:bg-sky-100 hover:text-sky-900"
+                        className="nodrag nopan inline-grid h-5 w-5 place-items-center rounded text-sky-700 hover:bg-sky-100 hover:text-sky-900"
                         title={`Open page ${r.source_ref.page} in viewer`}
+                        aria-label={`Open source page ${r.source_ref.page}`}
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => {
                           e.stopPropagation();
                           openSourceRef(r.source_ref);
                         }}
                       >
-                        p{r.source_ref.page}
+                        <AnchorIcon size={11} strokeWidth={2.2} aria-hidden="true" />
                       </button>
                     ) : null}
                     {/* Per-row source handle. Default state is a 2px grey
