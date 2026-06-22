@@ -23,11 +23,11 @@ _KEYED_PROVIDERS = ("openai", "azure", "custom")
 
 def _rewrite_base_url(config_path, old: str, new: str) -> bool:
     """Replace the openai_base_url value in the toml in place. True on success."""
-    text = config_path.read_text()
+    text = config_path.read_text(encoding="utf-8")
     needle = f'openai_base_url = "{old}"'
     if needle not in text:
         return False
-    config_path.write_text(text.replace(needle, f'openai_base_url = "{new}"'))
+    config_path.write_text(text.replace(needle, f'openai_base_url = "{new}"'), encoding="utf-8")
     return True
 
 

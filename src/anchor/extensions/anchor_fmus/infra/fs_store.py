@@ -58,12 +58,12 @@ class FsFmuStore(FmuStore):
     async def list_fmus(self) -> list[FmuModel]:
         out: list[FmuModel] = []
         for path in sorted(self.models.glob("*.json")):
-            out.append(FmuModel.model_validate_json(path.read_text()))
+            out.append(FmuModel.model_validate_json(path.read_text(encoding="utf-8")))
         return out
 
     async def write_model_summary(self, slug: str, model: FmuModel) -> Path:
         target = self.models / f"{slug}.json"
-        async with aiofiles.open(target, "w") as f:
+        async with aiofiles.open(target, "w", encoding="utf-8") as f:
             await f.write(model.model_dump_json(indent=2))
         return target
 
@@ -71,14 +71,14 @@ class FsFmuStore(FmuStore):
         path = self.models / f"{slug}.json"
         if not path.exists():
             return None
-        return FmuModel.model_validate_json(path.read_text())
+        return FmuModel.model_validate_json(path.read_text(encoding="utf-8"))
 
     async def write_simulation(self, run: SimulationRun, series: TimeSeries) -> Path:
         sim_dir = self.simulations / run.id
         sim_dir.mkdir(parents=True, exist_ok=True)
-        async with aiofiles.open(sim_dir / "run.json", "w") as f:
+        async with aiofiles.open(sim_dir / "run.json", "w", encoding="utf-8") as f:
             await f.write(run.model_dump_json(indent=2))
-        async with aiofiles.open(sim_dir / "series.json", "w") as f:
+        async with aiofiles.open(sim_dir / "series.json", "w", encoding="utf-8") as f:
             await f.write(series.model_dump_json())
         return sim_dir / "run.json"
 
@@ -88,7 +88,7 @@ class FsFmuStore(FmuStore):
             run_path = sim_dir / "run.json"
             if not run_path.exists():
                 continue
-            run = SimulationRun.model_validate_json(run_path.read_text())
+            run = SimulationRun.model_validate_json(run_path.read_text(encoding="utf-8"))
             if fmu_slug is None or run.fmu_slug == fmu_slug:
                 out.append(run)
         return out
@@ -97,4 +97,4 @@ class FsFmuStore(FmuStore):
         path = self.simulations / simulation_id / "series.json"
         if not path.exists():
             return None
-        return TimeSeries.model_validate_json(path.read_text())
+        return TimeSeries.model_validate_json(path.read_text(encoding="utf-8"))
