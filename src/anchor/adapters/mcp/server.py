@@ -27,6 +27,7 @@ from anchor.adapters.status import build_status_summary
 from anchor.extensions.anchor_cad import mcp_handlers as cad_handlers
 from anchor.extensions.anchor_fmus import mcp_handlers as fmu_handlers
 from anchor.extensions.anchor_pdfs import mcp_handlers as pdf_handlers
+from anchor.extensions.anchor_pdfs.core.value_provenance import enrich_spec_row_source_refs
 from anchor.extensions.anchor_sysml import mcp_handlers as sysml_handlers
 from anchor.infra.environment import NoEnvironmentError, NoProjectError
 
@@ -54,22 +55,6 @@ Source-grounding (load-bearing):
   pointing back at its origin (page+bbox for PDFs, region_id for
   gold-extracted regions). Spec rows carry their own per-row
   source_ref. This is the project's primary trust mechanism.
-- Source refs inside node data are enough for grounding. Visual edges
-  are optional wiring, not a required part of every grounded answer.
-
-Canvas editing policy:
-- Classify the user's intent before changing the canvas.
-- Treat requests whose main intent is to answer, summarize, extract,
-  populate, fill, revise, or update content as content-only. Use
-  `canvas_update_node` on existing nodes when possible.
-- Preserve existing canvas wiring by default. Do not add, remove, or
-  reroute edges unless the user clearly asks for wiring changes.
-- Change edges only when the user's main intent is to change wiring,
-  relationships, provenance visualization, layout connections, or graph
-  structure.
-- If no suitable node exists, you may create a new content node with
-  source_ref data. Still do not add edges unless the user asked for
-  wiring or visual provenance edges.
 
 When the user asks you to populate placeholders:
 1. `canvas_list_placeholders(workspace_slug)` returns the ones flagged.
@@ -78,8 +63,7 @@ When the user asks you to populate placeholders:
 3. Replace the placeholder by writing real data via
    `canvas_update_node({id, label, data: {placeholder: false,
    source_ref: ..., rows: [...]}})`.
-4. Preserve existing edges and layout unless the user's main intent is
-   wiring, provenance visualization, graph structure, or reorganization.
+4. Optionally call `canvas_organize_subtree` to tidy the result.
 
 If you're producing a snapshot of the canvas, use `canvas_snapshot(...,
 format: "inline")` so the host renders the image inline.
@@ -104,7 +88,6 @@ Canvas tools:
 - canvas_list_workspaces / canvas_create_workspace / canvas_get_state
 - canvas_add_node / canvas_update_node / canvas_remove_node
 - canvas_add_edge / canvas_update_edge / canvas_remove_edge
-  (explicit wiring only; do not use for ordinary content updates)
 - canvas_clear / canvas_organize_subtree / canvas_align / canvas_distribute
 - canvas_create_sub_canvas — nest a child canvas inside a node
 - canvas_list_placeholders — your "what to fill" entrypoint
@@ -137,9 +120,7 @@ sky-blue outline + hint chip. Agent: enumerate via
 `canvas_list_placeholders`, fill via `canvas_update_node({id, data: {
 placeholder: false, source_ref: {slug, page, bbox, region_id?}, rows: [
 {key, value, source_ref}, ... ]}})`. Keep `placeholder_hint` in `data`
-even after filling. It is useful audit history. Do not add evidence
-edges while filling placeholders unless the user explicitly asks for
-edge wiring.
+even after filling. It is useful audit history.
 
 ── Where data lives ───────────────────────────────────────────────────────
 
@@ -428,7 +409,22 @@ def build_mcp_server(
                 text = _json.dumps(summary)
             elif name in canvas_names:
                 b = get_bundle(args.pop("project", None))
-                text = await handlers_canvas.call_tool(b.workspace, name, args)
+
+                # Enrich spec-row source refs against this project's doc store
+                # so row-level provenance survives canvas writes (from #136).
+                async def enrich_fields(
+                    fields: dict[str, Any], _doc_store=b.doc_store
+                ) -> dict[str, Any]:
+                    if "data" not in fields:
+                        return fields
+                    return {
+                        **fields,
+                        "data": await enrich_spec_row_source_refs(fields["data"], _doc_store),
+                    }
+
+                text = await handlers_canvas.call_tool(
+                    b.workspace, name, args, enrich_node_fields=enrich_fields,
+                )
             elif name in fmu_names:
                 b = get_bundle(args.pop("project", None))
                 if b.fmu is None:

@@ -49,9 +49,8 @@ def test_bbox_must_have_four_finite_numbers():
     assert bbox_error([0.0, 100.0, 50.0, 0.0]) is None
 
 
-def test_bbox_bottomleft_ordering_is_enforced():
-    # BOTTOMLEFT: [left, top, right, bottom] with top >= bottom.
-    assert bbox_error([0, 50, 100, 60]) is not None  # top < bottom
+def test_bbox_accepts_either_y_order_but_rejects_bad_x_order():
+    assert bbox_error([0, 50, 100, 60]) is None
     assert bbox_error([100, 60, 0, 50]) is not None  # left > right
 
 

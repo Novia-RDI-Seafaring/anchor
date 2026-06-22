@@ -262,9 +262,9 @@ export function PageWithBboxViewer() {
                       y={y}
                       width={w}
                       height={h}
-                      fill="rgba(244, 114, 22, 0.35)"
-                      stroke="#EA580C"
-                      strokeWidth={3.5}
+                      fill="rgba(251, 146, 60, 0.18)"
+                      stroke="#FB923C"
+                      strokeWidth={2.2}
                       vectorEffect="non-scaling-stroke"
                     >
                       <title>highlight target</title>

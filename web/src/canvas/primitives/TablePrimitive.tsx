@@ -328,7 +328,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                       onAppendRow={() => appendRow("key")}
                     />
                   </td>
-                  <td className="px-3 py-1 text-neutral-900">
+                  <td className={`px-3 py-1 text-neutral-900 ${r.source_ref ? "bg-emerald-50/80" : ""}`}>
                     <RowCell
                       rowIndex={i}
                       col="value"

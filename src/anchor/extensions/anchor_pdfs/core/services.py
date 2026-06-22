@@ -40,6 +40,8 @@ from anchor.extensions.anchor_pdfs.core.silver import (
     build_pages_meta,
     render_pages_md,
     snap_to_docling_items,
+    table_bbox_from_items,
+    table_cells_from_items,
 )
 from anchor.extensions.anchor_pdfs.core.synopsis import SynopsisData, compose_synopsis
 
@@ -294,9 +296,23 @@ class IngestService:
                         bbox_any = r.get("bbox") or r.get("approximate_bbox")
                         bbox_list: list[float] = list(bbox_any) if isinstance(bbox_any, list) else []
                         if len(bbox_list) == 4:
-                            snap_bbox, _ = snap_to_docling_items(docling, page, bbox_list)
+                            snap_bbox, item_indexes = snap_to_docling_items(docling, page, bbox_list)
                             if snap_bbox:
                                 r = {**r, "bbox": snap_bbox}
+                                cells = table_cells_from_items(
+                                    docling.get("items", []),
+                                    item_indexes,
+                                    region_bbox=bbox_list,
+                                )
+                                if cells and r.get("kind") in {"table", "spec_block"}:
+                                    r = {**r, "cells": cells}
+                                table_bbox = table_bbox_from_items(
+                                    docling.get("items", []),
+                                    item_indexes,
+                                    region_bbox=bbox_list,
+                                )
+                                if table_bbox and r.get("kind") == "table":
+                                    r = {**r, "bbox": table_bbox}
                             elif "bbox" not in r:
                                 r = {**r, "bbox": bbox_list}
                         snapped.append(r)

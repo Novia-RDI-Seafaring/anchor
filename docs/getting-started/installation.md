@@ -81,7 +81,7 @@ uv run anchor serve
 
 # terminal 2
 pnpm --dir web dev
-# → backend on :8002, Vite HMR on :5173
+# -> backend on :8002, Vite HMR on :5173
 ```
 
 Storage resolves from the active project. Run inside a project folder, or
@@ -162,7 +162,7 @@ pnpm --dir web build
 
 uv tool install --force --reinstall --refresh .
 anchor serve
-    ```
+```
 
 On Windows, reinstall can fail if an agent harness is still running
 `anchor-mcp.exe`:
@@ -230,6 +230,34 @@ ANCHOR_REGION_MODEL=gpt-5.4
 ANCHOR_POLISH_MODEL=gpt-5.4
 ```
 
+For Azure OpenAI, the simplest working setup is:
+
+```bash
+anchor init . --provider azure \
+  --base-url https://<resource>.openai.azure.com/ \
+  --vision-model <vision-deployment-name>
+
+echo 'ANCHOR_OPENAI_API_KEY=<your-azure-key>' >> .env
+anchor check --probe
+anchor ingest path/to/file.pdf --force
+```
+
+`anchor init` rewrites a bare Azure resource URL to
+`https://<resource>.openai.azure.com/openai/v1/`. The model value is the Azure
+deployment name, not the base model name. The key must be supplied through
+`ANCHOR_OPENAI_API_KEY`; a personal `OPENAI_API_KEY` is not proof that the
+Azure project is configured.
+
+After ingest, verify the gold layer:
+
+```bash
+anchor list
+anchor gold-map <slug>
+```
+
+The document should show `"has_gold": true` in `anchor list`. If it does not,
+check the key, endpoint, and deployment name before retrying with `--force`.
+
 Without a vision endpoint, `anchor serve` still works. You get silver-layer
 extraction (page text, page PNGs, and Docling structure), but gold regions are
 skipped.
@@ -244,7 +272,7 @@ skipped.
 ## Verify the install
 
 ```bash
-anchor version          # -> 0.2.4
+anchor version          # -> 0.2.5
 anchor canvas list      # -> your existing canvases (empty on a fresh install)
 ```
 

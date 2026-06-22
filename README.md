@@ -39,7 +39,7 @@ create a `.env` file before starting ANCHOR; see
 itself does not require an API key.
 
 ```bash
-anchor serve              # → http://127.0.0.1:8002
+anchor serve              # -> http://127.0.0.1:8002
 ```
 
 Requires Python >= 3.12. CI tests Linux and runs CLI smoke checks on
@@ -188,18 +188,18 @@ Every canvas is a folder. Every document is a folder. Both shareable as zips, bo
 
 ```
 ~/anchor-data/
-├─ bronze/                 # raw PDFs (your originals)
-│   └─ datasheet.pdf
-├─ silver/<doc-slug>/      # docling extraction + per-page markdown + page PNGs
-│   ├─ index.json          # outline, tables, figures
-│   ├─ pages.meta.json
-│   └─ pages/{1.md, 1.png, …}
-├─ gold/<doc-slug>/        # structured regions with page + bbox provenance
-│   └─ pages/{1.regions.json, 1/r1-spec-block.png, …}
-└─ canvases/<canvas-slug>/
-    ├─ meta.json
-    ├─ state.json          # latest snapshot
-    └─ events.jsonl        # append-only log; every action ever taken
+|- bronze/                 # raw PDFs (your originals)
+|  `- datasheet.pdf
+|- silver/<doc-slug>/      # docling extraction + per-page markdown + page PNGs
+|  |- index.json           # outline, tables, figures
+|  |- pages.meta.json
+|  `- pages/{1.md, 1.png, ...}
+|- gold/<doc-slug>/        # structured regions with page + bbox provenance
+|  `- pages/{1.regions.json, 1/r1-spec-block.png, ...}
+`- canvases/<canvas-slug>/
+   |- meta.json
+   |- state.json           # latest snapshot
+   `- events.jsonl         # append-only log; every action ever taken
 ```
 
 This layout is **the contract**. You can hand-edit JSON files, copy a canvas folder to another machine, or version-control the whole thing.
@@ -221,7 +221,7 @@ settings:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ANCHOR_OPENAI_API_KEY` | (unset) | Optional: enables LLM polish + region extraction in the gold layer |
+| `ANCHOR_OPENAI_API_KEY` | (unset) | Optional: enables LLM polish + region extraction in the gold layer. Required for Azure and custom endpoints. |
 | `ANCHOR_OPENAI_BASE_URL` | (unset) | Override the OpenAI-compatible endpoint. For Azure OpenAI v1 use `https://<resource>.openai.azure.com/openai/v1/`; for Ollama use `http://localhost:11434/v1`. |
 | `ANCHOR_POLISH_MODEL` | `gpt-5.4` | Model name for page-MD polishing |
 | `ANCHOR_REGION_MODEL` | `gpt-5.4` | Model name for region extraction |
@@ -229,7 +229,10 @@ settings:
 | `ANCHOR_DPI` | `150` | Render DPI for page images |
 | `ANCHOR_CORS_ORIGINS` | (unset) | Comma-separated additional origins permitted by the HTTP server |
 
-If you don't set `ANCHOR_OPENAI_API_KEY`, ingest still produces silver (deterministic Docling extraction + per-page markdown). Gold extraction (LLM-driven structured regions) is skipped. The system stays useful without an API key: silver is the workable substrate; gold is the polish.
+If no usable vision key is configured, ingest still produces silver
+(deterministic Docling extraction + per-page markdown). Gold extraction
+(LLM-driven structured regions) is skipped. The system stays useful without an
+API key: silver is the workable substrate; gold is the polish.
 
 ### Enable gold region extraction
 
@@ -252,7 +255,9 @@ ANCHOR_REGION_MODEL=gpt-5.4
 ```
 
 For Azure OpenAI, ANCHOR currently supports the Azure OpenAI **v1** endpoint
-through the standard OpenAI-compatible client using API-key authentication:
+through the standard OpenAI-compatible client using API-key authentication.
+The key must be the Azure resource key. A personal `OPENAI_API_KEY` in your
+shell is not proof that the Azure project is configured.
 
 ```dotenv
 ANCHOR_OPENAI_API_KEY=<your-azure-openai-key>
@@ -261,12 +266,25 @@ ANCHOR_POLISH_MODEL=<vision-capable-deployment-name>
 ANCHOR_REGION_MODEL=<vision-capable-deployment-name>
 ```
 
-The Azure deployment name is used as `model` and must support image input and
-JSON-formatted chat completion output. Azure Entra ID authentication and the
-older Azure deployment/API-version endpoint shape are not configured by ANCHOR
-environment variables today. See Microsoft's
+The Azure deployment name is used as `model`, not the base model name, and must
+support image input and JSON-formatted chat completion output. Azure Entra ID
+authentication and the older Azure deployment/API-version endpoint shape are
+not configured by ANCHOR environment variables today. See Microsoft's
 [Azure OpenAI v1 API documentation](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/api-version-lifecycle?tabs=python)
 for endpoint details.
+
+You can let ANCHOR write the non-secret project settings for you:
+
+```bash
+anchor init . --provider azure \
+  --base-url https://<resource-name>.openai.azure.com/ \
+  --vision-model <vision-capable-deployment-name>
+echo 'ANCHOR_OPENAI_API_KEY=<your-azure-openai-key>' >> .env
+anchor check --probe
+```
+
+Run those commands from the project folder, the same folder that contains
+`anchor.toml` and `.env`.
 
 From the same directory as `.env`, start ANCHOR and upload the PDF in the UI:
 
@@ -277,11 +295,20 @@ anchor serve
 Alternatively, ingest a file directly from the same directory:
 
 ```powershell
-anchor ingest "C:\path\to\datasheet.pdf" --data-dir "$HOME\anchor-data"
+anchor ingest "C:\path\to\datasheet.pdf" --force
 ```
 
 Successful gold extraction creates `~/anchor-data/gold/<doc-slug>/pages/*.regions.json`
-and returns a non-zero `region_count` when regions are identified.
+and returns a non-zero `region_count` when regions are identified. Verify with:
+
+```bash
+anchor list
+anchor gold-map <doc-slug>
+```
+
+In `anchor list`, the document should show `"has_gold": true`. If it does not,
+check `ANCHOR_OPENAI_API_KEY`, the `/openai/v1/` base URL, and that
+`ANCHOR_REGION_MODEL` is the Azure deployment name.
 
 For Ollama / local-LLM recipes, see [`docs/guides/agent-setup.md`](./docs/guides/agent-setup.md).
 

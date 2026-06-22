@@ -56,7 +56,7 @@ use` session selection, else the default environment and its `default` project.
 | --- | --- | --- |
 | `provider` | — | The chosen provider; records the data zone. |
 | `embed_model` | `BAAI/bge-small-en-v1.5` | Embedding model. A `text-embedding-*` id routes embeddings to the configured endpoint. |
-| `openai_base_url` | — | OpenAI-compatible endpoint for polish / region extraction. |
+| `openai_base_url` | (unset) | OpenAI-compatible endpoint for polish / region extraction. |
 | `polish_model` / `region_model` | `gpt-5.4` | Vision model or deployment names. |
 | `docling_device` | `auto` | Bronze-stage accelerator (see below). |
 
@@ -97,12 +97,12 @@ deployment layer.
 
 The provider you pick determines where document content may go:
 
-- **`local` / `ollama`** — bronze, silver, and embeddings run on your machine;
+- **`local` / `ollama`**: bronze, silver, and embeddings run on your machine;
   no document content leaves the network. `ollama` adds offline gold regions via
   a local vision model.
-- **`openai`** — page images and extracted text are sent to OpenAI for polish
+- **`openai`**: page images and extracted text are sent to OpenAI for polish
   and region extraction.
-- **`azure` / `custom`** — the same content is sent only to the endpoint you
+- **`azure` / `custom`**: the same content is sent only to the endpoint you
   configure (your tenant / region, or a self-hosted gateway).
 
 Embeddings stay **local** (`bge-small`) by default, so text never leaves the
@@ -137,10 +137,44 @@ export ANCHOR_OPENAI_API_KEY=<your-azure-key>   # never written to env.toml
 ```
 
 Use the **deployment name** (not the base model name) as `polish_model` /
-`region_model`. Content stays inside your Azure tenant / region — the "my zone"
-posture. Validate with a one-page PDF before relying on extracted values; if your
-resource does not expose the v1 surface, front it with an OpenAI-compatible proxy
-(for example LiteLLM) and use that URL with the `custom` provider.
+`region_model`. For Azure, do not rely on a personal `OPENAI_API_KEY`; set
+`ANCHOR_OPENAI_API_KEY` to the Azure resource key, ideally in the project
+folder's gitignored `.env`:
+
+```bash
+echo 'ANCHOR_OPENAI_API_KEY=<your-azure-key>' >> .env
+```
+
+PowerShell:
+
+```powershell
+Add-Content .env "ANCHOR_OPENAI_API_KEY=<your-azure-key>"
+```
+
+Gold extraction through `anchor ingest` needs this keyed vision setup. If the
+key is missing, bronze and silver are still written locally, but no
+`OpenAIRegionExtractor` is wired and `has_gold` stays false. If the endpoint,
+key, or deployment name is wrong, the Azure call fails during ingest.
+
+Check the setup before ingesting sensitive documents:
+
+```bash
+anchor check --probe
+```
+
+Then verify an ingest:
+
+```bash
+anchor ingest path/to/file.pdf --force
+anchor list
+anchor gold-map <slug>
+```
+
+`anchor list` should show `"has_gold": true` and a non-zero region count.
+Content stays inside your Azure tenant / region. Validate with a one-page PDF
+before relying on extracted values; if your resource does not expose the v1
+surface, front it with an OpenAI-compatible proxy (for example LiteLLM) and use
+that URL with the `custom` provider.
 
 ## Example: OpenAI-compatible extraction
 

@@ -9,6 +9,7 @@ import base64
 import json
 import mimetypes
 from pathlib import Path
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from anchor.core.services.workspace_service import WorkspaceService
@@ -399,7 +400,16 @@ def tool_definitions() -> list[dict[str, Any]]:
     ]
 
 
-async def call_tool(svc: WorkspaceService, name: str, args: dict[str, Any]) -> str:
+NodeFieldsEnricher = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
+
+
+async def call_tool(
+    svc: WorkspaceService,
+    name: str,
+    args: dict[str, Any],
+    *,
+    enrich_node_fields: NodeFieldsEnricher | None = None,
+) -> str:
     try:
         if name == "canvas_get_state":
             return json.dumps(await svc.get_state(args["workspace_slug"]))
@@ -430,11 +440,15 @@ async def call_tool(svc: WorkspaceService, name: str, args: dict[str, Any]) -> s
                 state, env = await svc.reparent_node(slug, node_id, parent_val)
             else:
                 if parent_present:
+                    if enrich_node_fields:
+                        fields = await enrich_node_fields(fields)
                     await svc.update_node(slug, node_id, fields)
                     state, env = await svc.reparent_node(slug, node_id, parent_val)
                 else:
                     if not fields:
                         return json.dumps({"error": "nothing to update"})
+                    if enrich_node_fields:
+                        fields = await enrich_node_fields(fields)
                     state, env = await svc.update_node(slug, node_id, fields)
             return json.dumps({"event": env.model_dump(), "state": state.get_state()})
         if name == "canvas_remove_node":

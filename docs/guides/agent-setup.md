@@ -138,6 +138,11 @@ ANCHOR_POLISH_MODEL=<vision-capable-deployment-name>
 ANCHOR_REGION_MODEL=<vision-capable-deployment-name>
 ```
 
+For Azure, `ANCHOR_OPENAI_API_KEY` must be the Azure resource key. A personal
+`OPENAI_API_KEY` in your shell is not proof that the Azure project is
+configured. The model values must be Azure deployment names, not base model
+names.
+
 An Ollama or other local OpenAI-compatible server can use the same wiring:
 
 ```dotenv
