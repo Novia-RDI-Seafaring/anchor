@@ -1,7 +1,8 @@
 """MCP stdio assembly keeps document-search configuration usable."""
 from __future__ import annotations
 
-from anchor.adapters.mcp.stdio_main import _build_ingest_service, _config_for_data_dir
+from anchor.adapters.mcp.services import _build_ingest_service
+from anchor.adapters.mcp.stdio_main import _config_for_data_dir
 from anchor.extensions.anchor_pdfs.infra.llm.local_sentence_transformer_embedder import (
     LocalSentenceTransformerEmbedder,
 )

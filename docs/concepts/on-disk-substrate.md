@@ -13,8 +13,13 @@
 
 ## The full tree
 
+The `data/` root below is a project's data directory: the hidden `.anchor_data/`
+folder inside the project folder (`<project>/.anchor_data/`, or
+`~/.anchor/envs/<env>/projects/<name>/.anchor_data/` for a managed project).
+Its internal layout is the same wherever the project lives.
+
 ```
-data/
+data/  ( = the project's .anchor_data/ )
 ├── canvases/                       (canvas core)
 │   └── <slug>/
 │       ├── meta.json               slug, title, created_at, schema_version

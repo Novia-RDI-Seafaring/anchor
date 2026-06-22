@@ -14,6 +14,7 @@ the resolved port instances built from the config.
 """
 from __future__ import annotations
 
+import contextvars
 import os
 import sys
 import tomllib
@@ -29,6 +30,19 @@ from pydantic_settings import (
 
 #: Filename for the project-local, non-secret configuration.
 CONFIG_FILENAME = "anchor.toml"
+
+#: Pre-merged config values supplied by the environment/project resolver.
+#:
+#: When set, ``settings_customise_sources`` uses these mapping values as the
+#: toml-level source instead of walking up for an ``anchor.toml``. The resolver
+#: (``anchor.infra.environment``) layers the environment ``config.toml`` under
+#: the project ``project.toml`` and parks the result here, so a single
+#: ``AnchorConfig`` carries the resolved layering while ``ANCHOR_*`` env vars
+#: and explicit constructor args still win above it. Unset for every direct
+#: ``AnchorConfig()`` caller, which keeps the legacy walk-up behavior intact.
+_ACTIVE_LAYERS: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
+    "anchor_active_config_layers", default=None
+)
 
 
 def _load_toml_tolerant(path: Path) -> dict[str, Any]:
@@ -157,19 +171,46 @@ class AnchorConfig(BaseSettings):
             env_settings,
             dotenv_settings,
         ]
-        toml_path = discover_config_file()
-        if toml_path is not None:
-            try:
-                values = _load_toml_tolerant(toml_path)
-                sources.append(_MappingSettingsSource(settings_cls, values))
-            except Exception as exc:  # noqa: BLE001
-                # A malformed project anchor.toml must never brick the CLI:
-                # DEFAULT_DATA_DIR is computed at import time, so a parse error
-                # here would crash every command (including `init --force` that
-                # would fix it). Warn and fall back to env / defaults instead.
-                print(f"Warning: ignoring unreadable {toml_path}: {exc}", file=sys.stderr)
+        layers = _ACTIVE_LAYERS.get()
+        if layers is not None:
+            # The environment/project resolver has already merged the
+            # environment config.toml under the project project.toml. Use that
+            # as the single toml-level source instead of walking up for a stray
+            # anchor.toml, so the resolved layering is honored exactly.
+            sources.append(_MappingSettingsSource(settings_cls, layers))
+        else:
+            toml_path = discover_config_file()
+            if toml_path is not None:
+                try:
+                    values = _load_toml_tolerant(toml_path)
+                    sources.append(_MappingSettingsSource(settings_cls, values))
+                except Exception as exc:  # noqa: BLE001
+                    # A malformed project anchor.toml must never brick the CLI:
+                    # DEFAULT_DATA_DIR is computed at import time, so a parse
+                    # error here would crash every command (including
+                    # `init --force` that would fix it). Warn and fall back to
+                    # env / defaults instead.
+                    print(f"Warning: ignoring unreadable {toml_path}: {exc}", file=sys.stderr)
         sources.append(file_secret_settings)
         return tuple(sources)
+
+    @classmethod
+    def from_layers(cls, *, layer_values: dict[str, Any], data_dir: Path) -> AnchorConfig:
+        """Build a config from pre-merged environment+project toml values.
+
+        ``layer_values`` are the environment ``config.toml`` overlaid by the
+        project ``project.toml`` (with ``[meta]`` and any ``data_dir`` stripped
+        — storage location is structural, set from the resolved project dir).
+        They sit below ``ANCHOR_*`` env vars in precedence, matching a hand
+        ``anchor.toml``. ``data_dir`` is forced to the project directory so the
+        project, not a stray ``ANCHOR_DATA_DIR``, decides where its documents
+        and canvases live.
+        """
+        token = _ACTIVE_LAYERS.set(dict(layer_values))
+        try:
+            return cls(data_dir=data_dir)
+        finally:
+            _ACTIVE_LAYERS.reset(token)
 
     @property
     def bronze_dir(self) -> Path:
