@@ -21,10 +21,24 @@ type Row = {
   // node flips to that page and highlights the matching region, and any
   // evidence edge whose data.source_ref matches snaps from node-to-node
   // floating to row-handle↔region-handle anchored mode.
-  source_ref?: { slug?: string; page: number; region_id?: string; bbox?: number[] };
+  source_region_id?: string;
+  source_ref?: {
+    slug?: string;
+    page: number;
+    region_id?: string;
+    source_region_id?: string;
+    bbox?: number[];
+  };
 };
 
-type SourceRef = { kind?: string; slug?: string; page?: number; region_id?: string; bbox?: number[] };
+type SourceRef = {
+  kind?: string;
+  slug?: string;
+  page?: number;
+  region_id?: string;
+  source_region_id?: string;
+  bbox?: number[];
+};
 
 /**
  * TablePrimitive — `spec` node renderer.
@@ -120,7 +134,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       setHoveredSourceRef({
         slug: d.source_doc_slug,
         page: d.source_ref.page,
-        region_id: d.source_region_id,
+        region_id: d.source_ref.region_id ?? d.source_region_id ?? d.source_ref.source_region_id,
         bbox: d.source_ref.bbox,
       });
     }
@@ -137,7 +151,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
     setHoveredSourceRef({
       slug,
       page: ref.page,
-      region_id: ref.region_id ?? d.source_region_id,
+      region_id: ref.region_id ?? row.source_region_id ?? ref.source_region_id ?? d.source_region_id,
       bbox: ref.bbox,
     });
   };
@@ -172,7 +186,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       page: ref.page,
       workspaceSlug,
       documentNodeId: docNodeId,
-      highlightRegionId: ref.region_id ?? d.source_region_id,
+      highlightRegionId: ref.region_id ?? d.source_region_id ?? ref.source_region_id,
       highlightBbox: ref.bbox,
     });
   };

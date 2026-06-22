@@ -4,7 +4,7 @@ import { useParams } from "react-router-dom";
 
 import { BACKEND_URL } from "@/api/client";
 import { documents, type DocumentIndex, type Region } from "@/api/documents";
-import { bboxToImageRect } from "@/lib/bbox";
+import { bboxToImageRect, sameBbox } from "@/lib/bbox";
 import { useUiStore } from "@/stores/uiStore";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -50,31 +50,13 @@ type RegionHighlight = { regionId?: string; bbox?: number[] };
 const RENDER_DPI = 150;
 const POINTS_PER_INCH = 72;
 
-function normalizedBbox(bbox: number[] | undefined): [number, number, number, number] | null {
-  if (!bbox || bbox.length < 4) return null;
-  const [a, b, c, d] = bbox;
-  if (a === undefined || b === undefined || c === undefined || d === undefined) return null;
-  return [
-    Math.min(a, c),
-    Math.min(b, d),
-    Math.max(a, c),
-    Math.max(b, d),
-  ];
-}
-
-function sameBbox(a: number[] | undefined, b: number[] | undefined): boolean {
-  const left = normalizedBbox(a);
-  const right = normalizedBbox(b);
-  if (!left || !right) return false;
-  return left.every((value, index) => Math.abs(value - right[index]!) <= 0.5);
-}
-
 function matchesExternalHighlight(
   highlight: RegionHighlight | null,
   rid: string,
   bbox: number[],
 ): boolean {
   if (!highlight) return false;
+  if (highlight.bbox && !sameBbox(highlight.bbox, bbox)) return false;
   if (highlight.regionId) return highlight.regionId === rid;
   return sameBbox(highlight.bbox, bbox);
 }
@@ -384,6 +366,34 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                   </div>
                 );
               })
+            : null}
+          {canScale && imgSize && externalHighlight?.bbox
+            ? (() => {
+                const parent = externalHighlight.regionId
+                  ? regions.find((r, idx) => ((r as { id?: string }).id ?? `r${idx}`) === externalHighlight.regionId)
+                  : undefined;
+                if (parent?.bbox && sameBbox(externalHighlight.bbox, parent.bbox)) return null;
+                const rect = bboxToImageRect(externalHighlight.bbox, pageW, pageH, imgSize.w, imgSize.h);
+                if (!rect) return null;
+                const xpc = (rect.x / imgSize.w) * 100;
+                const ypc = (rect.y / imgSize.h) * 100;
+                const wpc = (rect.w / imgSize.w) * 100;
+                const hpc = (rect.h / imgSize.h) * 100;
+                return (
+                  <div
+                    className="pointer-events-none absolute"
+                    style={{
+                      left: `${xpc}%`,
+                      top: `${ypc}%`,
+                      width: `${wpc}%`,
+                      height: `${hpc}%`,
+                      background: "rgba(16, 185, 129, 0.22)",
+                      outline: "2px solid #059669",
+                      outlineOffset: "-1px",
+                    }}
+                  />
+                );
+              })()
             : null}
         </div>
       ) : (
