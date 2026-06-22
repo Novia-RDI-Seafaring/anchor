@@ -330,7 +330,7 @@ def synopsis(
             typer.echo(md)
         else:
             output.parent.mkdir(parents=True, exist_ok=True)
-            output.write_text(md)
+            output.write_text(md, encoding="utf-8")
             typer.echo(str(output))
         return
     typer.echo(f"unknown --format {format!r} (use json | pdf | md)", err=True)
