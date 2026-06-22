@@ -66,7 +66,7 @@ async def call_tool(svc: SysmlService, name: str, args: dict[str, Any]) -> str:
                 p = Path(args["path"])
                 if not p.exists():
                     return json.dumps({"error": f"path not found: {p}"})
-                text = p.read_text()
+                text = p.read_text(encoding="utf-8")
             if text is None:
                 return json.dumps({"error": "either 'text' or 'path' is required"})
             result = await svc.render(

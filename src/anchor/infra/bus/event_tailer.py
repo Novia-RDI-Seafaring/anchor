@@ -86,7 +86,7 @@ class EventTailer:
 
     async def _publish(self, line: bytes) -> None:
         try:
-            rec = json.loads(line.decode())
+            rec = json.loads(line.decode("utf-8"))
             event = DomainEvent(**rec)
         except (ValueError, TypeError):
             return

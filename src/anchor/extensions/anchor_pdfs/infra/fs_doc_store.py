@@ -75,7 +75,7 @@ class FsDocStore:
             title = slug
             filename = ""
             if idx_path.exists():
-                idx = json.loads(idx_path.read_text())
+                idx = json.loads(idx_path.read_text(encoding="utf-8"))
                 doc = idx.get("document", {})
                 page_count = int(doc.get("page_count", 0))
                 title = doc.get("title", slug)
@@ -84,7 +84,7 @@ class FsDocStore:
             region_count = 0
             if has_gold:
                 for rf in (self.gold / slug / "pages").glob("*.regions.json"):
-                    rdata = json.loads(rf.read_text())
+                    rdata = json.loads(rf.read_text(encoding="utf-8"))
                     region_count += len(rdata if isinstance(rdata, list) else rdata.get("regions", []))
             entry = {
                 "slug": slug, "title": title, "filename": filename,
@@ -167,11 +167,11 @@ class FsDocStore:
 
     async def get_index(self, slug: str) -> dict[str, Any] | None:
         p = self.silver / slug / "index.json"
-        return json.loads(p.read_text()) if p.exists() else None
+        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
     async def get_pages_meta(self, slug: str) -> dict[str, Any] | None:
         p = self.silver / slug / "pages.meta.json"
-        return json.loads(p.read_text()) if p.exists() else None
+        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
     async def get_page_text(self, slug: str, page: int) -> str | None:
         for name in (f"{page}.md", f"{page}.raw.md"):
@@ -200,7 +200,7 @@ class FsDocStore:
         if not d.is_dir():
             return result
         for rf in sorted(d.glob("*.regions.json")):
-            data = json.loads(rf.read_text())
+            data = json.loads(rf.read_text(encoding="utf-8"))
             pg = int(data.get("page", rf.stem.rstrip(".regions")))
             if page is not None and pg != page:
                 continue
