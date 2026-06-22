@@ -37,10 +37,13 @@ async def enrich_spec_row_source_refs(data: Any, store: DocStore) -> Any:
             continue
 
         regions = await _regions_for_page(store, cache, slug, page)
-        region = _find_region(
-            regions,
-            _first_str(source_ref.get("region_id"), node_region_id, node_ref.get("region_id")),
+        region_id = _first_str(
+            source_ref.get("region_id"),
+            row.get("source_region_id"),
+            node_region_id,
+            node_ref.get("region_id"),
         )
+        region = _find_region(regions, region_id)
         if region is None:
             next_rows.append(row)
             continue
@@ -51,7 +54,6 @@ async def enrich_spec_row_source_refs(data: Any, store: DocStore) -> Any:
             continue
 
         new_ref = {**source_ref, "slug": slug, "page": page, "bbox": cell_bbox}
-        region_id = _first_str(source_ref.get("region_id"), node_region_id, node_ref.get("region_id"))
         if region_id:
             new_ref["region_id"] = region_id
         next_rows.append({**row, "source_ref": new_ref})

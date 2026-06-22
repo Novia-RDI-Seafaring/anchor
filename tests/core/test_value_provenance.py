@@ -70,6 +70,40 @@ async def test_enrich_spec_row_source_refs_uses_key_to_disambiguate_duplicate_va
 
 
 @pytest.mark.asyncio
+async def test_enrich_spec_row_source_refs_accepts_row_level_region_id():
+    store = MemoryDocStore()
+    await store.write_gold_region_file("doc", 1, [{
+        "id": "r1",
+        "kind": "table",
+        "title": "Data",
+        "page": 1,
+        "bbox": [0, 100, 200, 0],
+        "cells": [
+            {"row": 0, "col": 0, "text": "Field", "bbox": [10, 90, 60, 80]},
+            {"row": 0, "col": 1, "text": "Result", "bbox": [80, 90, 140, 80]},
+        ],
+    }])
+    data = {
+        "source_doc_slug": "doc",
+        "rows": [{
+            "key": "Field",
+            "value": "Result",
+            "source_region_id": "r1",
+            "source_ref": {"page": 1, "bbox": [0, 100, 200, 0]},
+        }],
+    }
+
+    enriched = await enrich_spec_row_source_refs(data, store)
+
+    assert enriched["rows"][0]["source_ref"] == {
+        "slug": "doc",
+        "page": 1,
+        "region_id": "r1",
+        "bbox": [80.0, 90.0, 140.0, 80.0],
+    }
+
+
+@pytest.mark.asyncio
 async def test_enrich_spec_row_source_refs_leaves_ambiguous_values_unchanged():
     store = MemoryDocStore()
     await store.write_gold_region_file("doc", 1, [{
