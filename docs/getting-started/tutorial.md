@@ -31,10 +31,11 @@ pip install anchor-kb            # in your active virtualenv
 
 !!! tip "Quick demo vs. a real project"
     This tutorial uses `anchor demo`, which works out of the box in the default
-    `~/anchor-data`. For your own work, run `anchor init` in a project folder
-    first. It picks the AI provider / data zone and writes `anchor.toml`, and
-    every command run from that folder then uses it. See
-    [Configuration](../reference/configuration.md).
+    environment's default project. For your own work, `cd` into a working
+    folder and run `anchor init`. It initializes a **project** there and binds
+    it to an environment (self-creating the default `local` env on a fresh
+    machine). To use a non-local data zone, run `anchor env create` first.
+    See [Environments and projects](../guides/environments-and-projects.md).
 
 ## 2. Run `anchor demo`
 
@@ -44,7 +45,7 @@ anchor demo
 
 This does three things in every installation:
 
-1. Creates `~/anchor-data/` if it's missing.
+1. Creates the default environment's `default` project if it's missing.
 2. Creates a workspace called `demo` and drops six
    **placeholder spec nodes** with hints like "Max inlet pressure",
    "Temperature range", "Motor power range".
@@ -90,13 +91,13 @@ flips to the dashed-sky look. Pick `Clear placeholder` to revert.
 In a second terminal:
 
 ```bash
-anchor install claude-code
+anchor install claude-code           # or: claude-desktop, cursor
 ```
 
-This writes a **folder-resolving** MCP entry plus the skill: one registration
-works for every project, because the server resolves the project from the folder
-you open the agent in (and falls back to `~/anchor-data`, where `anchor demo`
-lives, when there's no project `anchor.toml`).
+This writes an MCP entry pointing at your default environment, plus the skill.
+The server serves that environment; you name a project per call, or use its
+`default` project (where `anchor demo` lives). To serve a different
+environment, install with `anchor install claude-code --env <name>`.
 
 Restart Claude Code. In any conversation, `/mcp` should now show `anchor` with
 its available tools. For Codex, Cursor, OpenCode, and generic stdio clients,

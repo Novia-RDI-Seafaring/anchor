@@ -6,17 +6,24 @@ from pathlib import Path
 
 import typer
 
-from anchor.infra.config import AnchorConfig
-
 
 def default_data_dir() -> Path:
-    """Resolve the default storage root, including ``ANCHOR_DATA_DIR``."""
-    return AnchorConfig().data_dir
+    """Resolve the default storage root: the active project under its environment.
+
+    Storage comes from the environment (the config), not an ``ANCHOR_DATA_DIR``.
+    Honors the selectors — ``ANCHOR_ENV`` / ``ANCHOR_PROJECT`` and the
+    ``anchor use`` session selection — and falls back to the default environment
+    and its ``default`` project. Pass an explicit ``--data-dir`` to point a
+    single command somewhere else.
+    """
+    from anchor.infra.environment import resolve_project
+
+    return resolve_project().data_dir
 
 
-# Typer evaluates option defaults while importing the CLI. Resolve through
-# AnchorConfig so every CLI subcommand honors ANCHOR_DATA_DIR unless the user
-# passes an explicit --data-dir.
+# Typer evaluates option defaults while importing the CLI. Resolve through the
+# environment so every CLI subcommand lands on the active environment's default
+# project unless the user passes an explicit --data-dir.
 DEFAULT_DATA_DIR = default_data_dir()
 
 

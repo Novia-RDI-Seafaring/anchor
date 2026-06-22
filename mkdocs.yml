@@ -108,6 +108,7 @@ nav:
     - Install: getting-started/installation.md
     - Tutorial: getting-started/tutorial.md
   - Guides:
+    - Environments and projects: guides/environments-and-projects.md
     - Working with documents and canvases: guides/documents-and-canvases.md
     - Agent setup: guides/agent-setup.md
     - Agent configuration: guides/agent-configuration.md

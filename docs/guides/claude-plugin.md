@@ -45,20 +45,21 @@ The plugin version follows ANCHOR releases. A new release on PyPI is
 picked up by uvx; the plugin manifest version is bumped in the same
 release commit.
 
-## Project resolution and the data dir
+## Project resolution
 
-The plugin registers the MCP server without a baked data dir. The
-server resolves the active project from its working directory, so the
-normal flow is:
+The plugin registers the MCP server without a baked project. The
+server resolves the active project from its working directory: it walks
+up to the nearest `anchor.toml` marker. The normal flow is:
 
 ```bash
-cd ~/my-project
-anchor init        # optional: writes anchor.toml, picks the data dir
+anchor env create local  # creates an environment + its default project
+cd ~/work/pumps
+anchor init              # start a project here, bound to the default env
 claude
 ```
 
-Without a project, the server falls back to `ANCHOR_DATA_DIR`, then
-`~/anchor-data`.
+Without a project marker in scope, the server falls back to the default
+environment's default project.
 
 Some harness setups spawn the MCP server outside your project folder.
 The desktop app is the known case (see
@@ -67,7 +68,7 @@ The workaround is to pin the project explicitly with a user-level MCP
 entry instead of the plugin's default one:
 
 ```bash
-claude mcp add anchor -- uvx --from anchor-kb anchor-mcp --project /path/to/project
+claude mcp add anchor -- uvx --from anchor-kb anchor-mcp --env local
 ```
 
 A user-level server named `anchor` coexists with the plugin's server;

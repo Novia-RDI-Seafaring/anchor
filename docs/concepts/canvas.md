@@ -28,12 +28,13 @@ rendered server-side. Click one to open it; the URL becomes
 `/c/<slug>` and React Router mounts `CanvasPage`, which mounts
 `CanvasGraph(slug=...)`.
 
-A workspace is the unit of portability. The folder
-`data/canvases/<slug>/` is the entire state of one canvas. Copy that
-folder to another machine, run `anchor serve --data-dir ./received`,
-and the same canvas opens with the same nodes and edges. Documents
-referenced from those nodes need to come along too — they live in
-their producer's data folder, not in the canvas folder — but the two
+A canvas is a board inside a project. Each canvas lives under the
+project's `.anchor_data/canvases/<slug>/`, and that folder is the
+entire state of one canvas. Copy that folder into another project's
+`.anchor_data/canvases/`, open that project, and the same canvas opens
+with the same nodes and edges. Documents referenced from those nodes
+need to come along too. They live in the project's `.anchor_data/`
+bronze, silver, and gold stages, not in the canvas folder. The two
 substrates are independently transferable.
 
 ## Node types

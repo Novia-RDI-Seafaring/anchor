@@ -64,7 +64,7 @@ find content in it. It succeeded at the task. It also produced these findings.
 | The skill listed `get_gold_regions` but no search tool, so the agent nearly told the user "no search exists." Search exists across CLI, MCP, and HTTP. | Discoverability, Contract truth | High (false "no") | Fixed: `search_documents` / `anchor search` now in the skill. |
 | `anchor check --probe` reported "not ready" while the real ingest worked. The probe sent a deprecated `max_tokens` the model rejected. Ingestion sends neither token param. | Honest verdicts | High (corrosive false negative) | Fixed: the probe sends no token-cap parameter. |
 | `anchor ingest` mixed RapidOCR INFO logs and progress bars into the output. | Pure machine output | Medium (a stricter parser would choke) | Fixed: `stdout` is pure JSON, noise quieted to `stderr`. |
-| `anchor init` echoed the resolved config back, including key state. The agent could set up and know it was set up. | (Positive) Contract truth | n/a | Keep. The model for the rest of the CLI. |
+| `anchor env create` echoed the resolved config back, including key state. The agent could set up and know it was set up. | (Positive) Contract truth | n/a | Keep. The model for the rest of the CLI. |
 
 The through-line: skill ≠ CLI, probe ≠ ingest, logs ≠ stdout. Three instances of
 one bug. The fix was not a feature. It was making each surface tell the truth.
