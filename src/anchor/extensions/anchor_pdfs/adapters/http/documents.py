@@ -61,6 +61,33 @@ async def page_image(slug: str, page: int, store: DocStore = Depends(get_doc_sto
     return FileResponse(p, media_type="image/png")
 
 
+@router.get("/{slug}/pages/{page}/crop")
+async def page_crop(
+    slug: str,
+    page: int,
+    bbox: str = Query(..., description="Comma-separated [left, top, right, bottom] bbox."),
+    dpi: int = Query(300, ge=72, le=600),
+    store: DocStore = Depends(get_doc_store),
+    ingest: IngestService = Depends(get_ingest_service),
+):
+    path = await store.get_raw_pdf_path(slug)
+    if path is None:
+        raise HTTPException(404, f"raw PDF not available for slug: {slug}")
+    if str(path).startswith("memory://"):
+        raise HTTPException(501, "in-memory store cannot crop raw PDF over HTTP")
+    try:
+        values = [float(part.strip()) for part in bbox.split(",")]
+    except ValueError as e:
+        raise HTTPException(400, "bbox must contain four numeric values") from e
+    if len(values) != 4:
+        raise HTTPException(400, "bbox must contain four numeric values")
+    try:
+        png = await ingest.renderer.crop_region(path, page, values, fmt="png", dpi=dpi)
+    except (IndexError, ValueError) as e:
+        raise HTTPException(400, str(e)) from e
+    return Response(png, media_type="image/png")
+
+
 @router.get("/{slug}/crops/{rel_path:path}")
 async def crop(slug: str, rel_path: str, store: DocStore = Depends(get_doc_store)):
     p = await store.get_crop_path(slug, rel_path)

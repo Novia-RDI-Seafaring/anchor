@@ -69,6 +69,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
     source_doc_slug?: string;
     source_doc_node_id?: string;
     source_region_id?: string;
+    crops?: { png?: string | null; svg?: string | null };
     source_ref?: SourceRef;
     dashed?: boolean;
     width?: number;
@@ -192,10 +193,12 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   };
   const openSource = () => openSourceRef(d.source_ref);
 
-  const cropUrl =
-    d.source_doc_slug && d.source_region_id && d.source_ref?.page
-      ? `${(import.meta.env.VITE_BACKEND_URL as string | undefined) ?? ""}/api/documents/${d.source_doc_slug}/crops/${d.source_ref.page}/${d.source_region_id}.png`
-      : null;
+  const cropRel = d.crops?.png ?? d.crops?.svg ?? null;
+  const storedCropUrl = d.source_doc_slug && cropRel ? documents.cropUrl(d.source_doc_slug, cropRel) : null;
+  const renderedCropUrl = d.source_doc_slug && d.source_ref?.page && d.source_ref?.bbox
+    ? documents.pageCropUrl(d.source_doc_slug, d.source_ref.page, d.source_ref.bbox)
+    : null;
+  const previewUrl = renderedCropUrl ?? storedCropUrl;
 
   const canEdit = selected ?? false;
   // Inline title rename — wires the spec table's `label` field to the same
@@ -294,17 +297,21 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         ) : null}
       </div>
 
-      {cropUrl ? (
+      {previewUrl ? (
         <div className="border-b border-neutral-200 bg-neutral-50">
           <img
-            src={cropUrl}
+            src={previewUrl}
             alt={d.label ?? "region"}
             className="block max-h-32 w-full object-contain"
             loading="lazy"
             draggable={false}
             onError={(e) => {
               const img = e.currentTarget as HTMLImageElement;
-              // Fallback: full-page image if crop is missing.
+              if (storedCropUrl && img.dataset.cropFallback !== "stored") {
+                img.dataset.cropFallback = "stored";
+                img.src = storedCropUrl;
+                return;
+              }
               if (d.source_doc_slug && d.source_ref?.page) {
                 img.src = documents.pageImageUrl(d.source_doc_slug, d.source_ref.page);
               } else {

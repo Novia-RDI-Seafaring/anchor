@@ -51,6 +51,7 @@ export function PageWithBboxViewer() {
         data: {
           source_doc_slug: viewer.slug,
           source_region_id: rid,
+          crops: region.crops,
           description: region.description,
           tags: (region as { tags?: string[] }).tags ?? [],
           source_ref: {
