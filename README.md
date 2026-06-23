@@ -115,7 +115,10 @@ anchor demo
 
 # Or step by step:
 
-# 1. Configure a project folder and create your first canvas
+# 1. Start a project in a folder. The first time, `anchor init` asks you to
+#    pick a provider — this is the ENVIRONMENT, the trust boundary that decides
+#    where document content may go (local keeps everything on your machine).
+#    Pass --provider to skip the prompt, e.g. `anchor init --provider local`.
 mkdir my-anchor-project
 cd my-anchor-project
 anchor init
