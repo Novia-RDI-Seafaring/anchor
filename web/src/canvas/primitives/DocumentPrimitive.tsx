@@ -321,9 +321,14 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                           source_doc_slug: slug,
                           source_doc_node_id: id,
                           source_region_id: rid,
+                          crops: r.crops,
                           description: (r as { description?: string }).description,
                           tags: (r as { tags?: string[] }).tags ?? [],
-                          source_ref: { kind: "pdf-page-bbox", page, bbox },
+                          source_ref: {
+                            kind: "pdf-page-bbox",
+                            page,
+                            bbox,
+                          },
                         },
                       };
                       e.dataTransfer.effectAllowed = "copy";

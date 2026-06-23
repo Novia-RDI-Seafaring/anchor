@@ -24,6 +24,7 @@ export type Region = {
   page?: number;
   bbox?: number[];
   approximate_bbox?: number[];
+  crops?: { png?: string | null; svg?: string | null; pdf?: string | null };
   [key: string]: unknown;
 };
 
@@ -49,4 +50,11 @@ export const documents = {
     api.get<{ text: string }>(`/api/documents/${slug}/pages/${page}/text`),
   pageImageUrl: (slug: string, page: number) =>
     `${BACKEND_URL}/api/documents/${slug}/pages/${page}/image`,
+  pageCropUrl: (slug: string, page: number, bbox: number[], dpi = 300) =>
+    `${BACKEND_URL}/api/documents/${slug}/pages/${page}/crop?${new URLSearchParams({
+      bbox: bbox.join(","),
+      dpi: String(dpi),
+    }).toString()}`,
+  cropUrl: (slug: string, relPath: string) =>
+    `${BACKEND_URL}/api/documents/${slug}/crops/${relPath}`,
 };
