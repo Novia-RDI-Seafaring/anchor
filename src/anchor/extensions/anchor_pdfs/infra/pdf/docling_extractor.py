@@ -142,6 +142,7 @@ def _convert(pdf_path: Path, device: str) -> dict[str, Any]:
         AcceleratorDevice,
         AcceleratorOptions,
         PdfPipelineOptions,
+        RapidOcrOptions,
     )
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
@@ -153,6 +154,14 @@ def _convert(pdf_path: Path, device: str) -> dict[str, Any]:
 
     pipeline_options = PdfPipelineOptions()
     pipeline_options.accelerator_options = AcceleratorOptions(device=accel_device)
+    # Pin the OCR engine. docling's default OcrAutoOptions lets RapidOCR
+    # auto-select a backend; with onnxruntime absent and torch present (torch
+    # ships for the layout model), RapidOCR 3.x falls back to its torch engine,
+    # whose default PP-OCRv6 model does not exist — ingest then dies with
+    # "Unsupported configuration: torch.PP-OCRv6.det.small". onnxruntime is a
+    # declared dependency, so force that backend for deterministic ingest across
+    # fresh installs.
+    pipeline_options.ocr_options = RapidOcrOptions(backend="onnxruntime")
     converter = DocumentConverter(
         format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
     )
