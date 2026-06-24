@@ -76,7 +76,7 @@ def tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "canvas_add_node",
-            "description": "Add a node by node_type, label, x, y, parent, data.",
+            "description": "Add (create / place) a new node by node_type, label, x, y, parent, data.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -95,7 +95,9 @@ def tool_definitions() -> list[dict[str, Any]]:
         {
             "name": "canvas_update_node",
             "description": (
-                "Patch a node's fields. The `data` field REPLACES the whole "
+                "Update (edit / modify / patch) an existing node's label, "
+                "position, parent, or content. "
+                "The `data` field REPLACES the whole "
                 "data dict — to add or change a single key (e.g. colour), read "
                 "the current node first and pass the merged dict back. Shape / "
                 "card primitives honour `data.bg_color` and `data.stroke_color` "
