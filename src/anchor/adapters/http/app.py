@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from anchor.adapters.http.routers import edges, nodes, sse, status, workspaces
+from anchor.adapters.http.routers import edges, ingests, nodes, sse, status, workspaces
 from anchor.core.ids import InvalidWorkspaceSlugError
 from anchor.core.ports.event_bus import EventBus
 from anchor.core.services.workspace_service import WorkspaceService
@@ -102,6 +102,7 @@ def build_app(
     app.include_router(ingest_sessions.router)
     app.include_router(upload.router)
     app.include_router(sse.router)
+    app.include_router(ingests.router)
     app.include_router(status.router)
     if cad_service is not None:
         app.dependency_overrides[cad_routes.get_cad_service] = lambda: cad_service

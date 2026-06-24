@@ -163,6 +163,37 @@ class IngestService:
             }
         publish_workspace_id = workspace_id or self._gid
         ingest_started_at = self.clock.now()
+        # Live activity record (issue #51): updated through the store as each
+        # stage advances so the project-level "what is ingesting" surface sees
+        # this run cross-process and after a restart. Bookkeeping only — a
+        # write hiccup must never affect the pipeline, so writes are guarded.
+        activity = {
+            "slug": slug,
+            "filename": filename,
+            "stage": "bronze",
+            "current": 0,
+            "total": 0,
+            "status": "running",
+            "started_at": ingest_started_at,
+            "updated_at": ingest_started_at,
+        }
+
+        async def record_activity(
+            stage: str, *, current: int = 0, total: int = 0,
+            status: str = "running", error: str | None = None,
+        ) -> None:
+            activity.update(
+                stage=stage, current=current, total=total, status=status,
+                updated_at=self.clock.now(),
+            )
+            if error is not None:
+                activity["error"] = error
+            try:
+                await self.store.write_ingest_activity(slug, dict(activity))
+            except Exception:  # noqa: BLE001 - never let bookkeeping break ingest
+                pass
+
+        await record_activity("bronze")
         stages: list[dict[str, Any]] = []
         # Tracks the pipeline stage in flight so a crash reports the real
         # failing stage (not a hardcoded "unknown") on the bus + in the
@@ -188,6 +219,7 @@ class IngestService:
 
             current_stage = "silver_extract"
             await self._publish(IngestProgress(slug=slug, stage="silver_extract", current=0, total=1), publish_workspace_id)
+            await record_activity("silver_extract", current=0, total=1)
             stage_started_at = self.clock.now()
             docling = await self.extractor.extract(bronze_path)
             finish_stage(
@@ -269,6 +301,7 @@ class IngestService:
                     await self._publish(IngestProgress(
                         slug=slug, stage="silver_polish", current=page, total=page_count,
                     ), publish_workspace_id)
+                    await record_activity("silver_polish", current=page, total=page_count)
                 finish_stage(
                     "silver_polish",
                     stage_started_at,
@@ -347,6 +380,7 @@ class IngestService:
                     await self._publish(IngestProgress(
                         slug=slug, stage="gold_regions", current=page, total=page_count,
                     ), publish_workspace_id)
+                    await record_activity("gold_regions", current=page, total=page_count)
                 finish_stage(
                     "gold_regions",
                     stage_started_at,
@@ -370,6 +404,7 @@ class IngestService:
             embedded_count = 0
             if self.embedder is not None:
                 current_stage = "embed"
+                await record_activity("embed")
                 stage_started_at = self.clock.now()
                 embedded_count = await self.embed_document(
                     slug, publish_workspace_id=publish_workspace_id,
@@ -425,6 +460,7 @@ class IngestService:
                 "timing_report_path": str(timing_report_path),
                 "duration_seconds": timing_report["duration_seconds"],
             }
+            await record_activity(current_stage, status="done")
             await self._publish(DocIngested(slug=slug, summary=summary), publish_workspace_id)
             return summary
 
@@ -444,6 +480,7 @@ class IngestService:
                 )
             except Exception:  # noqa: BLE001 - never let bookkeeping mask the real failure
                 pass
+            await record_activity(current_stage, status="failed", error=str(exc))
             await self._publish(DocIngestFailed(slug=slug, stage=current_stage, error=str(exc)), publish_workspace_id)
             raise
 

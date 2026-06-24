@@ -96,6 +96,31 @@ class DocStore(Protocol):
         stays deterministic; when omitted it is left out of the record."""
         raise NotImplementedError
 
+    async def write_ingest_activity(self, slug: str, record: dict[str, Any]) -> None:
+        """Upsert the live ingest-activity record for ``slug`` (issue #51).
+
+        ``IngestService`` calls this as each pipeline stage advances so the
+        in-flight progress is durable next to the corpus, not only on the
+        in-process bus. The record is the project-level activity surface's
+        source of truth: a server lists it, an agent pulls it, and a restart
+        rebuilds the whole surface from disk — so a crashed or out-of-process
+        ingest is still visible. Shape mirrors ``IngestActivity``:
+        ``{slug, filename, stage, current, total, status, started_at,
+        updated_at, error?}``. Stores that cannot persist (pure in-memory test
+        doubles in a separate process) may keep it in memory."""
+        raise NotImplementedError
+
+    async def read_ingest_activity(self, slug: str) -> dict[str, Any] | None:
+        """The live ingest-activity record for ``slug``, or ``None`` when there
+        is none. The pull half of the cross-trigger surface."""
+        raise NotImplementedError
+
+    async def list_ingest_activity(self) -> list[dict[str, Any]]:
+        """Every ingest-activity record in this project, terminal ones
+        included. Retention/pruning is the registry's concern, not the
+        store's; the store just reports what is on disk."""
+        raise NotImplementedError
+
     async def write_gold_region_file(self, slug: str, page: int, regions: list[dict[str, Any]]) -> Path:
         raise NotImplementedError
 

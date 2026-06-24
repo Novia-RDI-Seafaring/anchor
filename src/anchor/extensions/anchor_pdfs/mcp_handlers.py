@@ -183,6 +183,31 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {"type": "object", "properties": {}},
         },
         {
+            "name": "list_active_ingests",
+            "description": (
+                "List ingests in flight for this project, including ones started "
+                "by the CLI, another agent, or the web UI. Each entry: {slug, "
+                "filename, stage, current, total, pct, status, started_at}. Call "
+                "this before assuming an ingest finished, or to show progress."
+            ),
+            "inputSchema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "get_ingest_status",
+            "description": (
+                "Report the live ingest-activity record for one document slug: "
+                "its current stage, progress, and terminal state (done / failed "
+                "+ failed stage). Returns {found: false} when nothing is ingesting "
+                "or has recently ingested that slug. Use it to poll a specific "
+                "ingest you (or another process) kicked off."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {"slug": {"type": "string"}},
+                "required": ["slug"],
+            },
+        },
+        {
             "name": "get_document_index",
             "description": "Silver index for a document (outline, tables, figures).",
             "inputSchema": {
@@ -445,6 +470,24 @@ async def call_tool(
         return json.dumps(summary)
     if name == "list_documents":
         return json.dumps(await store.list_documents())
+    if name == "list_active_ingests":
+        from anchor.core.clock import SystemClock
+        from anchor.extensions.anchor_pdfs.core.ingest_activity import (
+            IngestActivityRegistry,
+        )
+        registry = IngestActivityRegistry(store=store, _now=SystemClock().now)
+        activities = await registry.snapshot()
+        return json.dumps({"ingests": [a.to_dict() for a in activities]})
+    if name == "get_ingest_status":
+        from anchor.core.clock import SystemClock
+        from anchor.extensions.anchor_pdfs.core.ingest_activity import (
+            IngestActivityRegistry,
+        )
+        registry = IngestActivityRegistry(store=store, _now=SystemClock().now)
+        activity = await registry.get(args["slug"])
+        if activity is None:
+            return json.dumps({"slug": args["slug"], "found": False})
+        return json.dumps({"found": True, **activity.to_dict()})
     if name == "get_document_index":
         out = await store.get_index(args["slug"])
         return json.dumps(out) if out else json.dumps({"error": "not found"})
