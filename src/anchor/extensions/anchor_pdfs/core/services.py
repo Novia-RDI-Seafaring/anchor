@@ -181,7 +181,6 @@ class IngestService:
 
         bronze_path: Path | None = None
         try:
-            current_stage = "bronze"
             stage_started_at = self.clock.now()
             bronze_path = await self.store.stash_bronze(pdf_bytes, filename)
             finish_stage("bronze", stage_started_at, output_path=str(bronze_path))
