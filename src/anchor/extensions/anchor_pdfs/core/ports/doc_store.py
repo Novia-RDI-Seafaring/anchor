@@ -76,6 +76,26 @@ class DocStore(Protocol):
     async def write_silver_artifact(self, slug: str, name: str, payload: bytes | str) -> Path:
         raise NotImplementedError
 
+    async def write_ingest_failure(
+        self,
+        slug: str,
+        *,
+        filename: str,
+        stage: str,
+        error: str,
+        bronze_path: str | None,
+        failed_at: float | None = None,
+    ) -> Path:
+        """Record a failed ingest so the document becomes visible as ``failed``.
+
+        Writes a failure record into the same ``ingest-report.json`` slot the
+        success path uses (and, for fs, creates ``silver/<slug>/`` so the doc
+        surfaces through ``list_documents``). The orphan bronze is kept on
+        purpose; this only makes the failure discoverable rather than silently
+        absent. ``failed_at`` is threaded from the service clock so the store
+        stays deterministic; when omitted it is left out of the record."""
+        raise NotImplementedError
+
     async def write_gold_region_file(self, slug: str, page: int, regions: list[dict[str, Any]]) -> Path:
         raise NotImplementedError
 

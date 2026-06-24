@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -38,10 +39,46 @@ class MemoryDocStore:
         self._candidates: dict[tuple[str, int], list[dict[str, Any]]] = {}
         # Gold completeness markers: slug -> marker dict ({"complete": bool, ...}).
         self._gold_markers: dict[str, dict[str, Any]] = {}
+        # Failed-ingest records: slug -> failure record (mirrors the fs
+        # ingest-report.json with status == "failed").
+        self._failures: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
 
     async def list_documents(self) -> list[dict[str, Any]]:
-        return list(self._docs.values())
+        out: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for slug, doc in self._docs.items():
+            seen.add(slug)
+            entry = dict(doc)
+            failure = self._failures.get(slug)
+            if failure:
+                entry["status"] = "failed"
+                entry["stage"] = failure.get("stage", "unknown")
+                entry["error"] = failure.get("error", "")
+                if failure.get("bronze_path"):
+                    entry["bronze_path"] = failure["bronze_path"]
+            else:
+                entry["status"] = "ok"
+            out.append(entry)
+        # Failures with no seeded doc row (crash-early ingests) still surface.
+        for slug, failure in self._failures.items():
+            if slug in seen:
+                continue
+            entry: dict[str, Any] = {
+                "slug": slug,
+                "title": slug,
+                "filename": failure.get("filename", ""),
+                "page_count": 0,
+                "has_gold": False,
+                "region_count": 0,
+                "status": "failed",
+                "stage": failure.get("stage", "unknown"),
+                "error": failure.get("error", ""),
+            }
+            if failure.get("bronze_path"):
+                entry["bronze_path"] = failure["bronze_path"]
+            out.append(entry)
+        return out
 
     async def get_index(self, slug: str) -> dict[str, Any] | None:
         return self._indexes.get(slug)
@@ -129,6 +166,19 @@ class MemoryDocStore:
         import re
         if name == "index.json":
             self._indexes[slug] = json.loads(payload) if isinstance(payload, str) else json.loads(payload.decode())
+            # A successful re-ingest clears any prior failure record so the
+            # doc flips back to status == "ok".
+            self._failures.pop(slug, None)
+            idx = self._indexes[slug]
+            doc = idx.get("document", {}) if isinstance(idx, dict) else {}
+            self._docs[slug] = {
+                "slug": slug,
+                "title": doc.get("title", slug),
+                "filename": doc.get("filename", ""),
+                "page_count": int(doc.get("page_count", 0)),
+                "has_gold": False,
+                "region_count": 0,
+            }
         elif name == "pages.meta.json":
             self._pages_meta[slug] = json.loads(payload) if isinstance(payload, str) else json.loads(payload.decode())
         elif (m := re.fullmatch(r"pages/(\d+)\.candidates\.json", name)):
@@ -139,6 +189,32 @@ class MemoryDocStore:
         elif (m := re.fullmatch(r"pages/(\d+)\.raw\.md", name)) and isinstance(payload, str):
             self._page_text.setdefault((slug, int(m.group(1))), payload)
         return Path(f"memory://silver/{slug}/{name}")
+
+    async def write_ingest_failure(
+        self,
+        slug: str,
+        *,
+        filename: str,
+        stage: str,
+        error: str,
+        bronze_path: str | None,
+        failed_at: float | None = None,
+    ) -> Path:
+        record: dict[str, Any] = {
+            "status": "failed",
+            "stage": stage,
+            "error": error,
+            "filename": filename,
+            "bronze_path": bronze_path,
+        }
+        if failed_at is not None:
+            from datetime import datetime
+            record["failed_at"] = datetime.fromtimestamp(
+                failed_at, tz=UTC
+            ).isoformat()
+        async with self._lock:
+            self._failures[slug] = record
+        return Path(f"memory://silver/{slug}/ingest-report.json")
 
     async def write_gold_region_file(self, slug: str, page: int, regions: list[dict[str, Any]]) -> Path:
         async with self._lock:

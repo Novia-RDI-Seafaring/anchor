@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -90,6 +91,21 @@ class FsDocStore:
                 "slug": slug, "title": title, "filename": filename,
                 "page_count": page_count, "has_gold": has_gold, "region_count": region_count,
             }
+            # Surface ingest outcome. A report with `status: failed` is a
+            # crash-stashed bronze with no silver/gold — make it visible as
+            # failed (with the failing stage + error) instead of an empty
+            # ok-looking row. Missing report or any non-failed status reads ok.
+            report = self._read_ingest_report(slug)
+            if report and report.get("status") == "failed":
+                entry["status"] = "failed"
+                entry["stage"] = report.get("stage", "unknown")
+                entry["error"] = report.get("error", "")
+                if report.get("bronze_path"):
+                    entry["bronze_path"] = report["bronze_path"]
+                if not filename and report.get("filename"):
+                    entry["filename"] = report["filename"]
+            else:
+                entry["status"] = "ok"
             marker = self._read_gold_marker(slug)
             if has_gold and marker:
                 if marker.get("mode"):
@@ -109,6 +125,16 @@ class FsDocStore:
     # marker existed fall back to the ingest report: a successful keyed run
     # wrote it as its very last step, so its presence with regions implies
     # the gold loop finished.
+
+    def _read_ingest_report(self, slug: str) -> dict[str, Any] | None:
+        p = self.silver / slug / "ingest-report.json"
+        if not p.is_file():
+            return None
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return None
+        return data if isinstance(data, dict) else None
 
     def _read_gold_marker(self, slug: str) -> dict[str, Any] | None:
         p = self.gold / slug / GOLD_COMPLETE_MARKER
@@ -277,6 +303,35 @@ class FsDocStore:
             async with aiofiles.open(target, "wb") as f:
                 await f.write(payload)
         return target
+
+    async def write_ingest_failure(
+        self,
+        slug: str,
+        *,
+        filename: str,
+        stage: str,
+        error: str,
+        bronze_path: str | None,
+        failed_at: float | None = None,
+    ) -> Path:
+        record: dict[str, Any] = {
+            "status": "failed",
+            "stage": stage,
+            "error": error,
+            "filename": filename,
+            "bronze_path": bronze_path,
+        }
+        if failed_at is not None:
+            from datetime import datetime
+            record["failed_at"] = datetime.fromtimestamp(
+                failed_at, tz=UTC
+            ).isoformat()
+        # Reuse the silver writer so the record lands in the same
+        # ingest-report.json slot the success path uses; this also creates
+        # silver/<slug>/ so the orphaned doc surfaces in list_documents.
+        return await self.write_silver_artifact(
+            slug, "ingest-report.json", json.dumps(record, indent=2),
+        )
 
     async def write_gold_region_file(self, slug: str, page: int, regions: list[dict[str, Any]]) -> Path:
         target = self.gold / slug / "pages" / f"{page}.regions.json"
