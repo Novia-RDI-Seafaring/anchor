@@ -6,35 +6,38 @@ tools; optional FMU behavior depends on installed/runtime configuration.
 
 ## Connect an agent harness
 
-The simplest path registers a **folder-resolving** server once — it works for
-every `anchor init` project, because it resolves the project from the directory
-the agent is launched in:
+One MCP server serves one **environment** (a named profile = the data zone),
+selected by name. Projects inside it are addressed by a per-call `project`
+argument.
 
 ```bash
-anchor install claude-code   # writes the MCP entry + skill, no baked data dir
-anchor install cursor
+anchor install claude-code              # writes the MCP entry + skill (default env)
+anchor install claude-desktop --env work
+anchor install cursor --env work
 ```
 
-`anchor install claude-code` targets Claude Code. Claude Desktop reads a
-separate `claude_desktop_config.json`, so configure that client with an
-`mcpServers.anchor` entry that runs `anchor-mcp`.
-
-Then open the agent inside a project folder (one with an `anchor.toml`) and the
-tools target that project. To name a project explicitly — for example when the
-server's working directory is elsewhere — pass `--project`:
+Each writes an entry that runs `anchor-mcp --env <name>`:
 
 ```bash
-anchor-mcp --project /path/to/project
+anchor-mcp --env work
 ```
 
-See [Agent configuration](../guides/agent-configuration.md) for Codex,
-OpenCode, and generic stdio client examples.
+Project-scoped tools take an optional `project`; omit it for the default
+project. `list_projects` enumerates the environment's projects, `create_project`
+makes one, and a missing/unknown project returns a self-correcting error. A
+second environment is a second named server (Claude Desktop supports `--name`);
+the agent cannot cross from one environment into another.
+
+See [Environments and projects](../guides/environments-and-projects.md) and
+[Agent configuration](../guides/agent-configuration.md) for Codex, OpenCode,
+and generic stdio client examples.
 
 ## Tool families
 
 | Family | Representative operations |
 | --- | --- |
 | Status | `anchor_status` |
+| Environment / projects | `list_projects`, `create_project`, `update_project`, `open_project`, `create_environment` |
 | Canvas | `canvas_list_workspaces`, `canvas_get_state`, `canvas_add_node`, `canvas_update_node`, `canvas_add_edge`, `canvas_snapshot` |
 | Documents | `ingest_pdf`, `list_documents`, `get_document_index`, `get_gold_regions`, `search_documents`, `get_crop` |
 | Harness ingestion | `ingest_begin`, `ingest_get_page`, `ingest_submit_page`, `ingest_status`, `ingest_finalize`, `ingest_abort` - the agent performs polish + region grouping page by page (provider `harness`, no API key); CLI parity via `anchor ingest-session` |
@@ -45,15 +48,12 @@ OpenCode, and generic stdio client examples.
 ## Status check
 
 Use `anchor_status` when an MCP client appears connected but sees the wrong
-documents or an empty canvas list. It reports:
+documents or an empty canvas list. It reports the resolved environment, the
+active project's data directory, and document / embedding / workspace counts.
 
-- the process working directory
-- the resolved `anchor.toml`, if one was found
-- the active data directory
-- document, embedding, and workspace counts
-
-If the paths do not match the project you intended, restart the client from the
-project folder or configure `anchor-mcp --project /path/to/project`.
+If it shows the wrong project, pass the right `project` argument (see
+`list_projects`). To use a different environment, add a second named server
+(`anchor-mcp --env <name>`); the agent cannot switch environments on its own.
 
 ## Source-grounded workflow
 

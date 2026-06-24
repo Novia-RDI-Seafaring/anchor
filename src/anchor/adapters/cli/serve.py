@@ -7,7 +7,6 @@ from pathlib import Path
 
 import typer
 
-from anchor.adapters.cli.common import DEFAULT_DATA_DIR
 from anchor.adapters.cli.services import _build_ingest_session_service, _build_real_services
 
 
@@ -24,7 +23,13 @@ def _find_free_port(host: str, start: int, *, limit: int = 20) -> int:
 
 
 def serve(
-    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+    data_dir: Path = typer.Option(
+        None, "--data-dir", "-d", help="Explicit storage dir (overrides --env/--project)."
+    ),
+    env: str = typer.Option(None, "--env", help="Environment to serve (default: resolved)."),
+    project: str = typer.Option(
+        None, "--project", help="Project to serve (default: the environment's default)."
+    ),
     host: str = typer.Option(
         "127.0.0.1",
         "--host",
@@ -42,6 +47,16 @@ def serve(
     import uvicorn
 
     from anchor.adapters.http.app import build_app
+
+    # Resolve the project to serve from --env/--project unless an explicit
+    # --data-dir was given. One server serves one project (a browser session is
+    # one project); point it at a non-default project with --project.
+    if data_dir is None:
+        from anchor.infra.environment import resolve_project
+
+        rp = resolve_project(env, project)
+        data_dir = rp.data_dir
+        typer.echo(f"[anchor serve] env={rp.environment.name} project={rp.name}", err=True)
 
     # If the requested port is taken (e.g. another `anchor serve` for a
     # different project), fall through to the next free one rather than failing

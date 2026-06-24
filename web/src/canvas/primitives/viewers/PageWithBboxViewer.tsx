@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { canvases } from "@/api/canvases";
 import { documents, type DocumentIndex, type Region } from "@/api/documents";
-import { bboxToImageRect } from "@/lib/bbox";
+import { bboxToImageRect, sameBbox } from "@/lib/bbox";
 import { useUiStore } from "@/stores/uiStore";
 
 /**
@@ -51,6 +51,7 @@ export function PageWithBboxViewer() {
         data: {
           source_doc_slug: viewer.slug,
           source_region_id: rid,
+          crops: region.crops,
           description: region.description,
           tags: (region as { tags?: string[] }).tags ?? [],
           source_ref: {
@@ -219,7 +220,11 @@ export function PageWithBboxViewer() {
                   if (!rect) return null;
                   const { x, y, w, h } = rect;
                   const rid = r.id ?? `r${idx}`;
-                  const isActive = activeRegion === rid;
+                  const highlightBbox = highlightAppliesToPage ? viewer.highlightBbox : undefined;
+                  const isSubHighlight = activeRegion === rid
+                    && !!highlightBbox
+                    && !sameBbox(highlightBbox, r.bbox);
+                  const isActive = activeRegion === rid && !isSubHighlight;
                   return (
                     <rect
                       key={rid}
@@ -252,7 +257,7 @@ export function PageWithBboxViewer() {
                   // If the highlight bbox matches the parent region bbox,
                   // skip the inner emphasis (the parent rect already covers it).
                   const parent = active?.bbox;
-                  if (parent && parent.length === 4 && parent.every((v, i) => v === sub[i])) return null;
+                  if (sameBbox(parent, sub)) return null;
                   const rect = bboxToImageRect(sub, pageW, pageH, imgSize.w, imgSize.h);
                   if (!rect) return null;
                   const { x, y, w, h } = rect;
@@ -262,9 +267,9 @@ export function PageWithBboxViewer() {
                       y={y}
                       width={w}
                       height={h}
-                      fill="rgba(244, 114, 22, 0.35)"
-                      stroke="#EA580C"
-                      strokeWidth={3.5}
+                      fill="rgba(251, 146, 60, 0.18)"
+                      stroke="#FB923C"
+                      strokeWidth={2.2}
                       vectorEffect="non-scaling-stroke"
                     >
                       <title>highlight target</title>

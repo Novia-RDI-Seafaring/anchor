@@ -14,7 +14,7 @@ import os
 
 import typer
 
-from anchor.infra.config import AnchorConfig, discover_config_file
+from anchor.infra.config import AnchorConfig
 from anchor.infra.providers import get_provider, normalize_base_url
 
 # Providers that authenticate against an endpoint (mirror of init's set).
@@ -23,11 +23,11 @@ _KEYED_PROVIDERS = ("openai", "azure", "custom")
 
 def _rewrite_base_url(config_path, old: str, new: str) -> bool:
     """Replace the openai_base_url value in the toml in place. True on success."""
-    text = config_path.read_text()
+    text = config_path.read_text(encoding="utf-8")
     needle = f'openai_base_url = "{old}"'
     if needle not in text:
         return False
-    config_path.write_text(text.replace(needle, f'openai_base_url = "{new}"'))
+    config_path.write_text(text.replace(needle, f'openai_base_url = "{new}"'), encoding="utf-8")
     return True
 
 
@@ -38,28 +38,41 @@ def check(
     fix: bool = typer.Option(
         False, "--fix", help="Apply any safe endpoint repair without prompting."
     ),
+    env: str = typer.Option(
+        None, "--env", help="Environment NAME to check (default: the default env)."
+    ),
 ) -> None:
-    """Verify the resolved data zone + config for this project."""
-    config_path = discover_config_file()
-    cfg = AnchorConfig()
+    """Verify the resolved data zone + config for this environment."""
+    from anchor.infra.environment import (
+        DEFAULT_PROJECT,
+        LEGACY_DATA_DIR,
+        resolve_environment,
+        resolve_project_config,
+    )
+
+    env = resolve_environment(env)
+    cfg = resolve_project_config(env, DEFAULT_PROJECT)
+    default_dir = env.project_dir(DEFAULT_PROJECT)
+    config_path = env.config_path  # the env.toml, target of endpoint repair
     prov = get_provider(cfg.provider) if cfg.provider else None
 
     typer.echo("Data zone")
-    if config_path:
-        typer.echo(f"  config         : {config_path}")
+    typer.echo(f"  environment    : {env.name}")
+    if env.initialized:
+        typer.echo(f"  config         : {env.config_path}")
     else:
-        typer.echo("  config         : (none found — using ANCHOR_* env + defaults)")
+        typer.echo("  config         : (env not set up yet — defaults; `anchor env create`)")
     if prov:
         typer.echo(f"  provider       : {prov.label} — {prov.zone}")
     elif cfg.provider:
         typer.echo(f"  provider       : {cfg.provider}")
-    # Be honest when the resolved data dir is not on disk yet: a fresh project
-    # has none until first ingest, but a bare path here reads as "all set" and
-    # has masked a misconfigured zone before. Say so rather than imply it exists.
+    # Be honest when the project dir is not on disk yet: a fresh project has
+    # none until first ingest, but a bare path here reads as "all set" and has
+    # masked a misconfigured zone before. Say so rather than imply it exists.
     data_dir_note = (
-        "" if cfg.data_dir.exists() else "  (does not exist yet, created on first ingest)"
+        "" if default_dir.exists() else "  (created on first ingest)"
     )
-    typer.echo(f"  data dir       : {cfg.data_dir}{data_dir_note}")
+    typer.echo(f"  default project: {default_dir}{data_dir_note}")
     embed_remote = cfg.embed_model.startswith("text-embedding-")
     typer.echo(
         f"  embed model    : {cfg.embed_model}  "
@@ -72,6 +85,14 @@ def check(
     else:
         typer.echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com (public)'}")
         typer.echo(f"  vision model   : {cfg.region_model}")
+
+    # Lean one-time awareness: an existing ~/anchor-data still serving the
+    # default project, but the user should know they can fold it into the env.
+    if default_dir == LEGACY_DATA_DIR and LEGACY_DATA_DIR.is_dir():
+        typer.echo("")
+        typer.echo(f"  note           : using legacy {LEGACY_DATA_DIR}.")
+        typer.echo("                   Run `anchor migrate` to adopt it as this "
+                   "environment's default project.")
 
     problems: list[str] = []
     personal = bool(os.environ.get("OPENAI_API_KEY"))
@@ -132,11 +153,12 @@ def check(
             typer.echo(f"    should be: {fixed}")
             apply = fix or (
                 config_path is not None
-                and typer.confirm("    Fix it in anchor.toml now?", default=True)
+                and typer.confirm("    Fix it in env.toml now?", default=True)
             )
             if apply and config_path and _rewrite_base_url(config_path, cfg.openai_base_url, fixed):
                 typer.echo("    fixed.")
-                cfg = AnchorConfig()  # reload so the probe uses the repaired URL
+                # Reload so the probe uses the repaired URL.
+                cfg = resolve_project_config(resolve_environment(env.name), DEFAULT_PROJECT)
             else:
                 problems.append("Azure endpoint is missing the /openai/v1/ suffix.")
 

@@ -245,6 +245,28 @@ changelog entries by these prefixes.
   fails, fix the issue, don't bypass.
 - **CI must be green before merge.** Branch protection enforces it;
   the social contract is to not ask for exceptions.
+- **Resolve advanced-security (CodeQL) findings before a PR is "done".**
+  GitHub code scanning runs on every PR and posts findings as
+  `github-advanced-security[bot]` review comments. A PR is not ready
+  for review/merge while it has open code-scanning alerts. After opening
+  or updating a PR, check for them and fix the real cause (do not dismiss):
+
+  ```bash
+  # alerts on the PR's branch (authoritative)
+  gh api "repos/Novia-RDI-Seafaring/anchor/code-scanning/alerts?ref=refs/heads/<branch>&state=open" \
+    --jq '.[] | "#\(.number) [\(.rule.severity)] \(.rule.id): \(.most_recent_instance.location.path):\(.most_recent_instance.location.start_line) -> \(.most_recent_instance.message.text)"'
+
+  # or the bot's inline PR comments
+  gh api repos/Novia-RDI-Seafaring/anchor/pulls/<n>/comments \
+    --jq '.[] | select(.user.login=="github-advanced-security[bot]") | "\(.path):\(.line)  \(.body)"'
+  ```
+
+  Fix at the source, push a normal commit, and the scan re-runs and clears
+  the alert. Common findings in this codebase: cyclic imports between
+  modules (break the back-edge by moving the shared helper into the module
+  that owns it), and dead or duplicate variable assignments (remove the
+  redundant one). If a finding is a genuine false positive, ask the user
+  before dismissing it; never `--no-verify` or dismiss to go green.
 
 **Updating a PR branch when it's behind main.** Use:
 

@@ -13,8 +13,7 @@ before persisting a region:
   submissions with a closed schema and returns structured errors so the
   agent can repair and resubmit.
 
-Bboxes are BOTTOMLEFT `[left, top, right, bottom]` with `top >= bottom`,
-matching docling and the rest of the silver layer.
+Bboxes use four finite coordinates. The renderer tolerates either Y order.
 """
 from __future__ import annotations
 
@@ -43,7 +42,7 @@ def _err(index: int, field: str, message: str) -> dict[str, Any]:
 
 
 def bbox_error(bbox: Any) -> str | None:
-    """Return a message when `bbox` is not a valid BOTTOMLEFT box, else None."""
+    """Return a message when `bbox` is not valid enough for gold, else None."""
     if not isinstance(bbox, list) or len(bbox) != 4:
         return "bbox must be a list of 4 numbers [left, top, right, bottom]"
     for v in bbox:
@@ -52,8 +51,6 @@ def bbox_error(bbox: Any) -> str | None:
     left, top, right, bottom = (float(v) for v in bbox)
     if left > right:
         return f"bbox left ({left}) must be <= right ({right})"
-    if bottom > top:
-        return f"bbox is BOTTOMLEFT: top ({top}) must be >= bottom ({bottom})"
     return None
 
 

@@ -1,4 +1,5 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
+import { Anchor as AnchorIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
@@ -20,10 +21,24 @@ type Row = {
   // node flips to that page and highlights the matching region, and any
   // evidence edge whose data.source_ref matches snaps from node-to-node
   // floating to row-handle↔region-handle anchored mode.
-  source_ref?: { slug?: string; page: number; region_id?: string; bbox?: number[] };
+  source_region_id?: string;
+  source_ref?: {
+    slug?: string;
+    page: number;
+    region_id?: string;
+    source_region_id?: string;
+    bbox?: number[];
+  };
 };
 
-type SourceRef = { kind?: string; slug?: string; page?: number; region_id?: string; bbox?: number[] };
+type SourceRef = {
+  kind?: string;
+  slug?: string;
+  page?: number;
+  region_id?: string;
+  source_region_id?: string;
+  bbox?: number[];
+};
 
 /**
  * TablePrimitive — `spec` node renderer.
@@ -54,6 +69,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
     source_doc_slug?: string;
     source_doc_node_id?: string;
     source_region_id?: string;
+    crops?: { png?: string | null; svg?: string | null };
     source_ref?: SourceRef;
     dashed?: boolean;
     width?: number;
@@ -119,7 +135,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       setHoveredSourceRef({
         slug: d.source_doc_slug,
         page: d.source_ref.page,
-        region_id: d.source_region_id,
+        region_id: d.source_ref.region_id ?? d.source_region_id ?? d.source_ref.source_region_id,
         bbox: d.source_ref.bbox,
       });
     }
@@ -136,7 +152,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
     setHoveredSourceRef({
       slug,
       page: ref.page,
-      region_id: ref.region_id ?? d.source_region_id,
+      region_id: ref.region_id ?? row.source_region_id ?? ref.source_region_id ?? d.source_region_id,
       bbox: ref.bbox,
     });
   };
@@ -171,16 +187,18 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       page: ref.page,
       workspaceSlug,
       documentNodeId: docNodeId,
-      highlightRegionId: ref.region_id ?? d.source_region_id,
+      highlightRegionId: ref.region_id ?? d.source_region_id ?? ref.source_region_id,
       highlightBbox: ref.bbox,
     });
   };
   const openSource = () => openSourceRef(d.source_ref);
 
-  const cropUrl =
-    d.source_doc_slug && d.source_region_id && d.source_ref?.page
-      ? `${(import.meta.env.VITE_BACKEND_URL as string | undefined) ?? ""}/api/documents/${d.source_doc_slug}/crops/${d.source_ref.page}/${d.source_region_id}.png`
-      : null;
+  const cropRel = d.crops?.png ?? d.crops?.svg ?? null;
+  const storedCropUrl = d.source_doc_slug && cropRel ? documents.cropUrl(d.source_doc_slug, cropRel) : null;
+  const renderedCropUrl = d.source_doc_slug && d.source_ref?.page && d.source_ref?.bbox
+    ? documents.pageCropUrl(d.source_doc_slug, d.source_ref.page, d.source_ref.bbox)
+    : null;
+  const previewUrl = renderedCropUrl ?? storedCropUrl;
 
   const canEdit = selected ?? false;
   // Inline title rename — wires the spec table's `label` field to the same
@@ -263,8 +281,9 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         {d.source_ref?.page ? (
           <button
             type="button"
-            className="nodrag nopan shrink-0 rounded border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 hover:bg-sky-100"
+            className="nodrag nopan grid h-6 w-6 shrink-0 place-items-center rounded border border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100"
             title={`Open page ${d.source_ref.page} in viewer`}
+            aria-label={`Open source page ${d.source_ref.page}`}
             onMouseDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               // Stop bubbling here so the surrounding header onClick (which
@@ -273,22 +292,26 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
               openSource();
             }}
           >
-            p{d.source_ref.page}
+            <AnchorIcon size={12} strokeWidth={2.2} aria-hidden="true" />
           </button>
         ) : null}
       </div>
 
-      {cropUrl ? (
+      {previewUrl ? (
         <div className="border-b border-neutral-200 bg-neutral-50">
           <img
-            src={cropUrl}
+            src={previewUrl}
             alt={d.label ?? "region"}
             className="block max-h-32 w-full object-contain"
             loading="lazy"
             draggable={false}
             onError={(e) => {
               const img = e.currentTarget as HTMLImageElement;
-              // Fallback: full-page image if crop is missing.
+              if (storedCropUrl && img.dataset.cropFallback !== "stored") {
+                img.dataset.cropFallback = "stored";
+                img.src = storedCropUrl;
+                return;
+              }
               if (d.source_doc_slug && d.source_ref?.page) {
                 img.src = documents.pageImageUrl(d.source_doc_slug, d.source_ref.page);
               } else {
@@ -328,7 +351,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                       onAppendRow={() => appendRow("key")}
                     />
                   </td>
-                  <td className="px-3 py-1 text-neutral-900">
+                  <td className={`px-3 py-1 text-neutral-900 ${r.source_ref ? "bg-emerald-50/80" : ""}`}>
                     <RowCell
                       rowIndex={i}
                       col="value"
@@ -345,15 +368,16 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                     {r.source_ref?.page ? (
                       <button
                         type="button"
-                        className="nodrag nopan rounded px-1 py-0.5 text-[10px] text-sky-700 hover:bg-sky-100 hover:text-sky-900"
+                        className="nodrag nopan inline-grid h-5 w-5 place-items-center rounded text-sky-700 hover:bg-sky-100 hover:text-sky-900"
                         title={`Open page ${r.source_ref.page} in viewer`}
+                        aria-label={`Open source page ${r.source_ref.page}`}
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => {
                           e.stopPropagation();
                           openSourceRef(r.source_ref);
                         }}
                       >
-                        p{r.source_ref.page}
+                        <AnchorIcon size={11} strokeWidth={2.2} aria-hidden="true" />
                       </button>
                     ) : null}
                     {/* Per-row source handle. Default state is a 2px grey

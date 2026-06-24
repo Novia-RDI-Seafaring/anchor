@@ -2,8 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import { pickEdgeMode, type EdgeForMode, type HoveredSourceRef } from "./edge-mode";
 
-const evidenceEdge = (sourceRef: Record<string, unknown>, targetDocSlug = "lkh"): EdgeForMode => ({
+const evidenceEdge = (
+  sourceRef: Record<string, unknown>,
+  targetDocSlug = "lkh",
+  withHandles = true,
+): EdgeForMode => ({
   edge_type: "anchored",
+  ...(withHandles ? { sourceHandle: "row:0:key", targetHandle: "region:r4" } : {}),
   data: { kind: "evidence", source_ref: sourceRef },
   targetDocSlug,
 });
@@ -18,6 +23,12 @@ describe("pickEdgeMode", () => {
     const edge = evidenceEdge({ page: 2, region_id: "r4" });
     const hovered: HoveredSourceRef = { slug: "lkh", page: 2, region_id: "r4" };
     expect(pickEdgeMode(edge, hovered)).toBe("anchored");
+  });
+
+  it("keeps matching node-level evidence edges floating when they have no row/region handles", () => {
+    const edge = evidenceEdge({ page: 2, region_id: "r4" }, "lkh", false);
+    const hovered: HoveredSourceRef = { slug: "lkh", page: 2, region_id: "r4" };
+    expect(pickEdgeMode(edge, hovered)).toBe("floating");
   });
 
   it("floats an evidence edge when the hovered slug is for a different document", () => {
@@ -91,6 +102,8 @@ describe("pickEdgeMode", () => {
   it("preserves smooth routing for an evidence edge when nothing is hovered", () => {
     const edge: EdgeForMode = {
       edge_type: "smooth",
+      sourceHandle: "row:0:key",
+      targetHandle: "region:r4",
       data: { kind: "evidence", source_ref: { page: 2, region_id: "r4" } },
       targetDocSlug: "lkh",
     };
@@ -104,6 +117,8 @@ describe("pickEdgeMode", () => {
     // break for any edge a user customised the routing on.
     const edge: EdgeForMode = {
       edge_type: "smooth",
+      sourceHandle: "row:0:key",
+      targetHandle: "region:r4",
       data: { kind: "evidence", source_ref: { page: 2, region_id: "r4" } },
       targetDocSlug: "lkh",
     };

@@ -4,78 +4,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-import os
 from pathlib import Path
 
 from mcp.server.stdio import stdio_server
 
+from anchor.adapters.mcp.router import ProjectRouter
 from anchor.adapters.mcp.server import build_mcp_server
-from anchor.core.ports.event_bus import EventBus
-from anchor.core.services.workspace_service import WorkspaceService
-from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
-from anchor.extensions.anchor_pdfs.core.ingest.session import IngestSessionService
-from anchor.extensions.anchor_pdfs.core.services import IngestService
-from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
-from anchor.extensions.anchor_pdfs.infra.fs_session_store import FsIngestSessionStore
-from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
-from anchor.extensions.anchor_pdfs.infra.llm.openai_md_polisher import OpenAIPageMdPolisher
-from anchor.extensions.anchor_pdfs.infra.llm.openai_region_extractor import OpenAIRegionExtractor
-from anchor.extensions.anchor_pdfs.infra.pdf.docling_extractor import DoclingPdfExtractor
-from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
-from anchor.infra.bus.memory_bus import MemoryEventBus
+from anchor.adapters.mcp.services import build_bundle
 from anchor.infra.config import AnchorConfig
-from anchor.infra.snapshot.headless_chromium_snapshotter import HeadlessChromiumSnapshotter
-from anchor.infra.stores.fs_workspace_store import FsWorkspaceStore
-
-
-def _build_ingest_service(config: AnchorConfig, bus: EventBus, doc_store: DocStore) -> IngestService:
-    api_key = config.openai_api_key.get_secret_value() if config.openai_api_key else None
-    has_openai = bool(api_key) or bool(os.environ.get("OPENAI_API_KEY"))
-    openai_base_url = (config.openai_base_url or "").strip() or None
-    embedder = build_embedder(
-        model=config.embed_model,
-        api_key=api_key,
-        base_url=openai_base_url,
-    )
-    return IngestService(
-        doc_store,
-        bus,
-        extractor=DoclingPdfExtractor(device=config.docling_device),
-        renderer=PymupdfPdfRenderer(),
-        polisher=OpenAIPageMdPolisher(api_key=api_key, base_url=openai_base_url)
-        if has_openai
-        else None,
-        region_extractor=OpenAIRegionExtractor(api_key=api_key, base_url=openai_base_url)
-        if has_openai
-        else None,
-        embedder=embedder,
-        embed_model_id=getattr(embedder, "model_id", None),
-        default_polish_model=config.polish_model,
-        default_region_model=config.region_model,
-        default_dpi=config.dpi,
-    )
-
-
-def _build_ingest_session_service(
-    config: AnchorConfig, bus: EventBus, doc_store: DocStore,
-) -> IngestSessionService:
-    """Harness ingest sessions: the agent polishes pages + groups regions;
-    this service runs the mechanical half against the same doc store."""
-    api_key = config.openai_api_key.get_secret_value() if config.openai_api_key else None
-    openai_base_url = (config.openai_base_url or "").strip() or None
-    embedder = build_embedder(
-        model=config.embed_model, api_key=api_key, base_url=openai_base_url,
-    )
-    return IngestSessionService(
-        doc_store,
-        FsIngestSessionStore(config.data_dir),
-        bus,
-        extractor=DoclingPdfExtractor(device=config.docling_device),
-        renderer=PymupdfPdfRenderer(),
-        embedder=embedder,
-        embed_model_id=getattr(embedder, "model_id", None),
-        default_dpi=config.dpi,
-    )
 
 
 def _config_for_data_dir(data_dir: Path | None) -> AnchorConfig:
@@ -85,85 +21,52 @@ def _config_for_data_dir(data_dir: Path | None) -> AnchorConfig:
     return AnchorConfig()
 
 
-def _apply_project(project: Path | None) -> None:
-    """Point config resolution at an `anchor init` folder.
+def _config_for_project(project: Path) -> AnchorConfig:
+    """Layer config for an `anchor init` project folder.
 
-    Any agent can use a project's Anchor by naming the folder — no per-project
-    reinstall. ``--project`` sets ANCHOR_CONFIG so the whole config (data dir,
-    models, data zone) resolves from that folder's anchor.toml, even when the
-    server's working directory is elsewhere. A bare ``anchor-mcp`` launched
-    inside the folder already resolves it via walk-up; this is the explicit
-    handle for when it isn't.
+    The folder's ``anchor.toml`` marker names the environment + overrides; its
+    corpus lives in ``<folder>/.anchor_data``. We resolve the data dir and layer
+    env.toml < marker so a single ``--project`` server gets the same config the
+    CLI would. A bare ``anchor-mcp`` launched inside the folder resolves the same
+    thing via walk-up; this is the explicit handle for when it isn't.
     """
-    if project is None:
-        return
     import sys
 
-    config_file = project.expanduser() / "anchor.toml"
-    if config_file.is_file():
-        os.environ["ANCHOR_CONFIG"] = str(config_file)
-    else:
+    from anchor.infra.environment import DATA_DIRNAME, PROJECT_MARKER_FILENAME, config_for_data_dir
+
+    folder = project.expanduser()
+    if not (folder / PROJECT_MARKER_FILENAME).is_file():
         print(
             f"Warning: anchor-mcp: no anchor.toml in {project} — run `anchor init` there. "
             "Falling back to environment / defaults.",
             file=sys.stderr,
         )
+        return AnchorConfig()
+    return config_for_data_dir(folder / DATA_DIRNAME)
 
 
-async def _run(data_dir: Path | None, base_url: str = "http://localhost:8002") -> None:
-    config = _config_for_data_dir(data_dir)
-    data_dir = config.data_dir
-    bus = MemoryEventBus()
-    workspace_store = FsWorkspaceStore(config.canvases_dir)
-    doc_store = FsDocStore(config.data_dir)
-    # The MCP server doesn't host the canvas itself — it loops through a
-    # running `anchor serve` reachable at `base_url` for snapshot rendering.
-    snapshotter = HeadlessChromiumSnapshotter(
-        base_url=base_url, output_dir=config.data_dir / "snapshots",
-    )
-    workspace = WorkspaceService(workspace_store, bus, snapshotter=snapshotter)
-    ingest = _build_ingest_service(config, bus, doc_store)
-    ingest_session = _build_ingest_session_service(config, bus, doc_store)
+async def _run(
+    *,
+    env: str | None = None,
+    project: Path | None = None,
+    data_dir: Path | None = None,
+    base_url: str = "http://localhost:8002",
+) -> None:
+    """Serve MCP over stdio.
 
-    # Wire CAD extension service so anchor-mcp exposes cad.* tools too.
-    from anchor.extensions.anchor_cad import extension as cad_ext
-    cad = cad_ext.build_service(data_dir, bus)
-
-    # Wire FMU extension service. Real runtime needs FMPy; the synthetic
-    # demo runtime is gated behind ANCHOR_FMU_DEMO=1. Without either,
-    # the FMU tools are simply absent from this MCP server's tool list.
-    # We log to stderr rather than swallowing so the user knows why.
-    import sys
-    fmu = None
-    try:
-        from anchor.extensions.anchor_fmus import extension as fmu_ext
-        fmu = fmu_ext.build_service(data_dir, bus)
-    except fmu_ext.FmuRuntimeUnavailableError as exc:
-        print(f"Warning: anchor-mcp: FMU tools disabled - {exc}", file=sys.stderr)
-    except Exception as exc:  # noqa: BLE001
-        print(f"Warning: anchor-mcp: FMU tools failed to start - {exc}", file=sys.stderr)
-
-    # Wire SysML extension — pure-Python, no optional deps to fall over.
-    from anchor.extensions.anchor_sysml import extension as sysml_ext
-    sysml = sysml_ext.build_service(data_dir, bus, workspace=workspace)
-
-    # Wire synopsis service so MCP clients can compose entity-scoped PDFs/decks.
-    from anchor.extensions.anchor_pdfs.core.services import SynopsisService
-    from anchor.extensions.anchor_pdfs.infra.synopsis_renderers import (
-        MarpSynopsisRenderer,
-        PymupdfSynopsisRenderer,
-    )
-    synopsis = SynopsisService(
-        doc_store,
-        pdf_renderer=PymupdfSynopsisRenderer(),
-        md_renderer=MarpSynopsisRenderer(),
-    )
-
-    server = build_mcp_server(
-        workspace=workspace, ingest=ingest, doc_store=doc_store,
-        ingest_session=ingest_session,
-        config=config, fmu=fmu, cad=cad, sysml=sysml, synopsis=synopsis,
-    )
+    With ``env`` set (an environment NAME), run the multiproject model: one
+    server for that environment, projects addressed by per-call name, lifecycle
+    tools, and self-correcting resolution errors. Otherwise serve a single
+    project bound to a folder (``--project``) or a raw storage root
+    (``--data-dir``).
+    """
+    if env is not None:
+        router = ProjectRouter(env_arg=env, base_url=base_url)
+        server = build_mcp_server(router=router)
+    else:
+        config = _config_for_project(project) if project is not None else _config_for_data_dir(data_dir)
+        bundle = build_bundle(config, base_url=base_url)
+        server = build_mcp_server(bundle=bundle)
     async with stdio_server() as (read, write):
         await server.run(read, write, server.create_initialization_options())
 
@@ -171,19 +74,26 @@ async def _run(data_dir: Path | None, base_url: str = "http://localhost:8002") -
 def main() -> None:
     parser = argparse.ArgumentParser(description="Anchor v2 MCP (stdio)")
     parser.add_argument(
+        "--env",
+        type=str,
+        default=None,
+        help="An Anchor environment NAME (a profile under ~/.anchor/envs/). "
+        "Serves every project in it; name the project per call.",
+    )
+    parser.add_argument(
         "--project",
         type=Path,
         default=None,
-        help="An `anchor init` folder; use its anchor.toml (data dir, models, zone). "
-        "Lets any agent use a project's Anchor by naming the folder — no reinstall.",
+        help="Legacy single-project mode: an `anchor init` folder whose anchor.toml "
+        "(data dir, models, zone) binds the whole server. Ignored when --env is set.",
     )
     parser.add_argument(
         "--data-dir",
         "-d",
         type=Path,
         default=None,
-        help="Storage root. Defaults to the resolved config (--project / anchor.toml / "
-        "ANCHOR_DATA_DIR), else ~/anchor-data.",
+        help="Legacy single-project storage root. Defaults to the resolved config "
+        "(--project / anchor.toml / ANCHOR_DATA_DIR), else ~/anchor-data.",
     )
     parser.add_argument(
         "--base-url",
@@ -192,10 +102,11 @@ def main() -> None:
     )
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()
-    _apply_project(args.project)
     if args.verbose:
         logging.basicConfig(level=logging.INFO)
-    asyncio.run(_run(args.data_dir, base_url=args.base_url))
+    asyncio.run(
+        _run(env=args.env, project=args.project, data_dir=args.data_dir, base_url=args.base_url)
+    )
 
 
 if __name__ == "__main__":

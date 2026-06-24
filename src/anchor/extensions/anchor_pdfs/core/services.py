@@ -40,6 +40,8 @@ from anchor.extensions.anchor_pdfs.core.silver import (
     build_pages_meta,
     render_pages_md,
     snap_to_docling_items,
+    table_bbox_from_items,
+    table_cells_from_items,
 )
 from anchor.extensions.anchor_pdfs.core.synopsis import SynopsisData, compose_synopsis
 
@@ -162,6 +164,10 @@ class IngestService:
         publish_workspace_id = workspace_id or self._gid
         ingest_started_at = self.clock.now()
         stages: list[dict[str, Any]] = []
+        # Tracks the pipeline stage in flight so a crash reports the real
+        # failing stage (not a hardcoded "unknown") on the bus + in the
+        # persisted failure record. Updated as each stage begins.
+        current_stage = "bronze"
 
         def finish_stage(stage: str, started_at: float, **fields: Any) -> None:
             finished_at = self.clock.now()
@@ -173,12 +179,14 @@ class IngestService:
                 **fields,
             })
 
+        bronze_path: Path | None = None
         try:
             stage_started_at = self.clock.now()
             bronze_path = await self.store.stash_bronze(pdf_bytes, filename)
             finish_stage("bronze", stage_started_at, output_path=str(bronze_path))
             await self._publish(DocBronzed(slug=slug, bronze_path=str(bronze_path)), publish_workspace_id)
 
+            current_stage = "silver_extract"
             await self._publish(IngestProgress(slug=slug, stage="silver_extract", current=0, total=1), publish_workspace_id)
             stage_started_at = self.clock.now()
             docling = await self.extractor.extract(bronze_path)
@@ -191,6 +199,7 @@ class IngestService:
                 (int(it["page"]) for it in docling.get("items", []) if isinstance(it.get("page"), (int, float))),
                 default=0,
             )
+            current_stage = "silver_index"
             stage_started_at = self.clock.now()
             index = build_index(docling, filename=filename)
             pages_md = render_pages_md(docling)
@@ -218,6 +227,7 @@ class IngestService:
             page_pngs: dict[int, bytes] = {}
             items_by_page: dict[int, list[dict[str, Any]]] = {}
             if page_count:
+                current_stage = "silver_render_pages"
                 stage_started_at = self.clock.now()
                 page_pngs = await self.renderer.render_pages(bronze_path, dpi=dpi)
                 for page, png in page_pngs.items():
@@ -235,6 +245,7 @@ class IngestService:
 
             polished_pages: list[int] = []
             if polish and self.polisher and page_count:
+                current_stage = "silver_polish"
                 stage_started_at = self.clock.now()
                 page_timings: list[dict[str, Any]] = []
                 for page, png in page_pngs.items():
@@ -272,6 +283,7 @@ class IngestService:
             region_errors: list[dict[str, Any]] = []
             gold_completed = False
             if regions and self.region_extractor and page_count:
+                current_stage = "gold_regions"
                 stage_started_at = self.clock.now()
                 page_timings: list[dict[str, Any]] = []
                 # Mark gold incomplete before the (overwriting) loop so a
@@ -294,9 +306,23 @@ class IngestService:
                         bbox_any = r.get("bbox") or r.get("approximate_bbox")
                         bbox_list: list[float] = list(bbox_any) if isinstance(bbox_any, list) else []
                         if len(bbox_list) == 4:
-                            snap_bbox, _ = snap_to_docling_items(docling, page, bbox_list)
+                            snap_bbox, item_indexes = snap_to_docling_items(docling, page, bbox_list)
                             if snap_bbox:
                                 r = {**r, "bbox": snap_bbox}
+                                cells = table_cells_from_items(
+                                    docling.get("items", []),
+                                    item_indexes,
+                                    region_bbox=bbox_list,
+                                )
+                                if cells and r.get("kind") in {"table", "spec_block"}:
+                                    r = {**r, "cells": cells}
+                                table_bbox = table_bbox_from_items(
+                                    docling.get("items", []),
+                                    item_indexes,
+                                    region_bbox=bbox_list,
+                                )
+                                if table_bbox and r.get("kind") == "table":
+                                    r = {**r, "bbox": table_bbox}
                             elif "bbox" not in r:
                                 r = {**r, "bbox": bbox_list}
                         snapped.append(r)
@@ -343,6 +369,7 @@ class IngestService:
 
             embedded_count = 0
             if self.embedder is not None:
+                current_stage = "embed"
                 stage_started_at = self.clock.now()
                 embedded_count = await self.embed_document(
                     slug, publish_workspace_id=publish_workspace_id,
@@ -402,7 +429,22 @@ class IngestService:
             return summary
 
         except Exception as exc:  # surface the failure on the bus before re-raising
-            await self._publish(DocIngestFailed(slug=slug, stage="unknown", error=str(exc)), publish_workspace_id)
+            # Persist a failure record so the orphaned bronze (stashed but
+            # never silvered) becomes visible as a failed document through
+            # list_documents instead of silently absent. Bookkeeping is
+            # wrapped so a write hiccup can never mask the original error.
+            try:
+                await self.store.write_ingest_failure(
+                    slug,
+                    filename=filename,
+                    stage=current_stage,
+                    error=str(exc),
+                    bronze_path=str(bronze_path) if bronze_path is not None else None,
+                    failed_at=self.clock.now(),
+                )
+            except Exception:  # noqa: BLE001 - never let bookkeeping mask the real failure
+                pass
+            await self._publish(DocIngestFailed(slug=slug, stage=current_stage, error=str(exc)), publish_workspace_id)
             raise
 
     async def embed_document(

@@ -302,6 +302,8 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
       const mode = pickEdgeMode(
         {
           edge_type: e.edge_type,
+          sourceHandle: e.sourceHandle,
+          targetHandle: e.targetHandle,
           data: e.data as { kind?: string; source_ref?: Record<string, unknown> } | undefined,
           targetDocSlug: tgtSlug,
         },
@@ -336,7 +338,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         label: e.label,
         type,
         data: { ...(e.data ?? {}), label: e.label || undefined, active, dimmed },
-        style: dimmed ? { opacity: 0.3 } : undefined,
+        style: dimmed ? { opacity: 0.65 } : undefined,
         selected: isSelected,
       } satisfies RfEdge;
     }));

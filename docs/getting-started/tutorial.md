@@ -31,10 +31,11 @@ pip install anchor-kb            # in your active virtualenv
 
 !!! tip "Quick demo vs. a real project"
     This tutorial uses `anchor demo`, which works out of the box in the default
-    `~/anchor-data`. For your own work, run `anchor init` in a project folder
-    first — it picks the AI provider / data zone and writes `anchor.toml`, and
-    every command run from that folder then uses it. See
-    [Configuration](../reference/configuration.md).
+    environment's default project. For your own work, `cd` into a working
+    folder and run `anchor init`. It initializes a **project** there and binds
+    it to an environment. The first time, it asks you to pick a provider (your
+    data zone), or pass `--provider`, or run `anchor env create` first.
+    See [Environments and projects](../guides/environments-and-projects.md).
 
 ## 2. Run `anchor demo`
 
@@ -44,7 +45,7 @@ anchor demo
 
 This does three things in every installation:
 
-1. Creates `~/anchor-data/` if it's missing.
+1. Creates the default environment's `default` project if it's missing.
 2. Creates a workspace called `demo` and drops six
    **placeholder spec nodes** with hints like "Max inlet pressure",
    "Temperature range", "Motor power range".
@@ -58,8 +59,10 @@ vendor PDF. For a normal first run, ingest your own PDF in another terminal:
 anchor ingest /path/to/datasheet.pdf
 ```
 
-Silver extraction is local. Gold regions build only when you configure
-`ANCHOR_OPENAI_API_KEY` (or `OPENAI_API_KEY`) and a suitable vision endpoint.
+Silver extraction is local. Gold regions build only when you configure a keyed
+vision provider. For public OpenAI, `OPENAI_API_KEY` can work; for Azure or a
+custom endpoint, use `ANCHOR_OPENAI_API_KEY` plus the endpoint and deployment
+names.
 Leave the server running.
 
 If the server's already running on that port, pass `--port 8003`. MCP tools
@@ -76,7 +79,7 @@ http://localhost:8002/c/demo
 You'll see:
 
 - Six **placeholder spec nodes** in a grid on the right. Each carries a
-  dashed sky-blue outline and a small `✶ empty · <hint>` chip in the
+  dashed sky-blue outline and a small `empty <hint>` chip in the
   top-right corner. That's the "agent please fill this" signal.
 - A **document node** after you ingest your PDF.
 
@@ -88,13 +91,13 @@ flips to the dashed-sky look. Pick `Clear placeholder` to revert.
 In a second terminal:
 
 ```bash
-anchor install claude-code
+anchor install claude-code           # or: claude-desktop, cursor
 ```
 
-This writes a **folder-resolving** MCP entry plus the skill: one registration
-works for every project, because the server resolves the project from the folder
-you open the agent in (and falls back to `~/anchor-data`, where `anchor demo`
-lives, when there's no project `anchor.toml`).
+This writes an MCP entry pointing at your default environment, plus the skill.
+The server serves that environment; you name a project per call, or use its
+`default` project (where `anchor demo` lives). To serve a different
+environment, install with `anchor install claude-code --env <name>`.
 
 Restart Claude Code. In any conversation, `/mcp` should now show `anchor` with
 its available tools. For Codex, Cursor, OpenCode, and generic stdio clients,
@@ -148,7 +151,7 @@ ungrounded.
 
 - Drop another PDF onto the canvas and the same flow works on a fresh
   doc. `anchor ingest /path/to/file.pdf` runs the pipeline from the CLI.
-- Make your own placeholders: right-click any shape → `Mark as
+- Make your own placeholders: right-click any shape, then `Mark as
   placeholder`. Set `data.placeholder_hint` via the Properties panel to
   give the agent a steer.
 - Run `anchor canvas placeholders demo` in a shell to see the agent-
@@ -158,9 +161,12 @@ ungrounded.
 
 ## Troubleshooting
 
-`anchor ingest` produced no gold regions. Check `ANCHOR_OPENAI_API_KEY`
-and the configured vision model. Without a configured LLM endpoint, silver
-still builds but region-driven placeholder filling is unavailable.
+`anchor ingest` produced no gold regions. Bronze and silver still run locally,
+but the gold region step needs a keyed vision provider. For Azure, check all of
+these before retrying with `--force`: `ANCHOR_OPENAI_API_KEY` is set to the
+Azure resource key, `openai_base_url` ends in `/openai/v1/`, and
+`region_model` is the Azure deployment name. Run `anchor check --probe`, then
+`anchor list` and `anchor gold-map <slug>` after ingest.
 
 `/mcp` doesn't list `anchor`. Restart your harness fully (`Cmd+Q`,
 reopen, not just close the window). MCP server lists load on startup.

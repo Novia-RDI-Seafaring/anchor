@@ -159,12 +159,59 @@ describe("TablePrimitive row handles", () => {
         },
       ],
     });
-    fireEvent.click(screen.getByRole("button", { name: "p2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open source page 2" }));
     expect(useUiStore.getState().pdfViewer).toMatchObject({
       slug: "alfa-laval-lkh",
       page: 2,
       highlightRegionId: "r9",
       highlightPage: 2,
     });
+  });
+
+  it("uses a rendered bbox crop for dragged-region previews", async () => {
+    await renderTable({
+      label: "Dragged region",
+      source_doc_slug: "doc-a",
+      source_region_id: "region-a",
+      source_ref: { page: 3, bbox: [1, 2, 3, 4] },
+      crops: { png: "3/region-a-custom.png" },
+      description: "Region summary",
+    });
+
+    expect(screen.getByAltText("Dragged region").getAttribute("src")).toBe(
+      "/api/documents/doc-a/pages/3/crop?bbox=1%2C2%2C3%2C4&dpi=300",
+    );
+  });
+
+  it("uses the stored region crop when no bbox exists", async () => {
+    await renderTable({
+      label: "Dragged region",
+      source_doc_slug: "doc-a",
+      source_region_id: "region-a",
+      source_ref: { page: 3 },
+      crops: { png: "3/region-a-custom.png" },
+      description: "Region summary",
+    });
+
+    expect(screen.getByAltText("Dragged region").getAttribute("src")).toBe(
+      "/api/documents/doc-a/crops/3/region-a-custom.png",
+    );
+  });
+
+  it("uses a rendered bbox crop when no stored crop exists", async () => {
+    await renderTable({
+      label: "Dragged region without crop",
+      source_doc_slug: "doc-b",
+      source_region_id: "region-b",
+      source_ref: {
+        page: 4,
+        bbox: [10, 20, 110, 70],
+      },
+      description: "Region summary",
+    });
+
+    expect(screen.getByAltText("Dragged region without crop").getAttribute("src")).toBe(
+      "/api/documents/doc-b/pages/4/crop?bbox=10%2C20%2C110%2C70&dpi=300",
+    );
   });
 });

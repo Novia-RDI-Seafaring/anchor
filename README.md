@@ -13,7 +13,7 @@ Drop a PDF onto a canvas. The agent reads it and pulls the values you need into 
 
 Drop FMU simulation models onto the same canvas and wire the extracted values into their parameters.
 
-It runs on your laptop. Data lives under `~/anchor-data`. Agents talk to it over MCP, so it works with Claude Code, Cursor, or any MCP client. There's an HTTP API and a CLI too.
+It runs on your laptop. A project is a folder: run `anchor init` in it, and its documents and canvases live in a hidden `.anchor_data/` right there. Agents talk to it over MCP, so it works with Claude Code, Cursor, Claude Desktop, or any MCP client. There's an HTTP API and a CLI too.
 
 First five minutes: [`docs/getting-started/tutorial.md`](./docs/getting-started/tutorial.md).
 
@@ -39,7 +39,7 @@ create a `.env` file before starting ANCHOR; see
 itself does not require an API key.
 
 ```bash
-anchor serve              # → http://127.0.0.1:8002
+anchor serve              # -> http://127.0.0.1:8002
 ```
 
 Requires Python >= 3.12. CI tests Linux and runs CLI smoke checks on
@@ -87,10 +87,12 @@ Source development requires Node.js 20+ and pnpm 10. If `pnpm` is not installed
 globally, use the Corepack form instead: `corepack pnpm@10 --dir web install`
 and `corepack pnpm@10 --dir web dev`.
 
-For normal use, run `anchor init` in a project folder and leave
-`ANCHOR_DATA_DIR` unset. Commands then share the project's `anchor.toml`.
-Configuration precedence is: explicit flags, `ANCHOR_*` environment variables,
-`.env`, project `anchor.toml`, then built-in defaults.
+For normal use, run `anchor init` in a project folder. It writes an
+`anchor.toml` marker and a hidden `.anchor_data/` there, and binds the project
+to an environment (the provider and data zone). Commands run inside the folder
+then resolve it automatically. Configuration precedence is: explicit flags,
+`ANCHOR_*` environment variables, the project `anchor.toml`, the environment
+`env.toml`, then built-in defaults.
 
 Releases are tag-driven: pushing a `v*` tag triggers the
 [release workflow](./.github/workflows/release.yml), which publishes
@@ -113,7 +115,10 @@ anchor demo
 
 # Or step by step:
 
-# 1. Configure a project folder and create your first canvas
+# 1. Start a project in a folder. The first time, `anchor init` asks you to
+#    pick a provider — this is the ENVIRONMENT, the trust boundary that decides
+#    where document content may go (local keeps everything on your machine).
+#    Pass --provider to skip the prompt, e.g. `anchor init --provider local`.
 mkdir my-anchor-project
 cd my-anchor-project
 anchor init
@@ -175,6 +180,12 @@ For Cursor:
 anchor install cursor
 ```
 
+`anchor install claude-code` / `cursor` wire the MCP server for the default
+environment. For Claude Desktop, or to serve a specific environment, use
+`anchor install claude-desktop --env <name>`; it writes a named entry, echoes
+the data zone before wiring, and is collision-safe. See the
+[agent setup guide](./docs/guides/agent-setup.md).
+
 See the [agent configuration guide](./docs/guides/agent-configuration.md) for
 Codex, OpenCode, Cursor, Claude Code, and generic stdio examples.
 
@@ -182,39 +193,48 @@ Codex, OpenCode, Cursor, Claude Code, and generic stdio examples.
 
 ## Where data lives
 
-Every canvas is a folder. Every document is a folder. Both shareable as zips, both diffable in git.
+A project is a folder. Its corpus and canvases live in a hidden `.anchor_data/`
+beside an `anchor.toml` marker. Everything is plain files: `tar` it, mail it,
+diff it in git.
 
 ```
-~/anchor-data/
-├─ bronze/                 # raw PDFs (your originals)
-│   └─ datasheet.pdf
-├─ silver/<doc-slug>/      # docling extraction + per-page markdown + page PNGs
-│   ├─ index.json          # outline, tables, figures
-│   ├─ pages.meta.json
-│   └─ pages/{1.md, 1.png, …}
-├─ gold/<doc-slug>/        # structured regions with page + bbox provenance
-│   └─ pages/{1.regions.json, 1/r1-spec-block.png, …}
-└─ canvases/<canvas-slug>/
-    ├─ meta.json
-    ├─ state.json          # latest snapshot
-    └─ events.jsonl        # append-only log; every action ever taken
+your-project/
+├── anchor.toml             # binds this folder to an environment (provider + data zone)
+└── .anchor_data/
+    ├── bronze/<slug>/      # raw PDFs (your originals)
+    ├── silver/<slug>/      # Docling extraction + per-page markdown + page PNGs
+    ├── gold/<slug>/        # structured regions with page + bbox provenance
+    └── canvases/<slug>/    # meta.json, state.json, events.jsonl (append-only log)
 ```
 
-This layout is **the contract**. You can hand-edit JSON files, copy a canvas folder to another machine, or version-control the whole thing.
+This layout is **the contract**. You can hand-edit the JSON, copy a canvas
+folder to another machine, or version-control the whole project. The file-level
+detail is in [On-disk substrate](./docs/concepts/on-disk-substrate.md).
+
+A project created by an agent (no working folder) is *managed* under its
+environment at `~/.anchor/envs/<env>/projects/<name>/`, with the same
+`.anchor_data/` inside. A pre-existing `~/anchor-data` from older versions keeps
+working until you run `anchor migrate`.
 
 ---
 
 ## Configuration
 
-Configure a project with `anchor init`; it writes non-secret settings to
-`anchor.toml`. Select the data directory and server bind address with the CLI
-flags `--data-dir`, `--host`, and `--port`. The following `ANCHOR_`
-environment variables override project settings:
+Provider, model, and data-zone settings live in an environment's `env.toml`,
+created with `anchor env create <name>`. Run `anchor init` in a folder to start
+a project bound to an environment; it writes an `anchor.toml` marker (and a
+hidden `.anchor_data/`) there, with any per-project overrides going in that
+marker. The first time, if no environment exists yet, `anchor init` asks you to
+pick a provider (your data zone), or you pass `--provider`. It never picks a
+trust boundary for you silently. See
+[Environments and projects](./docs/guides/environments-and-projects.md) for the
+full model. Select the server bind address with the CLI flags `--host` and
+`--port`. The following `ANCHOR_` environment variables override the resolved
+settings:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ANCHOR_DATA_DIR` | `~/anchor-data` | Storage root override for CLI and MCP commands. An explicit `--data-dir` takes priority. |
-| `ANCHOR_OPENAI_API_KEY` | (unset) | Optional: enables LLM polish + region extraction in the gold layer |
+| `ANCHOR_OPENAI_API_KEY` | (unset) | Optional: enables LLM polish + region extraction in the gold layer. Required for Azure and custom endpoints. |
 | `ANCHOR_OPENAI_BASE_URL` | (unset) | Override the OpenAI-compatible endpoint. For Azure OpenAI v1 use `https://<resource>.openai.azure.com/openai/v1/`; for Ollama use `http://localhost:11434/v1`. |
 | `ANCHOR_POLISH_MODEL` | `gpt-5.4` | Model name for page-MD polishing |
 | `ANCHOR_REGION_MODEL` | `gpt-5.4` | Model name for region extraction |
@@ -222,7 +242,10 @@ environment variables override project settings:
 | `ANCHOR_DPI` | `150` | Render DPI for page images |
 | `ANCHOR_CORS_ORIGINS` | (unset) | Comma-separated additional origins permitted by the HTTP server |
 
-If you don't set `ANCHOR_OPENAI_API_KEY`, ingest still produces silver (deterministic Docling extraction + per-page markdown). Gold extraction (LLM-driven structured regions) is skipped. The system stays useful without an API key: silver is the workable substrate; gold is the polish.
+If no usable vision key is configured, ingest still produces silver
+(deterministic Docling extraction + per-page markdown). Gold extraction
+(LLM-driven structured regions) is skipped. The system stays useful without an
+API key: silver is the workable substrate; gold is the polish.
 
 ### Enable gold region extraction
 
@@ -245,7 +268,9 @@ ANCHOR_REGION_MODEL=gpt-5.4
 ```
 
 For Azure OpenAI, ANCHOR currently supports the Azure OpenAI **v1** endpoint
-through the standard OpenAI-compatible client using API-key authentication:
+through the standard OpenAI-compatible client using API-key authentication.
+The key must be the Azure resource key. A personal `OPENAI_API_KEY` in your
+shell is not proof that the Azure project is configured.
 
 ```dotenv
 ANCHOR_OPENAI_API_KEY=<your-azure-openai-key>
@@ -254,12 +279,26 @@ ANCHOR_POLISH_MODEL=<vision-capable-deployment-name>
 ANCHOR_REGION_MODEL=<vision-capable-deployment-name>
 ```
 
-The Azure deployment name is used as `model` and must support image input and
-JSON-formatted chat completion output. Azure Entra ID authentication and the
-older Azure deployment/API-version endpoint shape are not configured by ANCHOR
-environment variables today. See Microsoft's
+The Azure deployment name is used as `model`, not the base model name, and must
+support image input and JSON-formatted chat completion output. Azure Entra ID
+authentication and the older Azure deployment/API-version endpoint shape are
+not configured by ANCHOR environment variables today. See Microsoft's
 [Azure OpenAI v1 API documentation](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/api-version-lifecycle?tabs=python)
 for endpoint details.
+
+You can let ANCHOR write the non-secret environment settings for you. Create an
+environment for the zone, drop the key into its gitignored `.env`, then bind a
+project folder to it:
+
+```bash
+anchor env create azure --provider azure \
+  --base-url https://<resource-name>.openai.azure.com/ \
+  --vision-model <vision-capable-deployment-name>
+echo 'ANCHOR_OPENAI_API_KEY=<your-azure-openai-key>' >> ~/.anchor/envs/azure/.env
+anchor check --env azure --probe       # confirm the deployment + key, sends no documents
+
+cd your-project && anchor init --env azure
+```
 
 From the same directory as `.env`, start ANCHOR and upload the PDF in the UI:
 
@@ -270,11 +309,21 @@ anchor serve
 Alternatively, ingest a file directly from the same directory:
 
 ```powershell
-anchor ingest "C:\path\to\datasheet.pdf" --data-dir "$HOME\anchor-data"
+anchor ingest "C:\path\to\datasheet.pdf" --force
 ```
 
-Successful gold extraction creates `~/anchor-data/gold/<doc-slug>/pages/*.regions.json`
-and returns a non-zero `region_count` when regions are identified.
+Successful gold extraction writes structured regions under the project's
+`.anchor_data/gold/<doc-slug>/` and returns a non-zero `region_count` when
+regions are identified. Verify with:
+
+```bash
+anchor list
+anchor gold-map <doc-slug>
+```
+
+In `anchor list`, the document should show `"has_gold": true`. If it does not,
+check `ANCHOR_OPENAI_API_KEY`, the `/openai/v1/` base URL, and that
+`ANCHOR_REGION_MODEL` is the Azure deployment name.
 
 For Ollama / local-LLM recipes, see [`docs/guides/agent-setup.md`](./docs/guides/agent-setup.md).
 
@@ -282,37 +331,45 @@ For Ollama / local-LLM recipes, see [`docs/guides/agent-setup.md`](./docs/guides
 
 ## Commands
 
+Run most commands from inside a project folder and they resolve it automatically
+(via the `anchor.toml` marker). Full reference: [docs/reference/cli.md](./docs/reference/cli.md).
+
 ```
-anchor serve     [--data-dir DIR] [--host HOST] [--port PORT]
-anchor demo      [--data-dir DIR] [--host HOST] [--port PORT] [--no-serve]
-anchor ingest    PDF_PATH [--data-dir DIR] [--skip-polish] [--skip-regions]
-anchor list      [--data-dir DIR]
-anchor index     SLUG [--data-dir DIR]
-anchor regions   SLUG [--page N] [--data-dir DIR]
-anchor page-text SLUG PAGE [--data-dir DIR]
-anchor embed     [SLUG] [--overwrite] [--data-dir DIR]
-anchor search    "<query>" [--k N] [--data-dir DIR]
-anchor canvas    list   [--data-dir DIR]
-anchor canvas    create SLUG [--title TITLE] [--data-dir DIR]
-anchor canvas    placeholders SLUG [--data-dir DIR]
-anchor canvas    snapshot SLUG [--data-dir DIR] [--base-url URL]
-anchor install     claude-code [--data-dir DIR] [--dry-run]
-anchor install     cursor [--data-dir DIR] [--dry-run]
-anchor install     print [--data-dir DIR]
-anchor extensions  list  [--data-dir DIR] [--verbose]
-anchor extensions  info  NAME [--data-dir DIR]
-anchor extensions  add   MANIFEST_PATH [--scope system|project] [--data-dir DIR] [--force]
-anchor extensions  remove NAME [--scope system|project] [--data-dir DIR]
-anchor extensions  discover [--data-dir DIR]
-anchor extensions  schema
+# Environments (the provider / data-zone profile = the trust boundary)
+anchor env create NAME [--provider local|ollama|openai|azure|custom] [--base-url …] [--vision-model …]
+anchor env list | show NAME | default NAME | set-description NAME "…"
+
+# Projects (a folder = a corpus + its canvases)
+anchor init [NAME] [--env NAME] [--provider …]   # start a project in this folder
+anchor project create NAME [--env NAME]          # a managed project under the env
+anchor project list | set-description | move NAME --to ENV
+anchor use ENV [PROJECT]                          # session default so you can omit --env
+anchor migrate                                    # fold a legacy ~/anchor-data in
+anchor check [--env NAME] [--probe] [--fix]       # audit the data zone before ingesting
+
+# Documents + search
+anchor ingest PDF_PATH [--skip-polish] [--skip-regions] [--force]
+anchor list | index SLUG | regions SLUG [--page N] | page-text SLUG PAGE
+anchor embed [SLUG] [--overwrite] | search "<query>" [--k N]
+
+# Canvas + server
+anchor serve [--env NAME] [--project NAME] [--host HOST] [--port PORT]
+anchor demo  [--no-serve]
+anchor canvas list | create SLUG [--title TITLE] | placeholders SLUG | snapshot SLUG
+
+# Agents (write a named MCP pointer for an environment)
+anchor install claude-desktop --env NAME [--name ENTRY] [--create]
+anchor install claude-code [--env NAME] | cursor [--env NAME] | print
+
+# Extensions (OIP producers) + misc
+anchor extensions list | info NAME | add MANIFEST | remove NAME | discover | schema
 anchor version
 ```
 
-For new Claude Code setups, use the client-native `claude mcp add` command
-shown above. The `anchor install claude-code` helper remains in the CLI but is
-not the recommended setup path for current Claude Code releases.
-
-`anchor-mcp [--data-dir DIR]` runs the MCP server over stdio (used by Claude Code's MCP harness; you don't normally invoke it yourself).
+`anchor-mcp --env NAME` runs the MCP server over stdio for one environment (used
+by an agent's MCP harness; you don't normally invoke it yourself). `--data-dir`
+is still accepted on the document/canvas commands to point at a raw storage dir,
+but the project folder is the usual way in.
 
 ---
 
@@ -350,7 +407,7 @@ For implementation status: today, an OIP-registered producer is *visible* in `ex
 
 ```bash
 uv sync --extra dev                       # one-time: install pytest/ruff/import-linter
-uv run pytest                             # ~340 backend tests
+uv run pytest                             # ~570 backend tests
 uv run lint-imports                       # 6 dependency-rule contracts
 pnpm --dir web test                       # ~180 web tests (Vitest)
 pnpm --dir web exec tsc --noEmit          # web typecheck
@@ -362,7 +419,7 @@ The test seam is function-based pytest with in-memory implementations of every p
 
 ## Status & roadmap
 
-**v0.2 (current):** canvas primitive + PDF ingestion in one package, real-time SSE sync, MCP integration, skill installer for Claude Code/Cursor, backend and web test suites, hexagonal contracts enforced.
+**v0.2 (current):** canvas primitive + PDF ingestion in one package, real-time SSE sync, MCP integration, folder-based projects under named environments (the data-zone / trust boundary), skill + pointer installers for Claude Code / Cursor / Claude Desktop, backend and web test suites, hexagonal contracts enforced.
 
 **Near-term:** complete remaining node renderer and asset workflows, then stabilise the extension registration surface.
 
@@ -416,7 +473,7 @@ If you use ANCHOR, please cite the software repository:
 
 ```bibtex
 @misc{ANCHOR,
-  author       = {Lamin Jatta and Christoffer Bj{\"o}rkskog},
+  author       = {Lamin Jatta and Christoffer Bj{\"o}rkskog and Mikael Manng{\aa}rd and Johan West{\"o}},
   title        = {ANCHOR: Agent-Native Canvas to Help Organize Resources for Traceable Engineering Document Extraction},
   year         = {2026},
   howpublished = {\url{https://github.com/Novia-RDI-Seafaring/anchor}},
