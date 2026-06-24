@@ -351,9 +351,32 @@ gh issue edit <n> --add-assignee @me
 # Move the card to In progress via the Project UI or `gh project item-edit`.
 ```
 
-If multiple agents may be working concurrently, comment on the issue
-when you start so the activity is visible without polling the
-Project board.
+When several harnesses loop over the queue concurrently (e.g. two
+maintainers each running an agent), the assignee is the lock and a
+**claim comment** is the tie-break record. Follow this every time you
+move from triage to implementation:
+
+1. **Poll only unassigned issues.** Add `--search "no:assignee"` to the
+   listing. An assigned issue is off-limits unless it is stale (below).
+2. **Claim = assign + comment.** Right after `--add-assignee @me`, post a
+   short claim comment naming your harness, e.g.
+   `Claiming this: <your-login> harness, starting now.` The comment is
+   the visible signal other loopers see without polling the board.
+3. **Race check.** GitHub's assignee is a set, not an atomic lock: two
+   loopers can both assign within the same minute. So immediately
+   re-read the issue (`gh issue view <n> --json assignees,comments`). If
+   another trusted agent is also assigned or posted an **earlier** claim
+   comment, you lost the race: **unassign yourself and pick another
+   issue.** Deterministic tie-break: earliest claim-comment timestamp
+   wins; on an exact tie, the login that sorts first keeps it.
+4. **Stale reclaim.** To avoid deadlock if a harness dies mid-work, an
+   issue that is assigned but has **no linked PR/branch and no claim
+   activity for more than ~2 hours** may be reclaimed. Comment that you
+   are reclaiming it (and why) before reassigning.
+5. **Release on stop.** If you stop without opening a PR, **unassign and
+   comment** so the issue returns to the pool. A `Closes #<n>` PR is the
+   durable ownership signal; until one exists, the assignment + claim
+   comment are all that hold the issue.
 
 ### Filing new work mid-session
 
