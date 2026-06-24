@@ -298,6 +298,31 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "derive_region",
+            "description": (
+                "Persist a region derived from an existing gold region — the "
+                "consumer side of an OIP region producer. Give the parent "
+                "region id and the new region; it inherits the parent's "
+                "source_ref (so provenance points at the same page and bbox) "
+                "and records derived_from, then stores it durably. Example: a "
+                "chart digitizer returns a chart_series; derive_region files it "
+                "beside the chart region it came from. Re-run `embed` to make "
+                "it searchable."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {"type": "string"},
+                    "parent_region_id": {"type": "string"},
+                    "region": {
+                        "type": "object",
+                        "description": "The derived region: id, kind, title, content.data, ...",
+                    },
+                },
+                "required": ["slug", "parent_region_id", "region"],
+            },
+        },
+        {
             "name": "get_embeddings_meta",
             "description": (
                 "Return metadata about a document's embeddings (model id, "
@@ -459,6 +484,15 @@ async def call_tool(
         try:
             return json.dumps(await ingest.search(args["query"], k=int(args.get("k", 10))))
         except RuntimeError as e:
+            return json.dumps({"error": str(e)})
+    if name == "derive_region":
+        try:
+            return json.dumps(
+                await ingest.derive_region(
+                    args["slug"], args["parent_region_id"], args["region"]
+                )
+            )
+        except (ValueError, RuntimeError) as e:
             return json.dumps({"error": str(e)})
     if name == "get_embeddings_meta":
         slug = args["slug"]

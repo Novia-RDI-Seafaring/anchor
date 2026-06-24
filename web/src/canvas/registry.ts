@@ -41,6 +41,7 @@ import { Model3DPrimitive } from "./primitives/Model3DPrimitive";
 import { SubCanvasPrimitive } from "./primitives/SubCanvasPrimitive";
 import { SysmlBlockPrimitive } from "./primitives/SysmlBlockPrimitive";
 import { SysmlPackagePrimitive } from "./primitives/SysmlPackagePrimitive";
+import { ChartPrimitive } from "./primitives/ChartPrimitive";
 import { SysmlRequirementPrimitive } from "./primitives/SysmlRequirementPrimitive";
 import { TablePrimitive } from "./primitives/TablePrimitive";
 
@@ -249,6 +250,12 @@ registerNodeRenderer("cad:model", Model3DPrimitive, {
   glyph: "cube",
   order: 40,
 });
+
+// `chart` — recognised OIP renders token (RFC 0001). Any producer whose
+// region carries `content.data` shaped like the chart token renders here;
+// graph-data-extractor's `chart_series` is the first. No palette metadata:
+// charts arrive as derived regions, not as toolbar drag-outs.
+registerNodeRenderer("chart", ChartPrimitive);
 
 // SysML v2 primitives — anchor_sysml extension's manifest node_types
 registerNodeRenderer("sysml:block", SysmlBlockPrimitive, {

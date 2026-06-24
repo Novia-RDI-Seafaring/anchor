@@ -3,12 +3,18 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse, Response
+from pydantic import BaseModel
 
 from anchor.adapters.http.deps import get_doc_store, get_ingest_service
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
+
+
+class DeriveRegionBody(BaseModel):
+    parent_region_id: str
+    region: dict
 
 
 def _synopsis_svc(request: Request) -> SynopsisService:
@@ -195,6 +201,24 @@ async def embed_document(
         return {"slug": slug, "skipped": True, "reason": "already embedded", "embed_model": existing.get("embed_model")}
     n = await ingest.embed_document(slug)
     return {"slug": slug, "embedded": n, "embed_model": ingest.embed_model_id}
+
+
+@router.post("/{slug}/derived-regions")
+async def derive_region(
+    slug: str,
+    body: DeriveRegionBody,
+    ingest: IngestService = Depends(get_ingest_service),
+):
+    """Persist a region derived from an existing gold region.
+
+    The consumer side of an OIP region producer: inherits the parent's
+    source_ref (provenance) and records derived_from, then stores it durably.
+    Re-run `POST /{slug}/embed` to make the new region searchable.
+    """
+    try:
+        return await ingest.derive_region(slug, body.parent_region_id, body.region)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from None
 
 
 @router.get("/_search")

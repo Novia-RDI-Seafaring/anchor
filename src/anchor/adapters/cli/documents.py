@@ -93,6 +93,35 @@ def search(
     typer.echo(json.dumps(out, indent=2))
 
 
+def derive_region(
+    slug: str = typer.Argument(..., help="Document slug."),
+    parent_region_id: str = typer.Argument(..., help="Region id the new region derives from."),
+    region: str = typer.Option(
+        ..., "--region", help="The derived region as a JSON string, or @path to a JSON file."
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Persist a region derived from an existing gold region.
+
+    The consumer side of an OIP region producer: inherits the parent's
+    source_ref (provenance) and records derived_from, then stores it durably.
+    Re-run `anchor embed <slug>` to make the new region searchable.
+    """
+    raw = Path(region[1:]).read_text(encoding="utf-8") if region.startswith("@") else region
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        typer.echo(f"--region is not valid JSON: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    _, _, _, ingest_svc, _ = _build_real_services(data_dir)
+    try:
+        out = asyncio.run(ingest_svc.derive_region(slug, parent_region_id, payload))
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(json.dumps(out, indent=2))
+
+
 def embed(
     slug: str | None = typer.Argument(
         None,
@@ -342,6 +371,7 @@ def register_document_commands(app: typer.Typer) -> None:
     app.command()(ingest)
     app.command("list")(list_documents)
     app.command()(search)
+    app.command("derive-region")(derive_region)
     app.command()(embed)
     app.command()(index)
     app.command()(regions)
