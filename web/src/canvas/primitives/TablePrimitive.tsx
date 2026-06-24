@@ -359,6 +359,10 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                       value={r.value}
                       rowsLen={rows.length}
                       canEdit={canEdit}
+                      // Grounded values get a yellow "marker pen" highlight on
+                      // row hover, so the eye lands on the exact value while the
+                      // source node highlights where it came from (issue #145).
+                      marker={!!r.source_ref}
                       pendingFocus={pendingFocus}
                       setPendingFocus={setPendingFocus}
                       onCommit={(v) => commitRow(i, "value", v)}
@@ -455,6 +459,7 @@ function RowCell({
   value,
   rowsLen,
   canEdit,
+  marker = false,
   pendingFocus,
   setPendingFocus,
   onCommit,
@@ -465,6 +470,9 @@ function RowCell({
   value: string;
   rowsLen: number;
   canEdit: boolean;
+  /** When true, the displayed value is highlighted with a yellow marker on
+   *  row hover (the grounded-value affordance, issue #145). */
+  marker?: boolean;
   pendingFocus: { row: number; col: "key" | "value" } | null;
   setPendingFocus: (next: { row: number; col: "key" | "value" } | null) => void;
   onCommit: (next: string) => void;
@@ -565,9 +573,16 @@ function RowCell({
       />
     );
   }
+  // A grounded value uses an inline-block marker span so the yellow highlight
+  // hugs the text (marker-pen look) rather than filling the whole cell, while
+  // still truncating long values. Plain cells stay a simple block span.
+  const markerClass = marker
+    ? "nodrag inline-block max-w-full truncate align-bottom rounded-sm px-0.5 -mx-0.5 transition-colors duration-100 group-hover/tr:bg-yellow-200 group-hover/tr:text-neutral-900"
+    : "nodrag block truncate";
   return (
     <span
-      className={`nodrag block truncate ${canEdit ? "cursor-text" : "cursor-pointer"}`}
+      data-testid={marker ? "spec-value-marker" : undefined}
+      className={`${markerClass} ${canEdit ? "cursor-text" : "cursor-pointer"}`}
       onDoubleClick={(e) => {
         if (!canEdit) return;
         e.stopPropagation();

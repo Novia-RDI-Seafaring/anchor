@@ -214,4 +214,22 @@ describe("TablePrimitive row handles", () => {
       "/api/documents/doc-b/pages/4/crop?bbox=10%2C20%2C110%2C70&dpi=300",
     );
   });
+
+  it("marks a grounded value for the yellow hover highlight; leaves an ungrounded value plain", async () => {
+    await renderTable({
+      label: "Mixed grounding",
+      source_doc_slug: "lkh",
+      rows: [
+        { key: "Grounded", value: "600 kPa", source_ref: { page: 2, region_id: "r4" } },
+        { key: "Plain", value: "no source" },
+      ],
+    });
+    // The grounded value carries the marker affordance with the yellow
+    // on-hover class; the ungrounded value does not get the marker.
+    const markers = screen.getAllByTestId("spec-value-marker");
+    expect(markers).toHaveLength(1);
+    expect(markers[0]!.textContent).toBe("600 kPa");
+    expect(markers[0]!.className).toContain("group-hover/tr:bg-yellow-200");
+    expect(screen.getByText("no source").getAttribute("data-testid")).toBeNull();
+  });
 });
