@@ -35,8 +35,8 @@ CONFIG_FILENAME = "anchor.toml"
 #:
 #: When set, ``settings_customise_sources`` uses these mapping values as the
 #: toml-level source instead of walking up for an ``anchor.toml``. The resolver
-#: (``anchor.infra.environment``) layers the environment ``config.toml`` under
-#: the project ``project.toml`` and parks the result here, so a single
+#: (``anchor.infra.environment``) layers the environment ``env.toml`` under
+#: the project ``anchor.toml`` and parks the result here, so a single
 #: ``AnchorConfig`` carries the resolved layering while ``ANCHOR_*`` env vars
 #: and explicit constructor args still win above it. Unset for every direct
 #: ``AnchorConfig()`` caller, which keeps the legacy walk-up behavior intact.
@@ -174,7 +174,7 @@ class AnchorConfig(BaseSettings):
         layers = _ACTIVE_LAYERS.get()
         if layers is not None:
             # The environment/project resolver has already merged the
-            # environment config.toml under the project project.toml. Use that
+            # environment env.toml under the project anchor.toml. Use that
             # as the single toml-level source instead of walking up for a stray
             # anchor.toml, so the resolved layering is honored exactly.
             sources.append(_MappingSettingsSource(settings_cls, layers))
@@ -198,8 +198,8 @@ class AnchorConfig(BaseSettings):
     def from_layers(cls, *, layer_values: dict[str, Any], data_dir: Path) -> AnchorConfig:
         """Build a config from pre-merged environment+project toml values.
 
-        ``layer_values`` are the environment ``config.toml`` overlaid by the
-        project ``project.toml`` (with ``[meta]`` and any ``data_dir`` stripped
+        ``layer_values`` are the environment ``env.toml`` overlaid by the
+        project ``anchor.toml`` (with ``[meta]`` and any ``data_dir`` stripped
         — storage location is structural, set from the resolved project dir).
         They sit below ``ANCHOR_*`` env vars in precedence, matching a hand
         ``anchor.toml``. ``data_dir`` is forced to the project directory so the
