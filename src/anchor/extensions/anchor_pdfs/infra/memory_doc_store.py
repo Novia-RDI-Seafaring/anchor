@@ -24,6 +24,16 @@ def _normalise_regions(regions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [_with_bbox_alias(r) for r in regions]
 
 
+def _derived_page(region: dict[str, Any]) -> int | None:
+    """Resolve the gold page a derived region belongs on."""
+    sref = region.get("source_ref")
+    if isinstance(sref, dict) and isinstance(sref.get("page"), int):
+        return sref["page"]
+    if isinstance(region.get("page"), int):
+        return region["page"]
+    return None
+
+
 class MemoryDocStore:
     def __init__(self) -> None:
         self._docs: dict[str, dict[str, Any]] = {}
@@ -219,6 +229,21 @@ class MemoryDocStore:
     async def write_gold_region_file(self, slug: str, page: int, regions: list[dict[str, Any]]) -> Path:
         async with self._lock:
             self._regions[(slug, page)] = _normalise_regions(regions)
+        return Path(f"memory://gold/{slug}/{page}.regions.json")
+
+    async def add_derived_region(self, slug: str, region: dict[str, Any]) -> Path:
+        page = _derived_page(region)
+        if page is None:
+            raise ValueError(
+                "add_derived_region: cannot resolve page from region.source_ref.page "
+                "or region.page"
+            )
+        async with self._lock:
+            existing = list(self._regions.get((slug, page), []))
+            rid = region.get("id")
+            kept = [r for r in existing if r.get("id") != rid] if rid else existing
+            kept.append(region)
+            self._regions[(slug, page)] = _normalise_regions(kept)
         return Path(f"memory://gold/{slug}/{page}.regions.json")
 
     async def write_embeddings(self, slug: str, payload: dict[str, Any]) -> Path:
