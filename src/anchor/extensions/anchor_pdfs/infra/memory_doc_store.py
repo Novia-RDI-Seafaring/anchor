@@ -6,22 +6,7 @@ from datetime import UTC
 from pathlib import Path
 from typing import Any
 
-
-def _with_bbox_alias(region: dict[str, Any]) -> dict[str, Any]:
-    if "bbox" in region or "approximate_bbox" not in region:
-        return region
-    bbox = region.get("approximate_bbox")
-    if not (
-        isinstance(bbox, list)
-        and len(bbox) == 4
-        and all(isinstance(v, (int, float)) for v in bbox)
-    ):
-        return region
-    return {**region, "bbox": [float(v) for v in bbox]}
-
-
-def _normalise_regions(regions: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [_with_bbox_alias(r) for r in regions]
+from anchor.extensions.anchor_pdfs.infra._region_normalize import _normalise_regions
 
 
 def _derived_page(region: dict[str, Any]) -> int | None:

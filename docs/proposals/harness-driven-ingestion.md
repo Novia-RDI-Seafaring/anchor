@@ -1,3 +1,5 @@
+> Superseded (shipped in 0.2.5): harness-driven ingestion is now implemented. See `IngestSessionService`, the `ingest_begin` / `ingest_submit_page` / `ingest_finalize` operations on MCP, HTTP, and CLI, and the `harness` provider in `anchor init`.
+
 # Harness-driven ingestion (no-API-key ingest via the harness agent)
 
 Status: proposal
