@@ -86,7 +86,7 @@ async def _safe_list_workspaces(
 ) -> tuple[list[dict[str, Any]], str | None]:
     try:
         return await workspace.list_workspaces(), None
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("Failed to list workspaces for status summary.")
         return [], "Unable to list workspaces"
 
@@ -94,7 +94,7 @@ async def _safe_list_workspaces(
 async def _safe_list_documents(doc_store: DocStore) -> tuple[list[dict[str, Any]], str | None]:
     try:
         return await doc_store.list_documents(), None
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("Failed to list documents for status summary.")
         return [], "Unable to list documents"
 
@@ -102,7 +102,7 @@ async def _safe_list_documents(doc_store: DocStore) -> tuple[list[dict[str, Any]
 async def _safe_list_embeddings(doc_store: DocStore) -> tuple[list[dict[str, Any]], str | None]:
     try:
         return await doc_store.list_embeddings(), None
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         logger.exception("Failed to list embeddings for status summary.")
         return [], "Unable to list embeddings"
 
