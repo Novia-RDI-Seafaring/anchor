@@ -9,24 +9,18 @@
  *   - outside-click (document-level pointerdown listener)
  *   - selecting an item
  *
- * Why we don't reuse the Radix ContextMenu primitive in
- * `components/ui/context-menu.tsx` here: Radix v2 attaches the open
- * gesture to a `Trigger` element (a right-click on the trigger fires
- * the menu). ReactFlow intercepts the contextmenu event on nodes and
- * gives us a callback — there's no DOM element we can hand to Radix as
- * the trigger without re-implementing the right-click ourselves. A
- * tiny hand-rolled menu is simpler than fighting the abstraction. The
- * Radix primitive in `ui/context-menu.tsx` is kept for any future
- * non-canvas use.
+ * This is a custom menu because ReactFlow already gives us the target
+ * node and screen coordinates. That is simpler than adapting a trigger
+ * based context-menu primitive to a canvas callback.
  *
  * Item enablement rules:
- *   - Fill / Stroke / Text — always (top-level submenus; producer
+ *   - Fill / Stroke / Text - always (top-level submenus; producer
  *     primitives ignore the colour fields).
- *   - Align top/bottom/left/right/center-h/center-v — only when ≥ 2 selected
- *   - Distribute horizontal/vertical — only when ≥ 3 selected
- *   - Bring to front / Send to back — disabled today (pending a z-order field)
- *   - Organize subtree — single node OR multi if any selected has edges
- *   - Delete / Edit properties — always
+ *   - Align top/bottom/left/right/center-h/center-v - only when 2 or more selected
+ *   - Distribute horizontal/vertical - only when 3 or more selected
+ *   - Bring to front / Send to back - disabled today (pending a z-order field)
+ *   - Organize subtree - single node OR multi if any selected has edges
+ *   - Delete / Edit properties - always
  */
 import {
   AlignCenter,
