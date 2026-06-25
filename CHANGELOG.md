@@ -9,6 +9,21 @@ next version section on tag.
 
 ## [Unreleased]
 
+### Added
+
+- Local-only / no-egress ingest mode for confidential documents (#48). The
+  `local` provider now records `local_only = true`, and the runtime asserts it
+  identically across CLI, HTTP and MCP: ingest + embed build no OpenAI client
+  for any stage regardless of key presence, and HuggingFace model loading is
+  pinned offline (`HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE`) so cached weights
+  load without reaching the network.
+- `anchor models prefetch` (+ `anchor models list`) to download the local model
+  set (bge-small embedder + docling layout/OCR) ahead of time, so a later
+  offline run works. CLI-only: a one-time provisioning command, not on the
+  per-call ingest path.
+- `anchor check` now echoes the local-only posture and the offline model set;
+  the runtime status payload carries a `provider.local_only` flag.
+
 ### Changed
 
 - MCP server now advertises a tiered tool surface. A small core (~15 tools:

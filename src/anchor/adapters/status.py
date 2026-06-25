@@ -68,6 +68,10 @@ async def build_status_summary(
             "harness_mode": (config.provider or "").lower() == "harness",
             "key_required": (config.provider or "").lower()
             not in ("local", "ollama", "harness", ""),
+            # Local-only / no-egress posture: when true, ingest + embed build no
+            # OpenAI client and model loading is pinned offline. The runtime
+            # asserts this the same way across CLI, HTTP and MCP.
+            "local_only": config.local_only,
             "openai_base_url": config.openai_base_url or "api.openai.com",
             "embed_model": config.embed_model,
             "polish_model": config.polish_model,

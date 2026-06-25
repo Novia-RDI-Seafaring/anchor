@@ -52,6 +52,27 @@ def fmu_tools_available() -> bool:
     return importlib.util.find_spec("fmpy") is not None
 
 
+def _egress_settings(config: AnchorConfig) -> tuple[str | None, bool, str | None]:
+    """Resolve (api_key, has_openai, base_url) honoring local-only / no-egress.
+
+    Local-only mode builds no OpenAI client (``has_openai`` forced False,
+    base_url dropped) regardless of key presence — the runtime assertion that a
+    confidential ingest performs no external egress — and pins the HuggingFace
+    offline env so model loading stays off the network. Mirrors the CLI twin in
+    ``anchor.adapters.cli.services`` so an agent-launched MCP server gets the
+    same posture as the shell.
+    """
+    if config.local_only:
+        from anchor.infra.models import enforce_offline
+
+        enforce_offline()
+        return None, False, None
+    api_key = config.openai_api_key.get_secret_value() if config.openai_api_key else None
+    has_openai = bool(api_key) or bool(os.environ.get("OPENAI_API_KEY"))
+    openai_base_url = (config.openai_base_url or "").strip() or None
+    return api_key, has_openai, openai_base_url
+
+
 async def active_extensions_for_bundle(bundle: ServiceBundle) -> set[str]:
     """Which extension capabilities currently have data in this project.
 
@@ -90,9 +111,7 @@ def _build_ingest_service(config: AnchorConfig, bus: EventBus, doc_store: DocSto
     from anchor.extensions.anchor_pdfs.infra.pdf.docling_extractor import DoclingPdfExtractor
     from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
 
-    api_key = config.openai_api_key.get_secret_value() if config.openai_api_key else None
-    has_openai = bool(api_key) or bool(os.environ.get("OPENAI_API_KEY"))
-    openai_base_url = (config.openai_base_url or "").strip() or None
+    api_key, has_openai, openai_base_url = _egress_settings(config)
     embedder = build_embedder(
         model=config.embed_model,
         api_key=api_key,
@@ -127,8 +146,7 @@ def _build_ingest_session_service(
     from anchor.extensions.anchor_pdfs.infra.pdf.docling_extractor import DoclingPdfExtractor
     from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
 
-    api_key = config.openai_api_key.get_secret_value() if config.openai_api_key else None
-    openai_base_url = (config.openai_base_url or "").strip() or None
+    api_key, _has_openai, openai_base_url = _egress_settings(config)
     embedder = build_embedder(
         model=config.embed_model, api_key=api_key, base_url=openai_base_url,
     )

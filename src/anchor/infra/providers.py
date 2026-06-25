@@ -32,6 +32,13 @@ class Provider:
     #: False when the config can be written but the runtime client is not yet
     #: implemented (Azure — see #48). init records the choice and flags it.
     available: bool = True
+    #: True when this provider runs with no external egress at all: ingest +
+    #: embed call no remote endpoint and model loading is pinned offline. Sets
+    #: ``local_only = true`` in the env.toml so the runtime asserts it (see
+    #: ``AnchorConfig.local_only`` and ``anchor.infra.models``). Only the pure
+    #: ``local`` provider qualifies; ``ollama`` talks to a local *server*, which
+    #: is on-host but still a network call.
+    local_only: bool = False
     #: One-line caveat shown when this provider is chosen.
     note: str = ""
 
@@ -43,7 +50,9 @@ PROVIDERS: tuple[Provider, ...] = (
         zone="on-host · nothing leaves the network",
         does_vision=False,
         base_url_required=False,
-        note="Bronze/silver + local-embedding search. No gold regions (those need a vision model).",
+        local_only=True,
+        note="Bronze/silver + local-embedding search, no egress (run `anchor models prefetch` "
+        "once first to work offline). No gold regions (those need a vision model).",
     ),
     Provider(
         key="harness",

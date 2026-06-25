@@ -135,6 +135,16 @@ class AnchorConfig(BaseSettings):
     # LM Studio, etc. Leave None for stock OpenAI. Used by both the
     # vision-LLM polish and region extraction infra impls.
     openai_base_url: str | None = None
+    # Local-only / no-egress mode. A property of the data zone, not a new
+    # mechanism: when true, ingest + embed run with no external network calls
+    # at all. No OpenAI client is built for polish / region / embeddings
+    # regardless of key presence, and model loading is pinned offline
+    # (`HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE`) so cached weights load without
+    # reaching huggingface.co. Set by the ``local`` provider at `anchor init`
+    # time, or directly via ``ANCHOR_LOCAL_ONLY=1`` / ``local_only = true`` in a
+    # project's anchor.toml. Run ``anchor models prefetch`` once first so the
+    # required weights are cached before an offline run.
+    local_only: bool = False
     embed_model: str = "BAAI/bge-small-en-v1.5"
     polish_model: str = "gpt-5.4"
     region_model: str = "gpt-5.4"

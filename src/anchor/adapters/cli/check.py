@@ -78,8 +78,24 @@ def check(
         f"  embed model    : {cfg.embed_model}  "
         f"({'remote — sent to your endpoint' if embed_remote else 'local, no egress'})"
     )
+    # Local-only / no-egress posture: a single asserted line. When active, no
+    # OpenAI client is built for any stage and model loading is pinned offline.
+    if cfg.local_only:
+        from anchor.infra.models import offline_active, required_models
+
+        typer.echo("  local-only     : ON — no external egress; polish + regions disabled")
+        cached = "offline env set ✓" if offline_active() else (
+            "run `anchor models prefetch` once, then set HF_HUB_OFFLINE=1 to verify"
+        )
+        typer.echo(f"  offline models : {cached}")
+        for spec in required_models(cfg.embed_model):
+            typer.echo(f"                   - {spec.repo_id} ({spec.note})")
     provider_key = (cfg.provider or "").lower()
-    if provider_key == "harness":
+    if cfg.local_only:
+        # Vision (polish + regions) is disabled in no-egress mode; printing an
+        # endpoint here would falsely imply an outbound call could happen.
+        typer.echo("  vision         : disabled (no egress) — bronze/silver + local search only")
+    elif provider_key == "harness":
         typer.echo("  vision         : your agent harness — gold extraction runs through")
         typer.echo("                   ingest sessions (begin → submit pages → finalize)")
     else:
