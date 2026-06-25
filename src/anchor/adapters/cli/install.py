@@ -8,7 +8,10 @@ Targets:
                   Code actually reads) and write a skill file at
                   ~/.claude/skills/anchor/SKILL.md so Claude Code knows when
                   to use Anchor's tools.
-    cursor        Add MCP server entry to ~/.cursor/mcp.json.
+    cursor        Add MCP server entry to ~/.cursor/mcp.json. Pass --rules to
+                  also write a project-scoped .cursor/rules/anchor.mdc that
+                  points a Cursor agent in this workspace at AGENTS.md + the
+                  anchor CLI/MCP surfaces.
     print         Print what would be installed without writing anything.
 
 Idempotent: existing entries are updated in place; re-running is safe.
@@ -50,6 +53,63 @@ def _claude_code_paths() -> tuple[Path, Path]:
 
 def _cursor_paths() -> Path:
     return Path.home() / ".cursor" / "mcp.json"
+
+
+def _cursor_rules_path(project_dir: Path) -> Path:
+    """Project-scoped Cursor rules file for the Anchor briefing.
+
+    Cursor has no global skills directory; it reads project-scoped
+    ``.cursor/rules/*.mdc`` (and ``AGENTS.md``). This is the per-project
+    pointer that makes a Cursor agent auto-load the Anchor briefing.
+    """
+    return project_dir / ".cursor" / "rules" / "anchor.mdc"
+
+
+# The rules file is a short pointer, not a copy of AGENTS.md. It tells a
+# Cursor agent where the single source of truth lives and how Anchor is
+# reachable, so the briefing stays in one place. ASCII only, no em-dashes:
+# Cursor reads this on a fresh workspace and a cp1252 write would corrupt it.
+_CURSOR_RULES_MDC = """\
+---
+description: Anchor workspace briefing (auto-loaded by Cursor)
+alwaysApply: true
+---
+
+# Anchor project
+
+This workspace is an Anchor project. Anchor is an agent-native canvas for
+turning engineering PDFs into source-grounded knowledge and wiring it onto a
+canvas.
+
+- Read `AGENTS.md` at the project root first. It is the vendor-neutral
+  briefing (conventions, architecture, the bronze/silver/gold ingestion
+  pipeline). Do not duplicate it here; it is the single source of truth.
+- Anchor is reachable two ways, with parity:
+  - the `anchor` CLI (run `anchor --help`; e.g. `anchor ingest <pdf>`,
+    `anchor canvas list`),
+  - the `anchor` MCP server, which injects its own tool briefing on connect.
+- Treat this Cursor workspace as one Anchor project. Ingest, query, and place
+  nodes through the CLI or MCP tools; do not write your own PDF/OCR parsing.
+"""
+
+
+def _install_cursor_rules(project_dir: Path, *, force: bool, dry_run: bool) -> tuple[Path, bool]:
+    """Write the project-scoped ``.cursor/rules/anchor.mdc`` pointer.
+
+    Idempotent and edit-safe: writes only when the file is absent or its
+    content differs from the shipped pointer, and never overwrites a
+    user-edited file unless ``force`` is passed. Returns ``(path, wrote)``.
+    """
+    rules_path = _cursor_rules_path(project_dir)
+    existing = rules_path.read_text(encoding="utf-8") if rules_path.exists() else None
+    up_to_date = existing == _CURSOR_RULES_MDC
+    user_edited = existing is not None and not up_to_date
+    if up_to_date or (user_edited and not force):
+        return rules_path, False
+    if not dry_run:
+        rules_path.parent.mkdir(parents=True, exist_ok=True)
+        rules_path.write_text(_CURSOR_RULES_MDC, encoding="utf-8")
+    return rules_path, True
 
 
 def _claude_desktop_config_path() -> Path:
@@ -178,15 +238,44 @@ def install_cursor(
     env: str = typer.Option(
         None, "--env", help="Environment NAME the server serves (default: the default env)."
     ),
+    rules: bool = typer.Option(
+        False,
+        "--rules",
+        help="Also write a project-scoped .cursor/rules/anchor.mdc pointing this "
+        "Cursor workspace at AGENTS.md + the anchor CLI/MCP surfaces.",
+    ),
+    project_dir: Path = typer.Option(
+        None,
+        "--project-dir",
+        help="Project directory for --rules (default: the current directory).",
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="With --rules, overwrite a user-edited anchor.mdc."
+    ),
     dry_run: bool = typer.Option(False, "--dry-run"),
 ) -> None:
-    """Register Anchor as MCP server in Cursor."""
+    """Register Anchor as MCP server in Cursor.
+
+    With ``--rules``, also writes a project-scoped ``.cursor/rules/anchor.mdc``
+    so a Cursor agent opened in this workspace auto-loads the Anchor briefing
+    (it points at ``AGENTS.md`` + the CLI/MCP surfaces, it does not duplicate
+    them). The rules write is idempotent and will not clobber a user-edited
+    file unless ``--force`` is passed.
+    """
     env_name = env or _default_env_name()
     config_path = _cursor_paths()
     entry = _install_env_pointer(config_path, env_name, dry_run=dry_run)
     typer.echo(("[dry-run] " if dry_run else "") + f"MCP entry 'anchor' -> {config_path}")
     typer.echo(f"          command: {entry['command']}")
     typer.echo(f"          args:    {entry['args']}")
+    if rules:
+        target = (project_dir or Path.cwd()).resolve()
+        rules_path, wrote = _install_cursor_rules(target, force=force, dry_run=dry_run)
+        prefix = "[dry-run] " if dry_run else ""
+        if wrote:
+            typer.echo(prefix + f"Rules    -> {rules_path}")
+        else:
+            typer.echo(f"Rules    -> {rules_path} (up to date; pass --force to overwrite)")
 
 
 def _env_pointer_entry(env_name: str) -> dict[str, Any]:
@@ -196,7 +285,11 @@ def _env_pointer_entry(env_name: str) -> dict[str, Any]:
 
 def _environment_zone(env_name: str) -> tuple[bool, str]:
     """Return (initialized, egress-zone label) for an environment name."""
-    from anchor.infra.environment import DEFAULT_PROJECT, resolve_environment, resolve_project_config
+    from anchor.infra.environment import (
+        DEFAULT_PROJECT,
+        resolve_environment,
+        resolve_project_config,
+    )
     from anchor.infra.providers import get_provider
 
     env = resolve_environment(env_name)
@@ -298,4 +391,4 @@ def install_print(
     )
     typer.echo("")
     typer.echo("=== cursor ===")
-    install_cursor(env=env, dry_run=True)
+    install_cursor(env=env, rules=False, project_dir=None, force=False, dry_run=True)

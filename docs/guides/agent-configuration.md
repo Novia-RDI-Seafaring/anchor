@@ -213,6 +213,20 @@ anchor install cursor
 Restart Cursor after registration and confirm that the `anchor` MCP server is
 enabled.
 
+Cursor has no global skills directory, so the MCP entry gives the agent tools
+but not the project conventions. When a Cursor workspace is an Anchor project,
+run the helper from that folder with `--rules` to also write a project-scoped
+`.cursor/rules/anchor.mdc` that points the agent at `AGENTS.md` plus the
+CLI/MCP surfaces:
+
+```bash
+cd ~/work/pumps
+anchor install cursor --rules
+```
+
+The rules file is a short pointer, not a copy of `AGENTS.md`. The write is
+idempotent and keeps any edits you make unless you pass `--force`.
+
 ## Generic stdio client
 
 For another MCP client that accepts `mcpServers` JSON:
