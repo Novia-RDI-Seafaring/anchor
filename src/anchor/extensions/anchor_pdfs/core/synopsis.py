@@ -25,11 +25,11 @@ strategies; the seam is the ``EntityFilter`` callable.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
-
 
 # ── Result shapes ──────────────────────────────────────────────────────────
 
@@ -101,6 +101,15 @@ _TABLE_HEADER_DROP = {
     "connections for flushed and double mechanical shaft seal",
     "materials", "min/max motor speed",
 }
+
+# ReDoS-safe operating-point pattern.  Digit runs are bounded ({1,6}); the gap
+# character class [^.,;0-9] explicitly EXCLUDES digits so it cannot overlap the
+# trailing \d{1,6} -- that removes the polynomial ambiguity that CodeQL flags in
+# the original r"(\d+\s*Hz[^.,;]*?\d+\s*rpm)".  Gap length is also bounded
+# ({0,80}) so the overall match cost is O(len(input)).
+_OPERATING_POINT_RE = re.compile(
+    r"(\d{1,6}\s{0,4}Hz[^.,;0-9]{0,80}\d{1,6}\s{0,4}rpm)"
+)
 
 
 def _entity_number(entity: str) -> int | None:
@@ -251,7 +260,7 @@ def _extract_extras(slug: str, entity: str, gold: dict[str, Any]) -> tuple[list[
         for r in regions:
             desc = r.get("description") or ""
             if "Hz" in desc and "rpm" in desc and not operating:
-                m = re.search(r"(\d+\s*Hz[^.,;]*?\d+\s*rpm)", desc)
+                m = _OPERATING_POINT_RE.search(desc)
                 if m:
                     operating.append(m.group(1).strip())
             entities = r.get("entities") or []
