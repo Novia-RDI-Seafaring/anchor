@@ -121,11 +121,23 @@ def serve(
 
     ingest_session_service = _build_ingest_session_service(config, bus, doc_store)
 
+    # The agent intent queue (#148): durable project-level store on the same
+    # bus, so a drop-to-ingest enqueued here is visible to CLI/MCP and fires the
+    # IntentPending SSE signal.
+    from anchor.core.clock import SystemClock
+    from anchor.core.services.intent_service import IntentService
+    from anchor.infra.stores.fs_intent_store import FsIntentStore
+
+    intent_service = IntentService(
+        FsIntentStore(data_dir), bus, now=SystemClock().now
+    )
+
     app_ = build_app(
         workspace_service=workspace,
         ingest_service=ingest,
         doc_store=doc_store,
         bus=bus,
+        intent_service=intent_service,
         ingest_session_service=ingest_session_service,
         static_dir=static_dir if static_dir.is_dir() else None,
         cad_service=cad_service,

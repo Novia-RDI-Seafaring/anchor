@@ -93,6 +93,30 @@ Every region carries `page` + `bbox` (BOTTOMLEFT coordinates from
 Docling). The agent's `get_product_data(slug)` tool returns the full
 gold JSON in one call.
 
+## Agent intent queue (your inbox)
+
+User canvas actions that need the agent surface as durable, project-level
+**intents** (issue #148), not as raw canvas events. This keeps a harness off
+the high-frequency event firehose: it reacts to a small curated queue instead.
+
+- Transport is **push-notify / pull-payload**. A lightweight
+  `intent_pending {count}` SSE signal (count only, never the payload) rides the
+  event bus; pull the payload with `list_pending_intents` on that nudge or your
+  own cadence.
+- Scope is the **project**, not one canvas. Each intent carries
+  `origin_canvas_id` + optional `target`; a per-canvas view is just a filter, so
+  an intent raised on canvas A is visible from canvas B in the same project.
+- Kinds: `drop_to_ingest` (wired today), plus `make_reference` /
+  `attach_to_fact` (recognized + stored; their authoring is #147).
+
+The loop: when signaled (or periodically) call `list_pending_intents` /
+`next_intent`, handle each one, then `resolve_intent(id, result)`. For a
+`drop_to_ingest` in a harness-ingest project, the payload carries the dropped
+doc's `slug` + `filename` + the placeholder `node_id`; run the harness ingest
+(`ingest_begin -> submit_page -> finalize`), update the node, then resolve.
+Parity: HTTP `GET/POST /api/intents` (+ `/events`), CLI `anchor intents` /
+`anchor intent resolve <id>`.
+
 ## FMU runtime
 
 - Real runtime: `fmpy` — `uv pip install 'anchor[fmus]'`.

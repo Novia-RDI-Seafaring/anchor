@@ -20,7 +20,7 @@ from mcp.server import Server
 from mcp.types import ImageContent, Resource, TextContent, Tool
 from pydantic import AnyUrl
 
-from anchor.adapters.mcp import handlers_canvas, tiering
+from anchor.adapters.mcp import handlers_canvas, handlers_intents, tiering
 from anchor.adapters.mcp.router import ProjectRouter
 from anchor.adapters.mcp.services import (
     ServiceBundle,
@@ -104,6 +104,12 @@ Canvas tools:
 - canvas_create_sub_canvas — nest a child canvas inside a node
 - canvas_list_placeholders — your "what to fill" entrypoint
 - canvas_snapshot — PNG of the live canvas; pass format='inline'
+
+Agent intent queue (your inbox, issue #148):
+- list_pending_intents / next_intent — user canvas actions waiting for you
+  (e.g. a doc dropped onto the canvas in a harness-ingest project). Pull on the
+  IntentPending signal or your own cadence.
+- resolve_intent(id, result) — mark one done after you handle it.
 
 Status tools:
 - anchor_status: show cwd, config path, data dir, and document/canvas counts
@@ -379,6 +385,7 @@ def build_mcp_server(
         raise ValueError(f"unknown resource: {uri}")
 
     canvas_defs = handlers_canvas.tool_definitions()
+    intent_defs = handlers_intents.tool_definitions()
     pdf_defs = pdf_handlers.tool_definitions()
     fmu_present = fmu_tools_available() if multiproject else (bundle.fmu is not None)
     fmu_defs = fmu_handlers.tool_definitions() if fmu_present else []
@@ -390,7 +397,8 @@ def build_mcp_server(
     lifecycle_defs = LIFECYCLE_TOOL_DEFINITIONS if multiproject else []
 
     project_scoped = [
-        *status_defs, *canvas_defs, *pdf_defs, *fmu_defs, *cad_defs, *sysml_defs,
+        *status_defs, *canvas_defs, *intent_defs, *pdf_defs,
+        *fmu_defs, *cad_defs, *sysml_defs,
     ]
     # The full dispatchable surface, in canonical order. ``all_defs`` is what
     # every tool COULD be advertised; the tiered selector (anchor#133) picks
@@ -441,6 +449,7 @@ def build_mcp_server(
     status_names = {d["name"] for d in status_defs}
     lifecycle_names = {d["name"] for d in lifecycle_defs}
     canvas_names = {d["name"] for d in canvas_defs}
+    intent_names = {d["name"] for d in intent_defs}
     fmu_names = {d["name"] for d in fmu_defs} | getattr(fmu_handlers, "LEGACY_TOOL_NAMES", set())
     cad_names = {d["name"] for d in cad_defs}
     sysml_names = {d["name"] for d in sysml_defs} | getattr(sysml_handlers, "LEGACY_TOOL_NAMES", set())
@@ -486,6 +495,11 @@ def build_mcp_server(
                 text = await handlers_canvas.call_tool(
                     b.workspace, name, args, enrich_node_fields=enrich_fields,
                 )
+            elif name in intent_names:
+                b = get_bundle(args.pop("project", None))
+                if b.intents is None:
+                    raise RuntimeError("intent queue is not available")
+                text = await handlers_intents.call_tool(b.intents, name, args)
             elif name in fmu_names:
                 b = get_bundle(args.pop("project", None))
                 if b.fmu is None:
