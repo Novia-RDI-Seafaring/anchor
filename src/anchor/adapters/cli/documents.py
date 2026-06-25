@@ -71,6 +71,46 @@ def list_documents(
     typer.echo(json.dumps(asyncio.run(doc_store.list_documents()), indent=2))
 
 
+def ingests(
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """List ingests in flight for this project (any trigger: CLI, MCP, UI).
+
+    Reads the durable per-slug activity records, so an ingest running in
+    another process (or left behind by a crash) still shows up here. Each
+    entry carries its current stage, progress, and terminal state.
+    """
+    from anchor.core.clock import SystemClock
+    from anchor.extensions.anchor_pdfs.core.ingest_activity import IngestActivityRegistry
+
+    _, _, _, _, doc_store = _build_real_services(data_dir)
+    registry = IngestActivityRegistry(store=doc_store, _now=SystemClock().now)
+    activities = asyncio.run(registry.snapshot())
+    typer.echo(json.dumps({"ingests": [a.to_dict() for a in activities]}, indent=2))
+
+
+def ingest_status(
+    slug: str = typer.Argument(..., help="Document slug to report on."),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Show the live ingest-activity record for one document slug.
+
+    Reports the current stage, progress, and terminal state (done / failed +
+    failed stage). Exits 1 (with {found: false}) when nothing is ingesting or
+    has recently ingested that slug.
+    """
+    from anchor.core.clock import SystemClock
+    from anchor.extensions.anchor_pdfs.core.ingest_activity import IngestActivityRegistry
+
+    _, _, _, _, doc_store = _build_real_services(data_dir)
+    registry = IngestActivityRegistry(store=doc_store, _now=SystemClock().now)
+    activity = asyncio.run(registry.get(slug))
+    if activity is None:
+        typer.echo(json.dumps({"slug": slug, "found": False}, indent=2))
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps({"found": True, **activity.to_dict()}, indent=2))
+
+
 def search(
     query: str = typer.Argument(..., help="Free-text query."),
     k: int = typer.Option(10, "--k", "-k", help="Top-k hits to return."),
@@ -370,6 +410,8 @@ def register_document_commands(app: typer.Typer) -> None:
     """Attach root document commands without changing their public names."""
     app.command()(ingest)
     app.command("list")(list_documents)
+    app.command("ingests")(ingests)
+    app.command("ingest-status")(ingest_status)
     app.command()(search)
     app.command("derive-region")(derive_region)
     app.command()(embed)

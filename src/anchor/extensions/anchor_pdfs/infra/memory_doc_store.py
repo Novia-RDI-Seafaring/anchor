@@ -37,6 +37,8 @@ class MemoryDocStore:
         # Failed-ingest records: slug -> failure record (mirrors the fs
         # ingest-report.json with status == "failed").
         self._failures: dict[str, dict[str, Any]] = {}
+        # Live ingest-activity records (issue #51): slug -> record dict.
+        self._activity: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
 
     async def list_documents(self) -> list[dict[str, Any]]:
@@ -210,6 +212,17 @@ class MemoryDocStore:
         async with self._lock:
             self._failures[slug] = record
         return Path(f"memory://silver/{slug}/ingest-report.json")
+
+    async def write_ingest_activity(self, slug: str, record: dict[str, Any]) -> None:
+        async with self._lock:
+            self._activity[slug] = {**record, "slug": slug}
+
+    async def read_ingest_activity(self, slug: str) -> dict[str, Any] | None:
+        rec = self._activity.get(slug)
+        return dict(rec) if rec is not None else None
+
+    async def list_ingest_activity(self) -> list[dict[str, Any]]:
+        return [dict(r) for r in self._activity.values()]
 
     async def write_gold_region_file(self, slug: str, page: int, regions: list[dict[str, Any]]) -> Path:
         async with self._lock:

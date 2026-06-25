@@ -51,6 +51,10 @@ class FsDocStore:
         self.bronze = self.data_dir / "bronze"
         self.silver = self.data_dir / "silver"
         self.gold = self.data_dir / "gold"
+        # Live ingest-activity records (issue #51): one small JSON per slug the
+        # pipeline updates as it advances, so an in-flight ingest is visible
+        # across process boundaries and survives a restart.
+        self.ingest_status = self.data_dir / "ingest_status"
         for p in (self.bronze, self.silver, self.gold):
             p.mkdir(parents=True, exist_ok=True)
         self._lock = asyncio.Lock()
@@ -324,6 +328,60 @@ class FsDocStore:
         return await self.write_silver_artifact(
             slug, "ingest-report.json", json.dumps(record, indent=2),
         )
+
+    # ── Ingest activity (issue #51) ──────────────────────────────────────
+    #
+    # A tiny per-slug JSON written as the pipeline advances. Kept in its own
+    # ``ingest_status/`` tree (not silver) so it never collides with corpus
+    # artifacts and is trivial to list. The slug is validated against the
+    # filename rules so a crafted slug can't escape the directory.
+
+    def _activity_path(self, slug: str) -> Path:
+        # The slug is the file stem. Reject anything with a path component or
+        # traversal up front, then verify containment via the resolved path so
+        # a crafted slug can never escape the ingest_status directory.
+        if not slug or "/" in slug or "\\" in slug or slug in {".", ".."}:
+            raise UnsafeUploadError(f"unsafe ingest-activity slug: {slug!r}")
+        target = self.ingest_status / f"{slug}.json"
+        assert_within(target, self.ingest_status)
+        return target
+
+    async def write_ingest_activity(self, slug: str, record: dict[str, Any]) -> None:
+        target = self._activity_path(slug)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps({**record, "slug": slug})
+        # Atomic upsert so a concurrent reader never sees a half-written file.
+        tmp = target.with_suffix(".json.tmp")
+        async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
+            await f.write(payload)
+        os.replace(tmp, target)
+
+    async def read_ingest_activity(self, slug: str) -> dict[str, Any] | None:
+        try:
+            target = self._activity_path(slug)
+        except UnsafeUploadError:
+            return None
+        if not target.is_file():
+            return None
+        try:
+            data = json.loads(target.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return None
+        return data if isinstance(data, dict) else None
+
+    async def list_ingest_activity(self) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        if not self.ingest_status.is_dir():
+            return out
+        for p in sorted(self.ingest_status.glob("*.json")):
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                continue
+            if isinstance(data, dict):
+                data.setdefault("slug", p.stem)
+                out.append(data)
+        return out
 
     async def write_gold_region_file(self, slug: str, page: int, regions: list[dict[str, Any]]) -> Path:
         target = self.gold / slug / "pages" / f"{page}.regions.json"

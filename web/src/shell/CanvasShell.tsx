@@ -25,6 +25,7 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { ActivityToast } from "@/canvas/ActivityToast";
 import { DirectionalConnectors } from "@/canvas/DirectionalConnectors";
 
+import { IngestActivityPill } from "./IngestActivityPill";
 import { LeftToolRail } from "./LeftToolRail";
 import { LibraryDrawer } from "./LibraryDrawer";
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -47,6 +48,9 @@ export function CanvasShell({ workspaceSlug, children }: Props) {
               transform via useStore. Renders nothing when not in single-
               select mode. */}
           <DirectionalConnectors workspaceSlug={workspaceSlug} />
+          {/* Project-level ingestion-activity pill (issue #51): bottom-left,
+              live for every in-flight ingest regardless of trigger. */}
+          <IngestActivityPill />
           <ActivityToast />
         </div>
         <LibraryDrawer workspaceSlug={workspaceSlug} />
