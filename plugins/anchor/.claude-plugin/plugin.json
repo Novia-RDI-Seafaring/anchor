@@ -1,7 +1,7 @@
 {
   "name": "anchor",
   "displayName": "ANCHOR",
-  "version": "0.2.4",
+  "version": "0.2.8",
   "description": "Source-grounded engineering knowledge canvas. Ingest PDF datasheets, query the structured contents, and build canvases where every value points back to its source page and bbox. Bundles the anchor MCP server and the anchor skill.",
   "author": {
     "name": "Novia RDI Seafaring"
