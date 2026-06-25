@@ -101,7 +101,7 @@ async def test_http_intent_pending_sse_emits_count():
 
     request = SimpleNamespace(
         app=SimpleNamespace(state=SimpleNamespace(bus=s.bus)),
-        is_disconnected=lambda: _false(),
+        is_disconnected=_false,
     )
     resp = await events_route(request, canvas=None, intents=s.intents)
     gen = resp.body_iterator

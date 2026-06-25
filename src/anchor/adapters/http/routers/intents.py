@@ -26,7 +26,7 @@ from fastapi import APIRouter, Depends, Request
 from sse_starlette.sse import EventSourceResponse
 
 from anchor.adapters.http.deps import get_intent_service
-from anchor.core.intents.intent import INTENT_PENDING_EVENT
+from anchor.core.intents.intent import INTENT_KINDS, INTENT_PENDING_EVENT
 from anchor.core.services.intent_service import IntentService, UnknownIntentKindError
 
 router = APIRouter(prefix="/api/intents", tags=["intents"])
@@ -65,8 +65,15 @@ async def enqueue(
             target=body.get("target"),
             payload=body.get("payload"),
         )
-    except UnknownIntentKindError as exc:
-        return {"error": "unknown_kind", "message": str(exc)}
+    except UnknownIntentKindError:
+        # Return a fixed, safe message (the valid kinds are a static set) rather
+        # than echoing the exception text -- keeps client-controlled input out
+        # of the error body.
+        return {
+            "error": "unknown_kind",
+            "message": "unknown intent kind",
+            "valid_kinds": sorted(INTENT_KINDS),
+        }
     return {"intent": intent.to_dict()}
 
 
