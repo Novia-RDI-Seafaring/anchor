@@ -73,6 +73,35 @@ def _egress_settings(config: AnchorConfig) -> tuple[str | None, bool, str | None
     return api_key, has_openai, openai_base_url
 
 
+async def active_extensions_for_bundle(bundle: ServiceBundle) -> set[str]:
+    """Which extension capabilities currently have data in this project.
+
+    Drives the tiered MCP surface (anchor#133): an extension's tools are
+    advertised by default only when the resolved project actually has data for
+    it. Best-effort and non-raising -- on any probe failure the extension is
+    treated as inactive (its tools stay reachable via capability discovery).
+
+    Only data-bearing extensions auto-activate here: FMU and CAD gate on having
+    at least one stored model. SysML is canvas-driven (no per-project model
+    store) so it is never auto-active; it is discovered through
+    ``anchor_list_capabilities`` on demand.
+    """
+    active: set[str] = set()
+    if bundle.fmu is not None:
+        try:
+            if await bundle.fmu.list_models():
+                active.add("fmu")
+        except Exception:  # noqa: BLE001 -- probe must never break list_tools
+            pass
+    if bundle.cad is not None:
+        try:
+            if await bundle.cad.list_models():
+                active.add("cad")
+        except Exception:  # noqa: BLE001
+            pass
+    return active
+
+
 def _build_ingest_service(config: AnchorConfig, bus: EventBus, doc_store: DocStore) -> IngestService:
     from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
     from anchor.extensions.anchor_pdfs.infra.llm.openai_md_polisher import OpenAIPageMdPolisher

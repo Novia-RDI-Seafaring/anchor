@@ -299,7 +299,17 @@ def _render_table_md(cells: Any) -> str:
         if not isinstance(r, int) or not isinstance(c, int):
             continue
         text = (cell.get("text") or "").strip().replace("|", "\\|").replace("\n", " ")
-        grid[(r, c)] = text
+        # Two cells can resolve to the same (row, col): docling repeats a
+        # span's text across the positions it covers, and dense tables can
+        # emit distinct cells at one grid coordinate. A plain assignment
+        # keeps only the last and silently drops the rest (issue #129:
+        # missing / collapsed values). Coalesce instead - dedup identical
+        # text (span repetition), but preserve distinct texts side by side.
+        existing = grid.get((r, c))
+        if existing and text and text != existing:
+            grid[(r, c)] = f"{existing} {text}"
+        elif not existing:
+            grid[(r, c)] = text
         rows = max(rows, r + 1)
         cols = max(cols, c + 1)
     if rows == 0 or cols == 0:
