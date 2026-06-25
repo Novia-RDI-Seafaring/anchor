@@ -4,10 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 
-
 from anchor.adapters.mcp import handlers_canvas
 from anchor.adapters.mcp.server import _error_result
-
 from tests.fixtures.services import make_in_memory_services
 
 
@@ -372,6 +370,72 @@ def test_canvas_update_node_clears_placeholder_round_trip():
             {"workspace_slug": "w1"},
         ))
         assert listing2 == []
+    asyncio.run(run())
+
+
+def test_canvas_add_node_description_documents_structured_rows():
+    """The add-node tool description must steer spec nodes toward `data.rows`
+    (structured {key, value, source_ref}) over the prose `description` (#131)."""
+    defs = {d["name"]: d for d in handlers_canvas.tool_definitions()}
+    desc = defs["canvas_add_node"]["description"]
+    assert "data.rows" in desc
+    assert "key" in desc and "value" in desc and "source_ref" in desc
+    # The structured-rows contract must lead; prose is the fallback.
+    assert "description" in desc
+
+
+def test_canvas_add_node_spec_description_only_returns_hint_but_succeeds():
+    """A spec node created with prose `description` but no `rows` still writes,
+    and the result carries a non-fatal `hint` nudging toward structured rows."""
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        body = await handlers_canvas.call_tool(s.workspace, "canvas_add_node", {
+            "workspace_slug": "w1", "id": "a", "node_type": "spec",
+            "label": "Pumps",
+            "data": {"description": "P-101 is 150mm, P-102 is 200mm"},
+        })
+        out = json.loads(body)
+        # Non-fatal: the node was actually added.
+        assert out["event"]["type"] == "NodeAdded"
+        assert "error" not in out
+        # ...and the hint steers toward rows.
+        assert "hint" in out
+        assert "data.rows" in out["hint"]
+
+    asyncio.run(run())
+
+
+def test_canvas_add_node_spec_with_rows_has_no_hint():
+    """A spec node that already uses structured rows gets no nudge."""
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        body = await handlers_canvas.call_tool(s.workspace, "canvas_add_node", {
+            "workspace_slug": "w1", "id": "a", "node_type": "spec",
+            "label": "Pumps",
+            "data": {"rows": [{"key": "P-101", "value": "150 mm"}]},
+        })
+        out = json.loads(body)
+        assert out["event"]["type"] == "NodeAdded"
+        assert "hint" not in out
+
+    asyncio.run(run())
+
+
+def test_canvas_add_node_non_spec_with_description_has_no_hint():
+    """The nudge is spec-specific: a fact/concept with a description is fine."""
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        body = await handlers_canvas.call_tool(s.workspace, "canvas_add_node", {
+            "workspace_slug": "w1", "id": "a", "node_type": "fact",
+            "label": "Note", "data": {"description": "a free-form note"},
+        })
+        out = json.loads(body)
+        assert out["event"]["type"] == "NodeAdded"
+        assert "hint" not in out
+
     asyncio.run(run())
 
 

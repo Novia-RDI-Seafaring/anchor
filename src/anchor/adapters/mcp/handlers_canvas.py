@@ -8,8 +8,8 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
-from pathlib import Path
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any
 
 from anchor.core.services.workspace_service import WorkspaceService
@@ -63,6 +63,30 @@ def _ctype_for(name: str) -> str:
     return guess or "application/octet-stream"
 
 
+# Non-fatal nudge for the #131 failure mode: an agent dumps tabular facts into
+# a spec node's prose `description` instead of structured `data.rows`. Prose is
+# still allowed (some specs really are a caption), so this never blocks the
+# write -- it only attaches a `hint` to the tool result steering the next call
+# toward rows. Returns None when no nudge applies.
+_SPEC_ROWS_HINT = (
+    "This `spec` node has a prose `description` but no `data.rows`. "
+    "If it holds tabular facts (IDs, values, measurements), move them into "
+    "`data.rows` as [{key, value, source_ref}] so they render as a clean, "
+    "source-clickable table. Keep `description` only for a short caption."
+)
+
+
+def _spec_rows_hint(node_type: str | None, data: dict[str, Any] | None) -> str | None:
+    if node_type != "spec":
+        return None
+    data = data or {}
+    has_rows = bool(data.get("rows"))
+    has_description = bool(str(data.get("description") or "").strip())
+    if has_description and not has_rows:
+        return _SPEC_ROWS_HINT
+    return None
+
+
 def tool_definitions() -> list[dict[str, Any]]:
     return [
         {
@@ -76,7 +100,21 @@ def tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "canvas_add_node",
-            "description": "Add (create / place) a new node by node_type, label, x, y, parent, data.",
+            "description": (
+                "Add (create / place) a new node by node_type, label, x, y, parent, data.\n"
+                "A `spec` node is a TABLE, not prose: put tabular facts in "
+                "`data.rows`, a list of {key, value, source_ref} objects, one "
+                "row per fact. `source_ref` is {slug, page, bbox?, region_id?} "
+                "grounding that row to its source page. Use `data.description` "
+                "only for a short prose caption; do NOT pack multiple values "
+                "into it -- rows render as a clean table and each row stays "
+                "clickable back to its source, free text does not. "
+                'Example for "list every pump ID and diameter": '
+                '{"node_type": "spec", "label": "Pump diameters", "data": '
+                '{"rows": [{"key": "P-101", "value": "150 mm", "source_ref": '
+                '{"slug": "datasheet", "page": 3}}, {"key": "P-102", "value": '
+                '"200 mm", "source_ref": {"slug": "datasheet", "page": 3}}]}}.'
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -423,8 +461,12 @@ async def call_tool(
             return json.dumps(await svc.list_workspaces())
         if name == "canvas_add_node":
             slug = args.pop("workspace_slug")
+            hint = _spec_rows_hint(args.get("node_type"), args.get("data"))
             state, env = await svc.add_node(slug, **args)
-            return json.dumps({"event": env.model_dump(), "state": state.get_state()})
+            result: dict[str, Any] = {"event": env.model_dump(), "state": state.get_state()}
+            if hint is not None:
+                result["hint"] = hint
+            return json.dumps(result)
         if name == "canvas_update_node":
             slug = args.pop("workspace_slug")
             node_id = args.pop("id")
