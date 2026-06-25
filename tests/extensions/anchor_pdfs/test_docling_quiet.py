@@ -13,7 +13,7 @@ from anchor.extensions.anchor_pdfs.infra.pdf import docling_extractor as dx
 
 def test_quiets_docling_and_rapidocr_by_default(monkeypatch):
     monkeypatch.delenv("ANCHOR_LOG_LEVEL", raising=False)
-    monkeypatch.setattr(dx, "_QUIETED", False)
+    monkeypatch.setitem(dx._STATE, "quieted", False)
     logging.getLogger("docling").setLevel(logging.INFO)
     logging.getLogger("RapidOCR").setLevel(logging.INFO)
     logging.getLogger("docling.models.stages.ocr.rapid_ocr_model").setLevel(logging.INFO)
@@ -30,7 +30,7 @@ def test_quiets_docling_and_rapidocr_by_default(monkeypatch):
 
 def test_debug_keeps_full_log_stream(monkeypatch):
     monkeypatch.setenv("ANCHOR_LOG_LEVEL", "DEBUG")
-    monkeypatch.setattr(dx, "_QUIETED", False)
+    monkeypatch.setitem(dx._STATE, "quieted", False)
     logging.getLogger("docling").setLevel(logging.INFO)
 
     dx._quiet_dependency_logs()

@@ -8,7 +8,7 @@ from anchor.infra import quiet
 
 def test_quiets_huggingface_and_docling(monkeypatch):
     monkeypatch.delenv("ANCHOR_LOG_LEVEL", raising=False)
-    monkeypatch.setattr(quiet, "_QUIETED", False)
+    monkeypatch.setitem(quiet._STATE, "quieted", False)
     logging.getLogger("huggingface_hub").setLevel(logging.INFO)
     logging.getLogger("transformers").setLevel(logging.INFO)
     logging.getLogger("docling").setLevel(logging.INFO)
@@ -22,7 +22,7 @@ def test_quiets_huggingface_and_docling(monkeypatch):
 
 def test_debug_opts_out(monkeypatch):
     monkeypatch.setenv("ANCHOR_LOG_LEVEL", "DEBUG")
-    monkeypatch.setattr(quiet, "_QUIETED", False)
+    monkeypatch.setitem(quiet._STATE, "quieted", False)
     logging.getLogger("huggingface_hub").setLevel(logging.INFO)
 
     quiet.quiet_dependency_logs()
