@@ -75,6 +75,22 @@ environment; projects inside it are addressed by a per-call `project` argument
 (`list_projects` enumerates them). A second environment is a second named
 server.
 
+Cursor has no global skills directory, so the MCP entry alone gives a Cursor
+agent the tools and the server's own briefing but not the project conventions.
+For a Cursor workspace that is an Anchor project, add `--rules` to also write a
+project-scoped `.cursor/rules/anchor.mdc` that points the agent at `AGENTS.md`
+plus the CLI/MCP surfaces:
+
+```bash
+cd ~/work/pumps
+anchor install cursor --rules            # writes ./.cursor/rules/anchor.mdc
+```
+
+The rules file is a short pointer, not a copy of `AGENTS.md`. The write is
+idempotent and will not overwrite a file you have edited unless you pass
+`--force`; use `--project-dir` to target a directory other than the current
+one.
+
 Restart the harness and verify that `anchor` appears in its MCP server list.
 The set of tools depends on available optional extensions, such as the FMU
 runtime.
