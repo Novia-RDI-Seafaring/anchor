@@ -1,31 +1,30 @@
 /**
- * useInlineField — generic inline edit for any string-valued field on a node.
+ * useInlineField - generic inline edit for any string-valued field on a node.
  *
- * Generalised from `useInlineLabel` so the same commit/cancel state machine
- * powers both single-line label edits (shapes, cards) and multi-line body
- * edits (notes). The hook is field-agnostic — `field: "label"` patches the
+ * Powers both single-line label edits (shapes, cards) and multi-line body
+ * edits (notes). The hook is field-agnostic: `field: "label"` patches the
  * canonical node label, `field: "text"` (or any other string) patches the
  * matching property inside `data`. Server echoes back via SSE; the
  * store-driven value remains the source of truth.
  *
  * Commit flow (identical to the predecessor):
- *   beginEdit()   → enters edit mode, seeds the input with the current value
- *   commit()      → PATCHes the node (label = top-level, anything else = data);
+ *   beginEdit()   -> enters edit mode, seeds the input with the current value
+ *   commit()      -> PATCHes the node (label = top-level, anything else = data);
  *                   bails out cleanly when the value didn't change.
- *   cancel()      → exits edit mode without touching the server.
+ *   cancel()      -> exits edit mode without touching the server.
  *
  * Auto-grown via `inputProps`:
- *   - onChange  — store the in-flight value
- *   - onKeyDown — Enter commits (multi-line: Shift+Enter inserts a newline,
+ *   - onChange  - store the in-flight value
+ *   - onKeyDown - Enter commits (multi-line: Shift+Enter inserts a newline,
  *                 Enter alone commits); Escape cancels; keystrokes are
  *                 stopPropagation'd so ReactFlow doesn't hijack Delete/Backspace.
- *   - onBlur    — commits (natural "tab away" behaviour)
- *   - onMouseDown — stopPropagation so the click doesn't reach ReactFlow's
+ *   - onBlur    - commits (natural "tab away" behaviour)
+ *   - onMouseDown - stopPropagation so the click doesn't reach ReactFlow's
  *                   node-drag handler; without this the caret jumps.
- *   - className — carries `nodrag` so ReactFlow doesn't intercept caret
+ *   - className - carries `nodrag` so ReactFlow doesn't intercept caret
  *                 positioning.
  *
- * Empty values are allowed — a pure shape with no label is the starting
+ * Empty values are allowed. A pure shape with no label is the starting
  * state on every drag-out from the tool rail.
  *
  * Multi-line specifics: when `multiline: true` the hook returns

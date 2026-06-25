@@ -1,10 +1,9 @@
 /**
- * LabelEditor — single-line text input bound to `node.label`.
+ * LabelEditor - single-line text input bound to `node.label`.
  *
  * Used by the Properties panel for shape primitives (concept, entity,
- * funnel, area). The canvas also exposes an inline rename via
- * `useInlineLabel` — this panel-side editor is a stable alternative for
- * users who prefer a side rail over double-clicking the shape.
+ * funnel, area). This panel-side editor is a stable alternative for
+ * users who prefer a side rail over double-clicking a shape.
  *
  * Edits debounce 300ms (see `_usePatchNode`); the SSE echo reconciles
  * back into the store and re-feeds this component via `node.label`.
