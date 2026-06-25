@@ -11,8 +11,8 @@ authors:
     given-names: Mikael
   - family-names: Westö
     given-names: Johan
-version: 0.2.7
-date-released: "2026-06-22"
+version: 0.2.8
+date-released: "2026-06-23"
 url: "https://github.com/Novia-RDI-Seafaring/anchor"
 repository-code: "https://github.com/Novia-RDI-Seafaring/anchor"
 license: MIT
