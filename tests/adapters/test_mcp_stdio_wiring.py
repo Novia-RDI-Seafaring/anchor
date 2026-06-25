@@ -78,3 +78,40 @@ def test_mcp_openai_key_does_not_override_configured_local_embedder(tmp_path):
 
     assert isinstance(ingest.embedder, LocalSentenceTransformerEmbedder)
     assert ingest.embed_model_id == "local/test-model"
+
+
+def test_mcp_local_only_builds_no_openai_client_despite_key(tmp_path, monkeypatch):
+    """local-only is the no-egress assertion: even with a key + endpoint set,
+    no polisher / region extractor is wired and the embedder stays local."""
+    monkeypatch.setenv("OPENAI_API_KEY", "stray-personal-key")
+    config = AnchorConfig(
+        data_dir=tmp_path,
+        local_only=True,
+        openai_api_key="test-key",
+        openai_base_url="http://models.test/v1",
+        embed_model="local/test-model",
+        _env_file=None,
+    )
+
+    ingest = _build_ingest_service(config, MemoryEventBus(), MemoryDocStore())
+
+    assert ingest.polisher is None
+    assert ingest.region_extractor is None
+    assert isinstance(ingest.embedder, LocalSentenceTransformerEmbedder)
+
+
+def test_mcp_local_only_pins_offline_env(tmp_path, monkeypatch):
+    """Building the service in local-only mode pins HuggingFace offline so cached
+    weights load without reaching the network."""
+    for var in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"):
+        monkeypatch.delenv(var, raising=False)
+    config = AnchorConfig(
+        data_dir=tmp_path, local_only=True, embed_model="local/test-model", _env_file=None,
+    )
+
+    _build_ingest_service(config, MemoryEventBus(), MemoryDocStore())
+
+    import os
+
+    assert os.environ.get("HF_HUB_OFFLINE") == "1"
+    assert os.environ.get("TRANSFORMERS_OFFLINE") == "1"

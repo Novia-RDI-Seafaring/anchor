@@ -84,6 +84,22 @@ def test_check_local_provider_needs_no_key(tmp_path):
     assert "no egress" in result.output
 
 
+def test_env_create_local_records_local_only(tmp_path):
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
+    data = tomllib.loads((_env_dir(tmp_path) / "env.toml").read_text())
+    assert data["local_only"] is True
+
+
+def test_check_local_only_echoes_no_egress_posture(tmp_path):
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
+    result = _run_check(tmp_path)
+    assert result.exit_code == 0, result.output
+    # The asserted no-egress line + the model set a prefetch would warm.
+    assert "local-only" in result.output
+    assert "offline models" in result.output
+    assert "BAAI/bge-small-en-v1.5" in result.output
+
+
 def test_check_flags_nonexistent_project_dir(tmp_path):
     runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
     shutil.rmtree(_default_dir(tmp_path))
