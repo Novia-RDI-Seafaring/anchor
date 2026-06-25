@@ -52,8 +52,8 @@ def test_enforce_offline_respects_operator_value(monkeypatch):
 
 def test_prefetch_loads_each_model_and_reports(monkeypatch):
     loaded: list[str] = []
-    monkeypatch.setattr(models_mod, "_warm_embedder", lambda repo: loaded.append(f"embed:{repo}"))
-    monkeypatch.setattr(models_mod, "_warm_docling", lambda: loaded.append("docling"))
+    monkeypatch.setattr("anchor.infra.models._warm_embedder",lambda repo: loaded.append(f"embed:{repo}"))
+    monkeypatch.setattr("anchor.infra.models._warm_docling",lambda: loaded.append("docling"))
 
     results = prefetch_models(DEFAULT_EMBED_MODEL)
 
@@ -66,8 +66,8 @@ def test_prefetch_reports_failure_without_aborting(monkeypatch):
     def boom() -> None:
         raise RuntimeError("hub unreachable")
 
-    monkeypatch.setattr(models_mod, "_warm_embedder", lambda repo: None)
-    monkeypatch.setattr(models_mod, "_warm_docling", boom)
+    monkeypatch.setattr("anchor.infra.models._warm_embedder",lambda repo: None)
+    monkeypatch.setattr("anchor.infra.models._warm_docling",boom)
 
     results = prefetch_models(DEFAULT_EMBED_MODEL)
 
