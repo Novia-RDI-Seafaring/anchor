@@ -121,3 +121,86 @@ def test_install_print_emits_plans(home):
     assert "claude-code" in result.output
     assert "cursor" in result.output
     assert "--env" in result.output
+
+
+def test_install_cursor_writes_mcp_entry(home):
+    create_env("local")
+    result = runner.invoke(install_app, ["cursor", "--env", "local"])
+    assert result.exit_code == 0, result.output
+    cfg = json.loads((home / ".cursor" / "mcp.json").read_text())
+    assert cfg["mcpServers"]["anchor"]["args"] == ["--env", "local"]
+    # Without --rules, no project rules file is written.
+    assert not (home / ".cursor" / "rules").exists()
+
+
+def test_install_cursor_rules_writes_pointer(home, tmp_path):
+    create_env("local")
+    project = tmp_path / "proj"
+    project.mkdir()
+    result = runner.invoke(
+        install_app, ["cursor", "--env", "local", "--rules", "--project-dir", str(project)]
+    )
+    assert result.exit_code == 0, result.output
+    rules = project / ".cursor" / "rules" / "anchor.mdc"
+    assert rules.exists()
+    text = rules.read_text(encoding="utf-8")
+    # Points at AGENTS.md + the CLI/MCP surfaces; declares the workspace a project.
+    assert "AGENTS.md" in text
+    assert "`anchor` CLI" in text
+    assert "MCP server" in text
+    assert "this Cursor workspace as one Anchor project" in text.replace("\n", " ")
+    # Cursor .mdc frontmatter so the rule auto-loads.
+    assert text.startswith("---")
+    assert "alwaysApply: true" in text
+    # ASCII only (no em-dashes / curly punctuation) so a cp1252 write is safe.
+    assert text.isascii()
+
+
+def test_install_cursor_rules_is_idempotent(home, tmp_path):
+    create_env("local")
+    project = tmp_path / "proj"
+    project.mkdir()
+    args = ["cursor", "--env", "local", "--rules", "--project-dir", str(project)]
+    first = runner.invoke(install_app, args)
+    assert first.exit_code == 0, first.output
+    assert "Rules" in first.output
+    rules = project / ".cursor" / "rules" / "anchor.mdc"
+    body = rules.read_text(encoding="utf-8")
+    second = runner.invoke(install_app, args)
+    assert second.exit_code == 0, second.output
+    assert "up to date" in second.output
+    # Re-run does not rewrite or change the file.
+    assert rules.read_text(encoding="utf-8") == body
+
+
+def test_install_cursor_rules_preserves_user_edits_without_force(home, tmp_path):
+    create_env("local")
+    project = tmp_path / "proj"
+    project.mkdir()
+    rules = project / ".cursor" / "rules" / "anchor.mdc"
+    rules.parent.mkdir(parents=True)
+    rules.write_text("my own edits\n", encoding="utf-8")
+    args = ["cursor", "--env", "local", "--rules", "--project-dir", str(project)]
+    result = runner.invoke(install_app, args)
+    assert result.exit_code == 0, result.output
+    # User edit is kept; --force is offered.
+    assert rules.read_text(encoding="utf-8") == "my own edits\n"
+    assert "--force" in result.output
+    # With --force, the shipped pointer replaces the edit.
+    forced = runner.invoke(install_app, [*args, "--force"])
+    assert forced.exit_code == 0, forced.output
+    assert "AGENTS.md" in rules.read_text(encoding="utf-8")
+
+
+def test_install_cursor_rules_dry_run_makes_no_writes(home, tmp_path):
+    create_env("local")
+    project = tmp_path / "proj"
+    project.mkdir()
+    result = runner.invoke(
+        install_app,
+        ["cursor", "--env", "local", "--rules", "--project-dir", str(project), "--dry-run"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "[dry-run]" in result.output
+    assert not (project / ".cursor").exists()
+    assert not (home / ".cursor" / "mcp.json").exists()
