@@ -36,6 +36,7 @@ an environment the way it runs `npm init`. See
 | `anchor embed SLUG` | Embed gold regions for semantic search. |
 | `anchor search QUERY` | Search embedded gold regions. |
 | `anchor synopsis SLUG --entity ENTITY` | Compose an entity-scoped synopsis. |
+| `anchor extract SLUG --shape shape.json [-o out.json]` | Pointed extraction: fill a caller shape from selected regions/entities (`--region`, `--page`, `--entity`) with per-leaf provenance. |
 
 Commands resolve storage from the selected environment and project, in order:
 `--env` / `--project` > `ANCHOR_ENV` / `ANCHOR_PROJECT` > the `anchor use`

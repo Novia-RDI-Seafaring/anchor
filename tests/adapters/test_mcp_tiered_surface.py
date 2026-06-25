@@ -66,8 +66,9 @@ def _multiproject_server():
 async def test_base_single_project_advertises_core_not_full_surface(tmp_path):
     server, _ = _single_project_server(tmp_path)
     names = await _advertised(server)
-    # The full dispatchable surface is ~45+; the tiered default is ~15.
-    assert len(names) <= 20
+    # The full dispatchable surface is ~45+; the tiered default stays a small
+    # curated slice (~20, the 90% path + extract_pointed from #132).
+    assert len(names) <= 21
     assert set(names) == set(tiering.CORE_NAMES) - tiering.CORE_LIFECYCLE_NAMES
     # No lifecycle tools in single-project mode.
     assert "create_environment" not in names
@@ -77,7 +78,7 @@ async def test_base_multiproject_advertises_core_plus_lifecycle(tmp_path):
     create_env("local")
     server, _ = _multiproject_server()
     names = await _advertised(server)
-    assert len(names) <= 20
+    assert len(names) <= 21
     assert tiering.CORE_NAMES.issubset(set(names))
     # The long tail is gated out by default.
     for gated in ("fmu_inspect", "inspect", "sysml_render", "create_environment",
@@ -88,7 +89,7 @@ async def test_base_multiproject_advertises_core_plus_lifecycle(tmp_path):
 async def test_core_includes_the_ninety_percent_path():
     expected = {
         "ingest_pdf", "list_documents", "get_document_index", "get_gold_regions",
-        "get_page_text", "get_crop", "search_documents",
+        "get_page_text", "get_crop", "search_documents", "extract_pointed",
         "canvas_create_workspace", "canvas_get_state", "canvas_add_node",
         "canvas_update_node", "canvas_add_edge", "canvas_snapshot",
         "anchor_list_capabilities",

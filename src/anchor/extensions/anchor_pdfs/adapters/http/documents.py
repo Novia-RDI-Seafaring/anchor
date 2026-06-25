@@ -1,6 +1,8 @@
 """Documents — shared substrate, not per-workspace."""
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from pydantic import BaseModel
@@ -15,6 +17,11 @@ router = APIRouter(prefix="/api/documents", tags=["documents"])
 class DeriveRegionBody(BaseModel):
     parent_region_id: str
     region: dict
+
+
+class ExtractPointedBody(BaseModel):
+    select: dict | None = None
+    shape: Any
 
 
 def _synopsis_svc(request: Request) -> SynopsisService:
@@ -218,6 +225,29 @@ async def derive_region(
     try:
         return await ingest.derive_region(slug, body.parent_region_id, body.region)
     except ValueError as exc:
+        raise HTTPException(404, str(exc)) from None
+
+
+@router.post("/{slug}/extract")
+async def extract_pointed(
+    slug: str,
+    body: ExtractPointedBody,
+    ingest: IngestService = Depends(get_ingest_service),
+):
+    """Pointed extraction: selected regions/entities into a caller shape.
+
+    Resolves `select` ({regions, pages, entity}) to gold regions and fills
+    `shape` (by-example or JSON Schema) from their cells, returning
+    `{doc_slug, data, provenance, unfilled}`. Every filled leaf carries a
+    `source_ref` provenance entry; unfillable leaves are listed in
+    `unfilled` and never guessed. 404 when the document has no gold layer.
+    """
+    from anchor.extensions.anchor_pdfs.core.pointed_extraction import (
+        PointedExtractionError,
+    )
+    try:
+        return await ingest.extract_pointed(slug, select=body.select, shape=body.shape)
+    except PointedExtractionError as exc:
         raise HTTPException(404, str(exc)) from None
 
 

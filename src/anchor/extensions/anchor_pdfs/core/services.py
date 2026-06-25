@@ -23,6 +23,9 @@ from anchor.extensions.anchor_pdfs.core.events import (
     IngestProgress,
 )
 from anchor.extensions.anchor_pdfs.core.ingest.validation import validate_regions
+from anchor.extensions.anchor_pdfs.core.pointed_extraction import (
+    extract_pointed as _extract_pointed,
+)
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.ports.embedder import Embedder
 from anchor.extensions.anchor_pdfs.core.ports.md_polisher import PageMdPolisher
@@ -653,6 +656,27 @@ class IngestService:
             "derived_from": parent_region_id,
             "path": str(path),
         }
+
+    async def extract_pointed(
+        self,
+        slug: str,
+        *,
+        select: dict[str, Any] | None,
+        shape: Any,
+    ) -> dict[str, Any]:
+        """Pointed extraction: selected regions/entities into a caller shape.
+
+        Resolves ``select`` (region ids / pages / entity) to gold regions and
+        fills ``shape`` (by-example or JSON Schema) from their cells, attaching
+        a ``source_ref`` provenance entry per filled leaf and listing
+        unfillable leaves in ``unfilled``. Pure-core mechanics live in
+        ``pointed_extraction``; this is the service seam the adapters call so
+        MCP / CLI / HTTP reach the same code path. Raises
+        ``PointedExtractionError`` for an unknown slug / missing gold layer.
+        """
+        return await _extract_pointed(
+            store=self.store, slug=slug, select=select, shape=shape,
+        )
 
     async def _publish(self, evt: Any, workspace_id: str | None = None) -> None:
         await self.bus.publish(DomainEvent(
