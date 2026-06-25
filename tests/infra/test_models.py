@@ -1,7 +1,6 @@
 """Offline-model provisioning + no-egress env enforcement (infra.models)."""
 from __future__ import annotations
 
-import anchor.infra.models as models_mod
 from anchor.infra.models import (
     DEFAULT_EMBED_MODEL,
     HF_OFFLINE_VARS,
