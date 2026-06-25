@@ -11,6 +11,16 @@ next version section on tag.
 
 ### Added
 
+- Pointed extraction (#132): pull a selected set of gold regions / entities out
+  of a document into a caller-defined JSON shape, with every filled leaf
+  grounded to its source cell. `select` is any of `{regions, pages, entity}`
+  (entity reuses synopsis scoping); `shape` is by-example or a JSON Schema. The
+  response is `{doc_slug, data, provenance (JSON-Pointer -> source_ref
+  {page, region_id, bbox, quote}), unfilled}` -- filled leaves carry provenance,
+  unfillable leaves are listed in `unfilled` and never guessed. Parity across
+  MCP (`extract_pointed`, in the core tool set), CLI (`anchor extract <slug>
+  --shape shape.json [-o out.json]`), and HTTP
+  (`POST /api/documents/{slug}/extract`).
 - Agent intent/request queue (#148): a durable, project-level queue of user
   canvas actions for a harness to act on, surfaced without the event firehose.
   Push-notify / pull-payload transport (a lightweight `intent_pending {count}`

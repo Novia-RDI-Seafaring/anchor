@@ -162,6 +162,71 @@ def derive_region(
     typer.echo(json.dumps(out, indent=2))
 
 
+def extract(
+    slug: str = typer.Argument(..., help="Document slug to extract from."),
+    shape: Path = typer.Option(
+        ..., "--shape", help="Path to the shape JSON (by-example or JSON Schema)."
+    ),
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="Write the result JSON here instead of stdout."
+    ),
+    regions: list[str] = typer.Option(
+        None, "--region", help="Select a region, e.g. 'p2/r4' (repeatable)."
+    ),
+    pages: list[int] = typer.Option(
+        None, "--page", "-p", help="Select all regions on a page (repeatable)."
+    ),
+    entity: str | None = typer.Option(
+        None, "--entity", "-e", help="Select regions scoped to an entity, e.g. 'LKH-5'."
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Pointed extraction: selected regions/entities into a caller shape (#132).
+
+    Resolves the selection (regions / pages / entity; empty selects every gold
+    region) and fills the shape from the selected regions' cells, attaching a
+    `source_ref` provenance entry per filled leaf. Unfillable leaves are listed
+    in `unfilled` and never guessed. Prints `{doc_slug, data, provenance,
+    unfilled}` (or writes it to --output).
+    """
+    if not shape.exists():
+        typer.echo(f"shape file not found: {shape}", err=True)
+        raise typer.Exit(code=1)
+    try:
+        shape_obj = json.loads(shape.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        typer.echo(f"--shape is not valid JSON: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+
+    select: dict = {}
+    if regions:
+        select["regions"] = list(regions)
+    if pages:
+        select["pages"] = list(pages)
+    if entity:
+        select["entity"] = entity
+
+    from anchor.extensions.anchor_pdfs.core.pointed_extraction import (
+        PointedExtractionError,
+    )
+
+    _, _, _, ingest_svc, _ = _build_real_services(data_dir)
+    try:
+        result = asyncio.run(
+            ingest_svc.extract_pointed(slug, select=select or None, shape=shape_obj)
+        )
+    except PointedExtractionError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from None
+    payload = json.dumps(result, indent=2)
+    if output is None:
+        typer.echo(payload)
+    else:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(payload, encoding="utf-8")
+        typer.echo(str(output))
+
+
 def embed(
     slug: str | None = typer.Argument(
         None,
@@ -414,6 +479,7 @@ def register_document_commands(app: typer.Typer) -> None:
     app.command("ingest-status")(ingest_status)
     app.command()(search)
     app.command("derive-region")(derive_region)
+    app.command()(extract)
     app.command()(embed)
     app.command()(index)
     app.command()(regions)

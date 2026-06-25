@@ -57,6 +57,7 @@ CORE_PDF_NAMES: set[str] = {
     "get_page_text",
     "get_crop",
     "search_documents",
+    "extract_pointed",
 }
 
 # The agent intent queue (#148): the agent's inbox of user canvas actions
