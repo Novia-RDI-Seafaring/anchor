@@ -9,6 +9,18 @@ next version section on tag.
 
 ## [Unreleased]
 
+### Changed
+
+- MCP server now advertises a tiered tool surface. A small core (~15 tools:
+  ingest/list/read/search documents, the common canvas verbs, project
+  list/create) is advertised by default; the long tail (FMU, CAD, SysML, the
+  harness ingest sub-protocol, advanced canvas and document ops) is gated.
+  Gated tools stay callable by name and are discoverable via the new
+  `anchor_list_capabilities` meta-tool; an extension's tools auto-appear in
+  the default list once the open project has data for it. This keeps a base
+  PDF+canvas project from drowning tool-search in large-surface harnesses
+  (down from ~48 advertised tools). (#133)
+
 ## [0.2.5] - 2026-06-17
 
 Grounding, harness ingest, and agent onboarding release. This is the wheel to
