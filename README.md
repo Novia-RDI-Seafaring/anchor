@@ -201,10 +201,10 @@ diff it in git.
 your-project/
 ├── anchor.toml             # binds this folder to an environment (provider + data zone)
 └── .anchor_data/
-    ├── bronze/<slug>/      # raw PDFs (your originals)
-    ├── silver/<slug>/      # Docling extraction + per-page markdown + page PNGs
-    ├── gold/<slug>/        # structured regions with page + bbox provenance
-    └── canvases/<slug>/    # meta.json, state.json, events.jsonl (append-only log)
+    ├── bronze/<original>.pdf   # raw PDFs, flat (original filename)
+    ├── silver/<slug>/          # Docling extraction + per-page markdown + page PNGs
+    ├── gold/<slug>/            # structured regions with page + bbox provenance
+    └── canvases/<slug>/        # meta.json, state.json, events.jsonl (append-only log)
 ```
 
 This layout is **the contract**. You can hand-edit the JSON, copy a canvas
