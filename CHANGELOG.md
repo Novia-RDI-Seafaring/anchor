@@ -11,6 +11,16 @@ next version section on tag.
 
 ### Added
 
+- Agent intent/request queue (#148): a durable, project-level queue of user
+  canvas actions for a harness to act on, surfaced without the event firehose.
+  Push-notify / pull-payload transport (a lightweight `intent_pending {count}`
+  SSE signal on the event bus; pull the payload via `list_pending_intents`).
+  Drop-to-ingest in a harness-ingest project now enqueues a `drop_to_ingest`
+  intent and marks the node "awaiting agent"; `make_reference` /
+  `attach_to_fact` are recognized kinds the queue stores (authoring is #147).
+  Parity across HTTP (`/api/intents` + `/events`), MCP (`list_pending_intents`,
+  `next_intent`, `resolve_intent`, in the core tool set), and CLI
+  (`anchor intents`, `anchor intent resolve`).
 - Local-only / no-egress ingest mode for confidential documents (#48). The
   `local` provider now records `local_only = true`, and the runtime asserts it
   identically across CLI, HTTP and MCP: ingest + embed build no OpenAI client

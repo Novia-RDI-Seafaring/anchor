@@ -8,9 +8,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from anchor.adapters.http.routers import edges, ingests, nodes, sse, status, workspaces
+from anchor.adapters.http.routers import (
+    edges,
+    ingests,
+    intents,
+    nodes,
+    sse,
+    status,
+    workspaces,
+)
+from anchor.core.clock import SystemClock
 from anchor.core.ids import InvalidWorkspaceSlugError
 from anchor.core.ports.event_bus import EventBus
+from anchor.core.services.intent_service import IntentService
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.core.upload_safety import UnsafeUploadError
 from anchor.extensions.anchor_cad.adapters.http import cad_routes
@@ -31,6 +41,7 @@ def build_app(
     ingest_service: IngestService,
     doc_store: DocStore,
     bus: EventBus,
+    intent_service: IntentService | None = None,
     static_dir: Path | None = None,
     cad_service: CadService | None = None,
     sysml_service: SysmlService | None = None,
@@ -45,6 +56,17 @@ def build_app(
     app.state.ingest_service = ingest_service
     app.state.doc_store = doc_store
     app.state.bus = bus
+    # The intent queue rides the same bus; build a default fs-backed service
+    # when the caller did not supply one so the surface is always wired.
+    if intent_service is None:
+        from anchor.infra.stores.fs_intent_store import FsIntentStore
+
+        data_dir = canvases_dir.parent if canvases_dir is not None else None
+        if data_dir is not None:
+            intent_service = IntentService(
+                FsIntentStore(data_dir), bus, now=SystemClock().now
+            )
+    app.state.intent_service = intent_service
     app.state.cad_service = cad_service
     app.state.sysml_service = sysml_service
     app.state.synopsis_service = synopsis_service
@@ -103,6 +125,7 @@ def build_app(
     app.include_router(upload.router)
     app.include_router(sse.router)
     app.include_router(ingests.router)
+    app.include_router(intents.router)
     app.include_router(status.router)
     if cad_service is not None:
         app.dependency_overrides[cad_routes.get_cad_service] = lambda: cad_service

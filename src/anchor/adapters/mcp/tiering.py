@@ -59,6 +59,16 @@ CORE_PDF_NAMES: set[str] = {
     "search_documents",
 }
 
+# The agent intent queue (#148): the agent's inbox of user canvas actions
+# (drop-to-ingest, ...) waiting to be handled. A primary agent workflow, so it
+# is advertised on every connection rather than gated behind capability
+# discovery.
+CORE_INTENT_NAMES: set[str] = {
+    "list_pending_intents",
+    "next_intent",
+    "resolve_intent",
+}
+
 # The canvas verbs an agent reaches for first.
 CORE_CANVAS_NAMES: set[str] = {
     "canvas_create_workspace",
@@ -76,6 +86,7 @@ CORE_NAMES: set[str] = (
     CORE_LIFECYCLE_NAMES
     | CORE_STATUS_NAMES
     | CORE_PDF_NAMES
+    | CORE_INTENT_NAMES
     | CORE_CANVAS_NAMES
     | {CAPABILITIES_TOOL_NAME}
 )

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from anchor.core.ports.event_bus import EventBus
+from anchor.core.services.intent_service import IntentService
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.extensions.anchor_pdfs.core.ingest.session import IngestSessionService
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
@@ -33,6 +34,7 @@ class ServiceBundle:
     workspace: WorkspaceService
     ingest: IngestService
     doc_store: DocStore
+    intents: IntentService | None = None
     ingest_session: IngestSessionService | None = None
     cad: Any | None = None
     sysml: Any | None = None
@@ -164,6 +166,7 @@ def _build_ingest_session_service(
 
 def build_bundle(config: AnchorConfig, *, base_url: str = "http://localhost:8002") -> ServiceBundle:
     """Wire every service for one project from its resolved ``config``."""
+    from anchor.core.clock import SystemClock
     from anchor.extensions.anchor_pdfs.core.services import SynopsisService
     from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
     from anchor.extensions.anchor_pdfs.infra.synopsis_renderers import (
@@ -171,12 +174,14 @@ def build_bundle(config: AnchorConfig, *, base_url: str = "http://localhost:8002
         PymupdfSynopsisRenderer,
     )
     from anchor.infra.snapshot.headless_chromium_snapshotter import HeadlessChromiumSnapshotter
+    from anchor.infra.stores.fs_intent_store import FsIntentStore
     from anchor.infra.stores.fs_workspace_store import FsWorkspaceStore
 
     data_dir = config.data_dir
     bus = MemoryEventBus()
     workspace_store = FsWorkspaceStore(config.canvases_dir)
     doc_store = FsDocStore(data_dir)
+    intents = IntentService(FsIntentStore(data_dir), bus, now=SystemClock().now)
     snapshotter = HeadlessChromiumSnapshotter(
         base_url=base_url, output_dir=data_dir / "snapshots",
     )
@@ -212,6 +217,7 @@ def build_bundle(config: AnchorConfig, *, base_url: str = "http://localhost:8002
         workspace=workspace,
         ingest=ingest,
         doc_store=doc_store,
+        intents=intents,
         ingest_session=ingest_session,
         cad=cad,
         sysml=sysml,
