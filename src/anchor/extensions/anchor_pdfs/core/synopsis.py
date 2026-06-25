@@ -25,11 +25,11 @@ strategies; the seam is the ``EntityFilter`` callable.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
-
 
 # ── Result shapes ──────────────────────────────────────────────────────────
 
@@ -101,6 +101,14 @@ _TABLE_HEADER_DROP = {
     "connections for flushed and double mechanical shaft seal",
     "materials", "min/max motor speed",
 }
+
+
+# Operating-point matcher ("50 Hz ... 2900 rpm"). All quantifiers are bounded
+# so the pattern is linear-time on any input (no polynomial ReDoS): the digit
+# runs are capped, and the gap between the Hz and rpm tokens is a length-capped
+# negated class with no nested repetition that could match the same text two
+# ways. Compiled once at import.
+_OPERATING_POINT_RE = re.compile(r"(\d{1,6}\s{0,4}Hz[^.,;]{0,80}?\d{1,6}\s{0,4}rpm)")
 
 
 def _entity_number(entity: str) -> int | None:
@@ -251,7 +259,12 @@ def _extract_extras(slug: str, entity: str, gold: dict[str, Any]) -> tuple[list[
         for r in regions:
             desc = r.get("description") or ""
             if "Hz" in desc and "rpm" in desc and not operating:
-                m = re.search(r"(\d+\s*Hz[^.,;]*?\d+\s*rpm)", desc)
+                # Bounded quantifiers only: the digit runs and the gap between
+                # the Hz and rpm tokens are length-capped so the match cannot
+                # backtrack polynomially on adversarial input (e.g. "0Hz" with
+                # a long run of zeros). Still captures normal operating-point
+                # strings like "50 Hz -> 2900 rpm".
+                m = re.search(_OPERATING_POINT_RE, desc)
                 if m:
                     operating.append(m.group(1).strip())
             entities = r.get("entities") or []
