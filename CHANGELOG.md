@@ -9,6 +9,15 @@ next version section on tag.
 
 ## [Unreleased]
 
+### Changed
+
+- URL assertions in `test_openai_client_zone.py` now compare the parsed
+  hostname (via `urlsplit`) instead of substring checks, clearing three
+  `py/incomplete-url-substring-sanitization` CodeQL alerts (#165).
+- `_QUIETED` bool + `global` reassignment replaced with a `_STATE` dict in
+  `quiet.py` and `docling_extractor.py`, clearing two
+  `py/unused-global-variable` CodeQL alerts (#165).
+
 ### Added
 
 - Pointed extraction (#132): pull a selected set of gold regions / entities out

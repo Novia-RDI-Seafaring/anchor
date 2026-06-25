@@ -17,13 +17,12 @@ from __future__ import annotations
 import logging
 import os
 
-_QUIETED = False
+_STATE: dict[str, bool] = {"quieted": False}
 
 
 def quiet_dependency_logs() -> None:
     """Quiet HuggingFace + docling log/progress noise. Idempotent; DEBUG opts out."""
-    global _QUIETED
-    if _QUIETED or os.environ.get("ANCHOR_LOG_LEVEL", "").upper() == "DEBUG":
+    if _STATE["quieted"] or os.environ.get("ANCHOR_LOG_LEVEL", "").upper() == "DEBUG":
         return
 
     # HuggingFace / transformers / sentence-transformers (embedder load). These
@@ -53,4 +52,4 @@ def quiet_dependency_logs() -> None:
     logging.getLogger("docling").setLevel(logging.WARNING)
     logging.getLogger("docling.models.stages.ocr.rapid_ocr_model").setLevel(logging.ERROR)
 
-    _QUIETED = True
+    _STATE["quieted"] = True

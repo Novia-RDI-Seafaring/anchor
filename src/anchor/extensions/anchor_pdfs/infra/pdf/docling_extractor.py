@@ -16,7 +16,7 @@ from typing import Any
 # doomed device per document.
 _FELL_BACK: set[str] = set()
 
-_QUIETED = False
+_STATE: dict[str, bool] = {"quieted": False}
 
 
 class _DropBelow(logging.Filter):
@@ -46,10 +46,9 @@ def _quiet_dependency_logs() -> None:
     OCR — it misleads users *and* agents. Quiet it by default; restore the full
     stream with ``ANCHOR_LOG_LEVEL=DEBUG``.
     """
-    global _QUIETED
     import os
 
-    if _QUIETED or os.environ.get("ANCHOR_LOG_LEVEL", "").upper() == "DEBUG":
+    if _STATE["quieted"] or os.environ.get("ANCHOR_LOG_LEVEL", "").upper() == "DEBUG":
         return
     # docling uses standard module loggers that don't fight back; a level is enough.
     logging.getLogger("docling").setLevel(logging.WARNING)
@@ -74,7 +73,7 @@ def _quiet_dependency_logs() -> None:
         disable_progress_bars()
     except Exception:  # noqa: BLE001 - best effort; absent in some installs
         pass
-    _QUIETED = True
+    _STATE["quieted"] = True
 
 
 class DoclingPdfExtractor:
