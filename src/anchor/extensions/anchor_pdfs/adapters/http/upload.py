@@ -13,11 +13,16 @@ import logging
 import time
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 
-from anchor.adapters.http.deps import get_ingest_service, get_workspace_service
+from anchor.adapters.http.deps import (
+    get_ingest_service,
+    get_intent_service,
+    get_workspace_service,
+)
 from anchor.adapters.http.schemas import IngestUploadResponse
 from anchor.core.ids import new_event_id, new_id, slugify
+from anchor.core.services.intent_service import IntentService
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.core.upload_safety import UnsafeUploadError, safe_upload_name
 from anchor.extensions.anchor_pdfs.core.services import IngestService
@@ -33,19 +38,31 @@ router = APIRouter(prefix="/api/workspaces", tags=["upload"])
 _MAX_PDF_BYTES = 200 * 1024 * 1024
 
 
+def _is_harness_project(request: Request) -> bool:
+    """True when this project's ingestion is harness-driven (the agent runs the
+    vision extraction, no server-side key). In that mode the server cannot
+    ingest the gold layer itself, so drop-to-ingest enqueues an intent instead
+    of running the pipeline. Detected from the resolved provider on app config."""
+    config = getattr(request.app.state, "anchor_config", None)
+    provider = getattr(config, "provider", None) if config is not None else None
+    return (provider or "").lower() == "harness"
+
+
 @router.post("/{slug}/upload")
 async def upload(
     slug: str,
+    request: Request,
     file: UploadFile = File(...),
     x: float = Form(0.0),
     y: float = Form(0.0),
     ingest: IngestService = Depends(get_ingest_service),
     workspace: WorkspaceService = Depends(get_workspace_service),
+    intents: IntentService = Depends(get_intent_service),
 ) -> IngestUploadResponse:
     try:
         filename = safe_upload_name(file.filename, allowed_extensions={".pdf"})
     except UnsafeUploadError as exc:
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
     pdf_bytes = await file.read()
     if len(pdf_bytes) > _MAX_PDF_BYTES:
         raise HTTPException(413, f"PDF exceeds {_MAX_PDF_BYTES // (1024 * 1024)} MB cap")
@@ -53,6 +70,7 @@ async def upload(
     job_id = new_event_id()
     node_id = new_id()
     queued_at = time.time()
+    harness = _is_harness_project(request)
 
     await workspace.add_node(
         slug,
@@ -64,15 +82,42 @@ async def upload(
         data={
             "slug": doc_slug,
             "filename": filename,
-            "status": "pending",
+            # In harness mode the agent must run the ingest; reflect that the
+            # node is waiting on the agent rather than being pipeline-queued.
+            "status": "awaiting_agent" if harness else "pending",
             "job_id": job_id,
-            "ingest_stage": "queued",
-            "ingest_stage_label": "queued",
+            "ingest_stage": "awaiting_agent" if harness else "queued",
+            "ingest_stage_label": "awaiting agent" if harness else "queued",
             "ingest_progress": 0,
             "ingest_started_at": queued_at,
             "ingest_updated_at": queued_at,
         },
     )
+
+    if harness:
+        # Harness ingestion: the server has no vision key, so it cannot run the
+        # gold stage. Bronze is stashed so the agent can fetch the raw PDF, then
+        # a project-level drop_to_ingest intent is enqueued (firing the
+        # IntentPending signal). The agent pulls it and runs ingest_begin ->
+        # submit_page -> finalize, then resolve_intent. (Issue #148.)
+        try:
+            await ingest.store.stash_bronze(pdf_bytes, filename)
+        except Exception:  # noqa: BLE001 - enqueue even if stash is unavailable
+            log.exception("drop-to-ingest: bronze stash failed (continuing to enqueue)")
+        intent = await intents.enqueue(
+            "drop_to_ingest",
+            origin_canvas_id=slug,
+            payload={
+                "slug": doc_slug,
+                "filename": filename,
+                "node_id": node_id,
+                "workspace_id": slug,
+                "job_id": job_id,
+            },
+        )
+        return IngestUploadResponse(
+            slug=doc_slug, job_id=job_id, status="awaiting_agent", intent_id=intent.id
+        )
 
     async def _run() -> None:
         try:

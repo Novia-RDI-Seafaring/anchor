@@ -9,6 +9,53 @@ next version section on tag.
 
 ## [Unreleased]
 
+### Added
+
+- Pointed extraction (#132): pull a selected set of gold regions / entities out
+  of a document into a caller-defined JSON shape, with every filled leaf
+  grounded to its source cell. `select` is any of `{regions, pages, entity}`
+  (entity reuses synopsis scoping); `shape` is by-example or a JSON Schema. The
+  response is `{doc_slug, data, provenance (JSON-Pointer -> source_ref
+  {page, region_id, bbox, quote}), unfilled}` -- filled leaves carry provenance,
+  unfillable leaves are listed in `unfilled` and never guessed. Parity across
+  MCP (`extract_pointed`, in the core tool set), CLI (`anchor extract <slug>
+  --shape shape.json [-o out.json]`), and HTTP
+  (`POST /api/documents/{slug}/extract`).
+- Agent intent/request queue (#148): a durable, project-level queue of user
+  canvas actions for a harness to act on, surfaced without the event firehose.
+  Push-notify / pull-payload transport (a lightweight `intent_pending {count}`
+  SSE signal on the event bus; pull the payload via `list_pending_intents`).
+  Drop-to-ingest in a harness-ingest project now enqueues a `drop_to_ingest`
+  intent and marks the node "awaiting agent"; `make_reference` /
+  `attach_to_fact` are recognized kinds the queue stores (authoring is #147).
+  Parity across HTTP (`/api/intents` + `/events`), MCP (`list_pending_intents`,
+  `next_intent`, `resolve_intent`, in the core tool set), and CLI
+  (`anchor intents`, `anchor intent resolve`).
+- Local-only / no-egress ingest mode for confidential documents (#48). The
+  `local` provider now records `local_only = true`, and the runtime asserts it
+  identically across CLI, HTTP and MCP: ingest + embed build no OpenAI client
+  for any stage regardless of key presence, and HuggingFace model loading is
+  pinned offline (`HF_HUB_OFFLINE` / `TRANSFORMERS_OFFLINE`) so cached weights
+  load without reaching the network.
+- `anchor models prefetch` (+ `anchor models list`) to download the local model
+  set (bge-small embedder + docling layout/OCR) ahead of time, so a later
+  offline run works. CLI-only: a one-time provisioning command, not on the
+  per-call ingest path.
+- `anchor check` now echoes the local-only posture and the offline model set;
+  the runtime status payload carries a `provider.local_only` flag.
+
+### Changed
+
+- MCP server now advertises a tiered tool surface. A small core (~15 tools:
+  ingest/list/read/search documents, the common canvas verbs, project
+  list/create) is advertised by default; the long tail (FMU, CAD, SysML, the
+  harness ingest sub-protocol, advanced canvas and document ops) is gated.
+  Gated tools stay callable by name and are discoverable via the new
+  `anchor_list_capabilities` meta-tool; an extension's tools auto-appear in
+  the default list once the open project has data for it. This keeps a base
+  PDF+canvas project from drowning tool-search in large-surface harnesses
+  (down from ~48 advertised tools). (#133)
+
 ## [0.2.5] - 2026-06-17
 
 Grounding, harness ingest, and agent onboarding release. This is the wheel to

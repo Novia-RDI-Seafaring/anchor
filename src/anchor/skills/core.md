@@ -109,7 +109,9 @@ On the CLI, select with `--env` / `--project`, or set a session default with
 default project. Every choice is a flag, so no prompt blocks you:
 
 ```bash
-# local-only (no document egress): no key, no endpoint
+# local-only (no document egress): no key, no endpoint. Ingest + embed make
+# NO external network calls; model loading is pinned offline. Run
+# `anchor models prefetch` once (with network) so a later offline run works.
 anchor env create local --yes --provider local
 
 # a named endpoint (Azure shown): the deployment name is the model

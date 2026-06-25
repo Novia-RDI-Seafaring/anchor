@@ -16,7 +16,9 @@ from anchor.adapters.cli.fmu import fmu_app
 from anchor.adapters.cli.ingest_session import ingest_session_app
 from anchor.adapters.cli.init import init
 from anchor.adapters.cli.install import install_app
+from anchor.adapters.cli.intents import intent_app, intents
 from anchor.adapters.cli.migrate import migrate_app
+from anchor.adapters.cli.models import models_app
 from anchor.adapters.cli.project import project_app
 from anchor.adapters.cli.serve import serve
 from anchor.adapters.cli.services import _build_real_services
@@ -61,16 +63,19 @@ app.command()(check)
 app.command()(serve)
 app.command()(use)
 register_document_commands(app)
+app.command("intents")(intents)
 app.command()(demo)
 
 app.add_typer(env_app, name="env")
 app.add_typer(project_app, name="project")
 app.add_typer(migrate_app, name="migrate")
+app.add_typer(models_app, name="models")
 app.add_typer(ingest_session_app, name="ingest-session")
 app.add_typer(canvas_app, name="canvas")
 app.add_typer(sysml_app, name="sysml")
 app.add_typer(fmu_app, name="fmu")
 app.add_typer(cad_app, name="cad")
+app.add_typer(intent_app, name="intent")
 app.add_typer(install_app, name="install")
 app.add_typer(extensions_app, name="extensions")
 

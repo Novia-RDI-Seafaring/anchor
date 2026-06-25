@@ -68,6 +68,34 @@ def test_table_renders_as_gfm():
     assert "| 1 | 2 |" in md
 
 
+def test_table_distinct_cells_at_same_coordinate_are_coalesced_not_dropped():
+    # Two distinct cell texts at the same (row, col) must both survive
+    # (issue #129: missing / collapsed values). A plain dict assignment
+    # would keep only the last and silently drop "A".
+    docling = {"items": [
+        {"label": "table", "page": 1, "bbox": [0, 600, 100, 700], "cells": [
+            {"row": 0, "col": 0, "text": "A"},
+            {"row": 0, "col": 0, "text": "B"},
+        ]},
+    ]}
+    md = render_pages_md(docling)[1]
+    assert "A" in md and "B" in md
+
+
+def test_table_identical_span_text_at_same_coordinate_is_deduped():
+    # Docling repeats a spanned cell's text across the positions it covers;
+    # identical text must collapse to one (no "PUMP PUMP").
+    docling = {"items": [
+        {"label": "table", "page": 1, "bbox": [0, 600, 100, 700], "cells": [
+            {"row": 0, "col": 0, "text": "PUMP"},
+            {"row": 0, "col": 0, "text": "PUMP"},
+        ]},
+    ]}
+    md = render_pages_md(docling)[1]
+    assert "PUMP PUMP" not in md
+    assert "| PUMP |" in md
+
+
 def test_pages_grouped_by_page_number():
     docling = {"items": [
         {"label": "text", "text": "p1", "page": 1, "bbox": [0, 600, 100, 620]},

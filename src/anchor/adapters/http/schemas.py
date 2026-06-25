@@ -66,7 +66,11 @@ class UpdateEdgeRequest(BaseModel):
 class IngestUploadResponse(BaseModel):
     slug: str
     job_id: str
+    # "started" when the server ingests directly; "awaiting_agent" when the
+    # project's ingestion is harness-driven and a drop_to_ingest intent was
+    # enqueued for the agent to pick up (issue #148).
     status: str = "started"
+    intent_id: str | None = None
 
 
 class SnapshotRequest(BaseModel):

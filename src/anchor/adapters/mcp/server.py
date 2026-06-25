@@ -20,9 +20,13 @@ from mcp.server import Server
 from mcp.types import ImageContent, Resource, TextContent, Tool
 from pydantic import AnyUrl
 
-from anchor.adapters.mcp import handlers_canvas
+from anchor.adapters.mcp import handlers_canvas, handlers_intents, tiering
 from anchor.adapters.mcp.router import ProjectRouter
-from anchor.adapters.mcp.services import ServiceBundle, fmu_tools_available
+from anchor.adapters.mcp.services import (
+    ServiceBundle,
+    active_extensions_for_bundle,
+    fmu_tools_available,
+)
 from anchor.adapters.status import build_status_summary
 from anchor.extensions.anchor_cad import mcp_handlers as cad_handlers
 from anchor.extensions.anchor_fmus import mcp_handlers as fmu_handlers
@@ -68,6 +72,14 @@ When the user asks you to populate placeholders:
 If you're producing a snapshot of the canvas, use `canvas_snapshot(...,
 format: "inline")` so the host renders the image inline.
 
+Tool surface (load-bearing):
+- A small core is advertised by default (ingest/list/read/search docs,
+  the common canvas verbs, project list/create). The long tail (FMU, CAD,
+  SysML, the harness ingest sub-protocol, advanced canvas + doc ops) is
+  reachable but not advertised until needed. Call `anchor_list_capabilities`
+  to see it; every listed tool is callable by name straight away. Extension
+  tools also auto-appear once the open project has data for them.
+
 Stuck? Read the `anchor://help` resource for the deeper tour.
 
 Project resolution check:
@@ -92,6 +104,12 @@ Canvas tools:
 - canvas_create_sub_canvas — nest a child canvas inside a node
 - canvas_list_placeholders — your "what to fill" entrypoint
 - canvas_snapshot — PNG of the live canvas; pass format='inline'
+
+Agent intent queue (your inbox, issue #148):
+- list_pending_intents / next_intent — user canvas actions waiting for you
+  (e.g. a doc dropped onto the canvas in a harness-ingest project). Pull on the
+  IntentPending signal or your own cadence.
+- resolve_intent(id, result) — mark one done after you handle it.
 
 Status tools:
 - anchor_status: show cwd, config path, data dir, and document/canvas counts
@@ -367,6 +385,7 @@ def build_mcp_server(
         raise ValueError(f"unknown resource: {uri}")
 
     canvas_defs = handlers_canvas.tool_definitions()
+    intent_defs = handlers_intents.tool_definitions()
     pdf_defs = pdf_handlers.tool_definitions()
     fmu_present = fmu_tools_available() if multiproject else (bundle.fmu is not None)
     fmu_defs = fmu_handlers.tool_definitions() if fmu_present else []
@@ -378,19 +397,59 @@ def build_mcp_server(
     lifecycle_defs = LIFECYCLE_TOOL_DEFINITIONS if multiproject else []
 
     project_scoped = [
-        *status_defs, *canvas_defs, *pdf_defs, *fmu_defs, *cad_defs, *sysml_defs,
+        *status_defs, *canvas_defs, *intent_defs, *pdf_defs,
+        *fmu_defs, *cad_defs, *sysml_defs,
     ]
-    advertised = (
-        [*lifecycle_defs, *_with_project_arg(project_scoped)] if multiproject else project_scoped
-    )
+    # The full dispatchable surface, in canonical order. ``all_defs`` is what
+    # every tool COULD be advertised; the tiered selector (anchor#133) picks
+    # the subset advertised by default. Dispatch in ``call_tool`` routes by
+    # name against this full surface regardless of advertisement, so a gated
+    # tool stays callable the moment a harness discovers it.
+    capabilities_def = tiering.CAPABILITIES_TOOL_DEFINITION
+    # The capabilities meta-tool is project-scoped: it reports which extensions
+    # are active for the resolved project, so it flows through the same
+    # ``project``-arg injection as the other project-scoped tools.
+    project_scoped = [capabilities_def, *project_scoped]
+    if multiproject:
+        all_defs = [*lifecycle_defs, *_with_project_arg(project_scoped)]
+    else:
+        all_defs = list(project_scoped)
+
+    # Extension tool-name groups, used both to auto-advertise an active
+    # extension and to answer the capabilities meta-tool.
+    extension_names = {
+        "fmu": {d["name"] for d in fmu_defs},
+        "cad": {d["name"] for d in cad_defs},
+        "sysml": {d["name"] for d in sysml_defs},
+    }
+
+    async def _active_extensions() -> set[str]:
+        """Extensions with data in the resolved default project (best-effort).
+
+        ``list_tools`` is connection-level (no per-call project), so we gate
+        against the default/session-default project -- the one the agent is
+        most likely acting on. Any resolution failure (e.g. an un-initialized
+        environment) yields no active extensions; the long tail is still one
+        ``anchor_list_capabilities`` call away.
+        """
+        try:
+            b = get_bundle(None)
+        except Exception:  # noqa: BLE001 -- never let list_tools fail
+            return set()
+        return await active_extensions_for_bundle(b)
 
     @app.list_tools()
     async def list_tools() -> list[Tool]:
+        active = await _active_extensions()
+        advertised = tiering.select_advertised(
+            all_defs, active_extensions=active, extension_names=extension_names,
+        )
         return [Tool(**d) for d in advertised]
 
     status_names = {d["name"] for d in status_defs}
     lifecycle_names = {d["name"] for d in lifecycle_defs}
     canvas_names = {d["name"] for d in canvas_defs}
+    intent_names = {d["name"] for d in intent_defs}
     fmu_names = {d["name"] for d in fmu_defs} | getattr(fmu_handlers, "LEGACY_TOOL_NAMES", set())
     cad_names = {d["name"] for d in cad_defs}
     sysml_names = {d["name"] for d in sysml_defs} | getattr(sysml_handlers, "LEGACY_TOOL_NAMES", set())
@@ -399,7 +458,18 @@ def build_mcp_server(
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
         args = dict(arguments)
         try:
-            if name in lifecycle_names:
+            if name == tiering.CAPABILITIES_TOOL_NAME:
+                try:
+                    b = get_bundle(args.pop("project", None))
+                    active = await active_extensions_for_bundle(b)
+                except (NoProjectError, NoEnvironmentError):
+                    raise
+                except Exception:  # noqa: BLE001 -- still list the catalog
+                    active = set()
+                text = _json.dumps(
+                    tiering.build_capabilities_payload(all_defs, active_extensions=active)
+                )
+            elif name in lifecycle_names:
                 text = _handle_lifecycle(router, name, args)  # type: ignore[arg-type]
             elif name in status_names:
                 b = get_bundle(args.pop("project", None))
@@ -425,6 +495,11 @@ def build_mcp_server(
                 text = await handlers_canvas.call_tool(
                     b.workspace, name, args, enrich_node_fields=enrich_fields,
                 )
+            elif name in intent_names:
+                b = get_bundle(args.pop("project", None))
+                if b.intents is None:
+                    raise RuntimeError("intent queue is not available")
+                text = await handlers_intents.call_tool(b.intents, name, args)
             elif name in fmu_names:
                 b = get_bundle(args.pop("project", None))
                 if b.fmu is None:

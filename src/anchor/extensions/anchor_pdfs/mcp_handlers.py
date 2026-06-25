@@ -363,6 +363,47 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "extract_pointed",
+            "description": (
+                "Pointed extraction: pull a selected set of regions/entities out of "
+                "a gold-extracted document into a caller-defined JSON shape, with "
+                "every filled leaf grounded to its source cell. select = any of "
+                "{regions: ['p2/r4'], pages: [2,3], entity: 'LKH-5'} (entity reuses "
+                "synopsis scoping). shape is by-example (leaf types: string, number, "
+                "quantity, bool, or nested object/array) OR a JSON Schema. Returns "
+                "{doc_slug, data (filled to the shape), provenance (JSON-Pointer -> "
+                "source_ref {page, region_id, bbox, quote}), unfilled (JSON-Pointers "
+                "the source did not cover)}. Leaves are never guessed: a leaf is "
+                "either filled from a real cell with provenance or listed in unfilled."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {"type": "string"},
+                    "select": {
+                        "type": "object",
+                        "description": (
+                            "Any of regions (['p2/r4']), pages ([2,3]), entity "
+                            "('LKH-5'). Empty selects every gold region."
+                        ),
+                        "properties": {
+                            "regions": {"type": "array", "items": {"type": "string"}},
+                            "pages": {"type": "array", "items": {"type": "integer"}},
+                            "entity": {"type": "string"},
+                        },
+                    },
+                    "shape": {
+                        "type": "object",
+                        "description": (
+                            "By-example shape (leaf types string|number|quantity|bool, "
+                            "or nested object/array) or a JSON Schema."
+                        ),
+                    },
+                },
+                "required": ["slug", "shape"],
+            },
+        },
+        {
             "name": "compose_synopsis",
             "description": (
                 "Compose an entity-scoped synopsis from a document's gold-layer data. "
@@ -549,6 +590,18 @@ async def call_tool(
             "embedded_at": data.get("embedded_at"),
             "vector_count": len(data.get("vectors", [])),
         })
+    if name == "extract_pointed":
+        from anchor.extensions.anchor_pdfs.core.pointed_extraction import (
+            PointedExtractionError,
+        )
+        try:
+            return json.dumps(await ingest.extract_pointed(
+                args["slug"],
+                select=args.get("select"),
+                shape=args.get("shape"),
+            ))
+        except PointedExtractionError as e:
+            return json.dumps({"error": str(e)})
     if name == "compose_synopsis":
         if synopsis is None:
             return json.dumps({"error": "synopsis service not wired (renderer/store missing)"})

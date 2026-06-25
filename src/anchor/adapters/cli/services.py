@@ -2,7 +2,35 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+
+def _egress_settings(config) -> tuple[str | None, bool, str | None]:
+    """Resolve (api_key, has_openai, base_url) honoring local-only / no-egress.
+
+    In local-only mode no OpenAI client is ever built: ``has_openai`` is forced
+    False (so polish + region extraction stay unwired) and the base_url is
+    dropped, regardless of any key in the env. Embeddings stay local too — the
+    embedder selection only goes remote for a ``text-embedding-*`` model, which
+    local-only never configures. This is the runtime assertion that a
+    confidential ingest performs no external egress. The HuggingFace offline env
+    is pinned here so cached model weights load without reaching the network.
+    """
+    if config.local_only:
+        from anchor.infra.models import enforce_offline
+
+        enforce_offline()
+        return None, False, None
+    api_key = config.openai_api_key.get_secret_value() if config.openai_api_key else None
+    # OpenAI SDK reads OPENAI_API_KEY from env by default; instantiate if either
+    # path has a key so polish/region steps don't silently no-op.
+    has_openai = bool(api_key) or bool(os.environ.get("OPENAI_API_KEY"))
+    # base_url lets users point polish/region at an OpenAI-compatible backend
+    # (Azure OpenAI, Ollama, vLLM, LM Studio). Empty string is treated the same
+    # as None so a stray env var doesn't break stock OpenAI usage.
+    openai_base_url = (config.openai_base_url or "").strip() or None
+    return api_key, has_openai, openai_base_url
 
 
 def _build_real_services(data_dir: Path, *, base_url: str = "http://localhost:8002"):
@@ -14,8 +42,6 @@ def _build_real_services(data_dir: Path, *, base_url: str = "http://localhost:80
     `base_url` is where the wired SnapshotPort points headless chromium.
     Default matches `anchor serve --port 8002`; override when serving on a
     non-default port."""
-    import os
-
     from anchor.core.services.workspace_service import WorkspaceService
     from anchor.extensions.anchor_pdfs.core.services import IngestService
     from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
@@ -44,15 +70,7 @@ def _build_real_services(data_dir: Path, *, base_url: str = "http://localhost:80
         output_dir=config.data_dir / "snapshots",
     )
     workspace = WorkspaceService(workspace_store, bus, snapshotter=snapshotter)
-    api_key = config.openai_api_key.get_secret_value() if config.openai_api_key else None
-    # OpenAI SDK reads OPENAI_API_KEY from env by default; instantiate if either path
-    # has a key so polish/region steps don't silently no-op.
-    has_openai = bool(api_key) or bool(os.environ.get("OPENAI_API_KEY"))
-    # base_url lets users point polish/region at an OpenAI-compatible
-    # backend (Azure OpenAI, Ollama, vLLM, LM Studio). Empty string is
-    # treated the same as None so a stray env var doesn't break stock
-    # OpenAI usage.
-    openai_base_url = (config.openai_base_url or "").strip() or None
+    api_key, has_openai, openai_base_url = _egress_settings(config)
     from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
 
     embedder = build_embedder(
@@ -92,8 +110,7 @@ def _build_ingest_session_service(config, bus, doc_store):
     from anchor.extensions.anchor_pdfs.infra.pdf.docling_extractor import DoclingPdfExtractor
     from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
 
-    api_key = config.openai_api_key.get_secret_value() if config.openai_api_key else None
-    openai_base_url = (config.openai_base_url or "").strip() or None
+    api_key, _has_openai, openai_base_url = _egress_settings(config)
     embedder = build_embedder(
         model=config.embed_model, api_key=api_key, base_url=openai_base_url,
     )

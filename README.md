@@ -201,10 +201,10 @@ diff it in git.
 your-project/
 ├── anchor.toml             # binds this folder to an environment (provider + data zone)
 └── .anchor_data/
-    ├── bronze/<slug>/      # raw PDFs (your originals)
-    ├── silver/<slug>/      # Docling extraction + per-page markdown + page PNGs
-    ├── gold/<slug>/        # structured regions with page + bbox provenance
-    └── canvases/<slug>/    # meta.json, state.json, events.jsonl (append-only log)
+    ├── bronze/<original>.pdf   # raw PDFs, flat (original filename)
+    ├── silver/<slug>/          # Docling extraction + per-page markdown + page PNGs
+    ├── gold/<slug>/            # structured regions with page + bbox provenance
+    └── canvases/<slug>/        # meta.json, state.json, events.jsonl (append-only log)
 ```
 
 This layout is **the contract**. You can hand-edit the JSON, copy a canvas
@@ -327,6 +327,43 @@ check `ANCHOR_OPENAI_API_KEY`, the `/openai/v1/` base URL, and that
 
 For Ollama / local-LLM recipes, see [`docs/guides/agent-setup.md`](./docs/guides/agent-setup.md).
 
+### Local-only / no-egress mode (confidential documents)
+
+For confidential documents that must never leave the host, run the `local`
+provider. It ingests (docling layout + OCR) and embeds (local bge-small) with no
+external network calls at all: no OpenAI client is built for any stage,
+regardless of any key in your environment, and model loading is pinned offline.
+Gold region extraction is skipped (that needs a vision model); bronze + silver +
+local-embedding search still work.
+
+```bash
+# One-time: warm the local model cache while you still have network.
+anchor models prefetch                  # downloads bge-small + docling models
+
+# Create a no-egress environment and bind a project to it.
+anchor env create vault --yes --provider local
+cd confidential-project && anchor init --env vault
+
+# Verify the posture before feeding sensitive input.
+anchor check --env vault                # shows "local-only: ON — no external egress"
+
+# Ingest with no outbound connections.
+anchor ingest "C:\path\to\datasheet.pdf"
+```
+
+The `local` provider records `local_only = true` in the environment's
+`env.toml`, which the runtime honors identically across the CLI, HTTP and MCP
+adapters (so an agent-launched `anchor-mcp` gets the same no-egress posture). On
+a fully locked-down host, also export the HuggingFace offline switches so a
+cache miss fails fast instead of attempting a download:
+
+```bash
+export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
+```
+
+`anchor models list` reports the exact model set a local-only ingest needs;
+`anchor check` echoes it and whether the offline env is active.
+
 ---
 
 ## Commands
@@ -346,6 +383,10 @@ anchor project list | set-description | move NAME --to ENV
 anchor use ENV [PROJECT]                          # session default so you can omit --env
 anchor migrate                                    # fold a legacy ~/anchor-data in
 anchor check [--env NAME] [--probe] [--fix]       # audit the data zone before ingesting
+
+# Local models (offline / no-egress provisioning)
+anchor models list [--env NAME]                   # the local model set an ingest needs
+anchor models prefetch [--env NAME] [--embed-model M]  # cache them while you have network
 
 # Documents + search
 anchor ingest PDF_PATH [--skip-polish] [--skip-regions] [--force]

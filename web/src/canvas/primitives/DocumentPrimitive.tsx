@@ -9,6 +9,9 @@ import { useUiStore } from "@/stores/uiStore";
 
 const STATUS_STYLES: Record<string, string> = {
   pending: "border-amber-400 bg-amber-50",
+  // Harness-ingest projects: the dropped doc is waiting for the agent to run
+  // the ingest (issue #148). Same amber "needs attention" cue as queued.
+  awaiting_agent: "border-amber-400 bg-amber-50",
   ingesting: "border-blue-400 bg-blue-50",
   searching: "border-blue-400 bg-blue-50",
   found: "border-emerald-400 bg-emerald-50",
@@ -18,6 +21,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "queued",
+  awaiting_agent: "awaiting agent",
   ingesting: "ingesting",
   searching: "ingesting",
   found: "ready",
