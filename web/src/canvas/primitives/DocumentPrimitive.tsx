@@ -112,6 +112,12 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   const { id: workspaceSlug } = useParams<{ id: string }>();
 
   const [page, setPage] = useState(1);
+  // The "resting" page the preview returns to once no node is hovering a
+  // reference into this document. Defaults to the cover (page 1) and only
+  // moves on deliberate navigation — page arrows, or a *pinned* (sticky)
+  // source ref broadcast by a selected referencing node (#187). A transient
+  // hover flip never touches it, so hover-out always reverts here.
+  const restingPage = useRef(1);
   const [index, setIndex] = useState<DocumentIndex | null>(null);
   const [regions, setRegions] = useState<Region[]>([]);
   const [pageMeta, setPageMeta] = useState<Record<number, PageMeta>>({});
@@ -161,13 +167,29 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   }, [slug, page, isReady]);
 
   // Phase B: react to a cross-component hover. If something else broadcasts
-  // a source_ref pointing into this document, flip to the right page.
+  // a source_ref pointing into this document, flip to the right page. The
+  // flip is *transient*: when the ref clears (hover-out) or stops pointing at
+  // this document, the preview reverts to its resting page (the cover, or the
+  // user's last manually-navigated page) instead of sticking on the last
+  // referenced page (#187).
+  //
+  // A *sticky* ref (broadcast by a selected/pinned referencing node) instead
+  // adopts its page as the new resting page, so the preview stays put after
+  // the pointer leaves and a later hover-out reverts to it rather than fights
+  // the deliberate selection.
+  const pointsHere = !!hoveredSourceRef && slug != null && hoveredSourceRef.slug === slug;
   useEffect(() => {
-    if (!hoveredSourceRef || !slug || hoveredSourceRef.slug !== slug) return;
-    if (hoveredSourceRef.page && hoveredSourceRef.page !== page) {
-      setPage(hoveredSourceRef.page);
+    if (!slug) return;
+    if (pointsHere && hoveredSourceRef?.page) {
+      if (hoveredSourceRef.sticky) {
+        restingPage.current = hoveredSourceRef.page;
+      }
+      setPage((p) => (p === hoveredSourceRef.page ? p : hoveredSourceRef.page));
+    } else {
+      // No ref pointing at this doc — settle back on the resting page.
+      setPage((p) => (p === restingPage.current ? p : restingPage.current));
     }
-  }, [hoveredSourceRef, slug, page]);
+  }, [pointsHere, hoveredSourceRef, slug]);
 
   const total = index?.document?.page_count ?? d.page_count ?? 0;
   // Prefer explicit page dimensions when the producer exposes them; otherwise
@@ -427,7 +449,13 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
             onDoubleClick={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
-              setPage((p) => Math.max(1, p - 1));
+              // Deliberate navigation updates the resting page so a later
+              // hover-out reverts here, not to the cover (#187).
+              setPage((p) => {
+                const next = Math.max(1, p - 1);
+                restingPage.current = next;
+                return next;
+              });
             }}
           >
             ‹
@@ -443,7 +471,11 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
             onDoubleClick={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
-              setPage((p) => Math.min(total, p + 1));
+              setPage((p) => {
+                const next = Math.min(total, p + 1);
+                restingPage.current = next;
+                return next;
+              });
             }}
           >
             ›

@@ -153,3 +153,98 @@ describe("DocumentPrimitive click isolation", () => {
     expect(onParentDblClick).toHaveBeenCalled();
   });
 });
+
+/**
+ * Transient hover-driven page flip (#187).
+ *
+ * Hovering a node that cites a page broadcasts a `hoveredSourceRef`, which
+ * flips the document preview to that page. On hover-out the ref clears, and
+ * the preview must revert to its resting page (the cover) instead of sticking
+ * on the last referenced page. Deliberate page navigation (arrows) and a
+ * pinned/sticky reference (a selected referencing node) survive that revert.
+ */
+describe("DocumentPrimitive hover-driven page revert (#187)", () => {
+  it("hovering a node citing page N flips the preview to N", async () => {
+    await renderDoc(READY_DOC);
+    expect(screen.getByText(/page 1 \/ 3/)).toBeTruthy();
+
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 3 });
+    });
+
+    expect(screen.getByText(/page 3 \/ 3/)).toBeTruthy();
+  });
+
+  it("hover-out reverts the preview to the cover (page 1)", async () => {
+    await renderDoc(READY_DOC);
+
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 3 });
+    });
+    expect(screen.getByText(/page 3 \/ 3/)).toBeTruthy();
+
+    await act(async () => {
+      useUiStore.getState().clearHoveredSourceRef();
+    });
+    // No ref pointing here anymore — back to the cover without clicking
+    // through every page.
+    expect(screen.getByText(/page 1 \/ 3/)).toBeTruthy();
+  });
+
+  it("a ref pointing at a different document does not strand this preview", async () => {
+    await renderDoc(READY_DOC);
+
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 2 });
+    });
+    expect(screen.getByText(/page 2 \/ 3/)).toBeTruthy();
+
+    // Hovering a reference into some OTHER document is, for this node, the
+    // same as no reference: it settles back on the cover.
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "other", page: 5 });
+    });
+    expect(screen.getByText(/page 1 \/ 3/)).toBeTruthy();
+  });
+
+  it("explicit arrow navigation is not auto-reverted on hover-out", async () => {
+    await renderDoc(READY_DOC);
+
+    // Deliberately page to 2 via the arrow.
+    const next = screen.getByRole("button", { name: "›" });
+    await act(async () => {
+      fireEvent.click(next);
+    });
+    expect(screen.getByText(/page 2 \/ 3/)).toBeTruthy();
+
+    // A transient hover flips to 3, then clears.
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 3 });
+    });
+    expect(screen.getByText(/page 3 \/ 3/)).toBeTruthy();
+
+    await act(async () => {
+      useUiStore.getState().clearHoveredSourceRef();
+    });
+    // Reverts to the manually-set resting page (2), not the cover.
+    expect(screen.getByText(/page 2 \/ 3/)).toBeTruthy();
+  });
+
+  it("a sticky (pinned) reference keeps the preview on its page after clear", async () => {
+    await renderDoc(READY_DOC);
+
+    // A selected referencing node broadcasts a sticky ref.
+    await act(async () => {
+      useUiStore
+        .getState()
+        .setHoveredSourceRef({ slug: "pump", page: 3, sticky: true });
+    });
+    expect(screen.getByText(/page 3 \/ 3/)).toBeTruthy();
+
+    // Clearing the hover must NOT fight the deliberate selection.
+    await act(async () => {
+      useUiStore.getState().clearHoveredSourceRef();
+    });
+    expect(screen.getByText(/page 3 \/ 3/)).toBeTruthy();
+  });
+});
