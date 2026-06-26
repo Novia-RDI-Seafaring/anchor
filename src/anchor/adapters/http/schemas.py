@@ -6,6 +6,15 @@ from typing import Any
 from pydantic import BaseModel
 
 
+class CreateProjectRequest(BaseModel):
+    name: str
+    description: str = ""
+
+
+class RenameProjectRequest(BaseModel):
+    new: str
+
+
 class CreateWorkspaceRequest(BaseModel):
     slug: str
     title: str = ""

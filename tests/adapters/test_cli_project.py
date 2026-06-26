@@ -117,6 +117,73 @@ def test_project_move_zone_change_needs_confirm(tmp_path):
     assert resolve_environment("cloud").project_exists("pumps")
 
 
+def test_project_remove_empty(tmp_path):
+    env = create_env("local")
+    create_project(env, "day1-test")
+    result = runner.invoke(app, ["project", "remove", "day1-test", "--env", "local"])
+    assert result.exit_code == 0, result.output
+    assert not resolve_environment("local").project_exists("day1-test")
+
+
+def test_project_remove_refuses_nonempty(tmp_path):
+    env = create_env("local")
+    create_project(env, "pumps")
+    (env.project_dir("pumps") / "bronze" / "d.pdf").write_text("x")
+    result = runner.invoke(app, ["project", "remove", "pumps", "--env", "local"])
+    assert result.exit_code == 1
+    assert "still has" in result.output
+    assert resolve_environment("local").project_exists("pumps")
+
+
+def test_project_remove_force_delete_data(tmp_path):
+    env = create_env("local")
+    create_project(env, "pumps")
+    (env.project_dir("pumps") / "bronze" / "d.pdf").write_text("x")
+    root = env.project_root("pumps")
+    result = runner.invoke(
+        app, ["project", "remove", "pumps", "--env", "local", "--force", "--delete-data"]
+    )
+    assert result.exit_code == 0, result.output
+    assert not resolve_environment("local").project_exists("pumps")
+    assert not root.exists()
+
+
+def test_project_remove_unknown(tmp_path):
+    create_env("local")
+    result = runner.invoke(app, ["project", "remove", "ghost", "--env", "local"])
+    assert result.exit_code == 1
+    assert "does not exist" in result.output
+
+
+def test_project_rename(tmp_path):
+    env = create_env("local")
+    create_project(env, "day1-test", description="throwaway")
+    result = runner.invoke(
+        app, ["project", "rename", "day1-test", "agentic-engineering", "--env", "local"]
+    )
+    assert result.exit_code == 0, result.output
+    env = resolve_environment("local")
+    assert env.project_exists("agentic-engineering")
+    assert not env.project_exists("day1-test")
+    assert project_meta(env, "agentic-engineering").description == "throwaway"
+
+
+def test_project_rename_rejects_existing_target(tmp_path):
+    env = create_env("local")
+    create_project(env, "pumps")
+    create_project(env, "paper")
+    result = runner.invoke(app, ["project", "rename", "pumps", "paper", "--env", "local"])
+    assert result.exit_code == 1
+    assert "already exists" in result.output
+
+
+def test_project_rename_rejects_bad_name(tmp_path):
+    env = create_env("local")
+    create_project(env, "pumps")
+    result = runner.invoke(app, ["project", "rename", "pumps", "../escape", "--env", "local"])
+    assert result.exit_code == 2
+
+
 # -- migrate ----------------------------------------------------------------- #
 def test_migrate_moves_legacy_data_dir(tmp_path, monkeypatch):
     legacy = tmp_path / "anchor-data"

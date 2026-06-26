@@ -6,8 +6,9 @@ resolves it to a :class:`~anchor.adapters.mcp.services.ServiceBundle`, cached by
 the project's storage directory, so the running server multiplexes any number
 of projects without rebinding at startup. It also backs the lifecycle tools
 (``create_environment`` / ``create_project`` / ``list_projects`` /
-``open_project`` / ``update_project``) and raises the self-correcting
-``no_project`` / ``no_environment`` errors.
+``open_project`` / ``update_project`` / ``remove_project`` /
+``rename_project``) and raises the self-correcting ``no_project`` /
+``no_environment`` errors.
 
 Crossing environments is deliberately *not* an MCP operation: the agent must
 not move a corpus across a trust boundary. ``anchor project move`` is the
@@ -31,6 +32,8 @@ from anchor.infra.environment import (
     create_project,
     ensure_project,
     project_meta,
+    remove_project,
+    rename_project,
     resolve_environment,
     resolve_project_config,
     set_project_description,
@@ -122,6 +125,24 @@ class ProjectRouter:
             raise NoProjectError(name, env.list_project_names())
         set_project_description(env, name, description)
         return {"updated": name, "description": description}
+
+    def remove_project(
+        self, name: str, *, delete_data: bool = False, force: bool = False
+    ) -> dict[str, Any]:
+        env = self.environment()
+        result = remove_project(env, name, delete_data=delete_data, force=force)
+        self._cache.pop(str(env.project_dir(name)), None)
+        if self._session_default == name:
+            self._session_default = None
+        return result
+
+    def rename_project(self, old: str, new: str) -> dict[str, Any]:
+        env = self.environment()
+        result = rename_project(env, old, new)
+        self._cache.pop(str(env.project_dir(old)), None)
+        if self._session_default == old:
+            self._session_default = new
+        return result
 
     def create_environment(
         self,

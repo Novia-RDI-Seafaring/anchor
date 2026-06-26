@@ -173,12 +173,14 @@ _CAPABILITY_GROUPS: list[dict[str, Any]] = [
         "when_to_use": (
             "Environment + project administration beyond list/create: make a "
             "new environment, set the session default project, edit a project's "
-            "description."
+            "description, or remove / rename a project to clean up."
         ),
         "names": [
             "create_environment",
             "open_project",
             "update_project",
+            "remove_project",
+            "rename_project",
         ],
     },
     {
