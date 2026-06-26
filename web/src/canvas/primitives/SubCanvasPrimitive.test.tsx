@@ -10,14 +10,20 @@
  * re-introduces a snapshot fetch, this test would still pass but the
  * assertion `expect(fetch).not.toHaveBeenCalled()` guards it.
  */
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { ReactFlowProvider } from "@xyflow/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { breadcrumb } from "@/canvas/breadcrumb";
 import * as workspacesHook from "@/canvas/useWorkspacesList";
 import { SubCanvasPrimitive } from "./SubCanvasPrimitive";
+
+/** Echoes the current pathname so navigation can be asserted. */
+function LocationProbe() {
+  const loc = useLocation();
+  return <div data-testid="location">{loc.pathname}</div>;
+}
 
 beforeEach(() => {
   breadcrumb.clear();
@@ -67,6 +73,7 @@ async function renderTile({
             path="/c/:id"
             element={
               <ReactFlowProvider>
+                <LocationProbe />
                 <SubCanvasPrimitive
                   {...({
                     id: "n1",
@@ -149,5 +156,45 @@ describe("SubCanvasPrimitive", () => {
     breadcrumb.enter("looped");
     await renderTile({ data: { canvas_slug: "looped" } });
     expect(screen.getByText(/already visiting/)).toBeTruthy();
+  });
+
+  it("renders a one-click 'open' affordance that navigates to the child canvas (#181)", async () => {
+    mockWorkspaces([{ slug: "child", node_count: 0, edge_count: 0 }]);
+    await renderTile({ data: { canvas_slug: "child", title: "Child" } });
+
+    const open = screen.getByRole("button", { name: "Open canvas child" });
+    await act(async () => {
+      fireEvent.click(open);
+    });
+
+    // Single click navigated into the child route and pushed the breadcrumb.
+    expect(screen.getByTestId("location").textContent).toBe("/c/child");
+    expect(breadcrumb.includes("child")).toBe(true);
+  });
+
+  it("the open affordance stops propagation so it does not select/drag the node", async () => {
+    mockWorkspaces([{ slug: "child", node_count: 0, edge_count: 0 }]);
+    await renderTile({ data: { canvas_slug: "child", title: "Child" } });
+
+    const open = screen.getByRole("button", { name: "Open canvas child" });
+    // The control opts out of ReactFlow drag/pan; that plus stopPropagation
+    // keeps a click from reaching the node-level select/drag handlers.
+    expect(open.className).toContain("nodrag");
+    expect(open.className).toContain("nopan");
+
+    const clickEvent = new MouseEvent("click", { bubbles: true, cancelable: true });
+    const stopSpy = vi.spyOn(clickEvent, "stopPropagation");
+    await act(async () => {
+      open.dispatchEvent(clickEvent);
+    });
+    expect(stopSpy).toHaveBeenCalled();
+  });
+
+  it("hides the open affordance for a canvas already in the breadcrumb chain", async () => {
+    mockWorkspaces([{ slug: "looped", node_count: 0, edge_count: 0 }]);
+    breadcrumb.reset("parent");
+    breadcrumb.enter("looped");
+    await renderTile({ data: { canvas_slug: "looped" } });
+    expect(screen.queryByRole("button", { name: /Open canvas/ })).toBeNull();
   });
 });

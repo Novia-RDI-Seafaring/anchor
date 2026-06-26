@@ -182,7 +182,9 @@ export function ChartPrimitive({ id: _id, data, selected }: NodeProps) {
         {hasProv && (
           <button
             type="button"
-            className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-600 hover:bg-neutral-200"
+            className="nodrag nopan shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] text-neutral-600 hover:bg-neutral-200"
+            onMouseDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               openPdf(ref!.slug!, { page: ref!.page, highlightRegionId: ref!.region_id, highlightBbox: ref!.bbox });
