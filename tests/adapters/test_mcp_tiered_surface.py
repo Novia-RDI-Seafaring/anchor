@@ -80,7 +80,7 @@ async def test_base_multiproject_advertises_core_plus_lifecycle(tmp_path):
     create_env("local")
     server, _ = _multiproject_server()
     names = await _advertised(server)
-    assert len(names) <= 21
+    assert len(names) <= 22
     assert tiering.CORE_NAMES.issubset(set(names))
     # The long tail is gated out by default.
     for gated in ("fmu_inspect", "inspect", "sysml_render", "create_environment",

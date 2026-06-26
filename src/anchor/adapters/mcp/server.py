@@ -122,6 +122,7 @@ PDF tools (extension anchor_pdfs):
 - ingest_pdf / list_documents / get_document_index
 - search_documents — semantic search across embedded gold regions
 - get_gold_regions / get_page_text / get_page_image / get_crop / get_pdf
+- locate_text — where a value appears on a page (page-space quads), for value-precise highlights
 
 Harness ingestion (provider = harness, no API key):
 - ingest_begin / ingest_get_page / ingest_submit_page

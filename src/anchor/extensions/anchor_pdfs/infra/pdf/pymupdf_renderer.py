@@ -21,6 +21,17 @@ class PymupdfPdfRenderer:
     ) -> bytes:
         return await asyncio.to_thread(_crop_region_sync, pdf_path, page, bbox, fmt, dpi)
 
+    async def locate_text(
+        self,
+        pdf_path: Path,
+        page: int,
+        query: str,
+        within_bbox: list[float] | None = None,
+    ) -> list[list[float]]:
+        return await asyncio.to_thread(
+            _locate_text_sync, pdf_path, page, query, within_bbox
+        )
+
 
 def _render_pages_sync(pdf_path: Path, dpi: int) -> dict[int, bytes]:
     import pymupdf
@@ -68,3 +79,60 @@ def _crop_region_sync(pdf_path: Path, page_no: int, bbox: list[float], fmt: Crop
             new[0].set_cropbox(rect)
             return new.tobytes()
     raise ValueError(f"unknown fmt: {fmt}")
+
+
+def _bottomleft_clip_rect(h: float, within_bbox: list[float]):
+    """Build a PyMuPDF (TOPLEFT) clip rect from a BOTTOMLEFT region bbox.
+
+    Mirrors `_crop_region_sync`: gold/region bboxes are stored in Docling's
+    BOTTOMLEFT origin with an unguaranteed element order, so we sort per axis
+    after the bottom-left->top-left flip and get a positive-area rect for any
+    ordering.
+    """
+    import pymupdf
+
+    if len(within_bbox) != 4:
+        raise ValueError("within_bbox must be [left, top, right, bottom]")
+    left, top, right, bottom = within_bbox
+    x0, x1 = sorted((left, right))
+    y0, y1 = sorted((h - top, h - bottom))
+    return pymupdf.Rect(x0, y0, x1, y1)
+
+
+def _locate_text_sync(
+    pdf_path: Path,
+    page_no: int,
+    query: str,
+    within_bbox: list[float] | None,
+) -> list[list[float]]:
+    import pymupdf
+
+    query = (query or "").strip()
+    if not query:
+        return []
+    with pymupdf.open(pdf_path) as doc:
+        if page_no < 1 or page_no > doc.page_count:
+            return []
+        page = doc[page_no - 1]
+        h = page.rect.height
+        clip = None
+        if within_bbox is not None:
+            clip = _bottomleft_clip_rect(h, within_bbox)
+            # A degenerate region clip would make search_for raise; treat it as
+            # "no region constraint" rather than failing the locate.
+            if clip.width <= 1e-6 or clip.height <= 1e-6:
+                clip = None
+        # PyMuPDF returns matches as TOPLEFT page-space rects.
+        try:
+            rects = page.search_for(query, clip=clip)
+        except Exception:  # noqa: BLE001 - a search that PyMuPDF cannot run -> no match
+            return []
+        out: list[list[float]] = []
+        for r in rects:
+            # Convert TOPLEFT (PyMuPDF) -> BOTTOMLEFT (gold/Docling) so the
+            # returned quad rides through the same `bboxToImageRect` mapping the
+            # frontend uses for region bboxes. Emit ascending order per axis.
+            x0, x1 = sorted((r.x0, r.x1))
+            yb0, yb1 = sorted((h - r.y0, h - r.y1))
+            out.append([x0, yb0, x1, yb1])
+        return out

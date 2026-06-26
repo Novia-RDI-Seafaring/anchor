@@ -46,6 +46,31 @@ export const documents = {
     return Object.values(rsp.pages ?? {}).flat().map(normaliseRegion);
   },
   goldMap: (slug: string) => api.get<Record<string, unknown>>(`/api/documents/${slug}/gold-map`),
+  /**
+   * Locate `query` on a page and return its page-space quad(s) (value-precise
+   * highlight, #197). `bbox` clips the search to a region so a value that
+   * repeats elsewhere on the page resolves to the right spot. Quads come back
+   * in the same coordinate convention region bboxes use, so they ride through
+   * `bboxToImageRect` unchanged. Resolves to `[]` (never throws) when the text
+   * cannot be located so the caller falls back to the region-level highlight.
+   */
+  locate: async (
+    slug: string,
+    page: number,
+    query: string,
+    bbox?: number[],
+  ): Promise<number[][]> => {
+    const params = new URLSearchParams({ query });
+    if (bbox && bbox.length === 4) params.set("bbox", bbox.join(","));
+    try {
+      const rsp = await api.get<{ quads?: number[][] }>(
+        `/api/documents/${slug}/pages/${page}/locate?${params.toString()}`,
+      );
+      return Array.isArray(rsp.quads) ? rsp.quads : [];
+    } catch {
+      return [];
+    }
+  },
   pageText: (slug: string, page: number) =>
     api.get<{ text: string }>(`/api/documents/${slug}/pages/${page}/text`),
   pageImageUrl: (slug: string, page: number) =>

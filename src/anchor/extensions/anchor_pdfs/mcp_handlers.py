@@ -241,6 +241,34 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "locate_text",
+            "description": (
+                "Find where a value/text appears on a page and return its "
+                "page-space quad(s) in the same coordinate convention region "
+                "bboxes use. Pass within_bbox (a region's bbox) to disambiguate "
+                "a value that repeats elsewhere on the page. Returns an empty "
+                "quads list when the text is not found (caller falls back to the "
+                "region-level highlight). Powers the value-precise highlight in "
+                "the canvas doc preview and PDF viewer."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {"type": "string"},
+                    "page": {"type": "integer"},
+                    "query": {"type": "string", "description": "The text to locate."},
+                    "within_bbox": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 4,
+                        "maxItems": 4,
+                        "description": "Optional [left, top, right, bottom] region clip.",
+                    },
+                },
+                "required": ["slug", "page", "query"],
+            },
+        },
+        {
             "name": "get_gold_map",
             "description": "Full gold extraction: document metadata + outline + all regions + per-page meta.",
             "inputSchema": {
@@ -537,6 +565,20 @@ async def call_tool(
     if name == "get_page_text":
         text = await store.get_page_text(args["slug"], int(args["page"]))
         return text if text is not None else json.dumps({"error": "not found"})
+    if name == "locate_text":
+        path = await store.get_raw_pdf_path(args["slug"])
+        if path is None or str(path).startswith("memory://"):
+            return json.dumps({"error": f"raw PDF not available for slug: {args['slug']}"})
+        try:
+            quads = await ingest.renderer.locate_text(
+                path, int(args["page"]), args["query"], args.get("within_bbox"),
+            )
+        except (IndexError, ValueError) as e:
+            return json.dumps({"error": str(e)})
+        return json.dumps({
+            "slug": args["slug"], "page": int(args["page"]),
+            "query": args["query"], "quads": quads,
+        })
     if name == "get_gold_map":
         out = await store.get_gold_map(args["slug"])
         return json.dumps(out) if out is not None else json.dumps({"error": "not found"})
