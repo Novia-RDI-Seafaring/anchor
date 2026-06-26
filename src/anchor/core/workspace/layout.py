@@ -31,6 +31,16 @@ Algorithm (vertical orientation):
 3. Walk top-down: place the root at its current (x, y); each child gets
    centred under its parent according to its subtree width.
 
+The root is the FIXED layout root: its position never moves and its
+*measured* size is honoured so the first level of children is placed
+fully clear of its bounding box. Positions are React-Flow top-left
+coordinates (matching `align.py`), so children are centred on the root's
+visual centre (`root_x + root_w/2`) rather than on its top-left corner,
+and the first level drops past the root's actual bottom edge
+(`root_y + root_h + gap`) instead of a fixed gap from the root's origin.
+Without this, a tall source/doc node (hundreds of px tall) swallows its
+children: a fixed `LEVEL_GAP_Y` of 200 leaves them behind/under the node.
+
 Horizontal orientation swaps the role of x and y so the tree grows
 left-to-right.
 
@@ -61,10 +71,27 @@ SIB_GAP_Y = 40.0
 class NodeLike:
     """Just the fields layout actually needs. Keep this narrow so tests
     can pass plain dicts wrapped in NodeLike without standing up a full
-    Workspace."""
+    Workspace.
+
+    ``width`` / ``height`` are the node's *measured* size (React-Flow
+    top-left coordinates). They default to ``None``; callers that don't
+    know a node's size get the ``NODE_W`` / ``NODE_H`` fallback via the
+    ``w`` / ``h`` properties. The root's measured size is what lets the
+    layout place children clear of a tall source/doc node instead of
+    behind it."""
     id: str
     x: float
     y: float
+    width: float | None = None
+    height: float | None = None
+
+    @property
+    def w(self) -> float:
+        return self.width if self.width is not None else NODE_W
+
+    @property
+    def h(self) -> float:
+        return self.height if self.height is not None else NODE_H
 
 
 @dataclass(frozen=True)
@@ -138,44 +165,69 @@ def _subtree_width(
 def _place_vertical(
     root_id: str, root_x: float, root_y: float,
     children: Mapping[str, list[str]],
-    *, level_gap: float = LEVEL_GAP_Y,
+    *, root_w: float = NODE_W, root_h: float = NODE_H,
+    level_gap: float = LEVEL_GAP_Y,
     sib_gap: float = SIB_GAP_X, node_w: float = NODE_W,
 ) -> dict[str, tuple[float, float]]:
-    """Centred-tree placement, top-down."""
+    """Centred-tree placement, top-down.
+
+    Positions are React-Flow top-left coordinates. Children are centred on
+    the root's *visual* centre (``root_x + root_w/2``) and the first level
+    is dropped past the root's actual bottom edge (``root_y + root_h``) so
+    a tall root (a source/doc node) never sits on top of its children. The
+    returned child positions are top-left, so each child's centre is
+    converted back by subtracting ``node_w/2``."""
     out: dict[str, tuple[float, float]] = {root_id: (root_x, root_y)}
     width_cache: dict[str, int] = {}
+    root_cx = root_x + root_w / 2.0
+    # First level clears the root's measured bottom edge; deeper levels use
+    # the plain centre-to-centre gap (children below the root all share the
+    # default node size, so the fixed gap is fine once we're past the root).
+    first_level_top = root_y + root_h + level_gap
 
-    def recurse(node_id: str, x_center: float, y: float) -> None:
+    def place_children(node_id: str, x_center: float, kids_top: float) -> None:
+        """Centre ``node_id``'s children at ``kids_top`` and recurse.
+
+        ``x_center`` is the parent's visual centre; ``kids_top`` is the
+        top-left ``y`` the children's row sits at. The first level is fed
+        ``first_level_top`` (past the root's measured bottom edge); deeper
+        levels advance by the plain centre-to-centre gap."""
         kids = children.get(node_id, [])
         if not kids:
             return
         total_units = sum(_subtree_width(c, children, width_cache) for c in kids)
         slot_w = node_w + sib_gap
-        total_width = total_units * slot_w
-        cursor = x_center - total_width / 2.0
-        next_y = y + level_gap
+        cursor = x_center - (total_units * slot_w) / 2.0
+        next_top = kids_top + NODE_H + level_gap
         for c in kids:
             cw = _subtree_width(c, children, width_cache)
             cx = cursor + (cw * slot_w) / 2.0
-            out[c] = (cx, next_y)
-            recurse(c, cx, next_y)
+            out[c] = (cx - node_w / 2.0, kids_top)
+            place_children(c, cx, next_top)
             cursor += cw * slot_w
 
-    recurse(root_id, root_x, root_y)
+    place_children(root_id, root_cx, first_level_top)
     return out
 
 
 def _place_horizontal(
     root_id: str, root_x: float, root_y: float,
     children: Mapping[str, list[str]],
-    *, level_gap: float = LEVEL_GAP_X,
+    *, root_w: float = NODE_W, root_h: float = NODE_H,
+    level_gap: float = LEVEL_GAP_X,
     sib_gap: float = SIB_GAP_Y, node_h: float = NODE_H,
 ) -> dict[str, tuple[float, float]]:
-    """Swap roles of x/y: tree grows left-to-right."""
+    """Swap roles of x/y: tree grows left-to-right.
+
+    The transpose means the vertical placer's "down past the root's
+    height" becomes "right past the root's width", so we feed the root's
+    *width* in as the swapped-axis ``root_h`` and its *height* as the
+    swapped-axis ``root_w``."""
     # Reuse vertical placement on a swapped axis, then swap back.
     # Effectively: vertical with root_x ↔ root_y, then transpose.
     vert = _place_vertical(
         root_id, root_y, root_x, children,
+        root_w=root_h, root_h=root_w,
         level_gap=level_gap, sib_gap=sib_gap, node_w=node_h,
     )
     return {nid: (y, x) for nid, (x, y) in vert.items()}
@@ -209,9 +261,15 @@ def organize_subtree(
 
     root = nodes_by_id[root_id]
     if orientation == "vertical":
-        placed = _place_vertical(root_id, root.x, root.y, children)
+        placed = _place_vertical(
+            root_id, root.x, root.y, children,
+            root_w=root.w, root_h=root.h,
+        )
     else:
-        placed = _place_horizontal(root_id, root.x, root.y, children)
+        placed = _place_horizontal(
+            root_id, root.x, root.y, children,
+            root_w=root.w, root_h=root.h,
+        )
 
     # Strip the root and filter to actually-existing nodes (the BFS may
     # have visited an edge whose endpoint was deleted out from under us).

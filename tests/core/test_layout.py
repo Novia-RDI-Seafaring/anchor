@@ -10,8 +10,25 @@ from anchor.core.workspace.layout import (
 )
 
 
-def _node(nid: str, x: float = 0.0, y: float = 0.0) -> NodeLike:
-    return NodeLike(id=nid, x=x, y=y)
+def _node(
+    nid: str, x: float = 0.0, y: float = 0.0,
+    width: float | None = None, height: float | None = None,
+) -> NodeLike:
+    return NodeLike(id=nid, x=x, y=y, width=width, height=height)
+
+
+# Default node footprint the layout falls back to when size is unknown.
+# Mirrors the layout module constants so the overlap assertions below stay
+# in sync if the constants are retuned.
+from anchor.core.workspace.layout import NODE_H, NODE_W  # noqa: E402
+
+
+def _overlaps(
+    ax: float, ay: float, aw: float, ah: float,
+    bx: float, by: float, bw: float, bh: float,
+) -> bool:
+    """Axis-aligned bbox overlap test on React-Flow top-left coords."""
+    return ax < bx + bw and ax + aw > bx and ay < by + bh and ay + ah > by
 
 
 def _edge(a: str, b: str) -> EdgeLike:
@@ -164,6 +181,95 @@ def test_outgoing_from_leaf_returns_empty():
     edges = [_edge("a", "b"), _edge("b", "c")]
     out = organize_subtree(nodes, edges, "c", direction="outgoing")
     assert out == {}
+
+
+# ── source/anchor node is the fixed root (issue #194) ──────────────────
+#
+# Organising a source/doc node's children must place them CLEAR of the
+# source node, never behind/under it. The source node is the fixed layout
+# root: its position never changes and its measured size is honoured so a
+# tall doc node (hundreds of px) doesn't swallow its children.
+
+def test_children_clear_a_tall_source_node():
+    # A 600px-tall source/doc node at the origin with two children.
+    src = _node("src", x=0, y=0, width=320, height=600)
+    out = organize_subtree(
+        [src, _node("a"), _node("b")],
+        [_edge("a", "src"), _edge("b", "src")],
+        "src",
+    )
+    # Every child must sit fully below the source node's bottom edge
+    # (y=600), i.e. its top is past the source's measured height.
+    for nid in ("a", "b"):
+        _, cy = out[nid]
+        assert cy >= src.y + src.height, (
+            f"{nid} at y={cy} lands inside the 600px source node"
+        )
+
+
+def test_no_child_overlaps_source_bbox():
+    # The headline acceptance check: no child's bounding box intersects the
+    # source node's bounding box, for a wide AND tall source node.
+    src = _node("src", x=50, y=50, width=500, height=400)
+    nodes = [src] + [_node(n) for n in ("a", "b", "c", "d")]
+    edges = [_edge(n, "src") for n in ("a", "b", "c", "d")]
+    out = organize_subtree(nodes, edges, "src")
+    for nid in ("a", "b", "c", "d"):
+        cx, cy = out[nid]
+        assert not _overlaps(
+            cx, cy, NODE_W, NODE_H,
+            src.x, src.y, src.width, src.height,
+        ), f"{nid} bbox at ({cx},{cy}) overlaps the source node"
+
+
+def test_no_child_overlaps_source_bbox_horizontal():
+    # Same guarantee for left-to-right layout: a wide source node must not
+    # sit on top of its children.
+    src = _node("src", x=50, y=50, width=500, height=400)
+    nodes = [src] + [_node(n) for n in ("a", "b", "c")]
+    edges = [_edge(n, "src") for n in ("a", "b", "c")]
+    out = organize_subtree(nodes, edges, "src", orientation="horizontal")
+    for nid in ("a", "b", "c"):
+        cx, cy = out[nid]
+        assert not _overlaps(
+            cx, cy, NODE_W, NODE_H,
+            src.x, src.y, src.width, src.height,
+        ), f"{nid} bbox at ({cx},{cy}) overlaps the source node (horizontal)"
+
+
+def test_source_node_is_excluded_from_moves():
+    # The fixed root's position is never returned (it does not move).
+    src = _node("src", x=123, y=456, width=400, height=300)
+    out = organize_subtree(
+        [src, _node("a"), _node("b")],
+        [_edge("a", "src"), _edge("b", "src")],
+        "src",
+    )
+    assert "src" not in out
+
+
+def test_messy_subtree_is_de_overlapped():
+    # Children seeded at junk overlapping coordinates (a freshly scaffolded
+    # canvas) all land at distinct, non-overlapping positions after one
+    # organize call.
+    src = _node("src", x=0, y=0, width=300, height=500)
+    junk = [
+        _node("a", x=5, y=5), _node("b", x=6, y=4),
+        _node("c", x=4, y=6), _node("d", x=5, y=5),
+    ]
+    edges = [_edge(n, "src") for n in ("a", "b", "c", "d")]
+    out = organize_subtree([src, *junk], edges, "src")
+    coords = list(out.values())
+    # No two children share a position.
+    assert len(set(coords)) == len(coords)
+    # And none overlap each other's footprint.
+    items = list(out.items())
+    for i in range(len(items)):
+        for j in range(i + 1, len(items)):
+            (_, (ax, ay)), (_, (bx, by)) = items[i], items[j]
+            assert not _overlaps(
+                ax, ay, NODE_W, NODE_H, bx, by, NODE_W, NODE_H,
+            ), "two organized children overlap each other"
 
 
 def test_unsupported_direction_raises():
