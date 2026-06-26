@@ -7,10 +7,24 @@ import tomllib
 import pytest
 from typer.testing import CliRunner
 
+from anchor.adapters.cli import check as check_mod
 from anchor.adapters.cli.main import app
 from anchor.infra import environment as env_mod
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _stub_ocr_probe(monkeypatch):
+    """Never import the real onnxruntime (issue #195 numpy double-load).
+
+    ``anchor check`` probes the OCR backend by importing ``onnxruntime``.
+    Importing the real wheel from the test suite is what triggers the flaky
+    'cannot load module more than once per process' failure, so stub the probe
+    to report the backend as importable. Tests that assert on the probe's own
+    branches live in ``test_cli_check_ocr.py`` and patch it explicitly.
+    """
+    monkeypatch.setattr(check_mod, "_probe_ocr_backend", lambda: (True, None))
 
 
 @pytest.fixture(autouse=True)
