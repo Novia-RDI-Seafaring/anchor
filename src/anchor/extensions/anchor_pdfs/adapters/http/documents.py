@@ -97,7 +97,14 @@ async def page_crop(
     try:
         png = await ingest.renderer.crop_region(path, page, values, fmt="png", dpi=dpi)
     except (IndexError, ValueError) as e:
+        # Bad bbox input (wrong arity, degenerate region): client error.
         raise HTTPException(400, str(e)) from e
+    except Exception as e:  # noqa: BLE001
+        # Any renderer/PyMuPDF failure (e.g. an inverted or out-of-bounds rect
+        # raising FzErrorArgument) is a request the renderer cannot fulfil, not a
+        # server fault. Return 422 with the message so the caller (and the canvas
+        # node's <img> onError fallback) sees a clean 4xx instead of a 500.
+        raise HTTPException(422, f"could not crop region: {e}") from e
     return Response(png, media_type="image/png")
 
 

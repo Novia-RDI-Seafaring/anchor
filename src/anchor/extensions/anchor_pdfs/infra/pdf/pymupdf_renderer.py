@@ -42,8 +42,22 @@ def _crop_region_sync(pdf_path: Path, page_no: int, bbox: list[float], fmt: Crop
     with pymupdf.open(pdf_path) as doc:
         page = doc[page_no - 1]
         h = page.rect.height
-        # convert BOTTOMLEFT → PyMuPDF (TOPLEFT)
-        rect = pymupdf.Rect(left, h - top, right, h - bottom)
+        # Convert BOTTOMLEFT (gold/Docling) → PyMuPDF (TOPLEFT) and normalize.
+        #
+        # The 4-tuple element ORDER is not guaranteed: gold bboxes are stored
+        # ascending-y ([x0, y0, x1, y1] with y0 < y1) for some documents and
+        # descending-y for others. The bottom-left→top-left flip (h - y) then
+        # produces an inverted rect (y0 > y1) for ascending-y input, which makes
+        # PyMuPDF raise FzErrorArgument instead of returning a crop. Taking
+        # min/max per axis mirrors the frontend's order-independent
+        # `bboxToImageRect`, so any ordering yields a valid positive-area rect.
+        x0, x1 = sorted((left, right))
+        y0, y1 = sorted((h - top, h - bottom))
+        rect = pymupdf.Rect(x0, y0, x1, y1)
+        # A degenerate (zero/near-zero area) bbox would make PyMuPDF raise; surface
+        # it as ValueError so the route maps it to 4xx, never a 500.
+        if rect.width <= 1e-6 or rect.height <= 1e-6:
+            raise ValueError(f"degenerate bbox: {bbox}")
         if fmt == "png":
             return page.get_pixmap(clip=rect, dpi=dpi).tobytes("png")
         elif fmt == "svg":
