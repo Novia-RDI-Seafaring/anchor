@@ -21,6 +21,7 @@ from anchor.adapters.cli.migrate import migrate_app
 from anchor.adapters.cli.models import models_app
 from anchor.adapters.cli.project import project_app
 from anchor.adapters.cli.serve import serve
+from anchor.adapters.cli.serve_info import serve_info
 from anchor.adapters.cli.services import _build_real_services
 from anchor.adapters.cli.sysml import sysml_app
 
@@ -61,6 +62,7 @@ def _main(
 app.command()(init)
 app.command()(check)
 app.command()(serve)
+app.command("serve-info")(serve_info)
 app.command()(use)
 register_document_commands(app)
 app.command("intents")(intents)

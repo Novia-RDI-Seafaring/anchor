@@ -75,7 +75,10 @@ provider as needed.
 - **Slug naming.** Document slugs are filename-derived (lowercase,
   hyphenated). Canvas slugs are user-chosen, e.g. `pump-analysis`.
 - **Don't re-ingest.** `list_documents()` first; if the slug exists with
-  `has_gold: true`, skip ingest unless the user asks for a fresh pass.
+  `has_gold: true`, skip ingest unless the user asks for a fresh pass. A row
+  with `status: "empty_gold"` is the exception: gold extraction yielded 0
+  regions on a non-empty document (usually a transient failure), so `has_gold`
+  is false and you should re-ingest that slug to recover its regions.
 
 ## Live state
 

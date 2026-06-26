@@ -32,6 +32,7 @@ beforeEach(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any);
   vi.spyOn(documents, "regions").mockResolvedValue([]);
+  vi.spyOn(documents, "locate").mockResolvedValue([]);
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue({ ok: true, json: async () => null }),
@@ -142,6 +143,41 @@ describe("DocumentPrimitive click isolation", () => {
     expect(onParentDblClick).not.toHaveBeenCalled();
   });
 
+  it("locates the value text when a hovered ref carries a query, scoped to the region bbox (#197)", async () => {
+    await renderDoc({ ...READY_DOC, slug: "alfa-laval-lkh" });
+    // A spec row broadcasts its hover with the cell value (`query`) and the
+    // region bbox. The document node must locate that text inside the region
+    // for the value-precise highlight.
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({
+        slug: "alfa-laval-lkh",
+        page: 1,
+        region_id: "r9",
+        bbox: [50, 480, 550, 410],
+        query: "600 kPa",
+      });
+    });
+    expect(documents.locate).toHaveBeenCalledWith(
+      "alfa-laval-lkh",
+      1,
+      "600 kPa",
+      [50, 480, 550, 410],
+    );
+  });
+
+  it("does not locate when the hovered ref carries no query (region-only highlight)", async () => {
+    await renderDoc({ ...READY_DOC, slug: "alfa-laval-lkh" });
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({
+        slug: "alfa-laval-lkh",
+        page: 1,
+        region_id: "r9",
+        bbox: [50, 480, 550, 410],
+      });
+    });
+    expect(documents.locate).not.toHaveBeenCalled();
+  });
+
   it("double-clicking the node BODY still bubbles to the node-level handler (#27)", async () => {
     const { onParentDblClick } = await renderDoc(READY_DOC);
     // The label text lives in the body, outside any interactive control.
@@ -151,5 +187,100 @@ describe("DocumentPrimitive click isolation", () => {
     });
     // The dblclick reaches the shell, where ReactFlow would open the viewer.
     expect(onParentDblClick).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Transient hover-driven page flip (#187).
+ *
+ * Hovering a node that cites a page broadcasts a `hoveredSourceRef`, which
+ * flips the document preview to that page. On hover-out the ref clears, and
+ * the preview must revert to its resting page (the cover) instead of sticking
+ * on the last referenced page. Deliberate page navigation (arrows) and a
+ * pinned/sticky reference (a selected referencing node) survive that revert.
+ */
+describe("DocumentPrimitive hover-driven page revert (#187)", () => {
+  it("hovering a node citing page N flips the preview to N", async () => {
+    await renderDoc(READY_DOC);
+    expect(screen.getByText(/page 1 \/ 3/)).toBeTruthy();
+
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 3 });
+    });
+
+    expect(screen.getByText(/page 3 \/ 3/)).toBeTruthy();
+  });
+
+  it("hover-out reverts the preview to the cover (page 1)", async () => {
+    await renderDoc(READY_DOC);
+
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 3 });
+    });
+    expect(screen.getByText(/page 3 \/ 3/)).toBeTruthy();
+
+    await act(async () => {
+      useUiStore.getState().clearHoveredSourceRef();
+    });
+    // No ref pointing here anymore — back to the cover without clicking
+    // through every page.
+    expect(screen.getByText(/page 1 \/ 3/)).toBeTruthy();
+  });
+
+  it("a ref pointing at a different document does not strand this preview", async () => {
+    await renderDoc(READY_DOC);
+
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 2 });
+    });
+    expect(screen.getByText(/page 2 \/ 3/)).toBeTruthy();
+
+    // Hovering a reference into some OTHER document is, for this node, the
+    // same as no reference: it settles back on the cover.
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "other", page: 5 });
+    });
+    expect(screen.getByText(/page 1 \/ 3/)).toBeTruthy();
+  });
+
+  it("explicit arrow navigation is not auto-reverted on hover-out", async () => {
+    await renderDoc(READY_DOC);
+
+    // Deliberately page to 2 via the arrow.
+    const next = screen.getByRole("button", { name: "›" });
+    await act(async () => {
+      fireEvent.click(next);
+    });
+    expect(screen.getByText(/page 2 \/ 3/)).toBeTruthy();
+
+    // A transient hover flips to 3, then clears.
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 3 });
+    });
+    expect(screen.getByText(/page 3 \/ 3/)).toBeTruthy();
+
+    await act(async () => {
+      useUiStore.getState().clearHoveredSourceRef();
+    });
+    // Reverts to the manually-set resting page (2), not the cover.
+    expect(screen.getByText(/page 2 \/ 3/)).toBeTruthy();
+  });
+
+  it("a sticky (pinned) reference keeps the preview on its page after clear", async () => {
+    await renderDoc(READY_DOC);
+
+    // A selected referencing node broadcasts a sticky ref.
+    await act(async () => {
+      useUiStore
+        .getState()
+        .setHoveredSourceRef({ slug: "pump", page: 3, sticky: true });
+    });
+    expect(screen.getByText(/page 3 \/ 3/)).toBeTruthy();
+
+    // Clearing the hover must NOT fight the deliberate selection.
+    await act(async () => {
+      useUiStore.getState().clearHoveredSourceRef();
+    });
+    expect(screen.getByText(/page 3 \/ 3/)).toBeTruthy();
   });
 });

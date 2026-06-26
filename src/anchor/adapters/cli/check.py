@@ -58,8 +58,11 @@ def check(
 
     typer.echo("Data zone")
     typer.echo(f"  environment    : {env.name}")
+    # The "environment" is a named provider/data-zone/trust profile, not a .env
+    # dotfile of secrets. The config below is env.toml; an API key (if any) lives
+    # in ANCHOR_OPENAI_API_KEY, never in env.toml.
     if env.initialized:
-        typer.echo(f"  config         : {env.config_path}")
+        typer.echo(f"  config         : {env.config_path}  (env.toml; not a .env dotfile)")
     else:
         typer.echo("  config         : (env not set up yet — defaults; `anchor env create`)")
     if prov:
@@ -101,6 +104,19 @@ def check(
     else:
         typer.echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com (public)'}")
         typer.echo(f"  vision model   : {cfg.region_model}")
+
+    # Running serve binding (#177, #179): tie this project's data dir to a live
+    # `anchor serve` port so an agent or user knows where the canvas is actually
+    # hosted, instead of assuming :8002.
+    from anchor.infra.serve_registry import find_serve_for_data_dir
+
+    serve_record = find_serve_for_data_dir(default_dir)
+    if serve_record is not None:
+        typer.echo(f"  serve          : running at {serve_record.base_url()} "
+                   f"(pid {serve_record.pid})")
+    else:
+        typer.echo("  serve          : none running for this project "
+                   "(start with `anchor serve`)")
 
     # Lean one-time awareness: an existing ~/anchor-data still serving the
     # default project, but the user should know they can fold it into the env.

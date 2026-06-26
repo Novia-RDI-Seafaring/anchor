@@ -375,6 +375,56 @@ def page_text(
     typer.echo(text)
 
 
+def locate_text(
+    slug: str,
+    page: int = typer.Argument(..., help="Page number the value is on."),
+    query: str = typer.Argument(..., help="The value/text to locate on the page."),
+    bbox: str | None = typer.Option(
+        None,
+        "--bbox",
+        help="Optional comma-separated [left, top, right, bottom] region to clip "
+        "the search to (disambiguates a value that repeats on the page).",
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Locate a value on a page and print its page-space quad(s).
+
+    Prints ``{slug, page, query, quads: [[left, top, right, bottom], ...]}`` in
+    the same coordinate convention region bboxes use. Returns an empty ``quads``
+    list when the text is not found (the UI then falls back to the region-level
+    highlight). Mirrors the MCP ``locate_text`` tool and the HTTP
+    ``/api/documents/{slug}/pages/{page}/locate`` route.
+    """
+    within_bbox: list[float] | None = None
+    if bbox is not None:
+        try:
+            within_bbox = [float(part.strip()) for part in bbox.split(",")]
+        except ValueError:
+            typer.echo("--bbox must contain four numeric values", err=True)
+            raise typer.Exit(code=2) from None
+        if len(within_bbox) != 4:
+            typer.echo("--bbox must contain four numeric values", err=True)
+            raise typer.Exit(code=2)
+    _, _, _, ingest_svc, doc_store = _build_real_services(data_dir)
+
+    async def run() -> dict:
+        path = await doc_store.get_raw_pdf_path(slug)
+        if path is None or str(path).startswith("memory://"):
+            raise FileNotFoundError(f"raw PDF not available for slug: {slug}")
+        quads = await ingest_svc.renderer.locate_text(path, page, query, within_bbox)
+        return {"slug": slug, "page": page, "query": query, "quads": quads}
+
+    try:
+        out = asyncio.run(run())
+    except FileNotFoundError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from None
+    except (IndexError, ValueError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from None
+    typer.echo(json.dumps(out, indent=2))
+
+
 # ── Read-byte commands (parity with MCP get_page_image / get_crop / get_pdf) ─
 #
 # Default `path` prints the on-disk path — agents on the same machine read
@@ -533,6 +583,7 @@ def register_document_commands(app: typer.Typer) -> None:
     app.command()(regions)
     app.command("embeddings-meta")(embeddings_meta)
     app.command("page-text")(page_text)
+    app.command("locate-text")(locate_text)
     app.command("gold-map")(gold_map)
     app.command("page-image")(page_image)
     app.command("crop")(crop)

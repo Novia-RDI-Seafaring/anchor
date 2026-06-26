@@ -33,10 +33,13 @@ export function PageWithBboxViewer() {
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [activeRegion, setActiveRegion] = useState<string | null>(null);
   const [sending, setSending] = useState<string | null>(null);
+  const [valueQuads, setValueQuads] = useState<number[][]>([]);
   const viewerSlug = viewer?.slug;
   const viewerPage = viewer?.page;
   const viewerHighlightRegionId = viewer?.highlightRegionId;
   const viewerHighlightPage = viewer?.highlightPage;
+  const viewerHighlightQuery = viewer?.highlightQuery;
+  const viewerHighlightBbox = viewer?.highlightBbox;
 
   async function sendRegionToCanvas(region: Region & { description?: string }) {
     if (!viewer?.workspaceSlug || !viewer?.documentNodeId) return;
@@ -129,6 +132,30 @@ export function PageWithBboxViewer() {
       cancel = true;
     };
   }, [viewerSlug, viewerPage, viewerHighlightRegionId, viewerHighlightPage]);
+
+  // Value-precise highlight (#197): when the viewer was opened for a grounded
+  // value, locate that text inside the region and overlay it (yellow) on top
+  // of the region rectangle. Only resolves on the page the highlight targets.
+  // Empty result -> the region rectangle remains as the graceful fallback.
+  useEffect(() => {
+    if (
+      !viewerSlug
+      || viewerPage == null
+      || !viewerHighlightQuery
+      || viewerHighlightQuery.trim() === ""
+      || viewerHighlightPage !== viewerPage
+    ) {
+      setValueQuads([]);
+      return;
+    }
+    let cancel = false;
+    documents.locate(viewerSlug, viewerPage, viewerHighlightQuery, viewerHighlightBbox)
+      .then((quads) => { if (!cancel) setValueQuads(quads); })
+      .catch(() => { if (!cancel) setValueQuads([]); });
+    return () => {
+      cancel = true;
+    };
+  }, [viewerSlug, viewerPage, viewerHighlightQuery, viewerHighlightBbox, viewerHighlightPage]);
 
   useEffect(() => {
     if (!viewer) return;
@@ -276,6 +303,31 @@ export function PageWithBboxViewer() {
                     </rect>
                   );
                 })()}
+                {/* Value-precise highlight (#197): finer yellow marker-pen
+                    quads layered over the region rectangle, marking the exact
+                    text the grounded value came from. */}
+                {highlightAppliesToPage
+                  ? valueQuads.map((quad, qi) => {
+                      const rect = bboxToImageRect(quad, pageW, pageH, imgSize.w, imgSize.h);
+                      if (!rect) return null;
+                      return (
+                        <rect
+                          key={`value-quad-${qi}`}
+                          data-testid="value-quad"
+                          x={rect.x}
+                          y={rect.y}
+                          width={rect.w}
+                          height={rect.h}
+                          fill="rgba(250, 204, 21, 0.45)"
+                          stroke="#CA8A04"
+                          strokeWidth={1.8}
+                          vectorEffect="non-scaling-stroke"
+                        >
+                          <title>value: {viewer.highlightQuery}</title>
+                        </rect>
+                      );
+                    })
+                  : null}
               </svg>
             ) : null}
           </div>

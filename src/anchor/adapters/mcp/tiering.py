@@ -46,6 +46,7 @@ CORE_LIFECYCLE_NAMES: set[str] = {
 
 CORE_STATUS_NAMES: set[str] = {
     "anchor_status",
+    "server_info",
 }
 
 # The 90%-path document tools: ingest, list, read, and semantic search.
@@ -55,6 +56,7 @@ CORE_PDF_NAMES: set[str] = {
     "get_document_index",
     "get_gold_regions",
     "get_page_text",
+    "locate_text",
     "get_crop",
     "search_documents",
     "extract_pointed",

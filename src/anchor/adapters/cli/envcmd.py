@@ -6,6 +6,12 @@ the trust boundary that holds projects. Environments live under
 stands up an environment; ``anchor env list`` / ``show`` / ``default`` manage
 the set. (To start a project in a folder, use ``anchor init``.) ``anchor use``
 sets a session default so later commands can omit ``--env`` / ``--project``.
+
+Note: an Anchor "environment" is a named provider / data-zone / trust profile
+under ``~/.anchor/envs/<name>/`` (its config file is ``env.toml``). It is NOT a
+``.env`` dotfile of secrets. Anchor does not read or write a literal ``.env``
+for the environment itself; an endpoint API key, when one is needed, lives in
+``ANCHOR_OPENAI_API_KEY`` (or a gitignored ``.env`` next to the profile).
 """
 from __future__ import annotations
 
@@ -25,7 +31,11 @@ from anchor.infra.environment import (
 from anchor.infra.providers import get_provider
 
 env_app = typer.Typer(
-    help="Manage Anchor environments (named config profiles).",
+    help=(
+        "Manage Anchor environments (named config profiles under "
+        "~/.anchor/envs/<name>/). An environment is a provider / data-zone / "
+        "trust profile, NOT a .env dotfile of secrets."
+    ),
     no_args_is_help=True,
 )
 
