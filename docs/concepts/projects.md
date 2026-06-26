@@ -4,7 +4,9 @@ Anchor has two levels.
 
 An **environment** is a named configuration profile: the AI provider, the
 models, and the data **zone**. It is the trust and egress boundary. It decides
-where a corpus's content may go. Environments live under `~/.anchor/envs/<name>/`.
+where a corpus's content may go. Environments live under `~/.anchor/envs/<name>/`,
+with their config in `env.toml`. An environment is **not** a `.env` dotfile of
+secrets; see [Environment vs `.env`](../guides/environments-and-projects.md#environment-vs-env).
 
 A **project** is one corpus (its ingested documents) plus its canvases. A
 project is a *folder*. It carries an `anchor.toml` marker that binds it to an
