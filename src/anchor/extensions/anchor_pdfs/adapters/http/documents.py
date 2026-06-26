@@ -108,6 +108,47 @@ async def page_crop(
     return Response(png, media_type="image/png")
 
 
+@router.get("/{slug}/pages/{page}/locate")
+async def locate_text(
+    slug: str,
+    page: int,
+    query: str = Query(..., min_length=1, description="Text to locate on the page."),
+    bbox: str | None = Query(
+        None,
+        description="Optional comma-separated [left, top, right, bottom] region "
+        "to clip the search to (disambiguates a value that repeats on the page).",
+    ),
+    store: DocStore = Depends(get_doc_store),
+    ingest: IngestService = Depends(get_ingest_service),
+):
+    """Locate ``query`` on a page and return its page-space quad(s).
+
+    Returns ``{slug, page, query, quads: [[left, top, right, bottom], ...]}``
+    in the same coordinate convention region bboxes use, so the frontend can
+    overlay the value-precise highlight on top of the region rectangle. Returns
+    an empty ``quads`` list when the text is not found; the caller then falls
+    back to the region-level highlight.
+    """
+    path = await store.get_raw_pdf_path(slug)
+    if path is None:
+        raise HTTPException(404, f"raw PDF not available for slug: {slug}")
+    if str(path).startswith("memory://"):
+        raise HTTPException(501, "in-memory store cannot locate text in raw PDF over HTTP")
+    within_bbox: list[float] | None = None
+    if bbox is not None:
+        try:
+            within_bbox = [float(part.strip()) for part in bbox.split(",")]
+        except ValueError as e:
+            raise HTTPException(400, "bbox must contain four numeric values") from e
+        if len(within_bbox) != 4:
+            raise HTTPException(400, "bbox must contain four numeric values")
+    try:
+        quads = await ingest.renderer.locate_text(path, page, query, within_bbox)
+    except (IndexError, ValueError) as e:
+        raise HTTPException(400, str(e)) from e
+    return {"slug": slug, "page": page, "query": query, "quads": quads}
+
+
 @router.get("/{slug}/crops/{rel_path:path}")
 async def crop(slug: str, rel_path: str, store: DocStore = Depends(get_doc_store)):
     p = await store.get_crop_path(slug, rel_path)
