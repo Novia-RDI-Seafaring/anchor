@@ -69,8 +69,9 @@ async def test_base_single_project_advertises_core_not_full_surface(tmp_path):
     server, _ = _single_project_server(tmp_path)
     names = await _advertised(server)
     # The full dispatchable surface is ~45+; the tiered default stays a small
-    # curated slice (~20, the 90% path + extract_pointed from #132).
-    assert len(names) <= 21
+    # curated slice (~20, the 90% path + extract_pointed from #132 +
+    # server_info from #177/#179).
+    assert len(names) <= 22
     assert set(names) == set(tiering.CORE_NAMES) - tiering.CORE_LIFECYCLE_NAMES
     # No lifecycle tools in single-project mode.
     assert "create_environment" not in names
@@ -80,7 +81,7 @@ async def test_base_multiproject_advertises_core_plus_lifecycle(tmp_path):
     create_env("local")
     server, _ = _multiproject_server()
     names = await _advertised(server)
-    assert len(names) <= 21
+    assert len(names) <= 22
     assert tiering.CORE_NAMES.issubset(set(names))
     # The long tail is gated out by default.
     for gated in ("fmu_inspect", "inspect", "sysml_render", "create_environment",

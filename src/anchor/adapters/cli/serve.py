@@ -147,10 +147,41 @@ def serve(
         canvases_dir=data_dir / "canvases",
         config=config,
     )
+
+    # Self-identification surface (#177, #179): record this server's actual
+    # binding so /api/whoami, the MCP server_info tool, and `anchor serve-info`
+    # can report which project lives on which port -- and so `canvas url`
+    # resolves against a server really serving this data dir instead of
+    # guessing :8002.
+    from datetime import UTC, datetime
+
+    from anchor.infra import serve_registry
+
+    started_at = datetime.now(UTC).isoformat()
+    env_name, project_name = serve_registry.identify_data_dir(data_dir)
+    app_.state.serve_binding = {
+        "host": host,
+        "port": port,
+        "data_dir": str(data_dir),
+        "env": env_name,
+        "project": project_name,
+        "started_at": started_at,
+    }
+    record_path = None
+    try:
+        record_path = serve_registry.register_serve(
+            host=host, port=port, data_dir=data_dir, started_at=started_at
+        )
+    except OSError as exc:  # advisory only -- never block the server from booting
+        typer.echo(f"[anchor serve] could not write serve record: {exc}", err=True)
+
     if port != requested_port:
         typer.echo(
-            f"[anchor serve] port {requested_port} is in use — serving on {port} instead.",
+            f"[anchor serve] port {requested_port} is in use -- serving on {port} instead.",
             err=True,
         )
     typer.echo(f"[anchor serve] data_dir={data_dir}  ->  http://{host}:{port}")
-    uvicorn.run(app_, host=host, port=port)
+    try:
+        uvicorn.run(app_, host=host, port=port)
+    finally:
+        serve_registry.unregister_serve(record_path)
