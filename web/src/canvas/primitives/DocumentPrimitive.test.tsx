@@ -32,6 +32,7 @@ beforeEach(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any);
   vi.spyOn(documents, "regions").mockResolvedValue([]);
+  vi.spyOn(documents, "locate").mockResolvedValue([]);
   vi.stubGlobal(
     "fetch",
     vi.fn().mockResolvedValue({ ok: true, json: async () => null }),
@@ -140,6 +141,41 @@ describe("DocumentPrimitive click isolation", () => {
       fireEvent.doubleClick(open);
     });
     expect(onParentDblClick).not.toHaveBeenCalled();
+  });
+
+  it("locates the value text when a hovered ref carries a query, scoped to the region bbox (#197)", async () => {
+    await renderDoc({ ...READY_DOC, slug: "alfa-laval-lkh" });
+    // A spec row broadcasts its hover with the cell value (`query`) and the
+    // region bbox. The document node must locate that text inside the region
+    // for the value-precise highlight.
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({
+        slug: "alfa-laval-lkh",
+        page: 1,
+        region_id: "r9",
+        bbox: [50, 480, 550, 410],
+        query: "600 kPa",
+      });
+    });
+    expect(documents.locate).toHaveBeenCalledWith(
+      "alfa-laval-lkh",
+      1,
+      "600 kPa",
+      [50, 480, 550, 410],
+    );
+  });
+
+  it("does not locate when the hovered ref carries no query (region-only highlight)", async () => {
+    await renderDoc({ ...READY_DOC, slug: "alfa-laval-lkh" });
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({
+        slug: "alfa-laval-lkh",
+        page: 1,
+        region_id: "r9",
+        bbox: [50, 480, 550, 410],
+      });
+    });
+    expect(documents.locate).not.toHaveBeenCalled();
   });
 
   it("double-clicking the node BODY still bubbles to the node-level handler (#27)", async () => {

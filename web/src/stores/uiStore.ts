@@ -9,6 +9,13 @@ type PdfViewerState = {
   highlightRegionId?: string;
   highlightBbox?: number[];
   highlightPage?: number;
+  /**
+   * The grounded value's text. When set, the viewer locates this text inside
+   * the region (via documents.locate) and draws a value-precise yellow
+   * highlight layered over the region rectangle (#197). Falls back to the
+   * region-level highlight when the text cannot be located.
+   */
+  highlightQuery?: string;
 };
 
 /**
@@ -22,6 +29,12 @@ type HoveredSourceRef = {
   page: number;
   region_id?: string;    // when known (regions resolved by id)
   bbox?: number[];       // raw bbox in PDF user-space
+  /**
+   * The grounded value's text. When a spec row broadcasts its hover it carries
+   * the cell value here so the document node can draw a value-precise yellow
+   * highlight inside the region (#197), not just the region rectangle.
+   */
+  query?: string;
 } | null;
 
 type UiState = {
@@ -59,6 +72,7 @@ type UiState = {
       documentNodeId?: string;
       highlightRegionId?: string;
       highlightBbox?: number[];
+      highlightQuery?: string;
     },
   ) => void;
   closePdf: () => void;
@@ -166,6 +180,7 @@ export const useUiStore = create<UiState>((set) => ({
         documentNodeId: options?.documentNodeId,
         highlightRegionId: options?.highlightRegionId,
         highlightBbox: options?.highlightBbox,
+        highlightQuery: options?.highlightQuery,
         highlightPage: options?.highlightRegionId || options?.highlightBbox
           ? options?.page ?? 1
           : undefined,
