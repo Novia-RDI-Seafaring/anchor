@@ -349,3 +349,72 @@ def test_patch_node_rejects_self_parent():
     client.post("/api/workspaces/w1/nodes", json={"id": "a"})
     rsp = client.patch("/api/workspaces/w1/nodes/a", json={"parent": "a"})
     assert rsp.status_code == 400
+
+
+# ── Node-write API hardening (#186/#189/#191/#192) ──────────────────────────
+
+def test_http_add_node_type_alias_and_position():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    # `type` alias accepted; no x/y -> auto-place returns origin first.
+    rsp = client.post("/api/workspaces/w1/nodes", json={"type": "fact", "id": "a"})
+    assert rsp.status_code == 201, rsp.text
+    body = rsp.json()
+    assert body["event"]["payload"]["node_type"] == "fact"
+    assert "position" in body
+
+
+def test_http_add_node_auto_place_non_overlapping():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    b1 = client.post("/api/workspaces/w1/nodes", json={"node_type": "fact", "width": 120, "height": 80}).json()
+    b2 = client.post("/api/workspaces/w1/nodes", json={"node_type": "fact", "width": 120, "height": 80}).json()
+    assert b1["position"] != b2["position"]
+
+
+def test_http_add_node_warns_on_dead_data_key():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    rsp = client.post("/api/workspaces/w1/nodes", json={
+        "node_type": "fact", "x": 0, "y": 0, "data": {"body": "nope"},
+    })
+    assert "warning" in rsp.json()
+
+
+def test_http_update_node_data_merges():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.post("/api/workspaces/w1/nodes", json={
+        "id": "a", "node_type": "fact", "x": 0, "y": 0,
+        "data": {"text": "x", "source_ref": {"page": 1}},
+    })
+    rsp = client.patch("/api/workspaces/w1/nodes/a", json={"data": {"text": "y"}})
+    assert rsp.status_code == 200, rsp.text
+    node = next(n for n in rsp.json()["state"]["nodes"] if n["id"] == "a")
+    assert node["data"]["text"] == "y"
+    assert node["data"]["source_ref"] == {"page": 1}
+
+
+def test_http_node_types_route():
+    client, _ = _client()
+    rsp = client.get("/api/node-types")
+    assert rsp.status_code == 200
+    names = {e["name"] for e in rsp.json()}
+    assert {"fact", "concept"} <= names
+    one = client.get("/api/node-types/fact")
+    assert one.status_code == 200
+    assert one.json()["body_field"] == "text"
+    assert client.get("/api/node-types/nope").status_code == 404
+
+
+def test_http_add_edge_type_alias():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.post("/api/workspaces/w1/nodes", json={"id": "a", "x": 0, "y": 0})
+    client.post("/api/workspaces/w1/nodes", json={"id": "b", "x": 200, "y": 0})
+    rsp = client.post("/api/workspaces/w1/edges", json={
+        "source": "a", "target": "b", "type": "anchored",
+        "data": {"kind": "evidence", "source_ref": {"page": 1}},
+    })
+    assert rsp.status_code == 201, rsp.text
+    assert rsp.json()["event"]["payload"]["edge_type"] == "anchored"

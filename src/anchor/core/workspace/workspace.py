@@ -27,6 +27,7 @@ from anchor.core.events.canvas import (
     NodeUpdated,
 )
 from anchor.core.workspace.edges import Edge  # noqa: F401  (re-exported)
+from anchor.core.workspace.merge import deep_merge
 from anchor.core.workspace.node_types import (
     EMPTY_REGISTRY,
     NodeTypeError,
@@ -95,7 +96,9 @@ def validate_command(
             raise CommandError(f"node {cmd.id!r} does not exist")
         if "data" in cmd.fields and isinstance(cmd.fields["data"], dict):
             existing = state.nodes[cmd.id]
-            new_data: dict[str, Any] = {**existing.data, **cmd.fields["data"]}
+            # Validate the post-merge data so the registry sees exactly what
+            # the reducer will store (deep-merge, None deletes — issue #192).
+            new_data: dict[str, Any] = deep_merge(existing.data, cmd.fields["data"])
             try:
                 types.validate(existing.node_type, new_data)
             except NodeTypeError as e:

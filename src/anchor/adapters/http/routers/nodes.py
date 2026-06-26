@@ -11,16 +11,62 @@ from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.value_provenance import enrich_spec_row_source_refs
 
 router = APIRouter(prefix="/api/workspaces", tags=["nodes"])
+node_types_router = APIRouter(prefix="/api/node-types", tags=["nodes"])
+
+
+def _data_warning(svc: WorkspaceService, node_type: str | None, data: dict | None) -> str | None:
+    """List data keys ``node_type``'s renderer ignores, as a soft warning (#191)."""
+    if not node_type:
+        return None
+    unknown = svc.unknown_data_keys(node_type, data)
+    if not unknown:
+        return None
+    return (
+        f"node_type {node_type!r} does not render these data keys: "
+        f"{', '.join(unknown)}. They are stored but never shown. "
+        f"GET /api/node-types/{node_type} for the renderable fields."
+    )
+
+
+@node_types_router.get("")
+async def list_node_types(svc: WorkspaceService = Depends(get_workspace_service)):
+    """Per-node-type data-field contract (#191). Same envelope as the
+    ``canvas_node_types`` MCP tool and ``anchor canvas node-types`` CLI."""
+    return svc.node_types_schema()
+
+
+@node_types_router.get("/{node_type}")
+async def get_node_type(node_type: str, svc: WorkspaceService = Depends(get_workspace_service)):
+    schema = svc.node_types_schema(node_type)
+    if not schema:
+        raise HTTPException(404, f"unknown node_type {node_type!r}")
+    return schema[0]
 
 
 @router.post("/{slug}/nodes", status_code=201)
 async def add_node(slug: str, req: AddNodeRequest, svc: WorkspaceService = Depends(get_workspace_service)):
+    # `exclude_none` drops omitted x/y so the service auto-places (#189) and
+    # drops the unused `type`/`node_type` alias. We resolve the alias and the
+    # node_type default ourselves so both shapes are accepted (#186).
+    kwargs = req.model_dump(exclude_none=True)
+    place = kwargs.pop("place", None)
+    node_type = kwargs.pop("node_type", None) or kwargs.pop("type", None) or "concept"
+    kwargs.pop("type", None)
+    kwargs["node_type"] = node_type
     try:
-        kwargs = req.model_dump(exclude_none=True)
-        state, env = await svc.add_node(slug, **kwargs)
+        state, env = await svc.add_node(slug, place=place, **kwargs)
     except CommandError as e:
         raise HTTPException(400, str(e))
-    return {"event": env.model_dump(), "state": state.get_state()}
+    resp = {
+        "event": env.model_dump(),
+        "state": state.get_state(),
+        # Echo the resolved position so the client can track layout (#189).
+        "position": {"x": env.payload.get("x"), "y": env.payload.get("y")},
+    }
+    warning = _data_warning(svc, node_type, kwargs.get("data"))
+    if warning is not None:
+        resp["warning"] = warning
+    return resp
 
 
 @router.patch("/{slug}/nodes/{node_id}")
@@ -36,6 +82,7 @@ async def update_node(
     # frontend unparents a node (drop outside any Area). `exclude_none` is
     # WRONG for parent because null IS a meaningful value.
     raw = req.model_dump(exclude_unset=True)
+    data_patch = raw.get("data") if isinstance(raw.get("data"), dict) else None
     # Defensive: a node can't be its own parent.
     if raw.get("parent") == node_id:
         raise HTTPException(400, "node cannot be its own parent")
@@ -70,7 +117,13 @@ async def update_node(
                 state, env = await svc.update_node(slug, node_id, fields)
     except CommandError as e:
         raise HTTPException(400, str(e))
-    return {"event": env.model_dump(), "state": state.get_state()}
+    resp = {"event": env.model_dump(), "state": state.get_state()}
+    if data_patch is not None:
+        node = state.nodes.get(node_id)
+        warning = _data_warning(svc, node.node_type if node else None, data_patch)
+        if warning is not None:
+            resp["warning"] = warning
+    return resp
 
 
 @router.delete("/{slug}/nodes/{node_id}")

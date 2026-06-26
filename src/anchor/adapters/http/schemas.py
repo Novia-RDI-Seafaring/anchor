@@ -27,10 +27,17 @@ class RenameWorkspaceRequest(BaseModel):
 
 class AddNodeRequest(BaseModel):
     id: str | None = None
-    node_type: str = "concept"
+    # `node_type` is canonical; `type` is accepted as an alias so a client
+    # can write back the field name it reads from canvas state (#186).
+    node_type: str | None = None
+    type: str | None = None
     label: str = ""
-    x: float = 0
-    y: float = 0
+    # x/y default to None so the server can tell "no coordinates given"
+    # (→ auto-place) from "placed at 0,0". `place="auto"` forces auto-place
+    # even when coordinates are present (#189).
+    x: float | None = None
+    y: float | None = None
+    place: str | None = None
     width: float | None = None
     height: float | None = None
     parent: str | None = None
@@ -52,7 +59,9 @@ class AddEdgeRequest(BaseModel):
     source: str
     target: str
     label: str = ""
-    edge_type: str = "floating"
+    # `edge_type` is canonical; `type` accepted as an alias (#186).
+    edge_type: str | None = None
+    type: str | None = None
     # Optional ReactFlow handle ids. When set, pin the edge to that specific
     # handle on the source/target node (e.g. spec-row → document-region).
     sourceHandle: str | None = None
@@ -67,6 +76,7 @@ class UpdateEdgeRequest(BaseModel):
     consistent patch contract."""
     label: str | None = None
     edge_type: str | None = None
+    type: str | None = None  # alias for edge_type (#186)
     sourceHandle: str | None = None
     targetHandle: str | None = None
     data: dict[str, Any] | None = None

@@ -160,9 +160,20 @@ real time on every connected client via SSE.
 - `canvas_list_placeholders(workspace_slug)` — every node flagged
   `data.placeholder == true` with its `placeholder_hint`. The entry
   point when the user says "fill in the specs I marked".
-- `canvas_add_node(workspace_slug, node_type, label, x, y, data?)`.
+- `canvas_add_node(workspace_slug, node_type, label, x?, y?, data?)`.
+  Omit `x`/`y` (or pass `place="auto"`) and the server picks a
+  non-overlapping spot and returns it under `position` — prefer this when
+  scaffolding many nodes so they don't pile up. `type` is accepted as an
+  alias for `node_type`.
+- `canvas_node_types(node_type?)` — which `data` keys each node type
+  renders and which is its body field. Call this BEFORE add/update so you
+  put the body in the right key (e.g. `fact` -> `data.text`, `concept` ->
+  `data.subtitle`; there is no generic `data.body`). add/update return a
+  `warning` when you pass a key the type ignores.
 - `canvas_update_node(workspace_slug, id, ...)` and
-  `canvas_remove_node(workspace_slug, id)`.
+  `canvas_remove_node(workspace_slug, id)`. The `data` field DEEP-MERGES
+  into the node's existing data (unmentioned keys like `source_ref`
+  survive; a key set to `null` is deleted) — no read-modify-write needed.
 - `canvas_add_edge(workspace_slug, source, target, edge_type?, data?)`
   and `canvas_remove_edge(workspace_slug, id)`.
 - `canvas_clear(workspace_slug)` — destructive; ask first.
@@ -178,8 +189,11 @@ real time on every connected client via SSE.
 | `concept` / `entity` | Generic shapes for grouping or schematics. |
 | `canvas` | A tile that links to a child canvas. |
 
-The full list and the data shapes live in the on-disk substrate docs;
-this is the shortlist of the ones agents touch most.
+This is the shortlist of the types agents touch most. For the exact
+`data` keys each type renders — and which key holds the visible body —
+call `canvas_node_types` (or `anchor canvas node-types`) instead of
+guessing; the body key differs per type (`fact` -> `text`, `concept` ->
+`subtitle`, `note` -> `text`, `area` -> `subtitle`).
 
 ## `anchor_pdfs` — ingest engineering PDFs
 
