@@ -37,6 +37,11 @@ class MemoryDocStore:
         # Failed-ingest records: slug -> failure record (mirrors the fs
         # ingest-report.json with status == "failed").
         self._failures: dict[str, dict[str, Any]] = {}
+        # Ingest reports: slug -> report dict (mirrors the fs
+        # ingest-report.json the pipeline writes on a finished run). Lets the
+        # memory store surface non-ok terminal states like `empty_gold`
+        # (issue #188) the same way the fs store reads them off disk.
+        self._reports: dict[str, dict[str, Any]] = {}
         # Live ingest-activity records (issue #51): slug -> record dict.
         self._activity: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
@@ -48,12 +53,18 @@ class MemoryDocStore:
             seen.add(slug)
             entry = dict(doc)
             failure = self._failures.get(slug)
+            report = self._reports.get(slug)
             if failure:
                 entry["status"] = "failed"
                 entry["stage"] = failure.get("stage", "unknown")
                 entry["error"] = failure.get("error", "")
                 if failure.get("bronze_path"):
                     entry["bronze_path"] = failure["bronze_path"]
+            elif report and report.get("status") == "empty_gold":
+                # Gold pass finished but yielded 0 regions on a non-empty doc
+                # (issue #188): a distinct, actionable non-ok state, not ok.
+                entry["status"] = "empty_gold"
+                entry["reason"] = report.get("reason", "gold extraction produced 0 regions")
             else:
                 entry["status"] = "ok"
             out.append(entry)
@@ -161,11 +172,20 @@ class MemoryDocStore:
         # In-memory store dispatches to specific keys based on filename convention.
         import json
         import re
+        if name == "ingest-report.json":
+            # The pipeline writes this once per finished run; keep it so
+            # list_documents can surface a non-ok terminal status (e.g.
+            # `empty_gold`, issue #188) the way the fs store reads it off disk.
+            data = json.loads(payload) if isinstance(payload, str) else json.loads(payload.decode())
+            if isinstance(data, dict):
+                self._reports[slug] = data
+            return Path(f"memory://silver/{slug}/{name}")
         if name == "index.json":
             self._indexes[slug] = json.loads(payload) if isinstance(payload, str) else json.loads(payload.decode())
-            # A successful re-ingest clears any prior failure record so the
-            # doc flips back to status == "ok".
+            # A successful re-ingest clears any prior failure record (and stale
+            # report) so the doc flips back to status == "ok".
             self._failures.pop(slug, None)
+            self._reports.pop(slug, None)
             idx = self._indexes[slug]
             doc = idx.get("document", {}) if isinstance(idx, dict) else {}
             self._docs[slug] = {

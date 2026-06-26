@@ -26,10 +26,14 @@ from typing import Any
 DEFAULT_TERMINAL_TTL_SECONDS = 20.0
 
 #: Status values a record can carry. ``running`` = still in flight;
-#: ``done`` / ``failed`` are terminal.
+#: ``done`` / ``failed`` / ``empty_gold`` are terminal. ``empty_gold`` is a
+#: gold pass that finished mechanically but produced 0 regions on a non-empty
+#: document (issue #188) — distinct from ``done`` so an autonomous loop can
+#: retry / re-ingest --force instead of reading it as success.
 RUNNING = "running"
 DONE = "done"
 FAILED = "failed"
+EMPTY_GOLD = "empty_gold"
 
 
 @dataclass
