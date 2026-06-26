@@ -113,7 +113,32 @@ def _is_accelerator_error(exc: Exception) -> bool:
     return any(s in msg for s in ("mps", "float64", "cuda", "out of memory", "cublas"))
 
 
+_OCR_REMEDIATION = (
+    "OCR backend not importable -- your editable install may be stale; "
+    "run `uv tool install --force --editable .` to re-sync dependencies."
+)
+
+
+def _assert_ocr_backend() -> None:
+    """Raise early and actionably when onnxruntime is not importable.
+
+    Fail before any heavy model loading so the error is immediate and the
+    remediation is obvious. The failure propagates as a regular exception so
+    ``IngestService`` records it in the failure log (consistent with #44) and
+    ``anchor list`` surfaces the actionable message.
+    """
+    try:
+        import importlib
+
+        importlib.import_module("onnxruntime")
+    except ImportError as exc:
+        raise RuntimeError(_OCR_REMEDIATION) from exc
+
+
 def _extract_sync(pdf_path: Path, device: str = "auto") -> dict[str, Any]:
+    # Fail fast if the OCR backend is not importable -- before any model
+    # loading -- so the error and remediation reach the user immediately.
+    _assert_ocr_backend()
     # Prefer a GPU when asked ("auto" picks the best one), but never let an
     # accelerator failure break ingestion: docling's MPS path raises "Cannot
     # convert a MPS Tensor to float64" on Apple Silicon, and a CPU retry
