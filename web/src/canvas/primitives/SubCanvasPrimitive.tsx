@@ -5,8 +5,9 @@
  * "N nodes · M edges" line. We deliberately do NOT load the child's PNG
  * snapshot inline: the parent canvas may hold a dozen sub-canvas tiles
  * and pulling on a Chromium snapshotter for each of them was both slow
- * and visually noisy. The user drills in by double-clicking — that's
- * where the full canvas lives.
+ * and visually noisy. The user drills in via the header "open" button
+ * (single click) or by double-clicking the tile body — that's where the
+ * full canvas lives.
  *
  * Counts come from the shared `useWorkspacesList()` cache (one GET
  * /api/workspaces per page rather than one per tile). If the cache hasn't
@@ -17,16 +18,18 @@
  *     glyph, and the node/edge counts.
  *   - Surface a "↩ already visiting" badge when the child slug is already
  *     in the user's breadcrumb chain — cycle prevention, see breadcrumb.ts.
- *     Double-click is disabled in that case.
+ *     The "open" affordance is hidden in that case (double-click is also
+ *     refused by CanvasGraph).
  *   - Inline-rename edits `data.title` only — the `canvas_slug` is the
  *     link key and must stay stable.
  *
- * Navigation lives in CanvasGraph.tsx's `onNodeDoubleClick` (see there).
- * This primitive only renders.
+ * Double-click navigation lives in CanvasGraph.tsx's `onNodeDoubleClick`
+ * (see there). The single-click "open" button here mirrors that same
+ * breadcrumb.enter + navigate so both paths land in the child canvas.
  */
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import { canvases } from "@/api/canvases";
 import { breadcrumb } from "@/canvas/breadcrumb";
@@ -64,13 +67,26 @@ export function SubCanvasPrimitive({ id, data, selected }: NodeProps) {
   const subSlug = d.canvas_slug ?? "";
   const title = d.title ?? d.label ?? subSlug;
   const { id: workspaceSlug } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const snap = useWorkspacesList();
   const child = subSlug ? snap?.bySlug.get(subSlug) : undefined;
 
   // Whether this link points to a canvas already in the breadcrumb chain.
-  // If so, double-click is disabled (cycle prevention) and we show a
-  // badge so the user understands why.
+  // If so, opening is disabled (cycle prevention) and we show a badge so
+  // the user understands why.
   const inChain = subSlug ? breadcrumb.includes(subSlug) : false;
+
+  // Single-click drill-down. Mirrors CanvasGraph's onNodeDoubleClick
+  // navigation so the visible "open" affordance and the double-click on
+  // the node body land in the same place. stopPropagation keeps the click
+  // from also selecting/dragging the node (#181 open-affordance part).
+  const canOpen = Boolean(subSlug) && !inChain;
+  const openChild = (e: { stopPropagation: () => void }) => {
+    e.stopPropagation();
+    if (!subSlug || breadcrumb.includes(subSlug)) return;
+    breadcrumb.enter(subSlug);
+    navigate(`/c/${subSlug}`);
+  };
 
   // The inline-edit hook only edits the *title*. canvas_slug is the link
   // and must remain stable so navigation keeps working.
@@ -134,9 +150,27 @@ export function SubCanvasPrimitive({ id, data, selected }: NodeProps) {
             </div>
           )}
         </div>
-        <span aria-hidden className="ml-1 shrink-0 text-neutral-400">
-          →
-        </span>
+        {canOpen ? (
+          <button
+            type="button"
+            className="nodrag nopan ml-1 inline-flex shrink-0 items-center gap-0.5 rounded border border-sky-300 bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 hover:bg-sky-100"
+            title={`Open ${subSlug}`}
+            aria-label={`Open canvas ${subSlug}`}
+            // Single click opens the child canvas. stopPropagation on
+            // mousedown/click/dblclick keeps the gesture from selecting or
+            // dragging the node, and from reaching the node-level
+            // double-click handler in CanvasGraph.
+            onMouseDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+            onClick={openChild}
+          >
+            open <span aria-hidden>→</span>
+          </button>
+        ) : (
+          <span aria-hidden className="ml-1 shrink-0 text-neutral-400">
+            →
+          </span>
+        )}
       </div>
 
       {/* Body — abstract representation: glyph + stats. */}

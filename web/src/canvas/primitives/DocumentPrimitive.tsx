@@ -306,6 +306,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                       setHoveredLocal(null);
                       clearHoveredSourceRef();
                     }}
+                    onDoubleClick={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.stopPropagation();
                       openPdf(slug, {
@@ -416,12 +417,18 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
         <div className="flex items-center justify-between border-b border-neutral-200 px-2 py-1 text-[11px] text-neutral-600">
           <button
             type="button"
+            className="nodrag nopan rounded border border-neutral-300 px-1.5 py-0.5 hover:bg-neutral-50 disabled:opacity-40"
+            disabled={page <= 1}
+            // stopPropagation on BOTH click and double-click: a fast
+            // double-tap on the arrow would otherwise reach ReactFlow's
+            // node-level onDoubleClick and open the PDF viewer (#184). The
+            // click handler alone does not stop the separate dblclick event.
+            onMouseDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               setPage((p) => Math.max(1, p - 1));
             }}
-            disabled={page <= 1}
-            className="rounded border border-neutral-300 px-1.5 py-0.5 hover:bg-neutral-50 disabled:opacity-40"
           >
             ‹
           </button>
@@ -430,12 +437,14 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
           </span>
           <button
             type="button"
+            className="nodrag nopan rounded border border-neutral-300 px-1.5 py-0.5 hover:bg-neutral-50 disabled:opacity-40"
+            disabled={page >= total}
+            onMouseDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               setPage((p) => Math.min(total, p + 1));
             }}
-            disabled={page >= total}
-            className="rounded border border-neutral-300 px-1.5 py-0.5 hover:bg-neutral-50 disabled:opacity-40"
           >
             ›
           </button>
@@ -488,7 +497,9 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
         {isReady && slug ? (
           <button
             type="button"
-            className="mt-1 w-full rounded border border-neutral-300 bg-white px-2 py-1 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50"
+            className="nodrag nopan mt-1 w-full rounded border border-neutral-300 bg-white px-2 py-1 text-[11px] font-medium text-neutral-700 hover:bg-neutral-50"
+            onMouseDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               openPdf(slug, {
