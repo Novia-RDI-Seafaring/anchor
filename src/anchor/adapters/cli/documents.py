@@ -293,12 +293,26 @@ def index(
 
 def regions(
     slug: str,
-    page: int | None = typer.Option(None, "--page", "-p"),
+    page_pos: int | None = typer.Argument(
+        None,
+        help="Page number to filter (positional form, same as --page).",
+        show_default=False,
+    ),
+    page: int | None = typer.Option(None, "--page", "-p", help="Page number to filter (option form)."),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
-    """Print gold regions for a document, optionally filtered to a page."""
+    """Print gold regions for a document, optionally filtered to a page.
+
+    The page can be supplied as a positional argument or via --page/-p.
+    Both forms are equivalent: ``anchor regions SLUG PAGE`` and
+    ``anchor regions SLUG --page PAGE`` do the same thing.
+    """
+    if page_pos is not None and page is not None:
+        typer.echo("error: supply page as a positional argument or --page, not both", err=True)
+        raise typer.Exit(code=2)
+    effective_page = page if page is not None else page_pos
     _, _, _, _, doc_store = _build_real_services(data_dir)
-    typer.echo(json.dumps(asyncio.run(doc_store.get_regions(slug, page=page)), indent=2))
+    typer.echo(json.dumps(asyncio.run(doc_store.get_regions(slug, page=effective_page)), indent=2))
 
 
 def embeddings_meta(
@@ -332,14 +346,31 @@ def embeddings_meta(
 
 def page_text(
     slug: str,
-    page: int,
+    page_pos: int | None = typer.Argument(
+        None,
+        help="Page number (positional form, same as --page).",
+        show_default=False,
+    ),
+    page: int | None = typer.Option(None, "--page", "-p", help="Page number (option form)."),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
-    """Print polished or raw markdown for a page."""
+    """Print polished or raw markdown for a page.
+
+    The page can be supplied as a positional argument or via --page/-p.
+    Both forms are equivalent: ``anchor page-text SLUG PAGE`` and
+    ``anchor page-text SLUG --page PAGE`` do the same thing.
+    """
+    if page_pos is not None and page is not None:
+        typer.echo("error: supply page as a positional argument or --page, not both", err=True)
+        raise typer.Exit(code=2)
+    effective_page = page if page is not None else page_pos
+    if effective_page is None:
+        typer.echo("error: page is required (positional or --page/-p)", err=True)
+        raise typer.Exit(code=2)
     _, _, _, _, doc_store = _build_real_services(data_dir)
-    text = asyncio.run(doc_store.get_page_text(slug, page))
+    text = asyncio.run(doc_store.get_page_text(slug, effective_page))
     if text is None:
-        typer.echo(f"no text for {slug}:{page}", err=True)
+        typer.echo(f"no text for {slug}:{effective_page}", err=True)
         raise typer.Exit(code=1)
     typer.echo(text)
 
@@ -367,15 +398,32 @@ def gold_map(
 
 def page_image(
     slug: str,
-    page: int,
+    page_pos: int | None = typer.Argument(
+        None,
+        help="Page number (positional form, same as --page).",
+        show_default=False,
+    ),
+    page: int | None = typer.Option(None, "--page", "-p", help="Page number (option form)."),
     copy_to: Path | None = typer.Option(None, "--copy-to"),
     out: str | None = typer.Option(None, "--out", help="Pass '-' to stream the bytes to stdout."),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
-    """Page screenshot. Prints the path by default; --copy-to or --out - for the bytes."""
+    """Page screenshot. Prints the path by default; --copy-to or --out - for the bytes.
+
+    The page can be supplied as a positional argument or via --page/-p.
+    Both forms are equivalent: ``anchor page-image SLUG PAGE`` and
+    ``anchor page-image SLUG --page PAGE`` do the same thing.
+    """
+    if page_pos is not None and page is not None:
+        typer.echo("error: supply page as a positional argument or --page, not both", err=True)
+        raise typer.Exit(code=2)
+    effective_page = page if page is not None else page_pos
+    if effective_page is None:
+        typer.echo("error: page is required (positional or --page/-p)", err=True)
+        raise typer.Exit(code=2)
     _, _, _, _, doc_store = _build_real_services(data_dir)
-    path = asyncio.run(doc_store.get_page_image_path(slug, page))
-    _emit_bytes(path, copy_to=copy_to, out=out, label=f"{slug} page {page}")
+    path = asyncio.run(doc_store.get_page_image_path(slug, effective_page))
+    _emit_bytes(path, copy_to=copy_to, out=out, label=f"{slug} page {effective_page}")
 
 
 def crop(
