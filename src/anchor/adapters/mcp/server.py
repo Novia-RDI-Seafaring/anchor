@@ -166,12 +166,65 @@ def _error_result(exc: Exception) -> str:
     return _json.dumps({"error": str(exc)})
 
 
+def _build_server_info(data_dir: Any) -> dict[str, Any]:
+    """Resolve which env/project this server is for + any serve bound to it.
+
+    Names the resolved env + project + data dir, then looks up a running
+    ``anchor serve`` actually bound to that data dir (anchor#177, anchor#179).
+    When one is up, ``serve`` carries its real base URL + canvas URL prefix so
+    the agent can hand the user a URL that resolves to THIS project rather than
+    guessing ``:8002``.
+    """
+    from pathlib import Path
+
+    from anchor.infra.environment import identify_data_dir
+    from anchor.infra.serve_registry import find_serve_for_data_dir
+
+    env_name, project_name = identify_data_dir(data_dir)
+    record = find_serve_for_data_dir(data_dir)
+    serve: dict[str, Any] | None = None
+    if record is not None:
+        base = record.base_url()
+        serve = {
+            "running": True,
+            "host": record.host,
+            "port": record.port,
+            "base_url": base,
+            "canvas_url_prefix": f"{base}/c/",
+            "pid": record.pid,
+            "started_at": record.started_at,
+        }
+    return {
+        "env": env_name,
+        "project": project_name,
+        "data_dir": str(Path(data_dir)),
+        "serve": serve if serve is not None else {"running": False},
+    }
+
+
 STATUS_TOOL_DEFINITION = {
     "name": "anchor_status",
     "description": (
         "Show ANCHOR's resolved project config, data directory, and document "
         "and canvas counts. Use this when an agent appears to be connected "
         "to the wrong project or an empty data zone."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    },
+}
+
+
+SERVER_INFO_TOOL_DEFINITION = {
+    "name": "server_info",
+    "description": (
+        "Report which env + project THIS MCP server resolves to, its data dir, "
+        "and whether a running `anchor serve` is bound to that same project -- "
+        "with that server's real base URL and canvas URL prefix. Use it to "
+        "confirm a localhost:PORT canvas URL points at this project before "
+        "you hand it to the user, instead of assuming :8002."
     ),
     "inputSchema": {
         "type": "object",
@@ -443,7 +496,7 @@ def build_mcp_server(
     sysml_defs = (
         sysml_handlers.tool_definitions() if (multiproject or bundle.sysml is not None) else []
     )
-    status_defs = [STATUS_TOOL_DEFINITION]
+    status_defs = [STATUS_TOOL_DEFINITION, SERVER_INFO_TOOL_DEFINITION]
     lifecycle_defs = LIFECYCLE_TOOL_DEFINITIONS if multiproject else []
 
     project_scoped = [
@@ -521,6 +574,9 @@ def build_mcp_server(
                 )
             elif name in lifecycle_names:
                 text = _handle_lifecycle(router, name, args)  # type: ignore[arg-type]
+            elif name == SERVER_INFO_TOOL_DEFINITION["name"]:
+                b = get_bundle(args.pop("project", None))
+                text = _json.dumps(_build_server_info(b.config.data_dir))
             elif name in status_names:
                 b = get_bundle(args.pop("project", None))
                 summary = await build_status_summary(

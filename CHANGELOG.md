@@ -20,6 +20,16 @@ next version section on tag.
 
 ### Added
 
+- Server self-identification (#177, #179): a running `anchor serve` now records
+  its actual binding (env, project, data dir, host:port) so a client can tell
+  which project a port hosts instead of assuming `:8002`. Surfaced with parity
+  across all three adapters: HTTP `GET /api/whoami`, the MCP `server_info` tool
+  (advertised by default), and the `anchor serve-info` CLI command (lists
+  running serves, or prints one project's base URL with `--project`). `anchor
+  check` now reports whether a serve is bound to this project. `anchor canvas
+  url` resolves against the serve actually serving this project's data dir, so
+  the printed port is the real one (fixing the hardcoded `:8002` that pointed at
+  the wrong project when the port was taken); it warns when no serve is running.
 - Pointed extraction (#132): pull a selected set of gold regions / entities out
   of a document into a caller-defined JSON shape, with every filled leaf
   grounded to its source cell. `select` is any of `{regions, pages, entity}`

@@ -105,6 +105,19 @@ def check(
         typer.echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com (public)'}")
         typer.echo(f"  vision model   : {cfg.region_model}")
 
+    # Running serve binding (#177, #179): tie this project's data dir to a live
+    # `anchor serve` port so an agent or user knows where the canvas is actually
+    # hosted, instead of assuming :8002.
+    from anchor.infra.serve_registry import find_serve_for_data_dir
+
+    serve_record = find_serve_for_data_dir(default_dir)
+    if serve_record is not None:
+        typer.echo(f"  serve          : running at {serve_record.base_url()} "
+                   f"(pid {serve_record.pid})")
+    else:
+        typer.echo("  serve          : none running for this project "
+                   "(start with `anchor serve`)")
+
     # Lean one-time awareness: an existing ~/anchor-data still serving the
     # default project, but the user should know they can fold it into the env.
     if default_dir == LEGACY_DATA_DIR and LEGACY_DATA_DIR.is_dir():

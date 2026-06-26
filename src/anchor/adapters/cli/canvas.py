@@ -15,14 +15,24 @@ from anchor.extensions.anchor_pdfs.core.value_provenance import enrich_spec_row_
 canvas_app = typer.Typer(help="Manage workspaces (canvases).")
 
 
-def _canvas_url(slug: str) -> str:
+def _canvas_url(slug: str, data_dir: Path | None = None) -> str:
     """The web URL a canvas is viewed at: ``http://<host>:<port>/c/<slug>``.
 
-    Uses the configured HTTP host/port (the default ``anchor serve`` target). If
-    ``serve`` fell through to another port because the default was taken, swap the
-    port for the one it printed.
+    When a ``data_dir`` is given and a running ``anchor serve`` is actually
+    bound to it, use that server's real host:port -- so a serve that bumped to
+    a free port (or a non-default project) yields a URL that resolves to *this*
+    project, not a guessed ``:8002`` pointing at someone else's server
+    (anchor#177). Falls back to the configured host/port when no serve for this
+    data dir is up.
     """
     from anchor.infra.config import AnchorConfig
+
+    if data_dir is not None:
+        from anchor.infra.serve_registry import find_serve_for_data_dir
+
+        record = find_serve_for_data_dir(data_dir)
+        if record is not None:
+            return f"{record.base_url()}/c/{slug}"
 
     cfg = AnchorConfig()
     host = cfg.http_host if cfg.http_host not in ("0.0.0.0", "::") else "127.0.0.1"
@@ -111,7 +121,9 @@ def canvas_create(
     _, _, ws, _, _ = _build_real_services(data_dir)
     typer.echo(json.dumps(asyncio.run(ws.create_workspace(slug, title=title)), indent=2))
     # Tell the user where to view it (stderr keeps stdout pure JSON for agents).
-    typer.echo(f"View this canvas at {_canvas_url(slug)}  (run `anchor serve`)", err=True)
+    typer.echo(
+        f"View this canvas at {_canvas_url(slug, data_dir)}  (run `anchor serve`)", err=True
+    )
 
 
 @canvas_app.command("url")
@@ -121,10 +133,22 @@ def canvas_url(
 ) -> None:
     """Print the web URL for a canvas (``http://<host>:<port>/c/<slug>``).
 
-    Needs a running ``anchor serve``. If serve chose a different port because the
-    default was taken, use the port it printed.
+    Resolves the URL against a running ``anchor serve`` actually bound to this
+    project's data dir, so the printed port is the real one (not a guessed
+    ``:8002``). When no serve for this project is up, prints the default-target
+    URL and warns on stderr that nothing is serving it yet.
     """
-    typer.echo(_canvas_url(slug))
+    from anchor.infra.serve_registry import find_serve_for_data_dir
+
+    record = find_serve_for_data_dir(data_dir)
+    if record is None:
+        typer.echo(
+            "Warning: no `anchor serve` is bound to this project's data dir "
+            f"({data_dir}); the URL below uses the default target and may not "
+            "resolve. Start one with `anchor serve` or check `anchor serve-info`.",
+            err=True,
+        )
+    typer.echo(_canvas_url(slug, data_dir))
 
 
 @canvas_app.command("delete")

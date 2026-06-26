@@ -16,6 +16,7 @@ from anchor.adapters.http.routers import (
     projects,
     sse,
     status,
+    whoami,
     workspaces,
 )
 from anchor.core.clock import SystemClock
@@ -129,6 +130,7 @@ def build_app(
     app.include_router(ingests.router)
     app.include_router(intents.router)
     app.include_router(status.router)
+    app.include_router(whoami.router)
     if cad_service is not None:
         app.dependency_overrides[cad_routes.get_cad_service] = lambda: cad_service
         app.include_router(cad_routes.router)

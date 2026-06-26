@@ -472,6 +472,28 @@ def config_for_data_dir(data_dir: Path | str) -> AnchorConfig:
     return AnchorConfig(data_dir=dd)
 
 
+def identify_data_dir(data_dir: Path | str) -> tuple[str | None, str | None]:
+    """Best-effort ``(env_name, project_name)`` for a data dir.
+
+    Reads the project ``anchor.toml`` marker at ``<root>/`` (the parent of a
+    ``.anchor_data`` dir) for its ``env`` + ``name``. Falls back to the legacy
+    default project for ``~/anchor-data``. Returns ``(None, None)`` for an
+    external / unmarked dir, so a caller can say "unknown project" honestly
+    rather than guess. Never raises; a broken marker yields what it can.
+    """
+    dd = _expand(data_dir)
+    if dd == LEGACY_DATA_DIR:
+        return DEFAULT_ENV, DEFAULT_PROJECT
+    root = dd.parent if dd.name == DATA_DIRNAME else dd
+    marker_path = root / PROJECT_MARKER_FILENAME
+    if marker_path.is_file():
+        marker = _safe_toml(marker_path)
+        env_name = marker.get("env")
+        name = marker.get("name") or root.name
+        return (str(env_name) if env_name else None, str(name) if name else None)
+    return None, None
+
+
 # --------------------------------------------------------------------------- #
 # Metadata
 # --------------------------------------------------------------------------- #
