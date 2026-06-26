@@ -58,8 +58,11 @@ def check(
 
     typer.echo("Data zone")
     typer.echo(f"  environment    : {env.name}")
+    # The "environment" is a named provider/data-zone/trust profile, not a .env
+    # dotfile of secrets. The config below is env.toml; an API key (if any) lives
+    # in ANCHOR_OPENAI_API_KEY, never in env.toml.
     if env.initialized:
-        typer.echo(f"  config         : {env.config_path}")
+        typer.echo(f"  config         : {env.config_path}  (env.toml; not a .env dotfile)")
     else:
         typer.echo("  config         : (env not set up yet — defaults; `anchor env create`)")
     if prov:

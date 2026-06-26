@@ -229,7 +229,9 @@ environment's `env.toml`. Then supply the key (never stored in the profile):
 export ANCHOR_OPENAI_API_KEY=sk-...
 ```
 
-Or set everything by hand in a `.env` or your shell:
+Or override individual settings by hand via `ANCHOR_*` variables in your shell
+or a `.env` (this is just an override file for the variables below, not the
+Anchor environment profile, which is `env.toml`):
 
 ```bash
 ANCHOR_OPENAI_API_KEY=sk-...
