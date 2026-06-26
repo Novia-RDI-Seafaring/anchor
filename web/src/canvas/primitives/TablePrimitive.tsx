@@ -285,6 +285,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
             title={`Open page ${d.source_ref.page} in viewer`}
             aria-label={`Open source page ${d.source_ref.page}`}
             onMouseDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
             onClick={(e) => {
               // Stop bubbling here so the surrounding header onClick (which
               // would fire `openSource` a second time) doesn't double-trigger.
@@ -372,6 +373,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                         title={`Open page ${r.source_ref.page} in viewer`}
                         aria-label={`Open source page ${r.source_ref.page}`}
                         onMouseDown={(e) => e.stopPropagation()}
+                        onDoubleClick={(e) => e.stopPropagation()}
                         onClick={(e) => {
                           e.stopPropagation();
                           openSourceRef(r.source_ref);
@@ -412,6 +414,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
             type="button"
             className="nodrag nopan rounded px-1.5 py-0.5 text-[10px] font-medium text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800"
             onMouseDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               appendRow("key");
