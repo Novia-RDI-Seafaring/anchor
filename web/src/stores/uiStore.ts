@@ -30,6 +30,15 @@ type HoveredSourceRef = {
   region_id?: string;    // when known (regions resolved by id)
   bbox?: number[];       // raw bbox in PDF user-space
   /**
+   * Marks a deliberate, pinned reference (e.g. broadcast by a *selected*
+   * referencing node) as opposed to a transient on-hover signal. A document
+   * node treats a transient ref as a temporary page flip that reverts to its
+   * resting page on clear, but a sticky ref pins the resting page so the
+   * preview stays put after the pointer leaves. Defaults to transient when
+   * absent. See DocumentPrimitive's page-flip effect (#187).
+   */
+  sticky?: boolean;
+  /**
    * The grounded value's text. When a spec row broadcasts its hover it carries
    * the cell value here so the document node can draw a value-precise yellow
    * highlight inside the region (#197), not just the region rectangle.
