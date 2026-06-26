@@ -366,7 +366,10 @@ class WorkspaceService:
             if root_id not in state.nodes:
                 raise CommandError(f"node {root_id!r} does not exist")
 
-            node_likes = [NodeLike(id=n.id, x=n.x, y=n.y) for n in state.nodes.values()]
+            node_likes = [
+                NodeLike(id=n.id, x=n.x, y=n.y, width=n.width, height=n.height)
+                for n in state.nodes.values()
+            ]
             edge_likes = [EdgeLike(source=e.source, target=e.target) for e in state.edges.values()]
             placements = organize_subtree(
                 node_likes, edge_likes, root_id,

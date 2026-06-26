@@ -64,6 +64,46 @@ def test_organize_emits_one_move_per_descendant():
     asyncio.run(run())
 
 
+def test_organize_clears_a_tall_source_node():
+    """Issue #194: organizing a tall source/doc node's children places them
+    clear of (not behind/under) the source node, end-to-end through the
+    service. The source node stays fixed as the layout root."""
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("docs")
+        # A big source/doc node and three children stacked on top of it.
+        await s.workspace.add_node(
+            "docs", id="src", label="Datasheet", x=0, y=0,
+            width=320, height=600,
+        )
+        for nid in ("a", "b", "c"):
+            await s.workspace.add_node("docs", id=nid, label=nid, x=10, y=10)
+            await s.workspace.add_edge("docs", source=nid, target="src")
+
+        state, envelopes = await s.workspace.organize_subtree("docs", "src")
+        assert len(envelopes) == 3
+
+        src = state.nodes["src"]
+        # Source node is the fixed root — position unchanged.
+        assert (src.x, src.y) == (0.0, 0.0)
+        src_w = src.width or 0.0
+        src_h = src.height or 0.0
+        # Default child footprint (NodeLike fallback) for the overlap check.
+        cw, ch = 200.0, 100.0
+        for nid in ("a", "b", "c"):
+            n = state.nodes[nid]
+            # No child bbox intersects the source node's bbox.
+            overlaps = (
+                n.x < src.x + src_w and n.x + cw > src.x
+                and n.y < src.y + src_h and n.y + ch > src.y
+            )
+            assert not overlaps, f"{nid} at ({n.x},{n.y}) overlaps the source"
+            # And concretely: each child sits below the source's bottom edge.
+            assert n.y >= src.y + src_h
+
+    asyncio.run(run())
+
+
 def test_organize_unknown_root_raises():
     async def run():
         s = make_in_memory_services()
