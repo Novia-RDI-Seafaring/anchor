@@ -113,26 +113,39 @@ def _is_accelerator_error(exc: Exception) -> bool:
     return any(s in msg for s in ("mps", "float64", "cuda", "out of memory", "cublas"))
 
 
+# Remediation for a genuinely missing backend (ModuleNotFoundError). A
+# force-reinstall re-syncs the dep. Do NOT use this when the backend is
+# present but fails to import (ABI mismatch / numpy double-load) -- a reinstall
+# does not help and the wrong hint already misdirected analysis (issue #195).
 _OCR_REMEDIATION = (
-    "OCR backend not importable -- your editable install may be stale; "
+    "OCR backend not installed -- your editable install may be stale; "
     "run `uv tool install --force --editable .` to re-sync dependencies."
 )
 
 
 def _assert_ocr_backend() -> None:
-    """Raise early and actionably when onnxruntime is not importable.
+    """Raise early and actionably when onnxruntime is not usable.
 
     Fail before any heavy model loading so the error is immediate and the
     remediation is obvious. The failure propagates as a regular exception so
     ``IngestService`` records it in the failure log (consistent with #44) and
     ``anchor list`` surfaces the actionable message.
+
+    Distinguish the two failure modes so the message is accurate:
+    - ``ModuleNotFoundError`` -> backend genuinely missing -> reinstall hint.
+    - any other ``ImportError`` -> backend present but failed to import ->
+      report the actual error and do NOT suggest a reinstall.
     """
     try:
         import importlib
 
         importlib.import_module("onnxruntime")
-    except ImportError as exc:
+    except ModuleNotFoundError as exc:
         raise RuntimeError(_OCR_REMEDIATION) from exc
+    except ImportError as exc:
+        raise RuntimeError(
+            f"OCR backend present but failed to import: {exc}"
+        ) from exc
 
 
 def _extract_sync(pdf_path: Path, device: str = "auto") -> dict[str, Any]:

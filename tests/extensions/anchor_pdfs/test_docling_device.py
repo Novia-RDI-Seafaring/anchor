@@ -1,11 +1,29 @@
 """Docling device resolution + CPU fallback (no real docling/torch needed)."""
 from __future__ import annotations
 
+import importlib
 from types import SimpleNamespace
 
 import pytest
 
 from anchor.extensions.anchor_pdfs.infra.pdf import docling_extractor as dx
+
+
+@pytest.fixture(autouse=True)
+def _stub_ocr_backend(monkeypatch):
+    """Never import the real onnxruntime (issue #195 numpy double-load).
+
+    These tests drive ``_extract_sync``, which calls ``_assert_ocr_backend``
+    and imports ``onnxruntime``. Importing the real wheel here is the source of
+    the flaky 'cannot load module more than once per process' failure, so we
+    patch the import boundary to make the backend deterministically present.
+    """
+    real_import = importlib.import_module
+    monkeypatch.setattr(
+        importlib,
+        "import_module",
+        lambda name, *a, **k: object() if name == "onnxruntime" else real_import(name, *a, **k),
+    )
 
 
 @pytest.fixture(autouse=True)
