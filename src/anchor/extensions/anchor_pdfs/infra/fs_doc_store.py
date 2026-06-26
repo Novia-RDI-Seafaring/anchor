@@ -18,6 +18,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
+from contextlib import asynccontextmanager
 from datetime import UTC
 from pathlib import Path
 from typing import Any
@@ -25,7 +27,15 @@ from typing import Any
 import aiofiles
 
 from anchor.core.upload_safety import UnsafeUploadError, assert_within, safe_upload_name
+from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
 from anchor.extensions.anchor_pdfs.infra._region_normalize import _normalise_regions
+
+#: How long a stale ingest lock file may sit before another writer reclaims it.
+#: A lock is freed in a ``finally`` on normal exit and on a handled crash, but a
+#: hard kill (SIGKILL, power loss) can orphan it. Rather than wedge every future
+#: ingest of that slug forever, a lock older than this is treated as abandoned
+#: and broken. Sized well above the longest realistic gold pass.
+INGEST_LOCK_STALE_SECONDS = 6 * 60 * 60
 
 #: Gold completeness marker filename, written atomically as the commit
 #: point of a gold pass (keyed pipeline or harness finalize). Content is
@@ -55,9 +65,85 @@ class FsDocStore:
         # pipeline updates as it advances, so an in-flight ingest is visible
         # across process boundaries and survives a restart.
         self.ingest_status = self.data_dir / "ingest_status"
-        for p in (self.bronze, self.silver, self.gold):
+        # Per-slug ingest lock files (issue #175). A single-writer guard so two
+        # concurrent `anchor ingest --force` on one slug cannot interleave and
+        # desync the gold-complete marker from the real artifacts.
+        self.ingest_locks = self.data_dir / "ingest_locks"
+        for p in (self.bronze, self.silver, self.gold, self.ingest_locks):
             p.mkdir(parents=True, exist_ok=True)
         self._lock = asyncio.Lock()
+
+    # ── Per-slug ingest lock (issue #175) ────────────────────────────────
+    #
+    # Cross-process single-writer guard for one slug's gold pass. Backed by an
+    # exclusively-created lock file under ``ingest_locks/`` (O_CREAT|O_EXCL is
+    # atomic on POSIX and Windows). An in-process ``asyncio.Lock`` shares the
+    # same slug-keyed file across coroutines so two tasks in one event loop also
+    # serialize. A lock orphaned by a hard kill is reclaimed once it goes stale.
+
+    def _ingest_lock_path(self, slug: str) -> Path:
+        if not slug or "/" in slug or "\\" in slug or slug in {".", ".."}:
+            raise UnsafeUploadError(f"unsafe ingest-lock slug: {slug!r}")
+        target = self.ingest_locks / f"{slug}.lock"
+        assert_within(target, self.ingest_locks)
+        return target
+
+    def _try_create_lock(self, path: Path) -> bool:
+        """Atomically create the lock file. True on success, False if held.
+
+        Breaks a stale lock (older than ``INGEST_LOCK_STALE_SECONDS``) left by a
+        hard-killed writer, then retries once."""
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            try:
+                age = time.time() - path.stat().st_mtime
+            except OSError:
+                return False
+            if age < INGEST_LOCK_STALE_SECONDS:
+                return False
+            # Stale lock from an orphaned run: reclaim it. unlink + retry; if a
+            # racing writer grabbed it first, the retry simply fails and we wait.
+            try:
+                path.unlink()
+                fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except OSError:
+                return False
+        try:
+            os.write(fd, f"pid={os.getpid()} acquired_at={time.time()}\n".encode())
+        finally:
+            os.close(fd)
+        return True
+
+    @asynccontextmanager
+    async def ingest_lock(
+        self, slug: str, *, wait: bool = True, timeout: float | None = None,
+    ):
+        path = self._ingest_lock_path(slug)  # validate the slug up front
+        deadline = (time.monotonic() + timeout) if timeout is not None else None
+        poll = 0.05
+        while True:
+            if self._try_create_lock(path):
+                break
+            if not wait:
+                raise IngestLockHeld(
+                    f"ingest lock for {slug!r} is held by another writer; "
+                    "another ingest is running for this slug"
+                )
+            if deadline is not None and time.monotonic() >= deadline:
+                raise IngestLockHeld(
+                    f"timed out after {timeout}s waiting for the ingest lock on "
+                    f"{slug!r}; another ingest is still running for this slug"
+                )
+            await asyncio.sleep(poll)
+            poll = min(poll * 2, 1.0)
+        try:
+            yield
+        finally:
+            try:
+                path.unlink()
+            except OSError:
+                pass
 
     async def list_documents(self) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
@@ -78,11 +164,10 @@ class FsDocStore:
                 title = doc.get("title", slug)
                 filename = doc.get("filename", "")
             has_gold = self._gold_complete(slug)
-            region_count = 0
-            if has_gold:
-                for rf in (self.gold / slug / "pages").glob("*.regions.json"):
-                    rdata = json.loads(rf.read_text(encoding="utf-8"))
-                    region_count += len(rdata if isinstance(rdata, list) else rdata.get("regions", []))
+            # Count the regions actually on disk (not the marker's stale figure)
+            # so a marker desynced by a concurrent --force (issue #175) still
+            # reports the true region_count once the cross-check vouches for gold.
+            region_count = self._count_gold_regions(slug) if has_gold else 0
             entry = {
                 "slug": slug, "title": title, "filename": filename,
                 "page_count": page_count, "has_gold": has_gold, "region_count": region_count,
@@ -150,25 +235,63 @@ class FsDocStore:
             return None
         return data if isinstance(data, dict) else None
 
+    def _count_gold_regions(self, slug: str) -> int:
+        """Count regions actually present on disk in gold/<slug>/pages/."""
+        total = 0
+        for rf in (self.gold / slug / "pages").glob("*.regions.json"):
+            try:
+                rdata = json.loads(rf.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                continue
+            total += len(rdata if isinstance(rdata, list) else rdata.get("regions", []))
+        return total
+
+    def _gold_artifacts_consistent(self, slug: str) -> bool:
+        """Cross-check: are real, queryable gold artifacts present for ``slug``?
+
+        Issue #175: a killed/concurrent ``--force`` ingest can reset
+        ``.complete.json`` to the start-of-run stub ``{"complete": false}`` and
+        exit before finalizing, even though every gold artifact was written.
+        Trusting only the stub then reports a fully-golded, queryable doc as
+        ``has_gold: false``, so a consumer needlessly re-ingests (re-billing the
+        vision model). When the marker is missing or not-complete we therefore
+        cross-check the durable artifacts instead of trusting the stub.
+
+        Conservative on purpose: we require BOTH the finished ingest-report
+        (``gold_complete: true`` with a positive ``region_count``) AND that the
+        same number of regions are actually on disk. A genuinely-incomplete doc
+        (no report, partial regions, empty_gold) fails the check and stays
+        ``has_gold: false``."""
+        report = self._read_ingest_report(slug)
+        if not report:
+            return False
+        if report.get("status") != "success":
+            return False
+        # An explicit `gold_complete: false` is the empty_gold outcome
+        # (issue #188): a finished pass that produced no usable gold. Never
+        # vouch for it. A legacy pre-#188 report has no `gold_complete` key at
+        # all; for those we fall back to status + a positive region_count.
+        if report.get("gold_complete") is False:
+            return False
+        reported = int(report.get("region_count") or 0)
+        if reported <= 0:
+            return False
+        # The report claims N regions; require at least N actually present on
+        # disk so a report left over from a different (overwritten) run cannot
+        # vouch for gold that a crash truncated.
+        return self._count_gold_regions(slug) >= reported
+
     def _gold_complete(self, slug: str) -> bool:
         marker = self._read_gold_marker(slug)
-        if marker is not None:
-            return bool(marker.get("complete"))
-        # Legacy fallback (pre-marker docs): the keyed pipeline wrote
-        # ingest-report.json after the whole gold loop, so a success report
-        # with regions means gold completed. A crashed run has no report.
-        report_path = self.silver / slug / "ingest-report.json"
-        if not report_path.is_file():
-            return False
-        try:
-            report = json.loads(report_path.read_text(encoding="utf-8"))
-        except (ValueError, OSError):
-            return False
-        return (
-            isinstance(report, dict)
-            and report.get("status") == "success"
-            and int(report.get("region_count") or 0) > 0
-        )
+        if marker is not None and marker.get("complete"):
+            return True
+        # Marker missing, stub, or explicitly not-complete. Before trusting it,
+        # cross-check the durable gold artifacts (issue #175): a concurrent /
+        # killed --force ingest can reset the marker to the start-of-run stub
+        # while leaving a complete, queryable gold layer behind. This also
+        # covers legacy pre-marker docs whose only completeness signal is the
+        # ingest-report the keyed pipeline wrote as its last step.
+        return self._gold_artifacts_consistent(slug)
 
     async def has_gold(self, slug: str) -> bool:
         return self._gold_complete(slug)
