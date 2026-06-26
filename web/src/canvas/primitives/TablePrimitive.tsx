@@ -154,6 +154,9 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       page: ref.page,
       region_id: ref.region_id ?? row.source_region_id ?? ref.source_region_id ?? d.source_region_id,
       bbox: ref.bbox,
+      // Carry the cell value so the document node can draw the value-precise
+      // highlight inside the region, not just the region rectangle (#197).
+      query: row.value || undefined,
     });
   };
 
@@ -169,7 +172,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   // document; resolve it either from the spec's stored source_doc_node_id
   // or, as a fallback for older nodes that don't carry it, by looking up
   // the matching document node in the canvas store by slug.
-  const openSourceRef = (ref?: SourceRef) => {
+  const openSourceRef = (ref?: SourceRef, query?: string) => {
     const slug = ref?.slug ?? d.source_doc_slug;
     if (!slug || !ref?.page) return;
     let docNodeId = d.source_doc_node_id;
@@ -189,6 +192,10 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       documentNodeId: docNodeId,
       highlightRegionId: ref.region_id ?? d.source_region_id ?? ref.source_region_id,
       highlightBbox: ref.bbox,
+      // Value-precise highlight in the PDF viewer modal (#197): the viewer
+      // locates this text inside the region and highlights it over the
+      // region rectangle, falling back to the region when not found.
+      highlightQuery: query,
     });
   };
   const openSource = () => openSourceRef(d.source_ref);
@@ -380,7 +387,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                         onDoubleClick={(e) => e.stopPropagation()}
                         onClick={(e) => {
                           e.stopPropagation();
-                          openSourceRef(r.source_ref);
+                          openSourceRef(r.source_ref, r.value || undefined);
                         }}
                       >
                         <AnchorIcon size={11} strokeWidth={2.2} aria-hidden="true" />

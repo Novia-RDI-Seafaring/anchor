@@ -145,6 +145,9 @@ describe("TablePrimitive row handles", () => {
       page: 2,
       region_id: "r9",
       bbox: undefined,
+      // The hover now carries the cell value so the document node can draw the
+      // value-precise highlight (#197).
+      query: "-10 C",
     });
   });
 

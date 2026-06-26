@@ -123,6 +123,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   const [pageMeta, setPageMeta] = useState<Record<number, PageMeta>>({});
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [hoveredLocal, setHoveredLocal] = useState<string | null>(null);
+  const [valueQuads, setValueQuads] = useState<number[][]>([]);
   const [nowSeconds, setNowSeconds] = useState(() => Date.now() / 1000);
   const imgRef = useRef<HTMLImageElement | null>(null);
 
@@ -230,6 +231,24 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     if (hoveredSourceRef.page !== page) return null;
     return { regionId: hoveredSourceRef.region_id, bbox: hoveredSourceRef.bbox };
   }, [hoveredSourceRef, slug, page]);
+
+  // Value-precise highlight (#197): when the hovered ref carries the cell value
+  // (`query`), locate that text inside the region and draw a finer yellow quad
+  // layer over the region rectangle. Empty result -> the region-level highlight
+  // (above) is the graceful fallback, so we never show nothing.
+  const valueQuery = externalHighlight ? hoveredSourceRef?.query : undefined;
+  const valueBbox = externalHighlight?.bbox;
+  useEffect(() => {
+    if (!isReady || !slug || !valueQuery || valueQuery.trim() === "") {
+      setValueQuads([]);
+      return;
+    }
+    let cancelled = false;
+    documents.locate(slug, page, valueQuery, valueBbox).then((quads) => {
+      if (!cancelled) setValueQuads(quads);
+    }).catch(() => { if (!cancelled) setValueQuads([]); });
+    return () => { cancelled = true; };
+  }, [slug, page, valueQuery, valueBbox, isReady]);
 
   return (
     <div
@@ -426,6 +445,35 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                   />
                 );
               })()
+            : null}
+          {/* Value-precise highlight (#197): finer yellow marker-pen quads
+              over the region rectangle, marking the exact text the grounded
+              value came from. Empty -> region-level highlight is the fallback. */}
+          {canScale && imgSize && valueQuads.length > 0
+            ? valueQuads.map((quad, qi) => {
+                const rect = bboxToImageRect(quad, pageW, pageH, imgSize.w, imgSize.h);
+                if (!rect) return null;
+                const xpc = (rect.x / imgSize.w) * 100;
+                const ypc = (rect.y / imgSize.h) * 100;
+                const wpc = (rect.w / imgSize.w) * 100;
+                const hpc = (rect.h / imgSize.h) * 100;
+                return (
+                  <div
+                    key={`value-quad-${qi}`}
+                    data-testid="value-quad"
+                    className="pointer-events-none absolute"
+                    style={{
+                      left: `${xpc}%`,
+                      top: `${ypc}%`,
+                      width: `${wpc}%`,
+                      height: `${hpc}%`,
+                      background: "rgba(250, 204, 21, 0.45)",
+                      outline: "1.5px solid #CA8A04",
+                      outlineOffset: "-1px",
+                    }}
+                  />
+                );
+              })
             : null}
         </div>
       ) : (
