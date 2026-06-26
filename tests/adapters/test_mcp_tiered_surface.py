@@ -81,7 +81,10 @@ async def test_base_multiproject_advertises_core_plus_lifecycle(tmp_path):
     create_env("local")
     server, _ = _multiproject_server()
     names = await _advertised(server)
-    assert len(names) <= 22
+    # Multiproject advertises the full core including the two lifecycle tools
+    # (create_project, list_projects), so the cap is one higher than the
+    # single-project slice: 21 curated + 2 lifecycle = 23 with server_info.
+    assert len(names) <= 23
     assert tiering.CORE_NAMES.issubset(set(names))
     # The long tail is gated out by default.
     for gated in ("fmu_inspect", "inspect", "sysml_render", "create_environment",
