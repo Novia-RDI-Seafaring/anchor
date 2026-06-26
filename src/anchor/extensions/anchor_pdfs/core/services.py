@@ -48,6 +48,14 @@ from anchor.extensions.anchor_pdfs.core.silver import (
 )
 from anchor.extensions.anchor_pdfs.core.synopsis import SynopsisData, compose_synopsis
 
+#: How many times the keyed gold pass is run while it produces 0 regions on a
+#: non-empty document before giving up and surfacing `empty_gold` (issue #188).
+#: A transient region-extraction failure (empty model response, a timeout that
+#: yielded nothing) usually clears on a fresh pass; a genuinely region-less PDF
+#: keeps returning 0 and is surfaced as empty_gold after the attempts. Total
+#: attempts, not extra retries: 2 means one initial pass plus one retry.
+GOLD_EMPTY_MAX_ATTEMPTS = 2
+
 
 class SynopsisService:
     """Orchestrates entity-scoped synopsis composition for a document.
@@ -318,91 +326,130 @@ class IngestService:
             invalid_region_count = 0
             region_errors: list[dict[str, Any]] = []
             gold_completed = False
+            empty_gold = False
+            gold_attempts = 0
             if regions and self.region_extractor and page_count:
                 current_stage = "gold_regions"
-                stage_started_at = self.clock.now()
-                page_timings: list[dict[str, Any]] = []
-                # Mark gold incomplete before the (overwriting) loop so a
-                # crash mid-loop leaves the document invisible-as-gold
-                # instead of a partial blend that reads as complete.
-                await self.store.clear_gold_complete(slug)
-                for page, png in page_pngs.items():
-                    page_started_at = self.clock.now()
-                    raw_regions = await self.region_extractor.extract_page(
-                        page_image=png,
-                        page_no=page,
-                        docling_items=items_by_page.get(page, []),
-                        model=region_model,
-                    )
-                    snapped: list[dict[str, Any]] = []
-                    for r in raw_regions:
-                        if not isinstance(r, dict):
+                # Bounded retry of the whole gold pass (issue #188). A
+                # transient region-extraction failure can yield 0 regions on a
+                # document that genuinely has them; a fresh pass usually
+                # recovers. We retry while the pass produces 0 regions on a
+                # non-empty document, up to GOLD_EMPTY_MAX_ATTEMPTS total. A
+                # doc that genuinely has no extractable regions just keeps
+                # returning 0 and exits the loop after the attempts, then gets
+                # surfaced as empty_gold (not a silent ok) below.
+                while True:
+                    gold_attempts += 1
+                    region_count = 0
+                    invalid_region_count = 0
+                    region_errors = []
+                    stage_started_at = self.clock.now()
+                    page_timings: list[dict[str, Any]] = []
+                    # Mark gold incomplete before the (overwriting) loop so a
+                    # crash mid-loop leaves the document invisible-as-gold
+                    # instead of a partial blend that reads as complete.
+                    await self.store.clear_gold_complete(slug)
+                    for page, png in page_pngs.items():
+                        page_started_at = self.clock.now()
+                        raw_regions = await self.region_extractor.extract_page(
+                            page_image=png,
+                            page_no=page,
+                            docling_items=items_by_page.get(page, []),
+                            model=region_model,
+                        )
+                        snapped: list[dict[str, Any]] = []
+                        for r in raw_regions:
+                            if not isinstance(r, dict):
+                                snapped.append(r)
+                                continue
+                            bbox_any = r.get("bbox") or r.get("approximate_bbox")
+                            bbox_list: list[float] = list(bbox_any) if isinstance(bbox_any, list) else []
+                            if len(bbox_list) == 4:
+                                snap_bbox, item_indexes = snap_to_docling_items(docling, page, bbox_list)
+                                if snap_bbox:
+                                    r = {**r, "bbox": snap_bbox}
+                                    cells = table_cells_from_items(
+                                        docling.get("items", []),
+                                        item_indexes,
+                                        region_bbox=bbox_list,
+                                    )
+                                    if cells and r.get("kind") in {"table", "spec_block"}:
+                                        r = {**r, "cells": cells}
+                                    table_bbox = table_bbox_from_items(
+                                        docling.get("items", []),
+                                        item_indexes,
+                                        region_bbox=bbox_list,
+                                    )
+                                    if table_bbox and r.get("kind") == "table":
+                                        r = {**r, "bbox": table_bbox}
+                                elif "bbox" not in r:
+                                    r = {**r, "bbox": bbox_list}
                             snapped.append(r)
-                            continue
-                        bbox_any = r.get("bbox") or r.get("approximate_bbox")
-                        bbox_list: list[float] = list(bbox_any) if isinstance(bbox_any, list) else []
-                        if len(bbox_list) == 4:
-                            snap_bbox, item_indexes = snap_to_docling_items(docling, page, bbox_list)
-                            if snap_bbox:
-                                r = {**r, "bbox": snap_bbox}
-                                cells = table_cells_from_items(
-                                    docling.get("items", []),
-                                    item_indexes,
-                                    region_bbox=bbox_list,
-                                )
-                                if cells and r.get("kind") in {"table", "spec_block"}:
-                                    r = {**r, "cells": cells}
-                                table_bbox = table_bbox_from_items(
-                                    docling.get("items", []),
-                                    item_indexes,
-                                    region_bbox=bbox_list,
-                                )
-                                if table_bbox and r.get("kind") == "table":
-                                    r = {**r, "bbox": table_bbox}
-                            elif "bbox" not in r:
-                                r = {**r, "bbox": bbox_list}
-                        snapped.append(r)
-                    # Shared schema gate: only valid regions reach gold.
-                    # Invalid ones are dropped and reported instead of
-                    # silently persisted (or silently swallowed upstream).
-                    valid, page_errors = validate_regions(snapped)
-                    if page_errors:
-                        invalid_region_count += len(snapped) - len(valid)
-                        region_errors.extend({**e, "page": page} for e in page_errors)
-                    await self.store.write_gold_region_file(slug, page, valid)
-                    region_count += len(valid)
-                    page_finished_at = self.clock.now()
-                    page_timings.append({
-                        "page": page,
-                        "region_count": len(valid),
-                        "invalid_region_count": len(snapped) - len(valid),
-                        "started_at": page_started_at,
-                        "finished_at": page_finished_at,
-                        "duration_seconds": round(max(0.0, page_finished_at - page_started_at), 3),
-                    })
+                        # Shared schema gate: only valid regions reach gold.
+                        # Invalid ones are dropped and reported instead of
+                        # silently persisted (or silently swallowed upstream).
+                        valid, page_errors = validate_regions(snapped)
+                        if page_errors:
+                            invalid_region_count += len(snapped) - len(valid)
+                            region_errors.extend({**e, "page": page} for e in page_errors)
+                        await self.store.write_gold_region_file(slug, page, valid)
+                        region_count += len(valid)
+                        page_finished_at = self.clock.now()
+                        page_timings.append({
+                            "page": page,
+                            "region_count": len(valid),
+                            "invalid_region_count": len(snapped) - len(valid),
+                            "started_at": page_started_at,
+                            "finished_at": page_finished_at,
+                            "duration_seconds": round(max(0.0, page_finished_at - page_started_at), 3),
+                        })
+                        await self._publish(IngestProgress(
+                            slug=slug, stage="gold_regions", current=page, total=page_count,
+                        ), publish_workspace_id)
+                        await record_activity("gold_regions", current=page, total=page_count)
+                    finish_stage(
+                        "gold_regions",
+                        stage_started_at,
+                        attempt=gold_attempts,
+                        page_count=len(page_timings),
+                        region_count=region_count,
+                        invalid_region_count=invalid_region_count,
+                        model=region_model,
+                        pages=page_timings,
+                    )
+                    if region_count > 0 or gold_attempts >= GOLD_EMPTY_MAX_ATTEMPTS:
+                        break
+                    # 0 regions on a non-empty doc: retry the whole pass once
+                    # more before giving up. Keep the bus/activity honest about
+                    # the retry so a watcher does not read the empty pass as done.
                     await self._publish(IngestProgress(
-                        slug=slug, stage="gold_regions", current=page, total=page_count,
+                        slug=slug, stage="gold_regions_retry",
+                        current=gold_attempts, total=GOLD_EMPTY_MAX_ATTEMPTS,
                     ), publish_workspace_id)
-                    await record_activity("gold_regions", current=page, total=page_count)
-                finish_stage(
-                    "gold_regions",
-                    stage_started_at,
-                    page_count=len(page_timings),
-                    region_count=region_count,
-                    invalid_region_count=invalid_region_count,
-                    model=region_model,
-                    pages=page_timings,
-                )
-                # Commit point: gold becomes visible (has_gold/get_gold_map/
-                # list_documents) only once the marker lands, atomically.
-                await self.store.mark_gold_complete(slug, {
-                    "mode": "keyed",
-                    "model": region_model,
-                    "region_count": region_count,
-                    "completed_at": self.clock.now(),
-                })
-                gold_completed = True
-                await self._publish(DocGoldExtracted(slug=slug, region_count=region_count), publish_workspace_id)
+
+                # 0 regions on a document that has pages/text is treated as a
+                # surfaced empty-gold outcome, not a silent ok (issue #188).
+                # We do NOT mark gold complete: has_gold stays false, so a
+                # consumer never mistakes an empty extraction for a finished
+                # one, and a re-ingest (no --force needed) re-runs the gold
+                # stage. A genuinely region-less PDF lands here too; it is
+                # surfaced as empty_gold with a reason rather than a false ok.
+                empty_gold = region_count == 0
+                if empty_gold:
+                    await self._publish(
+                        DocGoldExtracted(slug=slug, region_count=0), publish_workspace_id,
+                    )
+                else:
+                    # Commit point: gold becomes visible (has_gold/get_gold_map/
+                    # list_documents) only once the marker lands, atomically.
+                    await self.store.mark_gold_complete(slug, {
+                        "mode": "keyed",
+                        "model": region_model,
+                        "region_count": region_count,
+                        "completed_at": self.clock.now(),
+                    })
+                    gold_completed = True
+                    await self._publish(DocGoldExtracted(slug=slug, region_count=region_count), publish_workspace_id)
 
             embedded_count = 0
             if self.embedder is not None:
@@ -420,10 +467,22 @@ class IngestService:
                 )
 
             ingest_finished_at = self.clock.now()
+            # A gold pass that produced 0 regions on a non-empty document is a
+            # surfaced non-ok outcome (issue #188): record it as `empty_gold`
+            # with an actionable reason so list_documents / the ingest-activity
+            # surface flag it, instead of a silent `success` that an autonomous
+            # loop reads as done.
+            empty_gold_reason = (
+                f"gold extraction produced 0 regions after {gold_attempts} "
+                f"attempt(s) on a {page_count}-page document. This is usually a "
+                "transient region-extraction failure, not a region-less PDF; "
+                "re-ingest (pass --force / force=True if the slug now reports gold) "
+                "to retry the gold stage."
+            )
             timing_report = {
                 "slug": slug,
                 "filename": filename,
-                "status": "success",
+                "status": "empty_gold" if empty_gold else "success",
                 "started_at": ingest_started_at,
                 "finished_at": ingest_finished_at,
                 "duration_seconds": round(max(0.0, ingest_finished_at - ingest_started_at), 3),
@@ -433,6 +492,7 @@ class IngestService:
                 "invalid_region_count": invalid_region_count,
                 "region_errors": region_errors,
                 "gold_complete": gold_completed,
+                "gold_attempts": gold_attempts,
                 "mode": "keyed",
                 "embedded_count": embedded_count,
                 "options": {
@@ -445,6 +505,8 @@ class IngestService:
                 },
                 "stages": stages,
             }
+            if empty_gold:
+                timing_report["reason"] = empty_gold_reason
             timing_report_path = await self.store.write_silver_artifact(
                 slug,
                 "ingest-report.json",
@@ -463,7 +525,14 @@ class IngestService:
                 "timing_report_path": str(timing_report_path),
                 "duration_seconds": timing_report["duration_seconds"],
             }
-            await record_activity(current_stage, status="done")
+            if empty_gold:
+                summary["status"] = "empty_gold"
+                summary["reason"] = empty_gold_reason
+            await record_activity(
+                current_stage,
+                status="empty_gold" if empty_gold else "done",
+                error=empty_gold_reason if empty_gold else None,
+            )
             await self._publish(DocIngested(slug=slug, summary=summary), publish_workspace_id)
             return summary
 
