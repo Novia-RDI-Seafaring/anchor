@@ -33,7 +33,11 @@ from anchor.extensions.anchor_fmus import mcp_handlers as fmu_handlers
 from anchor.extensions.anchor_pdfs import mcp_handlers as pdf_handlers
 from anchor.extensions.anchor_pdfs.core.value_provenance import enrich_spec_row_source_refs
 from anchor.extensions.anchor_sysml import mcp_handlers as sysml_handlers
-from anchor.infra.environment import NoEnvironmentError, NoProjectError
+from anchor.infra.environment import (
+    NoEnvironmentError,
+    NoProjectError,
+    ProjectNotEmptyError,
+)
 
 # ── Server instructions ────────────────────────────────────────────────────
 #
@@ -254,6 +258,41 @@ LIFECYCLE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
             "required": ["name"],
         },
     },
+    {
+        "name": "remove_project",
+        "description": (
+            "Remove a project from this environment (peer of `anchor project "
+            "remove`). Deregisters it; with `delete_data` also deletes its "
+            "on-disk .anchor_data/ + anchor.toml. Refuses a project that still "
+            "has documents/canvases unless `force` is true. Never touches "
+            "other projects. Use this to undo a throwaway project."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "delete_data": {"type": "boolean"},
+                "force": {"type": "boolean"},
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "rename_project",
+        "description": (
+            "Rename a project (peer of `anchor project rename`). Updates the "
+            "registry + the project's anchor.toml; the folder path is "
+            "unchanged. Fails if the new name already exists."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "old": {"type": "string"},
+                "new": {"type": "string"},
+            },
+            "required": ["old", "new"],
+        },
+    },
 ]
 
 
@@ -298,6 +337,16 @@ def _handle_lifecycle(router: ProjectRouter, name: str, args: dict[str, Any]) ->
         return _json.dumps(router.update_project(args["name"], args.get("description", "")))
     if name == "open_project":
         return _json.dumps(router.open_project(args["name"]))
+    if name == "remove_project":
+        return _json.dumps(
+            router.remove_project(
+                args["name"],
+                delete_data=bool(args.get("delete_data", False)),
+                force=bool(args.get("force", False)),
+            )
+        )
+    if name == "rename_project":
+        return _json.dumps(router.rename_project(args["old"], args["new"]))
     raise RuntimeError(f"unknown lifecycle tool {name!r}")
 
 
@@ -524,6 +573,16 @@ def build_mcp_server(
                 )
         except (NoProjectError, NoEnvironmentError) as exc:
             text = _resolution_error(exc)
+        except ProjectNotEmptyError as exc:
+            text = _json.dumps(
+                {
+                    "error": "project_not_empty",
+                    "message": str(exc),
+                    "project": exc.name,
+                    "documents": exc.documents,
+                    "canvases": exc.canvases,
+                }
+            )
         except Exception as exc:  # noqa: BLE001  - surface to caller as JSON
             text = _error_result(exc)
         # Promote inline-image envelopes (`{"_mcp_image_b64": ..., "_mcp_mime": ...}`)

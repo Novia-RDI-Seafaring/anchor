@@ -131,6 +131,19 @@ class NoProjectError(Exception):
         super().__init__(msg)
 
 
+class ProjectNotEmptyError(Exception):
+    """A project still holds documents/canvases and was removed without force."""
+
+    def __init__(self, name: str, documents: int, canvases: int) -> None:
+        self.name = name
+        self.documents = documents
+        self.canvases = canvases
+        super().__init__(
+            f"project {name!r} still has {documents} document(s) and "
+            f"{canvases} canvas(es). Pass force=True to remove it anyway."
+        )
+
+
 @dataclass(frozen=True)
 class Meta:
     """User-editable metadata for an environment or a project."""
@@ -662,6 +675,146 @@ def move_project(from_env: Environment, name: str, to_env: Environment) -> dict[
     return {"project": name, "from": from_env.name, "to": to_env.name, "folder": str(new_root)}
 
 
+def _count_documents(data_dir: Path) -> int:
+    """Count ingested documents in a project's data dir.
+
+    A document is one ingested PDF (its ``bronze/<file>``); ``silver``/``gold``
+    are derived. Counted from the filesystem so this stays in ``infra`` and does
+    not import the ``anchor_pdfs`` extension (the canvas/infra layering rule).
+    """
+    bronze = _expand(data_dir) / "bronze"
+    if not bronze.is_dir():
+        return 0
+    return sum(1 for child in bronze.iterdir() if child.is_file())
+
+
+def _count_canvases(data_dir: Path) -> int:
+    """Count canvases in a project's data dir (one ``canvases/<slug>/`` each)."""
+    canvases = _expand(data_dir) / "canvases"
+    if not canvases.is_dir():
+        return 0
+    return sum(1 for child in canvases.iterdir() if child.is_dir())
+
+
+def project_contents(env: Environment, name: str) -> dict[str, int]:
+    """Return ``{"documents": N, "canvases": M}`` for project ``name``."""
+    validate_project_name(name)
+    data_dir = env.project_dir(name)
+    return {
+        "documents": _count_documents(data_dir),
+        "canvases": _count_canvases(data_dir),
+    }
+
+
+def _is_managed(env: Environment, root: Path) -> bool:
+    """True when ``root`` is a folder Anchor manages under the env's ``projects/``.
+
+    A managed project's folder name *is* its project name (it is auto-discovered
+    by scanning ``projects/``), so removing/renaming it touches the folder. An
+    external project (created with ``anchor init`` in the user's own folder) is
+    addressed only through the registry + marker; its folder is the user's.
+    """
+    return _expand(root).parent == _expand(env.projects_dir)
+
+
+def remove_project(
+    env: Environment,
+    name: str,
+    *,
+    delete_data: bool = False,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Remove project ``name`` from ``env``. Never touches any other project.
+
+    Always deregisters the project from the env's ``projects.toml``. A *managed*
+    project (its folder lives under the env's ``projects/``) is auto-discovered
+    from disk, so its folder is removed too — otherwise it would re-appear in
+    ``list_projects``. An *external* ``anchor init`` project keeps its folder by
+    default (it is the user's working directory); ``delete_data=True`` then also
+    wipes that folder's ``.anchor_data/`` and its ``anchor.toml`` marker. Refuses
+    a project that still has documents/canvases unless ``force=True``.
+    """
+    validate_project_name(name)
+    if not env.initialized:
+        raise NoEnvironmentError(env.name)
+    if not env.project_exists(name):
+        raise NoProjectError(name, env.list_project_names())
+    contents = project_contents(env, name)
+    if not force and (contents["documents"] or contents["canvases"]):
+        raise ProjectNotEmptyError(name, contents["documents"], contents["canvases"])
+
+    root = _expand(env.project_root(name))
+    data_dir = _expand(env.project_dir(name))
+    managed = _is_managed(env, root)
+    # Never delete the legacy ~/anchor-data via a project remove; that is
+    # `anchor migrate` territory, not a per-project cleanup.
+    is_legacy = data_dir == _expand(LEGACY_DATA_DIR)
+    deleted_data = False
+    if managed:
+        # The managed folder exists only to hold this project; drop it whole so
+        # the disk scan no longer re-discovers it. (Empty by default, or
+        # non-empty under --force.)
+        if not is_legacy and root.is_dir():
+            shutil.rmtree(root)
+            deleted_data = True
+    elif delete_data and not is_legacy:
+        # External project: leave the user's folder, wipe only Anchor's bits.
+        if data_dir.is_dir():
+            shutil.rmtree(data_dir)
+            deleted_data = True
+        marker = root / PROJECT_MARKER_FILENAME
+        if marker.is_file():
+            marker.unlink()
+    unregister_project(env, name)
+    return {
+        "removed": name,
+        "environment": env.name,
+        "deleted_data": deleted_data,
+        "folder": str(root),
+    }
+
+
+def rename_project(env: Environment, old: str, new: str) -> dict[str, Any]:
+    """Rename project ``old`` to ``new`` in ``env``.
+
+    Updates the registry key and the project's ``anchor.toml`` (its ``name`` and
+    ``[meta].name`` when that still mirrors ``old``). A *managed* project's
+    folder is renamed under ``projects/`` to match (its folder name is its
+    identity); an *external* ``anchor init`` project keeps its folder path and
+    only its marker + registry entry are rebound. Errors if ``new`` exists.
+    """
+    validate_project_name(old)
+    validate_project_name(new)
+    if not env.initialized:
+        raise NoEnvironmentError(env.name)
+    if not env.project_exists(old):
+        raise NoProjectError(old, env.list_project_names())
+    if new == old:
+        return {"renamed": old, "to": new, "folder": str(_expand(env.project_root(old)))}
+    if env.project_exists(new):
+        raise FileExistsError(
+            f"project {new!r} already exists in environment {env.name!r}"
+        )
+
+    root = _expand(env.project_root(old))
+    marker = _read_project_marker(root)
+    settings = {k: v for k, v in _flat_settings(marker).items() if k not in ("env", "name")}
+    existing = _meta_from_table(marker.get("meta", {}))
+    # Carry description/tags forward; rename the meta name only when it still
+    # mirrors the old project name (a user-set display name is left untouched).
+    meta_name = new if (not existing.name or existing.name == old) else existing.name
+    meta = Meta(name=meta_name, description=existing.description, tags=existing.tags)
+
+    new_root = (env.projects_dir / new) if _is_managed(env, root) else root
+    if _expand(new_root) != root:
+        _expand(new_root).parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(root), str(_expand(new_root)))
+    _write_project_marker(new_root, env.name, new, settings, meta)
+    unregister_project(env, old)
+    register_project(env, new, new_root)
+    return {"renamed": old, "to": new, "folder": str(_expand(new_root))}
+
+
 __all__ = [
     "ANCHOR_HOME",
     "ENVS_DIRNAME",
@@ -681,6 +834,7 @@ __all__ = [
     "Meta",
     "NoEnvironmentError",
     "NoProjectError",
+    "ProjectNotEmptyError",
     "anchor_home",
     "envs_dir",
     "default_env_name",
@@ -702,4 +856,7 @@ __all__ = [
     "set_project_description",
     "set_environment_description",
     "move_project",
+    "remove_project",
+    "rename_project",
+    "project_contents",
 ]

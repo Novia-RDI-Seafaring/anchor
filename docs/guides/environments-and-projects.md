@@ -119,8 +119,16 @@ when you have no working folder, and the rest manage the set by name:
 anchor project create paper --env work  # managed project under envs/work/projects/
 anchor project list --env work
 anchor project set-description pumps "Centrifugal pump family" --env work
+anchor project rename day1-test agentic-engineering --env work  # registry + anchor.toml
+anchor project remove paper --env work              # deregister an empty project
+anchor project remove paper --env work --delete-data --force   # also wipe its data
 anchor project move pumps --to local --env work     # deliberate, zone-confirmed
 ```
+
+`remove` refuses a project that still has documents or canvases unless you pass
+`--force`; without `--delete-data` it only deregisters the project. `rename`
+keeps an `anchor init` folder where it is and only rebinds the registry +
+marker, while a managed project's folder is renamed to match.
 
 Documents and canvases follow the project. Inside a project folder you need no
 flags at all:

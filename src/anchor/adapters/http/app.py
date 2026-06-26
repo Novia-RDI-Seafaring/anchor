@@ -13,6 +13,7 @@ from anchor.adapters.http.routers import (
     ingests,
     intents,
     nodes,
+    projects,
     sse,
     status,
     workspaces,
@@ -117,6 +118,7 @@ def build_app(
     async def _unsafe_upload(_req: Request, exc: UnsafeUploadError) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=400)
 
+    app.include_router(projects.router)
     app.include_router(workspaces.router)
     app.include_router(nodes.router)
     app.include_router(edges.router)

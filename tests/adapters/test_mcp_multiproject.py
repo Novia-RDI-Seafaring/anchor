@@ -86,6 +86,39 @@ def test_router_update_project(tmp_path):
     assert project_meta(env, "pumps").description == "new"
 
 
+def test_router_remove_project(tmp_path):
+    env = create_env("local")
+    create_project(env, "pumps")
+    router = _router()
+    router.bundle_for("pumps")  # warm the cache
+    result = router.remove_project("pumps")
+    assert result["removed"] == "pumps"
+    assert "pumps" not in [p["name"] for p in router.list_projects()["projects"]]
+
+
+def test_router_remove_refuses_nonempty(tmp_path):
+    from anchor.infra.environment import ProjectNotEmptyError
+
+    env = create_env("local")
+    create_project(env, "pumps")
+    (env.project_dir("pumps") / "bronze" / "d.pdf").write_text("x")
+    with pytest.raises(ProjectNotEmptyError):
+        _router().remove_project("pumps")
+
+
+def test_router_rename_project(tmp_path):
+    env = create_env("local")
+    create_project(env, "day1")
+    router = _router()
+    router.open_project("day1")
+    result = router.rename_project("day1", "agentic")
+    assert result["renamed"] == "day1"
+    names = [p["name"] for p in router.list_projects()["projects"]]
+    assert "agentic" in names and "day1" not in names
+    # the session default follows the rename
+    assert router.list_projects()["session_default"] == "agentic"
+
+
 def test_router_create_environment(tmp_path):
     router = ProjectRouter(env_arg=None)
     result = router.create_environment("work", provider="local", description="test")
@@ -142,5 +175,5 @@ def test_lifecycle_tools_present():
     names = {d["name"] for d in LIFECYCLE_TOOL_DEFINITIONS}
     assert names == {
         "list_projects", "create_project", "create_environment",
-        "update_project", "open_project",
+        "update_project", "open_project", "remove_project", "rename_project",
     }

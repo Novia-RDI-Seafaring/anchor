@@ -11,6 +11,7 @@ from anchor.infra.environment import (
     Meta,
     NoEnvironmentError,
     NoProjectError,
+    ProjectNotEmptyError,
     config_for_data_dir,
     create_env,
     create_project,
@@ -18,7 +19,10 @@ from anchor.infra.environment import (
     environment_meta,
     list_env_names,
     move_project,
+    project_contents,
     project_meta,
+    remove_project,
+    rename_project,
     resolve_environment,
     resolve_project,
     resolve_project_config,
@@ -183,6 +187,178 @@ def test_move_refuses_existing_target(tmp_path):
     create_project(work, "pumps")
     with pytest.raises(FileExistsError):
         move_project(local, "pumps", work)
+
+
+# --------------------------------------------------------------------------- #
+# Remove
+# --------------------------------------------------------------------------- #
+def test_remove_external_deregisters_but_keeps_data(tmp_path):
+    env = create_env("local")
+    folder = tmp_path / "work" / "pumps"
+    create_project(env, "pumps", root=folder)
+
+    result = remove_project(env, "pumps")
+
+    assert result["removed"] == "pumps"
+    assert result["deleted_data"] is False
+    assert not resolve_environment("local").project_exists("pumps")
+    # an external project's folder + data are left on disk by default
+    assert (folder / ".anchor_data").is_dir()
+    assert "pumps" not in resolve_environment("local").list_project_names()
+
+
+def test_remove_managed_drops_folder(tmp_path):
+    env = create_env("local")
+    create_project(env, "pumps")
+    root = env.project_root("pumps")
+
+    result = remove_project(env, "pumps")
+
+    # a managed project is auto-discovered from disk, so remove drops its folder
+    assert result["deleted_data"] is True
+    assert not root.exists()
+    env = resolve_environment("local")
+    assert not env.project_exists("pumps")
+    assert "pumps" not in env.list_project_names()
+
+
+def test_remove_external_delete_data_wipes_anchor_bits(tmp_path):
+    env = create_env("local")
+    folder = tmp_path / "work" / "pumps"
+    create_project(env, "pumps", root=folder)
+
+    result = remove_project(env, "pumps", delete_data=True)
+
+    assert result["deleted_data"] is True
+    # the external `anchor init` folder stays; only data + marker are gone
+    assert folder.is_dir()
+    assert not (folder / ".anchor_data").exists()
+    assert not (folder / "anchor.toml").exists()
+
+
+def test_remove_refuses_nonempty_without_force(tmp_path):
+    env = create_env("local")
+    create_project(env, "pumps")
+    (env.project_dir("pumps") / "bronze" / "d.pdf").write_text("x")
+
+    with pytest.raises(ProjectNotEmptyError):
+        remove_project(env, "pumps")
+    # still registered — nothing was touched
+    assert resolve_environment("local").project_exists("pumps")
+
+
+def test_remove_force_removes_nonempty(tmp_path):
+    env = create_env("local")
+    create_project(env, "pumps")
+    (env.project_dir("pumps") / "bronze" / "d.pdf").write_text("x")
+
+    remove_project(env, "pumps", delete_data=True, force=True)
+    assert not resolve_environment("local").project_exists("pumps")
+
+
+def test_remove_counts_canvases_as_content(tmp_path):
+    env = create_env("local")
+    create_project(env, "pumps")
+    (env.project_dir("pumps") / "canvases" / "board").mkdir(parents=True)
+
+    assert project_contents(env, "pumps") == {"documents": 0, "canvases": 1}
+    with pytest.raises(ProjectNotEmptyError):
+        remove_project(env, "pumps")
+
+
+def test_remove_unknown_project_raises(tmp_path):
+    env = create_env("local")
+    with pytest.raises(NoProjectError):
+        remove_project(env, "ghost")
+
+
+def test_remove_only_touches_named_project(tmp_path):
+    env = create_env("local")
+    create_project(env, "keep")
+    create_project(env, "drop")
+
+    remove_project(env, "drop", delete_data=True)
+
+    env = resolve_environment("local")
+    assert env.project_exists("keep")
+    assert env.project_dir("keep").is_dir()
+    assert not env.project_exists("drop")
+
+
+# --------------------------------------------------------------------------- #
+# Rename
+# --------------------------------------------------------------------------- #
+def test_rename_updates_registry_and_marker(tmp_path):
+    env = create_env("local")
+    create_project(env, "day1-test", description="throwaway")
+
+    result = rename_project(env, "day1-test", "agentic-engineering")
+
+    assert result["renamed"] == "day1-test"
+    assert result["to"] == "agentic-engineering"
+    env = resolve_environment("local")
+    assert env.project_exists("agentic-engineering")
+    assert not env.project_exists("day1-test")
+    # a managed folder tracks the name; the old folder is gone
+    new_root = env.project_root("agentic-engineering")
+    assert new_root == env.root / "projects" / "agentic-engineering"
+    assert not (env.root / "projects" / "day1-test").exists()
+    marker = env_mod._read_project_marker(new_root)
+    assert marker["name"] == "agentic-engineering"
+    assert marker["meta"]["name"] == "agentic-engineering"
+    # description carried forward
+    assert project_meta(env, "agentic-engineering").description == "throwaway"
+
+
+def test_rename_external_keeps_folder_path(tmp_path):
+    env = create_env("local")
+    folder = tmp_path / "work" / "pumps"
+    create_project(env, "pumps", root=folder)
+    (env.project_dir("pumps") / "bronze" / "d.pdf").write_text("x")
+
+    rename_project(env, "pumps", "lkh")
+
+    env = resolve_environment("local")
+    # the external folder path is unchanged; only marker + registry are rebound
+    assert env.project_root("lkh") == folder
+    assert not env.project_exists("pumps")
+    assert (folder / ".anchor_data" / "bronze" / "d.pdf").is_file()
+    assert env_mod._read_project_marker(folder)["name"] == "lkh"
+
+
+def test_rename_rejects_existing_target(tmp_path):
+    env = create_env("local")
+    create_project(env, "pumps")
+    create_project(env, "paper")
+    with pytest.raises(FileExistsError):
+        rename_project(env, "pumps", "paper")
+
+
+def test_rename_unknown_project_raises(tmp_path):
+    env = create_env("local")
+    with pytest.raises(NoProjectError):
+        rename_project(env, "ghost", "spook")
+
+
+def test_rename_rejects_bad_new_name(tmp_path):
+    env = create_env("local")
+    create_project(env, "pumps")
+    with pytest.raises(InvalidProjectNameError):
+        rename_project(env, "pumps", "../escape")
+
+
+def test_rename_preserves_config_overrides(tmp_path):
+    env = create_env("local")
+    create_project(env, "pumps")
+    (env.project_root("pumps") / "anchor.toml").write_text(
+        'env = "local"\nname = "pumps"\nembed_model = "custom"\n\n[meta]\n'
+        'name = "Pumps"\ndescription = "LKH"\n'
+    )
+    rename_project(env, "pumps", "lkh")
+    env = resolve_environment("local")
+    # a user-set display name is left untouched; only the project id changes
+    assert env_mod._read_project_marker(env.project_root("lkh"))["meta"]["name"] == "Pumps"
+    assert resolve_project_config(env, "lkh").embed_model == "custom"
 
 
 # --------------------------------------------------------------------------- #
