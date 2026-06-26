@@ -117,21 +117,30 @@ def check(
     # of the check output.
     typer.echo("")
     typer.echo("OCR backend")
-    ocr_ok = _probe_ocr_backend()
+    ocr_ok, ocr_detail = _probe_ocr_backend()
+    problems: list[str] = []
     if ocr_ok:
         typer.echo("  onnxruntime    : importable ✓")
-    else:
-        typer.echo("  onnxruntime    : NOT importable")
+    elif ocr_detail == "missing":
+        # Genuinely not installed -- a force-reinstall re-syncs the dep.
+        typer.echo("  onnxruntime    : NOT installed")
         typer.echo(
-            "                   OCR backend not importable -- your editable install may be "
+            "                   OCR backend not installed -- your editable install may be "
             "stale; run `uv tool install --force --editable .` to re-sync dependencies."
         )
-
-    problems: list[str] = []
-    if not ocr_ok:
         problems.append(
-            "OCR backend not importable -- your editable install may be stale; "
+            "OCR backend not installed -- your editable install may be stale; "
             "run `uv tool install --force --editable .`."
+        )
+    else:
+        # Present but fails to import (ABI mismatch, numpy double-load, ...).
+        # A reinstall does NOT fix this; report the actual import error.
+        typer.echo("  onnxruntime    : present but failed to import")
+        typer.echo(
+            f"                   OCR backend present but failed to import: {ocr_detail}"
+        )
+        problems.append(
+            f"OCR backend present but failed to import: {ocr_detail}"
         )
     personal = bool(os.environ.get("OPENAI_API_KEY"))
     # local/ollama/harness keep content on-host → no key. openai accepts a
@@ -247,21 +256,33 @@ def _open_ingest_sessions(cfg: AnchorConfig) -> list[dict]:
     return out
 
 
-def _probe_ocr_backend() -> bool:
-    """Return True when the onnxruntime OCR backend is importable.
+def _probe_ocr_backend() -> tuple[bool, str | None]:
+    """Probe the onnxruntime OCR backend.
 
-    Attempting to import ``onnxruntime`` directly is the fastest and most
-    faithful test: it is the backend ``RapidOcrOptions(backend='onnxruntime')``
-    resolves at ingest time, and its absence is the exact cause of the
-    ``silver_extract`` failure described in issue #174.
+    Returns ``(ok, detail)``. ``ok`` is True when ``onnxruntime`` imports
+    cleanly. When it does not, ``detail`` distinguishes the two failure modes
+    so the caller can give the right remediation:
+
+    - ``ModuleNotFoundError`` -> ``"missing"``: the backend is genuinely not
+      installed (e.g. an editable install pre-dates the dep declaration). A
+      force-reinstall fixes it.
+    - any other ``ImportError`` -> the error string: the backend is present
+      but fails to import (ABI mismatch, numpy double-load, ...). A reinstall
+      does NOT help and the wrong hint already misdirected analysis once
+      (issue #195, #174).
+
+    Importing ``onnxruntime`` directly is the most faithful test: it is the
+    backend ``RapidOcrOptions(backend='onnxruntime')`` resolves at ingest time.
     """
     try:
         import importlib
 
         importlib.import_module("onnxruntime")
-        return True
-    except ImportError:
-        return False
+        return True, None
+    except ModuleNotFoundError:
+        return False, "missing"
+    except ImportError as exc:
+        return False, str(exc)
 
 
 def _probe(cfg: AnchorConfig, embed_remote: bool, problems: list[str]) -> None:
