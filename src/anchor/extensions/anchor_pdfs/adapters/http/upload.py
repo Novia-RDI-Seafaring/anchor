@@ -132,17 +132,25 @@ async def upload(
             })
             summary = await ingest.ingest_pdf(pdf_bytes, filename, slug=doc_slug, workspace_id=slug)
             finished_at = time.time()
-            await workspace.update_node(slug, node_id, {
-                "status": "ready",
+            # A gold pass that produced 0 regions on a non-empty document is a
+            # surfaced non-ok outcome (issue #188), not a silent "ready": flag
+            # it on the node with its reason so the canvas does not read an
+            # empty extraction as a finished one.
+            empty_gold = summary.get("status") == "empty_gold"
+            node_patch = {
+                "status": "empty_gold" if empty_gold else "ready",
                 "page_count": summary.get("page_count", 0),
                 "region_count": summary.get("region_count", 0),
                 "embedded_count": summary.get("embedded_count", 0),
-                "ingest_stage": "complete",
-                "ingest_stage_label": "complete",
+                "ingest_stage": "empty_gold" if empty_gold else "complete",
+                "ingest_stage_label": "0 regions — retry ingest" if empty_gold else "complete",
                 "ingest_progress": 100,
                 "ingest_updated_at": finished_at,
                 "ingest_finished_at": finished_at,
-            })
+            }
+            if empty_gold and summary.get("reason"):
+                node_patch["error"] = summary["reason"]
+            await workspace.update_node(slug, node_id, node_patch)
         except Exception as exc:
             log.exception("upload-and-ingest failed")
             try:

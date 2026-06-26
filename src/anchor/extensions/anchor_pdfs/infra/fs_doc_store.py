@@ -90,9 +90,14 @@ class FsDocStore:
             # Surface ingest outcome. A report with `status: failed` is a
             # crash-stashed bronze with no silver/gold — make it visible as
             # failed (with the failing stage + error) instead of an empty
-            # ok-looking row. Missing report or any non-failed status reads ok.
+            # ok-looking row. A report with `status: empty_gold` is a gold pass
+            # that finished but produced 0 regions on a non-empty document
+            # (issue #188) — surface it as a distinct, actionable non-ok state
+            # so an agent retries instead of trusting a silent ok. Missing
+            # report or `status: success` reads ok.
             report = self._read_ingest_report(slug)
-            if report and report.get("status") == "failed":
+            report_status = report.get("status") if report else None
+            if report_status == "failed":
                 entry["status"] = "failed"
                 entry["stage"] = report.get("stage", "unknown")
                 entry["error"] = report.get("error", "")
@@ -100,6 +105,9 @@ class FsDocStore:
                     entry["bronze_path"] = report["bronze_path"]
                 if not filename and report.get("filename"):
                     entry["filename"] = report["filename"]
+            elif report_status == "empty_gold":
+                entry["status"] = "empty_gold"
+                entry["reason"] = report.get("reason", "gold extraction produced 0 regions")
             else:
                 entry["status"] = "ok"
             marker = self._read_gold_marker(slug)
