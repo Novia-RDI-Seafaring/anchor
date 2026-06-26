@@ -233,6 +233,84 @@ def _place_horizontal(
     return {nid: (y, x) for nid, (x, y) in vert.items()}
 
 
+# ── Server-side auto-placement ──────────────────────────────────────────────
+#
+# Issue #189: an agent adding nodes can't perceive the layout, so hand-picked
+# (x, y) pile up on existing nodes. ``find_free_position`` scans a spiral of
+# grid cells outward from an origin and returns the first slot whose bounding
+# box doesn't overlap any existing node. The service calls this when add_node
+# gets no x/y (or place="auto") and returns the resolved position so the agent
+# can track the layout.
+
+PLACE_GAP = 40.0  # breathing room kept between a placed node and its neighbours
+
+
+def _overlaps(
+    ax: float, ay: float, aw: float, ah: float,
+    bx: float, by: float, bw: float, bh: float,
+    gap: float,
+) -> bool:
+    """Axis-aligned box overlap test, inflated by ``gap`` on every side."""
+    return (
+        ax < bx + bw + gap
+        and ax + aw + gap > bx
+        and ay < by + bh + gap
+        and ay + ah + gap > by
+    )
+
+
+def find_free_position(
+    nodes: Iterable[NodeLike],
+    *,
+    width: float | None = None,
+    height: float | None = None,
+    origin: tuple[float, float] = (0.0, 0.0),
+    gap: float = PLACE_GAP,
+    max_ring: int = 60,
+) -> tuple[float, float]:
+    """Return an (x, y) for a new node of ``width`` x ``height`` that does not
+    overlap any node in ``nodes``.
+
+    The search walks grid cells in expanding square rings around ``origin``
+    (ring 0 is the origin itself), stepping by the node's footprint plus
+    ``gap`` so adjacent slots never touch. The first non-overlapping cell
+    wins; positions are React-Flow top-left coordinates, matching the rest of
+    the layout math. With an empty canvas the origin is returned unchanged.
+
+    ``max_ring`` bounds the spiral so a pathologically dense canvas can't spin
+    forever; if every scanned cell is occupied the last candidate is returned
+    (it will still be far out past the cluster)."""
+    placed = [n for n in nodes]
+    w = width if width is not None else NODE_W
+    h = height if height is not None else NODE_H
+    ox, oy = origin
+    step_x = w + gap
+    step_y = h + gap
+
+    def free_at(x: float, y: float) -> bool:
+        for n in placed:
+            if _overlaps(x, y, w, h, n.x, n.y, n.w, n.h, gap):
+                return False
+        return True
+
+    if free_at(ox, oy):
+        return (ox, oy)
+
+    last = (ox, oy)
+    for ring in range(1, max_ring + 1):
+        # Walk the cells on the perimeter of the square ring at this radius.
+        for dx in range(-ring, ring + 1):
+            for dy in range(-ring, ring + 1):
+                if max(abs(dx), abs(dy)) != ring:
+                    continue  # interior cells already scanned by smaller rings
+                cx = ox + dx * step_x
+                cy = oy + dy * step_y
+                last = (cx, cy)
+                if free_at(cx, cy):
+                    return (cx, cy)
+    return last
+
+
 def organize_subtree(
     nodes: Iterable[NodeLike], edges: Iterable[EdgeLike],
     root_id: str, *, orientation: Orientation = "vertical",

@@ -26,6 +26,7 @@ from anchor.core.events.canvas import (
     NodeUpdated,
 )
 from anchor.core.workspace.edges import Edge
+from anchor.core.workspace.merge import deep_merge
 from anchor.core.workspace.nodes import Node
 from anchor.core.workspace.workspace import Workspace
 
@@ -64,7 +65,13 @@ def apply(state: Workspace, evt: BaseModel) -> Workspace:
         if evt.id in new.nodes:
             n = new.nodes[evt.id]
             for k, v in evt.fields.items():
-                if hasattr(n, k) and k not in {"id"}:
+                if k == "data" and isinstance(v, dict):
+                    # Deep-merge the patch into the node's existing data so
+                    # unmentioned keys (e.g. source_ref) survive; a None
+                    # value in the patch deletes that key. Replace-the-whole
+                    # -dict was issue #192's data-loss footgun.
+                    n.data = deep_merge(n.data, v)
+                elif hasattr(n, k) and k not in {"id"}:
                     setattr(n, k, v)
                 else:
                     n.data[k] = v
@@ -84,7 +91,10 @@ def apply(state: Workspace, evt: BaseModel) -> Workspace:
         if evt.id in new.edges:
             e = new.edges[evt.id]
             for k, v in evt.fields.items():
-                if hasattr(e, k) and k not in {"id", "source", "target"}:
+                if k == "data" and isinstance(v, dict):
+                    # Same merge-not-replace contract as NodeUpdated (#192).
+                    e.data = deep_merge(e.data, v)
+                elif hasattr(e, k) and k not in {"id", "source", "target"}:
                     setattr(e, k, v)
                 else:
                     e.data[k] = v

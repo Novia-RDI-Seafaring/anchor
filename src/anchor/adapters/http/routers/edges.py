@@ -13,8 +13,12 @@ router = APIRouter(prefix="/api/workspaces", tags=["edges"])
 
 @router.post("/{slug}/edges", status_code=201)
 async def add_edge(slug: str, req: AddEdgeRequest, svc: WorkspaceService = Depends(get_workspace_service)):
+    kwargs = req.model_dump(exclude_none=True)
+    # `edge_type` is canonical; accept `type` as an alias and default (#186).
+    edge_type = kwargs.pop("edge_type", None) or kwargs.pop("type", None) or "floating"
+    kwargs.pop("type", None)
+    kwargs["edge_type"] = edge_type
     try:
-        kwargs = req.model_dump(exclude_none=True)
         state, env = await svc.add_edge(slug, **kwargs)
     except CommandError as e:
         raise HTTPException(400, str(e))
@@ -29,6 +33,10 @@ async def update_edge(
     svc: WorkspaceService = Depends(get_workspace_service),
 ):
     fields = req.model_dump(exclude_none=True)
+    # `type` is an alias for `edge_type` (#186); canonical wins if both set.
+    if "type" in fields:
+        fields.setdefault("edge_type", fields.pop("type"))
+        fields.pop("type", None)
     try:
         state, env = await svc.update_edge(slug, edge_id, fields)
     except CommandError as e:

@@ -27,3 +27,66 @@ def test_canvas_delete_cli_requires_confirmation_and_removes_workspace(tmp_path)
     assert deleted.exit_code == 0, deleted.output
     assert json.loads(deleted.output) == {"slug": "scratch", "deleted": True}
     assert not (data_dir / "canvases" / "scratch").exists()
+
+
+def _add(runner, data_dir, slug, node_type, **opts):
+    args = ["canvas", "add-node", slug, node_type, "--data-dir", str(data_dir)]
+    for k, v in opts.items():
+        args += [f"--{k.replace('_', '-')}", str(v)]
+    return runner.invoke(app, args)
+
+
+def test_cli_add_node_auto_places_and_returns_position(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    r1 = _add(runner, data_dir, "w1", "fact", width=120, height=80)
+    assert r1.exit_code == 0, r1.output
+    out1 = json.loads(r1.output)
+    assert out1["position"] == {"x": 0.0, "y": 0.0}
+    r2 = _add(runner, data_dir, "w1", "fact", width=120, height=80)
+    out2 = json.loads(r2.output)
+    assert out2["position"] != out1["position"]
+
+
+def test_cli_add_node_warns_on_dead_data_key(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    r = runner.invoke(app, [
+        "canvas", "add-node", "w1", "fact", "--x", "0", "--y", "0",
+        "--data", json.dumps({"body": "nope"}), "--data-dir", str(data_dir),
+    ])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert "warning" in out and "body" in out["warning"]
+
+
+def test_cli_update_node_data_merges(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    add = runner.invoke(app, [
+        "canvas", "add-node", "w1", "fact", "--x", "0", "--y", "0",
+        "--data", json.dumps({"text": "x", "source_ref": {"page": 1}}),
+        "--data-dir", str(data_dir),
+    ])
+    node_id = json.loads(add.output)["event"]["payload"]["id"]
+    upd = runner.invoke(app, [
+        "canvas", "update-node", "w1", node_id,
+        "--data", json.dumps({"text": "y"}), "--data-dir", str(data_dir),
+    ])
+    assert upd.exit_code == 0, upd.output
+    state = json.loads(upd.output)["state"]
+    node = next(n for n in state["nodes"] if n["id"] == node_id)
+    assert node["data"]["text"] == "y"
+    assert node["data"]["source_ref"] == {"page": 1}
+
+
+def test_cli_node_types_command(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    r = runner.invoke(app, ["canvas", "node-types", "fact", "--data-dir", str(data_dir)])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out[0]["name"] == "fact" and out[0]["body_field"] == "text"

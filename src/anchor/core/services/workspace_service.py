@@ -35,7 +35,13 @@ from anchor.core.workspace.align import (
     align_nodes as _align_nodes_pure,
     distribute_nodes as _distribute_nodes_pure,
 )
-from anchor.core.workspace.layout import EdgeLike, NodeLike, organize_subtree
+from anchor.core.workspace.layout import (
+    EdgeLike,
+    NodeLike,
+    find_free_position,
+    organize_subtree,
+)
+from anchor.core.workspace.builtin_node_types import builtin_node_type_registry
 from anchor.core.workspace.node_types import NodeTypeRegistry
 from anchor.core.workspace.reducer import apply, cascade_events_for_remove
 from anchor.core.workspace.workspace import CommandError, Workspace, validate_command
@@ -72,7 +78,14 @@ class WorkspaceService:
         self.bus = bus
         self.clock: Clock = clock or SystemClock()
         self.locks: _LocksProto = locks or _NoLocks()
-        self.node_types = node_types
+        # Default to the built-in shape/card contract so every adapter gets
+        # the #191 unknown-data-key warning + queryable node-types schema
+        # without each builder wiring it. The built-in types carry no
+        # data_schema, so this never blocks a write — it only documents +
+        # warns. Pass node_types=EMPTY_REGISTRY explicitly to opt out.
+        self.node_types = (
+            node_types if node_types is not None else builtin_node_type_registry()
+        )
         self.snapshotter = snapshotter
 
     async def list_workspaces(self) -> list[dict[str, Any]]:
@@ -195,9 +208,60 @@ class WorkspaceService:
             })
         return out
 
-    async def add_node(self, slug: str, **kwargs: Any) -> tuple[Workspace, DomainEvent]:
-        cmd = NodeAdded(id=kwargs.pop("id", None) or new_id(), **kwargs)
-        return await self._dispatch(slug, cmd)
+    async def add_node(
+        self, slug: str, *, place: str | None = None, **kwargs: Any,
+    ) -> tuple[Workspace, DomainEvent]:
+        """Add a node. Resolves a non-overlapping position server-side when no
+        coordinates are supplied (or ``place="auto"``), returning the resolved
+        (x, y) on the emitted event so the caller can track layout (#189).
+
+        Auto-place triggers when ``place == "auto"`` OR neither ``x`` nor ``y``
+        was given. When explicit coordinates ARE given (and ``place`` is not
+        "auto") the node lands exactly there, as before. The resolved
+        position is always readable from ``event.payload["x"/"y"]``."""
+        if place not in (None, "auto", "exact"):
+            raise CommandError(
+                f"unknown place mode: {place!r} (use 'auto' or 'exact')",
+            )
+        node_id = kwargs.pop("id", None) or new_id()
+        gave_coords = ("x" in kwargs) or ("y" in kwargs)
+        auto = place == "auto" or (place is None and not gave_coords)
+        async with self.locks.lock(slug):
+            if auto:
+                state = await self.store.load(slug)
+                existing = [
+                    NodeLike(id=n.id, x=n.x, y=n.y, width=n.width, height=n.height)
+                    for n in state.nodes.values()
+                ]
+                x, y = find_free_position(
+                    existing,
+                    width=kwargs.get("width"),
+                    height=kwargs.get("height"),
+                )
+                kwargs["x"] = x
+                kwargs["y"] = y
+            cmd = NodeAdded(id=node_id, **kwargs)
+            return await self._dispatch_locked(slug, cmd)
+
+    def node_types_schema(self, name: str | None = None) -> list[dict[str, Any]]:
+        """Return the per-node-type data-field contract (#191).
+
+        Empty list when no registry is wired. Each entry:
+        ``{name, description, data_fields, body_field}``. Surfaced verbatim
+        by the ``node-types`` CLI command, the HTTP route, and the MCP tool."""
+        if self.node_types is None:
+            return []
+        return self.node_types.schema(name)
+
+    def unknown_data_keys(self, node_type: str, data: dict[str, Any] | None) -> list[str]:
+        """Data keys a node type's renderer will ignore (#191).
+
+        Empty when no registry is wired, the type is open, or every key is
+        recognised. Adapters attach a non-blocking warning when non-empty so a
+        write never silently drops a dead field."""
+        if self.node_types is None or not data:
+            return []
+        return self.node_types.unknown_data_keys(node_type, data)
 
     async def create_sub_canvas(
         self,
@@ -537,17 +601,25 @@ class WorkspaceService:
 
     async def _dispatch(self, slug: str, cmd: BaseModel) -> tuple[Workspace, DomainEvent]:
         async with self.locks.lock(slug):
-            state = await self.store.load(slug)
-            validate_command(state, cmd, node_types=self.node_types)
-            env = self._envelope(slug, cmd)
-            version = await self.store.append_event(slug, env)
-            env.version = version
-            new_state = apply(state, cmd)
-            new_state.version = version
-            new_state.last_event_id = env.id
-            await self.store.snapshot(slug, new_state)
-            await self.bus.publish(env)
-            return new_state, env
+            return await self._dispatch_locked(slug, cmd)
+
+    async def _dispatch_locked(self, slug: str, cmd: BaseModel) -> tuple[Workspace, DomainEvent]:
+        """Dispatch body assuming the caller already holds the workspace lock.
+
+        Split out so ``add_node`` can read state (for auto-placement) and
+        write the resulting command inside ONE lock acquisition — the
+        re-entrant lock impls don't all support nesting."""
+        state = await self.store.load(slug)
+        validate_command(state, cmd, node_types=self.node_types)
+        env = self._envelope(slug, cmd)
+        version = await self.store.append_event(slug, env)
+        env.version = version
+        new_state = apply(state, cmd)
+        new_state.version = version
+        new_state.last_event_id = env.id
+        await self.store.snapshot(slug, new_state)
+        await self.bus.publish(env)
+        return new_state, env
 
     def _envelope(self, slug: str, evt: BaseModel, *, causation_id: str | None = None) -> DomainEvent:
         return DomainEvent(

@@ -11,6 +11,24 @@ next version section on tag.
 
 ### Changed
 
+- Canvas node-write API hardening, with MCP / HTTP / CLI parity:
+  - `update-node` / `update-edge` now deep-MERGE the given `data` into the
+    node's existing data instead of replacing it. Unmentioned keys (e.g. a
+    node's `source_ref`) survive; nested dicts merge; a key set to `null` is
+    deleted (#192).
+  - The write surfaces accept `type` as an alias for the canonical
+    `node_type` / `edge_type`, so a record read from canvas state can be
+    written straight back (#186).
+  - `add-node` with no `x`/`y` (or `place="auto"`) auto-places a
+    non-overlapping position server-side and returns it under `position`;
+    explicit coordinates still land exactly (#189).
+- The per-node-type data-field contract is now explicit and queryable:
+  `anchor canvas node-types`, `GET /api/node-types`, and the
+  `canvas_node_types` MCP tool return which `data` keys each built-in node
+  type renders and which is its body field. `add-node` / `update-node`
+  attach a non-blocking `warning` when given a `data` key the type does not
+  render (e.g. `data.body` on a `fact`, which renders `data.text`) (#191).
+
 - URL assertions in `test_openai_client_zone.py` now compare the parsed
   hostname (via `urlsplit`) instead of substring checks, clearing three
   `py/incomplete-url-substring-sanitization` CodeQL alerts (#165).

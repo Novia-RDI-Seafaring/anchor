@@ -121,6 +121,7 @@ def build_app(
     app.include_router(projects.router)
     app.include_router(workspaces.router)
     app.include_router(nodes.router)
+    app.include_router(nodes.node_types_router)
     app.include_router(edges.router)
     app.include_router(documents.router)
     app.include_router(ingest_sessions.router)

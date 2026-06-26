@@ -196,8 +196,17 @@ def canvas_add_node(
     slug: str,
     node_type: str,
     label: str = typer.Option("", "--label", "-l"),
-    x: float = typer.Option(0.0, "--x"),
-    y: float = typer.Option(0.0, "--y"),
+    x: float | None = typer.Option(
+        None, "--x", help="X position. Omit (with --y) to auto-place a non-overlapping spot."
+    ),
+    y: float | None = typer.Option(
+        None, "--y", help="Y position. Omit (with --x) to auto-place a non-overlapping spot."
+    ),
+    place: str | None = typer.Option(
+        None,
+        "--place",
+        help="'auto' forces server-side non-overlapping placement even if --x/--y are given; 'exact' forces the given coordinates.",
+    ),
     width: float | None = typer.Option(None, "--width"),
     height: float | None = typer.Option(None, "--height"),
     parent: str | None = typer.Option(None, "--parent"),
@@ -206,15 +215,24 @@ def canvas_add_node(
     ),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
-    """Add a node to a workspace. Prints the resulting `{event, state}`."""
+    """Add a node to a workspace. Prints the resulting `{event, state, position}`.
+
+    Omit --x/--y (or pass --place auto) and the server assigns a
+    non-overlapping position, echoed back under `position` so you can track
+    the layout (#189). Unknown `data` keys for a known node_type surface a
+    non-blocking `warning` (run `anchor canvas node-types` for the contract).
+    """
     _, _, ws, _, _ = _build_real_services(data_dir)
+    parsed = _parse_data(data)
     kwargs: dict = {
         "node_type": node_type,
         "label": label,
-        "x": x,
-        "y": y,
-        "data": _parse_data(data),
+        "data": parsed,
     }
+    if x is not None:
+        kwargs["x"] = x
+    if y is not None:
+        kwargs["y"] = y
     if width is not None:
         kwargs["width"] = width
     if height is not None:
@@ -223,10 +241,42 @@ def canvas_add_node(
         kwargs["parent"] = parent
 
     async def run():
-        state, env = await ws.add_node(slug, **kwargs)
-        return {"event": env.model_dump(), "state": state.get_state()}
+        state, env = await ws.add_node(slug, place=place, **kwargs)
+        out: dict = {
+            "event": env.model_dump(),
+            "state": state.get_state(),
+            "position": {"x": env.payload.get("x"), "y": env.payload.get("y")},
+        }
+        unknown = ws.unknown_data_keys(node_type, parsed)
+        if unknown:
+            out["warning"] = (
+                f"node_type {node_type!r} does not render these data keys: "
+                f"{', '.join(unknown)}. Run `anchor canvas node-types {node_type}`."
+            )
+        return out
 
     typer.echo(json.dumps(asyncio.run(run()), indent=2))
+
+
+@canvas_app.command("node-types")
+def canvas_node_types(
+    node_type: str | None = typer.Argument(
+        None, help="Narrow to one node type; omit for all."
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Print the per-node-type data-field contract (#191).
+
+    Shows which `data` keys each built-in node type renders and which key is
+    its visible body. Same envelope as the `canvas_node_types` MCP tool and
+    the `GET /api/node-types` HTTP route (adapter parity).
+    """
+    _, _, ws, _, _ = _build_real_services(data_dir)
+    schema = ws.node_types_schema(node_type)
+    if node_type is not None and not schema:
+        typer.echo(f"unknown node_type {node_type!r}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps(schema, indent=2))
 
 
 @canvas_app.command("update-node")
@@ -251,10 +301,23 @@ def canvas_update_node(
         "--unparent",
         help=("Detach the node from its current parent. Mutually exclusive with --parent."),
     ),
-    data: str | None = typer.Option(None, "--data"),
+    data: str | None = typer.Option(
+        None,
+        "--data",
+        help=(
+            "JSON object deep-MERGED into the node's existing data: "
+            "unmentioned keys (e.g. source_ref) are kept; a key set to null "
+            "is deleted. Patch one field without read-modify-write."
+        ),
+    ),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
-    """Update fields on an existing node. Move-only when only --x and --y given."""
+    """Update fields on an existing node. Move-only when only --x and --y given.
+
+    `--data` deep-merges into existing data (it no longer replaces the whole
+    dict): unmentioned keys survive, nested dicts merge, a null value deletes
+    a key (#192).
+    """
     if parent is not None and unparent:
         typer.echo("--parent and --unparent are mutually exclusive", err=True)
         raise typer.Exit(code=2)
@@ -298,7 +361,20 @@ def canvas_update_node(
             if parent_op:
                 state, env = await ws.reparent_node(slug, node_id, parent_val)
         assert env is not None and state is not None  # for type narrowing
-        return {"event": env.model_dump(), "state": state.get_state()}
+        out: dict = {"event": env.model_dump(), "state": state.get_state()}
+        if data is not None:
+            node = state.nodes.get(node_id)
+            unknown = (
+                ws.unknown_data_keys(node.node_type, fields.get("data"))
+                if node is not None else []
+            )
+            if unknown:
+                out["warning"] = (
+                    f"node_type {node.node_type!r} does not render these data "
+                    f"keys: {', '.join(unknown)}. Run `anchor canvas node-types "
+                    f"{node.node_type}`."
+                )
+        return out
 
     typer.echo(json.dumps(asyncio.run(run()), indent=2))
 
@@ -378,11 +454,11 @@ def canvas_update_edge(
     source_handle: str | None = typer.Option(None, "--source-handle"),
     target_handle: str | None = typer.Option(None, "--target-handle"),
     data: str | None = typer.Option(
-        None, "--data", help="JSON object replacing the edge's `data` field"
+        None, "--data", help="JSON object deep-MERGED into the edge's `data` field (null deletes a key)"
     ),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
-    """Patch an edge's fields (label, type, handles, data)."""
+    """Patch an edge's fields (label, type, handles, data). `--data` deep-merges (#192)."""
     _, _, ws, _, _ = _build_real_services(data_dir)
     fields: dict = {}
     if label is not None:

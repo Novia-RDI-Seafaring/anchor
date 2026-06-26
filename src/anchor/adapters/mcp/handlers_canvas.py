@@ -76,6 +76,34 @@ _SPEC_ROWS_HINT = (
 )
 
 
+def _alias_type(args: dict[str, Any], canonical: str) -> None:
+    """Accept ``type`` as an alias for ``node_type`` / ``edge_type`` (#186).
+
+    Canvas state JSON exposes ``node_type`` / ``edge_type``; the write
+    surfaces historically diverged. We now accept BOTH on every write
+    surface so an agent can read a record's ``node_type`` and write it
+    straight back. ``node_type`` / ``edge_type`` is canonical and wins if
+    both are present; a bare ``type`` is promoted to the canonical key."""
+    if "type" in args:
+        alias = args.pop("type")
+        args.setdefault(canonical, alias)
+
+
+def _data_warning(svc: WorkspaceService, node_type: str | None, data: dict[str, Any] | None) -> str | None:
+    """Non-blocking warning listing data keys the node type won't render (#191)."""
+    if not node_type:
+        return None
+    unknown = svc.unknown_data_keys(node_type, data)
+    if not unknown:
+        return None
+    keys = ", ".join(unknown)
+    return (
+        f"node_type {node_type!r} does not render these data keys: {keys}. "
+        f"They are stored but never shown. Call canvas_node_types to see "
+        f"which data fields {node_type!r} renders (e.g. its body field)."
+    )
+
+
 def _spec_rows_hint(node_type: str | None, data: dict[str, Any] | None) -> str | None:
     if node_type != "spec":
         return None
@@ -102,6 +130,17 @@ def tool_definitions() -> list[dict[str, Any]]:
             "name": "canvas_add_node",
             "description": (
                 "Add (create / place) a new node by node_type, label, x, y, parent, data.\n"
+                "POSITION: omit x/y (or pass place='auto') and the server picks "
+                "a non-overlapping spot and returns it under `position` — the "
+                "preferred way to scaffold many nodes without piling them up. "
+                "Pass explicit x/y to place exactly there.\n"
+                "node_type is canonical; `type` is accepted as an alias so you "
+                "can write back the `node_type` you read from canvas state.\n"
+                "DATA FIELDS render per node_type — a key the renderer ignores "
+                "is stored but invisible, and the result carries a `warning`. "
+                "fact -> data.text (body); concept -> data.subtitle (short); "
+                "note -> data.text; area -> data.subtitle. There is no generic "
+                "`data.body`. Call canvas_node_types for the full contract.\n"
                 "A `spec` node is a TABLE, not prose: put tabular facts in "
                 "`data.rows`, a list of {key, value, source_ref} objects, one "
                 "row per fact. `source_ref` is {slug, page, bbox?, region_id?} "
@@ -120,10 +159,16 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "properties": {
                     "workspace_slug": {"type": "string"},
                     "id": {"type": "string"},
-                    "node_type": {"type": "string"},
+                    "node_type": {"type": "string", "description": "Canonical node type (e.g. 'fact', 'concept', 'spec')."},
+                    "type": {"type": "string", "description": "Alias for node_type (back-compat with canvas-state JSON keys)."},
                     "label": {"type": "string"},
                     "x": {"type": "number"},
                     "y": {"type": "number"},
+                    "place": {
+                        "type": "string",
+                        "enum": ["auto", "exact"],
+                        "description": "'auto' (or omitting x/y) asks the server for a non-overlapping position, returned under `position`. 'exact' forces the given x/y.",
+                    },
                     "parent": {"type": "string"},
                     "data": {"type": "object"},
                 },
@@ -131,13 +176,31 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "canvas_node_types",
+            "description": (
+                "List the per-node-type data-field contract: which `data` keys "
+                "each built-in node type renders and which key is its visible "
+                "body. Use this before add_node/update_node so you put the body "
+                "in the right key (fact -> text, concept -> subtitle, ...) "
+                "instead of a key that's silently dropped. Pass node_type to "
+                "narrow to one. Each entry: {name, description, data_fields, "
+                "body_field}."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {"node_type": {"type": "string"}},
+            },
+        },
+        {
             "name": "canvas_update_node",
             "description": (
                 "Update (edit / modify / patch) an existing node's label, "
                 "position, parent, or content. "
-                "The `data` field REPLACES the whole "
-                "data dict — to add or change a single key (e.g. colour), read "
-                "the current node first and pass the merged dict back. Shape / "
+                "The `data` field is DEEP-MERGED into the node's existing data: "
+                "unmentioned keys (e.g. source_ref) are preserved, nested dicts "
+                "merge recursively, and a key set to null is deleted. You no "
+                "longer need to read-modify-write the whole dict to patch one "
+                "field. Shape / "
                 "card primitives honour `data.bg_color` and `data.stroke_color` "
                 "(CSS colour strings, e.g. `#fef3c7`, `rgb(...)`); these tint "
                 "the background and the border + label colour respectively. "
@@ -195,6 +258,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "target": {"type": "string"},
                     "label": {"type": "string"},
                     "edge_type": {"type": "string", "enum": ["floating", "anchored"]},
+                    "type": {"type": "string", "enum": ["floating", "anchored"], "description": "Alias for edge_type (back-compat with canvas-state JSON keys)."},
                     "sourceHandle": {"type": "string"},
                     "targetHandle": {"type": "string"},
                     "data": {"type": "object"},
@@ -228,6 +292,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "id": {"type": "string"},
                     "label": {"type": "string"},
                     "edge_type": {"type": "string", "enum": ["floating", "anchored"]},
+                    "type": {"type": "string", "enum": ["floating", "anchored"], "description": "Alias for edge_type (back-compat with canvas-state JSON keys)."},
                     "sourceHandle": {"type": "string"},
                     "targetHandle": {"type": "string"},
                     "data": {"type": "object"},
@@ -461,15 +526,25 @@ async def call_tool(
             return json.dumps(await svc.list_workspaces())
         if name == "canvas_add_node":
             slug = args.pop("workspace_slug")
+            _alias_type(args, "node_type")
+            place = args.pop("place", None)
             hint = _spec_rows_hint(args.get("node_type"), args.get("data"))
-            state, env = await svc.add_node(slug, **args)
+            warning = _data_warning(svc, args.get("node_type"), args.get("data"))
+            state, env = await svc.add_node(slug, place=place, **args)
             result: dict[str, Any] = {"event": env.model_dump(), "state": state.get_state()}
+            # Echo the resolved position so the agent can track layout (#189).
+            result["position"] = {"x": env.payload.get("x"), "y": env.payload.get("y")}
             if hint is not None:
                 result["hint"] = hint
+            if warning is not None:
+                result["warning"] = warning
             return json.dumps(result)
+        if name == "canvas_node_types":
+            return json.dumps(svc.node_types_schema(args.get("node_type")))
         if name == "canvas_update_node":
             slug = args.pop("workspace_slug")
             node_id = args.pop("id")
+            data_patch = args.get("data") if isinstance(args.get("data"), dict) else None
             # `parent` is allowed to be explicitly None (means "unparent");
             # only strip the OTHER fields if they're None. The dispatcher
             # mirrors the HTTP route so HTTP / MCP / CLI behave identically.
@@ -494,12 +569,21 @@ async def call_tool(
                     if enrich_node_fields:
                         fields = await enrich_node_fields(fields)
                     state, env = await svc.update_node(slug, node_id, fields)
-            return json.dumps({"event": env.model_dump(), "state": state.get_state()})
+            result = {"event": env.model_dump(), "state": state.get_state()}
+            if data_patch is not None:
+                node = state.nodes.get(node_id)
+                warning = _data_warning(
+                    svc, node.node_type if node else None, data_patch,
+                )
+                if warning is not None:
+                    result["warning"] = warning
+            return json.dumps(result)
         if name == "canvas_remove_node":
             state, envelopes = await svc.remove_node(args["workspace_slug"], args["id"])
             return json.dumps({"events": [e.model_dump() for e in envelopes], "state": state.get_state()})
         if name == "canvas_add_edge":
             slug = args.pop("workspace_slug")
+            _alias_type(args, "edge_type")
             state, env = await svc.add_edge(slug, **args)
             return json.dumps({"event": env.model_dump(), "state": state.get_state()})
         if name == "canvas_remove_edge":
@@ -508,6 +592,7 @@ async def call_tool(
         if name == "canvas_update_edge":
             slug = args.pop("workspace_slug")
             edge_id = args.pop("id")
+            _alias_type(args, "edge_type")
             fields = {k: v for k, v in args.items() if v is not None}
             state, env = await svc.update_edge(slug, edge_id, fields)
             return json.dumps({"event": env.model_dump(), "state": state.get_state()})

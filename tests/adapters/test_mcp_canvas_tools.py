@@ -452,3 +452,96 @@ def test_canvas_update_node_rejects_self_parent():
         assert "error" in json.loads(body)
 
     asyncio.run(run())
+
+
+# ── Node-write API hardening (#186/#189/#191/#192) ──────────────────────────
+
+def test_canvas_add_node_accepts_type_alias():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        body = await handlers_canvas.call_tool(s.workspace, "canvas_add_node", {
+            "workspace_slug": "w1", "id": "a", "type": "fact", "x": 0, "y": 0,
+        })
+        out = json.loads(body)
+        assert out["event"]["payload"]["node_type"] == "fact"
+
+    asyncio.run(run())
+
+
+def test_canvas_add_edge_accepts_type_alias():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await s.workspace.add_node("w1", id="a", x=0, y=0)
+        await s.workspace.add_node("w1", id="b", x=200, y=0)
+        body = await handlers_canvas.call_tool(s.workspace, "canvas_add_edge", {
+            "workspace_slug": "w1", "source": "a", "target": "b", "type": "anchored",
+            "data": {"kind": "evidence", "source_ref": {"page": 1}},
+        })
+        out = json.loads(body)
+        assert out["event"]["payload"]["edge_type"] == "anchored"
+
+    asyncio.run(run())
+
+
+def test_canvas_add_node_auto_places_and_returns_position():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        # No x/y -> auto-place; position is echoed back.
+        b1 = json.loads(await handlers_canvas.call_tool(s.workspace, "canvas_add_node", {
+            "workspace_slug": "w1", "node_type": "fact", "width": 120, "height": 80,
+        }))
+        assert b1["position"] == {"x": 0.0, "y": 0.0}
+        b2 = json.loads(await handlers_canvas.call_tool(s.workspace, "canvas_add_node", {
+            "workspace_slug": "w1", "node_type": "fact", "width": 120, "height": 80,
+        }))
+        assert b2["position"] != b1["position"]
+
+    asyncio.run(run())
+
+
+def test_canvas_add_node_warns_on_unrendered_data_key():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        body = await handlers_canvas.call_tool(s.workspace, "canvas_add_node", {
+            "workspace_slug": "w1", "node_type": "fact", "x": 0, "y": 0,
+            "data": {"body": "this never renders"},
+        })
+        out = json.loads(body)
+        assert "warning" in out and "body" in out["warning"]
+
+
+    asyncio.run(run())
+
+
+def test_canvas_node_types_tool_returns_contract():
+    async def run():
+        s = make_in_memory_services()
+        body = await handlers_canvas.call_tool(s.workspace, "canvas_node_types", {"node_type": "fact"})
+        out = json.loads(body)
+        assert out[0]["name"] == "fact"
+        assert out[0]["body_field"] == "text"
+
+    asyncio.run(run())
+
+
+def test_canvas_update_node_data_merges_via_mcp():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await s.workspace.add_node(
+            "w1", id="a", node_type="fact", x=0, y=0,
+            data={"text": "x", "source_ref": {"page": 1}},
+        )
+        body = await handlers_canvas.call_tool(s.workspace, "canvas_update_node", {
+            "workspace_slug": "w1", "id": "a", "data": {"text": "y"},
+        })
+        out = json.loads(body)
+        node = next(n for n in out["state"]["nodes"] if n["id"] == "a")
+        assert node["data"]["text"] == "y"
+        assert node["data"]["source_ref"] == {"page": 1}
+
+    asyncio.run(run())

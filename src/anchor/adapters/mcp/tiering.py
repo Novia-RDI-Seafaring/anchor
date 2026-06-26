@@ -166,6 +166,7 @@ _CAPABILITY_GROUPS: list[dict[str, Any]] = [
             "canvas_distribute",
             "canvas_create_sub_canvas",
             "canvas_list_placeholders",
+            "canvas_node_types",
         ],
     },
     {

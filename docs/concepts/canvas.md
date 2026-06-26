@@ -68,6 +68,50 @@ extension that ships alongside that manifest registers a real React
 component under the name `pdf:document`; the canvas core never has to
 know about it.
 
+### Node data field contract
+
+A node's `data` is an open JSON object, but each renderer only reads a
+fixed set of keys. Put a body in the wrong key and it is stored but never
+shown. The body key differs per type:
+
+| Type      | Body key       | Other rendered `data` keys                 |
+| --------- | -------------- | ------------------------------------------ |
+| `fact`    | `text`         | `label`, `pictogram`                        |
+| `concept` | `subtitle`     | `label`, `pictogram`                        |
+| `note`    | `text`         | `label`                                     |
+| `entity`  | (none)         | `label`, `pictogram`                        |
+| `funnel`  | (none)         | `label`, `pictogram`                        |
+| `area`    | `subtitle`     | `label`, `tone`                             |
+
+There is **no generic `data.body`**. Every type also honours the shared
+styling keys (`bg_color`, `stroke_color`, `text_color`, `text_bold`,
+`text_align`, `text_family`, `text_size`, `dashed`, `width`, `height`) and
+the placeholder keys (`placeholder`, `placeholder_hint`).
+
+This contract is queryable so an agent never has to read the `.tsx`
+source: `anchor canvas node-types [TYPE]`, `GET /api/node-types[/TYPE]`,
+and the `canvas_node_types` MCP tool all return
+`{name, description, data_fields, body_field}`. When you `add-node` /
+`update-node` with a `data` key the type does not render, the adapter
+response carries a non-blocking `warning` listing the ignored keys.
+Producer types (`spec`, `document`, …) carry rich producer-defined data
+and stay open — no warning.
+
+### Write-API conventions
+
+- **Canonical field names.** Canvas state JSON exposes `node_type` and
+  `edge_type`. Those are the canonical names on the write surfaces too;
+  `type` is accepted as an alias everywhere (CLI, HTTP, MCP) so a record
+  you read back can be written straight through.
+- **`data` patches merge.** `update-node` / `update-edge` deep-merge the
+  given `data` into the existing data: unmentioned keys (e.g. a node's
+  `source_ref`) survive, nested dicts merge recursively, and a key set to
+  `null` is deleted. You no longer read-modify-write the whole dict to
+  change one field.
+- **Server auto-placement.** Omit `x`/`y` (or pass `place="auto"`) on
+  `add-node` and the server picks a non-overlapping position and returns
+  it under `position`. Pass explicit coordinates to place exactly there.
+
 ## Edge types
 
 Two:
