@@ -107,6 +107,8 @@ def unregister_serve(path: Path | None = None) -> None:
     try:
         target.unlink()
     except OSError:
+        # Best-effort cleanup: the record may already be gone (double
+        # shutdown, manual delete, or a wiped serves dir). Nothing to undo.
         pass
 
 
@@ -142,6 +144,9 @@ def list_serves(*, prune_stale: bool = True) -> list[ServeRecord]:
                 try:
                     path.unlink()
                 except OSError:
+                    # Pruning a stale/dead-PID record is best-effort; if it
+                    # cannot be removed (race with another serve, read-only
+                    # dir), just skip it and keep listing the rest.
                     pass
             continue
         out.append(record)
