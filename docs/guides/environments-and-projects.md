@@ -21,6 +21,25 @@ environment is also like an Azure subscription or resource group: resources
 (projects) live inside it and inherit its zone, and moving one out is a
 deliberate act.
 
+## Environment vs `.env`
+
+An Anchor **environment** is not a `.env` dotfile. The two only share three
+letters.
+
+- An **environment** is a named provider / data-zone / trust profile under
+  `~/.anchor/envs/<name>/`. Its configuration is `env.toml` (non-secret:
+  provider, models, zone). You pick one by name with `--env`, `anchor use`, or
+  the default.
+- A `.env` is a flat file of `KEY=value` secrets that some tools auto-load.
+  Anchor never ships or requires a literal `.env` for the environment itself,
+  and `anchor init` does not create one. The environment's settings live in
+  `env.toml`, not a `.env`.
+
+The one place a `.env` may appear is the endpoint API key. That key is never
+written to `env.toml`; it stays in `ANCHOR_OPENAI_API_KEY`, optionally captured
+into a gitignored `.env` next to the profile. That file holds only the secret.
+It does not define the environment.
+
 ## On disk
 
 A project is a folder with an `anchor.toml` marker and a hidden `.anchor_data/`

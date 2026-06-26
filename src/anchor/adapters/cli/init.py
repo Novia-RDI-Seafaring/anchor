@@ -327,6 +327,11 @@ def init(
     The environment is the trust boundary, so it is never invented silently. If
     none exists yet, init prompts you to pick a provider (on a terminal), or you
     pass `--provider`, or you create it first with `anchor env create <name>`.
+
+    An Anchor "environment" is a named provider / data-zone / trust profile under
+    `~/.anchor/envs/<name>/` (config in `env.toml`), NOT a `.env` dotfile of
+    secrets. `anchor init` does not create a `.env` for the environment; it only
+    writes this folder's `anchor.toml` marker plus the hidden `.anchor_data/`.
     """
     from anchor.core.ids import InvalidProjectNameError, validate_project_name
     from anchor.infra.environment import (
