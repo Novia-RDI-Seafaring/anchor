@@ -24,6 +24,7 @@ import { EdgeMarkerDefs } from "@/canvas/edges/EdgeMarkerDefs";
 import { FloatingEdge } from "@/canvas/edges/FloatingEdge";
 import { SmoothEdge, StepEdge, StraightEdge } from "@/canvas/edges/RoutedEdge";
 import { pickEdgeMode } from "@/canvas/edges/edge-mode";
+import { provenancePathEdgeIds } from "@/canvas/edges/provenance-path";
 import { EdgeContextMenu, type EdgeContextMenuTarget } from "@/canvas/EdgeContextMenu";
 import { EdgeContextToolbar } from "@/canvas/EdgeContextToolbar";
 import { NodeContextMenu, type ContextMenuTarget } from "@/canvas/NodeContextMenu";
@@ -199,6 +200,12 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   // hover that reflects back) the matching evidence edge flips from
   // node-to-node float to row-handle→region-handle anchored.
   const hoveredSourceRef = useUiStore((s) => s.hoveredSourceRef);
+  // Drives the hover-thicken provenance path (#183). When the pointer is
+  // over a node, we light up the evidence edge(s) tracing that node back to
+  // its source document and quiet the rest of the bundle. This composes with
+  // the row-level `hoveredSourceRef` swap above — both feed the same per-edge
+  // active/dimmed flags the evidence renderers already understand.
+  const hoveredNodeId = useUiStore((s) => s.hoveredNodeId);
   const setSelectedNodeId = useUiStore((s) => s.setSelectedNodeId);
   const setSelectedEdgeId = useUiStore((s) => s.setSelectedEdgeId);
   const selectedEdgeId = useUiStore((s) => s.selectedEdgeId);
@@ -324,10 +331,41 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
       }
     }
 
+    // Hover-thicken the provenance path (#183). When the pointer is over a
+    // node, walk the evidence-edge chain from that node to its source
+    // document and mark those edges active; every other evidence edge is
+    // dimmed so the relevant path pops out of the bundle. This is purely a
+    // styling pass — it never changes an edge's type/handles/endpoints, so
+    // edges thicken in place instead of jumping. The row-level row→region
+    // swap above still wins when it fires (it sets `activeEdgeId`); node
+    // hover is the broader default that quiets the yarn ball on its own.
+    const pathEdges = provenancePathEdgeIds(
+      hoveredNodeId,
+      Object.fromEntries(
+        Object.values(nodes).map((n) => [n.id, { id: n.id, node_type: n.node_type }]),
+      ),
+      Object.values(edges).map((e) => ({
+        id: e.id,
+        source: e.source,
+        target: e.target,
+        data: e.data as { kind?: string } | undefined,
+      })),
+    );
+    if (pathEdges.size > 0) {
+      // Dim every evidence edge that is NOT on the hovered node's path.
+      for (const e of Object.values(edges)) {
+        if (e.data?.kind !== "evidence") continue;
+        if (!pathEdges.has(e.id)) dimmedEvidence.add(e.id);
+      }
+    }
+
     setRfEdges(Object.values(edges).map((e) => {
       const type = typePicks[e.id] ?? "floating";
-      const dimmed = dimmedEvidence.has(e.id);
-      const active = activeEdgeId === e.id;
+      // Path membership lights up the edge; the row→region swap keeps its
+      // own single active edge. A path edge is never also dimmed.
+      const onPath = pathEdges.has(e.id);
+      const dimmed = dimmedEvidence.has(e.id) && !onPath;
+      const active = activeEdgeId === e.id || onPath;
       const isSelected = selectedEdgeId === e.id;
       return {
         id: e.id,
@@ -338,11 +376,11 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         label: e.label,
         type,
         data: { ...(e.data ?? {}), label: e.label || undefined, active, dimmed },
-        style: dimmed ? { opacity: 0.65 } : undefined,
+        style: dimmed ? { opacity: 0.25 } : undefined,
         selected: isSelected,
       } satisfies RfEdge;
     }));
-  }, [edges, nodes, hoveredSourceRef, selectedEdgeId]);
+  }, [edges, nodes, hoveredSourceRef, hoveredNodeId, selectedEdgeId]);
 
   const onNodesChange = useCallback((changes: NodeChange<RfNode>[]) => {
     setRfNodes((curr) => applyNodeChanges(changes, curr));
