@@ -14,10 +14,13 @@ import {
   userMarkerUrls,
 } from "./edge-style";
 import {
+  EVIDENCE_EDGE_QUIET_OPACITY,
   EdgeEndpointSockets,
   EvidencePathUnderlay,
   evidenceStroke,
+  evidenceStrokeWidth,
   isActiveEvidence,
+  isDimmedEvidence,
   isEvidenceEdge,
 } from "./edge-visuals";
 import { getFloatingEdgeParams } from "./floatingGeometry";
@@ -122,9 +125,20 @@ export function FloatingEdge(props: EdgeProps) {
       ? evidenceStroke(d)
       : DEFAULT_EDGE_STROKE;
   const baseDasharray = hasUserStrokeStyle ? user.strokeDasharray : (sysml.strokeDasharray || undefined);
+  // Evidence edges render quiet by default and thicken only when active
+  // (the hovered node's provenance path, #183). Off-path edges in a hovered
+  // bundle carry `data.dimmed` and fade further so the lit path stands out.
+  // Style only — width/opacity, never geometry — so hovering can't make an
+  // edge jump.
   const composedStyle: React.CSSProperties = {
     stroke: baseStroke,
-    strokeWidth: evidence ? (activeEvidence ? 2.5 : 2) : 1.5,
+    strokeWidth: evidence ? evidenceStrokeWidth(activeEvidence) : 1.5,
+    // Quiet resting opacity for evidence edges. CanvasGraph owns the
+    // stronger off-path `dimmed` fade and passes it via `style.opacity`,
+    // which the spread below lets win.
+    ...(evidence && !activeEvidence && !isDimmedEvidence(d)
+      ? { opacity: EVIDENCE_EDGE_QUIET_OPACITY }
+      : {}),
     ...(style ?? {}),
     strokeDasharray: baseDasharray,
     // `color` is what the `currentColor`-based user markers pick up. We
