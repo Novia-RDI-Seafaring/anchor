@@ -110,7 +110,29 @@ def check(
         typer.echo("                   Run `anchor migrate` to adopt it as this "
                    "environment's default project.")
 
+    # OCR backend probe: onnxruntime is a declared dependency but may be absent
+    # when an editable install pre-dates the dep declaration and has not been
+    # force-reinstalled. Report FAIL with a remediation hint so the user (or
+    # an agent driving setup) knows exactly what to do; never crash the rest
+    # of the check output.
+    typer.echo("")
+    typer.echo("OCR backend")
+    ocr_ok = _probe_ocr_backend()
+    if ocr_ok:
+        typer.echo("  onnxruntime    : importable ✓")
+    else:
+        typer.echo("  onnxruntime    : NOT importable")
+        typer.echo(
+            "                   OCR backend not importable -- your editable install may be "
+            "stale; run `uv tool install --force --editable .` to re-sync dependencies."
+        )
+
     problems: list[str] = []
+    if not ocr_ok:
+        problems.append(
+            "OCR backend not importable -- your editable install may be stale; "
+            "run `uv tool install --force --editable .`."
+        )
     personal = bool(os.environ.get("OPENAI_API_KEY"))
     # local/ollama/harness keep content on-host → no key. openai accepts a
     # personal OPENAI_API_KEY. azure/custom (and any configured endpoint) need
@@ -223,6 +245,23 @@ def _open_ingest_sessions(cfg: AnchorConfig) -> list[dict]:
             ),
         })
     return out
+
+
+def _probe_ocr_backend() -> bool:
+    """Return True when the onnxruntime OCR backend is importable.
+
+    Attempting to import ``onnxruntime`` directly is the fastest and most
+    faithful test: it is the backend ``RapidOcrOptions(backend='onnxruntime')``
+    resolves at ingest time, and its absence is the exact cause of the
+    ``silver_extract`` failure described in issue #174.
+    """
+    try:
+        import importlib
+
+        importlib.import_module("onnxruntime")
+        return True
+    except ImportError:
+        return False
 
 
 def _probe(cfg: AnchorConfig, embed_remote: bool, problems: list[str]) -> None:
