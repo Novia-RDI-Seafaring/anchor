@@ -142,8 +142,11 @@ class FsDocStore:
         finally:
             try:
                 path.unlink()
-            except OSError:
+            except FileNotFoundError:
+                # Lock already removed (for example by a racing cleanup); ignore.
                 pass
+            except OSError:
+                raise
 
     async def list_documents(self) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
