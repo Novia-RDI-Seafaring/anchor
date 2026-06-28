@@ -58,7 +58,8 @@ export function refreshWorkspaces(): Promise<Snapshot> {
  * Subscribe to the workspaces envelope. Returns the current snapshot
  * (cached or freshly-fetched) and re-renders when the cache updates.
  */
-export function useWorkspacesList(): Snapshot | null {
+export function useWorkspacesList(options: { refreshMs?: number } = {}): Snapshot | null {
+  const refreshMs = options.refreshMs;
   const [snap, setSnap] = useState<Snapshot | null>(cached);
   useEffect(() => {
     let active = true;
@@ -79,6 +80,13 @@ export function useWorkspacesList(): Snapshot | null {
       listeners.delete(setSnap);
     };
   }, []);
+  useEffect(() => {
+    if (!refreshMs || refreshMs <= 0) return;
+    const timer = window.setInterval(() => {
+      refreshWorkspaces().catch(() => {});
+    }, refreshMs);
+    return () => window.clearInterval(timer);
+  }, [refreshMs]);
   return snap;
 }
 
