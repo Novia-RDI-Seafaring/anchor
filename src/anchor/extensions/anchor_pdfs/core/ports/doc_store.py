@@ -1,11 +1,38 @@
 """DocStore protocol — durable shared documents (bronze/silver/gold)."""
 from __future__ import annotations
 
+from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import Any, Protocol
 
 
+class IngestLockHeld(RuntimeError):
+    """Raised when a per-slug ingest lock is already held by another writer.
+
+    Surfaced by ``DocStore.ingest_lock`` when ``wait=False`` and the lock for
+    ``slug`` is busy, so a concurrent ``--force`` ingest fails fast with a
+    clear message instead of interleaving with the holder and desyncing the
+    gold-complete marker (issue #175)."""
+
+
 class DocStore(Protocol):
+    def ingest_lock(
+        self, slug: str, *, wait: bool = True, timeout: float | None = None,
+    ) -> AbstractAsyncContextManager[None]:
+        """Single-writer guard for the gold pass of ``slug`` (issue #175).
+
+        Returns an async context manager. While held, no other writer may
+        acquire the same slug's lock; this stops two concurrent
+        ``anchor ingest --force`` runs on one slug from interleaving and
+        leaving ``.complete.json`` desynced from the real gold artifacts.
+
+        ``wait=True`` (default) blocks until the lock frees (bounded by
+        ``timeout`` seconds when given, else waits indefinitely); ``wait=False``
+        raises ``IngestLockHeld`` immediately if it is busy. A ``timeout`` that
+        elapses while waiting also raises ``IngestLockHeld``. Cross-process on
+        the fs store, in-process on the memory store."""
+        raise NotImplementedError
+
     async def list_documents(self) -> list[dict[str, Any]]:
         raise NotImplementedError
 
