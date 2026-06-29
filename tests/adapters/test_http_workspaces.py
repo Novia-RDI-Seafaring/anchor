@@ -418,3 +418,53 @@ def test_http_add_edge_type_alias():
     })
     assert rsp.status_code == 201, rsp.text
     assert rsp.json()["event"]["payload"]["edge_type"] == "anchored"
+
+
+def test_http_reference_create_list_attach_roundtrip():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.post(
+        "/api/workspaces/w1/nodes",
+        json={"id": "n1", "node_type": "fact", "x": 0, "y": 0},
+    )
+    # create
+    created = client.post(
+        "/api/workspaces/w1/references",
+        json={
+            "source_ref": {"slug": "datasheet", "page": 3, "bbox": [1, 2, 3, 4]},
+            "label": "Max inlet pressure",
+        },
+    )
+    assert created.status_code == 201, created.text
+    ref = created.json()
+    assert ref["id"]
+    assert ref["label"] == "Max inlet pressure"
+    # list
+    listed = client.get("/api/workspaces/w1/references")
+    assert listed.status_code == 200
+    assert [r["id"] for r in listed.json()] == [ref["id"]]
+    # attach
+    attached = client.post(
+        f"/api/workspaces/w1/references/{ref['id']}/attach",
+        json={"node_id": "n1"},
+    )
+    assert attached.status_code == 200, attached.text
+    state = attached.json()["state"]
+    node = next(n for n in state["nodes"] if n["id"] == "n1")
+    assert node["data"]["reference_id"] == ref["id"]
+    assert node["data"]["source_ref"]["slug"] == "datasheet"
+
+
+def test_http_reference_rejects_malformed_source_ref():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    rsp = client.post("/api/workspaces/w1/references", json={"source_ref": {"page": 3}})
+    assert rsp.status_code == 400
+
+
+def test_http_reference_list_backward_compatible():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    rsp = client.get("/api/workspaces/w1/references")
+    assert rsp.status_code == 200
+    assert rsp.json() == []

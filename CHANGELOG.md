@@ -9,6 +9,27 @@ next version section on tag.
 
 ## [Unreleased]
 
+### Added
+
+- Canvas references store, with MCP / HTTP / CLI parity (slice 1 of #147):
+  - A per-canvas bibliography lives in canvas meta as `references` (a list of
+    `{id, label?, source_ref, created_by, created_at}`). `source_ref` is a
+    `{slug, page, bbox?, region_id?, detail?}` locator that mirrors the per-row
+    source_ref spec nodes already carry, so a reference can drive the existing
+    value-level highlight once attached.
+  - Three ops reach all three adapters: create a reference, list the
+    bibliography, and attach a reference to a node (or one spec row by index).
+    Attaching sets the target's `reference_id` pointer plus its `source_ref`.
+    HTTP `POST/GET /api/workspaces/{slug}/references` and
+    `POST /api/workspaces/{slug}/references/{id}/attach`; MCP
+    `canvas_create_reference` / `canvas_list_references` /
+    `canvas_attach_reference`; CLI `anchor canvas reference create|list|attach`.
+  - Backward compatible: a canvas with no `references` key behaves exactly as
+    before. References survive a cold-boot replay from the event log.
+  - Scope is canvas-level for now; the shape and op signatures are written so
+    the store can move to project level later for cross-canvas reuse / paper
+    compilation.
+
 ### Changed
 
 - Canvas node-write API hardening, with MCP / HTTP / CLI parity:
