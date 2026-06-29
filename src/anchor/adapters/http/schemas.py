@@ -121,6 +121,28 @@ class DistributeNodesRequest(BaseModel):
     axis: str = "horizontal"
 
 
+class CreateReferenceRequest(BaseModel):
+    """Body for ``POST /api/workspaces/{slug}/references``.
+
+    ``source_ref`` is the locator into a source document: ``{slug, page}`` are
+    required, ``bbox`` / ``region_id`` / ``detail`` are optional. ``created_by``
+    is ``"human"`` (default) or ``"agent"``."""
+
+    source_ref: dict[str, Any]
+    label: str | None = None
+    created_by: str = "human"
+
+
+class AttachReferenceRequest(BaseModel):
+    """Body for ``POST /api/workspaces/{slug}/references/{id}/attach``.
+
+    ``node_id`` names the target node; ``row_index`` optionally targets one
+    row inside a spec node's ``data.rows``."""
+
+    node_id: str
+    row_index: int | None = None
+
+
 class CreateSubCanvasRequest(BaseModel):
     """Body for ``POST /api/workspaces/{parent_slug}/sub-canvas``.
 

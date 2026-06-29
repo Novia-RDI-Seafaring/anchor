@@ -473,6 +473,76 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "canvas_create_reference",
+            "description": (
+                "Author a reference (citation) and add it to the canvas "
+                "bibliography. Capture where a fact came from: `source_ref` is "
+                "{slug, page, bbox?, region_id?, detail?} where detail can carry "
+                "{quote, cell_bbox, match}. slug + page are required. `label` is "
+                "a human caption (e.g. 'Max inlet pressure, LKH-5'); `created_by` "
+                "is 'human' or 'agent' (default 'human' from the UI; pass 'agent' "
+                "when you author it). Returns the stored reference with its "
+                "server-assigned `id`. Attach it to a fact later with "
+                "canvas_attach_reference."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "source_ref": {
+                        "type": "object",
+                        "description": "{slug, page, bbox?, region_id?, detail?}. slug + page required.",
+                    },
+                    "label": {"type": "string"},
+                    "created_by": {
+                        "type": "string",
+                        "enum": ["human", "agent"],
+                        "default": "agent",
+                    },
+                },
+                "required": ["workspace_slug", "source_ref"],
+            },
+        },
+        {
+            "name": "canvas_list_references",
+            "description": (
+                "List the canvas bibliography (every reference authored on this "
+                "workspace). Each entry: {id, label?, source_ref, created_by, "
+                "created_at}. Use this to find a reference id to attach to a fact, "
+                "or to compile a bibliography."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {"workspace_slug": {"type": "string"}},
+                "required": ["workspace_slug"],
+            },
+        },
+        {
+            "name": "canvas_attach_reference",
+            "description": (
+                "Attach a stored reference to a fact: a node (and optionally one "
+                "spec row by `row_index`). Sets the target's `reference_id` "
+                "pointer and copies the reference's `source_ref` onto it so the "
+                "value resolves to its citation and drives the value-level "
+                "highlight (yellow marker + source detail highlight). Pass the "
+                "`reference_id` from canvas_create_reference / canvas_list_"
+                "references and the target `node_id`."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "reference_id": {"type": "string"},
+                    "node_id": {"type": "string"},
+                    "row_index": {
+                        "type": "integer",
+                        "description": "Optional: target one row inside a spec node's data.rows.",
+                    },
+                },
+                "required": ["workspace_slug", "reference_id", "node_id"],
+            },
+        },
+        {
             "name": "canvas_snapshot",
             "description": (
                 "Render a workspace canvas to PNG and return the bytes "
@@ -659,6 +729,24 @@ async def call_tool(
             ))
         if name == "canvas_list_placeholders":
             return json.dumps(await svc.list_placeholders(args["workspace_slug"]))
+        if name == "canvas_create_reference":
+            ref = await svc.create_reference(
+                args["workspace_slug"],
+                source_ref=args["source_ref"],
+                label=args.get("label"),
+                created_by=args.get("created_by", "agent"),
+            )
+            return json.dumps({"reference": ref})
+        if name == "canvas_list_references":
+            return json.dumps(await svc.list_references(args["workspace_slug"]))
+        if name == "canvas_attach_reference":
+            state, env = await svc.attach_reference(
+                args["workspace_slug"],
+                args["reference_id"],
+                node_id=args["node_id"],
+                row_index=args.get("row_index"),
+            )
+            return json.dumps({"event": env.model_dump(), "state": state.get_state()})
         if name == "canvas_snapshot":
             envelope_fmt = args.get("format", "path")
             image_fmt = args.get("image_format", "png")

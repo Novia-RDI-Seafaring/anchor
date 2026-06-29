@@ -25,6 +25,7 @@ from anchor.core.events.canvas import (
     NodeReparented,
     NodeResized,
     NodeUpdated,
+    ReferenceAttached,
 )
 from anchor.core.workspace.edges import Edge  # noqa: F401  (re-exported)
 from anchor.core.workspace.merge import deep_merge
@@ -118,3 +119,13 @@ def validate_command(
     elif isinstance(cmd, (EdgeRemoved, EdgeUpdated)):
         if cmd.id not in state.edges:
             raise CommandError(f"edge {cmd.id!r} does not exist")
+    elif isinstance(cmd, ReferenceAttached):
+        if cmd.node_id not in state.nodes:
+            raise CommandError(f"node {cmd.node_id!r} does not exist")
+        if cmd.row_index is not None:
+            node = state.nodes[cmd.node_id]
+            rows = node.data.get("rows")
+            if not isinstance(rows, list) or not (0 <= cmd.row_index < len(rows)):
+                raise CommandError(
+                    f"row_index {cmd.row_index} out of range for node {cmd.node_id!r}"
+                )

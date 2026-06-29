@@ -24,6 +24,8 @@ from anchor.core.events.canvas import (
     NodeReparented,
     NodeResized,
     NodeUpdated,
+    ReferenceAttached,
+    ReferenceCreated,
 )
 from anchor.core.workspace.edges import Edge
 from anchor.core.workspace.merge import deep_merge
@@ -98,6 +100,30 @@ def apply(state: Workspace, evt: BaseModel) -> Workspace:
                     setattr(e, k, v)
                 else:
                     e.data[k] = v
+    elif isinstance(evt, ReferenceCreated):
+        # Append to the canvas bibliography in metadata. Backward compatible:
+        # a canvas with no `references` key gets one lazily here.
+        refs = new.metadata.get("references")
+        if not isinstance(refs, list):
+            refs = []
+        refs.append(dict(evt.reference))
+        new.metadata["references"] = refs
+    elif isinstance(evt, ReferenceAttached):
+        # Point the target node (and optional spec row) at the reference so a
+        # fact resolves to its citation by id and carries the source_ref that
+        # drives the value-level highlight.
+        node = new.nodes.get(evt.node_id)
+        if node is not None:
+            if evt.row_index is None:
+                node.data["reference_id"] = evt.reference_id
+                node.data["source_ref"] = dict(evt.source_ref)
+            else:
+                rows = node.data.get("rows")
+                if isinstance(rows, list) and 0 <= evt.row_index < len(rows):
+                    row = rows[evt.row_index]
+                    if isinstance(row, dict):
+                        row["reference_id"] = evt.reference_id
+                        row["source_ref"] = dict(evt.source_ref)
     elif isinstance(evt, CanvasCleared):
         new.nodes = {}
         new.edges = {}

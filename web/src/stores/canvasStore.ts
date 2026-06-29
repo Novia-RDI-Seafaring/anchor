@@ -28,6 +28,39 @@ type Edge = {
   data?: Record<string, unknown>;
 };
 
+/**
+ * A locator into a source document (mirrors the backend `SourceRef`).
+ * `slug` + `page` are the minimal locator; the rest refine it. `detail`
+ * carries the value-level locator (#145): the exact quote, a single table
+ * cell bbox, or matcher metadata.
+ */
+export type SourceRef = {
+  slug: string;
+  page: number;
+  bbox?: number[];
+  region_id?: string;
+  detail?: {
+    quote?: string;
+    cell_bbox?: number[];
+    match?: Record<string, unknown>;
+  };
+};
+
+/**
+ * One entry in a canvas's bibliography (mirrors the backend `Reference`,
+ * stored canvas-scoped in `metadata.references`; #147 slice 1). `id` is
+ * server-assigned; `created_at` is a unix timestamp set at the service
+ * boundary. The References panel + attach-to-fact UX (slices 2-4) build on
+ * this shape; slice 1 ships the type alongside the data + ops, no UI yet.
+ */
+export type Reference = {
+  id: string;
+  label?: string;
+  source_ref: SourceRef;
+  created_by: "human" | "agent";
+  created_at: number;
+};
+
 const INGEST_STAGE_LABELS: Record<string, string> = {
   queued: "queued",
   starting: "starting ingest",
