@@ -25,6 +25,8 @@ CanvasEventType = Literal[
     "EdgeUpdated",
     "CanvasCleared",
     "CanvasSnapshot",
+    "ReferenceCreated",
+    "ReferenceAttached",
 ]
 
 
@@ -112,3 +114,31 @@ class CanvasSnapshot(BaseModel):
     nodes: list[dict[str, Any]] = []
     edges: list[dict[str, Any]] = []
     metadata: dict[str, Any] = {}
+
+
+class ReferenceCreated(BaseModel):
+    """A reference (citation) was added to the canvas bibliography.
+
+    ``reference`` is the full stored shape (id already assigned). The reducer
+    appends it to ``metadata['references']``. Canvas-scoped for now; the event
+    name is deliberately store-agnostic so a project-level store can reuse it.
+    """
+
+    type: Literal["ReferenceCreated"] = "ReferenceCreated"
+    reference: dict[str, Any]
+
+
+class ReferenceAttached(BaseModel):
+    """A reference was attached to a node (and optionally a spec row).
+
+    Carries the linkage so the target node/row resolves back to the
+    reference by id and carries the reference's ``source_ref`` (which drives
+    the value-level highlight from #145/#200). ``row_index`` is optional and
+    targets one row inside a spec node's ``data.rows``.
+    """
+
+    type: Literal["ReferenceAttached"] = "ReferenceAttached"
+    reference_id: str
+    node_id: str
+    row_index: int | None = None
+    source_ref: dict[str, Any]

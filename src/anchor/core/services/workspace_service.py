@@ -22,6 +22,8 @@ from anchor.core.events.canvas import (
     NodeReparented,
     NodeResized,
     NodeUpdated,
+    ReferenceAttached,
+    ReferenceCreated,
 )
 from anchor.core.events.envelope import DomainEvent
 from anchor.core.ids import new_event_id, new_id
@@ -44,6 +46,11 @@ from anchor.core.workspace.layout import (
 from anchor.core.workspace.builtin_node_types import builtin_node_type_registry
 from anchor.core.workspace.node_types import NodeTypeRegistry
 from anchor.core.workspace.reducer import apply, cascade_events_for_remove
+from anchor.core.workspace.references import (
+    Reference,
+    ReferenceError,
+    validate_source_ref,
+)
 from anchor.core.workspace.workspace import CommandError, Workspace, validate_command
 
 
@@ -370,6 +377,98 @@ class WorkspaceService:
 
     async def clear(self, slug: str) -> tuple[Workspace, DomainEvent]:
         return await self._dispatch(slug, CanvasCleared())
+
+    # ── References (canvas-scoped bibliography, #147 slice 1) ───────────────
+    #
+    # Stored in ``Workspace.metadata['references']`` (a list). Canvas-scoped
+    # for now; the maintainer decision is to keep this in canvas meta and
+    # consider promoting to a project-level store later (cross-canvas reuse /
+    # paper compilation). The op signatures are written so that promotion does
+    # not change adapter callers.
+
+    async def create_reference(
+        self,
+        slug: str,
+        *,
+        source_ref: dict[str, Any],
+        label: str | None = None,
+        created_by: str = "human",
+    ) -> dict[str, Any]:
+        """Author a reference and append it to the canvas bibliography.
+
+        Validates the ``source_ref`` (slug + page required; bbox / region_id /
+        detail optional), assigns a server-side id, stamps ``created_at`` from
+        the injected clock (deterministic in tests), and emits a
+        ``ReferenceCreated`` domain event so SSE clients update. Returns the
+        stored reference dict (with its assigned id)."""
+        try:
+            sref = validate_source_ref(source_ref)
+        except ReferenceError as e:
+            raise CommandError(str(e)) from e
+        if created_by not in ("human", "agent"):
+            raise CommandError(
+                f"created_by must be 'human' or 'agent', got {created_by!r}",
+            )
+        reference = Reference(
+            id=new_id(),
+            label=label,
+            source_ref=sref,
+            created_by=created_by,
+            created_at=self.clock.now(),
+        )
+        ref_dict = reference.model_dump()
+        async with self.locks.lock(slug):
+            await self.store.load(slug)  # surface 404 before we append
+            _, env = await self._dispatch_locked(
+                slug, ReferenceCreated(reference=ref_dict),
+            )
+        del env  # event already published inside _dispatch_locked
+        return ref_dict
+
+    async def list_references(self, slug: str) -> list[dict[str, Any]]:
+        """Return the canvas bibliography (``metadata['references']``).
+
+        Empty list for a canvas that has never had a reference (backward
+        compatible: no ``references`` key behaves exactly as today)."""
+        ws = await self.store.load(slug)
+        refs = ws.metadata.get("references")
+        if not isinstance(refs, list):
+            return []
+        return [dict(r) for r in refs if isinstance(r, dict)]
+
+    async def attach_reference(
+        self,
+        slug: str,
+        reference_id: str,
+        *,
+        node_id: str,
+        row_index: int | None = None,
+    ) -> tuple[Workspace, DomainEvent]:
+        """Attach a stored reference to a node (and optionally a spec row).
+
+        Sets the target node/row's ``reference_id`` pointer + ``source_ref``
+        (copied from the stored reference) so the fact resolves to its
+        citation by id and drives the existing value-level highlight. Emits a
+        ``ReferenceAttached`` domain event. Raises ``CommandError`` for an
+        unknown reference id, unknown node, or out-of-range row."""
+        async with self.locks.lock(slug):
+            state = await self.store.load(slug)
+            refs = state.metadata.get("references")
+            ref = None
+            if isinstance(refs, list):
+                ref = next(
+                    (r for r in refs if isinstance(r, dict) and r.get("id") == reference_id),
+                    None,
+                )
+            if ref is None:
+                raise CommandError(f"reference {reference_id!r} does not exist")
+            cmd = ReferenceAttached(
+                reference_id=reference_id,
+                node_id=node_id,
+                row_index=row_index,
+                source_ref=dict(ref.get("source_ref") or {}),
+            )
+            return await self._dispatch_locked(slug, cmd)
 
     async def organize_subtree(
         self,

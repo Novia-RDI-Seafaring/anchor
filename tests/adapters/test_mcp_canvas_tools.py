@@ -545,3 +545,47 @@ def test_canvas_update_node_data_merges_via_mcp():
         assert node["data"]["source_ref"] == {"page": 1}
 
     asyncio.run(run())
+
+
+def test_canvas_reference_create_list_attach_roundtrip():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await s.workspace.add_node("w1", id="n1", node_type="fact")
+        created = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_create_reference",
+            {
+                "workspace_slug": "w1",
+                "source_ref": {"slug": "d", "page": 2, "region_id": "r1"},
+                "label": "Inlet",
+            },
+        ))
+        ref = created["reference"]
+        assert ref["id"]
+        assert ref["created_by"] == "agent"  # MCP default
+        listed = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_list_references", {"workspace_slug": "w1"},
+        ))
+        assert [r["id"] for r in listed] == [ref["id"]]
+        attached = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_attach_reference",
+            {"workspace_slug": "w1", "reference_id": ref["id"], "node_id": "n1"},
+        ))
+        assert attached["event"]["type"] == "ReferenceAttached"
+        node = next(n for n in attached["state"]["nodes"] if n["id"] == "n1")
+        assert node["data"]["reference_id"] == ref["id"]
+
+    asyncio.run(run())
+
+
+def test_canvas_create_reference_malformed_returns_error():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        out = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_create_reference",
+            {"workspace_slug": "w1", "source_ref": {"page": 1}},
+        ))
+        assert "error" in out
+
+    asyncio.run(run())

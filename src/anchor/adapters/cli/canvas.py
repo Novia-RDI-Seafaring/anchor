@@ -14,6 +14,9 @@ from anchor.extensions.anchor_pdfs.core.value_provenance import enrich_spec_row_
 
 canvas_app = typer.Typer(help="Manage workspaces (canvases).")
 
+reference_app = typer.Typer(help="Manage a canvas's references (bibliography).")
+canvas_app.add_typer(reference_app, name="reference")
+
 
 def _canvas_url(slug: str, data_dir: Path | None = None) -> str:
     """The web URL a canvas is viewed at: ``http://<host>:<port>/c/<slug>``.
@@ -713,6 +716,94 @@ def canvas_create_sub(
         typer.echo(json.dumps(asyncio.run(run()), indent=2))
     except Exception as e:  # noqa: BLE001
         typer.echo(f"create-sub failed: {e}", err=True)
+        raise typer.Exit(code=2) from e
+
+
+# ── References (canvas bibliography, #147 slice 1) ───────────────────────────
+#
+# `anchor canvas reference create|list|attach` — thin wrappers around the same
+# WorkspaceService methods the HTTP routes and MCP tools call (adapter parity).
+
+
+@reference_app.command("create")
+def reference_create(
+    slug: str,
+    source_ref: str = typer.Option(
+        ...,
+        "--source-ref",
+        "-s",
+        help='JSON locator: {"slug": "doc", "page": 3, "bbox?": [..], "region_id?": "..", "detail?": {..}}. slug + page required.',
+    ),
+    label: str | None = typer.Option(None, "--label", "-l", help="Human caption."),
+    created_by: str = typer.Option(
+        "human", "--created-by", help="'human' (default) or 'agent'."
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Author a reference and add it to the canvas bibliography.
+
+    Prints the stored reference (with its server-assigned id). Same backend as
+    the `POST /references` HTTP route and the `canvas_create_reference` MCP tool.
+    """
+    from anchor.core.workspace.workspace import CommandError as _CmdErr
+
+    _, _, ws, _, _ = _build_real_services(data_dir)
+    parsed = _parse_data(source_ref)
+
+    async def run():
+        return await ws.create_reference(
+            slug, source_ref=parsed, label=label, created_by=created_by,
+        )
+
+    try:
+        typer.echo(json.dumps(asyncio.run(run()), indent=2))
+    except _CmdErr as e:
+        typer.echo(f"create reference failed: {e}", err=True)
+        raise typer.Exit(code=2) from e
+
+
+@reference_app.command("list")
+def reference_list(
+    slug: str,
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """List the canvas bibliography.
+
+    Same envelope as `GET /references` and the `canvas_list_references` MCP tool.
+    """
+    _, _, ws, _, _ = _build_real_services(data_dir)
+    typer.echo(json.dumps(asyncio.run(ws.list_references(slug)), indent=2))
+
+
+@reference_app.command("attach")
+def reference_attach(
+    slug: str,
+    reference_id: str,
+    node_id: str = typer.Option(..., "--node", "-n", help="Target node id."),
+    row_index: int | None = typer.Option(
+        None, "--row", "-r", help="Optional: target one spec row by index."
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Attach a stored reference to a node (and optionally a spec row).
+
+    Same backend as the `POST /references/{id}/attach` HTTP route and the
+    `canvas_attach_reference` MCP tool.
+    """
+    from anchor.core.workspace.workspace import CommandError as _CmdErr
+
+    _, _, ws, _, _ = _build_real_services(data_dir)
+
+    async def run():
+        state, env = await ws.attach_reference(
+            slug, reference_id, node_id=node_id, row_index=row_index,
+        )
+        return {"event": env.model_dump(), "state": state.get_state()}
+
+    try:
+        typer.echo(json.dumps(asyncio.run(run()), indent=2))
+    except _CmdErr as e:
+        typer.echo(f"attach reference failed: {e}", err=True)
         raise typer.Exit(code=2) from e
 
 

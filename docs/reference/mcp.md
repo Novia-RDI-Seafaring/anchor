@@ -39,6 +39,7 @@ and generic stdio client examples.
 | Status | `anchor_status` |
 | Environment / projects | `list_projects`, `create_project`, `update_project`, `open_project`, `create_environment` |
 | Canvas | `canvas_list_workspaces`, `canvas_get_state`, `canvas_add_node`, `canvas_update_node`, `canvas_add_edge`, `canvas_node_types`, `canvas_snapshot` |
+| References | `canvas_create_reference`, `canvas_list_references`, `canvas_attach_reference` - author a citation into a source document, keep a per-canvas bibliography, and attach a reference to a node or spec row (HTTP `/api/workspaces/{slug}/references`, CLI `anchor canvas reference create\|list\|attach`) |
 | Documents | `ingest_pdf`, `list_documents`, `get_document_index`, `get_gold_regions`, `search_documents`, `get_crop` |
 | Harness ingestion | `ingest_begin`, `ingest_get_page`, `ingest_submit_page`, `ingest_status`, `ingest_finalize`, `ingest_abort` - the agent performs polish + region grouping page by page (provider `harness`, no API key); CLI parity via `anchor ingest-session` |
 | CAD | `inspect`, `list_models`, `set_parameter` |
