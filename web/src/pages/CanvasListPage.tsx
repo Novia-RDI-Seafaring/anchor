@@ -14,21 +14,21 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { canvases, type WorkspaceListEntry } from "@/api/canvases";
+import { refreshWorkspaces, useWorkspacesList } from "@/canvas/useWorkspacesList";
 
 import { CanvasTree } from "./CanvasTree";
 
 export function CanvasListPage() {
-  const [items, setItems] = useState<WorkspaceListEntry[]>([]);
   const [slug, setSlug] = useState("");
   const [busy, setBusy] = useState(false);
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
   const [error, setError] = useState("");
   const navigate = useNavigate();
-
-  const refresh = () => canvases.list().then(setItems).catch(() => {});
+  const workspaces = useWorkspacesList({ refreshMs: 5000 });
+  const items = workspaces?.items ?? [];
 
   useEffect(() => {
-    refresh();
+    refreshWorkspaces().catch(() => {});
   }, []);
 
   const create = async () => {
@@ -55,7 +55,7 @@ export function CanvasListPage() {
     setError("");
     try {
       await canvases.delete(item.slug);
-      await refresh();
+      await refreshWorkspaces();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete canvas");
     } finally {

@@ -39,7 +39,8 @@ import {
   paintRectFrom,
 } from "@/canvas/PaintGhost";
 import { nodeTypes, paletteEntries } from "@/canvas/registry";
-import { CanvasSse } from "@/realtime/sseClient";
+import { refreshWorkspaces } from "@/canvas/useWorkspacesList";
+import { CanvasSse, type CanvasEvent } from "@/realtime/sseClient";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
@@ -106,6 +107,20 @@ type UploadJob = {
  */
 function shortId(): string {
   return Math.random().toString(36).slice(2, 10);
+}
+
+function workspaceListMayChange(evt: CanvasEvent): boolean {
+  switch (evt.type) {
+    case "NodeAdded":
+    case "NodeRemoved":
+    case "NodeUpdated":
+    case "EdgeAdded":
+    case "EdgeRemoved":
+    case "CanvasCleared":
+      return true;
+    default:
+      return false;
+  }
 }
 
 /** Walk up the parent chain summing positions so we can convert between
@@ -250,7 +265,12 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         if (cancelled) return;
         setSnapshot(snap as Parameters<typeof setSnapshot>[0]);
       },
-      onPatch: applyEvent,
+      onPatch: (evt) => {
+        applyEvent(evt);
+        if (workspaceListMayChange(evt)) {
+          refreshWorkspaces().catch(() => {});
+        }
+      },
     });
     sse.connect();
     return () => {

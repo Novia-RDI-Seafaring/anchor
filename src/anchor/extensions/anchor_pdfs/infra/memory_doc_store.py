@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
+from contextlib import asynccontextmanager
 from datetime import UTC
 from pathlib import Path
 from typing import Any
 
+from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
 from anchor.extensions.anchor_pdfs.infra._region_normalize import _normalise_regions
 
 
@@ -45,6 +48,39 @@ class MemoryDocStore:
         # Live ingest-activity records (issue #51): slug -> record dict.
         self._activity: dict[str, dict[str, Any]] = {}
         self._lock = asyncio.Lock()
+        # Per-slug ingest locks (issue #175). In-process single-writer guard so
+        # two concurrent ingests on one slug serialize their gold pass.
+        self._ingest_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+    @asynccontextmanager
+    async def ingest_lock(
+        self, slug: str, *, wait: bool = True, timeout: float | None = None,
+    ):
+        # In-process guard (issue #175): one asyncio.Lock per slug serializes
+        # concurrent ingests in the same event loop. `wait=False` fails fast;
+        # `timeout` bounds the wait. Mirrors the fs cross-process file lock.
+        lock = self._ingest_locks[slug]
+        if not wait:
+            if lock.locked():
+                raise IngestLockHeld(
+                    f"ingest lock for {slug!r} is held by another writer; "
+                    "another ingest is running for this slug"
+                )
+            await lock.acquire()
+        elif timeout is not None:
+            try:
+                await asyncio.wait_for(lock.acquire(), timeout=timeout)
+            except (TimeoutError, asyncio.TimeoutError) as exc:
+                raise IngestLockHeld(
+                    f"timed out after {timeout}s waiting for the ingest lock on "
+                    f"{slug!r}; another ingest is still running for this slug"
+                ) from exc
+        else:
+            await lock.acquire()
+        try:
+            yield
+        finally:
+            lock.release()
 
     async def list_documents(self) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
@@ -52,6 +88,12 @@ class MemoryDocStore:
         for slug, doc in self._docs.items():
             seen.add(slug)
             entry = dict(doc)
+            # Derive has_gold/region_count from the real gold state (markers +
+            # cross-check), not the stale seed on the doc row, so a marker
+            # desynced by a concurrent ingest (issue #175) still reports gold.
+            has_gold = await self.has_gold(slug)
+            entry["has_gold"] = has_gold
+            entry["region_count"] = self._count_gold_regions(slug) if has_gold else 0
             failure = self._failures.get(slug)
             report = self._reports.get(slug)
             if failure:
@@ -130,12 +172,46 @@ class MemoryDocStore:
             "pages_meta": self._pages_meta.get(slug, {}),
         }
 
+    def _count_gold_regions(self, slug: str) -> int:
+        """Regions actually held for ``slug`` across all pages."""
+        return sum(
+            len(regions)
+            for (s, _p), regions in self._regions.items()
+            if s == slug
+        )
+
+    def _gold_artifacts_consistent(self, slug: str) -> bool:
+        """Cross-check that real, queryable gold exists for ``slug`` (issue #175).
+
+        Mirrors FsDocStore: when the marker is missing or not-complete (e.g. a
+        concurrent ingest reset it to the stub), trust the durable artifacts
+        instead. Requires the finished ingest-report (``success`` +
+        ``gold_complete`` + positive ``region_count``) AND that many regions
+        actually present, so a genuinely-incomplete doc stays has_gold false."""
+        report = self._reports.get(slug)
+        if not report:
+            return False
+        if report.get("status") != "success":
+            return False
+        # Explicit gold_complete:false is the empty_gold outcome — never vouch.
+        # A legacy report has no gold_complete key; fall back to a positive
+        # region_count for those.
+        if report.get("gold_complete") is False:
+            return False
+        reported = int(report.get("region_count") or 0)
+        if reported <= 0:
+            return False
+        return self._count_gold_regions(slug) >= reported
+
     async def has_gold(self, slug: str) -> bool:
         if slug in self._gold_maps:
             # Explicitly seeded gold maps count as complete (test helper).
             return True
         marker = self._gold_markers.get(slug)
-        return bool(marker and marker.get("complete"))
+        if marker and marker.get("complete"):
+            return True
+        # Marker missing/stub: cross-check the durable gold artifacts (#175).
+        return self._gold_artifacts_consistent(slug)
 
     async def mark_gold_complete(self, slug: str, meta: dict[str, Any]) -> Path:
         async with self._lock:
