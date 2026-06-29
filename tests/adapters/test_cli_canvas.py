@@ -90,3 +90,53 @@ def test_cli_node_types_command(tmp_path):
     assert r.exit_code == 0, r.output
     out = json.loads(r.output)
     assert out[0]["name"] == "fact" and out[0]["body_field"] == "text"
+
+
+def test_cli_reference_create_list_attach_roundtrip(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    _add(runner, data_dir, "w1", "fact", x=0, y=0)
+    # The fact node id is auto-assigned; read it from state.
+    state = json.loads(
+        runner.invoke(app, ["canvas", "state", "w1", "--data-dir", str(data_dir)]).output
+    )
+    node_id = state["nodes"][0]["id"]
+
+    created = runner.invoke(app, [
+        "canvas", "reference", "create", "w1",
+        "--source-ref", json.dumps({"slug": "d", "page": 3, "bbox": [1, 2, 3, 4]}),
+        "--label", "Inlet pressure",
+        "--data-dir", str(data_dir),
+    ])
+    assert created.exit_code == 0, created.output
+    ref = json.loads(created.output)
+    assert ref["id"]
+    assert ref["created_by"] == "human"  # CLI default
+
+    listed = runner.invoke(app, ["canvas", "reference", "list", "w1", "--data-dir", str(data_dir)])
+    assert listed.exit_code == 0, listed.output
+    assert [r["id"] for r in json.loads(listed.output)] == [ref["id"]]
+
+    attached = runner.invoke(app, [
+        "canvas", "reference", "attach", "w1", ref["id"],
+        "--node", node_id, "--data-dir", str(data_dir),
+    ])
+    assert attached.exit_code == 0, attached.output
+    out = json.loads(attached.output)
+    assert out["event"]["type"] == "ReferenceAttached"
+    node = next(n for n in out["state"]["nodes"] if n["id"] == node_id)
+    assert node["data"]["reference_id"] == ref["id"]
+    assert node["data"]["source_ref"]["slug"] == "d"
+
+
+def test_cli_reference_create_rejects_malformed(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    r = runner.invoke(app, [
+        "canvas", "reference", "create", "w1",
+        "--source-ref", json.dumps({"page": 3}),
+        "--data-dir", str(data_dir),
+    ])
+    assert r.exit_code == 2

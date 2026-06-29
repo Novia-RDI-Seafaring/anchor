@@ -7,6 +7,8 @@ from fastapi.responses import FileResponse, Response
 from anchor.adapters.http.deps import get_workspace_service
 from anchor.adapters.http.schemas import (
     AlignNodesRequest,
+    AttachReferenceRequest,
+    CreateReferenceRequest,
     CreateSubCanvasRequest,
     CreateWorkspaceRequest,
     DistributeNodesRequest,
@@ -92,6 +94,65 @@ async def list_placeholders(slug: str, svc: WorkspaceService = Depends(get_works
         return await svc.list_placeholders(slug)
     except (KeyError, FileNotFoundError):
         raise HTTPException(404, f"workspace {slug!r} not found")
+
+
+@router.get("/{slug}/references")
+async def list_references(slug: str, svc: WorkspaceService = Depends(get_workspace_service)):
+    """List the canvas bibliography (``metadata['references']``).
+
+    Same envelope as the ``canvas_list_references`` MCP tool and the
+    ``anchor canvas reference list`` CLI. Empty list for a canvas that has
+    never had a reference (backward compatible)."""
+    _check_slug(slug)
+    try:
+        return await svc.list_references(slug)
+    except (KeyError, FileNotFoundError):
+        raise HTTPException(404, f"workspace {slug!r} not found")
+
+
+@router.post("/{slug}/references", status_code=201)
+async def create_reference(
+    slug: str,
+    req: CreateReferenceRequest,
+    svc: WorkspaceService = Depends(get_workspace_service),
+):
+    """Author a reference and append it to the canvas bibliography.
+
+    Body: ``{source_ref, label?, created_by?}``. ``source_ref`` needs at least
+    ``{slug, page}``. Returns the stored reference with its server-assigned id.
+    Emits a ``ReferenceCreated`` domain event so SSE clients update."""
+    _check_slug(slug)
+    try:
+        return await svc.create_reference(
+            slug,
+            source_ref=req.source_ref,
+            label=req.label,
+            created_by=req.created_by,
+        )
+    except CommandError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/{slug}/references/{reference_id}/attach")
+async def attach_reference(
+    slug: str,
+    reference_id: str,
+    req: AttachReferenceRequest,
+    svc: WorkspaceService = Depends(get_workspace_service),
+):
+    """Attach a stored reference to a node (and optionally a spec row).
+
+    Body: ``{node_id, row_index?}``. Sets the target's ``reference_id`` +
+    ``source_ref`` so the fact resolves to its citation and drives the
+    value-level highlight. Emits a ``ReferenceAttached`` domain event."""
+    _check_slug(slug)
+    try:
+        state, env = await svc.attach_reference(
+            slug, reference_id, node_id=req.node_id, row_index=req.row_index,
+        )
+    except CommandError as e:
+        raise HTTPException(400, str(e))
+    return {"event": env.model_dump(), "state": state.get_state()}
 
 
 @router.post("/{slug}/clear")

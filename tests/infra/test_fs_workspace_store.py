@@ -120,3 +120,32 @@ def test_events_jsonl_is_append_only(root):
         assert [r["version"] for r in records] == [1, 2, 3, 4, 5]
 
     asyncio.run(run())
+
+
+def test_references_survive_cold_boot_replay(root):
+    """A reference created + attached through the service is rebuilt from
+    events.jsonl by a fresh store instance (#147 slice 1 durability)."""
+    from anchor.core.clock import FixedClock
+    from anchor.core.services.workspace_service import WorkspaceService
+    from anchor.infra.bus.memory_bus import MemoryEventBus
+
+    async def run():
+        store = FsWorkspaceStore(root)
+        svc = WorkspaceService(store, MemoryEventBus(), clock=FixedClock(ts=1700000000.0))
+        await svc.create_workspace("w1")
+        await svc.add_node("w1", id="n1", node_type="fact")
+        ref = await svc.create_reference(
+            "w1", source_ref={"slug": "d", "page": 2}, label="Inlet",
+        )
+        await svc.attach_reference("w1", ref["id"], node_id="n1")
+
+        # Fresh store + service: state must be rebuilt from the event log.
+        store2 = FsWorkspaceStore(root)
+        svc2 = WorkspaceService(store2, MemoryEventBus())
+        refs = await svc2.list_references("w1")
+        assert [r["id"] for r in refs] == [ref["id"]]
+        state = await svc2.get_state("w1")
+        node = next(n for n in state["nodes"] if n["id"] == "n1")
+        assert node["data"]["reference_id"] == ref["id"]
+
+    asyncio.run(run())
