@@ -81,6 +81,14 @@ uv sync --extra dev          # adds pytest, ruff, import-linter
 pnpm --dir web install
 ```
 
+If `pnpm` is not installed globally, use one of these forms instead:
+
+```powershell
+corepack pnpm@10 --dir web install
+# or, with Node.js + npm only:
+npx pnpm@10 --dir web install
+```
+
 Dev mode runs two processes: one for the backend, one for the frontend with hot-reload.
 
 ```bash
@@ -90,6 +98,12 @@ uv run anchor serve
 # terminal 2
 pnpm --dir web dev
 # -> backend on :8002, Vite HMR on :5173
+```
+
+With the npm fallback, run the frontend command as:
+
+```powershell
+npx pnpm@10 --dir web dev
 ```
 
 Storage resolves from the active project. Run inside a project folder, or
@@ -143,6 +157,22 @@ the React frontend, so build the frontend first:
     uv tool install --force --reinstall --refresh .
     anchor serve
     ```
+
+=== "Node + npm only"
+
+    ```powershell
+    cd C:\path\to\anchor
+
+    npx pnpm@10 --dir web install
+    npx pnpm@10 --dir web build
+
+    uv tool install --force --reinstall --refresh .
+    anchor serve
+    ```
+
+    Use this when Node.js and npm are installed, but `pnpm` is not on PATH and
+    Corepack fails. `npx pnpm@10` runs pnpm through npm for that command without
+    requiring a global pnpm install.
 
 If Corepack fails with a permission error, install pnpm through npm and run the
 same local checkout build:

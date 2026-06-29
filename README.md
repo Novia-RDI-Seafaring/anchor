@@ -85,7 +85,9 @@ Open `http://localhost:5173` for the development UI. The backend remains on
 
 Source development requires Node.js 20+ and pnpm 10. If `pnpm` is not installed
 globally, use the Corepack form instead: `corepack pnpm@10 --dir web install`
-and `corepack pnpm@10 --dir web dev`.
+and `corepack pnpm@10 --dir web dev`. If Corepack is blocked but Node.js and
+npm are available, use `npx pnpm@10 --dir web install` and
+`npx pnpm@10 --dir web dev`.
 
 For normal use, run `anchor init` in a project folder. It writes an
 `anchor.toml` marker and a hidden `.anchor_data/` there, and binds the project
