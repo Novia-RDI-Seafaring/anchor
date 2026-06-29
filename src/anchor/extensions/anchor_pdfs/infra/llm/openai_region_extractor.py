@@ -35,7 +35,14 @@ class OpenAIRegionExtractor:
             f"List the visual regions on page {page_no} of this engineering PDF. "
             "For each region emit: id, kind (chart|spec_block|table|figure|diagram|text), "
             "title, description, approximate bbox [left, top, right, bottom] in BOTTOMLEFT coords, "
-            "tags[], entities[]. Return JSON with key 'regions'.\n"
+            "tags[], entities[]. For tables and spec blocks, make regions tight: split "
+            "distinct visual sections or sub-tables separated by headers, whitespace, or rules. "
+            "Do not merge adjacent sub-tables, and keep values from neighboring groups out of "
+            "the region. In the description, list exact visible facts as 'key: value' pairs "
+            "when the region contains key/value rows. Include the value for every key you can "
+            "read; if two keys share the same value, repeat that value for both keys. Do not "
+            "deduplicate equal values or summarize numeric values. Return JSON with key "
+            "'regions'.\n"
             f"\nDocling items:\n{json.dumps(items)[:8000]}"
         )
         messages = [{

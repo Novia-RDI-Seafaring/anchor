@@ -102,6 +102,8 @@ def test_get_page_returns_work_item_with_candidates_and_instructions():
         assert item["raw_md"].startswith("# Demo Doc")
         assert [c["id"] for c in item["candidates"]] == ["p1-i0", "p1-i1", "p1-i2"]
         assert "ingest_submit_page" in item["instructions"]
+        assert "sub-tables" in item["instructions"]
+        assert "repeat duplicate values" in item["instructions"]
         assert item["protocol_version"] == PROTOCOL_VERSION
         # Unknown page and unknown session produce structured errors.
         assert "error" in await s.ingest_session.ingest_get_page(order["session_id"], 9)

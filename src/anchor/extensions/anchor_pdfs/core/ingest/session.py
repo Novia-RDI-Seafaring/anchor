@@ -86,7 +86,9 @@ PAGE_INSTRUCTIONS = (
     "member_item_ids (the server computes the bbox from those). Only when no "
     "candidate covers a visual, send approx_bbox [left, top, right, bottom] "
     "in BOTTOMLEFT page coordinates instead. Optional: tags[], entities[] "
-    "(product/model identifiers). "
+    "(product/model identifiers). For table/spec_block regions, split visual "
+    "sub-tables, keep exact key: value facts in the description, and repeat "
+    "duplicate values for each key instead of deduplicating them. "
     "3) Submit with ingest_submit_page; on a rejection, repair the named "
     "fields and resubmit (resubmitting a page replaces it)."
 )
