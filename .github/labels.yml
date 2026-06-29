@@ -54,3 +54,7 @@
 - name: "needs-design"
   color: "fbca04"
   description: "Open architectural decisions; not ready to implement"
+
+- name: "unclaimed"
+  color: "e99695"
+  description: "PR's linked issue was not claimed (assigned to the author) before work began; advisory only"
