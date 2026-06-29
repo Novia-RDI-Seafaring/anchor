@@ -116,7 +116,7 @@ anchor demo
 # Or step by step:
 
 # 1. Start a project in a folder. The first time, `anchor init` asks you to
-#    pick a provider — this is the ENVIRONMENT, the trust boundary that decides
+#    pick a provider - this is the ENVIRONMENT, the trust boundary that decides
 #    where document content may go (local keeps everything on your machine).
 #    Pass --provider to skip the prompt, e.g. `anchor init --provider local`.
 mkdir my-anchor-project
@@ -134,6 +134,20 @@ anchor ingest /path/to/datasheet.pdf
 ```
 
 See [`docs/getting-started/tutorial.md`](./docs/getting-started/tutorial.md) for a walked-through `anchor demo` -> "agent fills the placeholders" tour.
+
+### Drag-drop, CLI ingest, and harness ingest
+
+There are two PDF ingestion modes:
+
+| Mode | How it starts | Who extracts gold regions | When to use it |
+|---|---|---|---|
+| Built-in ingest | Canvas drag-drop, HTTP upload, MCP `ingest_pdf`, or CLI `anchor ingest` | ANCHOR's configured extractor | Normal uploads, scripted ingest, and projects with a configured vision endpoint |
+| Harness-driven ingest | MCP `ingest_begin` -> `ingest_get_page` -> `ingest_submit_page` -> `ingest_finalize` | The connected agent harness, page by page | Provider `harness`, no-key workflows, or difficult PDFs where extraction quality matters more than speed |
+
+Both modes publish to the same project data layout: `bronze/`, `silver/`,
+`gold/`, and canvas state under `.anchor_data/`. A document ingested without a
+vision endpoint may have silver data but no gold regions. Configure a provider
+and re-ingest with `--force`, or use harness-driven ingest.
 
 That's the whole loop. Every PDF you ingest becomes a structured set of regions on disk; every canvas you create is a folder you can zip and email.
 
@@ -345,7 +359,7 @@ anchor env create vault --yes --provider local
 cd confidential-project && anchor init --env vault
 
 # Verify the posture before feeding sensitive input.
-anchor check --env vault                # shows "local-only: ON — no external egress"
+anchor check --env vault                # shows "local-only: ON - no external egress"
 
 # Ingest with no outbound connections.
 anchor ingest "C:\path\to\datasheet.pdf"
@@ -373,11 +387,11 @@ Run most commands from inside a project folder and they resolve it automatically
 
 ```
 # Environments (the provider / data-zone profile = the trust boundary)
-anchor env create NAME [--provider local|ollama|openai|azure|custom] [--base-url …] [--vision-model …]
-anchor env list | show NAME | default NAME | set-description NAME "…"
+anchor env create NAME [--provider local|ollama|openai|azure|custom] [--base-url ...] [--vision-model ...]
+anchor env list | show NAME | default NAME | set-description NAME "..."
 
 # Projects (a folder = a corpus + its canvases)
-anchor init [NAME] [--env NAME] [--provider …]   # start a project in this folder
+anchor init [NAME] [--env NAME] [--provider ...]  # start a project in this folder
 anchor project create NAME [--env NAME]          # a managed project under the env
 anchor project list | set-description | move NAME --to ENV
 anchor use ENV [PROJECT]                          # session default so you can omit --env
