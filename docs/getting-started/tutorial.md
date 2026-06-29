@@ -133,19 +133,19 @@ As the agent writes each node, you'll see:
 - The chip disappears.
 - The dashed sky outline flips to solid neutral.
 - The spec rows fade in.
-- A `p2` badge (or wherever the source lives) appears on the spec
-  header. Click it to open the source page in the viewer.
+- A source anchor icon appears beside grounded rows. Click it to open
+  the source page in the viewer.
 
 No reload needed. The same SSE stream is how a second browser tab, a
 second agent, or a headless viewer would see the same updates.
 
 ## 7. Inspect a value's source
 
-Click any `p2` badge on a spec table to open the PDF viewer at that
-page, with the relevant region's bbox highlighted in sky-blue. This is
-the trust mechanism: every value the agent writes points back to a
-specific page+bbox. If you don't see a source ref, treat the value as
-ungrounded.
+Click a row's source anchor icon on a spec table to open the PDF viewer
+at that page, with the relevant region or value highlighted. This is
+the trust mechanism: every grounded value the agent writes points back
+to a specific page and bbox when available. If you don't see a source
+ref, treat the value as ungrounded.
 
 ## What's next
 

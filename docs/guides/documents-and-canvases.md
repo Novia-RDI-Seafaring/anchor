@@ -31,6 +31,21 @@ Each completed ingest writes a timing report at
 duration, stage duration, per-page polish timing, per-page gold extraction
 timing, and embedding time. Use it when comparing slow and fast runs.
 
+### Built-in ingest vs. harness-driven ingest
+
+ANCHOR has two ways to turn a PDF into usable canvas evidence:
+
+| Mode | Entry points | Gold extraction path | Best fit |
+|---|---|---|---|
+| Built-in ingest | Canvas drag-drop, HTTP upload, MCP `ingest_pdf`, CLI `anchor ingest` | ANCHOR runs Docling silver extraction and, when configured, a vision extractor for gold regions | Fast normal use and repeatable scripted ingestion |
+| Harness-driven ingest | MCP `ingest_begin`, `ingest_get_page`, `ingest_submit_page`, `ingest_finalize` | The connected agent reads each page work item and submits polished markdown plus regions | No-key provider, quality-sensitive tables, or dense datasheets |
+
+Both modes write the same bronze, silver, and gold folders. The difference is
+who performs the gold-region interpretation. Drag-drop and `anchor ingest` use
+the configured backend extractor. Harness-driven ingest lets the agent review
+each page before publishing gold, so it can be slower but more deliberate on
+difficult tables.
+
 ## 3. Create a canvas
 
 ```bash
@@ -51,7 +66,7 @@ anchor install cursor
 ```
 
 These register a server that resolves the project from the folder you open the
-agent in — no baked data dir, no reinstall per project.
+agent in, with no baked data dir and no reinstall per project.
 
 Restart the client after installation. An agent can enumerate workspaces,
 search ingested documents, add evidence-backed nodes, and organize a canvas
