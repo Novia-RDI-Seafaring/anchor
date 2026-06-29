@@ -402,6 +402,33 @@ move from triage to implementation:
    durable ownership signal; until one exists, the assignment + claim
    comment are all that hold the issue.
 
+#### Distinct-account assumption
+
+Assignee-based claims only disambiguate when **each harness runs as a
+distinct GitHub account**. The assignee set, the claim comment author,
+and the PR author all key off the login. If two harnesses share one
+account, GitHub cannot tell them apart, so "assigned to me" and
+"assigned to the other agent" collapse into the same login.
+
+**Same-account multi-harness is unsupported for assignee-based claims.**
+If you must run two harnesses concurrently, give each its own GitHub
+account. There is no in-band lock that separates two agents behind one
+login. Run them on the same account only when their work cannot overlap.
+
+#### Advisory claim check on PR open
+
+A `claim-check` workflow runs when a PR opens, reopens, or leaves draft.
+It resolves the PR's linked issue (`Closes #<n>` and GitHub's linked
+references) and checks the issue is assigned to the PR author. On a miss
+it posts a single advisory comment and adds the `unclaimed` label. When
+the claim is satisfied it removes that label.
+
+The check is **advisory and never blocks merge**. It is not a required
+status. It only signals. A PR with no linked issue (a chore) is a clean
+skip with no warning. If you see the `unclaimed` label or its comment,
+the fix is the ritual above: assign the issue to yourself, ideally
+before the branch's first commit, and the next run clears the signal.
+
 ### Filing new work mid-session
 
 If you discover a bug, a missing feature, or a doc gap while doing
