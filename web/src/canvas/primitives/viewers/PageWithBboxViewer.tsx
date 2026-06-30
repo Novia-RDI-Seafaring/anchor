@@ -26,6 +26,7 @@ export function PageWithBboxViewer() {
   const viewer = useUiStore((s) => s.pdfViewer);
   const close = useUiStore((s) => s.closePdf);
   const setPage = useUiStore((s) => s.setPdfPage);
+  const setMode = useUiStore((s) => s.setPdfViewerMode);
 
   const [index, setIndex] = useState<DocumentIndex | null>(null);
   const [regions, setRegions] = useState<Region[]>([]);
@@ -158,7 +159,9 @@ export function PageWithBboxViewer() {
   }, [viewerSlug, viewerPage, viewerHighlightQuery, viewerHighlightBbox, viewerHighlightPage]);
 
   useEffect(() => {
-    if (!viewer) return;
+    // Only the modal owns global Escape / arrow keys. In dock mode the
+    // SourceDock toolbar drives navigation, so the modal must stay inert.
+    if (!viewer || viewer.mode !== "modal") return;
     function onKey(e: KeyboardEvent) {
       if (!viewer) return;
       if (e.key === "Escape") close();
@@ -172,7 +175,10 @@ export function PageWithBboxViewer() {
     return () => window.removeEventListener("keydown", onKey);
   }, [viewer, index, close, setPage]);
 
-  if (!viewer) return null;
+  // The shared pane backs both surfaces; this modal renders only when the
+  // viewer is in "modal" mode. The docked split-screen (#110a) is rendered
+  // by SourceDock for "dock" mode.
+  if (!viewer || viewer.mode !== "modal") return null;
 
   const total = index?.document?.page_count ?? 0;
   const explicitW = pageMeta[viewer.page]?.width ?? 0;
@@ -196,6 +202,14 @@ export function PageWithBboxViewer() {
             className="rounded px-2 py-1 text-sm hover:bg-white/10"
           >
             ✕ Close
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("dock")}
+            className="rounded border border-white/20 px-2 py-1 text-sm hover:bg-white/10"
+            title="Dock the source pane to the left of the canvas"
+          >
+            ⇤ Dock left
           </button>
           <div className="text-sm opacity-80">
             {index?.document?.title ?? viewer.slug}

@@ -1,8 +1,20 @@
 import { create } from "zustand";
 
+/**
+ * How the shared source pane is surfaced:
+ *   - "dock":  left-docked split-screen pane next to the canvas (#110a, the
+ *     first-class mode). One shared pane; opening a different document/region
+ *     swaps its content in place.
+ *   - "modal": the legacy fullscreen quick-look overlay (kept working).
+ * The same `pdfViewer` state backs both modes, so flipping `mode` swaps the
+ * surface without losing page/highlight context.
+ */
+export type PdfViewerMode = "dock" | "modal";
+
 type PdfViewerState = {
   slug: string;             // document slug
   page: number;
+  mode: PdfViewerMode;
   workspaceSlug?: string;   // for "send to canvas" actions
   documentNodeId?: string;  // for evidence-edge wiring
   /** When set, the viewer should focus this region and ride a deep-highlight on its bbox. */
@@ -48,6 +60,13 @@ type HoveredSourceRef = {
 
 type UiState = {
   pdfViewer: PdfViewerState | null;
+  /**
+   * Width ratio of the left-docked source pane (0..1 of the split-screen
+   * area). Session-only: persists while the app is open so the user's chosen
+   * split survives opening/closing the dock, but resets on reload. Clamped to
+   * a sane band by `setSourceDockRatio`.
+   */
+  sourceDockRatio: number;
   hoveredSourceRef: HoveredSourceRef;
   /**
    * True when the right-side Library drawer (shadcn Sheet) is open.
@@ -77,6 +96,8 @@ type UiState = {
     slug: string,
     options?: {
       page?: number;
+      /** Surface to open in. Defaults to "dock" (the #110a split-screen). */
+      mode?: PdfViewerMode;
       workspaceSlug?: string;
       documentNodeId?: string;
       highlightRegionId?: string;
@@ -86,6 +107,10 @@ type UiState = {
   ) => void;
   closePdf: () => void;
   setPdfPage: (page: number) => void;
+  /** Flip the shared pane between the docked and modal surfaces in place. */
+  setPdfViewerMode: (mode: PdfViewerMode) => void;
+  /** Clamp + store the left source-pane width ratio (0..1). */
+  setSourceDockRatio: (ratio: number) => void;
   setHoveredSourceRef: (ref: HoveredSourceRef) => void;
   clearHoveredSourceRef: () => void;
   setLibraryDrawerOpen: (open: boolean) => void;
@@ -168,8 +193,20 @@ type UiState = {
   setSelectedEdgeId: (id: string | null) => void;
 };
 
+/** Default split: source pane takes a touch under half the width. */
+export const DEFAULT_SOURCE_DOCK_RATIO = 0.45;
+/** Keep both panes usable: clamp the divider to this band. */
+const MIN_SOURCE_DOCK_RATIO = 0.2;
+const MAX_SOURCE_DOCK_RATIO = 0.8;
+
+export function clampDockRatio(ratio: number): number {
+  if (!Number.isFinite(ratio)) return DEFAULT_SOURCE_DOCK_RATIO;
+  return Math.min(MAX_SOURCE_DOCK_RATIO, Math.max(MIN_SOURCE_DOCK_RATIO, ratio));
+}
+
 export const useUiStore = create<UiState>((set) => ({
   pdfViewer: null,
+  sourceDockRatio: DEFAULT_SOURCE_DOCK_RATIO,
   hoveredSourceRef: null,
   libraryDrawerOpen: false,
   armedTool: null,
@@ -181,10 +218,13 @@ export const useUiStore = create<UiState>((set) => ({
   pendingInlineRenameNodeId: null,
   selectedEdgeId: null,
   openPdf: (slug, options) =>
-    set({
+    set((state) => ({
       pdfViewer: {
         slug,
         page: options?.page ?? 1,
+        // One shared pane: reuse the surface the viewer is already on unless
+        // the caller pins a specific mode. Defaults to the docked split-screen.
+        mode: options?.mode ?? state.pdfViewer?.mode ?? "dock",
         workspaceSlug: options?.workspaceSlug,
         documentNodeId: options?.documentNodeId,
         highlightRegionId: options?.highlightRegionId,
@@ -194,12 +234,17 @@ export const useUiStore = create<UiState>((set) => ({
           ? options?.page ?? 1
           : undefined,
       },
-    }),
+    })),
   closePdf: () => set({ pdfViewer: null }),
   setPdfPage: (page) =>
     set((state) =>
       state.pdfViewer ? { pdfViewer: { ...state.pdfViewer, page } } : state,
     ),
+  setPdfViewerMode: (mode) =>
+    set((state) =>
+      state.pdfViewer ? { pdfViewer: { ...state.pdfViewer, mode } } : state,
+    ),
+  setSourceDockRatio: (ratio) => set({ sourceDockRatio: clampDockRatio(ratio) }),
   setHoveredSourceRef: (ref) => set({ hoveredSourceRef: ref }),
   clearHoveredSourceRef: () => set({ hoveredSourceRef: null }),
   setLibraryDrawerOpen: (open) => set({ libraryDrawerOpen: open }),

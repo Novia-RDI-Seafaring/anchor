@@ -73,6 +73,12 @@ export const documents = {
   },
   pageText: (slug: string, page: number) =>
     api.get<{ text: string }>(`/api/documents/${slug}/pages/${page}/text`),
+  /**
+   * URL of the original PDF file. Used by the real-PDF source viewer
+   * (PDF.js) so the user gets a selectable text layer instead of a page
+   * screenshot. Served by `GET /api/documents/{slug}/pdf`.
+   */
+  pdfUrl: (slug: string) => `${BACKEND_URL}/api/documents/${slug}/pdf`,
   pageImageUrl: (slug: string, page: number) =>
     `${BACKEND_URL}/api/documents/${slug}/pages/${page}/image`,
   pageCropUrl: (slug: string, page: number, bbox: number[], dpi = 300) =>

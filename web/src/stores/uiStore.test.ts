@@ -9,13 +9,14 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { useUiStore } from "./uiStore";
+import { DEFAULT_SOURCE_DOCK_RATIO, useUiStore } from "./uiStore";
 
 beforeEach(() => {
   // Reset to the initial state by setting every field individually — the
   // store has no `reset()` action.
   useUiStore.setState({
     pdfViewer: null,
+    sourceDockRatio: DEFAULT_SOURCE_DOCK_RATIO,
     hoveredSourceRef: null,
     libraryDrawerOpen: false,
     armedTool: null,
@@ -189,6 +190,78 @@ describe("uiStore.selectedEdgeId — Miro-style edge editor selection", () => {
     useUiStore.setState({ selectedEdgeId: null, selectedNodeId: "n1" });
     useUiStore.getState().setSelectedEdgeId(null);
     expect(useUiStore.getState().selectedNodeId).toBe("n1");
+  });
+});
+
+describe("uiStore split-screen source dock (#110a)", () => {
+  it("openPdf defaults to the docked split-screen mode", () => {
+    useUiStore.getState().openPdf("lkh", { page: 1 });
+    expect(useUiStore.getState().pdfViewer).toMatchObject({
+      slug: "lkh",
+      page: 1,
+      mode: "dock",
+    });
+  });
+
+  it("openPdf can pin the modal quick-look mode", () => {
+    useUiStore.getState().openPdf("lkh", { page: 1, mode: "modal" });
+    expect(useUiStore.getState().pdfViewer?.mode).toBe("modal");
+  });
+
+  it("opening a second document reuses the pane and keeps the current mode", () => {
+    // Open in modal, then open a different document with no mode given.
+    useUiStore.getState().openPdf("doc-a", { page: 3, mode: "modal" });
+    useUiStore.getState().openPdf("doc-b", { page: 1 });
+    const v = useUiStore.getState().pdfViewer;
+    // Same single pane, content swapped, mode preserved.
+    expect(v?.slug).toBe("doc-b");
+    expect(v?.page).toBe(1);
+    expect(v?.mode).toBe("modal");
+  });
+
+  it("setPdfViewerMode flips the shared pane in place", () => {
+    useUiStore.getState().openPdf("lkh", { page: 2 });
+    useUiStore.getState().setPdfViewerMode("modal");
+    expect(useUiStore.getState().pdfViewer?.mode).toBe("modal");
+    expect(useUiStore.getState().pdfViewer?.page).toBe(2);
+  });
+
+  it("setPdfViewerMode is a no-op when no document is open", () => {
+    useUiStore.getState().setPdfViewerMode("modal");
+    expect(useUiStore.getState().pdfViewer).toBeNull();
+  });
+
+  it("closePdf returns to canvas-full (no viewer)", () => {
+    useUiStore.getState().openPdf("lkh");
+    useUiStore.getState().closePdf();
+    expect(useUiStore.getState().pdfViewer).toBeNull();
+  });
+
+  it("setSourceDockRatio stores a ratio within the band", () => {
+    useUiStore.getState().setSourceDockRatio(0.5);
+    expect(useUiStore.getState().sourceDockRatio).toBe(0.5);
+  });
+
+  it("setSourceDockRatio clamps below the minimum", () => {
+    useUiStore.getState().setSourceDockRatio(0.01);
+    expect(useUiStore.getState().sourceDockRatio).toBe(0.2);
+  });
+
+  it("setSourceDockRatio clamps above the maximum", () => {
+    useUiStore.getState().setSourceDockRatio(0.99);
+    expect(useUiStore.getState().sourceDockRatio).toBe(0.8);
+  });
+
+  it("setSourceDockRatio falls back to default for non-finite input", () => {
+    useUiStore.getState().setSourceDockRatio(Number.NaN);
+    expect(useUiStore.getState().sourceDockRatio).toBe(DEFAULT_SOURCE_DOCK_RATIO);
+  });
+
+  it("the dock ratio persists across opening/closing the viewer", () => {
+    useUiStore.getState().setSourceDockRatio(0.6);
+    useUiStore.getState().openPdf("lkh");
+    useUiStore.getState().closePdf();
+    expect(useUiStore.getState().sourceDockRatio).toBe(0.6);
   });
 });
 
