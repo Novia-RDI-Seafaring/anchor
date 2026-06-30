@@ -518,6 +518,42 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "canvas_remove_reference",
+            "description": (
+                "Remove a reference (citation) from the canvas bibliography. "
+                "Pass the `reference_id` from canvas_list_references. Idempotent "
+                "at the data level but errors on an unknown id so you notice a "
+                "stale id. Does not detach the reference from any node/row it was "
+                "attached to (that pointer is a cached copy)."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "reference_id": {"type": "string"},
+                },
+                "required": ["workspace_slug", "reference_id"],
+            },
+        },
+        {
+            "name": "canvas_update_reference",
+            "description": (
+                "Edit a reference's human caption (`label`). Only the label is "
+                "editable; the `source_ref` locator is immutable. Pass `label` "
+                "= null to clear the caption. Use the `reference_id` from "
+                "canvas_list_references."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "reference_id": {"type": "string"},
+                    "label": {"type": ["string", "null"]},
+                },
+                "required": ["workspace_slug", "reference_id"],
+            },
+        },
+        {
             "name": "canvas_attach_reference",
             "description": (
                 "Attach a stored reference to a fact: a node (and optionally one "
@@ -739,6 +775,18 @@ async def call_tool(
             return json.dumps({"reference": ref})
         if name == "canvas_list_references":
             return json.dumps(await svc.list_references(args["workspace_slug"]))
+        if name == "canvas_remove_reference":
+            state, env = await svc.remove_reference(
+                args["workspace_slug"], args["reference_id"],
+            )
+            return json.dumps({"event": env.model_dump(), "state": state.get_state()})
+        if name == "canvas_update_reference":
+            state, env = await svc.update_reference(
+                args["workspace_slug"],
+                args["reference_id"],
+                label=args.get("label"),
+            )
+            return json.dumps({"event": env.model_dump(), "state": state.get_state()})
         if name == "canvas_attach_reference":
             state, env = await svc.attach_reference(
                 args["workspace_slug"],

@@ -11,6 +11,26 @@ next version section on tag.
 
 ### Added
 
+- Canvas References panel, docked on the LEFT with the PDF source pane (slice 3
+  of #147):
+  - With the source dock open, the left region lists the canvas bibliography.
+    Each row shows the label (or a quote / slug+page fallback), the source doc
+    slug and page, a short quote snippet, and a crop thumbnail when the
+    reference has a bbox.
+  - Click a reference to open its source in the dock at its page with the bbox
+    (and quote) highlighted, reusing the deep-zoom viewer.
+  - Rename a reference's label or delete it from the panel.
+  - The panel live-updates: a reference made via "Make reference" in the dock
+    appears immediately (the references API emits an `anchor:references-changed`
+    browser event the panel refetches on).
+- Reference remove / update (label) ops, with MCP / HTTP / CLI parity (slice 3
+  of #147): drop a reference from the bibliography or edit its caption. Only the
+  label is mutable; the `source_ref` locator is immutable. HTTP
+  `DELETE /api/workspaces/{slug}/references/{id}` and
+  `PATCH /api/workspaces/{slug}/references/{id}`; MCP `canvas_remove_reference` /
+  `canvas_update_reference`; CLI `anchor canvas reference remove|update`. Both
+  emit `ReferenceRemoved` / `ReferenceUpdated` domain events so SSE clients
+  update; an unknown reference id errors.
 - Canvas references store, with MCP / HTTP / CLI parity (slice 1 of #147):
   - A per-canvas bibliography lives in canvas meta as `references` (a list of
     `{id, label?, source_ref, created_by, created_at}`). `source_ref` is a

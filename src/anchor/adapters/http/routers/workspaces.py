@@ -15,6 +15,7 @@ from anchor.adapters.http.schemas import (
     OrganizeSubtreeRequest,
     RenameWorkspaceRequest,
     SnapshotRequest,
+    UpdateReferenceRequest,
 )
 from anchor.core.ids import InvalidWorkspaceSlugError, validate_workspace_slug
 from anchor.core.services.workspace_service import WorkspaceService
@@ -131,6 +132,46 @@ async def create_reference(
         )
     except CommandError as e:
         raise HTTPException(400, str(e))
+
+
+@router.delete("/{slug}/references/{reference_id}")
+async def remove_reference(
+    slug: str,
+    reference_id: str,
+    svc: WorkspaceService = Depends(get_workspace_service),
+):
+    """Remove a reference from the canvas bibliography.
+
+    Same backend as the ``canvas_remove_reference`` MCP tool and the
+    ``anchor canvas reference remove`` CLI. Emits a ``ReferenceRemoved``
+    domain event so SSE clients update. 400 for an unknown reference id."""
+    _check_slug(slug)
+    try:
+        state, env = await svc.remove_reference(slug, reference_id)
+    except CommandError as e:
+        raise HTTPException(400, str(e))
+    return {"event": env.model_dump(), "state": state.get_state()}
+
+
+@router.patch("/{slug}/references/{reference_id}")
+async def update_reference(
+    slug: str,
+    reference_id: str,
+    req: UpdateReferenceRequest,
+    svc: WorkspaceService = Depends(get_workspace_service),
+):
+    """Edit a reference's human caption (``label``).
+
+    Body: ``{label?}``. Only the caption is editable; the ``source_ref``
+    locator is immutable. Same backend as the ``canvas_update_reference`` MCP
+    tool and the ``anchor canvas reference update`` CLI. Emits a
+    ``ReferenceUpdated`` domain event. 400 for an unknown reference id."""
+    _check_slug(slug)
+    try:
+        state, env = await svc.update_reference(slug, reference_id, label=req.label)
+    except CommandError as e:
+        raise HTTPException(400, str(e))
+    return {"event": env.model_dump(), "state": state.get_state()}
 
 
 @router.post("/{slug}/references/{reference_id}/attach")

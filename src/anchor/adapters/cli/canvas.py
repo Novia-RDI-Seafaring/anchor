@@ -775,6 +775,62 @@ def reference_list(
     typer.echo(json.dumps(asyncio.run(ws.list_references(slug)), indent=2))
 
 
+@reference_app.command("remove")
+def reference_remove(
+    slug: str,
+    reference_id: str,
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Remove a reference from the canvas bibliography.
+
+    Same backend as the `DELETE /references/{id}` HTTP route and the
+    `canvas_remove_reference` MCP tool.
+    """
+    from anchor.core.workspace.workspace import CommandError as _CmdErr
+
+    _, _, ws, _, _ = _build_real_services(data_dir)
+
+    async def run():
+        state, env = await ws.remove_reference(slug, reference_id)
+        return {"event": env.model_dump(), "state": state.get_state()}
+
+    try:
+        typer.echo(json.dumps(asyncio.run(run()), indent=2))
+    except _CmdErr as e:
+        typer.echo(f"remove reference failed: {e}", err=True)
+        raise typer.Exit(code=2) from e
+
+
+@reference_app.command("update")
+def reference_update(
+    slug: str,
+    reference_id: str,
+    label: str | None = typer.Option(
+        None, "--label", "-l", help="New human caption (omit to clear)."
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Edit a reference's human caption (label).
+
+    Only the label is editable; the source_ref locator is immutable. Same
+    backend as the `PATCH /references/{id}` HTTP route and the
+    `canvas_update_reference` MCP tool.
+    """
+    from anchor.core.workspace.workspace import CommandError as _CmdErr
+
+    _, _, ws, _, _ = _build_real_services(data_dir)
+
+    async def run():
+        state, env = await ws.update_reference(slug, reference_id, label=label)
+        return {"event": env.model_dump(), "state": state.get_state()}
+
+    try:
+        typer.echo(json.dumps(asyncio.run(run()), indent=2))
+    except _CmdErr as e:
+        typer.echo(f"update reference failed: {e}", err=True)
+        raise typer.Exit(code=2) from e
+
+
 @reference_app.command("attach")
 def reference_attach(
     slug: str,

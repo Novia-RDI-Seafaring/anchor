@@ -142,3 +142,29 @@ class ReferenceAttached(BaseModel):
     node_id: str
     row_index: int | None = None
     source_ref: dict[str, Any]
+
+
+class ReferenceRemoved(BaseModel):
+    """A reference was removed from the canvas bibliography.
+
+    ``reference_id`` names the entry to drop from ``metadata['references']``.
+    The reducer is a no-op when the id is absent (idempotent). Detaching the
+    reference from any node/row it was attached to is out of scope for this
+    event: the pointer is a cached copy and is cleaned up separately (slice 4).
+    """
+
+    type: Literal["ReferenceRemoved"] = "ReferenceRemoved"
+    reference_id: str
+
+
+class ReferenceUpdated(BaseModel):
+    """A reference's ``label`` was edited in the canvas bibliography.
+
+    Only the human caption changes; the ``source_ref`` locator is immutable
+    here so the schema stays stable (#147 slice 3). ``label`` may be ``None``
+    to clear the caption.
+    """
+
+    type: Literal["ReferenceUpdated"] = "ReferenceUpdated"
+    reference_id: str
+    label: str | None = None
