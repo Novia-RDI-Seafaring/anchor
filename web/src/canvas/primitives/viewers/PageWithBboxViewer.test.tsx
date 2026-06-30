@@ -52,6 +52,7 @@ describe("PageWithBboxViewer value-precise highlight", () => {
     await act(async () => {
       useUiStore.getState().openPdf("alfa-laval-lkh", {
         page: 2,
+        mode: "modal",
         highlightRegionId: "r9",
         highlightBbox: [50, 480, 550, 410],
         highlightQuery: "600 kPa",
@@ -70,6 +71,7 @@ describe("PageWithBboxViewer value-precise highlight", () => {
     await act(async () => {
       useUiStore.getState().openPdf("alfa-laval-lkh", {
         page: 2,
+        mode: "modal",
         highlightRegionId: "r9",
         highlightBbox: [50, 480, 550, 410],
       });

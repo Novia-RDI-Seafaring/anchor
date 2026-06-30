@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { CanvasGraph } from "@/canvas/CanvasGraph";
 import { breadcrumb } from "@/canvas/breadcrumb";
 import { PageWithBboxViewer } from "@/canvas/primitives/viewers/PageWithBboxViewer";
+import { SourceDock } from "@/canvas/primitives/viewers/SourceDock";
 import { CanvasShell } from "@/shell/CanvasShell";
 
 /**
@@ -119,11 +120,18 @@ export function CanvasPage() {
           </a>
         </div>
       </header>
-      <main className="flex-1 overflow-hidden">
-        <CanvasShell workspaceSlug={id}>
-          <CanvasGraph slug={id} />
-        </CanvasShell>
+      {/* Split-screen: the left-docked source pane (SourceDock) renders
+          itself only when the shared viewer is open in "dock" mode, sitting
+          to the LEFT of the canvas. Closing the dock returns to canvas-full. */}
+      <main className="flex flex-1 overflow-hidden">
+        <SourceDock />
+        <div className="min-w-0 flex-1">
+          <CanvasShell workspaceSlug={id}>
+            <CanvasGraph slug={id} />
+          </CanvasShell>
+        </div>
       </main>
+      {/* Legacy modal quick-look (renders only in "modal" mode). */}
       <PageWithBboxViewer />
     </div>
   );
