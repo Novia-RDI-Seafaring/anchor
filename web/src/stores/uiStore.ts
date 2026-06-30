@@ -67,14 +67,21 @@ type UiState = {
    * a sane band by `setSourceDockRatio`.
    */
   sourceDockRatio: number;
-  hoveredSourceRef: HoveredSourceRef;
   /**
-   * True when the right-side Library drawer (shadcn Sheet) is open.
-   * Session-only — the drawer is a transient launcher, not a layout
-   * preference, so we don't persist it. Toggled by the Library button on
-   * the left tool rail and the `]` keyboard shortcut.
+   * Width in pixels of the left files explorer (the VS Code style file list
+   * that sits at the very left of the source cluster, #220 part B). Persists
+   * across reloads via localStorage so the user's chosen explorer width is a
+   * sticky layout preference. Clamped to a sane band by `setExplorerWidth`.
    */
-  libraryDrawerOpen: boolean;
+  explorerWidth: number;
+  /**
+   * True when the whole source cluster (files explorer + PDF viewer) is
+   * collapsed so the canvas spans full width. Persists across reloads. When
+   * collapsed a slim re-open affordance remains so the cluster is one click
+   * away. Toggled by `toggleSourceCluster` and the `[` keyboard shortcut.
+   */
+  sourceClusterCollapsed: boolean;
+  hoveredSourceRef: HoveredSourceRef;
   /**
    * draw.io-style "armed tool" state — when set to a node_type string the
    * canvas treats the next click (or click+drag) as a placement gesture
@@ -111,10 +118,13 @@ type UiState = {
   setPdfViewerMode: (mode: PdfViewerMode) => void;
   /** Clamp + store the left source-pane width ratio (0..1). */
   setSourceDockRatio: (ratio: number) => void;
+  /** Clamp + store the left files-explorer width in pixels. */
+  setExplorerWidth: (px: number) => void;
+  /** Collapse / expand the whole source cluster (explorer + viewer). */
+  setSourceClusterCollapsed: (collapsed: boolean) => void;
+  toggleSourceCluster: () => void;
   setHoveredSourceRef: (ref: HoveredSourceRef) => void;
   clearHoveredSourceRef: () => void;
-  setLibraryDrawerOpen: (open: boolean) => void;
-  toggleLibraryDrawer: () => void;
   /** Arm `type` (or toggle off if already armed for the same type). */
   armTool: (type: string) => void;
   /** Force-disarm whatever tool is currently armed. */
@@ -128,9 +138,9 @@ type UiState = {
    */
   selectedNodeId: string | null;
   /**
-   * True when the right-side Properties panel (shadcn Sheet) is open.
-   * Mutually exclusive with `libraryDrawerOpen` — opening Properties
-   * closes Library, and vice-versa. Documented in PropertiesPanel.tsx.
+   * True when the right-side Properties panel (shadcn Sheet) is open. The
+   * right edge hosts the inspector only now that the Library drawer is
+   * retired (#220 part B) — ingested files live in the left explorer.
    */
   propertiesOpen: boolean;
   setSelectedNodeId: (id: string | null) => void;
@@ -204,11 +214,61 @@ export function clampDockRatio(ratio: number): number {
   return Math.min(MAX_SOURCE_DOCK_RATIO, Math.max(MIN_SOURCE_DOCK_RATIO, ratio));
 }
 
+/** Default width of the left files explorer, in pixels. */
+export const DEFAULT_EXPLORER_WIDTH = 248;
+const MIN_EXPLORER_WIDTH = 160;
+const MAX_EXPLORER_WIDTH = 520;
+
+export function clampExplorerWidth(px: number): number {
+  if (!Number.isFinite(px)) return DEFAULT_EXPLORER_WIDTH;
+  return Math.min(MAX_EXPLORER_WIDTH, Math.max(MIN_EXPLORER_WIDTH, px));
+}
+
+// Layout preferences persist across reloads (the dock ratio stays
+// session-only by design — it is content-driven, not a sticky choice).
+const EXPLORER_WIDTH_KEY = "anchor.explorerWidth";
+const SOURCE_CLUSTER_COLLAPSED_KEY = "anchor.sourceClusterCollapsed";
+
+function readStorage(key: string): string | null {
+  // Guard everything: jsdom/private-mode environments may lack a usable
+  // localStorage (missing methods, throwing getters). Failures fall back to
+  // the in-memory default rather than crashing store creation.
+  try {
+    if (typeof window === "undefined") return null;
+    const ls = window.localStorage;
+    if (!ls || typeof ls.getItem !== "function") return null;
+    return ls.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function readPersistedExplorerWidth(): number {
+  const raw = readStorage(EXPLORER_WIDTH_KEY);
+  return raw === null ? DEFAULT_EXPLORER_WIDTH : clampExplorerWidth(Number(raw));
+}
+
+function readPersistedCollapsed(): boolean {
+  return readStorage(SOURCE_CLUSTER_COLLAPSED_KEY) === "1";
+}
+
+function persist(key: string, value: string) {
+  try {
+    if (typeof window === "undefined") return;
+    const ls = window.localStorage;
+    if (!ls || typeof ls.setItem !== "function") return;
+    ls.setItem(key, value);
+  } catch {
+    // Private-mode / quota — layout falls back to in-memory only.
+  }
+}
+
 export const useUiStore = create<UiState>((set) => ({
   pdfViewer: null,
   sourceDockRatio: DEFAULT_SOURCE_DOCK_RATIO,
+  explorerWidth: readPersistedExplorerWidth(),
+  sourceClusterCollapsed: readPersistedCollapsed(),
   hoveredSourceRef: null,
-  libraryDrawerOpen: false,
   armedTool: null,
   selectedNodeId: null,
   propertiesOpen: false,
@@ -245,11 +305,23 @@ export const useUiStore = create<UiState>((set) => ({
       state.pdfViewer ? { pdfViewer: { ...state.pdfViewer, mode } } : state,
     ),
   setSourceDockRatio: (ratio) => set({ sourceDockRatio: clampDockRatio(ratio) }),
+  setExplorerWidth: (px) => {
+    const next = clampExplorerWidth(px);
+    persist(EXPLORER_WIDTH_KEY, String(next));
+    set({ explorerWidth: next });
+  },
+  setSourceClusterCollapsed: (collapsed) => {
+    persist(SOURCE_CLUSTER_COLLAPSED_KEY, collapsed ? "1" : "0");
+    set({ sourceClusterCollapsed: collapsed });
+  },
+  toggleSourceCluster: () =>
+    set((state) => {
+      const next = !state.sourceClusterCollapsed;
+      persist(SOURCE_CLUSTER_COLLAPSED_KEY, next ? "1" : "0");
+      return { sourceClusterCollapsed: next };
+    }),
   setHoveredSourceRef: (ref) => set({ hoveredSourceRef: ref }),
   clearHoveredSourceRef: () => set({ hoveredSourceRef: null }),
-  setLibraryDrawerOpen: (open) => set({ libraryDrawerOpen: open }),
-  toggleLibraryDrawer: () =>
-    set((state) => ({ libraryDrawerOpen: !state.libraryDrawerOpen })),
   armTool: (type) =>
     set((state) => ({
       // Clicking the same icon a second time toggles the tool off.
@@ -269,18 +341,9 @@ export const useUiStore = create<UiState>((set) => ({
     set((state) => (id !== null
       ? { selectedEdgeId: id, selectedNodeId: null }
       : { ...state, selectedEdgeId: null })),
-  setPropertiesOpen: (open) =>
-    set((state) =>
-      open
-        ? { propertiesOpen: true, libraryDrawerOpen: false }
-        : { ...state, propertiesOpen: false },
-    ),
+  setPropertiesOpen: (open) => set({ propertiesOpen: open }),
   toggleProperties: () =>
-    set((state) =>
-      state.propertiesOpen
-        ? { propertiesOpen: false }
-        : { propertiesOpen: true, libraryDrawerOpen: false },
-    ),
+    set((state) => ({ propertiesOpen: !state.propertiesOpen })),
   setDropTargetAreaId: (id) => set({ dropTargetAreaId: id }),
   setIsDraggingNode: (dragging) => set({ isDraggingNode: dragging }),
   setHoveredNodeId: (id) => set({ hoveredNodeId: id }),

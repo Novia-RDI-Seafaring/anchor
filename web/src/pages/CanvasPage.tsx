@@ -4,8 +4,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { CanvasGraph } from "@/canvas/CanvasGraph";
 import { breadcrumb } from "@/canvas/breadcrumb";
 import { PageWithBboxViewer } from "@/canvas/primitives/viewers/PageWithBboxViewer";
-import { SourceDock } from "@/canvas/primitives/viewers/SourceDock";
 import { CanvasShell } from "@/shell/CanvasShell";
+import { SourceCluster } from "@/shell/SourceCluster";
 
 /**
  * CanvasPage — single canvas, with a breadcrumb header that reflects the
@@ -108,7 +108,7 @@ export function CanvasPage() {
         </nav>
         <div className="text-sm font-semibold">{id}</div>
         <div className="flex items-center gap-3 text-xs text-neutral-500">
-          <span>drag from the palette · drop a PDF · double-click a document</span>
+          <span>drag from the palette · drop a PDF · click a file to open it</span>
           <a
             href={`/m/${id}`}
             target="_blank"
@@ -120,11 +120,13 @@ export function CanvasPage() {
           </a>
         </div>
       </header>
-      {/* Split-screen: the left-docked source pane (SourceDock) renders
-          itself only when the shared viewer is open in "dock" mode, sitting
-          to the LEFT of the canvas. Closing the dock returns to canvas-full. */}
+      {/* Left-to-right source cluster + canvas + inspector (#220).
+          SourceCluster hosts the files explorer and the PDF viewer
+          (SourceDock); it is resizable and collapses so the canvas can go
+          full width. The inspector (PropertiesPanel) lives inside CanvasShell
+          on the far right. */}
       <main className="flex flex-1 overflow-hidden">
-        <SourceDock />
+        <SourceCluster workspaceSlug={id} />
         <div className="min-w-0 flex-1">
           <CanvasShell workspaceSlug={id}>
             <CanvasGraph slug={id} />
