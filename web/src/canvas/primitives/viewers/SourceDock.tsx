@@ -122,6 +122,7 @@ export function SourceDock() {
           highlightPage={viewer.highlightPage}
           title={docTitle}
           onPageChange={setPage}
+          canvasSlug={viewer.workspaceSlug}
         />
         {/* Draggable divider, pinned to the dock's right edge. */}
         <div
