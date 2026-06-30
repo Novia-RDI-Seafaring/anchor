@@ -423,10 +423,11 @@ export function PdfSourceView({
               className="textLayer"
               style={{ position: "absolute", inset: 0 }}
             />
-            {/* Region capture overlay (#110b): clickable gold regions. Sits
-                above the text layer so a single click selects the region; text
-                selection still works via drag (which never fires this click).
-                Only mounted when a canvas is available to author into. */}
+            {/* Region capture overlay (#110b): gold-region outlines that
+                promote to a reference on click. Only the dashed OUTLINE is
+                interactive (`pointer-events: stroke`) so the region interior
+                stays free for text selection underneath. Only mounted when a
+                canvas is available to author into. */}
             {canvasSlug && viewportSize ? (
               <svg
                 data-testid="region-capture-layer"
@@ -448,17 +449,18 @@ export function PdfSourceView({
                       y={rect.top}
                       width={rect.width}
                       height={rect.height}
-                      fill="transparent"
+                      fill="none"
                       stroke="rgba(14, 165, 233, 0.35)"
-                      strokeWidth={1}
+                      strokeWidth={3}
                       strokeDasharray="3 3"
-                      style={{ cursor: "pointer", pointerEvents: "all" }}
+                      pointerEvents="stroke"
+                      style={{ cursor: "pointer" }}
                       onClick={(e) => {
                         e.stopPropagation();
                         captureRegion(region);
                       }}
                     >
-                      <title>{region.title ?? region.kind ?? rid} — click to make reference</title>
+                      <title>{region.title ?? region.kind ?? rid} — click outline to make reference</title>
                     </rect>
                   );
                 })}
