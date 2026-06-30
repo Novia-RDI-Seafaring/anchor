@@ -455,6 +455,44 @@ def test_http_reference_create_list_attach_roundtrip():
     assert node["data"]["source_ref"]["slug"] == "datasheet"
 
 
+def test_http_reference_remove_and_update_roundtrip():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    created = client.post(
+        "/api/workspaces/w1/references",
+        json={"source_ref": {"slug": "d", "page": 1}, "label": "old"},
+    )
+    ref = created.json()
+    # update label
+    updated = client.patch(
+        f"/api/workspaces/w1/references/{ref['id']}",
+        json={"label": "new"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["event"]["type"] == "ReferenceUpdated"
+    listed = client.get("/api/workspaces/w1/references").json()
+    assert listed[0]["label"] == "new"
+    # remove
+    removed = client.delete(f"/api/workspaces/w1/references/{ref['id']}")
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["event"]["type"] == "ReferenceRemoved"
+    assert client.get("/api/workspaces/w1/references").json() == []
+
+
+def test_http_reference_remove_unknown_errors():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    rsp = client.delete("/api/workspaces/w1/references/ghost")
+    assert rsp.status_code == 400
+
+
+def test_http_reference_update_unknown_errors():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    rsp = client.patch("/api/workspaces/w1/references/ghost", json={"label": "x"})
+    assert rsp.status_code == 400
+
+
 def test_http_reference_rejects_malformed_source_ref():
     client, _ = _client()
     client.post("/api/workspaces", json={"slug": "w1"})

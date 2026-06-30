@@ -24,6 +24,8 @@ from anchor.core.events.canvas import (
     NodeUpdated,
     ReferenceAttached,
     ReferenceCreated,
+    ReferenceRemoved,
+    ReferenceUpdated,
 )
 from anchor.core.events.envelope import DomainEvent
 from anchor.core.ids import new_event_id, new_id
@@ -469,6 +471,56 @@ class WorkspaceService:
                 source_ref=dict(ref.get("source_ref") or {}),
             )
             return await self._dispatch_locked(slug, cmd)
+
+    async def remove_reference(
+        self,
+        slug: str,
+        reference_id: str,
+    ) -> tuple[Workspace, DomainEvent]:
+        """Remove a reference from the canvas bibliography.
+
+        Emits a ``ReferenceRemoved`` domain event so SSE clients update.
+        Raises ``CommandError`` for an unknown reference id. Same backend as
+        the ``DELETE /references/{id}`` HTTP route, the ``canvas_remove_
+        reference`` MCP tool, and ``anchor canvas reference remove`` CLI."""
+        async with self.locks.lock(slug):
+            state = await self.store.load(slug)
+            refs = state.metadata.get("references")
+            exists = isinstance(refs, list) and any(
+                isinstance(r, dict) and r.get("id") == reference_id for r in refs
+            )
+            if not exists:
+                raise CommandError(f"reference {reference_id!r} does not exist")
+            return await self._dispatch_locked(
+                slug, ReferenceRemoved(reference_id=reference_id),
+            )
+
+    async def update_reference(
+        self,
+        slug: str,
+        reference_id: str,
+        *,
+        label: str | None = None,
+    ) -> tuple[Workspace, DomainEvent]:
+        """Edit a reference's human caption (``label``).
+
+        Only ``label`` is mutable; the ``source_ref`` locator is immutable so
+        the stored shape stays stable. ``label=None`` clears the caption.
+        Emits a ``ReferenceUpdated`` domain event. Raises ``CommandError`` for
+        an unknown reference id. Same backend as the ``PATCH /references/{id}``
+        HTTP route, the ``canvas_update_reference`` MCP tool, and ``anchor
+        canvas reference update`` CLI."""
+        async with self.locks.lock(slug):
+            state = await self.store.load(slug)
+            refs = state.metadata.get("references")
+            exists = isinstance(refs, list) and any(
+                isinstance(r, dict) and r.get("id") == reference_id for r in refs
+            )
+            if not exists:
+                raise CommandError(f"reference {reference_id!r} does not exist")
+            return await self._dispatch_locked(
+                slug, ReferenceUpdated(reference_id=reference_id, label=label),
+            )
 
     async def organize_subtree(
         self,

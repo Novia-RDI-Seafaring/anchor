@@ -18,6 +18,8 @@ from anchor.core.events.canvas import (
     NodeUpdated,
     ReferenceAttached,
     ReferenceCreated,
+    ReferenceRemoved,
+    ReferenceUpdated,
 )
 from anchor.core.events.envelope import DomainEvent
 
@@ -28,4 +30,5 @@ __all__ = [
     "EdgeAdded", "EdgeRemoved", "EdgeUpdated",
     "CanvasCleared", "CanvasSnapshot",
     "ReferenceCreated", "ReferenceAttached",
+    "ReferenceRemoved", "ReferenceUpdated",
 ]

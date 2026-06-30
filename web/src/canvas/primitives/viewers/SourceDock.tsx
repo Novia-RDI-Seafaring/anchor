@@ -4,6 +4,7 @@ import { documents, type DocumentIndex } from "@/api/documents";
 import { useUiStore } from "@/stores/uiStore";
 
 import { PdfSourceView } from "./PdfSourceView";
+import { ReferencesPanel } from "./ReferencesPanel";
 
 /**
  * SourceDock — the left-docked split-screen source pane (#110a).
@@ -91,6 +92,12 @@ export function SourceDock() {
       style={{ width: `${ratio * 100}%` }}
       data-testid="source-dock"
     >
+      {/* References bibliography sits above the PDF source pane (#147 slice 3).
+          Both share the LEFT dock so the canvas's citations live next to the
+          source they point at. Rendered only when we know the canvas slug. */}
+      {viewer.workspaceSlug ? (
+        <ReferencesPanel canvasSlug={viewer.workspaceSlug} />
+      ) : null}
       <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-2 py-1 text-xs text-neutral-600">
         <span className="font-medium uppercase tracking-wide">Source</span>
         <div className="flex items-center gap-1">

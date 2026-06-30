@@ -578,6 +578,50 @@ def test_canvas_reference_create_list_attach_roundtrip():
     asyncio.run(run())
 
 
+def test_canvas_reference_remove_and_update_roundtrip():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        created = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_create_reference",
+            {"workspace_slug": "w1", "source_ref": {"slug": "d", "page": 1}, "label": "old"},
+        ))
+        ref = created["reference"]
+        updated = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_update_reference",
+            {"workspace_slug": "w1", "reference_id": ref["id"], "label": "new"},
+        ))
+        assert updated["event"]["type"] == "ReferenceUpdated"
+        listed = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_list_references", {"workspace_slug": "w1"},
+        ))
+        assert listed[0]["label"] == "new"
+        removed = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_remove_reference",
+            {"workspace_slug": "w1", "reference_id": ref["id"]},
+        ))
+        assert removed["event"]["type"] == "ReferenceRemoved"
+        listed2 = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_list_references", {"workspace_slug": "w1"},
+        ))
+        assert listed2 == []
+
+    asyncio.run(run())
+
+
+def test_canvas_remove_unknown_reference_returns_error():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        out = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_remove_reference",
+            {"workspace_slug": "w1", "reference_id": "ghost"},
+        ))
+        assert "error" in out
+
+    asyncio.run(run())
+
+
 def test_canvas_create_reference_malformed_returns_error():
     async def run():
         s = make_in_memory_services()

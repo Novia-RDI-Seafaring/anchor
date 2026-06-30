@@ -26,6 +26,8 @@ from anchor.core.events.canvas import (
     NodeUpdated,
     ReferenceAttached,
     ReferenceCreated,
+    ReferenceRemoved,
+    ReferenceUpdated,
 )
 from anchor.core.workspace.edges import Edge
 from anchor.core.workspace.merge import deep_merge
@@ -108,6 +110,25 @@ def apply(state: Workspace, evt: BaseModel) -> Workspace:
             refs = []
         refs.append(dict(evt.reference))
         new.metadata["references"] = refs
+    elif isinstance(evt, ReferenceRemoved):
+        # Drop the matching entry from the bibliography. No-op (idempotent) when
+        # the id is absent or there is no `references` list yet.
+        refs = new.metadata.get("references")
+        if isinstance(refs, list):
+            new.metadata["references"] = [
+                r for r in refs
+                if not (isinstance(r, dict) and r.get("id") == evt.reference_id)
+            ]
+    elif isinstance(evt, ReferenceUpdated):
+        # Edit the matching entry's label in place; the source_ref is immutable.
+        refs = new.metadata.get("references")
+        if isinstance(refs, list):
+            updated = []
+            for r in refs:
+                if isinstance(r, dict) and r.get("id") == evt.reference_id:
+                    r = {**r, "label": evt.label}
+                updated.append(r)
+            new.metadata["references"] = updated
     elif isinstance(evt, ReferenceAttached):
         # Point the target node (and optional spec row) at the reference so a
         # fact resolves to its citation by id and carries the source_ref that

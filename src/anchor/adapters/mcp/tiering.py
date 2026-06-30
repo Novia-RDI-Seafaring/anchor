@@ -171,6 +171,8 @@ _CAPABILITY_GROUPS: list[dict[str, Any]] = [
             "canvas_node_types",
             "canvas_create_reference",
             "canvas_list_references",
+            "canvas_remove_reference",
+            "canvas_update_reference",
             "canvas_attach_reference",
         ],
     },

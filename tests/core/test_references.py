@@ -142,6 +142,73 @@ def test_attach_unknown_node_errors():
     asyncio.run(run())
 
 
+def test_remove_reference_drops_it_from_list():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        a = await s.workspace.create_reference("w1", source_ref={"slug": "d", "page": 1})
+        b = await s.workspace.create_reference("w1", source_ref={"slug": "d", "page": 2})
+        _, env = await s.workspace.remove_reference("w1", a["id"])
+        assert env.type == "ReferenceRemoved"
+        listed = await s.workspace.list_references("w1")
+        assert [r["id"] for r in listed] == [b["id"]]
+
+    asyncio.run(run())
+
+
+def test_remove_unknown_reference_errors():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        with pytest.raises(CommandError):
+            await s.workspace.remove_reference("w1", "ghost")
+
+    asyncio.run(run())
+
+
+def test_update_reference_edits_label_only():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        ref = await s.workspace.create_reference(
+            "w1", source_ref={"slug": "d", "page": 3, "bbox": [1, 2, 3, 4]},
+            label="old",
+        )
+        _, env = await s.workspace.update_reference("w1", ref["id"], label="new")
+        assert env.type == "ReferenceUpdated"
+        listed = await s.workspace.list_references("w1")
+        assert listed[0]["label"] == "new"
+        # source_ref locator is untouched.
+        assert listed[0]["source_ref"]["bbox"] == [1, 2, 3, 4]
+        assert listed[0]["id"] == ref["id"]
+
+    asyncio.run(run())
+
+
+def test_update_reference_clears_label_with_none():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        ref = await s.workspace.create_reference(
+            "w1", source_ref={"slug": "d", "page": 1}, label="caption",
+        )
+        await s.workspace.update_reference("w1", ref["id"], label=None)
+        listed = await s.workspace.list_references("w1")
+        assert listed[0]["label"] is None
+
+    asyncio.run(run())
+
+
+def test_update_unknown_reference_errors():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        with pytest.raises(CommandError):
+            await s.workspace.update_reference("w1", "ghost", label="x")
+
+    asyncio.run(run())
+
+
 def test_validate_source_ref_rejects_non_dict():
     with pytest.raises(ReferenceError):
         validate_source_ref("not-a-dict")

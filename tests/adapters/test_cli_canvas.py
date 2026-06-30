@@ -130,6 +130,45 @@ def test_cli_reference_create_list_attach_roundtrip(tmp_path):
     assert node["data"]["source_ref"]["slug"] == "d"
 
 
+def test_cli_reference_remove_and_update_roundtrip(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    created = runner.invoke(app, [
+        "canvas", "reference", "create", "w1",
+        "--source-ref", json.dumps({"slug": "d", "page": 1}),
+        "--label", "old", "--data-dir", str(data_dir),
+    ])
+    ref = json.loads(created.output)
+
+    updated = runner.invoke(app, [
+        "canvas", "reference", "update", "w1", ref["id"],
+        "--label", "new", "--data-dir", str(data_dir),
+    ])
+    assert updated.exit_code == 0, updated.output
+    assert json.loads(updated.output)["event"]["type"] == "ReferenceUpdated"
+    listed = runner.invoke(app, ["canvas", "reference", "list", "w1", "--data-dir", str(data_dir)])
+    assert json.loads(listed.output)[0]["label"] == "new"
+
+    removed = runner.invoke(app, [
+        "canvas", "reference", "remove", "w1", ref["id"], "--data-dir", str(data_dir),
+    ])
+    assert removed.exit_code == 0, removed.output
+    assert json.loads(removed.output)["event"]["type"] == "ReferenceRemoved"
+    listed2 = runner.invoke(app, ["canvas", "reference", "list", "w1", "--data-dir", str(data_dir)])
+    assert json.loads(listed2.output) == []
+
+
+def test_cli_reference_remove_unknown_errors(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    r = runner.invoke(app, [
+        "canvas", "reference", "remove", "w1", "ghost", "--data-dir", str(data_dir),
+    ])
+    assert r.exit_code == 2
+
+
 def test_cli_reference_create_rejects_malformed(tmp_path):
     data_dir = tmp_path / "anchor-data"
     runner = CliRunner()

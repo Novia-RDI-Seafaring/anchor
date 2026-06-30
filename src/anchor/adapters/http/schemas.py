@@ -143,6 +143,15 @@ class AttachReferenceRequest(BaseModel):
     row_index: int | None = None
 
 
+class UpdateReferenceRequest(BaseModel):
+    """Body for ``PATCH /api/workspaces/{slug}/references/{id}``.
+
+    Only the human caption (``label``) is editable; the ``source_ref`` locator
+    is immutable. ``label`` may be ``null`` to clear the caption."""
+
+    label: str | None = None
+
+
 class CreateSubCanvasRequest(BaseModel):
     """Body for ``POST /api/workspaces/{parent_slug}/sub-canvas``.
 
