@@ -28,6 +28,14 @@ Two paths, depending on whether you want to *use* ANCHOR or *hack on it*.
 
 `anchor` and `anchor-mcp` are now on your PATH globally. The wheel includes the prebuilt frontend, so no Node toolchain is required to just run it.
 
+!!! warning "Installing from git source needs a frontend build first"
+    The web UI ships prebuilt inside the PyPI wheel. Installing directly from
+    git source does not build the frontend.
+    `uv tool install "git+https://github.com/Novia-RDI-Seafaring/anchor@main"`
+    fails at the wheel build hook, which requires a prebuilt `web/dist` and does
+    not run `pnpm`. To install from source, build the frontend first with the
+    [from-source recipe](#install-from-source), or install the PyPI wheel above.
+
 Requires Python 3.12+. CI tests Linux and runs CLI smoke checks on macOS and
 Windows; verify browser and PDF workflows on your target platform.
 
@@ -87,6 +95,35 @@ select by name with `--env` / `--project`, `anchor use`, or `ANCHOR_ENV` /
 `env.toml`, the project `anchor.toml` marker, then `ANCHOR_*` environment
 variables and flags. The API key stays in `ANCHOR_OPENAI_API_KEY` or the
 environment's gitignored `.env`, never in the profile.
+
+## Install from source
+
+Use this when the published PyPI wheel is behind `main` and you want a global
+`anchor` command with the UI. It clones the repo, builds the frontend, then
+builds and installs the wheel from your local checkout.
+
+```bash
+git clone https://github.com/Novia-RDI-Seafaring/anchor && cd anchor
+pnpm --dir web install --frozen-lockfile
+pnpm --dir web build
+uv tool install --force .
+```
+
+The web UI ships prebuilt in the PyPI wheel. Installing directly from git
+source (`uv tool install "git+https://github.com/Novia-RDI-Seafaring/anchor@main"`)
+does not build the frontend. It fails at the wheel build hook, which requires a
+prebuilt `web/dist` and does not run `pnpm`. Build the frontend first with the
+recipe above, or install the PyPI wheel.
+
+If `pnpm` is not on your PATH, run the build with Corepack or npm instead:
+
+```bash
+corepack pnpm@10 --dir web install --frozen-lockfile
+corepack pnpm@10 --dir web build
+# or, with Node.js + npm only:
+npx pnpm@10 --dir web install --frozen-lockfile
+npx pnpm@10 --dir web build
+```
 
 ## Reinstall or upgrade
 
