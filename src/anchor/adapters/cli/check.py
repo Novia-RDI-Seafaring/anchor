@@ -15,10 +15,17 @@ import os
 import typer
 
 from anchor.infra.config import AnchorConfig
-from anchor.infra.providers import get_provider, normalize_base_url
+from anchor.infra.providers import get_provider, no_key_remedy_lines, normalize_base_url
 
 # Providers that authenticate against an endpoint (mirror of init's set).
 _KEYED_PROVIDERS = ("openai", "azure", "custom")
+
+
+def _echo_remedy(lines: list[str]) -> None:
+    """Print the no-key gold-skip remedy under the api-key line, indented."""
+    typer.echo("                   To fix, either:")
+    for line in lines:
+        typer.echo(f"                   - {line}")
 
 
 def _rewrite_base_url(config_path, old: str, new: str) -> bool:
@@ -172,20 +179,34 @@ def check(
         needs_key = bool(cfg.openai_base_url) or embed_remote or provider_key in _KEYED_PROVIDERS
         key_ok = bool(cfg.openai_api_key)
 
-    if needs_key:
+    # The env's .env is where ANCHOR_OPENAI_API_KEY belongs (only ANCHOR_* keys
+    # there load — a plain OPENAI_API_KEY is ignored). Name the exact path in the
+    # remedy so an agent or user can act without guessing (issue #226).
+    env_dotenv = str(env.root / ".env") if env.initialized else None
+    # An unset provider silently skips gold at ingest time (no vision stage runs),
+    # so surface it as a not-ready remedy instead of a bare "not needed" line.
+    if not cfg.provider:
+        typer.echo("  provider       : NOT set — gold extraction will be silently skipped")
+        problems.append(
+            "Provider is not set, so gold extraction is skipped: "
+            + "; ".join(no_key_remedy_lines(env_dotenv))
+        )
+        _echo_remedy(no_key_remedy_lines(env_dotenv))
+    elif needs_key:
         if cfg.openai_api_key:
             typer.echo("  api key        : ANCHOR_OPENAI_API_KEY detected ✓")
         elif key_ok:  # openai + personal key
             typer.echo("  api key        : using OPENAI_API_KEY ✓")
         else:
-            typer.echo("  api key        : NOT set")
+            typer.echo("  api key        : NOT set — gold extraction will be silently skipped")
             if personal:
                 typer.echo("                   (a personal OPENAI_API_KEY is set but is the wrong "
                            "credential for this endpoint)")
             problems.append(
-                "API key missing — set ANCHOR_OPENAI_API_KEY in your environment or a .env "
-                "(e.g. echo 'ANCHOR_OPENAI_API_KEY=…' >> .env)."
+                "API key missing, so gold extraction is skipped: "
+                + "; ".join(no_key_remedy_lines(env_dotenv))
             )
+            _echo_remedy(no_key_remedy_lines(env_dotenv))
     elif provider_key == "harness":
         typer.echo("  api key        : not needed — ingestion happens through the agent")
     else:

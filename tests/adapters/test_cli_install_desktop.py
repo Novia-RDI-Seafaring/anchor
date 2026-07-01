@@ -112,3 +112,29 @@ def test_privacy_zone_is_echoed(_paths):
     create_env("local", settings={"provider": "local"})
     result = runner.invoke(app, ["install", "claude-desktop", "--env", "local", "--yes"])
     assert "Data zone" in result.output
+
+
+def test_no_key_gold_skip_warning_for_keyed_env(_paths, monkeypatch):
+    # A keyed provider (azure) with no ANCHOR_OPENAI_API_KEY silently skips gold.
+    # install must surface the remedy + the harness fallback, without blocking.
+    monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    create_env(
+        "work",
+        settings={
+            "provider": "azure",
+            "openai_base_url": "https://x.openai.azure.com/openai/v1/",
+        },
+    )
+    result = runner.invoke(app, ["install", "claude-desktop", "--env", "work", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert "gold extraction will be silently skipped" in result.output
+    assert "ANCHOR_OPENAI_API_KEY" in result.output
+    assert "--provider harness" in result.output
+    assert "anchor check --env work" in result.output
+
+
+def test_no_key_warning_absent_for_local_env(_paths):
+    create_env("local", settings={"provider": "local"})
+    result = runner.invoke(app, ["install", "claude-desktop", "--env", "local", "--yes"])
+    assert "silently skipped" not in result.output
