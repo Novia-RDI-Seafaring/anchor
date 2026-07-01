@@ -107,8 +107,20 @@ underscore names such as `sysml_render` and `fmu_simulate`.
 
 ## Codex
 
-Codex CLI and the Codex IDE extension share the same MCP configuration. Add
-ANCHOR with:
+The simplest path is the bundled installer, which writes a named pointer entry
+into `~/.codex/config.toml` (it honors `$CODEX_HOME`):
+
+```bash
+anchor install codex --env local
+```
+
+It is additive and collision-safe like `install claude-desktop`: other servers
+and top-level Codex settings are preserved, and `--name` adds a second
+environment. The write round-trips the file through a TOML parser, which drops
+comments, so the original is backed up once to `config.toml.anchorbak`.
+
+Codex CLI and the Codex IDE extension share the same MCP configuration. You can
+also register the server manually with the CLI:
 
 ```bash
 codex mcp add anchor -- \

@@ -33,6 +33,23 @@ uv tool install anchor-kb
 includes the prebuilt frontend, so no Node toolchain is required to
 just run it.
 
+The web UI ships prebuilt in the PyPI wheel. If you want the latest
+`main` and PyPI is behind, install from a local checkout. Installing
+directly from git source
+(`uv tool install "git+https://github.com/Novia-RDI-Seafaring/anchor@main"`)
+does not build the frontend and fails at the wheel build hook. Build the
+frontend first:
+
+```bash
+git clone https://github.com/Novia-RDI-Seafaring/anchor && cd anchor
+pnpm --dir web install --frozen-lockfile
+pnpm --dir web build
+uv tool install --force .
+```
+
+See [Install from source](./docs/getting-started/installation.md#install-from-source)
+for pnpm-not-on-PATH fallbacks.
+
 If you want LLM-backed gold region extraction on your first PDF upload,
 create a `.env` file before starting ANCHOR; see
 [Enable gold region extraction](#enable-gold-region-extraction). Installation
