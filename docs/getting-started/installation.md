@@ -33,38 +33,13 @@ Windows; verify browser and PDF workflows on your target platform.
 
 ### First run
 
-Initialize a project in a working folder, then serve it:
+Installed? The [Quickstart](quickstart.md) takes you from here to a
+source-grounded value in about five minutes, no API key. It covers picking an
+environment (your trust boundary), wiring ANCHOR into your harness, and the
+first ingest.
 
-```bash
-cd ~/work/pumps
-anchor init               # project here, bound to the default env
-anchor serve              # http://127.0.0.1:8002
-```
-
-`anchor init` is the recommended starting point. Run it inside a working
-folder. It initializes a **project** there, dropping an `anchor.toml` marker
-and a hidden `.anchor_data/`, and binds it to an environment. The environment
-is the trust boundary, so init never picks one for you silently. The first time,
-it asks you to choose a provider (your data zone) right in the terminal:
-
-```bash
-cd ~/work/pumps
-anchor init                 # prompts: local | ollama | openai | azure | harness
-```
-
-Prefer to script it, or set the zone up front? Pass `--provider`, or create the
-environment first and bind to it:
-
-```bash
-anchor init --provider local --yes           # zero egress, no prompts
-# or:
-anchor env create work --provider azure …     # pick an AI provider / data zone
-cd ~/work/pumps && anchor init --env work      # bind this project to "work"
-```
-
-See [Environments and projects](../guides/environments-and-projects.md). To
-make ANCHOR available to an agent, run `anchor install claude-desktop --env
-local`.
+For the project model behind it (environments, projects, data zones), see
+[Environments and projects](../guides/environments-and-projects.md).
 
 ## Optional extras
 
@@ -246,61 +221,17 @@ holding a file inside the uv tool directory. Repeat the process check above
 before trying again. Do not remove `AppData\Roaming\uv\tools\anchor-kb` by hand
 while `anchor-mcp.exe` or its Python process is still running.
 
-## Configure gold extraction
+## Gold extraction
 
-The bronze and silver layers run locally without any external service. The gold
-layer (structured region extraction) uses an OpenAI-compatible vision model.
+Bronze and silver run locally with no external service. Gold (structured region
+extraction) is where you choose. The recommended no-key path is the `harness`
+provider: your agent reads the pages and ANCHOR embeds locally. The
+[Quickstart](quickstart.md) walks it end to end.
 
-The easiest way to configure it is `anchor env create`. Choose the `openai`,
-`azure`, or `custom` provider and it writes the endpoint and models into the
-environment's `env.toml`. Then supply the key (never stored in the profile):
-
-```bash
-export ANCHOR_OPENAI_API_KEY=sk-...
-```
-
-Or override individual settings by hand via `ANCHOR_*` variables in your shell
-or a `.env` (this is just an override file for the variables below, not the
-Anchor environment profile, which is `env.toml`):
-
-```bash
-ANCHOR_OPENAI_API_KEY=sk-...
-ANCHOR_OPENAI_BASE_URL=https://api.openai.com/v1   # or your Azure / Ollama URL
-ANCHOR_REGION_MODEL=gpt-5.4
-ANCHOR_POLISH_MODEL=gpt-5.4
-```
-
-For Azure OpenAI, the simplest working setup is:
-
-```bash
-anchor init . --provider azure \
-  --base-url https://<resource>.openai.azure.com/ \
-  --vision-model <vision-deployment-name>
-
-echo 'ANCHOR_OPENAI_API_KEY=<your-azure-key>' >> .env
-anchor check --probe
-anchor ingest path/to/file.pdf --force
-```
-
-`anchor init` rewrites a bare Azure resource URL to
-`https://<resource>.openai.azure.com/openai/v1/`. The model value is the Azure
-deployment name, not the base model name. The key must be supplied through
-`ANCHOR_OPENAI_API_KEY`; a personal `OPENAI_API_KEY` is not proof that the
-Azure project is configured.
-
-After ingest, verify the gold layer:
-
-```bash
-anchor list
-anchor gold-map <slug>
-```
-
-The document should show `"has_gold": true` in `anchor list`. If it does not,
-check the key, endpoint, and deployment name before retrying with `--force`.
-
-Without a vision endpoint, `anchor serve` still works. You get silver-layer
-extraction (page text, page PNGs, and Docling structure), but gold regions are
-skipped.
+For server-side extraction with a cloud vision model, use the `openai` or
+`azure` provider and a key; see [Quickstart, step 6](quickstart.md#6-optional-server-side-gold-with-openai)
+and, for Azure specifics, the
+[Azure OpenAI test-drive](../guides/azure-test-drive.md).
 
 !!! tip "Where config is read from"
     Settings and storage come from the selected environment, not the working
@@ -312,7 +243,7 @@ skipped.
 ## Verify the install
 
 ```bash
-anchor version          # -> 0.2.5
+anchor version          # -> the installed version
 anchor canvas list      # -> your existing canvases (empty on a fresh install)
 ```
 
