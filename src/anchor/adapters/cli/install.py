@@ -318,6 +318,7 @@ def install_claude_code(
     typer.echo(f"          command: {entry['command']}")
     typer.echo(f"          args:    {entry['args']}")
     typer.echo(("[dry-run] " if dry_run else "") + f"Skill    -> {skill_path}")
+    _warn_no_key(env_name, dry_run=dry_run)
     if not dry_run:
         typer.echo("")
         typer.echo("Next:")
@@ -393,6 +394,61 @@ def _environment_zone(env_name: str) -> tuple[bool, str]:
     return True, provider.zone if provider else "unknown"
 
 
+# Providers that authenticate against an endpoint (mirror of init/check's set).
+_KEYED_PROVIDERS = ("openai", "azure", "custom")
+
+
+def _no_key_remedy(env_name: str) -> list[str] | None:
+    """Remedy lines when this env would silently skip gold, else None.
+
+    An initialized env whose provider is unset, or a keyed provider
+    (openai/azure/custom) with no ``ANCHOR_OPENAI_API_KEY``, ingests silver but
+    silently skips gold. Return the shared onboarding remedy so ``install`` can
+    warn without blocking; ``harness``/``local`` (no key needed) return None.
+    """
+    import os
+
+    from anchor.infra.environment import (
+        DEFAULT_PROJECT,
+        resolve_environment,
+        resolve_project_config,
+    )
+    from anchor.infra.providers import no_key_remedy_lines
+
+    env = resolve_environment(env_name)
+    if not env.initialized:
+        return None
+    cfg = resolve_project_config(env, DEFAULT_PROJECT)
+    provider_key = (cfg.provider or "").lower()
+    if not provider_key:
+        return no_key_remedy_lines(str(env.root / ".env"))
+    if provider_key in _KEYED_PROVIDERS:
+        personal = bool(os.environ.get("OPENAI_API_KEY"))
+        has_key = bool(cfg.openai_api_key) or (provider_key == "openai" and personal)
+        if not has_key:
+            return no_key_remedy_lines(str(env.root / ".env"))
+    return None
+
+
+def _warn_no_key(env_name: str, *, dry_run: bool) -> None:
+    """Echo a one-block no-key gold-skip warning for ``env_name`` if applicable.
+
+    Non-blocking: it only makes the silent gold-skip visible and points at
+    ``anchor check`` and the harness fallback (issue #226)."""
+    remedy = _no_key_remedy(env_name)
+    if not remedy:
+        return
+    prefix = "[dry-run] " if dry_run else ""
+    typer.echo("")
+    typer.echo(
+        prefix + "! No provider/key for this environment — gold extraction will be "
+        "silently skipped."
+    )
+    for line in remedy:
+        typer.echo(f"  - {line}")
+    typer.echo(f"  Verify with: anchor check --env {env_name}")
+
+
 @install_app.command("claude-desktop")
 def install_claude_desktop(
     env: str = typer.Option(
@@ -448,6 +504,7 @@ def install_claude_desktop(
     initialized, zone = _environment_zone(env_name)
     typer.echo(f"Environment : {env_name}")
     typer.echo(f"Data zone   : {zone}")
+    _warn_no_key(env_name, dry_run=dry_run)
     if not dry_run and not yes:
         if not typer.confirm(
             f"Wire MCP server '{name}' for environment '{env_name}'?",

@@ -51,6 +51,37 @@ def _ctype(path: Path, fallback_ext: str) -> str:
     return guess or "application/octet-stream"
 
 
+def gold_skipped_note() -> dict[str, Any]:
+    """Machine- and human-readable note for a no-key gold skip (issue #226).
+
+    ``ingest_pdf`` runs silver but cannot run the gold (region) stage when the
+    environment has no provider/key wired (``region_extractor`` is None). The
+    result then reads as a bland success with zero regions. This note makes the
+    skip discoverable and points at the two fixes: the offline harness ingest
+    path (no key, embeds locally) and the endpoint-key remedy. Kept as a small
+    pure helper so it can be unit-tested and reused across surfaces.
+    """
+    from anchor.infra.providers import ANCHOR_KEY_VAR
+
+    return {
+        "gold_skipped": True,
+        "reason": (
+            "Gold (region) extraction was skipped: this environment has no "
+            "vision provider/key wired, so only bronze/silver ran."
+        ),
+        "fix_offline": (
+            "Ingest key-free through the harness tools: ingest_begin -> "
+            "ingest_get_page -> ingest_submit_page -> ingest_finalize "
+            "(the agent reads pages, embeddings are computed locally, no key)."
+        ),
+        "fix_key": (
+            f"Or configure an endpoint: set {ANCHOR_KEY_VAR} in the "
+            "environment's .env (a plain OPENAI_API_KEY there is ignored), "
+            "then re-ingest. Run `anchor check` to verify the data zone + key."
+        ),
+    }
+
+
 def tool_definitions() -> list[dict[str, Any]]:
     return [
         {
@@ -529,13 +560,24 @@ async def call_tool(
         if not path.exists():
             return json.dumps({"error": f"PDF not found: {path}"})
         pdf_bytes = path.read_bytes()
+        want_regions = not args.get("skip_regions", False)
         summary = await ingest.ingest_pdf(
             pdf_bytes, path.name,
             slug=args.get("slug"),
             polish=not args.get("skip_polish", False),
-            regions=not args.get("skip_regions", False),
+            regions=want_regions,
             force=args.get("force", False),
         )
+        # Gold silently skips when the caller wanted regions but no vision
+        # provider/key is wired (region_extractor is None). Attach an actionable
+        # note pointing at the offline harness path + the key remedy (#226). Not
+        # applied to an idempotent skip (already-ingested) or a forced re-run.
+        if (
+            want_regions
+            and ingest.region_extractor is None
+            and not summary.get("skipped")
+        ):
+            summary["note"] = gold_skipped_note()
         return json.dumps(summary)
     if name == "list_documents":
         return json.dumps(await store.list_documents())

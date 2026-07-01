@@ -4,9 +4,11 @@ from __future__ import annotations
 import pytest
 
 from anchor.infra.providers import (
+    ANCHOR_KEY_VAR,
     PROVIDERS,
     embed_options_for,
     get_provider,
+    no_key_remedy_lines,
     normalize_base_url,
 )
 
@@ -39,7 +41,26 @@ def test_normalize_is_noop_for_non_azure():
 
 def test_expected_providers_present():
     keys = {p.key for p in PROVIDERS}
-    assert {"local", "ollama", "openai", "azure", "custom"} <= keys
+    assert {"local", "harness", "ollama", "openai", "azure", "custom"} <= keys
+
+
+def test_no_key_remedy_names_key_var_path_and_harness_fallback():
+    lines = no_key_remedy_lines("/home/me/.anchor/envs/work/.env")
+    blob = " ".join(lines)
+    assert ANCHOR_KEY_VAR == "ANCHOR_OPENAI_API_KEY"
+    assert ANCHOR_KEY_VAR in blob
+    assert "/home/me/.anchor/envs/work/.env" in blob
+    # A plain OPENAI_API_KEY there is ignored — the remedy must say so.
+    assert "OPENAI_API_KEY in that .env is ignored" in blob
+    # The offline fallback: harness/local + the harness ingest tool chain.
+    assert "--provider harness" in blob
+    assert "ingest_begin" in blob
+    assert "ingest_finalize" in blob
+
+
+def test_no_key_remedy_tolerates_missing_path():
+    lines = no_key_remedy_lines(None)
+    assert any("ANCHOR_OPENAI_API_KEY" in ln for ln in lines)
 
 
 def test_lookup_is_case_insensitive():
