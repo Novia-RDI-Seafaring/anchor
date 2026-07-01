@@ -6,28 +6,22 @@ This walkthrough assumes you have a working AI harness on your machine
 (Claude Code, Cursor, opencode). If not, do that first; the agent is the
 half of ANCHOR that makes the canvas pay off.
 
+!!! tip "New here? Start with the Quickstart"
+    The [Quickstart](quickstart.md) is the shortest no-key path to your first
+    grounded value. This tutorial goes deeper into the `anchor demo` canvas and
+    the "agent fills the placeholders" flow.
+
 ## 1. Install
 
 You need Python 3.12+. CI runs on Linux and performs CLI smoke checks on
 macOS and Windows.
 
 ```bash
-uv tool install anchor-kb
-```
-
-After the install completes, `anchor` and `anchor-mcp` are on your `$PATH`.
-
-```bash
+uv tool install anchor-kb        # or: pipx install anchor-kb / pip install anchor-kb
 anchor version
 ```
 
-If you prefer plain pip / pipx, both work too:
-
-```bash
-pipx install anchor-kb           # isolated CLI install
-# or
-pip install anchor-kb            # in your active virtualenv
-```
+After the install completes, `anchor` and `anchor-mcp` are on your `$PATH`.
 
 !!! tip "Quick demo vs. a real project"
     This tutorial uses `anchor demo`, which works out of the box in the default
