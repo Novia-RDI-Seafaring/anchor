@@ -528,3 +528,76 @@ def needs_polish(
         return True
     labels = {it.get("label") for it in page_items}
     return "table" in labels or "picture" in labels
+
+
+#: A page with fewer than this many non-whitespace extractable characters is
+#: treated as having "no text layer" for the low-text warning. Datasheet pages
+#: are text-dense; a real page clears this by an order of magnitude. A page
+#: docling could not read (no text layer, vector outlines, scanned bitmap the
+#: default OCR skipped) lands near zero. Kept low so a genuinely sparse-but-real
+#: page (a single caption) is not flagged.
+LOW_TEXT_CHAR_THRESHOLD = 20
+
+
+def _page_text_len(items: list[dict[str, Any]], page: int) -> int:
+    """Non-whitespace extractable char count docling emitted for one page.
+
+    Sums text-item text plus table cell text (the two places silver draws
+    real characters from). Whitespace is stripped so a page of blank runs
+    still counts as empty.
+    """
+    total = 0
+    for it in items:
+        if not isinstance(it, dict) or it.get("page") != page:
+            continue
+        text = it.get("text")
+        if isinstance(text, str):
+            total += len("".join(text.split()))
+        for cell in it.get("cells") or []:
+            if isinstance(cell, dict):
+                cell_text = cell.get("text")
+                if isinstance(cell_text, str):
+                    total += len("".join(cell_text.split()))
+    return total
+
+
+def find_low_text_pages(
+    docling: dict[str, Any],
+    page_count: int,
+    *,
+    threshold: int = LOW_TEXT_CHAR_THRESHOLD,
+) -> list[int]:
+    """Page numbers that yielded near-zero extractable text (issue #231).
+
+    A page docling emitted almost no characters for usually has no text layer
+    (vector outlines or a scanned bitmap the default region OCR skipped). We
+    scan pages 1..page_count so a page docling dropped entirely (no items at
+    all) is caught, not just pages with a few empty items. Returns an empty
+    list when the document has no pages.
+    """
+    items = docling.get("items")
+    if not isinstance(items, list) or page_count <= 0:
+        return []
+    return [
+        page
+        for page in range(1, page_count + 1)
+        if _page_text_len(items, page) < threshold
+    ]
+
+
+def low_text_pages_warning(pages: list[int]) -> str | None:
+    """One-line, non-fatal warning naming low-text pages + the OCR remedy.
+
+    Returns None when there is nothing to warn about, so callers can do
+    ``if (msg := low_text_pages_warning(pages)): ...`` without a branch on the
+    list themselves.
+    """
+    if not pages:
+        return None
+    joined = ", ".join(str(p) for p in pages)
+    noun = "Page" if len(pages) == 1 else "Pages"
+    return (
+        f"{noun} {joined} had little or no extractable text (likely no text "
+        "layer / vector or scanned content). Retry with full-page OCR "
+        "(anchor ingest --full-page-ocr / ingest_pdf full_page_ocr=true)."
+    )

@@ -110,7 +110,7 @@ def test_pipeline_writes_activity_and_resolves_done(tmp_path):
 
 def test_pipeline_writes_failed_activity_with_stage(tmp_path):
     class Boom:
-        async def extract(self, _p):
+        async def extract(self, _p, *, full_page_ocr: bool = False):
             raise RuntimeError("docling exploded")
 
     async def run():

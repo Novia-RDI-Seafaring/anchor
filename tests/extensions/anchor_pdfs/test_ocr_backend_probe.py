@@ -57,7 +57,7 @@ def test_extract_sync_fails_fast_before_convert(monkeypatch):
     monkeypatch.setattr(importlib, "import_module", _raise)
 
     convert_called = []
-    monkeypatch.setattr(dx, "_convert", lambda p, d: convert_called.append(d) or {"items": []})
+    monkeypatch.setattr(dx, "_convert", lambda p, d, f=False: convert_called.append(d) or {"items": []})
 
     with pytest.raises(RuntimeError, match="OCR backend not installed"):
         dx._extract_sync("dummy.pdf")
@@ -68,7 +68,7 @@ def test_extract_sync_fails_fast_before_convert(monkeypatch):
 def test_extract_sync_proceeds_when_onnxruntime_available(monkeypatch):
     """_extract_sync continues normally when onnxruntime is importable."""
     monkeypatch.setattr(importlib, "import_module", lambda name: object())
-    monkeypatch.setattr(dx, "_convert", lambda p, d: {"items": [], "tables": []})
+    monkeypatch.setattr(dx, "_convert", lambda p, d, f=False: {"items": [], "tables": []})
     result = dx._extract_sync("dummy.pdf", device="cpu")
     assert "items" in result
 

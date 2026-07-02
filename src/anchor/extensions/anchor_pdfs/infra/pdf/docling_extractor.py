@@ -80,8 +80,12 @@ class DoclingPdfExtractor:
     def __init__(self, device: str = "auto") -> None:
         self._device = device
 
-    async def extract(self, pdf_path: Path) -> dict[str, Any]:
-        return await asyncio.to_thread(_extract_sync, pdf_path, self._device)
+    async def extract(
+        self, pdf_path: Path, *, full_page_ocr: bool = False
+    ) -> dict[str, Any]:
+        return await asyncio.to_thread(
+            _extract_sync, pdf_path, self._device, full_page_ocr
+        )
 
 
 def _resolve_device(requested: str) -> str:
@@ -148,7 +152,9 @@ def _assert_ocr_backend() -> None:
         ) from exc
 
 
-def _extract_sync(pdf_path: Path, device: str = "auto") -> dict[str, Any]:
+def _extract_sync(
+    pdf_path: Path, device: str = "auto", full_page_ocr: bool = False
+) -> dict[str, Any]:
     # Fail fast if the OCR backend is not importable -- before any model
     # loading -- so the error and remediation reach the user immediately.
     _assert_ocr_backend()
@@ -161,7 +167,7 @@ def _extract_sync(pdf_path: Path, device: str = "auto") -> dict[str, Any]:
     if candidate != "cpu" and candidate in _FELL_BACK:
         candidate = "cpu"
     try:
-        return _convert(pdf_path, candidate)
+        return _convert(pdf_path, candidate, full_page_ocr)
     except Exception as exc:  # noqa: BLE001 - inspect, then retry on CPU or re-raise
         if candidate != "cpu" and _is_accelerator_error(exc):
             _FELL_BACK.add(candidate)
@@ -169,19 +175,28 @@ def _extract_sync(pdf_path: Path, device: str = "auto") -> dict[str, Any]:
                 f"Warning: docling {candidate} backend failed ({exc}); retrying on CPU.",
                 file=sys.stderr,
             )
-            return _convert(pdf_path, "cpu")
+            return _convert(pdf_path, "cpu", full_page_ocr)
         raise
 
 
-def _convert(pdf_path: Path, device: str) -> dict[str, Any]:
-    from docling.datamodel.base_models import InputFormat
+def _build_pipeline_options(device: str, full_page_ocr: bool = False) -> Any:
+    """Build the docling ``PdfPipelineOptions`` for a device + OCR mode.
+
+    Factored out (pure, no convert) so a unit test can assert the OCR options
+    without running docling or needing a GPU/model. Lazy-imports docling so
+    tests that never call this pay no import cost.
+
+    ``full_page_ocr=True`` sets ``force_full_page_ocr`` on the RapidOCR options
+    so docling OCRs the whole page instead of only bitmap regions. That recovers
+    text docling's default skips when a page has only a partial text layer
+    (issue #231).
+    """
     from docling.datamodel.pipeline_options import (
         AcceleratorDevice,
         AcceleratorOptions,
         PdfPipelineOptions,
         RapidOcrOptions,
     )
-    from docling.document_converter import DocumentConverter, PdfFormatOption
 
     accel_device = {
         "cpu": AcceleratorDevice.CPU,
@@ -198,7 +213,19 @@ def _convert(pdf_path: Path, device: str) -> dict[str, Any]:
     # "Unsupported configuration: torch.PP-OCRv6.det.small". onnxruntime is a
     # declared dependency, so force that backend for deterministic ingest across
     # fresh installs.
-    pipeline_options.ocr_options = RapidOcrOptions(backend="onnxruntime")
+    pipeline_options.ocr_options = RapidOcrOptions(
+        backend="onnxruntime", force_full_page_ocr=full_page_ocr
+    )
+    return pipeline_options
+
+
+def _convert(
+    pdf_path: Path, device: str, full_page_ocr: bool = False
+) -> dict[str, Any]:
+    from docling.datamodel.base_models import InputFormat
+    from docling.document_converter import DocumentConverter, PdfFormatOption
+
+    pipeline_options = _build_pipeline_options(device, full_page_ocr)
     converter = DocumentConverter(
         format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
     )

@@ -41,6 +41,8 @@ from anchor.extensions.anchor_pdfs.core.silver import (
     build_index,
     build_page_candidates,
     build_pages_meta,
+    find_low_text_pages,
+    low_text_pages_warning,
     render_pages_md,
     snap_to_docling_items,
     table_bbox_from_items,
@@ -157,6 +159,7 @@ class IngestService:
         polish: bool = True,
         regions: bool = True,
         force: bool = False,
+        full_page_ocr: bool = False,
         polish_model: str | None = None,
         region_model: str | None = None,
         dpi: int | None = None,
@@ -240,7 +243,9 @@ class IngestService:
             await self._publish(IngestProgress(slug=slug, stage="silver_extract", current=0, total=1), publish_workspace_id)
             await record_activity("silver_extract", current=0, total=1)
             stage_started_at = self.clock.now()
-            docling = await self.extractor.extract(bronze_path)
+            docling = await self.extractor.extract(
+                bronze_path, full_page_ocr=full_page_ocr
+            )
             finish_stage(
                 "silver_extract",
                 stage_started_at,
@@ -250,6 +255,24 @@ class IngestService:
                 (int(it["page"]) for it in docling.get("items", []) if isinstance(it.get("page"), (int, float))),
                 default=0,
             )
+            # Detect pages docling emitted almost no text for (no text layer /
+            # vector or scanned content) and surface a non-fatal warning naming
+            # them + the full-page-OCR remedy (issue #231). Only when the caller
+            # did not already request full-page OCR — that is the remedy.
+            low_text_warning: str | None = None
+            if not full_page_ocr:
+                low_text_pages = find_low_text_pages(docling, page_count)
+                low_text_warning = low_text_pages_warning(low_text_pages)
+                if low_text_warning:
+                    await self._publish(
+                        IngestProgress(
+                            slug=slug,
+                            stage="silver_low_text_warning",
+                            current=len(low_text_pages),
+                            total=page_count,
+                        ),
+                        publish_workspace_id,
+                    )
             current_stage = "silver_index"
             stage_started_at = self.clock.now()
             index = build_index(docling, filename=filename)
@@ -528,6 +551,8 @@ class IngestService:
             }
             if empty_gold:
                 timing_report["reason"] = empty_gold_reason
+            if low_text_warning:
+                timing_report["warnings"] = [low_text_warning]
             timing_report_path = await self.store.write_silver_artifact(
                 slug,
                 "ingest-report.json",
@@ -549,6 +574,8 @@ class IngestService:
             if empty_gold:
                 summary["status"] = "empty_gold"
                 summary["reason"] = empty_gold_reason
+            if low_text_warning:
+                summary["warnings"] = [low_text_warning]
             await record_activity(
                 current_stage,
                 status="empty_gold" if empty_gold else "done",

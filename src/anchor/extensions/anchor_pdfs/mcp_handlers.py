@@ -98,6 +98,15 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "slug": {"type": "string"},
                     "skip_polish": {"type": "boolean"},
                     "skip_regions": {"type": "boolean"},
+                    "full_page_ocr": {
+                        "type": "boolean",
+                        "description": (
+                            "OCR the whole page instead of only bitmap regions. "
+                            "Use for PDFs with no / partial text layer "
+                            "(vector-outline or scanned pages) that drop "
+                            "paragraphs from silver. Slower; default false."
+                        ),
+                    },
                     "force": {"type": "boolean"},
                 },
                 "required": ["pdf_path"],
@@ -567,6 +576,7 @@ async def call_tool(
             polish=not args.get("skip_polish", False),
             regions=want_regions,
             force=args.get("force", False),
+            full_page_ocr=args.get("full_page_ocr", False),
         )
         # Gold silently skips when the caller wanted regions but no vision
         # provider/key is wired (region_extractor is None). Attach an actionable

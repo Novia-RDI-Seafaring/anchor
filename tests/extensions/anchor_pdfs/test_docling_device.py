@@ -45,16 +45,27 @@ def test_explicit_mps_is_passed_through():
 
 def test_explicit_device_is_passed_through(monkeypatch):
     seen = {}
-    monkeypatch.setattr(dx, "_convert", lambda p, d: seen.setdefault("device", d) or {"items": []})
+    monkeypatch.setattr(dx, "_convert", lambda p, d, f=False: seen.setdefault("device", d) or {"items": []})
     dx._extract_sync("x.pdf", device="cpu")
     assert seen["device"] == "cpu"
+
+
+def test_full_page_ocr_threads_through_to_convert(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        dx,
+        "_convert",
+        lambda p, d, f=False: seen.setdefault("full_page_ocr", f) or {"items": []},
+    )
+    dx._extract_sync("x.pdf", device="cpu", full_page_ocr=True)
+    assert seen["full_page_ocr"] is True
 
 
 def test_auto_prefers_gpu_then_falls_back_to_cpu(monkeypatch):
     monkeypatch.setattr(dx, "_resolve_device", lambda req: "mps" if req == "auto" else req)
     calls = []
 
-    def fake_convert(path, device):
+    def fake_convert(path, device, full_page_ocr=False):
         calls.append(device)
         if device != "cpu":
             raise RuntimeError("Cannot convert a MPS Tensor to float64 ...")
@@ -71,7 +82,7 @@ def test_second_doc_skips_known_bad_device(monkeypatch):
     dx._FELL_BACK.add("mps")
     monkeypatch.setattr(dx, "_resolve_device", lambda req: "mps")
     calls = []
-    monkeypatch.setattr(dx, "_convert", lambda p, d: calls.append(d) or {"items": []})
+    monkeypatch.setattr(dx, "_convert", lambda p, d, f=False: calls.append(d) or {"items": []})
     dx._extract_sync("x.pdf", device="auto")
     assert calls == ["cpu"]              # straight to CPU, no wasted GPU attempt
 
@@ -80,7 +91,7 @@ def test_non_accelerator_error_is_not_retried(monkeypatch):
     monkeypatch.setattr(dx, "_resolve_device", lambda req: "cuda")
     calls = []
 
-    def fake_convert(path, device):
+    def fake_convert(path, device, full_page_ocr=False):
         calls.append(device)
         raise ValueError("corrupt PDF: bad xref")
 

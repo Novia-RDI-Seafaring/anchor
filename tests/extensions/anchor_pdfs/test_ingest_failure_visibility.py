@@ -27,7 +27,7 @@ from tests.fixtures.services import make_in_memory_services
 class BoomExtractor:
     """Extractor that raises in the silver_extract stage."""
 
-    async def extract(self, pdf_path):
+    async def extract(self, pdf_path, *, full_page_ocr: bool = False):
         raise RuntimeError("docling exploded")
 
 
@@ -100,7 +100,7 @@ def test_failed_ingest_publishes_failed_event_with_real_stage():
         sub = asyncio.create_task(subscribe())
         await asyncio.sleep(0)
 
-        async def boom(_pdf):
+        async def boom(_pdf, *, full_page_ocr=False):
             raise RuntimeError("docling exploded")
         s.extractor.extract = boom  # type: ignore[assignment]
 

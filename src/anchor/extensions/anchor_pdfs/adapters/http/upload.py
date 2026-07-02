@@ -55,6 +55,7 @@ async def upload(
     file: UploadFile = File(...),
     x: float = Form(0.0),
     y: float = Form(0.0),
+    full_page_ocr: bool = Form(False),
     ingest: IngestService = Depends(get_ingest_service),
     workspace: WorkspaceService = Depends(get_workspace_service),
     intents: IntentService = Depends(get_intent_service),
@@ -130,7 +131,10 @@ async def upload(
                 "ingest_started_at": started_at,
                 "ingest_updated_at": started_at,
             })
-            summary = await ingest.ingest_pdf(pdf_bytes, filename, slug=doc_slug, workspace_id=slug)
+            summary = await ingest.ingest_pdf(
+                pdf_bytes, filename, slug=doc_slug, workspace_id=slug,
+                full_page_ocr=full_page_ocr,
+            )
             finished_at = time.time()
             # A gold pass that produced 0 regions on a non-empty document is a
             # surfaced non-ok outcome (issue #188), not a silent "ready": flag
