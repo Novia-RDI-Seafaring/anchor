@@ -17,6 +17,13 @@ def ingest(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
     skip_polish: bool = typer.Option(False, "--skip-polish"),
     skip_regions: bool = typer.Option(False, "--skip-regions"),
+    full_page_ocr: bool = typer.Option(
+        False,
+        "--full-page-ocr",
+        help="OCR the whole page instead of only bitmap regions. Use for PDFs "
+        "with no / partial text layer (vector-outline or scanned pages) that "
+        "silver drops paragraphs from. Slower; default off.",
+    ),
     force: bool = typer.Option(
         False, "--force", help="Re-ingest even if the slug already has gold (overwrites it)."
     ),
@@ -44,6 +51,7 @@ def ingest(
             polish=not skip_polish,
             regions=not skip_regions,
             force=force,
+            full_page_ocr=full_page_ocr,
             polish_model=config.polish_model,
             region_model=config.region_model,
             dpi=config.dpi,
@@ -60,6 +68,8 @@ def ingest(
                 err=True,
             )
         raise typer.Exit(code=1) from None
+    for warning in result.get("warnings", []):
+        typer.echo(f"Warning: {warning}", err=True)
     typer.echo(json.dumps(result, indent=2))
 
 

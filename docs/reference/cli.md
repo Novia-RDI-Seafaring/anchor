@@ -29,7 +29,7 @@ an environment the way it runs `npm init`. See
 
 | Command | Purpose |
 | --- | --- |
-| `anchor ingest PDF_PATH` | Run a PDF through the bronze, silver and optional gold pipeline. |
+| `anchor ingest PDF_PATH` | Run a PDF through the bronze, silver and optional gold pipeline. Add `--full-page-ocr` to OCR whole pages instead of only bitmap regions; use it for PDFs with no or partial text layer (vector-outline or scanned pages) that would otherwise drop paragraphs from silver. Ingest also warns when a page yields little or no extractable text and points at this flag. The same option is available on the MCP `ingest_pdf` tool as `full_page_ocr`. |
 | `anchor list` | List ingested documents. |
 | `anchor index SLUG` | Print a document silver index. |
 | `anchor regions SLUG` | Print gold-extracted regions. |

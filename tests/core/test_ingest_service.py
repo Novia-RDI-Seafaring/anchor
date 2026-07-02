@@ -275,7 +275,7 @@ def test_ingest_failure_emits_failed_event():
         await asyncio.sleep(0)
 
         # Make the extractor blow up
-        async def boom(_pdf):
+        async def boom(_pdf, *, full_page_ocr=False):
             raise RuntimeError("docling exploded")
         s.extractor.extract = boom  # type: ignore[assignment]
 
