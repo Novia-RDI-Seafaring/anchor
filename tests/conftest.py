@@ -1,4 +1,9 @@
 import importlib
+import os
+
+# Service-wiring tests construct many ingest services but do not call the real
+# local embedder. Keep them from starting background torch imports during pytest.
+os.environ.setdefault("ANCHOR_LOCAL_EMBEDDER_PRELOAD", "0")
 
 # Load onnxruntime once up front so numpy is initialized via it exactly once;
 # otherwise a later onnxruntime import after numpy is already loaded raises

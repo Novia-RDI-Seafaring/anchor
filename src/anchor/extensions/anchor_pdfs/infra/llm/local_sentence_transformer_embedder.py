@@ -13,15 +13,21 @@ vectors so storing the model id is non-negotiable.
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 from typing import Any
 
-
 DEFAULT_EMBED_MODEL = "BAAI/bge-small-en-v1.5"
+_GLOBAL_LOAD_LOCK = threading.Lock()
+
+
+def _preload_enabled() -> bool:
+    value = os.environ.get("ANCHOR_LOCAL_EMBEDDER_PRELOAD", "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
 
 
 class LocalSentenceTransformerEmbedder:
-    def __init__(self, model: str = DEFAULT_EMBED_MODEL) -> None:
+    def __init__(self, model: str = DEFAULT_EMBED_MODEL, *, preload: bool | None = None) -> None:
         self.model_id = model
         self._model: Any = None
         self._dim: int | None = None
@@ -29,7 +35,10 @@ class LocalSentenceTransformerEmbedder:
         # Start loading immediately so the first embed() call doesn't pay the
         # full cold-start cost (importing torch + sentence-transformers can take
         # 30–60 s on some machines).
-        threading.Thread(target=self._ensure_loaded, daemon=True).start()
+        if preload is None:
+            preload = _preload_enabled()
+        if preload:
+            threading.Thread(target=self._ensure_loaded, daemon=True).start()
 
     @property
     def dim(self) -> int | None:
@@ -38,9 +47,10 @@ class LocalSentenceTransformerEmbedder:
     def _ensure_loaded(self) -> None:
         with self._load_lock:
             if self._model is None:
-                from sentence_transformers import SentenceTransformer
+                with _GLOBAL_LOAD_LOCK:
+                    from sentence_transformers import SentenceTransformer
 
-                self._model = SentenceTransformer(self.model_id)
+                    self._model = SentenceTransformer(self.model_id)
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:

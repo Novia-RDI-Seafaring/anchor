@@ -54,6 +54,8 @@ data/
 /ax-paper/
 /posters/
 /arxiv-paper-axux/
+/z-notes/
+unused/
 # MkDocs build output
 /site/
 /public/

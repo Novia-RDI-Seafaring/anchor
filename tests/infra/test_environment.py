@@ -38,7 +38,9 @@ _CLEAR = (
     "ANCHOR_DATA_DIR",
     "ANCHOR_EMBED_MODEL",
     "ANCHOR_PROVIDER",
+    "ANCHOR_OPENAI_BASE_URL",
     "ANCHOR_OPENAI_API_KEY",
+    "ANCHOR_REGION_MODEL",
 )
 
 
@@ -398,6 +400,31 @@ def test_layering_env_then_project_then_envvar(tmp_path, monkeypatch):
 
     monkeypatch.setenv("ANCHOR_EMBED_MODEL", "env-var-model")
     assert resolve_project_config(env, "pumps").embed_model == "env-var-model"
+
+
+def test_layered_config_ignores_cwd_dotenv(tmp_path, monkeypatch):
+    env = create_env(
+        "local",
+        settings={
+            "provider": "azure",
+            "openai_base_url": "https://x.openai.azure.com/openai/v1/",
+            "region_model": "gpt-dep",
+        },
+    )
+    create_project(env, "pumps")
+    cwd = tmp_path / "work"
+    cwd.mkdir()
+    (cwd / ".env").write_text(
+        "ANCHOR_OPENAI_BASE_URL=https://api.openai.com/v1\n"
+        "ANCHOR_REGION_MODEL=gpt-ignored\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(cwd)
+
+    cfg = resolve_project_config(env, "pumps")
+
+    assert cfg.openai_base_url == "https://x.openai.azure.com/openai/v1/"
+    assert cfg.region_model == "gpt-dep"
 
 
 def test_config_for_data_dir_layers_project(tmp_path):

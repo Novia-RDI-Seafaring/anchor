@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import tomllib
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -28,20 +29,24 @@ def _servers(config):
     return tomllib.loads(config.read_text())["mcp_servers"]
 
 
+def _is_anchor_mcp_command(command: str) -> bool:
+    return Path(command).name.lower() in {"anchor-mcp", "anchor-mcp.exe"}
+
+
 def test_install_writes_named_pointer_entry(_paths):
     create_env("local")
     result = runner.invoke(app, ["install", "codex", "--env", "local", "--yes"])
     assert result.exit_code == 0, result.output
     entry = _servers(_paths)["anchor-local"]
     assert entry["args"] == ["--env", "local"]
-    assert entry["command"].endswith("anchor-mcp")
+    assert _is_anchor_mcp_command(entry["command"])
 
 
 def test_config_is_valid_toml_and_reparses(_paths):
     create_env("local")
     runner.invoke(app, ["install", "codex", "--env", "local", "--name", "anchor", "--yes"])
     data = tomllib.loads(_paths.read_text())
-    assert data["mcp_servers"]["anchor"]["command"].endswith("anchor-mcp")
+    assert _is_anchor_mcp_command(data["mcp_servers"]["anchor"]["command"])
     assert data["mcp_servers"]["anchor"]["args"] == ["--env", "local"]
 
 

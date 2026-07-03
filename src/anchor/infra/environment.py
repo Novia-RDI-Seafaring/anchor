@@ -58,7 +58,7 @@ from pathlib import Path
 from typing import Any
 
 from anchor.core.ids import validate_env_name, validate_project_name
-from anchor.infra.config import AnchorConfig, _load_toml_tolerant
+from anchor.infra.config import AnchorConfig, _load_toml_tolerant, expand_env_vars
 
 #: Root of the environment registry. Monkeypatched in tests.
 ANCHOR_HOME = Path.home() / ".anchor"
@@ -164,7 +164,7 @@ def _safe_toml(path: Path) -> dict[str, Any]:
 
 
 def _expand(value: Any) -> Path:
-    return Path(os.path.expandvars(str(value))).expanduser()
+    return Path(expand_env_vars(str(value))).expanduser()
 
 
 def _flat_settings(data: dict[str, Any]) -> dict[str, Any]:
