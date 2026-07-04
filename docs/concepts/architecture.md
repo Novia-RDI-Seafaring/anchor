@@ -24,6 +24,23 @@ layers are shown together in [The hexagon](#the-hexagon).
 
 ---
 
+## Runtime composition
+
+Each project is wired through `ProjectRuntime`, the shared composition
+root for one resolved project config and data directory. It owns the
+service instances that adapters should share: workspace service,
+document store, event bus, ingest services, agent intents, and optional
+extension services.
+
+HTTP, MCP, and CLI entry points ask for that runtime instead of each
+building their own copies. This keeps adapter behaviour aligned: a
+canvas mutation, PDF ingest, search, or intent operation reaches the
+same stores and event bus no matter which interface started it. Tests
+can still pass explicit services to the HTTP app when they need a small
+isolated runtime.
+
+---
+
 ## The three substrates
 
 | Substrate     | Lifetime                | Where it lives             | Owned by             |
@@ -113,6 +130,20 @@ add their own. Today there are two:
 `simulate`, `list_simulations`, ...). ANCHOR's canvas core never
 imports either.
 
+### Region retrieval
+
+PDF ingest writes bronze, silver, and gold artifacts. Silver is the
+Docling view: page markdown, item metadata, bboxes, and table cells.
+Gold is the agent-facing view: source regions with page, bbox, title,
+description, tags, optional cells, and server-derived `content`.
+
+That `content` is rendered by ANCHOR from the Docling items or table
+cells selected by the region geometry. It is not submitted by the
+agent. Search embeds region title, description, and content. In normal
+use an agent should search gold regions and call `get_gold_regions` for
+the matching region. Loading the whole page markdown remains a fallback
+for ambiguous or missing region content.
+
 ---
 
 ## Four ways to talk to it
@@ -129,11 +160,24 @@ no second copy of the business logic. An agent moving a node and a
 human dragging a node go through the same code path, hit the same
 event log, and notify the same SSE subscribers.
 
+The shared `ProjectRuntime` keeps the surrounding services aligned too:
+document store, ingest services, event bus, FMU/CAD/SysML services, and
+intent queue. Adapter parity means adding an operation should expose
+the same project-runtime operation through HTTP, MCP, and CLI unless
+there is a documented reason not to.
+
 The MCP server hosts both canvas tools (`canvas_get_state`,
 `canvas_add_node`, ...) and extension tools for PDFs, FMUs, CAD and
 SysML. Extension tool names use safe prefixes such as `ingest_pdf`,
 `fmu_simulate` and `sysml_render` so they can coexist with other tools
 and pass MCP client name validation.
+
+Extension discovery is handled by `ExtensionHost`. It reads bundled
+extension manifests and exposes the public extension list and skill
+metadata without making adapters know each extension's filesystem
+layout. Discovery is separate from runtime wiring: a manifest says what
+the extension offers, while service builders wire the concrete stores,
+clients, and optional runtimes.
 
 ---
 
