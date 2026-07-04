@@ -4,6 +4,8 @@ from __future__ import annotations
 from anchor.extensions.anchor_pdfs.core.silver import (
     build_index,
     point_in_bbox,
+    region_content_from_items,
+    region_search_text,
     table_bbox_from_items,
     table_cells_from_items,
 )
@@ -134,6 +136,41 @@ def test_table_cells_from_items_prefers_best_geometric_fit():
         200.0,
         10.0,
     ]
+
+
+def test_region_content_from_items_renders_selected_table():
+    items = [
+        {"label": "text", "text": "Intro", "bbox": [0, 120, 80, 100]},
+        {
+            "label": "table",
+            "bbox": [10, 100, 110, 10],
+            "cells": [
+                {"row": 0, "col": 0, "text": "Field"},
+                {"row": 0, "col": 1, "text": "Value"},
+                {"row": 1, "col": 0, "text": "limit"},
+                {"row": 1, "col": 1, "text": "10"},
+            ],
+        },
+    ]
+
+    content = region_content_from_items(items, [1])
+
+    assert "| Field | Value |" in content
+    assert "| limit | 10 |" in content
+    assert "Intro" not in content
+
+
+def test_region_search_text_includes_server_content_once():
+    region = {
+        "title": "Limits",
+        "description": "Limits",
+        "content": "| Field | Value |\n| --- | --- |\n| limit | 10 |",
+    }
+
+    text = region_search_text(region)
+
+    assert text.count("Limits") == 1
+    assert "| limit | 10 |" in text
 
 
 def test_point_in_bbox_tolerates_reversed_y_order():

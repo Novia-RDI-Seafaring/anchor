@@ -374,10 +374,47 @@ def build_pages_meta(docling: dict[str, Any]) -> dict[str, Any]:
 
 
 # Cap candidate text so a dense page does not balloon the persisted
-# candidates file or the harness work-item payload. The agent reads the
-# page image and raw markdown for the full content; candidate text is a
-# grouping aid, not the content channel.
+# candidates file or the harness work-item payload.
 _CANDIDATE_TEXT_MAX = 800
+
+# Cap server-derived region content so gold stays readable and embedding
+# payloads do not grow without bound on dense tables.
+_REGION_CONTENT_MAX = 6000
+
+
+def region_content_from_items(
+    items: Any,
+    indexes: list[int] | None = None,
+) -> str:
+    """Render selected Docling items as gold-region content.
+
+    This is server-derived from Docling candidates, not agent-submitted text.
+    """
+    if not isinstance(items, list):
+        return ""
+    selected = items
+    if indexes is not None:
+        selected = [items[i] for i in indexes if 0 <= i < len(items)]
+    if not selected:
+        return ""
+    content = _render_page_md([it for it in selected if isinstance(it, dict)]).strip()
+    return content[:_REGION_CONTENT_MAX].rstrip()
+
+
+def region_search_text(region: dict[str, Any]) -> str:
+    """Text embedded for a gold region."""
+    parts: list[str] = []
+    seen: set[str] = set()
+    for key in ("title", "description", "content"):
+        value = region.get(key)
+        if not isinstance(value, str):
+            continue
+        text = value.strip()
+        norm = " ".join(text.split()).casefold()
+        if text and norm not in seen:
+            seen.add(norm)
+            parts.append(text)
+    return "\n\n".join(parts)
 
 
 def build_page_candidates(docling: dict[str, Any]) -> dict[int, list[dict[str, Any]]]:

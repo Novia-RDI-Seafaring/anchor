@@ -41,6 +41,8 @@ from anchor.extensions.anchor_pdfs.core.silver import (
     build_index,
     build_page_candidates,
     build_pages_meta,
+    region_content_from_items,
+    region_search_text,
     render_pages_md,
     snap_to_docling_items,
     table_bbox_from_items,
@@ -387,6 +389,12 @@ class IngestService:
                                     snap_bbox, item_indexes = snap_to_docling_items(docling, page, bbox_list)
                                     if snap_bbox:
                                         r = {**r, "bbox": snap_bbox}
+                                        content = region_content_from_items(
+                                            docling.get("items", []),
+                                            item_indexes,
+                                        )
+                                        if content:
+                                            r = {**r, "content": content}
                                         cells = table_cells_from_items(
                                             docling.get("items", []),
                                             item_indexes,
@@ -590,11 +598,10 @@ class IngestService:
         embeddings for already-ingested gold layers without re-running the
         full pipeline.
 
-        The embedded text per region is ``"{title}. {description}"`` —
-        short enough to keep encode fast on CPU, dense enough that synonym
-        queries hit. Region markdown is omitted on purpose (it's already
-        captured in the page-level silver markdown which can be indexed
-        separately if needed).
+        The embedded text per region is built from title, description,
+        and server-derived region content when available. This keeps normal
+        agent retrieval at region granularity; page markdown remains the
+        fallback for unusual cases.
 
         Returns the number of regions embedded. Raises if no embedder
         is wired.
@@ -614,12 +621,9 @@ class IngestService:
                 rid = r.get("id")
                 if not rid:
                     continue
-                title = (r.get("title") or "").strip()
-                description = (r.get("description") or "").strip()
-                if not title and not description:
-                    continue
-                text = f"{title}. {description}".strip(". ").strip()
-                items.append((page, rid, text))
+                text = region_search_text(r)
+                if text:
+                    items.append((page, rid, text))
         if not items:
             return 0
         vectors = await self.embedder.embed([t for _, _, t in items])

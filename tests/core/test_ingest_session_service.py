@@ -237,6 +237,7 @@ def test_status_is_the_resume_surface_by_id_and_slug():
             {"row": 0, "col": 0, "text": "Field", "bbox": [10.0, 690.0, 80.0, 660.0]},
             {"row": 0, "col": 1, "text": "Value", "bbox": [100.0, 690.0, 180.0, 660.0]},
         ]
+        assert "| Field | Value |" in staged["regions"][0]["content"]
         by_slug = await s.ingest_session.ingest_status(slug="demo")
         assert by_slug["session_id"] == sid
         assert by_slug["state"] == "open"
@@ -288,6 +289,7 @@ def test_finalize_publishes_atomically_with_embeddings_and_report():
         assert {int(p) for p in gold["pages"]} == {1, 2}
         embeddings = await s.doc_store.get_embeddings("demo")
         assert len(embeddings["vectors"]) == 2
+        assert "| Field | Value |" in embeddings["vectors"][1]["text"]
         assert await s.doc_store.get_page_text("demo", 1) == "# Demo Doc polished"
         # Marker records the harness mode + declared model.
         assert await s.doc_store.has_gold("demo")

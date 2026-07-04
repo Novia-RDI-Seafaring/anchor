@@ -55,6 +55,8 @@ from anchor.extensions.anchor_pdfs.core.silver import (
     build_page_candidates,
     build_pages_meta,
     needs_polish,
+    region_content_from_items,
+    region_search_text,
     render_pages_md,
     snap_to_docling_items,
     table_bbox_from_items,
@@ -441,6 +443,7 @@ class IngestSessionService:
             bbox: list[float] = []
             geometry = ""
             cells: list[dict[str, Any]] = []
+            content = ""
             if isinstance(member_ids, list) and member_ids:
                 missing = [m for m in member_ids if m not in by_id]
                 if missing:
@@ -449,12 +452,14 @@ class IngestSessionService:
                         f"unknown candidate ids on page {page}: {missing}",
                     ))
                 else:
+                    selected_items = [by_id[m] for m in member_ids]
                     bbox = union_bbox([
-                        list(by_id[m].get("bbox") or []) for m in member_ids
+                        list(item.get("bbox") or []) for item in selected_items
                     ])
                     if bbox:
                         geometry = "members"
-                        cells = table_cells_from_items([by_id[m] for m in member_ids])
+                        cells = table_cells_from_items(selected_items)
+                        content = region_content_from_items(selected_items)
                     else:
                         errors.append(_err(
                             i, "member_item_ids",
@@ -474,6 +479,10 @@ class IngestSessionService:
                             docling_view["items"],
                             item_indexes,
                             region_bbox=approx_f,
+                        )
+                        content = region_content_from_items(
+                            docling_view["items"],
+                            item_indexes,
                         )
                         table_bbox = table_bbox_from_items(
                             docling_view["items"],
@@ -509,6 +518,8 @@ class IngestSessionService:
                 region["member_item_ids"] = list(member_ids)
             elif geometry in ("snapped", "coarse"):
                 region["approx_bbox"] = [float(v) for v in approx]
+            if content:
+                region["content"] = content
             if cells and region.get("kind") in {"table", "spec_block"}:
                 region["cells"] = cells
             shape_errors = validate_region(region, index=i)
@@ -633,8 +644,7 @@ class IngestSessionService:
             for page, regions in sorted(staged_regions.items()):
                 for r in regions:
                     rid = r.get("id")
-                    text = f"{(r.get('title') or '').strip()}. {(r.get('description') or '').strip()}"
-                    text = text.strip(". ").strip()
+                    text = region_search_text(r)
                     if rid and text:
                         items.append((page, rid, text))
             if items:
