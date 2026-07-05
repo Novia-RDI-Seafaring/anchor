@@ -208,6 +208,15 @@ def _parse_data(raw: str | None) -> dict:
     return out
 
 
+def _validate_layer(layer: str | None) -> str | None:
+    if layer is None:
+        return None
+    if layer not in {"background", "content", "annotation"}:
+        typer.echo("--layer must be background, content, or annotation", err=True)
+        raise typer.Exit(code=2)
+    return layer
+
+
 @canvas_app.command("state")
 def canvas_state(
     slug: str,
@@ -237,6 +246,10 @@ def canvas_add_node(
     width: float | None = typer.Option(None, "--width"),
     height: float | None = typer.Option(None, "--height"),
     parent: str | None = typer.Option(None, "--parent"),
+    locked: bool = typer.Option(False, "--locked"),
+    hidden: bool = typer.Option(False, "--hidden"),
+    layer: str | None = typer.Option(None, "--layer"),
+    opacity: float | None = typer.Option(None, "--opacity"),
     data: str | None = typer.Option(
         None, "--data", help="JSON object passed as the node's `data` field"
     ),
@@ -266,6 +279,15 @@ def canvas_add_node(
         kwargs["height"] = height
     if parent is not None:
         kwargs["parent"] = parent
+    if locked:
+        kwargs["locked"] = True
+    if hidden:
+        kwargs["visible"] = False
+    layer = _validate_layer(layer)
+    if layer is not None:
+        kwargs["layer"] = layer
+    if opacity is not None:
+        kwargs["opacity"] = opacity
 
     async def run():
         state, env = await ws.add_node(slug, place=place, **kwargs)
@@ -315,6 +337,12 @@ def canvas_update_node(
     y: float | None = typer.Option(None, "--y"),
     width: float | None = typer.Option(None, "--width"),
     height: float | None = typer.Option(None, "--height"),
+    lock: bool = typer.Option(False, "--locked"),
+    unlock: bool = typer.Option(False, "--unlocked"),
+    visible: bool = typer.Option(False, "--visible"),
+    hidden: bool = typer.Option(False, "--hidden"),
+    layer: str | None = typer.Option(None, "--layer"),
+    opacity: float | None = typer.Option(None, "--opacity"),
     parent: str | None = typer.Option(
         None,
         "--parent",
@@ -348,6 +376,12 @@ def canvas_update_node(
     if parent is not None and unparent:
         typer.echo("--parent and --unparent are mutually exclusive", err=True)
         raise typer.Exit(code=2)
+    if lock and unlock:
+        typer.echo("--locked and --unlocked are mutually exclusive", err=True)
+        raise typer.Exit(code=2)
+    if visible and hidden:
+        typer.echo("--visible and --hidden are mutually exclusive", err=True)
+        raise typer.Exit(code=2)
     if parent is not None and parent == node_id:
         typer.echo("node cannot be its own parent", err=True)
         raise typer.Exit(code=2)
@@ -363,6 +397,19 @@ def canvas_update_node(
         fields["width"] = width
     if height is not None:
         fields["height"] = height
+    if lock:
+        fields["locked"] = True
+    if unlock:
+        fields["locked"] = False
+    if visible:
+        fields["visible"] = True
+    if hidden:
+        fields["visible"] = False
+    layer = _validate_layer(layer)
+    if layer is not None:
+        fields["layer"] = layer
+    if opacity is not None:
+        fields["opacity"] = opacity
     if data is not None:
         fields["data"] = _parse_data(data)
     parent_op = parent is not None or unparent

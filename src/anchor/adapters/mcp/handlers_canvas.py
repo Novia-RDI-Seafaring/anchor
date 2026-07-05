@@ -164,12 +164,18 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "label": {"type": "string"},
                     "x": {"type": "number"},
                     "y": {"type": "number"},
+                    "width": {"type": "number"},
+                    "height": {"type": "number"},
                     "place": {
                         "type": "string",
                         "enum": ["auto", "exact"],
                         "description": "'auto' (or omitting x/y) asks the server for a non-overlapping position, returned under `position`. 'exact' forces the given x/y.",
                     },
                     "parent": {"type": "string"},
+                    "locked": {"type": "boolean"},
+                    "visible": {"type": "boolean"},
+                    "layer": {"type": "string", "enum": ["background", "content", "annotation"]},
+                    "opacity": {"type": "number"},
                     "data": {"type": "object"},
                 },
                 "required": ["workspace_slug"],
@@ -215,6 +221,8 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "label": {"type": "string"},
                     "x": {"type": "number"},
                     "y": {"type": "number"},
+                    "width": {"type": "number"},
+                    "height": {"type": "number"},
                     "parent": {
                         "type": ["string", "null"],
                         "description": (
@@ -225,6 +233,10 @@ def tool_definitions() -> list[dict[str, Any]]:
                             "dedicated command for invariant checking."
                         ),
                     },
+                    "locked": {"type": "boolean"},
+                    "visible": {"type": "boolean"},
+                    "layer": {"type": "string", "enum": ["background", "content", "annotation"]},
+                    "opacity": {"type": "number"},
                     "data": {"type": "object"},
                 },
                 "required": ["workspace_slug", "id"],
