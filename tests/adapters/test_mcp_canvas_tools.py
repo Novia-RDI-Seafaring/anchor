@@ -502,6 +502,28 @@ def test_canvas_add_node_auto_places_and_returns_position():
     asyncio.run(run())
 
 
+def test_canvas_add_node_preserves_structural_fields():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        body = await handlers_canvas.call_tool(s.workspace, "canvas_add_node", {
+            "workspace_slug": "w1",
+            "id": "a",
+            "locked": True,
+            "visible": False,
+            "layer": "annotation",
+            "opacity": 0.5,
+        })
+        out = json.loads(body)
+        node = next(n for n in out["state"]["nodes"] if n["id"] == "a")
+        assert node["locked"] is True
+        assert node["visible"] is False
+        assert node["layer"] == "annotation"
+        assert node["opacity"] == 0.5
+
+    asyncio.run(run())
+
+
 def test_canvas_add_node_warns_on_unrendered_data_key():
     async def run():
         s = make_in_memory_services()

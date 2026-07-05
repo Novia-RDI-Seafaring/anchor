@@ -4,7 +4,6 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from anchor.adapters.http.app import build_app
-
 from tests.fixtures.services import make_in_memory_services
 
 
@@ -370,6 +369,27 @@ def test_http_add_node_auto_place_non_overlapping():
     b1 = client.post("/api/workspaces/w1/nodes", json={"node_type": "fact", "width": 120, "height": 80}).json()
     b2 = client.post("/api/workspaces/w1/nodes", json={"node_type": "fact", "width": 120, "height": 80}).json()
     assert b1["position"] != b2["position"]
+
+
+def test_http_add_node_preserves_structural_fields():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    rsp = client.post(
+        "/api/workspaces/w1/nodes",
+        json={
+            "id": "a",
+            "locked": True,
+            "visible": False,
+            "layer": "annotation",
+            "opacity": 0.5,
+        },
+    )
+    assert rsp.status_code == 201, rsp.text
+    node = next(n for n in rsp.json()["state"]["nodes"] if n["id"] == "a")
+    assert node["locked"] is True
+    assert node["visible"] is False
+    assert node["layer"] == "annotation"
+    assert node["opacity"] == 0.5
 
 
 def test_http_add_node_warns_on_dead_data_key():

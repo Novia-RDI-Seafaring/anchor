@@ -13,6 +13,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+NodeLayer = Literal["background", "content", "annotation"]
+
 CanvasEventType = Literal[
     "NodeAdded",
     "NodeRemoved",
@@ -40,6 +42,10 @@ class NodeAdded(BaseModel):
     width: float | None = None
     height: float | None = None
     parent: str | None = None
+    locked: bool = False
+    visible: bool = True
+    layer: NodeLayer = "content"
+    opacity: float | None = None
     data: dict[str, Any] = {}
 
 

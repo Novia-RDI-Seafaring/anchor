@@ -49,6 +49,23 @@ def test_cli_add_node_auto_places_and_returns_position(tmp_path):
     assert out2["position"] != out1["position"]
 
 
+def test_cli_add_node_preserves_structural_fields(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    r = runner.invoke(app, [
+        "canvas", "add-node", "w1", "fact",
+        "--locked", "--hidden", "--layer", "annotation", "--opacity", "0.5",
+        "--data-dir", str(data_dir),
+    ])
+    assert r.exit_code == 0, r.output
+    node = json.loads(r.output)["state"]["nodes"][0]
+    assert node["locked"] is True
+    assert node["visible"] is False
+    assert node["layer"] == "annotation"
+    assert node["opacity"] == 0.5
+
+
 def test_cli_add_node_warns_on_dead_data_key(tmp_path):
     data_dir = tmp_path / "anchor-data"
     runner = CliRunner()
