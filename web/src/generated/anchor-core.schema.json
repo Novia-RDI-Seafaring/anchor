@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "models": {
+    "Node": {
+      "fields": [
+        "id",
+        "node_type",
+        "label",
+        "x",
+        "y",
+        "width",
+        "height",
+        "parent",
+        "locked",
+        "visible",
+        "layer",
+        "opacity",
+        "data"
+      ],
+      "required": []
+    },
+    "Edge": {
+      "fields": [
+        "id",
+        "source",
+        "target",
+        "label",
+        "edge_type",
+        "sourceHandle",
+        "targetHandle",
+        "data"
+      ],
+      "required": [
+        "source",
+        "target"
+      ]
+    },
+    "Workspace": {
+      "fields": [
+        "slug",
+        "title",
+        "version",
+        "nodes",
+        "edges",
+        "metadata",
+        "last_event_id"
+      ],
+      "required": [
+        "slug"
+      ]
+    },
+    "WorkspaceMeta": {
+      "fields": [
+        "slug",
+        "title",
+        "created_at"
+      ],
+      "required": [
+        "slug"
+      ]
+    },
+    "DomainEvent": {
+      "fields": [
+        "id",
+        "ts",
+        "version",
+        "workspace_id",
+        "type",
+        "payload",
+        "causation_id"
+      ],
+      "required": [
+        "workspace_id",
+        "type"
+      ]
+    }
+  },
+  "canvas_event_types": [
+    "NodeAdded",
+    "NodeRemoved",
+    "NodeMoved",
+    "NodeResized",
+    "NodeUpdated",
+    "NodeReparented",
+    "EdgeAdded",
+    "EdgeRemoved",
+    "EdgeUpdated",
+    "CanvasCleared",
+    "CanvasSnapshot",
+    "ReferenceCreated",
+    "ReferenceAttached"
+  ]
+}
