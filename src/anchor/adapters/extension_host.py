@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Callable
+from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,15 @@ _BUNDLED_MANIFEST_MODULES = (
     "anchor_fmus",
     "anchor_cad",
 )
+
+
+@dataclass(frozen=True)
+class ExtensionRuntimeStatus:
+    name: str
+    source: str
+    available: bool
+    reason: str | None = None
+    error_type: str | None = None
 
 
 def system_producers_dir() -> Path:

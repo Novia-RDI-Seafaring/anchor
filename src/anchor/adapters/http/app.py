@@ -55,6 +55,7 @@ def build_app(
     canvases_dir: Path | None = None,
     config: AnchorConfig | None = None,
 ) -> FastAPI:
+    extension_status = {}
     if runtime is not None:
         workspace_service = runtime.workspace
         ingest_service = runtime.ingest
@@ -68,6 +69,7 @@ def build_app(
         fmu_service = runtime.fmu
         canvases_dir = runtime.config.canvases_dir
         config = runtime.config
+        extension_status = runtime.extension_status
 
     if (
         workspace_service is None
@@ -98,6 +100,7 @@ def build_app(
     app.state.synopsis_service = synopsis_service
     app.state.ingest_session_service = ingest_session_service
     app.state.anchor_config = config
+    app.state.extension_status = extension_status
 
     # Bridge cross-process writes (CLI / MCP-stdio in another process) into
     # this app's bus by tailing each workspace's events.jsonl. SSE router

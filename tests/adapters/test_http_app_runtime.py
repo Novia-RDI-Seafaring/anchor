@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from anchor.adapters.extension_host import ExtensionRuntimeStatus
 from anchor.adapters.http.app import build_app
 from anchor.adapters.project_runtime import ProjectRuntime
 from anchor.infra.config import AnchorConfig
@@ -19,11 +20,21 @@ def test_build_app_accepts_project_runtime(tmp_path):
         doc_store=services.doc_store,
         intents=services.intents,
         ingest_session=services.ingest_session,
+        extension_status={
+            "anchor-fmus": ExtensionRuntimeStatus(
+                name="anchor-fmus",
+                source="bundled",
+                available=False,
+                reason="missing runtime",
+                error_type="RuntimeError",
+            ),
+        },
     )
 
     app = build_app(runtime)
 
     assert app.state.anchor_config is config
+    assert app.state.extension_status is runtime.extension_status
     assert app.state.workspace_service is services.workspace
     assert app.state.ingest_service is services.ingest
     assert app.state.doc_store is services.doc_store

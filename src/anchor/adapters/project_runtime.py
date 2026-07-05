@@ -12,10 +12,11 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from anchor.adapters.extension_host import ExtensionRuntimeStatus
 from anchor.core.ports.event_bus import EventBus
 from anchor.core.services.intent_service import IntentService
 from anchor.core.services.workspace_service import WorkspaceService
@@ -41,6 +42,7 @@ class ProjectRuntime:
     sysml: Any | None = None
     synopsis: Any | None = None
     fmu: Any | None = None
+    extension_status: dict[str, ExtensionRuntimeStatus] = field(default_factory=dict)
 
 
 def egress_settings(config: AnchorConfig) -> tuple[str | None, bool, str | None]:
@@ -166,16 +168,36 @@ def build_project_runtime(
     cad = None
     sysml = None
     fmu = None
+    extension_status: dict[str, ExtensionRuntimeStatus] = {}
     if include_extensions:
         from anchor.extensions.anchor_cad import extension as cad_ext
 
         cad = cad_ext.build_service(data_dir, bus)
+        cad_name = cad_ext.NAME
+        extension_status[cad_name] = ExtensionRuntimeStatus(
+            name=cad_name,
+            source="bundled",
+            available=True,
+        )
 
+        from anchor.extensions.anchor_fmus import extension as fmu_ext
+
+        fmu_name = fmu_ext.NAME
         try:
-            from anchor.extensions.anchor_fmus import extension as fmu_ext
-
             fmu = fmu_ext.build_service(data_dir, bus)
+            extension_status[fmu_name] = ExtensionRuntimeStatus(
+                name=fmu_name,
+                source="bundled",
+                available=True,
+            )
         except Exception as exc:  # noqa: BLE001 - optional extension
+            extension_status[fmu_name] = ExtensionRuntimeStatus(
+                name=fmu_name,
+                source="bundled",
+                available=False,
+                reason=str(exc),
+                error_type=exc.__class__.__name__,
+            )
             if fmu_warning is None:
                 print(f"Warning: FMU extension disabled: {exc}", file=sys.stderr)
             else:
@@ -184,6 +206,12 @@ def build_project_runtime(
         from anchor.extensions.anchor_sysml import extension as sysml_ext
 
         sysml = sysml_ext.build_service(data_dir, bus, workspace=workspace)
+        sysml_name = sysml_ext.NAME
+        extension_status[sysml_name] = ExtensionRuntimeStatus(
+            name=sysml_name,
+            source="bundled",
+            available=True,
+        )
 
     synopsis = None
     if include_synopsis:
@@ -211,6 +239,7 @@ def build_project_runtime(
         sysml=sysml,
         synopsis=synopsis,
         fmu=fmu,
+        extension_status=extension_status,
     )
 
 
