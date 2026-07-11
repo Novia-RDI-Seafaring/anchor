@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from anchor.adapters import project_runtime
 from anchor.adapters.project_runtime import build_project_runtime
 from anchor.infra.config import AnchorConfig
 
@@ -31,3 +32,22 @@ def test_project_runtime_records_optional_extension_failure(tmp_path, monkeypatc
     assert fmu_status.reason == "fmu unavailable"
     assert fmu_status.error_type == "RuntimeError"
     assert [str(exc) for exc in warnings] == ["fmu unavailable"]
+
+
+def test_project_runtime_can_omit_keyed_pdf_ingest(tmp_path, monkeypatch):
+    def fail_if_built(*_args, **_kwargs):
+        raise AssertionError("keyed PDF ingest should not be built")
+
+    monkeypatch.setattr(project_runtime, "build_ingest_service", fail_if_built)
+
+    runtime = build_project_runtime(
+        AnchorConfig(data_dir=tmp_path / "anchor-data", _env_file=None),
+        include_ingest=False,
+        include_intents=False,
+        include_ingest_session=False,
+        include_extensions=False,
+        include_synopsis=False,
+    )
+
+    assert runtime.ingest is None
+    assert runtime.workspace is not None

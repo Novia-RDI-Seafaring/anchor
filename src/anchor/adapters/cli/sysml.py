@@ -9,7 +9,7 @@ from pathlib import Path
 import typer
 
 from anchor.adapters.cli.common import DEFAULT_DATA_DIR
-from anchor.adapters.cli.services import _build_real_services
+from anchor.adapters.cli.services import _build_canvas_runtime
 
 sysml_app = typer.Typer(help="Render and export SysML v2 diagrams.")
 
@@ -26,7 +26,9 @@ def sysml_render(
     if not sysml_path.exists():
         typer.echo(f"SysML file not found: {sysml_path}", err=True)
         raise typer.Exit(code=1)
-    _, bus, workspace, _, _ = _build_real_services(data_dir)
+    runtime = _build_canvas_runtime(data_dir)
+    bus = runtime.bus
+    workspace = runtime.workspace
     from anchor.extensions.anchor_sysml import extension as sysml_ext
 
     svc = sysml_ext.build_service(data_dir, bus, workspace=workspace)
@@ -49,7 +51,9 @@ def sysml_export(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Export the workspace's SysML elements back to text (Phase 1 stub)."""
-    _, bus, workspace, _, _ = _build_real_services(data_dir)
+    runtime = _build_canvas_runtime(data_dir)
+    bus = runtime.bus
+    workspace = runtime.workspace
     from anchor.extensions.anchor_sysml import extension as sysml_ext
 
     svc = sysml_ext.build_service(data_dir, bus, workspace=workspace)

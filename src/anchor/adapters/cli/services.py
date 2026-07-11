@@ -37,8 +37,23 @@ def _build_real_services(data_dir: Path, *, base_url: str = "http://localhost:80
         runtime.config,
         runtime.bus,
         runtime.workspace,
-        runtime.ingest,
+        runtime.require_ingest(),
         runtime.doc_store,
+    )
+
+
+def _build_canvas_runtime(data_dir: Path, *, base_url: str = "http://localhost:8002"):
+    """Wire canvas commands without initializing PDF ingest or extensions."""
+    from anchor.adapters.project_runtime import build_project_runtime_for_data_dir
+
+    return build_project_runtime_for_data_dir(
+        data_dir,
+        base_url=base_url,
+        include_ingest=False,
+        include_intents=False,
+        include_ingest_session=False,
+        include_extensions=False,
+        include_synopsis=False,
     )
 
 

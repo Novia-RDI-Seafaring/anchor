@@ -8,6 +8,23 @@ from typer.testing import CliRunner
 from anchor.adapters.cli.main import app
 
 
+def test_canvas_cli_does_not_initialize_pdf_ingest(tmp_path, monkeypatch):
+    def fail_if_built(*_args, **_kwargs):
+        raise AssertionError("canvas commands should not build PDF ingest")
+
+    monkeypatch.setattr(
+        "anchor.adapters.project_runtime.build_ingest_service",
+        fail_if_built,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["canvas", "list", "--data-dir", str(tmp_path / "anchor-data")],
+    )
+
+    assert result.exit_code == 0, result.output
+
+
 def test_canvas_delete_cli_requires_confirmation_and_removes_workspace(tmp_path):
     data_dir = tmp_path / "anchor-data"
     runner = CliRunner()

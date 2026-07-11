@@ -14,15 +14,17 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from anchor.adapters.extension_host import ExtensionRuntimeStatus
 from anchor.core.ports.event_bus import EventBus
 from anchor.core.services.intent_service import IntentService
 from anchor.core.services.workspace_service import WorkspaceService
+from anchor.extensions.anchor_cad.core.services import CadService
+from anchor.extensions.anchor_fmus.core.services import FmuService
 from anchor.extensions.anchor_pdfs.core.ingest.session import IngestSessionService
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
-from anchor.extensions.anchor_pdfs.core.services import IngestService
+from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
+from anchor.extensions.anchor_sysml.core.services import SysmlService
 from anchor.infra.bus.memory_bus import MemoryEventBus
 from anchor.infra.config import AnchorConfig
 
@@ -34,15 +36,21 @@ class ProjectRuntime:
     config: AnchorConfig
     bus: EventBus
     workspace: WorkspaceService
-    ingest: IngestService
+    ingest: IngestService | None
     doc_store: DocStore
     intents: IntentService | None = None
     ingest_session: IngestSessionService | None = None
-    cad: Any | None = None
-    sysml: Any | None = None
-    synopsis: Any | None = None
-    fmu: Any | None = None
+    cad: CadService | None = None
+    sysml: SysmlService | None = None
+    synopsis: SynopsisService | None = None
+    fmu: FmuService | None = None
     extension_status: dict[str, ExtensionRuntimeStatus] = field(default_factory=dict)
+
+    def require_ingest(self) -> IngestService:
+        """Return keyed PDF ingest or fail clearly for a reduced runtime."""
+        if self.ingest is None:
+            raise RuntimeError("this ProjectRuntime was built without keyed PDF ingest")
+        return self.ingest
 
 
 def egress_settings(config: AnchorConfig) -> tuple[str | None, bool, str | None]:
@@ -130,6 +138,7 @@ def build_project_runtime(
     config: AnchorConfig,
     *,
     base_url: str = "http://localhost:8002",
+    include_ingest: bool = True,
     include_intents: bool = True,
     include_ingest_session: bool = True,
     include_extensions: bool = True,
@@ -158,7 +167,7 @@ def build_project_runtime(
         output_dir=data_dir / "snapshots",
     )
     workspace = WorkspaceService(workspace_store, bus, snapshotter=snapshotter)
-    ingest = build_ingest_service(config, bus, doc_store)
+    ingest = build_ingest_service(config, bus, doc_store) if include_ingest else None
     ingest_session = (
         build_ingest_session_service(config, bus, doc_store)
         if include_ingest_session
@@ -247,6 +256,7 @@ def build_project_runtime_for_data_dir(
     data_dir: Path,
     *,
     base_url: str = "http://localhost:8002",
+    include_ingest: bool = True,
     include_intents: bool = True,
     include_ingest_session: bool = True,
     include_extensions: bool = True,
@@ -259,6 +269,7 @@ def build_project_runtime_for_data_dir(
     return build_project_runtime(
         config_for_data_dir(data_dir),
         base_url=base_url,
+        include_ingest=include_ingest,
         include_intents=include_intents,
         include_ingest_session=include_ingest_session,
         include_extensions=include_extensions,

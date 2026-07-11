@@ -39,6 +39,13 @@ same stores and event bus no matter which interface started it. Tests
 can still pass explicit services to the HTTP app when they need a small
 isolated runtime.
 
+Long-running HTTP and MCP processes build the full runtime. Short-lived
+canvas-only CLI commands use the same builder with keyed PDF ingest and
+optional extensions disabled. Listing or moving canvas nodes therefore
+does not load Docling or an embedding model. Commands that ingest or
+search documents request the full runtime and fail clearly if keyed PDF
+ingest is unavailable.
+
 ---
 
 ## The three substrates
@@ -172,12 +179,12 @@ SysML. Extension tool names use safe prefixes such as `ingest_pdf`,
 `fmu_simulate` and `sysml_render` so they can coexist with other tools
 and pass MCP client name validation.
 
-Extension discovery is handled by `ExtensionHost`. It reads bundled
-extension manifests and exposes the public extension list and skill
-metadata without making adapters know each extension's filesystem
-layout. Discovery is separate from runtime wiring: a manifest says what
-the extension offers, while service builders wire the concrete stores,
-clients, and optional runtimes.
+Extension discovery lives in the `anchor.adapters.extension_host`
+module. It reads bundled extension manifests and exposes the public
+extension list and skill metadata without making adapters know each
+extension's filesystem layout. Discovery is separate from runtime
+wiring: a manifest says what the extension offers, while service
+builders wire the concrete stores, clients, and optional runtimes.
 
 ---
 
