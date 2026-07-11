@@ -23,13 +23,17 @@ import { AnchoredEdge } from "@/canvas/edges/AnchoredEdge";
 import { EdgeMarkerDefs } from "@/canvas/edges/EdgeMarkerDefs";
 import { FloatingEdge } from "@/canvas/edges/FloatingEdge";
 import { SmoothEdge, StepEdge, StraightEdge } from "@/canvas/edges/RoutedEdge";
-import { pickEdgeMode } from "@/canvas/edges/edge-mode";
-import { provenancePathEdgeIds } from "@/canvas/edges/provenance-path";
 import { EdgeContextMenu, type EdgeContextMenuTarget } from "@/canvas/EdgeContextMenu";
 import { EdgeContextToolbar } from "@/canvas/EdgeContextToolbar";
 import { NodeContextMenu, type ContextMenuTarget } from "@/canvas/NodeContextMenu";
 import { NodeContextToolbar } from "@/canvas/NodeContextToolbar";
 import { WaypointEditor } from "@/canvas/WaypointEditor";
+import {
+  ancestorOffset,
+  canvasNodeSize,
+  projectCanvasEdges,
+  projectCanvasNode,
+} from "@/canvas/canvasProjection";
 import {
   PAINT_DRAG_THRESHOLD_PX,
   PaintGhost,
@@ -78,18 +82,6 @@ type Props = {
   readOnly?: boolean;
 };
 
-type StoreNode = {
-  id: string;
-  node_type: string;
-  label: string;
-  x: number;
-  y: number;
-  /** Backend `Node.parent` — id of the container node (e.g. an Area) this
-   *  node is nested inside, or null/undefined when free-floating. */
-  parent?: string | null;
-  data?: Record<string, unknown>;
-};
-
 type UploadJob = {
   id: string;
   filename: string;
@@ -121,70 +113,6 @@ function workspaceListMayChange(evt: CanvasEvent): boolean {
     default:
       return false;
   }
-}
-
-/** Walk up the parent chain summing positions so we can convert between
- *  the store's absolute flow coords and ReactFlow's parent-relative
- *  expectation when a node is nested. Returns (0, 0) when there's no
- *  ancestry or the chain is broken. Safe against cycles via a visited set. */
-function ancestorOffset(nodeId: string, allNodes: Record<string, StoreNode>): { x: number; y: number } {
-  const acc = { x: 0, y: 0 };
-  const visited = new Set<string>();
-  let cur = allNodes[nodeId]?.parent ?? null;
-  while (cur != null) {
-    if (visited.has(cur)) break;
-    visited.add(cur);
-    const p = allNodes[cur];
-    if (!p) break;
-    acc.x += p.x;
-    acc.y += p.y;
-    cur = p.parent ?? null;
-  }
-  return acc;
-}
-
-function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
-  // Areas render behind other nodes (zIndex: -1) so the empty interior
-  // doesn't trap clicks meant for whatever sits on top. `selectable: true`
-  // still lets the user click the dashed border or header to select the
-  // area itself (and resize it via NodeResizer); clicks on the transparent
-  // interior fall through to the nodes inside.
-  const isArea = n.node_type === "area";
-  // Parent/child wiring — when this node has a `parent` AND that parent
-  // node currently exists, hand ReactFlow the standard `parentId` +
-  // `extent: "parent"` pair. ReactFlow then:
-  //   - moves the child along when the parent (Area) is dragged,
-  //   - clamps the child's position inside the parent's bounds,
-  //   - converts the position to parent-relative coordinates internally.
-  // Defensive: a `parent` that points at a missing node is silently
-  // ignored (otherwise ReactFlow logs a warning every render).
-  const parentExists = n.parent != null && allNodes[n.parent] != null;
-  const parentProps = parentExists
-    ? ({ parentId: n.parent as string, extent: "parent" as const })
-    : {};
-  // Convention: the store stores positions in ABSOLUTE flow coords (no
-  // notion of nesting). ReactFlow, however, interprets `position` as
-  // PARENT-RELATIVE when `parentId` is set. Subtract the parent chain's
-  // accumulated offset so the rendered position matches the absolute
-  // coords. `onNodeDragStop` does the inverse: adds the offset back
-  // before persisting so the store stays purely absolute.
-  const off = parentExists ? ancestorOffset(n.id, allNodes) : { x: 0, y: 0 };
-  const relX = n.x - off.x;
-  const relY = n.y - off.y;
-  // Lock support: `data.locked === true` freezes the node in place
-  // (ReactFlow's `draggable: false`) and the shape primitives skip
-  // mounting NodeResizer when the prop is read at render time. The flag
-  // is forward-compatible: producers / consumers can ignore it today.
-  const locked = (n.data as { locked?: boolean } | undefined)?.locked === true;
-  return {
-    id: n.id,
-    position: { x: relX, y: relY },
-    data: { label: n.label, ...(n.data ?? {}) },
-    type: n.node_type,
-    ...parentProps,
-    ...(isArea ? { zIndex: -1, draggable: true } : {}),
-    ...(locked ? { draggable: false } : {}),
-  };
 }
 
 export function CanvasGraph({ slug, readOnly = false }: Props) {
@@ -300,105 +228,20 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
       // SSE patches don't keep re-asserting selection.
       const pendingId = useUiStore.getState().pendingInlineRenameNodeId;
       const selectedSet = pendingId ? new Set([pendingId]) : wasSelected;
-      // Pass the full node map so `toRfNode` can resolve `parent` → `parentId`
+      // Pass the full node map so the projection can resolve parent links
       // only when the parent actually exists in this snapshot.
       return Object.values(nodes).map((n) => ({
-        ...toRfNode(n, nodes),
+        ...projectCanvasNode(n, nodes),
         selected: selectedSet.has(n.id),
       }));
     });
   }, [nodes]);
 
   useEffect(() => {
-    // pickEdgeMode resolves every edge to its ReactFlow renderer type. For
-    // non-evidence edges that's just the stored `edge_type` (now one of
-    // floating / anchored / smooth / step / straight). For evidence edges
-    // it implements the row-hover swap: when the active source_ref matches
-    // the edge's stored ref, flip to `anchored` so the handle wiring shows
-    // — regardless of whether the user previously picked smooth/step/etc.
-    //
-    // A second pass dims the OTHER evidence edges of the same target doc
-    // so the active row→region link visually pops.
-    const typePicks: Record<string, string> = {};
-    const evidenceForDoc: Record<string, string[]> = {};
-    let activeEdgeId: string | null = null;
-
-    for (const e of Object.values(edges)) {
-      const tgt = nodes[e.target];
-      const tgtSlug = (tgt?.data as { slug?: string } | undefined)?.slug;
-      const mode = pickEdgeMode(
-        {
-          edge_type: e.edge_type,
-          sourceHandle: e.sourceHandle,
-          targetHandle: e.targetHandle,
-          data: e.data as { kind?: string; source_ref?: Record<string, unknown> } | undefined,
-          targetDocSlug: tgtSlug,
-        },
-        hoveredSourceRef,
-      );
-      typePicks[e.id] = mode;
-      if (e.data?.kind === "evidence") {
-        if (tgtSlug) (evidenceForDoc[tgtSlug] ??= []).push(e.id);
-        if (mode === "anchored") activeEdgeId = e.id;
-      }
-    }
-    // Sibling-fade: when ANY evidence edge is active, dim the others
-    // pointing at the same document. The active edge stays bright.
-    const dimmedEvidence = new Set<string>();
-    if (activeEdgeId && hoveredSourceRef?.slug) {
-      for (const eid of evidenceForDoc[hoveredSourceRef.slug] ?? []) {
-        if (eid !== activeEdgeId) dimmedEvidence.add(eid);
-      }
-    }
-
-    // Hover-thicken the provenance path (#183). When the pointer is over a
-    // node, walk the evidence-edge chain from that node to its source
-    // document and mark those edges active; every other evidence edge is
-    // dimmed so the relevant path pops out of the bundle. This is purely a
-    // styling pass — it never changes an edge's type/handles/endpoints, so
-    // edges thicken in place instead of jumping. The row-level row→region
-    // swap above still wins when it fires (it sets `activeEdgeId`); node
-    // hover is the broader default that quiets the yarn ball on its own.
-    const pathEdges = provenancePathEdgeIds(
+    setRfEdges(projectCanvasEdges(nodes, edges, {
+      hoveredSourceRef,
       hoveredNodeId,
-      Object.fromEntries(
-        Object.values(nodes).map((n) => [n.id, { id: n.id, node_type: n.node_type }]),
-      ),
-      Object.values(edges).map((e) => ({
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        data: e.data as { kind?: string } | undefined,
-      })),
-    );
-    if (pathEdges.size > 0) {
-      // Dim every evidence edge that is NOT on the hovered node's path.
-      for (const e of Object.values(edges)) {
-        if (e.data?.kind !== "evidence") continue;
-        if (!pathEdges.has(e.id)) dimmedEvidence.add(e.id);
-      }
-    }
-
-    setRfEdges(Object.values(edges).map((e) => {
-      const type = typePicks[e.id] ?? "floating";
-      // Path membership lights up the edge; the row→region swap keeps its
-      // own single active edge. A path edge is never also dimmed.
-      const onPath = pathEdges.has(e.id);
-      const dimmed = dimmedEvidence.has(e.id) && !onPath;
-      const active = activeEdgeId === e.id || onPath;
-      const isSelected = selectedEdgeId === e.id;
-      return {
-        id: e.id,
-        source: e.source,
-        target: e.target,
-        sourceHandle: e.sourceHandle ?? undefined,
-        targetHandle: e.targetHandle ?? undefined,
-        label: e.label,
-        type,
-        data: { ...(e.data ?? {}), label: e.label || undefined, active, dimmed },
-        style: dimmed ? { opacity: 0.25 } : undefined,
-        selected: isSelected,
-      } satisfies RfEdge;
+      selectedEdgeId,
     }));
   }, [edges, nodes, hoveredSourceRef, hoveredNodeId, selectedEdgeId]);
 
@@ -617,8 +460,9 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         if (n.node_type !== "area") continue;
         if (n.id === draggedId) continue;
         if (descendants.has(n.id)) continue;
-        const w = (n.data?.width as number | undefined) ?? 320;
-        const h = (n.data?.height as number | undefined) ?? 200;
+        const size = canvasNodeSize(n);
+        const w = size.width ?? 320;
+        const h = size.height ?? 200;
         // Area position in flow coords is its own (x, y) when it has no
         // parent; when nested, ReactFlow stores parent-relative — but the
         // canvas store mirrors the wire `x`, `y` which the backend keeps

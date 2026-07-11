@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 import type { CanvasEvent } from "@/realtime/sseClient";
 
-type Node = {
+export type CanvasNode = {
   id: string;
   node_type: string;
   label: string;
@@ -23,7 +23,7 @@ type Node = {
   opacity?: number | null;
   data?: Record<string, unknown>;
 };
-type Edge = {
+export type CanvasEdge = {
   id: string;
   source: string;
   target: string;
@@ -124,10 +124,10 @@ function stageProgress(stage: string, current: number, total: number): number {
 }
 
 function patchDocumentNodes(
-  nodes: Record<string, Node>,
+  nodes: Record<string, CanvasNode>,
   docSlug: string,
   dataPatch: Record<string, unknown> | ((data: Record<string, unknown>) => Record<string, unknown>),
-): Record<string, Node> {
+): Record<string, CanvasNode> {
   let changed = false;
   const next = { ...nodes };
   for (const [id, node] of Object.entries(nodes)) {
@@ -160,7 +160,7 @@ type Snapshot = {
   metadata: Record<string, unknown>;
 };
 
-function asNode(row: WireRow): Node {
+function asNode(row: WireRow): CanvasNode {
   return {
     id: row.id,
     node_type: (row.node_type as string) ?? "concept",
@@ -172,13 +172,13 @@ function asNode(row: WireRow): Node {
     parent: (row.parent as string | null | undefined) ?? null,
     locked: (row.locked as boolean | undefined) ?? false,
     visible: (row.visible as boolean | undefined) ?? true,
-    layer: (row.layer as Node["layer"] | undefined) ?? "content",
+    layer: (row.layer as CanvasNode["layer"] | undefined) ?? "content",
     opacity: (row.opacity as number | null | undefined) ?? null,
     data: (row.data as Record<string, unknown>) ?? {},
   };
 }
 
-function asEdge(row: WireRow): Edge {
+function asEdge(row: WireRow): CanvasEdge {
   return {
     id: row.id,
     source: row.source as string,
@@ -204,8 +204,8 @@ export type Activity = {
 
 function describeEvent(
   evt: CanvasEvent,
-  prevNodes: Record<string, Node>,
-  prevEdges: Record<string, Edge>,
+  prevNodes: Record<string, CanvasNode>,
+  prevEdges: Record<string, CanvasEdge>,
 ): string {
   const p = evt.payload as Record<string, unknown>;
   const id = p.id as string | undefined;
@@ -255,8 +255,8 @@ function describeEvent(
 type State = {
   slug: string | null;
   version: number;
-  nodes: Record<string, Node>;
-  edges: Record<string, Edge>;
+  nodes: Record<string, CanvasNode>;
+  edges: Record<string, CanvasEdge>;
   activity: Activity[];
   setSnapshot: (snap: Snapshot) => void;
   applyEvent: (evt: CanvasEvent) => void;
@@ -391,7 +391,7 @@ export const useCanvasStore = create<State>((set) => ({
           parent: (p.parent as string | null | undefined) ?? null,
           locked: (p.locked as boolean | undefined) ?? false,
           visible: (p.visible as boolean | undefined) ?? true,
-          layer: (p.layer as Node["layer"] | undefined) ?? "content",
+          layer: (p.layer as CanvasNode["layer"] | undefined) ?? "content",
           opacity: (p.opacity as number | null | undefined) ?? null,
           data: (p.data as Record<string, unknown>) ?? {},
         };
@@ -436,7 +436,7 @@ export const useCanvasStore = create<State>((set) => ({
             "opacity",
             "data",
           ]);
-          const next: Node = { ...cur };
+          const next: CanvasNode = { ...cur };
           const data: Record<string, unknown> = { ...(cur.data ?? {}) };
           for (const [k, v] of Object.entries(fields)) {
             if (k === "data" && v && typeof v === "object") {
@@ -482,7 +482,7 @@ export const useCanvasStore = create<State>((set) => ({
         if (edges[id]) {
           const cur = edges[id];
           const known = new Set(["label", "edge_type", "sourceHandle", "targetHandle", "data"]);
-          const next: Edge = { ...cur };
+          const next: CanvasEdge = { ...cur };
           const data: Record<string, unknown> = { ...(cur.data ?? {}) };
           for (const [k, v] of Object.entries(fields)) {
             if (k === "data" && v && typeof v === "object") {
