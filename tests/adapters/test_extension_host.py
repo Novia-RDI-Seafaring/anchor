@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from anchor.adapters.extension_host import (
     bundled_manifests,
     discover_manifests,
@@ -9,6 +11,7 @@ from anchor.adapters.extension_host import (
     load_manifest,
     project_producers_dir,
     registration_dir,
+    registration_path,
     system_producers_dir,
 )
 
@@ -89,9 +92,36 @@ def test_load_manifest_reports_invalid_manifest(tmp_path):
     assert "missing oip_version/producer" in errors[0]
 
 
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        ([], "root must be an object"),
+        ({"oip_version": "0.1", "producer": "broken"}, "producer must be an object"),
+        (
+            {"oip_version": "0.1", "producer": {"name": "../outside"}},
+            "producer.name",
+        ),
+    ],
+)
+def test_load_manifest_rejects_unsafe_shapes(tmp_path, payload, message):
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps(payload), encoding="utf-8")
+    errors: list[str] = []
+
+    assert load_manifest(bad, on_error=errors.append) is None
+    assert message in errors[0]
+
+
 def test_registration_dir_resolves_scopes(tmp_path, monkeypatch):
     config_home = tmp_path / "config"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
 
     assert registration_dir("project", tmp_path) == project_producers_dir(tmp_path)
     assert registration_dir("system", tmp_path) == system_producers_dir()
+
+
+def test_registration_paths_fail_closed(tmp_path):
+    with pytest.raises(ValueError, match="scope"):
+        registration_dir("typo", tmp_path)
+    with pytest.raises(ValueError, match="producer.name"):
+        registration_path("project", tmp_path, "../../outside")

@@ -20,7 +20,7 @@ from anchor.adapters.extension_host import (
     discover_manifests,
     load_manifest,
     project_producers_dir,
-    registration_dir,
+    registration_path,
     system_producers_dir,
 )
 
@@ -29,6 +29,14 @@ extensions_app = typer.Typer(help="Inspect and manage canvas extensions (OIP pro
 
 def _report_manifest_error(message: str) -> None:
     typer.echo(f"  [skip] {message}", err=True)
+
+
+def _registration_path_or_exit(scope: str, data_dir: Path, name: object) -> Path:
+    try:
+        return registration_path(scope, data_dir, name)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
 
 
 # ── Commands -------------------------------------------------------------
@@ -131,9 +139,9 @@ def extensions_add(
         raise typer.Exit(code=1)
 
     name = m["producer"]["name"]
-    target_dir = registration_dir(scope, data_dir)
+    target = _registration_path_or_exit(scope, data_dir, name)
+    target_dir = target.parent
     target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / f"{name}.json"
 
     if target.exists() and not force:
         typer.echo(f"manifest already registered: {target}\nUse --force to overwrite.", err=True)
@@ -150,8 +158,8 @@ def extensions_remove(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Unregister a producer (deletes its manifest file)."""
-    target_dir = registration_dir(scope, data_dir)
-    target = target_dir / f"{name}.json"
+    target = _registration_path_or_exit(scope, data_dir, name)
+    target_dir = target.parent
     if not target.exists():
         typer.echo(f"not registered in {scope}: {name!r}", err=True)
         raise typer.Exit(code=1)
