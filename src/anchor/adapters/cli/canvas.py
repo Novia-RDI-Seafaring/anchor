@@ -8,14 +8,15 @@ from pathlib import Path
 
 import typer
 
+from anchor.adapters.cli.canvas_data import parse_data as _parse_data
+from anchor.adapters.cli.canvas_layout import register_layout_commands
+from anchor.adapters.cli.canvas_references import reference_app
+from anchor.adapters.cli.canvas_snapshot import register_snapshot_command
 from anchor.adapters.cli.common import DEFAULT_DATA_DIR
-from anchor.adapters.cli.services import _build_real_services
+from anchor.adapters.cli.services import _build_canvas_runtime
 from anchor.extensions.anchor_pdfs.core.value_provenance import enrich_spec_row_source_refs
 
 canvas_app = typer.Typer(help="Manage workspaces (canvases).")
-
-reference_app = typer.Typer(help="Manage a canvas's references (bibliography).")
-canvas_app.add_typer(reference_app, name="reference")
 
 
 def _canvas_url(slug: str, data_dir: Path | None = None) -> str:
@@ -60,7 +61,7 @@ def canvas_list(
     ``referenced_by`` slug lists; this is the same shape returned by the HTTP
     ``GET /api/workspaces`` and the ``canvas_list_workspaces`` MCP tool.
     """
-    _, _, ws, _, _ = _build_real_services(data_dir)
+    ws = _build_canvas_runtime(data_dir).workspace
     items = asyncio.run(ws.list_workspaces())
     if format == "json":
         typer.echo(json.dumps(items, indent=2))
@@ -98,7 +99,7 @@ def canvas_placeholders(
     optional ``data.placeholder_hint`` so callers can spot which one is
     the "Max inlet pressure" slot at a glance.
     """
-    _, _, ws, _, _ = _build_real_services(data_dir)
+    ws = _build_canvas_runtime(data_dir).workspace
     items = asyncio.run(ws.list_placeholders(slug))
     if format == "json":
         typer.echo(json.dumps(items, indent=2))
@@ -121,7 +122,7 @@ def canvas_create(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Create a new workspace folder."""
-    _, _, ws, _, _ = _build_real_services(data_dir)
+    ws = _build_canvas_runtime(data_dir).workspace
     typer.echo(json.dumps(asyncio.run(ws.create_workspace(slug, title=title)), indent=2))
     # Tell the user where to view it (stderr keeps stdout pure JSON for agents).
     typer.echo(
@@ -169,7 +170,7 @@ def canvas_delete(
     if not yes:
         typer.echo("Refusing to delete without --yes; pass -y to confirm.", err=True)
         raise typer.Exit(code=2)
-    _, _, ws, _, _ = _build_real_services(data_dir)
+    ws = _build_canvas_runtime(data_dir).workspace
     try:
         typer.echo(json.dumps(asyncio.run(ws.delete_workspace(slug)), indent=2))
     except FileNotFoundError as e:
@@ -194,20 +195,6 @@ def canvas_delete(
 #   )"
 
 
-def _parse_data(raw: str | None) -> dict:
-    if raw is None or raw == "":
-        return {}
-    try:
-        out = json.loads(raw)
-    except json.JSONDecodeError as e:
-        typer.echo(f"--data is not valid JSON: {e}", err=True)
-        raise typer.Exit(code=2) from e
-    if not isinstance(out, dict):
-        typer.echo("--data must be a JSON object", err=True)
-        raise typer.Exit(code=2)
-    return out
-
-
 def _validate_layer(layer: str | None) -> str | None:
     if layer is None:
         return None
@@ -223,7 +210,7 @@ def canvas_state(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Print the full workspace state (nodes + edges + metadata)."""
-    _, _, ws, _, _ = _build_real_services(data_dir)
+    ws = _build_canvas_runtime(data_dir).workspace
     typer.echo(json.dumps(asyncio.run(ws.get_state(slug)), indent=2))
 
 
@@ -262,7 +249,7 @@ def canvas_add_node(
     the layout (#189). Unknown `data` keys for a known node_type surface a
     non-blocking `warning` (run `anchor canvas node-types` for the contract).
     """
-    _, _, ws, _, _ = _build_real_services(data_dir)
+    ws = _build_canvas_runtime(data_dir).workspace
     parsed = _parse_data(data)
     kwargs: dict = {
         "node_type": node_type,
@@ -320,7 +307,7 @@ def canvas_node_types(
     its visible body. Same envelope as the `canvas_node_types` MCP tool and
     the `GET /api/node-types` HTTP route (adapter parity).
     """
-    _, _, ws, _, _ = _build_real_services(data_dir)
+    ws = _build_canvas_runtime(data_dir).workspace
     schema = ws.node_types_schema(node_type)
     if node_type is not None and not schema:
         typer.echo(f"unknown node_type {node_type!r}", err=True)
@@ -385,7 +372,9 @@ def canvas_update_node(
     if parent is not None and parent == node_id:
         typer.echo("node cannot be its own parent", err=True)
         raise typer.Exit(code=2)
-    _, _, ws, _, doc_store = _build_real_services(data_dir)
+    runtime = _build_canvas_runtime(data_dir)
+    ws = runtime.workspace
+    doc_store = runtime.doc_store
     fields: dict = {}
     if label is not None:
         fields["label"] = label
@@ -460,7 +449,7 @@ def canvas_remove_node(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Remove a node and any edges that touched it (cascade is in CORE)."""
-    _, _, ws, _, _ = _build_real_services(data_dir)
+    ws = _build_canvas_runtime(data_dir).workspace
 
     async def run():
         state, envelopes = await ws.remove_node(slug, node_id)
@@ -482,7 +471,7 @@ def canvas_add_edge(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Add an edge between two nodes."""
-    _, _, ws, _, _ = _build_real_services(data_dir)
+    ws = _build_canvas_runtime(data_dir).workspace
     payload = _parse_data(data)
     kwargs: dict = {
         "source": source,
@@ -510,7 +499,7 @@ def canvas_remove_edge(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Remove a single edge by id."""
-    _, _, ws, _, _ = _build_real_services(data_dir)
+    ws = _build_canvas_runtime(data_dir).workspace
 
     async def run():
         state, env = await ws.remove_edge(slug, edge_id)
@@ -533,7 +522,7 @@ def canvas_update_edge(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Patch an edge's fields (label, type, handles, data). `--data` deep-merges (#192)."""
-    _, _, ws, _, _ = _build_real_services(data_dir)
+    ws = _build_canvas_runtime(data_dir).workspace
     fields: dict = {}
     if label is not None:
         fields["label"] = label
@@ -571,7 +560,7 @@ def canvas_clear(
     if not yes:
         typer.echo("Refusing to clear without --yes; pass -y to confirm.", err=True)
         raise typer.Exit(code=2)
-    _, _, ws, _, _ = _build_real_services(data_dir)
+    ws = _build_canvas_runtime(data_dir).workspace
 
     async def run():
         state, env = await ws.clear(slug)
@@ -579,416 +568,6 @@ def canvas_clear(
 
     typer.echo(json.dumps(asyncio.run(run()), indent=2))
 
-
-@canvas_app.command("organize")
-def canvas_organize(
-    slug: str,
-    root_id: str,
-    orientation: str = typer.Option(
-        "vertical",
-        "--orientation",
-        "-o",
-        help="`vertical` (default) or `horizontal`.",
-    ),
-    algo: str = typer.Option(
-        "dagre",
-        "--algo",
-        "-a",
-        help="Layout algorithm. Only `dagre` ships today.",
-    ),
-    direction: str = typer.Option(
-        "any",
-        "--direction",
-        help=(
-            "Edge-walk policy. `outgoing` (parent->child arrows), `incoming` "
-            "(reports-to: subordinate->boss arrows), or `any` (undirected, "
-            "the default - v1 behaviour). Pick `incoming` on a reports-to "
-            "chart to scope strictly to subordinates of <root_id>."
-        ),
-    ),
-    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
-) -> None:
-    """Re-lay-out the subtree under <root_id> into a tidy tree.
-
-    Emits one NodeMoved per descendant whose position changes; the root
-    itself stays put. Same backend code as the HTTP `POST /layout` route
-    and the `canvas_organize_subtree` MCP tool — the adapter parity rule
-    means the move list you get here is byte-equal to what the UI would
-    produce for the same canvas.
-    """
-    _, _, ws, _, _ = _build_real_services(data_dir)
-
-    async def run():
-        state, envelopes = await ws.organize_subtree(
-            slug,
-            root_id,
-            orientation=orientation,
-            algo=algo,
-            direction=direction,
-        )
-        moves = [
-            {"id": env.payload["id"], "x": env.payload["x"], "y": env.payload["y"]}
-            for env in envelopes
-        ]
-        return {
-            "moves": moves,
-            "event_count": len(envelopes),
-            "state": state.get_state(),
-        }
-
-    try:
-        typer.echo(json.dumps(asyncio.run(run()), indent=2))
-    except ValueError as e:
-        typer.echo(f"organize failed: {e}", err=True)
-        raise typer.Exit(code=2) from e
-
-
-@canvas_app.command("align")
-def canvas_align(
-    slug: str,
-    node_ids: list[str] = typer.Argument(..., help="Node ids to align (at least 2)."),
-    anchor: str = typer.Option(
-        "top",
-        "--anchor",
-        "-a",
-        help="`top` | `bottom` | `left` | `right` | `center-h` | `center-v`.",
-    ),
-    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
-) -> None:
-    """Align the listed nodes to a shared edge or midline.
-
-    Same backend as the HTTP `POST /align` route and the `canvas_align`
-    MCP tool — the parity rule means the move list a UI would emit for
-    this selection is byte-equal to what we print here.
-    """
-    _, _, ws, _, _ = _build_real_services(data_dir)
-
-    async def run():
-        state, envelopes = await ws.align_nodes(slug, list(node_ids), anchor)  # type: ignore[arg-type]
-        moves = [
-            {"id": env.payload["id"], "x": env.payload["x"], "y": env.payload["y"]}
-            for env in envelopes
-        ]
-        return {
-            "moves": moves,
-            "event_count": len(envelopes),
-            "state": state.get_state(),
-        }
-
-    from anchor.core.workspace.workspace import CommandError as _CmdErr
-
-    try:
-        typer.echo(json.dumps(asyncio.run(run()), indent=2))
-    except _CmdErr as e:
-        typer.echo(f"align failed: {e}", err=True)
-        raise typer.Exit(code=2) from e
-    except ValueError as e:
-        typer.echo(f"align failed: {e}", err=True)
-        raise typer.Exit(code=2) from e
-
-
-@canvas_app.command("distribute")
-def canvas_distribute(
-    slug: str,
-    node_ids: list[str] = typer.Argument(..., help="Node ids to distribute (at least 3)."),
-    axis: str = typer.Option(
-        "horizontal",
-        "--axis",
-        "-x",
-        help="`horizontal` (default) or `vertical`.",
-    ),
-    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
-) -> None:
-    """Distribute the listed nodes' centres evenly along an axis.
-
-    Endpoints stay put; intermediate nodes get equally-spaced centres.
-    Same backend as the HTTP `POST /distribute` route and the
-    `canvas_distribute` MCP tool.
-    """
-    _, _, ws, _, _ = _build_real_services(data_dir)
-
-    async def run():
-        state, envelopes = await ws.distribute_nodes(slug, list(node_ids), axis)  # type: ignore[arg-type]
-        moves = [
-            {"id": env.payload["id"], "x": env.payload["x"], "y": env.payload["y"]}
-            for env in envelopes
-        ]
-        return {
-            "moves": moves,
-            "event_count": len(envelopes),
-            "state": state.get_state(),
-        }
-
-    from anchor.core.workspace.workspace import CommandError as _CmdErr
-
-    try:
-        typer.echo(json.dumps(asyncio.run(run()), indent=2))
-    except _CmdErr as e:
-        typer.echo(f"distribute failed: {e}", err=True)
-        raise typer.Exit(code=2) from e
-    except ValueError as e:
-        typer.echo(f"distribute failed: {e}", err=True)
-        raise typer.Exit(code=2) from e
-
-
-@canvas_app.command("create-sub")
-def canvas_create_sub(
-    parent_slug: str,
-    sub_slug: str,
-    title: str = typer.Option("", "--title", "-t"),
-    x: float = typer.Option(0.0, "--x"),
-    y: float = typer.Option(0.0, "--y"),
-    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
-) -> None:
-    """Create a child canvas <sub_slug> and link it from <parent_slug>.
-
-    Composite of `canvas create` + a `node_type=canvas` linking node so
-    the child workspace and the breadcrumb-able link land in one go.
-    Same WorkspaceService.create_sub_canvas backing as the
-    `POST /sub-canvas` HTTP route and the `canvas_create_sub_canvas`
-    MCP tool — adapter parity rule.
-    """
-    _, _, ws, _, _ = _build_real_services(data_dir)
-
-    async def run():
-        return await ws.create_sub_canvas(
-            parent_slug,
-            sub_slug,
-            title=title,
-            x=x,
-            y=y,
-        )
-
-    try:
-        typer.echo(json.dumps(asyncio.run(run()), indent=2))
-    except Exception as e:  # noqa: BLE001
-        typer.echo(f"create-sub failed: {e}", err=True)
-        raise typer.Exit(code=2) from e
-
-
-# ── References (canvas bibliography, #147 slice 1) ───────────────────────────
-#
-# `anchor canvas reference create|list|attach` — thin wrappers around the same
-# WorkspaceService methods the HTTP routes and MCP tools call (adapter parity).
-
-
-@reference_app.command("create")
-def reference_create(
-    slug: str,
-    source_ref: str = typer.Option(
-        ...,
-        "--source-ref",
-        "-s",
-        help='JSON locator: {"slug": "doc", "page": 3, "bbox?": [..], "region_id?": "..", "detail?": {..}}. slug + page required.',
-    ),
-    label: str | None = typer.Option(None, "--label", "-l", help="Human caption."),
-    created_by: str = typer.Option(
-        "human", "--created-by", help="'human' (default) or 'agent'."
-    ),
-    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
-) -> None:
-    """Author a reference and add it to the canvas bibliography.
-
-    Prints the stored reference (with its server-assigned id). Same backend as
-    the `POST /references` HTTP route and the `canvas_create_reference` MCP tool.
-    """
-    from anchor.core.workspace.workspace import CommandError as _CmdErr
-
-    _, _, ws, _, _ = _build_real_services(data_dir)
-    parsed = _parse_data(source_ref)
-
-    async def run():
-        return await ws.create_reference(
-            slug, source_ref=parsed, label=label, created_by=created_by,
-        )
-
-    try:
-        typer.echo(json.dumps(asyncio.run(run()), indent=2))
-    except _CmdErr as e:
-        typer.echo(f"create reference failed: {e}", err=True)
-        raise typer.Exit(code=2) from e
-
-
-@reference_app.command("list")
-def reference_list(
-    slug: str,
-    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
-) -> None:
-    """List the canvas bibliography.
-
-    Same envelope as `GET /references` and the `canvas_list_references` MCP tool.
-    """
-    _, _, ws, _, _ = _build_real_services(data_dir)
-    typer.echo(json.dumps(asyncio.run(ws.list_references(slug)), indent=2))
-
-
-@reference_app.command("remove")
-def reference_remove(
-    slug: str,
-    reference_id: str,
-    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
-) -> None:
-    """Remove a reference from the canvas bibliography.
-
-    Same backend as the `DELETE /references/{id}` HTTP route and the
-    `canvas_remove_reference` MCP tool.
-    """
-    from anchor.core.workspace.workspace import CommandError as _CmdErr
-
-    _, _, ws, _, _ = _build_real_services(data_dir)
-
-    async def run():
-        state, env = await ws.remove_reference(slug, reference_id)
-        return {"event": env.model_dump(), "state": state.get_state()}
-
-    try:
-        typer.echo(json.dumps(asyncio.run(run()), indent=2))
-    except _CmdErr as e:
-        typer.echo(f"remove reference failed: {e}", err=True)
-        raise typer.Exit(code=2) from e
-
-
-@reference_app.command("update")
-def reference_update(
-    slug: str,
-    reference_id: str,
-    label: str | None = typer.Option(
-        None, "--label", "-l", help="New human caption (omit to clear)."
-    ),
-    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
-) -> None:
-    """Edit a reference's human caption (label).
-
-    Only the label is editable; the source_ref locator is immutable. Same
-    backend as the `PATCH /references/{id}` HTTP route and the
-    `canvas_update_reference` MCP tool.
-    """
-    from anchor.core.workspace.workspace import CommandError as _CmdErr
-
-    _, _, ws, _, _ = _build_real_services(data_dir)
-
-    async def run():
-        state, env = await ws.update_reference(slug, reference_id, label=label)
-        return {"event": env.model_dump(), "state": state.get_state()}
-
-    try:
-        typer.echo(json.dumps(asyncio.run(run()), indent=2))
-    except _CmdErr as e:
-        typer.echo(f"update reference failed: {e}", err=True)
-        raise typer.Exit(code=2) from e
-
-
-@reference_app.command("attach")
-def reference_attach(
-    slug: str,
-    reference_id: str,
-    node_id: str = typer.Option(..., "--node", "-n", help="Target node id."),
-    row_index: int | None = typer.Option(
-        None, "--row", "-r", help="Optional: target one spec row by index."
-    ),
-    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
-) -> None:
-    """Attach a stored reference to a node (and optionally a spec row).
-
-    Same backend as the `POST /references/{id}/attach` HTTP route and the
-    `canvas_attach_reference` MCP tool.
-    """
-    from anchor.core.workspace.workspace import CommandError as _CmdErr
-
-    _, _, ws, _, _ = _build_real_services(data_dir)
-
-    async def run():
-        state, env = await ws.attach_reference(
-            slug, reference_id, node_id=node_id, row_index=row_index,
-        )
-        return {"event": env.model_dump(), "state": state.get_state()}
-
-    try:
-        typer.echo(json.dumps(asyncio.run(run()), indent=2))
-    except _CmdErr as e:
-        typer.echo(f"attach reference failed: {e}", err=True)
-        raise typer.Exit(code=2) from e
-
-
-@canvas_app.command("snapshot")
-def canvas_snapshot(
-    slug: str,
-    out: Path | None = typer.Option(
-        None,
-        "--out",
-        "-o",
-        help="Where to write the snapshot. Default: data_dir/snapshots/<slug>/<ts>.png.",
-    ),
-    image_format: str = typer.Option("png", "--format", "-f", help="png (default) or svg."),
-    viewport: str | None = typer.Option(
-        None, "--viewport", help="WxH in CSS pixels, e.g. '1920x1080'."
-    ),
-    full_page: bool = typer.Option(
-        True,
-        "--full-page/--viewport-only",
-        help="Capture the whole document (default) or just the viewport.",
-    ),
-    base_url: str = typer.Option(
-        "http://localhost:8002", "--base-url", help="URL of a running `anchor serve`."
-    ),
-    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
-) -> None:
-    """Render the named workspace canvas to an image.
-
-    Requires a running `anchor serve` reachable at --base-url. The headless
-    chromium navigates to {base_url}/c/{slug} so the same React Flow code
-    the user sees in the browser does the rendering.
-    """
-    vp: tuple[int, int] | None = None
-    if viewport is not None:
-        try:
-            w, h = viewport.lower().split("x")
-            vp = (int(w), int(h))
-        except (ValueError, IndexError) as e:
-            typer.echo(f"--viewport: expected WxH (e.g. 1920x1080), got {viewport!r}", err=True)
-            raise typer.Exit(code=2) from e
-
-    _, _, ws, _, _ = _build_real_services(data_dir, base_url=base_url)
-
-    async def run():
-        return await ws.snapshot(slug, format=image_format, viewport=vp, full_page=full_page)
-
-    try:
-        result = asyncio.run(run())
-    except NotImplementedError as e:
-        typer.echo(f"snapshot failed: {e}", err=True)
-        raise typer.Exit(code=2) from e
-    except RuntimeError as e:
-        typer.echo(f"snapshot failed: {e}", err=True)
-        typer.echo(
-            "Hint: ensure `anchor serve --port <p>` is running and pass --base-url http://localhost:<p>.",
-            err=True,
-        )
-        raise typer.Exit(code=1) from e
-    except ValueError as e:
-        typer.echo(f"snapshot failed: {e}", err=True)
-        raise typer.Exit(code=2) from e
-
-    if out is not None:
-        out.parent.mkdir(parents=True, exist_ok=True)
-        if result.path is not None:
-            out.write_bytes(result.path.read_bytes())
-        else:
-            assert result.bytes_ is not None
-            out.write_bytes(result.bytes_)
-        typer.echo(str(out))
-        return
-
-    # No --out: print the snapshotter's own path (the timeline file under
-    # data_dir/snapshots/<slug>/<ts>.png). For inline-bytes snapshotters
-    # there's nothing to print — write a tmp file and surface it.
-    if result.path is not None:
-        typer.echo(str(result.path))
-    else:
-        import tempfile
-
-        ext = f".{result.format}"
-        tmp = Path(tempfile.NamedTemporaryFile(suffix=ext, delete=False).name)
-        assert result.bytes_ is not None
-        tmp.write_bytes(result.bytes_)
-        typer.echo(str(tmp))
+register_layout_commands(canvas_app)
+canvas_app.add_typer(reference_app, name="reference")
+register_snapshot_command(canvas_app)

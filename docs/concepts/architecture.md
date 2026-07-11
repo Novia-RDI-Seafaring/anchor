@@ -24,6 +24,30 @@ layers are shown together in [The hexagon](#the-hexagon).
 
 ---
 
+## Runtime composition
+
+Each project is wired through `ProjectRuntime`, the shared composition
+root for one resolved project config and data directory. It owns the
+service instances that adapters should share: workspace service,
+document store, event bus, ingest services, agent intents, and optional
+extension services.
+
+HTTP, MCP, and CLI entry points ask for that runtime instead of each
+building their own copies. This keeps adapter behaviour aligned: a
+canvas mutation, PDF ingest, search, or intent operation reaches the
+same stores and event bus no matter which interface started it. Tests
+can still pass explicit services to the HTTP app when they need a small
+isolated runtime.
+
+Callers select a named profile: `canvas`, `ingest`, `extensions`,
+or `full`. Long-running HTTP and MCP processes use the full profile.
+Short-lived CLI commands request the smallest profile that supports
+their operation. Listing or moving canvas nodes therefore does not load
+Docling or an embedding model. Commands that require an omitted service
+fail with an error that names the active profile.
+
+---
+
 ## The three substrates
 
 | Substrate     | Lifetime                | Where it lives             | Owned by             |
@@ -134,6 +158,13 @@ The MCP server hosts both canvas tools (`canvas_get_state`,
 SysML. Extension tool names use safe prefixes such as `ingest_pdf`,
 `fmu_simulate` and `sysml_render` so they can coexist with other tools
 and pass MCP client name validation.
+
+Extension discovery lives in the `anchor.adapters.extension_host`
+module. It reads bundled extension manifests and exposes the public
+extension list and skill metadata without making adapters know each
+extension's filesystem layout. Discovery is separate from runtime
+wiring: a manifest says what the extension offers, while service
+builders wire the concrete stores, clients, and optional runtimes.
 
 ---
 
