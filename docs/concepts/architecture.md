@@ -32,6 +32,12 @@ service instances that adapters should share: workspace service,
 document store, event bus, ingest services, agent intents, and optional
 extension services.
 
+Bundled CAD, FMU, and SysML startup sits behind `ExtensionHost`. The host
+returns the concrete runtime modules plus structured availability records, so
+`ProjectRuntime` does not need to know each extension's builder interface.
+Registered third-party OIP manifests remain external producer contracts and
+are never imported as Python code.
+
 HTTP, MCP, and CLI entry points ask for that runtime instead of each
 building their own copies. This keeps adapter behaviour aligned: a
 canvas mutation, PDF ingest, search, or intent operation reaches the
@@ -179,12 +185,13 @@ SysML. Extension tool names use safe prefixes such as `ingest_pdf`,
 `fmu_simulate` and `sysml_render` so they can coexist with other tools
 and pass MCP client name validation.
 
-Extension discovery lives in the `anchor.adapters.extension_host`
-module. It reads bundled extension manifests and exposes the public
-extension list and skill metadata without making adapters know each
-extension's filesystem layout. Discovery is separate from runtime
-wiring: a manifest says what the extension offers, while service
-builders wire the concrete stores, clients, and optional runtimes.
+Extension discovery and bundled runtime startup live in the
+`anchor.adapters.extension_host` module. It reads bundled extension manifests,
+exposes the public extension list and skill metadata, and starts bundled CAD,
+FMU, and SysML modules without making `ProjectRuntime` know each builder
+interface. Manifest discovery remains separate from third-party code loading:
+a registered OIP manifest says what an external producer offers, but does not
+authorize ANCHOR to import or execute arbitrary package code.
 
 ---
 
@@ -196,10 +203,12 @@ builders wire the concrete stores, clients, and optional runtimes.
 - **React frontend** in `web/` — Vite + React 19 + Tailwind v4 +
   ReactFlow + Zustand + TanStack Query. Compiled into the same wheel
   via `web/dist/`. Same-origin in production, no separate API server.
-- **Two extensions in-tree** — `anchor_pdfs`, `anchor_fmus`. Both ship
-  OIP manifests. Both are reachable through the same MCP server.
-- **Hexagonal layering enforced in CI** — `uv run lint-imports` passes
-  five contracts on every push.
+- **Four extensions in-tree** - `anchor_pdfs`, `anchor_fmus`, `anchor_cad`,
+  and `anchor_sysml`. All ship OIP manifests and are reachable through the
+  same MCP server. SysML remains hidden from the public extension list while
+  its text-to-canvas flow is experimental.
+- **Hexagonal layering enforced in CI** - `uv run lint-imports` passes six
+  contracts on every push.
 
 ---
 

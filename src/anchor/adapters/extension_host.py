@@ -1,18 +1,27 @@
-"""Shared OIP manifest discovery for adapter entry points.
+"""Discover OIP manifests and start bundled ANCHOR extensions.
 
-The host centralizes manifest lookup and validation. It does not load
-third-party runtime code.
+The host owns first-party extension composition at the adapter seam. Registered
+third-party OIP manifests remain data and process contracts; this module never
+imports arbitrary code from them.
 """
 from __future__ import annotations
 
 import json
 import os
 import re
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from anchor.core.ports.event_bus import EventBus
+    from anchor.core.services.workspace_service import WorkspaceService
+    from anchor.extensions.anchor_cad.core.services import CadService
+    from anchor.extensions.anchor_fmus.core.services import FmuService
+    from anchor.extensions.anchor_sysml.core.services import SysmlService
 
 Manifest = dict[str, Any]
 ManifestGroups = dict[str, list[Manifest]]
@@ -38,6 +47,16 @@ class ExtensionRuntimeStatus:
     available: bool
     reason: str | None = None
     error_type: str | None = None
+
+
+@dataclass(frozen=True)
+class BundledExtensionRuntimes:
+    """First-party extension modules started for one project runtime."""
+
+    cad: CadService
+    sysml: SysmlService
+    fmu: FmuService | None
+    status: dict[str, ExtensionRuntimeStatus]
 
 
 def system_producers_dir() -> Path:
@@ -126,13 +145,134 @@ def load_manifest(
     return data
 
 
+class ExtensionHost:
+    """Compose extension discovery and bundled runtime startup for a project.
+
+    The interface intentionally separates manifest discovery from runtime
+    startup. OIP manifests describe producers but do not authorize ANCHOR to
+    import third-party code. Only bundled extension modules are started here.
+    """
+
+    def __init__(self, data_dir: Path | None = None) -> None:
+        self.data_dir = Path(data_dir) if data_dir is not None else None
+
+    def bundled_manifests(self) -> list[Manifest]:
+        """Return manifests for first-party producers bundled in this wheel."""
+        manifests: list[Manifest] = []
+        for module_name in _BUNDLED_MANIFEST_MODULES:
+            module = import_module(f"anchor.extensions.{module_name}.extension")
+            manifests.append(module.manifest(self.data_dir))
+        return manifests
+
+    def discover(
+        self,
+        *,
+        on_error: Callable[[str], None] | None = None,
+    ) -> ManifestGroups:
+        """Discover OIP manifests grouped by source."""
+        found: ManifestGroups = {
+            "bundled": self.bundled_manifests(),
+            "system": [],
+            "project": [],
+        }
+
+        sys_dir = system_producers_dir()
+        if sys_dir.is_dir():
+            for path in sorted(sys_dir.glob("*.json")):
+                manifest = load_manifest(path, on_error=on_error)
+                if manifest is not None:
+                    found["system"].append(manifest)
+
+        if self.data_dir is not None:
+            proj_dir = project_producers_dir(self.data_dir)
+            if proj_dir.is_dir():
+                for path in sorted(proj_dir.glob("*.json")):
+                    manifest = load_manifest(path, on_error=on_error)
+                    if manifest is not None:
+                        found["project"].append(manifest)
+
+        return found
+
+    def third_party_manifest_paths(self) -> list[Path]:
+        """Return registered third-party manifest paths in stable order."""
+        found: list[Path] = []
+        sys_dir = system_producers_dir()
+        if sys_dir.is_dir():
+            found.extend(sorted(sys_dir.glob("*.json")))
+
+        if self.data_dir is not None:
+            proj_dir = project_producers_dir(self.data_dir)
+            if proj_dir.is_dir():
+                found.extend(sorted(proj_dir.glob("*.json")))
+        return found
+
+    def start_bundled(
+        self,
+        *,
+        bus: EventBus,
+        workspace: WorkspaceService,
+        fmu_warning: Callable[[Exception], None] | None = None,
+    ) -> BundledExtensionRuntimes:
+        """Start bundled CAD, FMU, and SysML modules for this project.
+
+        CAD and SysML are required bundled modules and propagate startup
+        failures. FMU is optional because its real runtime is an extra; its
+        failure is recorded and reported while the rest of ANCHOR starts.
+        """
+        if self.data_dir is None:
+            raise RuntimeError("ExtensionHost.start_bundled requires a project data_dir")
+
+        from anchor.extensions.anchor_cad import extension as cad_ext
+        from anchor.extensions.anchor_fmus import extension as fmu_ext
+        from anchor.extensions.anchor_sysml import extension as sysml_ext
+
+        cad = cad_ext.build_service(self.data_dir, bus)
+        status = {
+            cad_ext.NAME: ExtensionRuntimeStatus(
+                name=cad_ext.NAME,
+                source="bundled",
+                available=True,
+            )
+        }
+
+        fmu = None
+        try:
+            fmu = fmu_ext.build_service(self.data_dir, bus)
+            status[fmu_ext.NAME] = ExtensionRuntimeStatus(
+                name=fmu_ext.NAME,
+                source="bundled",
+                available=True,
+            )
+        except Exception as exc:  # noqa: BLE001 - optional extension
+            status[fmu_ext.NAME] = ExtensionRuntimeStatus(
+                name=fmu_ext.NAME,
+                source="bundled",
+                available=False,
+                reason=str(exc),
+                error_type=exc.__class__.__name__,
+            )
+            if fmu_warning is None:
+                print(f"Warning: FMU extension disabled: {exc}", file=sys.stderr)
+            else:
+                fmu_warning(exc)
+
+        sysml = sysml_ext.build_service(self.data_dir, bus, workspace=workspace)
+        status[sysml_ext.NAME] = ExtensionRuntimeStatus(
+            name=sysml_ext.NAME,
+            source="bundled",
+            available=True,
+        )
+        return BundledExtensionRuntimes(
+            cad=cad,
+            sysml=sysml,
+            fmu=fmu,
+            status=status,
+        )
+
+
 def bundled_manifests(data_dir: Path | None = None) -> list[Manifest]:
     """Return manifests for first-party producers bundled in this wheel."""
-    manifests: list[Manifest] = []
-    for module_name in _BUNDLED_MANIFEST_MODULES:
-        module = import_module(f"anchor.extensions.{module_name}.extension")
-        manifests.append(module.manifest(data_dir))
-    return manifests
+    return ExtensionHost(data_dir).bundled_manifests()
 
 
 def discover_manifests(
@@ -141,41 +281,9 @@ def discover_manifests(
     on_error: Callable[[str], None] | None = None,
 ) -> ManifestGroups:
     """Discover OIP manifests grouped by their source."""
-    found: ManifestGroups = {
-        "bundled": bundled_manifests(data_dir),
-        "system": [],
-        "project": [],
-    }
-
-    sys_dir = system_producers_dir()
-    if sys_dir.is_dir():
-        for path in sorted(sys_dir.glob("*.json")):
-            manifest = load_manifest(path, on_error=on_error)
-            if manifest is not None:
-                found["system"].append(manifest)
-
-    if data_dir is not None:
-        proj_dir = project_producers_dir(data_dir)
-        if proj_dir.is_dir():
-            for path in sorted(proj_dir.glob("*.json")):
-                manifest = load_manifest(path, on_error=on_error)
-                if manifest is not None:
-                    found["project"].append(manifest)
-
-    return found
+    return ExtensionHost(data_dir).discover(on_error=on_error)
 
 
 def discover_third_party_manifest_paths(data_dir: Path | None = None) -> list[Path]:
     """Return registered third-party manifest paths in a stable order."""
-    found: list[Path] = []
-
-    sys_dir = system_producers_dir()
-    if sys_dir.is_dir():
-        found.extend(sorted(sys_dir.glob("*.json")))
-
-    if data_dir is not None:
-        proj_dir = project_producers_dir(data_dir)
-        if proj_dir.is_dir():
-            found.extend(sorted(proj_dir.glob("*.json")))
-
-    return found
+    return ExtensionHost(data_dir).third_party_manifest_paths()

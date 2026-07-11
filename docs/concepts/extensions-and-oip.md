@@ -146,8 +146,9 @@ types declared (`pdf:document`, `pdf:spec_table`). One source-ref kind
 
 Six MCP tools use the `fmu_` prefix. Three node types
 (`fmu:model`, `fmu:variable`, `fmu:plot`). Two source-ref kinds
-(`fmu-variable`, `fmu-simulation-time`). Falls back to a fake runtime
-if FMPy isn't installed, so the demo works on any machine.
+(`fmu-variable`, `fmu-simulation-time`). The extension fails closed when
+FMPy is unavailable. Synthetic simulation requires the explicit
+`ANCHOR_FMU_DEMO=1` opt-in, and every synthetic result is marked as such.
 
 ---
 

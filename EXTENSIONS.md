@@ -15,6 +15,11 @@ either in-tree or as separate `anchor-canvas-*` packages.
 > third-party Python/JavaScript bundles or proxy registered external producer
 > servers.
 
+Bundled manifest discovery and CAD/FMU/SysML runtime startup are composed by
+`anchor.adapters.extension_host.ExtensionHost`. This is intentionally narrower
+than third-party loading: an OIP manifest is data, not permission to import
+code into the ANCHOR process.
+
 ---
 
 ## What an extension provides
