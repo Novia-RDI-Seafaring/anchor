@@ -4,17 +4,11 @@ import {
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
-  applyEdgeChanges,
-  applyNodeChanges,
   useReactFlow,
-  type Connection,
-  type Edge as RfEdge,
-  type EdgeChange,
   type Node as RfNode,
-  type NodeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { canvases } from "@/api/canvases";
@@ -31,18 +25,15 @@ import { WaypointEditor } from "@/canvas/WaypointEditor";
 import {
   ancestorOffset,
   canvasNodeSize,
-  projectCanvasEdges,
-  projectCanvasNode,
 } from "@/canvas/canvasProjection";
 import {
-  PAINT_DRAG_THRESHOLD_PX,
   PaintGhost,
-  type PaintRect,
-  ghostIsSquare,
-  maybeSquareRect,
-  paintRectFrom,
 } from "@/canvas/PaintGhost";
-import { nodeTypes, paletteEntries } from "@/canvas/registry";
+import { nodeTypes } from "@/canvas/registry";
+import { UploadJobsOverlay } from "@/canvas/UploadJobsOverlay";
+import { useArmedToolPlacement } from "@/canvas/useArmedToolPlacement";
+import { useCanvasDrop } from "@/canvas/useCanvasDrop";
+import { useCanvasFlowState } from "@/canvas/useCanvasFlowState";
 import { refreshWorkspaces } from "@/canvas/useWorkspacesList";
 import { CanvasSse, type CanvasEvent } from "@/realtime/sseClient";
 import { useCanvasStore } from "@/stores/canvasStore";
@@ -82,25 +73,6 @@ type Props = {
   readOnly?: boolean;
 };
 
-type UploadJob = {
-  id: string;
-  filename: string;
-  percent: number;
-  status: "uploading" | "starting_ingest" | "failed";
-  left: number;
-  top: number;
-  error?: string;
-};
-
-/**
- * Tiny 8-char base36 id — used to seed unique child-canvas slugs when a
- * user drops a sub-canvas tile. Collision-safe enough for human-driven
- * canvas creation (the server's `create` is idempotent on slug anyway).
- */
-function shortId(): string {
-  return Math.random().toString(36).slice(2, 10);
-}
-
 function workspaceListMayChange(evt: CanvasEvent): boolean {
   switch (evt.type) {
     case "NodeAdded":
@@ -128,12 +100,10 @@ export function CanvasGraph({ slug, readOnly = false }: Props) {
   return <CanvasGraphInner slug={slug} readOnly={false} />;
 }
 
-function CanvasGraphInner({ slug, readOnly }: Props) {
+function CanvasGraphInner({ slug, readOnly = false }: Props) {
   const setSnapshot = useCanvasStore((s) => s.setSnapshot);
   const applyEvent = useCanvasStore((s) => s.applyEvent);
   const reset = useCanvasStore((s) => s.reset);
-  const nodes = useCanvasStore((s) => s.nodes);
-  const edges = useCanvasStore((s) => s.edges);
   const { screenToFlowPosition } = useReactFlow();
   const openPdf = useUiStore((s) => s.openPdf);
   const setHoveredSourceRef = useUiStore((s) => s.setHoveredSourceRef);
@@ -142,39 +112,32 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   // broadcasts a hovered source_ref (spec-row hover, region hover, an edge
   // hover that reflects back) the matching evidence edge flips from
   // node-to-node float to row-handle→region-handle anchored.
-  const hoveredSourceRef = useUiStore((s) => s.hoveredSourceRef);
   // Drives the hover-thicken provenance path (#183). When the pointer is
   // over a node, we light up the evidence edge(s) tracing that node back to
   // its source document and quiet the rest of the bundle. This composes with
   // the row-level `hoveredSourceRef` swap above — both feed the same per-edge
   // active/dimmed flags the evidence renderers already understand.
-  const hoveredNodeId = useUiStore((s) => s.hoveredNodeId);
   const setSelectedNodeId = useUiStore((s) => s.setSelectedNodeId);
   const setSelectedEdgeId = useUiStore((s) => s.setSelectedEdgeId);
-  const selectedEdgeId = useUiStore((s) => s.selectedEdgeId);
   const setPropertiesOpen = useUiStore((s) => s.setPropertiesOpen);
-  const armedTool = useUiStore((s) => s.armedTool);
-  const disarmTool = useUiStore((s) => s.disarmTool);
   const navigate = useNavigate();
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  // Pointer-down origin for armed-tool drag-to-size. Lives in a ref so
-  // pointermove handlers can update the in-flight ghost rect without
-  // re-rendering ReactFlow on every pixel — only the ghost state below
-  // does that, and only when the rect actually changes.
-  const armDownRef = useRef<{ clientX: number; clientY: number } | null>(null);
-  // Screen-space rect for the WYSIWYG ghost preview while drag-to-size is
-  // in progress. `null` when not painting. The ghost outline mirrors the
-  // armed tool's silhouette via `PaintGhost` so the user sees exactly the
-  // shape they're about to drop.
-  const [paintRect, setPaintRect] = useState<PaintRect | null>(null);
-  const [uploadJobs, setUploadJobs] = useState<Record<string, UploadJob>>({});
+  const { armedTool, paintRect, pointerHandlers } = useArmedToolPlacement(
+    slug,
+    screenToFlowPosition,
+  );
+  const { rootRef, onDragOver, onDrop, uploadJobs } = useCanvasDrop(
+    slug,
+    screenToFlowPosition,
+  );
 
   // ReactFlow needs to own the per-frame drag position. We seed its internal
   // node list from the Zustand store and re-seed whenever the store changes
   // (snapshot, SSE patch, etc.). `onNodesChange` lets ReactFlow update its
   // own state during drag/select/etc.
-  const [rfNodes, setRfNodes] = useState<RfNode[]>([]);
-  const [rfEdges, setRfEdges] = useState<RfEdge[]>([]);
+  const { rfNodes, rfEdges, onNodesChange, onEdgesChange, onConnect } = useCanvasFlowState(
+    slug,
+    readOnly,
+  );
   // Right-click menu target. Null when no context menu is open. Set by
   // `onNodeContextMenu` and cleared by selection / outside-click / Esc.
   const [contextMenuTarget, setContextMenuTarget] = useState<ContextMenuTarget | null>(null);
@@ -206,223 +169,6 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
       sse.disconnect();
     };
   }, [slug, applyEvent, reset, setSnapshot]);
-
-  // Reflect store → ReactFlow. Only updates when the store reference changes;
-  // ReactFlow's internal drag state isn't disturbed unless a relevant node
-  // actually changed on the store side. Multi-selection (Shift+click) is
-  // owned by ReactFlow itself — we preserve the prior `selected` flag on
-  // each node when rebuilding from the store so the per-node selection
-  // ring sticks across SSE patches. `selectedNodeId` is only used to scope
-  // single-node ops like the right-side Properties Panel; it no longer
-  // overrides the per-node selected flag (which would clobber multi-select).
-  useEffect(() => {
-    setRfNodes((prev) => {
-      const wasSelected = new Set(prev.filter((n) => n.selected).map((n) => n.id));
-      // Quick-add hand-off: when DirectionalConnectors or QuickAddPopover
-      // mint a fresh node, they stamp its id into uiStore's
-      // `pendingInlineRenameNodeId`. We want focus to TRANSFER to that
-      // node — not keep the source selected too — so the user can
-      // immediately type into the new node's label. Replace `wasSelected`
-      // with the pending id alone when one is set. The pending id is
-      // cleared the moment `useInlineField` consumes it, so subsequent
-      // SSE patches don't keep re-asserting selection.
-      const pendingId = useUiStore.getState().pendingInlineRenameNodeId;
-      const selectedSet = pendingId ? new Set([pendingId]) : wasSelected;
-      // Pass the full node map so the projection can resolve parent links
-      // only when the parent actually exists in this snapshot.
-      return Object.values(nodes).map((n) => ({
-        ...projectCanvasNode(n, nodes),
-        selected: selectedSet.has(n.id),
-      }));
-    });
-  }, [nodes]);
-
-  useEffect(() => {
-    setRfEdges(projectCanvasEdges(nodes, edges, {
-      hoveredSourceRef,
-      hoveredNodeId,
-      selectedEdgeId,
-    }));
-  }, [edges, nodes, hoveredSourceRef, hoveredNodeId, selectedEdgeId]);
-
-  const onNodesChange = useCallback((changes: NodeChange<RfNode>[]) => {
-    setRfNodes((curr) => applyNodeChanges(changes, curr));
-    if (readOnly) return;
-    for (const change of changes) {
-      // Backspace / Delete fires `remove` changes. Without persisting,
-      // the optimistic-only delete gets undone the moment the store →
-      // rfNodes effect re-runs (because the store still has the node).
-      if (change.type === "remove") {
-        // Drop locally first so the UI doesn't flicker, then ask the
-        // server. SSE will deliver the canonical NodeRemoved (+ cascade
-        // EdgeRemoved); the store's version-monotonic applyEvent makes
-        // the echo a no-op.
-        useCanvasStore.setState((state) => {
-          if (!state.nodes[change.id]) return state;
-          const { [change.id]: _gone, ...rest } = state.nodes;
-          return { ...state, nodes: rest };
-        });
-        canvases.removeNode(slug, change.id).catch(() => {
-          // SSE will reconcile if the server rejected the delete.
-        });
-        continue;
-      }
-      if (change.type !== "dimensions") continue;
-      // ReactFlow emits `dimensions` changes in three flavours:
-      //   - `resizing: true`  → mid-drag; ignore (would hammer the API)
-      //   - `resizing: false` → end-of-drag; persist
-      //   - `resizing: undefined` → DOM measurement on mount or content
-      //     change; NOT a user resize. We must skip these or we get an
-      //     infinite loop: measurement → patch → SSE echo → store update
-      //     → remount → measurement.
-      if (change.resizing !== false) continue;
-      const dim = change.dimensions;
-      if (!dim) continue;
-      // Skip the patch if the dimensions match the existing store value
-      // (defensive — covers any non-user-initiated dimension events that
-      // slipped through and any SSE reconciliation re-firing).
-      const existing = useCanvasStore.getState().nodes[change.id];
-      if (!existing) continue;
-      const prevW = (existing.data?.width as number | undefined) ?? null;
-      const prevH = (existing.data?.height as number | undefined) ?? null;
-      if (prevW === dim.width && prevH === dim.height) continue;
-      // Mirror locally so the store-driven re-render keeps the new size.
-      useCanvasStore.setState((state) => {
-        const cur = state.nodes[change.id];
-        if (!cur) return state;
-        return {
-          ...state,
-          nodes: {
-            ...state.nodes,
-            [change.id]: {
-              ...cur,
-              data: { ...cur.data, width: dim.width, height: dim.height },
-            },
-          },
-        };
-      });
-      // Merge with existing data so the server's whole-data replace
-      // doesn't wipe label-adjacent fields (body, tags, source_ref, …).
-      canvases
-        .patchNode(slug, change.id, {
-          data: { ...(existing.data ?? {}), width: dim.width, height: dim.height },
-        })
-        .catch(() => {
-          // SSE will reconcile.
-        });
-    }
-  }, [readOnly, slug]);
-
-  const onEdgesChange = useCallback((changes: EdgeChange<RfEdge>[]) => {
-    setRfEdges((curr) => applyEdgeChanges(changes, curr));
-    if (readOnly) return;
-    for (const change of changes) {
-      // Same fix as nodes: Backspace/Delete fires `remove`; persist it
-      // or SSE re-syncs the edge back onto the canvas seconds later.
-      if (change.type !== "remove") continue;
-      useCanvasStore.setState((state) => {
-        if (!state.edges[change.id]) return state;
-        const { [change.id]: _gone, ...rest } = state.edges;
-        return { ...state, edges: rest };
-      });
-      canvases.removeEdge(slug, change.id).catch(() => {
-        // SSE will reconcile if the server rejected.
-      });
-    }
-  }, [readOnly, slug]);
-
-  /**
-   * ReactFlow fires `onConnect` when the user finishes a connect drag — for
-   * us, dragging from a spec-row handle (id="row:i:key") onto a document-
-   * region handle (id="region:rid"). When both ends carry the row/region
-   * naming convention, we materialise an anchored evidence edge AND patch
-   * the spec row's source_ref to embed the region_id, so the row+edge stay
-   * in sync (the row already knows the page+bbox; we just attach the
-   * region).
-   */
-  const onConnect = useCallback((conn: Connection) => {
-    if (readOnly) return;
-    const { source, target, sourceHandle, targetHandle } = conn;
-    if (!source || !target) return;
-    const isRow = sourceHandle?.startsWith("row:");
-    const isRegion = targetHandle?.startsWith("region:");
-    const state = useCanvasStore.getState();
-    const sourceNode = state.nodes[source];
-    const targetNode = state.nodes[target];
-    if (!sourceNode || !targetNode) return;
-
-    if (isRow && isRegion && targetNode.node_type === "document") {
-      // Row → region: build the full evidence-edge payload from the row's
-      // existing source_ref, falling back to the spec's node-level ref.
-      const regionId = targetHandle!.slice("region:".length);
-      const rowData = sourceNode.data as {
-        source_doc_slug?: string;
-        source_ref?: { page?: number; bbox?: number[] };
-        rows?: Array<{ key?: string; source_ref?: { page?: number; bbox?: number[] } }>;
-      } | undefined;
-      // Parse "row:<i>:<key>"  — index is authoritative since keys can repeat.
-      const parts = sourceHandle!.split(":");
-      const rowIndex = Number(parts[1] ?? "-1");
-      const row = rowData?.rows?.[rowIndex];
-      const page = row?.source_ref?.page ?? rowData?.source_ref?.page;
-      const bbox = row?.source_ref?.bbox ?? rowData?.source_ref?.bbox;
-      const targetData = targetNode.data as { slug?: string } | undefined;
-      void canvases
-        .addEdge(slug, {
-          source,
-          target,
-          edge_type: "anchored",
-          sourceHandle,
-          targetHandle,
-          data: {
-            kind: "evidence",
-            ...(targetData?.slug ? { source_doc_slug: targetData.slug } : {}),
-            source_region_id: regionId,
-            ...(page !== undefined ? {
-              source_ref: { kind: "pdf-page-bbox", page, region_id: regionId, bbox },
-            } : {}),
-          },
-        })
-        .catch((err) => {
-          // eslint-disable-next-line no-console
-          console.error("row→region wire failed", err);
-        });
-      // Patch the row in the spec so its source_ref carries the region_id
-      // — the data and the edge stay in lock-step (without this, the row
-      // is wired visually but its provenance dict still says "no region").
-      if (row && rowData?.rows && page !== undefined) {
-        const draftRows = rowData.rows.map((r, i) => {
-          if (i !== rowIndex) return r;
-          return {
-            ...r,
-            source_ref: { page, region_id: regionId, bbox },
-          };
-        });
-        void canvases
-          .patchNode(slug, source, { data: { ...rowData, rows: draftRows } })
-          .catch((err) => {
-            // eslint-disable-next-line no-console
-            console.error("row source_ref backfill failed", err);
-          });
-      }
-      return;
-    }
-
-    // Generic floating edge for any other manual connect drag (e.g. two
-    // plain nodes). Keep parity with the existing UX — drag = connect.
-    void canvases
-      .addEdge(slug, {
-        source,
-        target,
-        ...(sourceHandle ? { sourceHandle } : {}),
-        ...(targetHandle ? { targetHandle } : {}),
-        edge_type: sourceHandle || targetHandle ? "anchored" : "floating",
-      })
-      .catch((err) => {
-        // eslint-disable-next-line no-console
-        console.error("generic connect failed", err);
-      });
-  }, [readOnly, slug]);
 
   /**
    * Find the topmost Area whose body contains the given canvas point.
@@ -515,366 +261,6 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
     [readOnly, findAreaAtPoint],
   );
 
-  const onDragOver = useCallback((event: React.DragEvent) => {
-    const types = event.dataTransfer.types;
-    // Accept either OS files (PDFs etc.) or our shell's structured payloads.
-    const accepted = types.includes("Files")
-      || types.includes("application/x-anchor-node")
-      || types.includes("application/x-anchor-canvas-link");
-    if (!accepted) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-  }, []);
-
-  const onDrop = useCallback(async (event: React.DragEvent) => {
-    const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-
-    // Path 0 — existing-canvas link: the Canvases tab in the Library
-    // drawer emits this. Attach the dragged workspace as a sub-canvas
-    // tile (no child workspace is created — this is a pure link).
-    const linkRaw = event.dataTransfer.getData("application/x-anchor-canvas-link");
-    if (linkRaw) {
-      event.preventDefault();
-      try {
-        const { slug: linkedSlug, title } = JSON.parse(linkRaw) as {
-          slug: string;
-          title: string;
-        };
-        if (linkedSlug && linkedSlug !== slug) {
-          await canvases.addNode(slug, {
-            node_type: "canvas",
-            label: title || linkedSlug,
-            x: flowPos.x,
-            y: flowPos.y,
-            data: { canvas_slug: linkedSlug, title: title || linkedSlug },
-          });
-        }
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error("canvas-link drop failed", err);
-      }
-      return;
-    }
-
-    // Path 1 — shell payload: Palette or Library dragged a node spec onto the canvas.
-    const nodeSpecRaw = event.dataTransfer.getData("application/x-anchor-node");
-    if (nodeSpecRaw) {
-      event.preventDefault();
-      try {
-        const spec = JSON.parse(nodeSpecRaw) as {
-          node_type: string;
-          label?: string;
-          width?: number;
-          height?: number;
-          data?: Record<string, unknown>;
-        };
-
-        // Special path for sub-canvas tiles: the LeftToolRail tags the
-        // payload with `__create_sub_canvas`. We provision a fresh child
-        // workspace + drop the linking node atomically via the composite
-        // `createSubCanvas` endpoint instead of the regular addNode path.
-        if (spec.data?.__create_sub_canvas) {
-          const subSlug = `${slug}-sub-${shortId()}`;
-          const title = (spec.data?.title as string | undefined) ?? spec.label ?? "Sub-canvas";
-          try {
-            await canvases.createSubCanvas(slug, {
-              slug: subSlug,
-              title,
-              x: flowPos.x,
-              y: flowPos.y,
-            });
-          } catch (err) {
-            // eslint-disable-next-line no-console
-            console.error("sub-canvas creation failed", err);
-          }
-          return;
-        }
-
-        const res = (await canvases.addNode(slug, {
-          ...spec,
-          x: flowPos.x,
-          y: flowPos.y,
-        })) as { event?: { payload?: { id?: string } } } | null;
-        const newId = res?.event?.payload?.id;
-
-        // Evidence edge: if the dropped payload carries a source_doc_node_id
-        // (e.g. dragging a region out of a document node), connect the new
-        // node back to its source. The edge keeps the source_ref so it can
-        // drive the cross-component hover-flip behavior.
-        const data = spec.data ?? {};
-        const sourceNodeId = (data.source_doc_node_id as string | undefined) ?? null;
-        const sourceRef = data.source_ref as Record<string, unknown> | undefined;
-        if (newId && sourceNodeId) {
-          await canvases.addEdge(slug, {
-            source: newId,
-            target: sourceNodeId,
-            edge_type: "anchored",
-            data: {
-              kind: "evidence",
-              ...(sourceRef ? { source_ref: sourceRef } : {}),
-              ...(data.source_region_id ? { source_region_id: data.source_region_id } : {}),
-            },
-          });
-        }
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error("shell drop failed", err);
-      }
-      return;
-    }
-
-    // Path 2 — OS files: drop-to-ingest for PDFs.
-    if (event.dataTransfer.files?.length) {
-      event.preventDefault();
-      const rootRect = rootRef.current?.getBoundingClientRect();
-      const dropLeft = rootRect ? event.clientX - rootRect.left : event.clientX;
-      const dropTop = rootRect ? event.clientY - rootRect.top : event.clientY;
-      const pdfs = Array.from(event.dataTransfer.files)
-        .filter((file) => file.name.toLowerCase().endsWith(".pdf"));
-
-      await Promise.all(pdfs.map(async (file, index) => {
-        const uploadId = `upload-${Date.now()}-${index}-${shortId()}`;
-        const yOffset = index * 36;
-        setUploadJobs((jobs) => ({
-          ...jobs,
-          [uploadId]: {
-            id: uploadId,
-            filename: file.name,
-            percent: 0,
-            status: "uploading",
-            left: dropLeft,
-            top: dropTop + yOffset,
-          },
-        }));
-        try {
-          await canvases.uploadFile(
-            slug,
-            file,
-            flowPos.x,
-            flowPos.y + yOffset,
-            {
-              onProgress: (progress) => {
-                setUploadJobs((jobs) => {
-                  const job = jobs[uploadId];
-                  if (!job) return jobs;
-                  return {
-                    ...jobs,
-                    [uploadId]: {
-                      ...job,
-                      percent: progress.percent,
-                    },
-                  };
-                });
-              },
-            },
-          );
-          setUploadJobs((jobs) => {
-            const job = jobs[uploadId];
-            if (!job) return jobs;
-            return {
-              ...jobs,
-              [uploadId]: {
-                ...job,
-                percent: 100,
-                status: "starting_ingest",
-              },
-            };
-          });
-          window.setTimeout(() => {
-            setUploadJobs((jobs) => {
-              const { [uploadId]: _done, ...rest } = jobs;
-              return rest;
-            });
-          }, 1500);
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.error("upload failed", err);
-          setUploadJobs((jobs) => {
-            const job = jobs[uploadId];
-            if (!job) return jobs;
-            return {
-              ...jobs,
-              [uploadId]: {
-                ...job,
-                status: "failed",
-                error: err instanceof Error ? err.message : String(err),
-              },
-            };
-          });
-          window.setTimeout(() => {
-            setUploadJobs((jobs) => {
-              const { [uploadId]: _failed, ...rest } = jobs;
-              return rest;
-            });
-          }, 6000);
-        }
-      }));
-    }
-  }, [slug, screenToFlowPosition]);
-
-  // Armed-tool placement gesture. When `armedTool` is set, a click on the
-  // pane places the shape at default size; a click-and-drag places it with
-  // the dragged rect as its position+size.
-  //
-  // We listen on the wrapper div rather than ReactFlow's `onPaneClick` so
-  // we can distinguish click from drag by comparing pointerdown→pointerup
-  // displacement. The 4-px threshold lives in `PaintGhost` (shared with
-  // the ghost-rect math) so the click-vs-drag boundary stays in lock-step.
-
-  // Cards don't drag-to-size (their layout is content-driven beyond a
-  // sensible default). Shapes (concept/entity/funnel/area) can grow.
-  const CAN_SIZE: Record<string, boolean> = {
-    concept: true,
-    entity: true,
-    funnel: true,
-    area: true,
-  };
-
-  const placeArmedNode = async (
-    flowX: number,
-    flowY: number,
-    sizeOverride?: { width: number; height: number },
-  ) => {
-    if (!armedTool) return;
-    // Special path: sub-canvas placement goes through the composite
-    // `createSubCanvas` endpoint so the child workspace + linking node
-    // land atomically. The slug is generated client-side; the backend
-    // returns the linking node id via SSE.
-    if (armedTool === "canvas") {
-      const subSlug = `${slug}-sub-${shortId()}`;
-      try {
-        await canvases.createSubCanvas(slug, {
-          slug: subSlug,
-          title: "Sub-canvas",
-          x: flowX,
-          y: flowY,
-        });
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error("armed sub-canvas placement failed", err);
-      } finally {
-        disarmTool();
-      }
-      return;
-    }
-    // Pull the palette meta for default size + payload shape. Producers
-    // are included so click-to-arm-then-place works for the spec tile.
-    const all = [
-      ...paletteEntries("shapes"),
-      ...paletteEntries("cards"),
-      ...paletteEntries("producers"),
-    ];
-    const meta = all.find((e) => e.name === armedTool)?.meta;
-    const label = meta?.noDefaultLabel ? "" : meta?.label ?? "";
-    const width = sizeOverride?.width ?? meta?.width;
-    const height = sizeOverride?.height ?? meta?.height;
-    try {
-      await canvases.addNode(slug, {
-        node_type: armedTool,
-        label,
-        x: flowX,
-        y: flowY,
-        ...(width !== undefined ? { width } : {}),
-        ...(height !== undefined ? { height } : {}),
-        data: { ...(meta?.data ?? {}), ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) },
-      });
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("armed-tool placement failed", err);
-    } finally {
-      // Always disarm after placement; user can re-arm by clicking the
-      // rail icon again.
-      disarmTool();
-    }
-  };
-
-  const onPointerDown = (event: React.PointerEvent) => {
-    if (!armedTool) return;
-    // Ignore clicks on existing nodes — the user might be trying to select
-    // a node mid-arm. ReactFlow tags nodes with `.react-flow__node` so we
-    // can sniff the event target.
-    const target = event.target as HTMLElement;
-    if (target.closest(".react-flow__node")) return;
-    // Record screen-space origin only. Flow-space conversion happens at
-    // pointer-up using the SAME endpoints the ghost rect uses, so the
-    // WYSIWYG contract (ghost rect == dropped node rect) holds.
-    armDownRef.current = {
-      clientX: event.clientX,
-      clientY: event.clientY,
-    };
-    setPaintRect(null);
-  };
-
-  const onPointerMove = (event: React.PointerEvent) => {
-    const down = armDownRef.current;
-    if (!down || !armedTool) return;
-    // Only sizeable shapes render the ghost — cards drop at default size
-    // even when the user drags, so a ghost would be misleading.
-    if (!CAN_SIZE[armedTool]) return;
-    const raw = paintRectFrom(
-      { x: down.clientX, y: down.clientY },
-      { x: event.clientX, y: event.clientY },
-    );
-    const constrained = maybeSquareRect(
-      raw,
-      { x: down.clientX, y: down.clientY },
-      ghostIsSquare(armedTool),
-    );
-    setPaintRect(constrained);
-  };
-
-  const onPointerUp = (event: React.PointerEvent) => {
-    if (!armedTool) return;
-    const down = armDownRef.current;
-    armDownRef.current = null;
-    setPaintRect(null);
-    if (!down) return;
-    const dx = event.clientX - down.clientX;
-    const dy = event.clientY - down.clientY;
-    const dist = Math.hypot(dx, dy);
-    if (dist < PAINT_DRAG_THRESHOLD_PX) {
-      // Single-click placement: default size at the click point. Convert
-      // here (not at pointer-down) so we use exactly the same call site
-      // every drop goes through — keeps the math consistent.
-      const downFlow = screenToFlowPosition({ x: down.clientX, y: down.clientY });
-      void placeArmedNode(downFlow.x, downFlow.y);
-      return;
-    }
-    // Drag-to-size — only honoured for sizeable shapes. Cards fall back to
-    // single-click placement at the start point.
-    if (!CAN_SIZE[armedTool]) {
-      const downFlow = screenToFlowPosition({ x: down.clientX, y: down.clientY });
-      void placeArmedNode(downFlow.x, downFlow.y);
-      return;
-    }
-    // WYSIWYG fix: compute the screen-space rect (same maths the ghost
-    // showed), then convert THAT rect's two diagonal corners to flow space.
-    // Sourcing both corners from the same `screenToFlowPosition` ensures
-    // the drop lands at the ghost-shown rect for any zoom/pan/transform.
-    // Square-locked (entity / circle) tools snap the rect to a square
-    // anchored at the down corner — same constraint the ghost applies.
-    const raw = paintRectFrom(
-      { x: down.clientX, y: down.clientY },
-      { x: event.clientX, y: event.clientY },
-    );
-    const screen = maybeSquareRect(
-      raw,
-      { x: down.clientX, y: down.clientY },
-      ghostIsSquare(armedTool),
-    );
-    const topLeftFlow = screenToFlowPosition({ x: screen.left, y: screen.top });
-    const bottomRightFlow = screenToFlowPosition({
-      x: screen.left + screen.width,
-      y: screen.top + screen.height,
-    });
-    const flowWidth = Math.max(40, Math.abs(bottomRightFlow.x - topLeftFlow.x));
-    const flowHeight = Math.max(24, Math.abs(bottomRightFlow.y - topLeftFlow.y));
-    void placeArmedNode(topLeftFlow.x, topLeftFlow.y, {
-      width: flowWidth,
-      height: flowHeight,
-    });
-  };
-
   // In readOnly mode the canvas becomes a pure projection: no drags, no
   // drops, no dblclick → viewer. It still subscribes to SSE so any state
   // change emitted by the rest of the system shows up live.
@@ -887,9 +273,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         : {
             onDragOver,
             onDrop,
-            onPointerDown,
-            onPointerMove,
-            onPointerUp,
+            ...pointerHandlers,
           })}
     >
       {/* Mount custom <marker> defs once per canvas. Edge components
@@ -1126,35 +510,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         <Controls showInteractive={!readOnly} />
         <MiniMap pannable zoomable />
       </ReactFlow>
-      {Object.values(uploadJobs).map((job) => {
-        const isFailed = job.status === "failed";
-        const label = job.status === "starting_ingest"
-          ? "Upload complete, starting ingest"
-          : isFailed
-            ? "Upload failed"
-            : `Uploading ${job.percent}%`;
-        return (
-          <div
-            key={job.id}
-            className={`pointer-events-none absolute z-40 w-64 -translate-x-1/2 -translate-y-full rounded-md border bg-white/95 px-3 py-2 text-xs shadow-lg backdrop-blur ${
-              isFailed ? "border-red-300 text-red-800" : "border-sky-200 text-neutral-700"
-            }`}
-            style={{ left: job.left, top: job.top }}
-          >
-            <div className="mb-1 flex items-center justify-between gap-3">
-              <span className="truncate font-medium">{job.filename}</span>
-              <span className="shrink-0 tabular-nums">{job.percent}%</span>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-neutral-200">
-              <div
-                className={isFailed ? "h-full bg-red-500" : "h-full bg-sky-500"}
-                style={{ width: `${Math.max(0, Math.min(100, job.percent))}%` }}
-              />
-            </div>
-            <div className="mt-1 truncate text-[10px]">{job.error ?? label}</div>
-          </div>
-        );
-      })}
+      <UploadJobsOverlay jobs={uploadJobs} />
       {/* Mini-toolbar above the selection and the right-click context menu.
           Hidden in readOnly canvases (snapshotter, monitor route). Both
           read selection from ReactFlow's per-node `selected` flag via
