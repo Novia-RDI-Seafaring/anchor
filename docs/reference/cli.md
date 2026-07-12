@@ -68,7 +68,7 @@ anchor canvas --help
 | `anchor sysml` | Render or export SysML text. |
 | `anchor fmu` | Inspect and simulate FMUs when the optional runtime is installed. |
 | `anchor cad` | Inspect supported CAD models and alter parameters. |
-| `anchor extensions` | List and inspect OIP producer manifests. |
+| `anchor extensions` | List and inspect OIP producer manifests. `anchor extensions status` reports bundled runtime availability and startup errors. |
 | `anchor install <harness>` | Register ANCHOR's MCP server (+ skill) with an AI harness. |
 
 Run `anchor <group> --help` for option-level detail.

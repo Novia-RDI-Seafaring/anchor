@@ -20,6 +20,10 @@ Bundled manifest discovery and CAD/FMU/SysML runtime startup are composed by
 than third-party loading: an OIP manifest is data, not permission to import
 code into the ANCHOR process.
 
+Runtime diagnostics have adapter parity: `anchor extensions status`,
+`GET /api/extensions/status`, and MCP `anchor_extension_status` return the
+same normalized availability records.
+
 ---
 
 ## What an extension provides

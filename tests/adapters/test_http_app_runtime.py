@@ -45,3 +45,16 @@ def test_build_app_accepts_project_runtime(tmp_path):
 
     response = TestClient(app).get("/api/status")
     assert response.status_code == 200
+
+    extension_response = TestClient(app).get("/api/extensions/status")
+    assert extension_response.status_code == 200
+    assert extension_response.json() == {
+        "extensions": [{
+            "name": "anchor-fmus",
+            "source": "bundled",
+            "available": False,
+            "reason": "missing runtime",
+            "error_type": "RuntimeError",
+        }],
+        "summary": {"available": 0, "unavailable": 1},
+    }

@@ -20,7 +20,7 @@ from mcp.server import Server
 from mcp.types import ImageContent, Resource, TextContent, Tool
 from pydantic import AnyUrl
 
-from anchor.adapters.mcp import handlers_canvas, handlers_intents, tiering
+from anchor.adapters.mcp import handlers_canvas, handlers_extensions, handlers_intents, tiering
 from anchor.adapters.mcp.router import ProjectRouter
 from anchor.adapters.mcp.services import (
     ServiceBundle,
@@ -117,6 +117,7 @@ Agent intent queue (your inbox, issue #148):
 
 Status tools:
 - anchor_status: show cwd, config path, data dir, and document/canvas counts
+- anchor_extension_status: show bundled runtime availability and failure reasons
 
 PDF tools (extension anchor_pdfs):
 - ingest_pdf / list_documents / get_document_index
@@ -496,7 +497,11 @@ def build_mcp_server(
     sysml_defs = (
         sysml_handlers.tool_definitions() if (multiproject or bundle.sysml is not None) else []
     )
-    status_defs = [STATUS_TOOL_DEFINITION, SERVER_INFO_TOOL_DEFINITION]
+    status_defs = [
+        STATUS_TOOL_DEFINITION,
+        SERVER_INFO_TOOL_DEFINITION,
+        handlers_extensions.TOOL_DEFINITION,
+    ]
     lifecycle_defs = LIFECYCLE_TOOL_DEFINITIONS if multiproject else []
 
     project_scoped = [
@@ -577,6 +582,9 @@ def build_mcp_server(
             elif name == SERVER_INFO_TOOL_DEFINITION["name"]:
                 b = get_bundle(args.pop("project", None))
                 text = _json.dumps(_build_server_info(b.config.data_dir))
+            elif name == handlers_extensions.TOOL_NAME:
+                b = get_bundle(args.pop("project", None))
+                text = handlers_extensions.call_tool(b.extension_status)
             elif name in status_names:
                 b = get_bundle(args.pop("project", None))
                 summary = await build_status_summary(

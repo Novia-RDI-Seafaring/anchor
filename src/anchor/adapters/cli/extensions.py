@@ -18,6 +18,7 @@ from anchor.adapters.cli.common import DEFAULT_DATA_DIR
 from anchor.adapters.extension_host import (
     SOURCE_ORDER,
     discover_manifests,
+    extension_runtime_status_payload,
     load_manifest,
     project_producers_dir,
     registration_path,
@@ -112,6 +113,25 @@ def extensions_info(
     typer.echo(f"unknown producer: {name!r}", err=True)
     typer.echo("Run `anchor extensions list` to see what's available.", err=True)
     raise typer.Exit(code=1)
+
+
+@extensions_app.command("status")
+def extensions_status(
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Report whether each bundled optional runtime started successfully."""
+    from anchor.adapters.project_runtime import build_project_runtime_for_data_dir
+
+    runtime = build_project_runtime_for_data_dir(
+        data_dir,
+        include_ingest=False,
+        include_intents=False,
+        include_ingest_session=False,
+        include_extensions=True,
+        include_synopsis=False,
+        fmu_warning=lambda _exc: None,
+    )
+    typer.echo(json.dumps(extension_runtime_status_payload(runtime.extension_status), indent=2))
 
 
 @extensions_app.command("add")

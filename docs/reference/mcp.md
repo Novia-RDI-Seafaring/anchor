@@ -36,7 +36,7 @@ and generic stdio client examples.
 
 | Family | Representative operations |
 | --- | --- |
-| Status | `anchor_status` |
+| Status | `anchor_status`, `anchor_extension_status` |
 | Environment / projects | `list_projects`, `create_project`, `update_project`, `open_project`, `create_environment` |
 | Canvas | `canvas_list_workspaces`, `canvas_get_state`, `canvas_add_node`, `canvas_update_node`, `canvas_add_edge`, `canvas_node_types`, `canvas_snapshot` |
 | References | `canvas_create_reference`, `canvas_list_references`, `canvas_remove_reference`, `canvas_update_reference`, `canvas_attach_reference` - author a citation into a source document, keep a per-canvas bibliography, rename or delete an entry, and attach a reference to a node or spec row (HTTP `/api/workspaces/{slug}/references`, CLI `anchor canvas reference create\|list\|remove\|update\|attach`) |

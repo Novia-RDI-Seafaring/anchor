@@ -10,11 +10,11 @@ import json
 import os
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 if TYPE_CHECKING:
     from anchor.core.ports.event_bus import EventBus
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 Manifest = dict[str, Any]
 ManifestGroups = dict[str, list[Manifest]]
+BundledRuntimeName = Literal["cad", "fmu", "sysml"]
 
 SOURCE_ORDER = ("bundled", "system", "project")
 _BUNDLED_MANIFEST_MODULES = (
@@ -47,6 +48,30 @@ class ExtensionRuntimeStatus:
     available: bool
     reason: str | None = None
     error_type: str | None = None
+
+
+def extension_runtime_status_payload(
+    statuses: Mapping[str, ExtensionRuntimeStatus],
+) -> dict[str, object]:
+    """Return the adapter-neutral extension runtime diagnostic payload."""
+    extensions = [
+        {
+            "name": status.name,
+            "source": status.source,
+            "available": status.available,
+            "reason": status.reason,
+            "error_type": status.error_type,
+        }
+        for _name, status in sorted(statuses.items())
+    ]
+    available = sum(1 for item in extensions if item["available"])
+    return {
+        "extensions": extensions,
+        "summary": {
+            "available": available,
+            "unavailable": len(extensions) - available,
+        },
+    }
 
 
 @dataclass(frozen=True)
@@ -206,6 +231,59 @@ class ExtensionHost:
                 found.extend(sorted(proj_dir.glob("*.json")))
         return found
 
+    @overload
+    def start(
+        self,
+        name: Literal["cad"],
+        *,
+        bus: EventBus,
+        workspace: WorkspaceService | None = None,
+    ) -> CadService: ...
+
+    @overload
+    def start(
+        self,
+        name: Literal["fmu"],
+        *,
+        bus: EventBus,
+        workspace: WorkspaceService | None = None,
+    ) -> FmuService: ...
+
+    @overload
+    def start(
+        self,
+        name: Literal["sysml"],
+        *,
+        bus: EventBus,
+        workspace: WorkspaceService | None = None,
+    ) -> SysmlService: ...
+
+    def start(
+        self,
+        name: BundledRuntimeName,
+        *,
+        bus: EventBus,
+        workspace: WorkspaceService | None = None,
+    ) -> CadService | FmuService | SysmlService:
+        """Start one bundled extension without starting unrelated modules."""
+        if self.data_dir is None:
+            raise RuntimeError("ExtensionHost.start requires a project data_dir")
+        if name == "cad":
+            from anchor.extensions.anchor_cad import extension as cad_ext
+
+            return cad_ext.build_service(self.data_dir, bus)
+        if name == "fmu":
+            from anchor.extensions.anchor_fmus import extension as fmu_ext
+
+            return fmu_ext.build_service(self.data_dir, bus)
+        if name == "sysml":
+            if workspace is None:
+                raise RuntimeError("ExtensionHost.start('sysml') requires WorkspaceService")
+            from anchor.extensions.anchor_sysml import extension as sysml_ext
+
+            return sysml_ext.build_service(self.data_dir, bus, workspace=workspace)
+        raise ValueError(f"unknown bundled runtime: {name!r}")
+
     def start_bundled(
         self,
         *,
@@ -222,14 +300,12 @@ class ExtensionHost:
         if self.data_dir is None:
             raise RuntimeError("ExtensionHost.start_bundled requires a project data_dir")
 
-        from anchor.extensions.anchor_cad import extension as cad_ext
         from anchor.extensions.anchor_fmus import extension as fmu_ext
-        from anchor.extensions.anchor_sysml import extension as sysml_ext
 
-        cad = cad_ext.build_service(self.data_dir, bus)
+        cad = self.start("cad", bus=bus)
         status = {
-            cad_ext.NAME: ExtensionRuntimeStatus(
-                name=cad_ext.NAME,
+            "anchor-cad": ExtensionRuntimeStatus(
+                name="anchor-cad",
                 source="bundled",
                 available=True,
             )
@@ -237,7 +313,7 @@ class ExtensionHost:
 
         fmu = None
         try:
-            fmu = fmu_ext.build_service(self.data_dir, bus)
+            fmu = self.start("fmu", bus=bus)
             status[fmu_ext.NAME] = ExtensionRuntimeStatus(
                 name=fmu_ext.NAME,
                 source="bundled",
@@ -256,9 +332,9 @@ class ExtensionHost:
             else:
                 fmu_warning(exc)
 
-        sysml = sysml_ext.build_service(self.data_dir, bus, workspace=workspace)
-        status[sysml_ext.NAME] = ExtensionRuntimeStatus(
-            name=sysml_ext.NAME,
+        sysml = self.start("sysml", bus=bus, workspace=workspace)
+        status["anchor-sysml"] = ExtensionRuntimeStatus(
+            name="anchor-sysml",
             source="bundled",
             available=True,
         )

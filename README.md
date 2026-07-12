@@ -422,7 +422,7 @@ anchor install claude-desktop --env NAME [--name ENTRY] [--create]
 anchor install claude-code [--env NAME] | cursor [--env NAME] | print
 
 # Extensions (OIP producers) + misc
-anchor extensions list | info NAME | add MANIFEST | remove NAME | discover | schema
+anchor extensions list | info NAME | status | add MANIFEST | remove NAME | discover | schema
 anchor version
 ```
 
@@ -447,6 +447,7 @@ The CLI surfaces this:
 
 ```bash
 anchor extensions list                        # what producers can this ANCHOR see?
+anchor extensions status                      # which bundled runtimes started?
 anchor extensions discover                    # where does it look for manifests?
 anchor extensions add <path-to-manifest.json> # register a new producer (system-wide)
 anchor extensions schema                      # print a starter manifest to edit

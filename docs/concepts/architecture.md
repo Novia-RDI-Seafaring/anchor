@@ -50,7 +50,9 @@ canvas-only CLI commands use the same builder with keyed PDF ingest and
 optional extensions disabled. Listing or moving canvas nodes therefore
 does not load Docling or an embedding model. Commands that ingest or
 search documents request the full runtime and fail clearly if keyed PDF
-ingest is unavailable.
+ingest is unavailable. Extension-specific CLI commands ask `ExtensionHost` to
+start only their selected CAD, FMU, or SysML module, so they share the bundled
+builder path without paying to start unrelated runtimes.
 
 ---
 
@@ -192,6 +194,11 @@ FMU, and SysML modules without making `ProjectRuntime` know each builder
 interface. Manifest discovery remains separate from third-party code loading:
 a registered OIP manifest says what an external producer offers, but does not
 authorize ANCHOR to import or execute arbitrary package code.
+
+Bundled startup diagnostics use one shared payload across all adapters:
+`anchor extensions status`, `GET /api/extensions/status`, and the MCP tool
+`anchor_extension_status`. Each reports the same sorted records, availability
+counts, failure reason, and error type.
 
 ---
 

@@ -6,9 +6,11 @@ import pytest
 
 from anchor.adapters.extension_host import (
     ExtensionHost,
+    ExtensionRuntimeStatus,
     bundled_manifests,
     discover_manifests,
     discover_third_party_manifest_paths,
+    extension_runtime_status_payload,
     load_manifest,
     project_producers_dir,
     registration_dir,
@@ -91,6 +93,51 @@ def test_extension_host_requires_data_dir_for_runtime_startup():
             bus=object(),  # type: ignore[arg-type]
             workspace=object(),  # type: ignore[arg-type]
         )
+
+
+def test_extension_host_rejects_unknown_runtime_name(tmp_path):
+    with pytest.raises(ValueError, match="unknown bundled runtime"):
+        ExtensionHost(tmp_path).start(
+            "unknown",  # type: ignore[arg-type]
+            bus=object(),  # type: ignore[arg-type]
+        )
+
+
+def test_extension_runtime_status_payload_is_stable_and_adapter_neutral():
+    payload = extension_runtime_status_payload({
+        "anchor-fmus": ExtensionRuntimeStatus(
+            name="anchor-fmus",
+            source="bundled",
+            available=False,
+            reason="missing runtime",
+            error_type="RuntimeError",
+        ),
+        "anchor-cad": ExtensionRuntimeStatus(
+            name="anchor-cad",
+            source="bundled",
+            available=True,
+        ),
+    })
+
+    assert payload == {
+        "extensions": [
+            {
+                "name": "anchor-cad",
+                "source": "bundled",
+                "available": True,
+                "reason": None,
+                "error_type": None,
+            },
+            {
+                "name": "anchor-fmus",
+                "source": "bundled",
+                "available": False,
+                "reason": "missing runtime",
+                "error_type": "RuntimeError",
+            },
+        ],
+        "summary": {"available": 1, "unavailable": 1},
+    }
 
 
 def test_discover_manifests_groups_bundled_system_and_project(tmp_path, monkeypatch):
