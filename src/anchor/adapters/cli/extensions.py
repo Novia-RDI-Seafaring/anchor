@@ -8,6 +8,7 @@ See `OIP.md` for the manifest schema and discovery rules.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 from pathlib import Path
@@ -18,11 +19,17 @@ from anchor.adapters.cli.common import DEFAULT_DATA_DIR
 from anchor.adapters.extension_host import (
     SOURCE_ORDER,
     discover_manifests,
+    execution_marker_path,
     extension_runtime_status_payload,
     load_manifest,
     project_producers_dir,
     registration_path,
     system_producers_dir,
+)
+from anchor.adapters.external_producers import (
+    build_external_gateway,
+    external_catalog_payload,
+    external_statuses,
 )
 
 extensions_app = typer.Typer(help="Inspect and manage canvas extensions (OIP producers).")
@@ -74,9 +81,11 @@ def extensions_list(
             tools_ns = m.get("invocation", {}).get("tools_namespace", "?")
             kinds = m.get("produces", {}).get("source_kinds", [])
             maturity = m.get("maturity", "stable")
+            execution = _execution_label(source, m)
             typer.echo(
                 f"  {p.get('name', '?'):<24} v{p.get('version', '?'):<8}  "
-                f"ns={tools_ns:<12} maturity={maturity:<12} sources={kinds}"
+                f"ns={tools_ns:<12} maturity={maturity:<12} "
+                f"exec={execution:<10} sources={kinds}"
             )
 
     # Collision detection
@@ -112,6 +121,9 @@ def extensions_info(
                 m_clean["_anchor_source"] = source
                 if "_manifest_path" in m:
                     m_clean["_anchor_path"] = m["_manifest_path"]
+                    m_clean["_anchor_execution_enabled"] = Path(
+                        m["_manifest_path"]
+                    ).with_suffix(".enabled").is_file()
                 typer.echo(json.dumps(m_clean, indent=2))
                 return
     typer.echo(f"unknown producer: {name!r}", err=True)
@@ -135,7 +147,49 @@ def extensions_status(
         include_synopsis=False,
         fmu_warning=lambda _exc: None,
     )
-    typer.echo(json.dumps(extension_runtime_status_payload(runtime.extension_status), indent=2))
+    external = asyncio.run(_external_catalog(data_dir))
+    statuses = {
+        **runtime.extension_status,
+        **external_statuses(external.statuses),
+    }
+    typer.echo(json.dumps(extension_runtime_status_payload(statuses), indent=2))
+
+
+@extensions_app.command("tools")
+def extensions_tools(
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Start enabled external producers and print their namespaced catalog."""
+    catalog = asyncio.run(_external_catalog(data_dir))
+    typer.echo(json.dumps(external_catalog_payload(catalog), indent=2))
+
+
+@extensions_app.command("call")
+def extensions_call(
+    tool_name: str,
+    arguments: str = typer.Option("{}", "--arguments", "--args"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Call one enabled external producer tool by `namespace.tool` name."""
+    try:
+        parsed = json.loads(arguments)
+    except json.JSONDecodeError as exc:
+        typer.echo(f"invalid --arguments JSON: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    if not isinstance(parsed, dict):
+        typer.echo("--arguments must decode to a JSON object", err=True)
+        raise typer.Exit(code=2)
+    try:
+        result = asyncio.run(_external_call(data_dir, tool_name, parsed))
+    except Exception as exc:  # noqa: BLE001 - CLI diagnostic surface
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        json.dumps(
+            result.model_dump(mode="json", by_alias=True, exclude_none=True),
+            indent=2,
+        )
+    )
 
 
 @extensions_app.command("add")
@@ -144,6 +198,11 @@ def extensions_add(
     scope: str = typer.Option("system", "--scope", "-s", help="system | project"),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
     force: bool = typer.Option(False, "--force", "-f"),
+    enable: bool = typer.Option(
+        False,
+        "--enable",
+        help="Also authorize ANCHOR to execute this producer command.",
+    ),
 ) -> None:
     """Register an OIP producer's manifest.
 
@@ -172,7 +231,50 @@ def extensions_add(
         raise typer.Exit(code=1)
 
     shutil.copy2(manifest_path, target)
+    marker = execution_marker_path(scope, data_dir, name)
+    if enable:
+        marker.write_text("enabled\n", encoding="utf-8")
+    elif marker.exists():
+        marker.unlink()
     typer.echo(f"registered '{name}' -> {target}")
+    if enable:
+        typer.echo("execution enabled")
+    else:
+        typer.echo(
+            f"execution disabled; review the manifest, then run "
+            f"`anchor extensions enable {name} --scope {scope}`"
+        )
+
+
+@extensions_app.command("enable")
+def extensions_enable(
+    name: str,
+    scope: str = typer.Option("system", "--scope", "-s", help="system | project"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Authorize execution of one registered producer command."""
+    manifest = _registration_path_or_exit(scope, data_dir, name)
+    if not manifest.is_file():
+        typer.echo(f"not registered in {scope}: {name!r}", err=True)
+        raise typer.Exit(code=1)
+    marker = execution_marker_path(scope, data_dir, name)
+    marker.write_text("enabled\n", encoding="utf-8")
+    typer.echo(f"execution enabled for {name} ({scope})")
+
+
+@extensions_app.command("disable")
+def extensions_disable(
+    name: str,
+    scope: str = typer.Option("system", "--scope", "-s", help="system | project"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Revoke execution authorization without removing the manifest."""
+    marker = execution_marker_path(scope, data_dir, name)
+    if not marker.exists():
+        typer.echo(f"execution is not enabled in {scope}: {name!r}", err=True)
+        raise typer.Exit(code=1)
+    marker.unlink()
+    typer.echo(f"execution disabled for {name} ({scope})")
 
 
 @extensions_app.command("remove")
@@ -188,6 +290,9 @@ def extensions_remove(
         typer.echo(f"not registered in {scope}: {name!r}", err=True)
         raise typer.Exit(code=1)
     target.unlink()
+    marker = execution_marker_path(scope, data_dir, name)
+    if marker.exists():
+        marker.unlink()
     typer.echo(f"removed {name} from {target_dir}")
 
 
@@ -240,3 +345,28 @@ def extensions_schema() -> None:
         },
     }
     typer.echo(json.dumps(example, indent=2))
+
+
+def _execution_label(source: str, manifest: dict) -> str:
+    if source == "bundled":
+        return "in-process"
+    path = manifest.get("_manifest_path")
+    if isinstance(path, str) and Path(path).with_suffix(".enabled").is_file():
+        return "enabled"
+    return "disabled"
+
+
+async def _external_catalog(data_dir: Path):
+    gateway = build_external_gateway(data_dir)
+    try:
+        return await gateway.catalog()
+    finally:
+        await gateway.close()
+
+
+async def _external_call(data_dir: Path, tool_name: str, arguments: dict):
+    gateway = build_external_gateway(data_dir)
+    try:
+        return await gateway.call(tool_name, arguments)
+    finally:
+        await gateway.close()

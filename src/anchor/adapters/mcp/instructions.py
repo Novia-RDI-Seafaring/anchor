@@ -72,7 +72,11 @@ Agent intent queue (your inbox, issue #148):
 
 Status tools:
 - anchor_status: show cwd, config path, data dir, and document/canvas counts
-- anchor_extension_status: show bundled runtime availability and failure reasons
+- anchor_extension_status: show bundled and external producer availability and failure reasons
+
+External OIP tools:
+- A human must register and enable each external producer through the CLI.
+- Enabled tools appear as <tools_namespace>.<tool_name> and stay in isolated processes.
 
 PDF tools (extension anchor_pdfs):
 - ingest_pdf / list_documents / get_document_index

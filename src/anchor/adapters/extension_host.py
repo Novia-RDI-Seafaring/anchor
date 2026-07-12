@@ -128,6 +128,11 @@ def registration_path(scope: str, data_dir: Path, producer_name: object) -> Path
     return registration_dir(scope, data_dir) / f"{name}.json"
 
 
+def execution_marker_path(scope: str, data_dir: Path, producer_name: object) -> Path:
+    """Return the human-controlled execution authorization marker path."""
+    return registration_path(scope, data_dir, producer_name).with_suffix(".enabled")
+
+
 def load_manifest(
     path: Path,
     *,
@@ -231,6 +236,32 @@ class ExtensionHost:
             if proj_dir.is_dir():
                 found.extend(sorted(proj_dir.glob("*.json")))
         return found
+
+    def external_manifests(
+        self,
+        *,
+        on_error: Callable[[str], None] | None = None,
+    ) -> list[Manifest]:
+        """Return effective registered manifests with project precedence.
+
+        Registration is the explicit authorization step for external process
+        execution. Bundled manifests are excluded because they run in-process
+        through the first-party composition path.
+        """
+        discovered = self.discover(on_error=on_error)
+        effective: dict[str, Manifest] = {}
+        for source in ("system", "project"):
+            for manifest in discovered[source]:
+                producer = manifest.get("producer", {})
+                name = producer.get("name")
+                if isinstance(name, str):
+                    marker = execution_marker_path(source, self.data_dir or Path(), name)
+                    effective[name] = {
+                        **manifest,
+                        "_anchor_source": source,
+                        "_anchor_execution_enabled": marker.is_file(),
+                    }
+        return [effective[name] for name in sorted(effective)]
 
     @overload
     def start(
@@ -364,3 +395,41 @@ def discover_manifests(
 def discover_third_party_manifest_paths(data_dir: Path | None = None) -> list[Path]:
     """Return registered third-party manifest paths in a stable order."""
     return ExtensionHost(data_dir).third_party_manifest_paths()
+
+
+def discover_external_manifests(
+    data_dir: Path | None = None,
+    *,
+    on_error: Callable[[str], None] | None = None,
+) -> list[Manifest]:
+    """Return effective registered manifests authorized for execution."""
+    return ExtensionHost(data_dir).external_manifests(on_error=on_error)
+
+
+def external_registration_fingerprint(
+    data_dir: Path | None = None,
+) -> tuple[tuple[str, int, int, bool, int], ...]:
+    """Return a stable change token for manifests and enable markers."""
+    entries: list[tuple[str, int, int, bool, int]] = []
+    for path in ExtensionHost(data_dir).third_party_manifest_paths():
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        marker = path.with_suffix(".enabled")
+        try:
+            marker_mtime = marker.stat().st_mtime_ns
+            marker_enabled = True
+        except OSError:
+            marker_mtime = 0
+            marker_enabled = False
+        entries.append(
+            (
+                str(path.resolve()),
+                stat.st_mtime_ns,
+                stat.st_size,
+                marker_enabled,
+                marker_mtime,
+            )
+        )
+    return tuple(sorted(entries))

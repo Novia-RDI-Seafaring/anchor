@@ -43,7 +43,7 @@ export function ExtensionStatusPanel() {
             </p>
           ) : null}
           {!status && !error ? (
-            <p className="text-xs text-neutral-500">Checking bundled extensions...</p>
+            <p className="text-xs text-neutral-500">Checking extensions...</p>
           ) : null}
         </div>
         <button

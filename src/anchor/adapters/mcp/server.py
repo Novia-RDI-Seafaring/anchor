@@ -1,4 +1,4 @@
-"""Single MCP server exposing canvas + bundled extensions' tool sets.
+"""Single MCP server exposing canvas and OIP extension tool sets.
 
 Tool dispatch routes by handler ownership: each tool name comes from one
 of the per-extension `tool_definitions()` lists, and `call_tool` routes
@@ -7,20 +7,24 @@ to whichever handler claimed it. PDF tools (`ingest_pdf`, `list_documents`,
 `anchor_fmus.mcp_handlers`; CAD tools (`inspect`, `list_models`, ...) in
 `anchor_cad.mcp_handlers`. Canvas tools live in `handlers_canvas`.
 
-External (third-party) OIP producers are NOT yet aggregated here — that's
-the MCP-proxy work documented in OIP.md as the next major feature.
+Registered external producers remain process-isolated and are proxied through
+their manifest-declared namespace.
 """
 from __future__ import annotations
 
 import copy
 import json as _json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from mcp.server import Server
-from mcp.types import ImageContent, Resource, TextContent, Tool
+from mcp.types import CallToolResult, ImageContent, Resource, TextContent, Tool
 from pydantic import AnyUrl
 
+from anchor.adapters.external_producers import ExternalProducerGateways
 from anchor.adapters.mcp import (
+    external_tools,
     handlers_canvas,
     handlers_extensions,
     handlers_intents,
@@ -331,6 +335,7 @@ def build_mcp_server(
     bundle: ServiceBundle | None = None,
     router: ProjectRouter | None = None,
     name: str = "anchor",
+    external_gateways: ExternalProducerGateways | None = None,
 ) -> Server:
     """Build the MCP server.
 
@@ -342,8 +347,17 @@ def build_mcp_server(
     if bundle is None and router is None:
         raise ValueError("build_mcp_server requires either a bundle or a router")
     multiproject = router is not None
+    external_gateways = external_gateways or ExternalProducerGateways()
+
+    @asynccontextmanager
+    async def server_lifespan(_server: Server) -> AsyncIterator[dict[str, Any]]:
+        try:
+            yield {}
+        finally:
+            await external_gateways.close()
+
     instructions = (_env_identity(router) + INSTRUCTIONS) if multiproject else INSTRUCTIONS
-    app = Server(name, instructions=instructions)
+    app = Server(name, instructions=instructions, lifespan=server_lifespan)
 
     def get_bundle(project: str | None) -> ServiceBundle:
         if router is not None:
@@ -406,6 +420,12 @@ def build_mcp_server(
     else:
         all_defs = list(project_scoped)
 
+    internal_names = {definition["name"] for definition in all_defs}
+    internal_names.update(getattr(fmu_handlers, "LEGACY_TOOL_NAMES", set()))
+    internal_names.update(getattr(sysml_handlers, "LEGACY_TOOL_NAMES", set()))
+    if isinstance(external_gateways, ExternalProducerGateways):
+        external_gateways.reserve(internal_names)
+
     # Extension tool-name groups, used both to auto-advertise an active
     # extension and to answer the capabilities meta-tool.
     extension_names = {
@@ -435,7 +455,19 @@ def build_mcp_server(
         advertised = tiering.select_advertised(
             all_defs, active_extensions=active, extension_names=extension_names,
         )
-        return [Tool(**d) for d in advertised]
+        tools = [Tool(**d) for d in advertised]
+        try:
+            b = get_bundle(None)
+            tools.extend(
+                await external_tools.catalog_tools(
+                    external_gateways,
+                    b.config.data_dir,
+                    multiproject=multiproject,
+                )
+            )
+        except (NoProjectError, NoEnvironmentError):
+            pass
+        return tools
 
     status_names = {d["name"] for d in status_defs}
     lifecycle_names = {d["name"] for d in lifecycle_defs}
@@ -446,7 +478,10 @@ def build_mcp_server(
     sysml_names = {d["name"] for d in sysml_defs} | getattr(sysml_handlers, "LEGACY_TOOL_NAMES", set())
 
     @app.call_tool()
-    async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
+    async def call_tool(
+        name: str,
+        arguments: dict[str, Any],
+    ) -> list[TextContent | ImageContent] | CallToolResult:
         args = dict(arguments)
         try:
             if name == tiering.CAPABILITIES_TOOL_NAME:
@@ -467,7 +502,12 @@ def build_mcp_server(
                 text = _json.dumps(_build_server_info(b.config.data_dir))
             elif name == handlers_extensions.TOOL_NAME:
                 b = get_bundle(args.pop("project", None))
-                text = handlers_extensions.call_tool(b.extension_status)
+                statuses = await external_tools.combined_statuses(
+                    external_gateways,
+                    b.config.data_dir,
+                    b.extension_status,
+                )
+                text = handlers_extensions.call_tool(statuses)
             elif name in status_names:
                 b = get_bundle(args.pop("project", None))
                 summary = await build_status_summary(
@@ -514,8 +554,16 @@ def build_mcp_server(
                 text = await sysml_handlers.call_tool(b.sysml, name, args)
             else:
                 b = get_bundle(args.pop("project", None))
+                external_gateway = await external_gateways.gateway_for(
+                    b.config.data_dir
+                )
+                if external_gateway.can_handle(name):
+                    return await external_gateway.call(name, args)
                 text = await pdf_handlers.call_tool(
-                    b.ingest, b.doc_store, name, args,
+                    b.ingest,
+                    b.doc_store,
+                    name,
+                    args,
                     synopsis=b.synopsis,
                     ingest_session=b.ingest_session,
                 )

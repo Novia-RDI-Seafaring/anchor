@@ -4,10 +4,17 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
+from mcp.types import CallToolResult, TextContent, Tool
 from typer.testing import CliRunner
 
+from anchor.adapters.cli import extensions as extensions_module
 from anchor.adapters.cli.extensions import extensions_app
 from anchor.adapters.extension_host import ExtensionRuntimeStatus
+from anchor.adapters.external_oip.gateway import (
+    ExternalProducerStatus,
+    GatewayCatalog,
+)
 
 
 def _runner():
@@ -42,6 +49,39 @@ def test_add_writes_to_system_dir(tmp_path, monkeypatch):
     result = _runner().invoke(extensions_app, ["add", str(manifest)])
     assert result.exit_code == 0, result.output
     assert (home / ".config" / "oip" / "producers.d" / "anchor-transcribe.json").exists()
+    assert not (
+        home / ".config" / "oip" / "producers.d" / "anchor-transcribe.enabled"
+    ).exists()
+    assert "execution disabled" in result.output
+
+
+def test_add_enable_and_disable_manage_execution_marker(tmp_path, monkeypatch):
+    config_home = tmp_path / "config"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({
+        "oip_version": "0.1",
+        "producer": {"name": "enabled-producer", "version": "1.0.0"},
+        "invocation": {
+            "kind": "mcp-stdio",
+            "command": "producer-mcp",
+            "tools_namespace": "enabled",
+        },
+    }), encoding="utf-8")
+    runner = _runner()
+
+    added = runner.invoke(extensions_app, ["add", str(manifest), "--enable"])
+    marker = config_home / "oip" / "producers.d" / "enabled-producer.enabled"
+    assert added.exit_code == 0, added.output
+    assert marker.read_text(encoding="utf-8") == "enabled\n"
+
+    disabled = runner.invoke(extensions_app, ["disable", "enabled-producer"])
+    assert disabled.exit_code == 0, disabled.output
+    assert not marker.exists()
+
+    enabled = runner.invoke(extensions_app, ["enable", "enabled-producer"])
+    assert enabled.exit_code == 0, enabled.output
+    assert marker.is_file()
 
 
 def test_add_with_project_scope_writes_into_data_dir(tmp_path, monkeypatch):
@@ -230,6 +270,11 @@ def test_status_emits_shared_runtime_diagnostics(tmp_path, monkeypatch):
         lambda *_args, **_kwargs: runtime,
     )
 
+    async def external_catalog(_data_dir):
+        return GatewayCatalog(tools=(), statuses=())
+
+    monkeypatch.setattr(extensions_module, "_external_catalog", external_catalog)
+
     result = _runner().invoke(
         extensions_app,
         ["status", "--data-dir", str(tmp_path / "data")],
@@ -246,3 +291,88 @@ def test_status_emits_shared_runtime_diagnostics(tmp_path, monkeypatch):
         }],
         "summary": {"available": 0, "unavailable": 1},
     }
+
+
+class _FakeGateway:
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def catalog(self):
+        return GatewayCatalog(
+            tools=(
+                Tool(
+                    name="vendor.echo",
+                    description="Echo externally",
+                    inputSchema={"type": "object"},
+                ),
+            ),
+            statuses=(
+                ExternalProducerStatus(
+                    name="vendor",
+                    source="project",
+                    available=True,
+                    tool_count=1,
+                ),
+            ),
+        )
+
+    async def call(self, name, arguments):
+        return CallToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text=json.dumps({"name": name, "arguments": arguments}),
+                )
+            ]
+        )
+
+    async def close(self):
+        self.closed = True
+
+
+@pytest.fixture
+def external_gateway(monkeypatch):
+    gateways: list[_FakeGateway] = []
+
+    def build(_data_dir):
+        gateway = _FakeGateway()
+        gateways.append(gateway)
+        return gateway
+
+    monkeypatch.setattr(extensions_module, "build_external_gateway", build)
+    return gateways
+
+
+def test_external_tools_print_namespaced_catalog(tmp_path, external_gateway):
+    result = _runner().invoke(
+        extensions_app,
+        ["tools", "--data-dir", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["tools"][0]["name"] == "vendor.echo"
+    assert external_gateway[0].closed is True
+
+
+def test_external_call_forwards_json_object(tmp_path, external_gateway):
+    result = _runner().invoke(
+        extensions_app,
+        [
+            "call",
+            "vendor.echo",
+            "--args",
+            '{"value": 9}',
+            "--data-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    forwarded = json.loads(payload["content"][0]["text"])
+    assert forwarded == {
+        "name": "vendor.echo",
+        "arguments": {"value": 9},
+    }
+    assert external_gateway[0].closed is True

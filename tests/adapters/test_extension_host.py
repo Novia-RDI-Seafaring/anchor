@@ -43,6 +43,28 @@ def test_bundled_manifests_match_current_public_discovery():
     assert sysml["maturity"] == "experimental"
 
 
+def test_external_manifests_exclude_bundled_and_project_overrides_system(
+    tmp_path, monkeypatch
+):
+    system_dir = tmp_path / "config" / "oip" / "producers.d"
+    project_dir = tmp_path / "data" / ".oip" / "producers.d"
+    system_dir.mkdir(parents=True)
+    project_dir.mkdir(parents=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    system = _manifest("shared")
+    system["producer"]["version"] = "1.0.0"
+    project = _manifest("shared")
+    project["producer"]["version"] = "2.0.0"
+    (system_dir / "shared.json").write_text(json.dumps(system), encoding="utf-8")
+    (project_dir / "shared.json").write_text(json.dumps(project), encoding="utf-8")
+
+    manifests = ExtensionHost(tmp_path / "data").external_manifests()
+
+    assert len(manifests) == 1
+    assert manifests[0]["producer"]["version"] == "2.0.0"
+    assert manifests[0]["_anchor_source"] == "project"
+
+
 def test_extension_host_starts_bundled_runtimes(tmp_path, monkeypatch):
     from anchor.extensions.anchor_cad import extension as cad_ext
     from anchor.extensions.anchor_fmus import extension as fmu_ext

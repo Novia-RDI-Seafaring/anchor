@@ -1,6 +1,8 @@
 """FastAPI app builder — wires services into routers."""
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -8,8 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from anchor.adapters.external_oip.gateway import ExternalProducerGateway
+from anchor.adapters.external_producers import build_external_gateway
 from anchor.adapters.http.routers import (
     edges,
+    external_extensions,
     ingests,
     intents,
     nodes,
@@ -54,6 +59,7 @@ def build_app(
     fmu_service: FmuService | None = None,
     canvases_dir: Path | None = None,
     config: AnchorConfig | None = None,
+    external_gateway: ExternalProducerGateway | None = None,
 ) -> FastAPI:
     extension_status = {}
     if runtime is not None:
@@ -79,7 +85,21 @@ def build_app(
     ):
         raise ValueError("build_app requires a ProjectRuntime or explicit core services")
 
-    app = FastAPI(title="Anchor v2", version="0.2.0")
+    if external_gateway is None:
+        external_gateway = (
+            build_external_gateway(config.data_dir)
+            if config is not None
+            else ExternalProducerGateway([])
+        )
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            await external_gateway.close()
+
+    app = FastAPI(title="Anchor v2", version="0.2.0", lifespan=lifespan)
     app.state.workspace_service = workspace_service
     app.state.ingest_service = ingest_service
     app.state.doc_store = doc_store
@@ -101,6 +121,7 @@ def build_app(
     app.state.ingest_session_service = ingest_session_service
     app.state.anchor_config = config
     app.state.extension_status = extension_status
+    app.state.external_gateway = external_gateway
 
     # Bridge cross-process writes (CLI / MCP-stdio in another process) into
     # this app's bus by tailing each workspace's events.jsonl. SSE router
@@ -158,6 +179,7 @@ def build_app(
     app.include_router(ingests.router)
     app.include_router(intents.router)
     app.include_router(status.router)
+    app.include_router(external_extensions.router)
     app.include_router(whoami.router)
     if cad_service is not None:
         app.dependency_overrides[cad_routes.get_cad_service] = lambda: cad_service
