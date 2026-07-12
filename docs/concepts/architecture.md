@@ -14,13 +14,19 @@ The contract has a name: the **Open Ingestion Protocol** (OIP). It's
 versioned separately and lives in its own
 [repository](https://github.com/Novia-RDI-Seafaring/OIP).
 
-A canvas with no extensions is empty but functional. A canvas with two
-extensions (PDFs, FMUs) is what we ship today. A canvas with someone
-else's extension (audio transcripts, code regions, video frames) is
-why OIP exists.
+A canvas with no extensions is empty but functional. ANCHOR ships bundled PDF,
+FMU, CAD, and SysML extensions today. A canvas with someone else's extension
+(audio transcripts, code regions, video frames) is why OIP exists.
 
 The runtime, durable stores, event bus, consumers, and ports-and-adapters
 layers are shown together in [The hexagon](#the-hexagon).
+
+![ANCHOR agent-native runtime architecture](../assets/diagrams/anchor-runtime-architecture.svg)
+
+*Codex, Claude Code, and OpenCode enter through the same MCP adapter. HTTP,
+CLI, and MCP share one project runtime and one state model. A matching
+[PNG version](../assets/diagrams/anchor-runtime-architecture.png) is available
+for tools that do not render SVG.*
 
 ---
 
@@ -212,8 +218,8 @@ counts, failure reason, and error type.
   via `web/dist/`. Same-origin in production, no separate API server.
 - **Four extensions in-tree** - `anchor_pdfs`, `anchor_fmus`, `anchor_cad`,
   and `anchor_sysml`. All ship OIP manifests and are reachable through the
-  same MCP server. SysML remains hidden from the public extension list while
-  its text-to-canvas flow is experimental.
+  same MCP server. SysML is marked `experimental` in its public manifest while
+  its text-to-canvas flow matures.
 - **Hexagonal layering enforced in CI** - `uv run lint-imports` passes six
   contracts on every push.
 

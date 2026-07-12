@@ -1,0 +1,231 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1536" height="1024" viewBox="0 0 1536 1024" role="img" aria-labelledby="title desc">
+  <title id="title">ANCHOR v2 agent-native canvas architecture</title>
+  <desc id="desc">Architecture diagram showing Codex, Claude Code, and OpenCode through the MCP adapter, thin HTTP and CLI adapters, shared ProjectRuntime and ExtensionHost composition, first-party extensions, isolated external OIP producers, local persistence, and event driven agent intent flow.</desc>
+
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.55" stop-color="#fafafa"/>
+      <stop offset="1" stop-color="#f4f4f5"/>
+    </linearGradient>
+
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e5e7eb"/>
+    </linearGradient>
+
+    <linearGradient id="runtime" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4f4f5"/>
+      <stop offset="0.52" stop-color="#d4d4d8"/>
+      <stop offset="1" stop-color="#a1a1aa"/>
+    </linearGradient>
+
+    <linearGradient id="wire" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#18181b"/>
+      <stop offset="0.5" stop-color="#52525b"/>
+      <stop offset="1" stop-color="#18181b"/>
+    </linearGradient>
+
+    <pattern id="dots" width="32" height="32" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.2" fill="#18181b" opacity="0.1"/>
+    </pattern>
+
+    <filter id="shadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.16"/>
+    </filter>
+
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.2 0 0 0 0 0.2 0 0 0 0 0.2 0 0 0 0.3 0" result="glow"/>
+      <feMerge>
+        <feMergeNode in="glow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 2 2 L 10 6 L 2 10 Z" fill="#18181b"/>
+    </marker>
+
+    <style>
+      .text {
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        fill: #18181b;
+      }
+      .muted {
+        fill: #52525b;
+      }
+      .small {
+        font-size: 18px;
+      }
+      .body {
+        font-size: 22px;
+      }
+      .label {
+        font-size: 28px;
+        font-weight: 800;
+      }
+      .title {
+        font-size: 48px;
+        font-weight: 850;
+      }
+      .caps {
+        font-size: 16px;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+      .box {
+        fill: #ffffff;
+        stroke: #18181b;
+        stroke-width: 2;
+        stroke-opacity: 0.72;
+      }
+      .box-purple {
+        fill: #fafafa;
+        stroke: #52525b;
+        stroke-width: 2;
+        stroke-opacity: 0.78;
+      }
+      .box-green {
+        fill: #f4f4f5;
+        stroke: #18181b;
+        stroke-width: 2;
+        stroke-opacity: 0.78;
+      }
+      .wire {
+        fill: none;
+        stroke: #18181b;
+        stroke-width: 3;
+        stroke-linecap: round;
+        opacity: 0.78;
+        marker-end: url(#arrow);
+      }
+      .soft-wire {
+        fill: none;
+        stroke: #52525b;
+        stroke-width: 2;
+        stroke-linecap: round;
+        opacity: 0.28;
+      }
+      .dash {
+        stroke-dasharray: 10 12;
+      }
+    </style>
+  </defs>
+
+  <rect width="1536" height="1024" fill="#ffffff"/>
+
+  <g transform="translate(70 70)">
+    <text class="text caps" x="0" y="0">ANCHOR v2</text>
+    <text class="text title" x="0" y="58">Agent-Native Canvas Architecture</text>
+    <text class="text muted body" x="2" y="100">Local-first runtime for agents, documents, extensions, and source-grounded canvas state.</text>
+  </g>
+
+  <g transform="translate(1120 62)">
+    <rect class="box-purple" x="0" y="0" width="340" height="104" rx="22"/>
+    <text class="text caps" x="28" y="38">Runtime posture</text>
+    <text class="text body" x="28" y="72" font-weight="800">No cloud lock-in</text>
+    <text class="text muted small" x="216" y="72">local data</text>
+  </g>
+
+  <g id="left-column">
+    <rect class="box" x="74" y="220" width="330" height="118" rx="24"/>
+    <text class="text caps" x="112" y="262">Human UI</text>
+    <text class="text label" x="112" y="304">Web + HTTP</text>
+
+    <rect class="box" x="74" y="420" width="330" height="118" rx="24"/>
+    <text class="text caps" x="112" y="462">Shell</text>
+    <text class="text label" x="112" y="504">CLI Adapter</text>
+
+    <rect class="box-green" x="74" y="710" width="330" height="138" rx="24"/>
+    <text class="text caps" x="112" y="752">Document flow</text>
+    <text class="text label" x="112" y="794">Bronze, Silver, Gold</text>
+    <text class="text muted small" x="112" y="826">PDFs, pages, regions, bboxes</text>
+  </g>
+
+  <g id="right-column">
+    <rect class="box-purple" x="1132" y="220" width="330" height="118" rx="24"/>
+    <text class="text caps" x="1170" y="262">Agent surface</text>
+    <text class="text label" x="1170" y="304">MCP Adapter</text>
+    <text class="text muted small" x="1170" y="330">Codex, Claude Code, OpenCode</text>
+
+    <rect class="box" x="1132" y="420" width="330" height="118" rx="24"/>
+    <text class="text caps" x="1170" y="462">Realtime</text>
+    <text class="text label" x="1170" y="504">EventBus + SSE</text>
+
+    <rect class="box-purple" x="1132" y="710" width="330" height="138" rx="24"/>
+    <text class="text caps" x="1170" y="752">Intent queue</text>
+    <text class="text label" x="1170" y="794">Push notify</text>
+    <text class="text muted small" x="1170" y="826">Pull payload for agent work</text>
+  </g>
+
+  <g id="center">
+    <rect class="box" x="548" y="202" width="440" height="126" rx="28"/>
+    <text class="text caps" x="768" y="246" text-anchor="middle">Domain interface</text>
+    <text class="text label" x="768" y="292" text-anchor="middle">WorkspaceService</text>
+
+    <path d="M 768 390 L 948 494 L 948 636 L 768 740 L 588 636 L 588 494 Z" fill="#ffffff" stroke="#18181b" stroke-width="3"/>
+    <path d="M 768 430 L 900 506 L 900 624 L 768 700 L 636 624 L 636 506 Z" fill="#f4f4f5" stroke="#52525b" stroke-width="2"/>
+    <path d="M 768 472 L 852 520 L 852 610 L 768 658 L 684 610 L 684 520 Z" fill="#d4d4d8" stroke="#18181b" stroke-width="2"/>
+    <text class="text caps" x="768" y="538" text-anchor="middle">Deep modules</text>
+    <text class="text label" x="768" y="580" text-anchor="middle">ProjectRuntime</text>
+    <text class="text muted small" x="768" y="608" text-anchor="middle">ExtensionHost starts</text>
+    <text class="text muted small" x="768" y="630" text-anchor="middle">bundled modules</text>
+
+    <rect class="box-green" x="520" y="850" width="496" height="104" rx="26"/>
+    <text class="text caps" x="768" y="888" text-anchor="middle">Local persistence</text>
+    <text class="text" x="768" y="928" text-anchor="middle" font-size="22" font-weight="800">meta.json + state.json + events.jsonl</text>
+  </g>
+
+  <g id="extensions">
+    <rect class="box" x="438" y="365" width="240" height="102" rx="22"/>
+    <text class="text caps" x="558" y="400" text-anchor="middle">PDFs</text>
+    <text class="text body" x="558" y="434" text-anchor="middle" font-weight="800">anchor_pdfs</text>
+    <text class="text muted small" x="558" y="458" text-anchor="middle">grounded regions</text>
+
+    <rect class="box-purple" x="858" y="365" width="240" height="102" rx="22"/>
+    <text class="text caps" x="978" y="400" text-anchor="middle">FMUs</text>
+    <text class="text body" x="978" y="434" text-anchor="middle" font-weight="800">anchor_fmus</text>
+    <text class="text muted small" x="978" y="458" text-anchor="middle">simulation runtime</text>
+
+    <rect class="box" x="438" y="664" width="240" height="102" rx="22"/>
+    <text class="text caps" x="558" y="700" text-anchor="middle">CAD</text>
+    <text class="text body" x="558" y="734" text-anchor="middle" font-weight="800">anchor_cad</text>
+    <text class="text muted small" x="558" y="758" text-anchor="middle">model viewers</text>
+
+    <rect class="box-purple" x="858" y="664" width="240" height="102" rx="22"/>
+    <text class="text caps" x="978" y="700" text-anchor="middle">SysML</text>
+    <text class="text body" x="978" y="734" text-anchor="middle" font-weight="800">anchor_sysml</text>
+    <text class="text muted small" x="978" y="758" text-anchor="middle">model graph</text>
+  </g>
+
+  <g id="wires">
+    <path class="wire" d="M 404 279 C 466 279 492 252 548 252"/>
+    <path class="wire" d="M 404 479 C 496 479 526 528 588 548"/>
+    <path class="wire" d="M 988 252 C 1044 252 1070 279 1132 279"/>
+    <path class="wire" d="M 948 548 C 1010 528 1040 479 1132 479"/>
+    <path class="wire" d="M 948 604 C 1022 628 1080 724 1132 779"/>
+    <path class="wire" d="M 404 779 C 482 748 530 696 588 626"/>
+    <path class="wire" d="M 768 328 L 768 390"/>
+    <path class="wire" d="M 768 740 L 768 850"/>
+
+    <path class="soft-wire dash" d="M 558 467 C 606 492 628 512 684 548"/>
+    <path class="soft-wire dash" d="M 978 467 C 930 492 908 512 852 548"/>
+    <path class="soft-wire dash" d="M 558 664 C 606 638 628 616 684 590"/>
+    <path class="soft-wire dash" d="M 978 664 C 930 638 908 616 852 590"/>
+  </g>
+
+  <g id="external-oip" transform="translate(1068 898)">
+    <rect class="box-purple" x="0" y="0" width="392" height="82" rx="22"/>
+    <text class="text caps" x="24" y="34">External OIP producers</text>
+    <text class="text body" x="24" y="62" font-weight="800">Manifest-discovered, isolated</text>
+  </g>
+
+  <g id="legend" transform="translate(74 900)">
+    <rect x="0" y="0" width="390" height="80" rx="18" fill="#ffffff" stroke="#18181b" stroke-opacity="0.55"/>
+    <text class="text small" x="26" y="32">$ anchor canvas list</text>
+    <text class="text muted small" x="26" y="55">project runtime resolved</text>
+    <text class="text muted small" x="26" y="74">adapters share one state model</text>
+  </g>
+</svg>
