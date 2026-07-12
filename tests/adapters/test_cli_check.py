@@ -1,4 +1,4 @@
-"""`anchor check` — verify the data zone, repair the endpoint, gate on readiness."""
+"""`anchor check` - verify the data zone, repair the endpoint, gate on readiness."""
 from __future__ import annotations
 
 import shutil
@@ -138,6 +138,7 @@ def test_check_harness_mode_is_ready_without_key(tmp_path):
     assert "Harness ingest sessions" in result.output
     assert "none open" in result.output
     assert "Ready" in result.output
+    result.output.encode("ascii")
 
 
 def test_check_missing_key_prints_actionable_remedy(tmp_path):

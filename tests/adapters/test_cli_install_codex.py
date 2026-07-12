@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from anchor.adapters.cli import install as install_mod
+from anchor.adapters.cli import install_named
 from anchor.adapters.cli.main import app
 from anchor.infra import environment as env_mod
 from anchor.infra.environment import create_env
@@ -18,7 +18,7 @@ runner = CliRunner()
 @pytest.fixture(autouse=True)
 def _paths(monkeypatch, tmp_path):
     config = tmp_path / ".codex" / "config.toml"
-    monkeypatch.setattr(install_mod, "_codex_config_path", lambda: config)
+    monkeypatch.setattr(install_named, "_codex_config_path", lambda: config)
     monkeypatch.setattr(env_mod, "ANCHOR_HOME", tmp_path / ".anchor")
     monkeypatch.setattr(env_mod, "LEGACY_DATA_DIR", tmp_path / "_legacy_unused")
     monkeypatch.delenv("ANCHOR_ENV", raising=False)
@@ -69,6 +69,30 @@ def test_install_preserves_unrelated_content(_paths):
     assert data["mcp_servers"]["other"]["command"] == "other-mcp"
     assert data["mcp_servers"]["other"]["args"] == ["--foo"]
     # New entry added.
+    assert data["mcp_servers"]["anchor-local"]["args"] == ["--env", "local"]
+
+
+def test_install_preserves_nested_codex_server_environment(_paths):
+    _paths.parent.mkdir(parents=True, exist_ok=True)
+    _paths.write_text(
+        '[mcp_servers.browser]\n'
+        'command = "browser-mcp"\n'
+        '\n'
+        '[mcp_servers.browser.env]\n'
+        'NODE_PATH = "C:\\\\tools\\\\node.exe"\n'
+        '"key.with.dots" = "preserved"\n',
+        encoding="utf-8",
+    )
+    create_env("local")
+
+    result = runner.invoke(app, ["install", "codex", "--env", "local", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    data = tomllib.loads(_paths.read_text(encoding="utf-8"))
+    assert data["mcp_servers"]["browser"]["env"] == {
+        "NODE_PATH": "C:\\tools\\node.exe",
+        "key.with.dots": "preserved",
+    }
     assert data["mcp_servers"]["anchor-local"]["args"] == ["--env", "local"]
 
 

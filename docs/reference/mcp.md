@@ -11,7 +11,9 @@ selected by name. Projects inside it are addressed by a per-call `project`
 argument.
 
 ```bash
+anchor install codex --env work
 anchor install claude-code              # writes the MCP entry + skill (default env)
+anchor install opencode --env work
 anchor install claude-desktop --env work
 anchor install cursor --env work
 ```

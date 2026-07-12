@@ -69,14 +69,14 @@ anchor canvas --help
 | `anchor fmu` | Inspect and simulate FMUs when the optional runtime is installed. |
 | `anchor cad` | Inspect supported CAD models and alter parameters. |
 | `anchor extensions` | List and inspect OIP producer manifests. `anchor extensions status` reports bundled runtime availability and startup errors. |
-| `anchor install <harness>` | Register ANCHOR's MCP server (+ skill) with an AI harness. |
+| `anchor install <harness>` | Register ANCHOR's MCP server with Codex, Claude Code, OpenCode, Claude Desktop, or Cursor. Supported targets may also install agent guidance. |
 
 Run `anchor <group> --help` for option-level detail.
 
-`anchor install claude-code` (and `cursor`, `claude-desktop`) register an MCP
-entry pointing at an environment (`--env <name>`, default the default
-environment). `claude-desktop` supports a named entry per environment
-(`--name`), so you can register more than one; see the command's `--help`.
+Every installer registers an MCP entry pointing at an environment (`--env
+<name>`, default the default environment). Codex, OpenCode, and Claude Desktop
+support a named entry per environment (`--name`), so you can register more than
+one; see each command's `--help`.
 
 For current Claude Code, Codex, OpenCode, Cursor, and generic stdio setup
 instructions, see [Agent configuration](../guides/agent-configuration.md).

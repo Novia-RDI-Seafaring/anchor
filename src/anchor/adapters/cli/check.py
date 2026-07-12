@@ -1,10 +1,10 @@
-"""``anchor check`` — verify the data zone and configuration before ingesting.
+"""``anchor check`` - verify the data zone and configuration before ingesting.
 
 Onboarding's hardest question for a sensitive-document user is "will my files
 actually stay where I think?" ``check`` answers it: it resolves the active
 project config, prints the data zone (provider, endpoint, data dir, models,
-whether the key is present), validates the endpoint shape, and — only with
-``--probe`` — makes one tiny call to confirm the deployment resolves and the key
+whether the key is present), validates the endpoint shape, and only with
+``--probe`` makes one tiny call to confirm the deployment resolves and the key
 authenticates, sending no document content. It exits non-zero when something
 would break a real ingest, so an agent or script can gate on it.
 """
@@ -71,9 +71,9 @@ def check(
     if env.initialized:
         typer.echo(f"  config         : {env.config_path}  (env.toml; not a .env dotfile)")
     else:
-        typer.echo("  config         : (env not set up yet — defaults; `anchor env create`)")
+        typer.echo("  config         : (env not set up yet - defaults; `anchor env create`)")
     if prov:
-        typer.echo(f"  provider       : {prov.label} — {prov.zone}")
+        typer.echo(f"  provider       : {prov.label} - {prov.zone}")
     elif cfg.provider:
         typer.echo(f"  provider       : {cfg.provider}")
     # Be honest when the project dir is not on disk yet: a fresh project has
@@ -86,15 +86,15 @@ def check(
     embed_remote = cfg.embed_model.startswith("text-embedding-")
     typer.echo(
         f"  embed model    : {cfg.embed_model}  "
-        f"({'remote — sent to your endpoint' if embed_remote else 'local, no egress'})"
+        f"({'remote - sent to your endpoint' if embed_remote else 'local, no egress'})"
     )
     # Local-only / no-egress posture: a single asserted line. When active, no
     # OpenAI client is built for any stage and model loading is pinned offline.
     if cfg.local_only:
         from anchor.infra.models import offline_active, required_models
 
-        typer.echo("  local-only     : ON — no external egress; polish + regions disabled")
-        cached = "offline env set ✓" if offline_active() else (
+        typer.echo("  local-only     : ON - no external egress; polish + regions disabled")
+        cached = "offline env set [OK]" if offline_active() else (
             "run `anchor models prefetch` once, then set HF_HUB_OFFLINE=1 to verify"
         )
         typer.echo(f"  offline models : {cached}")
@@ -104,10 +104,10 @@ def check(
     if cfg.local_only:
         # Vision (polish + regions) is disabled in no-egress mode; printing an
         # endpoint here would falsely imply an outbound call could happen.
-        typer.echo("  vision         : disabled (no egress) — bronze/silver + local search only")
+        typer.echo("  vision         : disabled (no egress) - bronze/silver + local search only")
     elif provider_key == "harness":
-        typer.echo("  vision         : your agent harness — gold extraction runs through")
-        typer.echo("                   ingest sessions (begin → submit pages → finalize)")
+        typer.echo("  vision         : your agent harness - gold extraction runs through")
+        typer.echo("                   ingest sessions (begin -> submit pages -> finalize)")
     else:
         typer.echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com (public)'}")
         typer.echo(f"  vision model   : {cfg.region_model}")
@@ -143,7 +143,7 @@ def check(
     ocr_ok, ocr_detail = _probe_ocr_backend()
     problems: list[str] = []
     if ocr_ok:
-        typer.echo("  onnxruntime    : importable ✓")
+        typer.echo("  onnxruntime    : importable [OK]")
     elif ocr_detail == "missing":
         # Genuinely not installed -- a force-reinstall re-syncs the dep.
         typer.echo("  onnxruntime    : NOT installed")
@@ -166,9 +166,9 @@ def check(
             f"OCR backend present but failed to import: {ocr_detail}"
         )
     personal = bool(os.environ.get("OPENAI_API_KEY"))
-    # local/ollama/harness keep content on-host → no key. openai accepts a
+    # local/ollama/harness keep content on-host, so no key. openai accepts a
     # personal OPENAI_API_KEY. azure/custom (and any configured endpoint) need
-    # the endpoint's own key in ANCHOR_OPENAI_API_KEY — a personal key is wrong there.
+    # the endpoint's own key in ANCHOR_OPENAI_API_KEY; a personal key is wrong there.
     if provider_key in ("local", "ollama", "harness"):
         needs_key = False
         key_ok = True
@@ -180,13 +180,13 @@ def check(
         key_ok = bool(cfg.openai_api_key)
 
     # The env's .env is where ANCHOR_OPENAI_API_KEY belongs (only ANCHOR_* keys
-    # there load — a plain OPENAI_API_KEY is ignored). Name the exact path in the
+    # there load; a plain OPENAI_API_KEY is ignored). Name the exact path in the
     # remedy so an agent or user can act without guessing (issue #226).
     env_dotenv = str(env.root / ".env") if env.initialized else None
     # An unset provider silently skips gold at ingest time (no vision stage runs),
     # so surface it as a not-ready remedy instead of a bare "not needed" line.
     if not cfg.provider:
-        typer.echo("  provider       : NOT set — gold extraction will be silently skipped")
+        typer.echo("  provider       : NOT set - gold extraction will be silently skipped")
         problems.append(
             "Provider is not set, so gold extraction is skipped: "
             + "; ".join(no_key_remedy_lines(env_dotenv))
@@ -194,11 +194,11 @@ def check(
         _echo_remedy(no_key_remedy_lines(env_dotenv))
     elif needs_key:
         if cfg.openai_api_key:
-            typer.echo("  api key        : ANCHOR_OPENAI_API_KEY detected ✓")
+            typer.echo("  api key        : ANCHOR_OPENAI_API_KEY detected [OK]")
         elif key_ok:  # openai + personal key
-            typer.echo("  api key        : using OPENAI_API_KEY ✓")
+            typer.echo("  api key        : using OPENAI_API_KEY [OK]")
         else:
-            typer.echo("  api key        : NOT set — gold extraction will be silently skipped")
+            typer.echo("  api key        : NOT set - gold extraction will be silently skipped")
             if personal:
                 typer.echo("                   (a personal OPENAI_API_KEY is set but is the wrong "
                            "credential for this endpoint)")
@@ -208,7 +208,7 @@ def check(
             )
             _echo_remedy(no_key_remedy_lines(env_dotenv))
     elif provider_key == "harness":
-        typer.echo("  api key        : not needed — ingestion happens through the agent")
+        typer.echo("  api key        : not needed - ingestion happens through the agent")
     else:
         typer.echo("  api key        : not needed (no egress)")
 
@@ -219,16 +219,16 @@ def check(
         typer.echo("")
         typer.echo("Harness ingest sessions")
         if not open_sessions:
-            typer.echo("  none open — ready for `ingest_begin` (agent) or "
+            typer.echo("  none open - ready for `ingest_begin` (agent) or "
                        "`anchor ingest-session begin <pdf>`")
         for entry in open_sessions:
             typer.echo(
                 f"  {entry['session_id']}  {entry['slug']}: "
                 f"{entry['submitted']}/{entry['page_count']} pages submitted "
-                f"({entry['state']}) — resume with ingest_status / finalize"
+                f"({entry['state']}) - resume with ingest_status / finalize"
             )
 
-    # Endpoint shape — repair an Azure URL that is missing /openai/v1/.
+    # Endpoint shape - repair an Azure URL that is missing /openai/v1/.
     if cfg.openai_base_url:
         fixed = normalize_base_url(provider_key, cfg.openai_base_url)
         if fixed and fixed != cfg.openai_base_url.strip():
@@ -246,12 +246,12 @@ def check(
             else:
                 problems.append("Azure endpoint is missing the /openai/v1/ suffix.")
 
-    # Optional live probe — confirms deployment + auth without sending documents.
+    # Optional live probe - confirms deployment + auth without sending documents.
     if probe:
         typer.echo("")
         typer.echo("Probe (tiny live call, no document content)")
         if not key_ok:
-            typer.echo("  skipped — no usable key to authenticate with.")
+            typer.echo("  skipped - no usable key to authenticate with.")
             problems.append("Cannot probe without a key.")
         else:
             _probe(cfg, embed_remote, problems)
@@ -262,7 +262,7 @@ def check(
         for p in problems:
             typer.echo(f"  - {p}")
         raise typer.Exit(code=1)
-    typer.echo("Ready ✓  config resolves and the data zone is what you expect.")
+    typer.echo("Ready [OK]  config resolves and the data zone is what you expect.")
 
 
 def _open_ingest_sessions(cfg: AnchorConfig) -> list[dict]:
@@ -338,14 +338,14 @@ def _probe(cfg: AnchorConfig, embed_remote: bool, problems: list[str]) -> None:
             model=cfg.region_model,
             messages=[{"role": "user", "content": "ping"}],
         )
-        typer.echo(f"  chat deployment '{cfg.region_model}' : reachable ✓")
+        typer.echo(f"  chat deployment '{cfg.region_model}' : reachable [OK]")
     except Exception as exc:  # noqa: BLE001 - surface the endpoint's own error
-        typer.echo(f"  chat deployment '{cfg.region_model}' : FAILED — {exc}")
+        typer.echo(f"  chat deployment '{cfg.region_model}' : FAILED - {exc}")
         problems.append(f"Vision/region deployment '{cfg.region_model}' did not respond.")
     if embed_remote:
         try:
             client.embeddings.create(model=cfg.embed_model, input=["ping"])
-            typer.echo(f"  embed deployment '{cfg.embed_model}' : reachable ✓")
+            typer.echo(f"  embed deployment '{cfg.embed_model}' : reachable [OK]")
         except Exception as exc:  # noqa: BLE001
-            typer.echo(f"  embed deployment '{cfg.embed_model}' : FAILED — {exc}")
+            typer.echo(f"  embed deployment '{cfg.embed_model}' : FAILED - {exc}")
             problems.append(f"Embedding deployment '{cfg.embed_model}' did not respond.")

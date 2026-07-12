@@ -62,15 +62,28 @@ so the entry name tells you which environment it serves.
     anchor install claude-code --env home
     ```
 
+=== "Codex"
+
+    ```bash
+    anchor install codex --env home
+    ```
+
+=== "OpenCode"
+
+    ```bash
+    anchor install opencode --env home
+    ```
+
 === "Cursor"
 
     ```bash
     anchor install cursor --env home
     ```
 
-Restart the harness. In Claude Code or Cursor, `/mcp` should now list `anchor`
-with its tools. For Codex, OpenCode, and generic stdio clients, see
-[Agent configuration](../guides/agent-configuration.md).
+Restart the harness. Verify the connection with `codex mcp list`, `opencode
+mcp list`, or the harness MCP panel. See
+[Agent configuration](../guides/agent-configuration.md) for detailed setup and
+generic stdio clients.
 
 ## 4. Ingest a PDF, no key
 

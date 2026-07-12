@@ -127,7 +127,7 @@ Nothing to a source-grounded value in about five minutes, no API key:
 ```bash
 uv tool install anchor-kb
 anchor env create home --provider harness --yes   # no-key, no-egress data zone
-anchor install claude-desktop --env home          # or claude-code / cursor
+anchor install codex --env home                   # or claude-code / opencode
 # restart your harness, drag a PDF into the chat, ask it to ingest
 anchor serve                                       # http://127.0.0.1:8002
 ```
@@ -174,13 +174,15 @@ and the anchor skill in one step. See the
 [Claude Code plugin guide](./docs/guides/claude-plugin.md) for details.
 
 Alternatively, with the CLI already installed, register the local stdio
-server with:
+server for your harness:
 
 ```bash
-anchor install claude-code
+anchor install codex          # Codex CLI and IDE extension
+anchor install claude-code    # Claude Code
+anchor install opencode       # OpenCode
 ```
 
-Pick one of the two paths, not both.
+Claude Code users should pick either the plugin or CLI installer, not both.
 
 Open Claude Code inside a folder configured with `anchor init`. In any
 conversation, run `/mcp` and you should see `anchor` listed with its available
@@ -193,17 +195,17 @@ talk normally:
 
 Claude calls the MCP tools directly. Your browser tab on `localhost:8002/c/pump-analysis`, if open, sees nodes appear live via SSE. Multi-client real-time sync between agents and humans is the default.
 
-For Cursor:
+For Cursor or Claude Desktop:
 
 ```bash
 anchor install cursor
+anchor install claude-desktop
 ```
 
-`anchor install claude-code` / `cursor` wire the MCP server for the default
-environment. For Claude Desktop, or to serve a specific environment, use
-`anchor install claude-desktop --env <name>`; it writes a named entry, echoes
-the data zone before wiring, and is collision-safe. See the
-[agent setup guide](./docs/guides/agent-setup.md).
+Each installer wires the MCP server for the default environment. Pass
+`--env <name>` to select another environment. Codex, OpenCode, and Claude
+Desktop use named, collision-safe entries so multiple environments can coexist.
+See the [agent setup guide](./docs/guides/agent-setup.md).
 
 See the [agent configuration guide](./docs/guides/agent-configuration.md) for
 Codex, OpenCode, Cursor, Claude Code, and generic stdio examples.
@@ -419,7 +421,8 @@ anchor canvas list | create SLUG [--title TITLE] | placeholders SLUG | snapshot 
 
 # Agents (write a named MCP pointer for an environment)
 anchor install claude-desktop --env NAME [--name ENTRY] [--create]
-anchor install claude-code [--env NAME] | cursor [--env NAME] | print
+anchor install codex [--env NAME] | claude-code [--env NAME]
+anchor install opencode [--env NAME] | cursor [--env NAME] | print
 
 # Extensions (OIP producers) + misc
 anchor extensions list | info NAME | status | add MANIFEST | remove NAME | discover | schema
@@ -458,7 +461,7 @@ Discovery, in priority order:
 1. **Per-data-dir**: `<data-dir>/.oip/producers.d/*.json` (highest priority; bound to a specific workspace tree)
 2. **System-wide**: `~/.config/oip/producers.d/*.json` (any installer can drop a manifest here; visible to every OIP consumer on the machine)
 3. **Bundled**: compiled into this ANCHOR wheel (`anchor-pdfs`, `anchor-fmus`,
-   and `anchor-cad`; SysML tools are also exposed by the bundled MCP server)
+   `anchor-cad`, and the explicitly experimental `anchor-sysml`)
 
 For implementation status: today, an OIP-registered producer is *visible* in `extensions list` but ANCHOR doesn't yet *spawn* external producer MCP servers and proxy their tools. That's the next engineering lift. See the [OIP repo](https://github.com/Novia-RDI-Seafaring/OIP) for the spec and `EXTENSIONS.md` for ANCHOR's host-side roadmap.
 

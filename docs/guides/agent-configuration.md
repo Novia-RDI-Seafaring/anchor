@@ -141,8 +141,17 @@ project instruction in `AGENTS.md`.
 
 ## OpenCode
 
-OpenCode reads global configuration from `~/.config/opencode/opencode.json`.
-A repository can also provide a project-specific `opencode.json`.
+The bundled installer writes a named local MCP entry while preserving unrelated
+OpenCode settings:
+
+```bash
+anchor install opencode --env local
+opencode mcp list
+```
+
+OpenCode reads global configuration from `~/.config/opencode/opencode.json`
+and honors `OPENCODE_CONFIG` for a custom path. A repository can also provide a
+project-specific `opencode.json`. For manual setup, add:
 
 Add:
 
@@ -166,8 +175,8 @@ Add:
 }
 ```
 
-If an `opencode.json` file already exists, merge only the `mcp.anchor` entry
-into it. Verify the connection with:
+If an `opencode.json` file already exists and you configure it manually, merge
+only the `mcp.anchor` entry into it. Verify the connection with:
 
 ```bash
 opencode mcp list

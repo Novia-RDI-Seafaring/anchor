@@ -202,7 +202,7 @@ def demo(
     typer.echo(f"  Data dir         : {data_dir}")
     typer.echo("")
     typer.echo("  Register Anchor with your AI harness:")
-    typer.echo("    anchor install claude-code           # or `cursor`")
+    typer.echo("    anchor install codex                 # or claude-code / opencode")
     typer.echo("")
     typer.echo("  Then in your agent, paste:")
     typer.echo(

@@ -85,17 +85,18 @@ flips to the dashed-sky look. Pick `Clear placeholder` to revert.
 In a second terminal:
 
 ```bash
-anchor install claude-code           # or: claude-desktop, cursor
+anchor install codex                 # or: claude-code, opencode, cursor
 ```
 
 This writes an MCP entry pointing at your default environment, plus the skill.
 The server serves that environment; you name a project per call, or use its
 `default` project (where `anchor demo` lives). To serve a different
-environment, install with `anchor install claude-code --env <name>`.
+environment, pass `--env <name>` to the installer.
 
-Restart Claude Code. In any conversation, `/mcp` should now show `anchor` with
-its available tools. For Codex, Cursor, OpenCode, and generic stdio clients,
-see [Agent configuration](../guides/agent-configuration.md).
+Restart the harness and verify the MCP entry (`codex mcp list`, `opencode mcp
+list`, or Claude Code `/mcp`). It should show the named Anchor environment and
+its available tools. See [Agent configuration](../guides/agent-configuration.md)
+for every supported client.
 
 ANCHOR's MCP server also returns a short system-prompt block on connect
 that tells the agent how to think about the canvas: the substrates,
