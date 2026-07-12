@@ -42,7 +42,21 @@ Bundled CAD, FMU, and SysML startup sits behind `ExtensionHost`. The host
 returns the concrete runtime modules plus structured availability records, so
 `ProjectRuntime` does not need to know each extension's builder interface.
 Registered third-party OIP manifests remain external producer contracts and
-are never imported as Python code.
+are never imported as Python code. Registered producers stay disabled until a
+human creates their execution marker with `anchor extensions enable`.
+
+Enabled producers run behind a deep `ExternalProducerGateway` adapter module.
+Its `catalog / call / close` interface absorbs namespace policy, lazy MCP stdio
+startup, process supervision, failure isolation, routing, and shutdown. One
+gateway is cached per project data directory and rebuilt only when a manifest
+or authorization marker changes.
+
+![External OIP process gateway](../assets/diagrams/external-oip-process-gateway.svg)
+
+*The gateway preserves the process seam: ANCHOR passes a command and argument
+array to the MCP SDK without a shell, and each third-party producer owns a
+separate child process. A matching
+[PNG version](../assets/diagrams/external-oip-process-gateway.png) is available.*
 
 HTTP, MCP, and CLI entry points ask for that runtime instead of each
 building their own copies. This keeps adapter behaviour aligned: a
@@ -197,14 +211,19 @@ Extension discovery and bundled runtime startup live in the
 `anchor.adapters.extension_host` module. It reads bundled extension manifests,
 exposes the public extension list and skill metadata, and starts bundled CAD,
 FMU, and SysML modules without making `ProjectRuntime` know each builder
-interface. Manifest discovery remains separate from third-party code loading:
-a registered OIP manifest says what an external producer offers, but does not
-authorize ANCHOR to import or execute arbitrary package code.
+interface. Manifest discovery remains separate from third-party execution.
+Registration says what an external producer offers; a human-controlled
+`.enabled` marker authorizes only its declared `mcp-stdio` process command.
+The external gateway lives under `anchor.adapters.external_oip` because MCP is
+a transport dependency forbidden from `anchor.infra` and `anchor.core`.
 
 Bundled startup diagnostics use one shared payload across all adapters:
 `anchor extensions status`, `GET /api/extensions/status`, and the MCP tool
 `anchor_extension_status`. Each reports the same sorted records, availability
 counts, failure reason, and error type.
+External producer diagnostics join the same payload after catalog probing.
+Catalog and call operations also have CLI, HTTP, and MCP parity. The only
+intentional exception is enable/disable, which stays human-only in the CLI.
 
 ---
 

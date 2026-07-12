@@ -8,21 +8,29 @@ this document describes the contract every extension follows so future
 extensions — transcription, code regions, web pages, your own — can ship
 either in-tree or as separate `anchor-canvas-*` packages.
 
-> **Implementation status:** This is a design contract, not a promise that
-> third-party extension loading is complete. The current wheel wires its
-> bundled implementations from `src/anchor/extensions/` and can list or
-> manage OIP manifests with `anchor extensions ...`. It does not yet import
-> third-party Python/JavaScript bundles or proxy registered external producer
-> servers.
+> **Implementation status:** Bundled implementations run in-process through
+> `ExtensionHost`. Registered external `mcp-stdio` producers run through the
+> process-isolated External Producer Gateway after a human explicitly enables
+> them. ANCHOR never imports third-party package code.
 
 Bundled manifest discovery and CAD/FMU/SysML runtime startup are composed by
 `anchor.adapters.extension_host.ExtensionHost`. This is intentionally narrower
-than third-party loading: an OIP manifest is data, not permission to import
-code into the ANCHOR process.
+than third-party loading. A manifest is discoverable data; an adjacent
+`.enabled` marker is the separate permission to execute its declared command.
 
 Runtime diagnostics have adapter parity: `anchor extensions status`,
 `GET /api/extensions/status`, and MCP `anchor_extension_status` return the
 same normalized availability records.
+
+External catalog and call operations also have parity:
+
+- CLI: `anchor extensions tools` and `anchor extensions call namespace.tool`
+- HTTP: `GET /api/extensions/external/tools` and
+  `POST /api/extensions/external/call/{namespace.tool}`
+- MCP: dynamically advertised `namespace.tool` definitions
+
+Enable and disable are intentionally CLI-only because the HTTP server is
+unauthenticated and an agent must not authorize executable code by itself.
 
 ---
 
@@ -267,6 +275,7 @@ function, it doesn't belong in core. Canvas core only knows registries.
 - Canvas core's domain model (Workspace, Node, Edge, reducer, events)
 - `NodeTypeRegistry` for runtime node-type registration
 - HTTP/MCP/CLI/SSE adapter shape
+- Process-isolated external `mcp-stdio` producer catalog and call gateway
 
 **In flux (will stabilise as we extract the canvas primitive):**
 - The `AnchorExtension` Protocol class itself (today: implicit in how PDF
@@ -279,9 +288,9 @@ function, it doesn't belong in core. Canvas core only knows registries.
 - Out-of-tree extension discovery via Python entry points
 - `anchor.toml` per-project extension pinning
 - `ANCHOR_EXTENSIONS_PATH` for editable-install paths
-- Automatic spawning/proxying of registered external producer MCP servers
 
-If you're writing an extension *today*, follow the bundled implementations
-under `src/anchor/extensions/` and expect integration work in the application
-wiring. The contract above is the target shape; a stable third-party loading
-surface is a follow-up refactor.
+If you are writing an external extension today, publish an OIP manifest with
+`invocation.kind = "mcp-stdio"`, a command, a string argument array, and a
+portable `tools_namespace`. Register it, review it, then enable execution.
+Remote transports, manifest-provided environment variables, custom working
+directories, and in-process imports remain unsupported.

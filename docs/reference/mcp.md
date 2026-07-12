@@ -1,8 +1,9 @@
 # MCP tools
 
 `anchor-mcp` exposes ANCHOR over MCP stdio for local agent harnesses. The
-tools available at runtime include canvas operations and bundled extension
-tools; optional FMU behavior depends on installed/runtime configuration.
+tools available at runtime include canvas operations, bundled extension tools,
+and enabled external OIP tools. Optional FMU behavior depends on installed
+runtime configuration.
 
 ## Connect an agent harness
 
@@ -47,6 +48,18 @@ and generic stdio client examples.
 | CAD | `inspect`, `list_models`, `set_parameter` |
 | SysML | `sysml_render`, `sysml_export` |
 | FMU | Inspection and simulation tools when enabled by the bundled FMU extension. |
+| External OIP | Enabled producer tools advertised dynamically as `tools_namespace.tool`. |
+
+## External producer tools
+
+An MCP agent cannot enable executable code. A human first registers and enables
+the producer through `anchor extensions add` and `anchor extensions enable`.
+The next MCP `tools/list` notices the changed manifest fingerprint, starts the
+producer lazily, and advertises its namespaced tools. Calls preserve native MCP
+text, image, resource, and structured content.
+
+Use `anchor_extension_status` to see disabled, unavailable, and active external
+producer diagnostics alongside bundled extensions.
 
 ## Status check
 

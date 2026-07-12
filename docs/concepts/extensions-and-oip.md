@@ -168,9 +168,10 @@ When `anchor extensions list` runs, it walks (in order):
 The same producer can appear in more than one place; the most specific
 location wins (project > system > bundled).
 
-A producer becomes discoverable by writing one file. Removing it is
-deleting one file. There is no registry, no plugin manager, no
-"please restart ANCHOR."
+A producer becomes discoverable by writing one manifest. It does not become
+executable until a human creates the adjacent `.enabled` marker through the
+CLI. Removing or changing either file updates a running gateway on its next
+catalog or call; no server restart is required.
 
 `anchor extensions add` accepts exactly two registration scopes:
 `system` and `project`. The manifest's `producer.name` becomes the
@@ -178,6 +179,31 @@ registration filename, so ANCHOR requires a portable file stem of 1 to
 128 letters, digits, dots, underscores, or hyphens, with no leading dot.
 Malformed manifests are skipped with a diagnostic, and unsafe names are
 rejected before ANCHOR creates or removes a file.
+
+### Authorize and call an external producer
+
+```bash
+anchor extensions add ./transcribe.json --scope project --data-dir ./.anchor_data
+anchor extensions enable anchor-transcribe --scope project --data-dir ./.anchor_data
+anchor extensions tools --data-dir ./.anchor_data
+anchor extensions call transcribe.extract --args '{"path": "audio.wav"}' \
+  --data-dir ./.anchor_data
+```
+
+Registration is intentionally not execution permission. Enable/disable is
+CLI-only, so an MCP agent or caller of the unauthenticated HTTP adapter cannot
+authorize a command. Once enabled, catalog and call have adapter parity:
+
+| Adapter | Catalog | Call |
+| --- | --- | --- |
+| CLI | `anchor extensions tools` | `anchor extensions call namespace.tool` |
+| HTTP | `GET /api/extensions/external/tools` | `POST /api/extensions/external/call/{namespace.tool}` |
+| MCP | normal `tools/list` | normal `tools/call` using `namespace.tool` |
+
+Only `mcp-stdio` is executable. ANCHOR invokes the command and argument array
+without a shell, inherits only the MCP SDK safe environment, starts lazily,
+and closes the process tree with the owning adapter. One failed producer does
+not hide working producers.
 
 ---
 
@@ -204,10 +230,10 @@ A producer goes through three states as it matures:
 2. **Bundled extension.** Lives in `src/anchor/extensions/`,
    ships in the same wheel, but is structurally separated and
    reachable through OIP. This is where the bundled implementations live today.
-3. **External package (proposed execution path).** Its own repo,
+3. **External package.** Its own repo,
    `pip install your-tool`, drops a manifest into
-   `~/.config/oip/producers.d/` on install. ANCHOR can list that manifest
-   today; spawning and proxying its server remains follow-up work.
+   `~/.config/oip/producers.d/` on install. A human reviews and enables it;
+   ANCHOR then proxies its namespaced MCP tools from an isolated process.
 
 The ladder is one-directional: extensions can move outward but can't
 move inward without losing the property of being independent. The

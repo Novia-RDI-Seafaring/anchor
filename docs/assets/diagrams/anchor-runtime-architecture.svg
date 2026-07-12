@@ -219,7 +219,7 @@
   <g id="external-oip" transform="translate(1068 898)">
     <rect class="box-purple" x="0" y="0" width="392" height="82" rx="22"/>
     <text class="text caps" x="24" y="34">External OIP producers</text>
-    <text class="text body" x="24" y="62" font-weight="800">Manifest-discovered, isolated</text>
+    <text class="text body" x="24" y="62" font-weight="800">Enabled, MCP-proxied, isolated</text>
   </g>
 
   <g id="legend" transform="translate(74 900)">

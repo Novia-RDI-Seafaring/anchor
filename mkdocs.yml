@@ -119,6 +119,7 @@ nav:
     - Projects: concepts/projects.md
     - Agent Experience (AX): concepts/agent-experience.md
     - Architecture: concepts/architecture.md
+    - External producer decision: adr/0001-external-oip-process-gateway.md
     - Data and events: concepts/data-and-events.md
     - Extensions and OIP: concepts/extensions-and-oip.md
     - On-disk substrate: concepts/on-disk-substrate.md

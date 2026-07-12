@@ -68,7 +68,11 @@ anchor canvas --help
 | `anchor sysml` | Render or export SysML text. |
 | `anchor fmu` | Inspect and simulate FMUs when the optional runtime is installed. |
 | `anchor cad` | Inspect supported CAD models and alter parameters. |
-| `anchor extensions` | List and inspect OIP producer manifests. `anchor extensions status` reports bundled runtime availability and startup errors. |
+| `anchor extensions list / info / status` | Inspect OIP manifests and bundled/external runtime diagnostics. |
+| `anchor extensions add / remove` | Register or unregister a manifest. Registration alone does not execute it. |
+| `anchor extensions enable / disable` | Human-only authorization for a registered external producer command. |
+| `anchor extensions tools` | Start enabled producers and print their namespaced tool catalog. |
+| `anchor extensions call namespace.tool --args JSON` | Call an enabled external producer through the isolated gateway. |
 | `anchor install <harness>` | Register ANCHOR's MCP server with Codex, Claude Code, OpenCode, Claude Desktop, or Cursor. Supported targets may also install agent guidance. |
 
 Run `anchor <group> --help` for option-level detail.

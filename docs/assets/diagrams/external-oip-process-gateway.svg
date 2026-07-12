@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1536" height="1024" viewBox="0 0 1536 1024" role="img" aria-labelledby="title desc">
+  <title id="title">ANCHOR external OIP process gateway</title>
+  <desc id="desc">Black and white architecture diagram showing human execution authorization, adapter parity, the deep external producer gateway, MCP stdio process isolation, namespaced tools, and producer lifecycle.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#111111"/>
+    </marker>
+    <style>
+      .title { font: 700 38px Arial, sans-serif; fill: #111111; }
+      .heading { font: 700 24px Arial, sans-serif; fill: #111111; }
+      .label { font: 700 19px Arial, sans-serif; fill: #111111; }
+      .body { font: 16px Arial, sans-serif; fill: #333333; }
+      .small { font: 14px Arial, sans-serif; fill: #444444; }
+      .box { fill: #ffffff; stroke: #111111; stroke-width: 2; rx: 4; }
+      .soft { fill: #eeeeee; stroke: #111111; stroke-width: 2; rx: 4; }
+      .deep { fill: #dddddd; stroke: #111111; stroke-width: 5; rx: 4; }
+      .dash { fill: #ffffff; stroke: #555555; stroke-width: 2; stroke-dasharray: 8 7; rx: 4; }
+      .wire { fill: none; stroke: #111111; stroke-width: 3; marker-end: url(#arrow); }
+      .thin { fill: none; stroke: #555555; stroke-width: 2; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect width="1536" height="1024" fill="#ffffff"/>
+  <text class="title" x="72" y="72">External OIP Producer Gateway</text>
+  <text class="body" x="72" y="106">Registered is discoverable. Enabled is executable. Third-party code stays out of the ANCHOR process.</text>
+
+  <rect class="soft" x="72" y="154" width="310" height="178"/>
+  <text class="heading" x="98" y="194">Human authorization</text>
+  <text class="label" x="98" y="236">anchor extensions add</text>
+  <text class="small" x="98" y="262">stores producer.json</text>
+  <text class="label" x="98" y="302">anchor extensions enable</text>
+  <text class="small" x="98" y="328">creates producer.enabled</text>
+
+  <rect class="box" x="458" y="154" width="300" height="178"/>
+  <text class="heading" x="484" y="194">Discovery policy</text>
+  <text class="body" x="484" y="232">project overrides system</text>
+  <text class="body" x="484" y="262">registration fingerprint</text>
+  <text class="body" x="484" y="292">enabled marker required</text>
+  <text class="small" x="484" y="320">no restart after file changes</text>
+
+  <path class="wire" d="M 382 244 L 450 244"/>
+
+  <rect class="deep" x="840" y="132" width="624" height="426"/>
+  <text class="heading" x="874" y="178">ExternalProducerGateway</text>
+  <text class="small" x="874" y="208">deep adapter module</text>
+
+  <rect class="box" x="878" y="240" width="166" height="94"/>
+  <text class="label" x="908" y="278">catalog()</text>
+  <text class="small" x="896" y="308">namespaced tools</text>
+
+  <rect class="box" x="1068" y="240" width="166" height="94"/>
+  <text class="label" x="1110" y="278">call()</text>
+  <text class="small" x="1091" y="308">native MCP result</text>
+
+  <rect class="box" x="1258" y="240" width="166" height="94"/>
+  <text class="label" x="1299" y="278">close()</text>
+  <text class="small" x="1283" y="308">all child processes</text>
+
+  <rect class="soft" x="878" y="372" width="546" height="140"/>
+  <text class="label" x="908" y="410">Gateway implementation absorbs</text>
+  <text class="body" x="908" y="444">manifest validation, namespace collisions, lazy clients</text>
+  <text class="body" x="908" y="474">failure isolation, catalog cache, routing, diagnostics</text>
+  <text class="small" x="908" y="502">one interface, one place to test</text>
+
+  <path class="wire" d="M 758 244 L 832 244"/>
+
+  <rect class="box" x="72" y="424" width="686" height="134"/>
+  <text class="heading" x="98" y="464">Adapter parity</text>
+  <text class="label" x="98" y="510">CLI</text>
+  <text class="body" x="148" y="510">tools / call</text>
+  <text class="label" x="316" y="510">HTTP</text>
+  <text class="body" x="382" y="510">/external/tools / call</text>
+  <text class="label" x="622" y="510">MCP</text>
+  <text class="body" x="680" y="510">namespace.tool</text>
+
+  <path class="wire" d="M 758 490 L 832 490"/>
+
+  <rect class="dash" x="72" y="650" width="1392" height="282"/>
+  <text class="heading" x="98" y="692">Process isolation seam</text>
+  <text class="small" x="98" y="720">No shell. No import. Safe inherited environment only.</text>
+
+  <rect class="soft" x="132" y="764" width="360" height="112"/>
+  <text class="label" x="162" y="804">MCP stdio adapter</text>
+  <text class="body" x="162" y="836">one worker owns startup to shutdown</text>
+  <text class="small" x="162" y="864">timeouts and graceful process-tree close</text>
+
+  <rect class="box" x="636" y="764" width="302" height="112"/>
+  <text class="label" x="676" y="804">Producer process A</text>
+  <text class="body" x="676" y="836">namespace: transcribe</text>
+  <text class="small" x="676" y="864">transcribe.extract</text>
+
+  <rect class="box" x="1076" y="764" width="302" height="112"/>
+  <text class="label" x="1116" y="804">Producer process B</text>
+  <text class="body" x="1116" y="836">namespace: vendor_cad</text>
+  <text class="small" x="1116" y="864">vendor_cad.inspect</text>
+
+  <path class="wire" d="M 492 820 L 628 820"/>
+  <path class="wire" d="M 492 844 L 560 844 L 560 906 L 1010 906 L 1010 820 L 1068 820"/>
+  <path class="thin" d="M 1150 558 L 1150 642 L 312 642 L 312 756"/>
+
+  <text class="small" x="72" y="982">Lifecycle: discover - authorize - lazy start - catalog/call - close on adapter shutdown</text>
+</svg>

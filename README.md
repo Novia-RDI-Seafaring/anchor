@@ -450,7 +450,7 @@ The CLI surfaces this:
 
 ```bash
 anchor extensions list                        # what producers can this ANCHOR see?
-anchor extensions status                      # which bundled runtimes started?
+anchor extensions status                      # bundled and external runtime diagnostics
 anchor extensions discover                    # where does it look for manifests?
 anchor extensions add <path-to-manifest.json> # register a new producer (system-wide)
 anchor extensions schema                      # print a starter manifest to edit
@@ -463,7 +463,23 @@ Discovery, in priority order:
 3. **Bundled**: compiled into this ANCHOR wheel (`anchor-pdfs`, `anchor-fmus`,
    `anchor-cad`, and the explicitly experimental `anchor-sysml`)
 
-For implementation status: today, an OIP-registered producer is *visible* in `extensions list` but ANCHOR doesn't yet *spawn* external producer MCP servers and proxy their tools. That's the next engineering lift. See the [OIP repo](https://github.com/Novia-RDI-Seafaring/OIP) for the spec and `EXTENSIONS.md` for ANCHOR's host-side roadmap.
+External producers are discoverable when registered and executable only after a
+human enables them:
+
+```bash
+anchor extensions add ./producer.json --scope project --data-dir ./.anchor_data
+anchor extensions enable my-producer --scope project --data-dir ./.anchor_data
+anchor extensions tools --data-dir ./.anchor_data
+anchor extensions call my_namespace.my_tool --args '{"value": 42}' \
+  --data-dir ./.anchor_data
+```
+
+Enabled `mcp-stdio` producers run in isolated child processes. ANCHOR does not
+use a shell or import their package code. Their tools appear in `anchor-mcp` as
+`<tools_namespace>.<tool>`, and equivalent catalog/call operations are
+available through CLI and HTTP. See [Extensions and OIP](./docs/concepts/extensions-and-oip.md),
+the [execution decision](./docs/adr/0001-external-oip-process-gateway.md), and
+the [OIP repository](https://github.com/Novia-RDI-Seafaring/OIP).
 
 ---
 
