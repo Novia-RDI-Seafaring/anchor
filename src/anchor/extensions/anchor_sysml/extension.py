@@ -34,6 +34,7 @@ def manifest(data_dir: Path | None = None) -> dict[str, Any]:
             "homepage": "https://github.com/Novia-RDI-Seafaring/anchor",
         },
         "kind": "bundled-in-tree",
+        "maturity": "experimental",
         "data_dir": str(data_dir) if data_dir else None,
         "produces": {
             "source_kinds": [

@@ -20,6 +20,8 @@ def test_list_shows_bundled_pdf_producer(tmp_path, monkeypatch):
     result = _runner().invoke(extensions_app, ["list", "--data-dir", str(tmp_path / "data")])
     assert result.exit_code == 0, result.output
     assert "anchor-pdfs" in result.output
+    assert "anchor-sysml" in result.output
+    assert "experimental" in result.output
     assert "bundled" in result.output
 
 

@@ -73,7 +73,11 @@ def extensions_list(
             p = m.get("producer", {})
             tools_ns = m.get("invocation", {}).get("tools_namespace", "?")
             kinds = m.get("produces", {}).get("source_kinds", [])
-            typer.echo(f"  {p.get('name', '?'):<24} v{p.get('version', '?'):<8}  ns={tools_ns:<12} sources={kinds}")
+            maturity = m.get("maturity", "stable")
+            typer.echo(
+                f"  {p.get('name', '?'):<24} v{p.get('version', '?'):<8}  "
+                f"ns={tools_ns:<12} maturity={maturity:<12} sources={kinds}"
+            )
 
     # Collision detection
     namespaces: dict[str, list[str]] = {}

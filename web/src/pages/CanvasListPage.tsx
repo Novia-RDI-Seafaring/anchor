@@ -17,6 +17,7 @@ import { canvases, type WorkspaceListEntry } from "@/api/canvases";
 import { refreshWorkspaces, useWorkspacesList } from "@/canvas/useWorkspacesList";
 
 import { CanvasTree } from "./CanvasTree";
+import { ExtensionStatusPanel } from "./ExtensionStatusPanel";
 
 export function CanvasListPage() {
   const [slug, setSlug] = useState("");
@@ -71,6 +72,8 @@ export function CanvasListPage() {
         <code className="rounded bg-neutral-100 px-1 text-[12px]">canvas</code>
         {" "}nodes — drop one onto a parent to grow the tree.
       </p>
+
+      <ExtensionStatusPanel />
 
       <div className="mt-8 flex gap-2">
         <input

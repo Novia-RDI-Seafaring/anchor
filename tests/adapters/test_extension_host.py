@@ -38,8 +38,9 @@ def _manifest(name: str) -> dict[str, object]:
 
 def test_bundled_manifests_match_current_public_discovery():
     names = [m["producer"]["name"] for m in bundled_manifests()]
-    assert names == ["anchor-pdfs", "anchor-fmus", "anchor-cad"]
-    assert "anchor-sysml" not in names
+    assert names == ["anchor-pdfs", "anchor-fmus", "anchor-cad", "anchor-sysml"]
+    sysml = bundled_manifests()[-1]
+    assert sysml["maturity"] == "experimental"
 
 
 def test_extension_host_starts_bundled_runtimes(tmp_path, monkeypatch):
@@ -164,6 +165,7 @@ def test_discover_manifests_groups_bundled_system_and_project(tmp_path, monkeypa
         "anchor-pdfs",
         "anchor-fmus",
         "anchor-cad",
+        "anchor-sysml",
     ]
 
 
