@@ -91,11 +91,11 @@ def test_non_accelerator_error_is_not_retried(monkeypatch):
 
 
 class _Box:
-    def __init__(self, l, t, r, b):
-        self.l = l
-        self.t = t
-        self.r = r
-        self.b = b
+    def __init__(self, left, top, right, bottom):
+        self.l = left
+        self.t = top
+        self.r = right
+        self.b = bottom
 
     def to_bottom_left_origin(self, page_height):
         return _Box(self.l, page_height - self.t, self.r, page_height - self.b)

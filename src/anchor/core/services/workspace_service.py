@@ -5,6 +5,7 @@ against current state, applies events, persists, and publishes.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any, Literal, Protocol
 
@@ -36,16 +37,20 @@ from anchor.core.workspace.align import (
     Anchor,
     Axis,
     SelectedNode,
+)
+from anchor.core.workspace.align import (
     align_nodes as _align_nodes_pure,
+)
+from anchor.core.workspace.align import (
     distribute_nodes as _distribute_nodes_pure,
 )
+from anchor.core.workspace.builtin_node_types import builtin_node_type_registry
 from anchor.core.workspace.layout import (
     EdgeLike,
     NodeLike,
     find_free_position,
     organize_subtree,
 )
-from anchor.core.workspace.builtin_node_types import builtin_node_type_registry
 from anchor.core.workspace.node_types import NodeTypeRegistry
 from anchor.core.workspace.reducer import apply, cascade_events_for_remove
 from anchor.core.workspace.references import (
@@ -665,7 +670,7 @@ class WorkspaceService:
         self,
         slug: str,
         ids: list[str],
-        compute: "callable[[list[SelectedNode]], dict[str, tuple[float, float]]]",  # noqa: F821
+        compute: Callable[[list[SelectedNode]], dict[str, tuple[float, float]]],
         *,
         op_label: str,
         min_count: int,

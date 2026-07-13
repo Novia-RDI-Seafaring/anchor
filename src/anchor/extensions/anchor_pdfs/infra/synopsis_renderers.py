@@ -8,13 +8,12 @@ crop-path resolver and return ``bytes`` (PDF) or ``str`` (Marp).
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Awaitable, Callable
 
 import fitz
 
 from anchor.extensions.anchor_pdfs.core.synopsis import SynopsisData
-
 
 CropPathResolver = Callable[[str, str], Awaitable[Path | None]]
 """(slug, rel_path) → absolute path to the crop image. Usually

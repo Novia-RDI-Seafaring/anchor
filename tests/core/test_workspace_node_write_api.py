@@ -5,7 +5,6 @@ import asyncio
 
 from tests.fixtures.services import make_in_memory_services
 
-
 # ── #192: update-node --data merges, not replaces ───────────────────────────
 
 def test_update_node_data_merges_and_preserves_source_ref():
