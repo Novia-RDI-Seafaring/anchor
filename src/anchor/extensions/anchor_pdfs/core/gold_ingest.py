@@ -11,6 +11,7 @@ from anchor.extensions.anchor_pdfs.core.ingest.validation import validate_region
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.ports.region_extractor import RegionExtractor
 from anchor.extensions.anchor_pdfs.core.silver import (
+    region_content_from_items,
     snap_to_docling_items,
     table_bbox_from_items,
     table_cells_from_items,
@@ -209,6 +210,9 @@ class GoldIngest:
                 snap_bbox, item_indexes = snap_to_docling_items(docling, page, bbox)
                 if snap_bbox:
                     region = {**region, "bbox": snap_bbox}
+                    content = region_content_from_items(items, item_indexes)
+                    if content:
+                        region = {**region, "content": content}
                     cells = table_cells_from_items(
                         items,
                         item_indexes,

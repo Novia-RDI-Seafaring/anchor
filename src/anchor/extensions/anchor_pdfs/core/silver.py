@@ -276,7 +276,7 @@ def _render_page_md(items: list[dict[str, Any]]) -> str:
             lines.append(f"_[figure: {cap}]_")
             lines.append("")
         elif label == "table":
-            md = _render_table_md(it.get("cells"))
+            md = render_table_cells_md(it.get("cells"))
             if md:
                 lines.append(md)
                 lines.append("")
@@ -286,11 +286,13 @@ def _render_page_md(items: list[dict[str, Any]]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _render_table_md(cells: Any) -> str:
+def render_table_cells_md(cells: Any) -> str:
+    """Render table cells as compact markdown while preserving cell order."""
     if not isinstance(cells, list) or not cells:
         return ""
     grid: dict[tuple[int, int], str] = {}
-    rows = cols = 0
+    row_indexes: set[int] = set()
+    column_indexes: set[int] = set()
     for cell in cells:
         if not isinstance(cell, dict):
             continue
@@ -310,16 +312,18 @@ def _render_table_md(cells: Any) -> str:
             grid[(r, c)] = f"{existing} {text}"
         elif not existing:
             grid[(r, c)] = text
-        rows = max(rows, r + 1)
-        cols = max(cols, c + 1)
-    if rows == 0 or cols == 0:
+        row_indexes.add(r)
+        column_indexes.add(c)
+    rows = sorted(row_indexes)
+    columns = sorted(column_indexes)
+    if not rows or not columns:
         return ""
 
     def row_md(r: int) -> str:
-        return "| " + " | ".join(grid.get((r, c), "") for c in range(cols)) + " |"
+        return "| " + " | ".join(grid.get((r, c), "") for c in columns) + " |"
 
-    out = [row_md(0), "| " + " | ".join(["---"] * cols) + " |"]
-    for r in range(1, rows):
+    out = [row_md(rows[0]), "| " + " | ".join(["---"] * len(columns)) + " |"]
+    for r in rows[1:]:
         out.append(row_md(r))
     return "\n".join(out)
 
@@ -378,6 +382,44 @@ def build_pages_meta(docling: dict[str, Any]) -> dict[str, Any]:
 # page image and raw markdown for the full content; candidate text is a
 # grouping aid, not the content channel.
 _CANDIDATE_TEXT_MAX = 800
+
+# Cap server-derived region content so gold and embedding payloads remain
+# bounded on dense tables.
+_REGION_CONTENT_MAX = 6000
+
+
+def region_content_from_items(
+    items: Any,
+    indexes: list[int] | None = None,
+) -> str:
+    """Render selected Docling items as trusted gold-region content."""
+    if not isinstance(items, list):
+        return ""
+    selected = items
+    if indexes is not None:
+        selected = [items[index] for index in indexes if 0 <= index < len(items)]
+    if not selected:
+        return ""
+    content = _render_page_md(
+        [item for item in selected if isinstance(item, dict)]
+    ).strip()
+    return content[:_REGION_CONTENT_MAX].rstrip()
+
+
+def region_search_text(region: dict[str, Any]) -> str:
+    """Combine unique region fields for embedding and retrieval."""
+    parts: list[str] = []
+    seen: set[str] = set()
+    for key in ("title", "description", "content"):
+        value = region.get(key)
+        if not isinstance(value, str):
+            continue
+        text = value.strip()
+        normalized = " ".join(text.split()).casefold()
+        if text and normalized not in seen:
+            seen.add(normalized)
+            parts.append(text)
+    return "\n\n".join(parts)
 
 
 def build_page_candidates(docling: dict[str, Any]) -> dict[int, list[dict[str, Any]]]:

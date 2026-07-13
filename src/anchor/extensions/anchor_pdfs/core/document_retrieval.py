@@ -10,6 +10,7 @@ from anchor.extensions.anchor_pdfs.core.events import IngestProgress
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.ports.embedder import Embedder
 from anchor.extensions.anchor_pdfs.core.search import search as search_topk
+from anchor.extensions.anchor_pdfs.core.silver import region_search_text
 
 Publish = Callable[[Any, str | None], Awaitable[None]]
 
@@ -55,12 +56,9 @@ class DocumentRetrieval:
                 region_id = region.get("id")
                 if not region_id:
                     continue
-                title = (region.get("title") or "").strip()
-                description = (region.get("description") or "").strip()
-                if not title and not description:
-                    continue
-                text = f"{title}. {description}".strip(". ").strip()
-                items.append((page, region_id, text))
+                text = region_search_text(region)
+                if text:
+                    items.append((page, region_id, text))
 
         if not items:
             return 0
