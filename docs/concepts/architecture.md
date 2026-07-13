@@ -174,9 +174,12 @@ description, tags, optional cells, and server-derived `content`.
 
 That `content` is rendered by ANCHOR from the Docling items or table
 cells selected by the region geometry. It is not submitted by the
-agent. Search embeds region title, description, and content. In normal
-use an agent should search gold regions and call `get_gold_regions` for
-the matching region. Loading the whole page markdown remains a fallback
+agent. Harness ingestion can select a logical sub-table with
+`table_slice {candidate_id, rows, columns?}`. ANCHOR persists only those
+cells and computes their bbox union, so adjacent tables no longer share one
+coarse region. Search embeds region title, description, and content. In
+normal use an agent should search gold regions and call `get_gold_regions`
+for the matching region. Loading the whole page markdown remains a fallback
 for ambiguous or missing region content.
 
 ---

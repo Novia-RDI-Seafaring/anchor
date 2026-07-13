@@ -14,11 +14,10 @@ through a transactional work-order protocol:
     ingest_abort    -> discard staging
 
 The server is the trust boundary: submissions pass a closed schema, and
-region geometry is named by grouping candidate item ids - the server
-computes `bbox = union(member bboxes)` in BOTTOMLEFT space, so the agent
-never emits free-form provenance coordinates. The `approx_bbox` escape
-hatch (for visuals docling missed) is snapped to docling items and
-stamped `geometry: snapped|coarse` so consumers see the difference.
+region geometry is named by grouping candidate item ids or selecting table
+cells. The server computes BOTTOMLEFT provenance coordinates. The
+`approx_bbox` escape hatch (for visuals docling missed) is snapped to docling
+items and stamped `geometry: snapped|coarse` so consumers see the difference.
 
 Pure orchestration over ports; no I/O, no framework imports.
 """
@@ -40,10 +39,9 @@ from anchor.extensions.anchor_pdfs.core.events import (
     DocPolished,
     DocSilvered,
 )
-from anchor.extensions.anchor_pdfs.core.ingest.validation import (
-    REGION_KINDS,
-    bbox_error,
-    validate_region,
+from anchor.extensions.anchor_pdfs.core.ingest.region_resolution import (
+    PAGE_INSTRUCTIONS,
+    resolve_regions,
 )
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.ports.embedder import Embedder
@@ -55,46 +53,13 @@ from anchor.extensions.anchor_pdfs.core.silver import (
     build_page_candidates,
     build_pages_meta,
     needs_polish,
-    region_content_from_items,
     region_search_text,
     render_pages_md,
-    snap_to_docling_items,
-    table_bbox_from_items,
-    table_cells_from_items,
-    union_bbox,
 )
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 
 MAX_POLISHED_MD_LEN = 400_000
-
-#: Fields a submitted region may carry. The schema is closed: anything
-#: else is rejected so drift between agent and server surfaces loudly.
-_SUBMIT_REGION_FIELDS = frozenset({
-    "id", "kind", "title", "description",
-    "member_item_ids", "approx_bbox", "tags", "entities",
-})
-
-#: Server-owned per-page task statement, returned on every work item so
-#: the skill only has to teach the loop shape, not the task itself.
-PAGE_INSTRUCTIONS = (
-    "Read the page image (image.path or base64) alongside raw_md. "
-    "1) If needs_polish, rewrite raw_md into faithful markdown for this page: "
-    "fix reading order, reconstruct tables, transcribe values exactly; never "
-    "invent content that is not on the page. "
-    "2) List the meaningful regions: for each, pick kind "
-    f"({'|'.join(REGION_KINDS)}), a short title, a 1-2 sentence description, "
-    "and name its geometry by listing the candidate item ids it covers in "
-    "member_item_ids (the server computes the bbox from those). Only when no "
-    "candidate covers a visual, send approx_bbox [left, top, right, bottom] "
-    "in BOTTOMLEFT page coordinates instead. Optional: tags[], entities[] "
-    "(product/model identifiers). For table/spec_block regions, split visual "
-    "sub-tables, keep exact key: value facts in the description, and repeat "
-    "duplicate values for each key instead of deduplicating them. "
-    "3) Submit with ingest_submit_page; on a rejection, repair the named "
-    "fields and resubmit (resubmitting a page replaces it)."
-)
-
 
 def _err(index: int, field: str, message: str) -> dict[str, Any]:
     return {"region_index": index, "field": field, "message": message}
@@ -370,7 +335,7 @@ class IngestSessionService:
 
         slug = session["slug"]
         candidates = await self.doc_store.get_page_candidates(slug, page) or []
-        resolved, errors = self._resolve_regions(regions, page=page, candidates=candidates)
+        resolved, errors = resolve_regions(regions, page=page, candidates=candidates)
 
         if polished_md is not None:
             if not isinstance(polished_md, str) or not polished_md.strip():
@@ -401,145 +366,6 @@ class IngestSessionService:
             "region_count": len(resolved),
             "remaining_pages": self._remaining_pages(session),
         }
-
-    def _resolve_regions(
-        self,
-        regions: Any,
-        *,
-        page: int,
-        candidates: list[dict[str, Any]],
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """Closed-schema check + server-side geometry resolution."""
-        if not isinstance(regions, list):
-            return [], [_err(0, "regions", "regions must be a list")]
-        by_id = {
-            c.get("id"): c for c in candidates
-            if isinstance(c, dict) and isinstance(c.get("id"), str)
-        }
-        # snap_to_docling_items expects a docling-shaped dict; the persisted
-        # candidates carry the same (label, bbox) payload, scoped to a page.
-        docling_view = {"items": [{**c, "page": page} for c in by_id.values()]}
-        resolved: list[dict[str, Any]] = []
-        errors: list[dict[str, Any]] = []
-
-        for i, raw in enumerate(regions):
-            if not isinstance(raw, dict):
-                errors.append(_err(i, "", "region must be an object"))
-                continue
-            unknown = sorted(set(raw) - _SUBMIT_REGION_FIELDS)
-            if unknown:
-                errors.append(_err(
-                    i, ",".join(unknown),
-                    f"unknown fields {unknown}; allowed: {sorted(_SUBMIT_REGION_FIELDS)}",
-                ))
-                continue
-
-            # Geometry resolution. On a geometry error we still run the
-            # shape checks below (with a placeholder bbox) so the agent
-            # learns about every problem in one verdict, not one per
-            # resubmission round trip.
-            member_ids = raw.get("member_item_ids")
-            approx = raw.get("approx_bbox")
-            bbox: list[float] = []
-            geometry = ""
-            cells: list[dict[str, Any]] = []
-            content = ""
-            if isinstance(member_ids, list) and member_ids:
-                missing = [m for m in member_ids if m not in by_id]
-                if missing:
-                    errors.append(_err(
-                        i, "member_item_ids",
-                        f"unknown candidate ids on page {page}: {missing}",
-                    ))
-                else:
-                    selected_items = [by_id[m] for m in member_ids]
-                    bbox = union_bbox([
-                        list(item.get("bbox") or []) for item in selected_items
-                    ])
-                    if bbox:
-                        geometry = "members"
-                        cells = table_cells_from_items(selected_items)
-                        content = region_content_from_items(selected_items)
-                    else:
-                        errors.append(_err(
-                            i, "member_item_ids",
-                            "named candidates have no usable bboxes; send approx_bbox instead",
-                        ))
-            elif approx is not None:
-                msg = bbox_error(approx)
-                if msg:
-                    errors.append(_err(i, "approx_bbox", msg))
-                else:
-                    approx_f = [float(v) for v in approx]
-                    snapped, item_indexes = snap_to_docling_items(docling_view, page, approx_f)
-                    if snapped:
-                        bbox = snapped
-                        geometry = "snapped"
-                        cells = table_cells_from_items(
-                            docling_view["items"],
-                            item_indexes,
-                            region_bbox=approx_f,
-                        )
-                        content = region_content_from_items(
-                            docling_view["items"],
-                            item_indexes,
-                        )
-                        table_bbox = table_bbox_from_items(
-                            docling_view["items"],
-                            item_indexes,
-                            region_bbox=approx_f,
-                        )
-                        if table_bbox and raw.get("kind") == "table":
-                            bbox = table_bbox
-                    else:
-                        # Docling saw nothing under the box (full-bleed
-                        # chart, scanned drawing). Keep the coarse box and
-                        # say so.
-                        bbox = approx_f
-                        geometry = "coarse"
-            else:
-                errors.append(_err(
-                    i, "member_item_ids",
-                    "region needs geometry: member_item_ids (preferred) or approx_bbox",
-                ))
-
-            region: dict[str, Any] = {
-                "id": raw.get("id") or f"r{i + 1}",
-                "kind": raw.get("kind"),
-                "title": raw.get("title"),
-                "description": raw.get("description") or "",
-                "page": page,
-                "bbox": bbox or [0.0, 0.0, 0.0, 0.0],  # placeholder when geometry failed
-                "geometry": geometry,
-                "tags": raw.get("tags") or [],
-                "entities": raw.get("entities") or [],
-            }
-            if geometry == "members":
-                region["member_item_ids"] = list(member_ids)
-            elif geometry in ("snapped", "coarse"):
-                region["approx_bbox"] = [float(v) for v in approx]
-            if content:
-                region["content"] = content
-            if cells and region.get("kind") in {"table", "spec_block"}:
-                region["cells"] = cells
-            shape_errors = validate_region(region, index=i)
-            if shape_errors:
-                errors.extend(shape_errors)
-                continue
-            if not geometry:
-                continue  # geometry error already recorded
-            resolved.append(region)
-
-        # Duplicate ids within one page would silently overwrite each other
-        # downstream; reject so the agent fixes them.
-        seen: set[str] = set()
-        for i, region in enumerate(resolved):
-            if region["id"] in seen:
-                errors.append(_err(i, "id", f"duplicate region id {region['id']!r} on page {page}"))
-            seen.add(region["id"])
-        if errors:
-            return [], errors
-        return resolved, []
 
     async def ingest_status(
         self, session_id: str | None = None, *, slug: str | None = None,

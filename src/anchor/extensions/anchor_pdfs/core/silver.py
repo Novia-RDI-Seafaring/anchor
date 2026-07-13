@@ -276,7 +276,7 @@ def _render_page_md(items: list[dict[str, Any]]) -> str:
             lines.append(f"_[figure: {cap}]_")
             lines.append("")
         elif label == "table":
-            md = _render_table_md(it.get("cells"))
+            md = render_table_cells_md(it.get("cells"))
             if md:
                 lines.append(md)
                 lines.append("")
@@ -286,11 +286,13 @@ def _render_page_md(items: list[dict[str, Any]]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _render_table_md(cells: Any) -> str:
+def render_table_cells_md(cells: Any) -> str:
+    """Render table cells as compact markdown while preserving cell order."""
     if not isinstance(cells, list) or not cells:
         return ""
     grid: dict[tuple[int, int], str] = {}
-    rows = cols = 0
+    row_indexes: set[int] = set()
+    column_indexes: set[int] = set()
     for cell in cells:
         if not isinstance(cell, dict):
             continue
@@ -310,16 +312,18 @@ def _render_table_md(cells: Any) -> str:
             grid[(r, c)] = f"{existing} {text}"
         elif not existing:
             grid[(r, c)] = text
-        rows = max(rows, r + 1)
-        cols = max(cols, c + 1)
-    if rows == 0 or cols == 0:
+        row_indexes.add(r)
+        column_indexes.add(c)
+    rows = sorted(row_indexes)
+    columns = sorted(column_indexes)
+    if not rows or not columns:
         return ""
 
     def row_md(r: int) -> str:
-        return "| " + " | ".join(grid.get((r, c), "") for c in range(cols)) + " |"
+        return "| " + " | ".join(grid.get((r, c), "") for c in columns) + " |"
 
-    out = [row_md(0), "| " + " | ".join(["---"] * cols) + " |"]
-    for r in range(1, rows):
+    out = [row_md(rows[0]), "| " + " | ".join(["---"] * len(columns)) + " |"]
+    for r in rows[1:]:
         out.append(row_md(r))
     return "\n".join(out)
 

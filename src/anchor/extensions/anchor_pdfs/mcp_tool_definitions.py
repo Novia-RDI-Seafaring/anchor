@@ -74,6 +74,8 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "Submit one polished page to the staging session. Each region: "
                 "{kind, title, description?, member_item_ids: [candidate ids], "
                 "tags?, entities?} - the server computes bbox from the members; "
+                "for a logical sub-table use table_slice: {candidate_id, rows, "
+                "columns?} to compute cell-level content and bbox; "
                 "send approx_bbox [l,t,r,b] (BOTTOMLEFT) only when no candidate "
                 "covers the visual. Idempotent per page (resubmit replaces). "
                 "Returns {accepted, errors?} - repair named fields and resubmit."

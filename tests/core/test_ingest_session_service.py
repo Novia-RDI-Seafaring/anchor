@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from copy import deepcopy
 
 from anchor.extensions.anchor_pdfs.core.ingest.session import PROTOCOL_VERSION
 from tests.fixtures.services import make_in_memory_services
@@ -245,6 +246,91 @@ def test_status_is_the_resume_surface_by_id_and_slug():
         by_id = await s.ingest_session.ingest_status(sid)
         assert by_id == by_slug
         assert "error" in await s.ingest_session.ingest_status(slug="nope")
+
+    asyncio.run(run())
+
+
+def test_submit_page_resolves_table_slice_to_selected_cells_and_bbox():
+    async def run():
+        s = _services()
+        docling = deepcopy(_TWO_PAGE_DOCLING)
+        docling["items"][3]["cells"].extend([
+            {"row": 1, "col": 0, "text": "Flow", "bbox": [10, 650, 80, 620]},
+            {"row": 1, "col": 1, "text": "10 l/s", "bbox": [100, 650, 180, 620]},
+            {"row": 2, "col": 0, "text": "Head", "bbox": [10, 610, 80, 580]},
+            {"row": 2, "col": 1, "text": "5 m", "bbox": [100, 610, 180, 580]},
+        ])
+        s.extractor.docling = docling
+        order = await _begin(s)
+
+        verdict = await s.ingest_session.ingest_submit_page(
+            order["session_id"],
+            2,
+            regions=[{
+                "kind": "table",
+                "title": "Head specification",
+                "table_slice": {
+                    "candidate_id": "p2-i0",
+                    "rows": [0, 2],
+                    "columns": [0, 1],
+                },
+            }],
+        )
+
+        assert verdict["accepted"] is True
+        staged = json.loads(await s.session_store.read_text(
+            order["session_id"], "gold/pages/2.regions.json",
+        ))
+        region = staged["regions"][0]
+        assert region["geometry"] == "table_slice"
+        assert region["bbox"] == [10.0, 690.0, 180.0, 580.0]
+        assert region["table_slice"] == {
+            "candidate_id": "p2-i0",
+            "rows": [0, 2],
+            "columns": [0, 1],
+        }
+        assert [cell["text"] for cell in region["cells"]] == [
+            "Field", "Value", "Head", "5 m",
+        ]
+        assert "| Field | Value |" in region["content"]
+        assert "| Head | 5 m |" in region["content"]
+        assert "Flow" not in region["content"]
+
+    asyncio.run(run())
+
+
+def test_submit_page_rejects_invalid_table_slice():
+    async def run():
+        s = _services()
+        order = await _begin(s)
+        verdict = await s.ingest_session.ingest_submit_page(
+            order["session_id"],
+            2,
+            regions=[
+                {
+                    "kind": "table",
+                    "title": "Unknown row",
+                    "table_slice": {"candidate_id": "p2-i0", "rows": [9]},
+                },
+                {
+                    "kind": "text",
+                    "title": "Wrong kind",
+                    "table_slice": {"candidate_id": "p2-i0", "rows": [0]},
+                },
+                {
+                    "kind": "table",
+                    "title": "Conflicting geometry",
+                    "member_item_ids": ["p2-i0"],
+                    "table_slice": {"candidate_id": "p2-i0", "rows": [0]},
+                },
+            ],
+        )
+
+        assert verdict["accepted"] is False
+        messages = [error["message"] for error in verdict["errors"]]
+        assert any("unknown rows" in message for message in messages)
+        assert any("only valid for table or spec_block" in message for message in messages)
+        assert any("exactly one geometry selector" in message for message in messages)
 
     asyncio.run(run())
 
