@@ -24,6 +24,8 @@ ANCHOR uses a process-isolated External Producer Gateway with a small
    cannot authorize executable code.
 3. Only `invocation.kind = "mcp-stdio"` is executable. ANCHOR passes the
    manifest command and argument array directly to the MCP SDK without a shell.
+   The invocation object is validated as the closed OIP 0.2 shape; unsupported
+   fields fail closed instead of being silently ignored.
 4. Each enabled producer runs in its own child process. ANCHOR never imports
    its Python, JavaScript, or native package code.
 5. Processes start lazily when a catalog or call needs them. One worker task
@@ -47,8 +49,13 @@ ANCHOR uses a process-isolated External Producer Gateway with a small
 - HTTP callers can invoke enabled tools because the server is loopback-only by
   default and registration was authorized locally. Exposing the HTTP server to
   a network still requires an authenticated reverse proxy.
-- Remote MCP transports, producer-supplied environment variables, working
-  directories, and in-process plugin imports remain unsupported.
+- Remote MCP transports, producer-supplied environment variables, and working
+  directories remain unsupported because canonical OIP 0.2 does not specify
+  them. Support waits for a versioned upstream contract rather than an
+  ANCHOR-only manifest dialect.
+- Package acquisition and lockfiles remain a separate consumer proposal.
+- In-process plugin imports remain rejected; process isolation is intentional,
+  not a temporary implementation gap.
 
 ## Rejected alternatives
 

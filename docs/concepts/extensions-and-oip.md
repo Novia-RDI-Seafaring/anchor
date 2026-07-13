@@ -205,6 +205,13 @@ without a shell, inherits only the MCP SDK safe environment, starts lazily,
 and closes the process tree with the owning adapter. One failed producer does
 not hide working producers.
 
+The canonical OIP 0.2 invocation object is closed to `kind`, `command`, `args`,
+and `tools_namespace`. ANCHOR rejects other fields instead of ignoring them.
+Remote transports, producer environment variables, and working directories
+must first be specified and versioned by OIP; ANCHOR will not create a private
+manifest dialect. Package acquisition is a separate consumer concern and does
+not authorize in-process imports.
+
 ---
 
 ## What OIP is *not* for

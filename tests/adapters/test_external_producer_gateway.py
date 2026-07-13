@@ -126,6 +126,30 @@ async def test_invalid_invocation_fails_closed_without_connecting():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["env", "cwd", "url"])
+async def test_nonstandard_invocation_fields_fail_closed(field):
+    manifest = _manifest("future-producer", "future")
+    manifest["invocation"][field] = {} if field == "env" else "value"
+    connected = False
+
+    async def connect(_spec: ProducerSpec) -> FakeProducerClient:
+        nonlocal connected
+        connected = True
+        return FakeProducerClient([])
+
+    catalog = await ExternalProducerGateway(
+        [manifest],
+        connector=connect,
+    ).catalog()
+
+    assert catalog.tools == ()
+    assert catalog.statuses[0].available is False
+    assert "unsupported invocation fields" in (catalog.statuses[0].reason or "")
+    assert field in (catalog.statuses[0].reason or "")
+    assert connected is False
+
+
+@pytest.mark.asyncio
 async def test_registered_but_disabled_manifest_is_never_started():
     manifest = _manifest("disabled", "disabled")
     manifest["_anchor_execution_enabled"] = False

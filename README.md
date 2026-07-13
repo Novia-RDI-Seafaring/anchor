@@ -481,15 +481,20 @@ available through CLI and HTTP. See [Extensions and OIP](./docs/concepts/extensi
 the [execution decision](./docs/adr/0001-external-oip-process-gateway.md), and
 the [OIP repository](https://github.com/Novia-RDI-Seafaring/OIP).
 
+ANCHOR follows the canonical OIP 0.2 invocation schema and fails closed on
+unknown invocation fields. Remote MCP, custom producer environment variables,
+and working directories require a future OIP version; ANCHOR does not add
+private manifest fields that other OIP consumers cannot understand.
+
 ---
 
 ## Tests
 
 ```bash
 uv sync --extra dev                       # one-time: install pytest/ruff/import-linter
-uv run pytest                             # ~570 backend tests
+uv run pytest                             # backend suite
 uv run lint-imports                       # 6 dependency-rule contracts
-pnpm --dir web test                       # ~180 web tests (Vitest)
+pnpm --dir web test                       # web suite (Vitest)
 pnpm --dir web exec tsc --noEmit          # web typecheck
 ```
 

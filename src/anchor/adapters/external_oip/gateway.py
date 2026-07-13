@@ -17,6 +17,7 @@ from mcp.types import CallToolResult, Tool
 
 Manifest = Mapping[str, Any]
 _NAMESPACE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
+_INVOCATION_FIELDS = frozenset({"kind", "command", "args", "tools_namespace"})
 
 
 class ExternalProducerError(RuntimeError):
@@ -307,6 +308,11 @@ def _producer_spec(manifest: Manifest, *, name: str, source: str) -> ProducerSpe
     invocation = manifest.get("invocation")
     if not isinstance(invocation, Mapping):
         raise ValueError("invocation must be an object")
+    unsupported = sorted(set(invocation) - _INVOCATION_FIELDS)
+    if unsupported:
+        raise ValueError(
+            f"unsupported invocation fields for OIP 0.2: {unsupported}"
+        )
     if invocation.get("kind") != "mcp-stdio":
         raise ValueError("only invocation.kind='mcp-stdio' is executable")
     command = invocation.get("command")
