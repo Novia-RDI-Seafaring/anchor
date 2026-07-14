@@ -1,8 +1,8 @@
-"""ProjectRouter — resolve a per-call project to its service bundle.
+"""Resolve each MCP project argument to a shared project runtime.
 
 One MCP server serves one *environment* (a named profile = the trust boundary).
 Each tool call names a *project* registered in that environment; the router
-resolves it to a :class:`~anchor.adapters.mcp.services.ServiceBundle`, cached by
+resolves it to a :class:`~anchor.adapters.project_runtime.ProjectRuntime`, cached by
 the project's storage directory, so the running server multiplexes any number
 of projects without rebinding at startup. It also backs the lifecycle tools
 (``create_environment`` / ``create_project`` / ``list_projects`` /
@@ -19,7 +19,8 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Any
 
-from anchor.adapters.mcp.services import ServiceBundle, build_bundle
+from anchor.adapters.mcp.services import build_bundle
+from anchor.adapters.project_runtime import ProjectRuntime
 from anchor.core.ids import validate_project_name
 from anchor.infra.environment import (
     DEFAULT_ENV,
@@ -53,7 +54,7 @@ class ProjectRouter:
         self.env_arg = env_arg  # the environment NAME this server is pinned to
         self.base_url = base_url
         self.cache_size = cache_size
-        self._cache: OrderedDict[str, ServiceBundle] = OrderedDict()
+        self._cache: OrderedDict[str, ProjectRuntime] = OrderedDict()
         self._session_default: str | None = None
 
     # -- environment ------------------------------------------------------- #
@@ -65,7 +66,7 @@ class ProjectRouter:
         return project or self._session_default or DEFAULT_PROJECT
 
     # -- bundles ----------------------------------------------------------- #
-    def bundle_for(self, project: str | None) -> ServiceBundle:
+    def bundle_for(self, project: str | None) -> ProjectRuntime:
         """Resolve ``project`` (or the default) to its service bundle."""
         env = self.environment()
         name = self._resolve_name(project)

@@ -1,10 +1,4 @@
-"""MCP compatibility facade for project runtime construction.
-
-The MCP adapter historically owned the per-project ``ServiceBundle`` builder.
-It now delegates to ``anchor.adapters.project_runtime`` so MCP, CLI, and HTTP
-can converge on one project runtime construction path without changing MCP
-imports in a broad sweep.
-"""
+"""MCP helpers for shared project runtime construction."""
 
 from __future__ import annotations
 
@@ -22,8 +16,6 @@ from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.services import IngestService
 from anchor.infra.config import AnchorConfig
 
-ServiceBundle = ProjectRuntime
-
 
 def fmu_tools_available() -> bool:
     """Cheap, side-effect-free probe matching anchor_fmus.build_service's gate.
@@ -37,7 +29,7 @@ def fmu_tools_available() -> bool:
     return importlib.util.find_spec("fmpy") is not None
 
 
-async def active_extensions_for_bundle(bundle: ServiceBundle) -> set[str]:
+async def active_extensions_for_bundle(bundle: ProjectRuntime) -> set[str]:
     """Which extension capabilities currently have data in this project.
 
     Drives the tiered MCP surface (anchor#133): an extension's tools are
@@ -74,6 +66,6 @@ def _build_ingest_service(
     return build_ingest_service(config, bus, doc_store)
 
 
-def build_bundle(config: AnchorConfig, *, base_url: str = "http://localhost:8002") -> ServiceBundle:
+def build_bundle(config: AnchorConfig, *, base_url: str = "http://localhost:8002") -> ProjectRuntime:
     """Wire every runtime module for one project from its resolved config."""
     return build_project_runtime(config, base_url=base_url, fmu_warning=_warn_fmu_disabled)

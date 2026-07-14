@@ -33,10 +33,10 @@ from anchor.adapters.mcp import (
 from anchor.adapters.mcp.instructions import HELP_RESOURCE_TEXT, INSTRUCTIONS
 from anchor.adapters.mcp.router import ProjectRouter
 from anchor.adapters.mcp.services import (
-    ServiceBundle,
     active_extensions_for_bundle,
     fmu_tools_available,
 )
+from anchor.adapters.project_runtime import ProjectRuntime
 from anchor.adapters.status import build_status_summary
 from anchor.extensions.anchor_cad import mcp_handlers as cad_handlers
 from anchor.extensions.anchor_fmus import mcp_handlers as fmu_handlers
@@ -332,7 +332,7 @@ def _env_identity(router: ProjectRouter) -> str:
 
 def build_mcp_server(
     *,
-    bundle: ServiceBundle | None = None,
+    bundle: ProjectRuntime | None = None,
     router: ProjectRouter | None = None,
     name: str = "anchor",
     external_gateways: ExternalProducerGateways | None = None,
@@ -359,7 +359,7 @@ def build_mcp_server(
     instructions = (_env_identity(router) + INSTRUCTIONS) if multiproject else INSTRUCTIONS
     app = Server(name, instructions=instructions, lifespan=server_lifespan)
 
-    def get_bundle(project: str | None) -> ServiceBundle:
+    def get_bundle(project: str | None) -> ProjectRuntime:
         if router is not None:
             return router.bundle_for(project)
         assert bundle is not None
