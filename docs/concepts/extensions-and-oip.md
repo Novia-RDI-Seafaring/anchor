@@ -210,7 +210,11 @@ and `tools_namespace`. ANCHOR rejects other fields instead of ignoring them.
 Remote transports, producer environment variables, and working directories
 must first be specified and versioned by OIP; ANCHOR will not create a private
 manifest dialect. Package acquisition is a separate consumer concern and does
-not authorize in-process imports.
+not authorize in-process imports. The future contracts are documented in the
+[OIP vNext invocation draft](../reference/oip-invocation-vnext.md) and
+[secure package acquisition draft](../reference/secure-package-acquisition.md).
+Both remain unimplemented; current validation and enablement behavior is
+unchanged.
 
 ---
 
@@ -223,7 +227,7 @@ not authorize in-process imports.
   or an in-IDE assistant could consume the same producer outputs. The
   spec is at `github.com/Novia-RDI-Seafaring/OIP` and ships its own
   CLI (`uvx oip validate <data-dir>`).
-- **Not a 1.0 promise.** OIP is `0.1`. The shape is settled enough to
+- **Not a 1.0 promise.** OIP is `0.2`. The shape is settled enough to
   build on; specifics will move.
 
 ---

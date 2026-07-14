@@ -484,7 +484,11 @@ the [OIP repository](https://github.com/Novia-RDI-Seafaring/OIP).
 ANCHOR follows the canonical OIP 0.2 invocation schema and fails closed on
 unknown invocation fields. Remote MCP, custom producer environment variables,
 and working directories require a future OIP version; ANCHOR does not add
-private manifest fields that other OIP consumers cannot understand.
+private manifest fields that other OIP consumers cannot understand. See the
+[OIP vNext invocation draft](./docs/reference/oip-invocation-vnext.md) and the
+[secure package acquisition draft](./docs/reference/secure-package-acquisition.md)
+for the proposed upstream and human-operator contracts. Neither is implemented
+yet, and dynamic in-process extension loading remains deliberately deferred.
 
 ---
 

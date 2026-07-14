@@ -54,6 +54,9 @@ ANCHOR uses a process-isolated External Producer Gateway with a small
   them. Support waits for a versioned upstream contract rather than an
   ANCHOR-only manifest dialect.
 - Package acquisition and lockfiles remain a separate consumer proposal.
+- The proposed boundaries are recorded in the
+  [OIP vNext invocation draft](../reference/oip-invocation-vnext.md) and
+  [secure package acquisition draft](../reference/secure-package-acquisition.md).
 - In-process plugin imports remain rejected; process isolation is intentional,
   not a temporary implementation gap.
 

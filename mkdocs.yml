@@ -129,5 +129,7 @@ nav:
     - CLI: reference/cli.md
     - MCP tools: reference/mcp.md
     - Configuration: reference/configuration.md
+    - OIP vNext invocation draft: reference/oip-invocation-vnext.md
+    - Secure package acquisition draft: reference/secure-package-acquisition.md
     - Releases: reference/releases.md
     - Citation and acknowledgments: reference/citation.md
