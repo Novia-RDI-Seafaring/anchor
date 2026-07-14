@@ -1,4 +1,4 @@
-"""IngestService — orchestrates the bronze → silver → gold pipeline.
+"""IngestService orchestrates the bronze -> silver -> gold pipeline.
 
 Pure orchestrator over ports; does not import docling/pymupdf/openai.
 Emits IngestProgress + DocBronzed/Silvered/.../Ingested on the bus.
@@ -15,14 +15,21 @@ from anchor.core.ids import new_event_id, slugify
 from anchor.core.ports.event_bus import EventBus
 from anchor.extensions.anchor_pdfs.core.events import (
     DocBronzed,
-    DocGoldExtracted,
     DocIngested,
     DocIngestFailed,
     DocPolished,
     DocSilvered,
     IngestProgress,
 )
-from anchor.extensions.anchor_pdfs.core.ingest.validation import validate_regions
+from anchor.extensions.anchor_pdfs.core.gold_ingest import (
+    GOLD_EMPTY_MAX_ATTEMPTS as GOLD_EMPTY_MAX_ATTEMPTS,
+)
+from anchor.extensions.anchor_pdfs.core.gold_ingest import (
+    INGEST_LOCK_WAIT_SECONDS as INGEST_LOCK_WAIT_SECONDS,
+)
+from anchor.extensions.anchor_pdfs.core.gold_ingest import (
+    GoldIngest,
+)
 from anchor.extensions.anchor_pdfs.core.pointed_extraction import (
     extract_pointed as _extract_pointed,
 )
@@ -32,85 +39,17 @@ from anchor.extensions.anchor_pdfs.core.ports.md_polisher import PageMdPolisher
 from anchor.extensions.anchor_pdfs.core.ports.pdf_extractor import PdfExtractor
 from anchor.extensions.anchor_pdfs.core.ports.pdf_renderer import PdfRenderer
 from anchor.extensions.anchor_pdfs.core.ports.region_extractor import RegionExtractor
-from anchor.extensions.anchor_pdfs.core.ports.synopsis_renderer import (
-    MarkdownSynopsisRenderer,
-    PdfSynopsisRenderer,
-)
 from anchor.extensions.anchor_pdfs.core.search import search as _search_topk
 from anchor.extensions.anchor_pdfs.core.silver import (
     build_index,
     build_page_candidates,
     build_pages_meta,
-    region_content_from_items,
     region_search_text,
     render_pages_md,
-    snap_to_docling_items,
-    table_bbox_from_items,
-    table_cells_from_items,
 )
-from anchor.extensions.anchor_pdfs.core.synopsis import SynopsisData, compose_synopsis
-
-#: How many times the keyed gold pass is run while it produces 0 regions on a
-#: non-empty document before giving up and surfacing `empty_gold` (issue #188).
-#: A transient region-extraction failure (empty model response, a timeout that
-#: yielded nothing) usually clears on a fresh pass; a genuinely region-less PDF
-#: keeps returning 0 and is surfaced as empty_gold after the attempts. Total
-#: attempts, not extra retries: 2 means one initial pass plus one retry.
-GOLD_EMPTY_MAX_ATTEMPTS = 2
-
-#: Default seconds an ingest waits for the per-slug lock before failing fast
-#: (issue #175). A concurrent --force on the same slug holds the lock for its
-#: gold pass; rather than block forever, a second ingest waits up to this long
-#: then surfaces a clear "another ingest is running" error. Sized above a long
-#: gold pass so genuine back-to-back runs queue cleanly, short enough that a
-#: wedged run does not hang a caller indefinitely.
-INGEST_LOCK_WAIT_SECONDS = 30 * 60
-
-
-class SynopsisService:
-    """Orchestrates entity-scoped synopsis composition for a document.
-
-    Pulls filtered facts via ``compose_synopsis`` (pure core function),
-    then delegates output to a renderer port. Kept separate from
-    ``IngestService`` because their dependencies barely overlap — ingest
-    needs extractors + polishers; synopsis only needs read access and
-    a renderer.
-    """
-
-    def __init__(
-        self,
-        store: DocStore,
-        *,
-        pdf_renderer: PdfSynopsisRenderer | None = None,
-        md_renderer: MarkdownSynopsisRenderer | None = None,
-    ) -> None:
-        self.store = store
-        self.pdf_renderer = pdf_renderer
-        self.md_renderer = md_renderer
-
-    async def compose(self, *, slug: str, entity: str) -> SynopsisData:
-        return await compose_synopsis(store=self.store, slug=slug, entity=entity)
-
-    async def render_pdf(self, *, slug: str, entity: str) -> bytes:
-        if self.pdf_renderer is None:
-            raise RuntimeError("SynopsisService: no pdf_renderer wired")
-        data = await self.compose(slug=slug, entity=entity)
-        return await self.pdf_renderer.render_pdf(
-            data, resolve_crop=self.store.get_crop_path,
-        )
-
-    async def render_markdown(
-        self, *, slug: str, entity: str, crop_url_base: str | None = None,
-    ) -> str:
-        if self.md_renderer is None:
-            raise RuntimeError("SynopsisService: no md_renderer wired")
-        data = await self.compose(slug=slug, entity=entity)
-        if crop_url_base is None:
-            crop_url_for = None
-        else:
-            def crop_url_for(_slug: str, rel: str) -> str:
-                return f"{crop_url_base.rstrip('/')}/{_slug}/crops/{rel}"
-        return self.md_renderer.render_markdown(data, crop_url_for=crop_url_for)
+from anchor.extensions.anchor_pdfs.core.synopsis_service import (
+    SynopsisService as SynopsisService,
+)
 
 
 class IngestService:
@@ -186,7 +125,7 @@ class IngestService:
         ingest_started_at = self.clock.now()
         # Live activity record (issue #51): updated through the store as each
         # stage advances so the project-level "what is ingesting" surface sees
-        # this run cross-process and after a restart. Bookkeeping only — a
+        # this run cross-process and after a restart. Bookkeeping only; a
         # write hiccup must never affect the pipeline, so writes are guarded.
         activity = {
             "slug": slug,
@@ -340,145 +279,28 @@ class IngestService:
             gold_attempts = 0
             if regions and self.region_extractor and page_count:
                 current_stage = "gold_regions"
-                # Single-writer guard (issue #175): hold a per-slug lock for the
-                # whole overwriting gold pass (clear marker -> region loop ->
-                # finalize). Two concurrent `anchor ingest --force` on one slug
-                # would otherwise interleave their clear/write/mark and leave
-                # `.complete.json` desynced from the real artifacts. We wait a
-                # bounded time then fail fast with a clear message rather than
-                # block forever. The lock spans every retry attempt so the
-                # bounded #188 retry stays a single critical section.
-                async with self.store.ingest_lock(
-                    slug, wait=True, timeout=INGEST_LOCK_WAIT_SECONDS,
-                ):
-                    # Bounded retry of the whole gold pass (issue #188). A
-                    # transient region-extraction failure can yield 0 regions on
-                    # a document that genuinely has them; a fresh pass usually
-                    # recovers. We retry while the pass produces 0 regions on a
-                    # non-empty document, up to GOLD_EMPTY_MAX_ATTEMPTS total. A
-                    # doc that genuinely has no extractable regions keeps
-                    # returning 0, exits the loop, and is surfaced as empty_gold
-                    # (not a silent ok) below.
-                    while True:
-                        gold_attempts += 1
-                        region_count = 0
-                        invalid_region_count = 0
-                        region_errors = []
-                        stage_started_at = self.clock.now()
-                        page_timings = []
-                        # Mark gold incomplete before the (overwriting) loop so a
-                        # crash mid-loop leaves the document invisible-as-gold
-                        # instead of a partial blend that reads as complete.
-                        await self.store.clear_gold_complete(slug)
-                        for page, png in page_pngs.items():
-                            page_started_at = self.clock.now()
-                            raw_regions = await self.region_extractor.extract_page(
-                                page_image=png,
-                                page_no=page,
-                                docling_items=items_by_page.get(page, []),
-                                model=region_model,
-                            )
-                            snapped: list[dict[str, Any]] = []
-                            for r in raw_regions:
-                                if not isinstance(r, dict):
-                                    snapped.append(r)
-                                    continue
-                                bbox_any = r.get("bbox") or r.get("approximate_bbox")
-                                bbox_list: list[float] = list(bbox_any) if isinstance(bbox_any, list) else []
-                                if len(bbox_list) == 4:
-                                    snap_bbox, item_indexes = snap_to_docling_items(docling, page, bbox_list)
-                                    if snap_bbox:
-                                        r = {**r, "bbox": snap_bbox}
-                                        content = region_content_from_items(
-                                            docling.get("items", []),
-                                            item_indexes,
-                                        )
-                                        if content:
-                                            r = {**r, "content": content}
-                                        cells = table_cells_from_items(
-                                            docling.get("items", []),
-                                            item_indexes,
-                                            region_bbox=bbox_list,
-                                        )
-                                        if cells and r.get("kind") in {"table", "spec_block"}:
-                                            r = {**r, "cells": cells}
-                                        table_bbox = table_bbox_from_items(
-                                            docling.get("items", []),
-                                            item_indexes,
-                                            region_bbox=bbox_list,
-                                        )
-                                        if table_bbox and r.get("kind") == "table":
-                                            r = {**r, "bbox": table_bbox}
-                                    elif "bbox" not in r:
-                                        r = {**r, "bbox": bbox_list}
-                                snapped.append(r)
-                            # Shared schema gate: only valid regions reach gold.
-                            # Invalid ones are dropped and reported instead of
-                            # silently persisted (or swallowed upstream).
-                            valid, page_errors = validate_regions(snapped)
-                            if page_errors:
-                                invalid_region_count += len(snapped) - len(valid)
-                                region_errors.extend({**e, "page": page} for e in page_errors)
-                            await self.store.write_gold_region_file(slug, page, valid)
-                            region_count += len(valid)
-                            page_finished_at = self.clock.now()
-                            page_timings.append({
-                                "page": page,
-                                "region_count": len(valid),
-                                "invalid_region_count": len(snapped) - len(valid),
-                                "started_at": page_started_at,
-                                "finished_at": page_finished_at,
-                                "duration_seconds": round(max(0.0, page_finished_at - page_started_at), 3),
-                            })
-                            await self._publish(IngestProgress(
-                                slug=slug, stage="gold_regions", current=page, total=page_count,
-                            ), publish_workspace_id)
-                            await record_activity("gold_regions", current=page, total=page_count)
-                        finish_stage(
-                            "gold_regions",
-                            stage_started_at,
-                            attempt=gold_attempts,
-                            page_count=len(page_timings),
-                            region_count=region_count,
-                            invalid_region_count=invalid_region_count,
-                            model=region_model,
-                            pages=page_timings,
-                        )
-                        if region_count > 0 or gold_attempts >= GOLD_EMPTY_MAX_ATTEMPTS:
-                            break
-                        # 0 regions on a non-empty doc: retry the whole pass once
-                        # more before giving up. Keep the bus/activity honest
-                        # about the retry so a watcher does not read the empty
-                        # pass as done.
-                        await self._publish(IngestProgress(
-                            slug=slug, stage="gold_regions_retry",
-                            current=gold_attempts, total=GOLD_EMPTY_MAX_ATTEMPTS,
-                        ), publish_workspace_id)
-
-                    # 0 regions on a document that has pages/text is treated as a
-                    # surfaced empty-gold outcome, not a silent ok (issue #188).
-                    # We do NOT mark gold complete: has_gold stays false, so a
-                    # consumer never mistakes an empty extraction for a finished
-                    # one, and a re-ingest (no --force needed) re-runs the gold
-                    # stage. A genuinely region-less PDF lands here too; it is
-                    # surfaced as empty_gold with a reason rather than a false ok.
-                    empty_gold = region_count == 0
-                    if empty_gold:
-                        await self._publish(
-                            DocGoldExtracted(slug=slug, region_count=0), publish_workspace_id,
-                        )
-                    else:
-                        # Commit point: gold becomes visible (has_gold /
-                        # get_gold_map / list_documents) only once the marker
-                        # lands, atomically, while we still hold the slug lock.
-                        await self.store.mark_gold_complete(slug, {
-                            "mode": "keyed",
-                            "model": region_model,
-                            "region_count": region_count,
-                            "completed_at": self.clock.now(),
-                        })
-                        gold_completed = True
-                        await self._publish(DocGoldExtracted(slug=slug, region_count=region_count), publish_workspace_id)
+                gold = await GoldIngest(
+                    self.store,
+                    self.region_extractor,
+                    self.clock,
+                    self._publish,
+                ).run(
+                    slug=slug,
+                    docling=docling,
+                    page_pngs=page_pngs,
+                    items_by_page=items_by_page,
+                    page_count=page_count,
+                    model=region_model,
+                    workspace_id=publish_workspace_id,
+                    record_activity=record_activity,
+                    finish_stage=finish_stage,
+                )
+                region_count = gold.region_count
+                invalid_region_count = gold.invalid_region_count
+                region_errors = gold.region_errors
+                gold_completed = gold.completed
+                empty_gold = gold.empty
+                gold_attempts = gold.attempts
 
             embedded_count = 0
             if self.embedder is not None:
