@@ -36,6 +36,8 @@ import {
 import {
   EdgeEndpointSockets,
   EvidencePathUnderlay,
+} from "./EvidenceEdgeDecorations";
+import {
   evidenceStroke,
   isActiveEvidence,
   isEvidenceEdge,

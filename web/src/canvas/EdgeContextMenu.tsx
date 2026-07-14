@@ -68,7 +68,7 @@ export function EdgeContextMenu({ workspaceSlug, target, onClose }: Props) {
   const patch = async (fields: Record<string, unknown>) => {
     try { await canvases.patchEdge(workspaceSlug, edge.id, fields); }
     catch (err) {
-      // eslint-disable-next-line no-console
+
       console.error("edge patch failed", err);
     }
   };

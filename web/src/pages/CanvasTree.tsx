@@ -29,67 +29,13 @@ import { Link } from "react-router-dom";
 
 import type { WorkspaceListEntry } from "@/api/canvases";
 
+import { indexBySlug, pickRoots } from "./canvasTreeModel";
+
 export type CanvasTreeProps = {
   items: WorkspaceListEntry[];
   onDelete?: (entry: WorkspaceListEntry) => void;
   deletingSlug?: string | null;
 };
-
-/** Build the slug → entry index once per render. */
-function indexBySlug(items: WorkspaceListEntry[]): Map<string, WorkspaceListEntry> {
-  const out = new Map<string, WorkspaceListEntry>();
-  for (const it of items) out.set(it.slug, it);
-  return out;
-}
-
-/**
- * Determine which slugs are tree roots.
- *
- * - A canvas with `referenced_by.length === 0` is a root.
- * - A cycle with no external parent — every member's `referenced_by`
- *   only points to other members of the same cycle — would otherwise
- *   be invisible. Pick its lexicographically-smallest slug as the root
- *   so it still surfaces in the tree.
- */
-export function pickRoots(items: WorkspaceListEntry[]): string[] {
-  const index = indexBySlug(items);
-  const orphans = items.filter((it) => it.referenced_by.length === 0).map((it) => it.slug);
-  const orphanSet = new Set(orphans);
-
-  // Connected-component sweep over the (references ∪ referenced_by) graph
-  // treated as undirected for reachability. Every canvas reachable from
-  // an orphan is already covered (an orphan ancestor will lead the tree
-  // down to it via `references`). The interesting case is a connected
-  // component with no orphan inside — a pure cycle that would otherwise
-  // be invisible. Adopt its smallest slug as a synthetic root.
-  const visited = new Set<string>();
-  const extraRoots: string[] = [];
-  for (const it of items) {
-    if (visited.has(it.slug)) continue;
-    const stack = [it.slug];
-    const component: string[] = [];
-    let touchesOrphan = false;
-    while (stack.length > 0) {
-      const cur = stack.pop()!;
-      if (visited.has(cur)) continue;
-      visited.add(cur);
-      component.push(cur);
-      if (orphanSet.has(cur)) touchesOrphan = true;
-      const node = index.get(cur);
-      if (!node) continue;
-      for (const r of node.references) if (!visited.has(r)) stack.push(r);
-      for (const r of node.referenced_by) if (!visited.has(r)) stack.push(r);
-    }
-    if (!touchesOrphan && component.length > 0) {
-      // Adopt the smallest slug as the cycle-root.
-      component.sort();
-      const head = component[0];
-      if (head) extraRoots.push(head);
-    }
-  }
-  // Stable order: alphabetical for predictable rendering.
-  return [...orphans, ...extraRoots].sort();
-}
 
 type RowProps = {
   slug: string;

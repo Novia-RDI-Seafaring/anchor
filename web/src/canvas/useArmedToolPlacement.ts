@@ -7,7 +7,7 @@ import {
   ghostIsSquare,
   maybeSquareRect,
   paintRectFrom,
-} from "@/canvas/PaintGhost";
+} from "@/canvas/paintGeometry";
 import { paletteEntries } from "@/canvas/registry";
 import { shortId } from "@/canvas/useCanvasDrop";
 import { useUiStore } from "@/stores/uiStore";

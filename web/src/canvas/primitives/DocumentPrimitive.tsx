@@ -6,64 +6,18 @@ import { BACKEND_URL } from "@/api/client";
 import { documents, type DocumentIndex, type Region } from "@/api/documents";
 import { bboxToImageRect, sameBbox } from "@/lib/bbox";
 import { useUiStore } from "@/stores/uiStore";
-
-const STATUS_STYLES: Record<string, string> = {
-  pending: "border-amber-400 bg-amber-50",
-  // Harness-ingest projects: the dropped doc is waiting for the agent to run
-  // the ingest (issue #148). Same amber "needs attention" cue as queued.
-  awaiting_agent: "border-amber-400 bg-amber-50",
-  ingesting: "border-blue-400 bg-blue-50",
-  searching: "border-blue-400 bg-blue-50",
-  found: "border-emerald-400 bg-emerald-50",
-  failed: "border-red-400 bg-red-50",
-  ready: "border-neutral-300 bg-white",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  pending: "queued",
-  awaiting_agent: "awaiting agent",
-  ingesting: "ingesting",
-  searching: "ingesting",
-  found: "ready",
-  failed: "failed",
-  ready: "ready",
-};
-
-function formatElapsed(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) return "0s";
-  const whole = Math.floor(seconds);
-  const minutes = Math.floor(whole / 60);
-  const secs = whole % 60;
-  if (minutes <= 0) return `${secs}s`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (hours <= 0) return `${minutes}m ${secs.toString().padStart(2, "0")}s`;
-  return `${hours}h ${mins.toString().padStart(2, "0")}m`;
-}
-
-function numericSeconds(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
+import {
+  DOCUMENT_RENDER_DPI,
+  DOCUMENT_STATUS_LABELS,
+  DOCUMENT_STATUS_STYLES,
+  POINTS_PER_INCH,
+  formatElapsed,
+  matchesExternalHighlight,
+  numericSeconds,
+  type RegionHighlight,
+} from "./documentPrimitiveModel";
 
 type PageMeta = { width: number; height: number };
-type RegionHighlight = { regionId?: string; bbox?: number[] };
-
-// Default DPI used by anchor_pdfs when rendering page PNGs. Matches
-// AnchorConfig.dpi. If the producer is reconfigured to a different DPI,
-// gold-map should expose it explicitly; for now we assume the default.
-const RENDER_DPI = 150;
-const POINTS_PER_INCH = 72;
-
-function matchesExternalHighlight(
-  highlight: RegionHighlight | null,
-  rid: string,
-  bbox: number[],
-): boolean {
-  if (!highlight) return false;
-  if (highlight.bbox && !sameBbox(highlight.bbox, bbox)) return false;
-  if (highlight.regionId) return highlight.regionId === rid;
-  return sameBbox(highlight.bbox, bbox);
-}
 
 /**
  * DocumentPrimitive: a paginated document viewport on the canvas.
@@ -101,7 +55,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     workspace_slug?: string;
   };
   const status = d.status ?? "ready";
-  const cls = STATUS_STYLES[status] ?? STATUS_STYLES.ready;
+  const cls = DOCUMENT_STATUS_STYLES[status] ?? DOCUMENT_STATUS_STYLES.ready;
   const isReady = status === "ready" || status === "found";
   const slug = d.slug;
 
@@ -198,8 +152,8 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   // defaults to 150 DPI, so 1 PDF point = 150/72 image pixels).
   const explicitW = pageMeta[page]?.width ?? 0;
   const explicitH = pageMeta[page]?.height ?? 0;
-  const derivedW = imgSize ? imgSize.w * POINTS_PER_INCH / RENDER_DPI : 0;
-  const derivedH = imgSize ? imgSize.h * POINTS_PER_INCH / RENDER_DPI : 0;
+  const derivedW = imgSize ? imgSize.w * POINTS_PER_INCH / DOCUMENT_RENDER_DPI : 0;
+  const derivedH = imgSize ? imgSize.h * POINTS_PER_INCH / DOCUMENT_RENDER_DPI : 0;
   const pageW = explicitW > 0 ? explicitW : derivedW;
   const pageH = explicitH > 0 ? explicitH : derivedH;
   const canScale = imgSize && pageW > 0 && pageH > 0;
@@ -212,7 +166,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
         ? 1
         : null;
   const ingestLabel = d.ingest_stage_label
-    ?? (d.ingest_stage ? d.ingest_stage.replaceAll("_", " ") : STATUS_LABELS[status] ?? status);
+    ?? (d.ingest_stage ? d.ingest_stage.replaceAll("_", " ") : DOCUMENT_STATUS_LABELS[status] ?? status);
   const ingestDetail = d.ingest_total && d.ingest_total > 1
     ? `${d.ingest_current ?? 0}/${d.ingest_total}`
     : null;
@@ -548,7 +502,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
           {!isReady ? (
             <span className="inline-flex items-center gap-1 rounded border border-current px-1.5 py-0.5 text-[9px] uppercase">
               <span className="block size-1.5 rotate-45 bg-current" />
-              {STATUS_LABELS[status] ?? status}
+              {DOCUMENT_STATUS_LABELS[status] ?? status}
             </span>
           ) : null}
         </div>
@@ -598,4 +552,3 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     </div>
   );
 }
-

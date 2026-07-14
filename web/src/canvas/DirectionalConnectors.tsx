@@ -200,7 +200,7 @@ export function DirectionalConnectors({ workspaceSlug }: Props) {
         // `pendingInlineRenameNodeId` channel below.
         useUiStore.getState().requestInlineRename(newId);
       } catch (err) {
-        // eslint-disable-next-line no-console
+
         console.error("directional peer creation failed", err);
       }
     },
@@ -271,7 +271,7 @@ export function DirectionalConnectors({ workspaceSlug }: Props) {
             data: {},
           })
           .catch((err) => {
-            // eslint-disable-next-line no-console
+
             console.error("directional edge-to-node failed", err);
           });
         return;

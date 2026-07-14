@@ -19,13 +19,7 @@
  * `pointer-events-none` so the ghost never swallows the pointer-up event;
  * the gesture lives on CanvasGraph's wrapper.
  */
-export type PaintRect = {
-  /** Screen-space top-left (CSS pixels, fixed positioning origin). */
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-};
+import { ghostOutlineKind, type PaintRect } from "./paintGeometry";
 
 /**
  * Compute the normalised rect (top-left + size) from a pointer-down and a
@@ -34,75 +28,6 @@ export type PaintRect = {
  * top:300, width:200, height:200}`, the dropped node lands at the matching
  * flow-space rect (per `paintFlowRect`).
  */
-export function paintRectFrom(
-  down: { x: number; y: number },
-  current: { x: number; y: number },
-): PaintRect {
-  const left = Math.min(down.x, current.x);
-  const top = Math.min(down.y, current.y);
-  const width = Math.abs(current.x - down.x);
-  const height = Math.abs(current.y - down.y);
-  return { left, top, width, height };
-}
-
-/**
- * Pixel threshold below which a pointer-down/up pair is treated as a
- * single-click placement (no drag-to-size). Mirrors the constant in
- * CanvasGraph so the two stay in lock-step.
- */
-export const PAINT_DRAG_THRESHOLD_PX = 4;
-
-/**
- * Should the armed tool render the ghost as a square (1:1) regardless of
- * cursor position? Entity (circle) does — its renderer collapses to a
- * single dimension and `NodeResizer` is locked to `keepAspectRatio`. Other
- * shapes accept any aspect.
- */
-export function ghostIsSquare(nodeType: string | null): boolean {
-  return nodeType === "entity";
-}
-
-/**
- * Constrain a free-aspect rect to a square anchored at the pointer-down
- * corner. Side length = max(width, height) — feels natural when the user
- * drags out into either quadrant. Returns the same rect when not square.
- */
-export function maybeSquareRect(
-  rect: PaintRect,
-  down: { x: number; y: number },
-  square: boolean,
-): PaintRect {
-  if (!square) return rect;
-  const side = Math.max(rect.width, rect.height);
-  // Anchor the square at the down corner: if the cursor went right/down,
-  // the rect's left/top equal `down`; if left/up, they sit at `down - side`.
-  const left = rect.left === down.x ? down.x : down.x - side;
-  const top = rect.top === down.y ? down.y : down.y - side;
-  return { left, top, width: side, height: side };
-}
-
-/**
- * Visual outline class for the ghost. Pulled out so the same dispatch
- * runs in tests without mounting React.
- */
-export function ghostOutlineKind(nodeType: string | null): "rect" | "circle" | "diamond" | "dashed" {
-  switch (nodeType) {
-    case "concept":
-    case "spec":
-    case "note":
-    case "fact":
-      return "rect";
-    case "entity":
-      return "circle";
-    case "funnel":
-      return "diamond";
-    case "area":
-      return "dashed";
-    default:
-      return "dashed";
-  }
-}
-
 type Props = {
   /** Screen-space rect to outline; null hides the ghost. */
   rect: PaintRect | null;

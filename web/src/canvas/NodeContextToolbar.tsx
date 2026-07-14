@@ -64,10 +64,11 @@ import {
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
-import { DEFAULT_BG, resolveColors } from "./colors";
+import { resolveColors } from "./colors";
 import { FillPicker } from "./FillPicker";
 import { StrokePicker } from "./StrokePicker";
 import { TextPicker } from "./TextPicker";
+import { ToolbarFillSwatch } from "./ToolbarFillSwatch";
 
 type Props = {
   workspaceSlug: string;
@@ -153,7 +154,8 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
   }, [confirmingDelete]);
   // Reset confirm state when the selection changes — we don't want a
   // stale "Delete?" hanging over a different selection.
-  useEffect(() => { setConfirmingDelete(false); }, [selectedNodeIds.join(",")]);
+  const selectedNodeKey = selectedNodeIds.join(",");
+  useEffect(() => { setConfirmingDelete(false); }, [selectedNodeKey]);
 
   if (!screenBox || selectedNodeIds.length === 0) return null;
 
@@ -182,7 +184,7 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
     try {
       await canvases.organizeSubtree(workspaceSlug, firstId, orientation);
     } catch (err) {
-      // eslint-disable-next-line no-console
+
       console.error("organize failed", err);
     }
   };
@@ -191,7 +193,7 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
     try {
       await canvases.align(workspaceSlug, selectedNodeIds, anchor);
     } catch (err) {
-      // eslint-disable-next-line no-console
+
       console.error("align failed", err);
     }
   };
@@ -200,7 +202,7 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
     try {
       await canvases.distribute(workspaceSlug, selectedNodeIds, axis);
     } catch (err) {
-      // eslint-disable-next-line no-console
+
       console.error("distribute failed", err);
     }
   };
@@ -210,7 +212,7 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
       try {
         await canvases.removeNode(workspaceSlug, id);
       } catch (err) {
-        // eslint-disable-next-line no-console
+
         console.error("delete failed", err);
       }
     }
@@ -224,7 +226,7 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
       try {
         await canvases.patchNode(workspaceSlug, id, { data });
       } catch (err) {
-        // eslint-disable-next-line no-console
+
         console.error("lock toggle failed", err);
       }
     }
@@ -318,7 +320,7 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
               title="Fill colour"
               className="inline-flex h-6 items-center gap-1 rounded border border-neutral-300 bg-white px-1.5 transition hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-sky-500"
             >
-              <ChipFillSwatch color={firstBg} />
+              <ToolbarFillSwatch color={firstBg} />
               <ChevronDown className="size-3 text-neutral-500" />
             </button>
           </PopoverTrigger>
@@ -578,38 +580,3 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
     </div>
   );
 }
-
-/**
- * Fill chip swatch — square that's tinted with the current `bg_color`. When
- * the colour resolves to `transparent` (no fill) we render a tiny
- * checkered-transparent indicator so the user can tell "no fill" apart
- * from "white fill", matching Miro's visual vocabulary.
- */
-function ChipFillSwatch({ color }: { color: string }) {
-  const isTransparent = color === DEFAULT_BG || color === "transparent";
-  if (isTransparent) {
-    return (
-      <span
-        className="block h-3.5 w-3.5 rounded border border-neutral-400"
-        style={{
-          backgroundImage:
-            "linear-gradient(45deg, #d4d4d4 25%, transparent 25%), " +
-            "linear-gradient(-45deg, #d4d4d4 25%, transparent 25%), " +
-            "linear-gradient(45deg, transparent 75%, #d4d4d4 75%), " +
-            "linear-gradient(-45deg, transparent 75%, #d4d4d4 75%)",
-          backgroundSize: "6px 6px",
-          backgroundPosition: "0 0, 0 3px, 3px -3px, -3px 0px",
-        }}
-        aria-hidden
-      />
-    );
-  }
-  return (
-    <span
-      className="block h-3.5 w-3.5 rounded border border-neutral-400"
-      style={{ background: color }}
-      aria-hidden
-    />
-  );
-}
-

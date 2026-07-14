@@ -95,7 +95,7 @@ export function registerNodeRenderer(
 ): void {
   if (registry.has(name)) {
     // Last-writer-wins so plugins can override defaults; warn for visibility.
-    // eslint-disable-next-line no-console
+
     console.warn(`registerNodeRenderer: overriding existing renderer for '${name}'`);
   }
   registry.set(name, component);
@@ -296,7 +296,7 @@ export async function registerExtensionComponent(
   moduleUrl: string,
   customElementTag: string,
 ): Promise<void> {
-  // eslint-disable-next-line no-console
+
   console.warn(
     `registerExtensionComponent: stub — module=${moduleUrl}, tag=${customElementTag}, type=${nodeType}`,
   );
@@ -314,7 +314,7 @@ export async function registerExtensionComponent(
  * `@a2ui/lit` is installed and one of our producers actually emits A2UI.
  */
 export function renderA2UIFragment(_a2uiMessage: unknown): null {
-  // eslint-disable-next-line no-console
+
   console.warn("renderA2UIFragment: stub — A2UI renderer not yet wired");
   return null;
 }

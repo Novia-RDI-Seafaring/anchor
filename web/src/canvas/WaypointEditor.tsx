@@ -66,7 +66,7 @@ export function WaypointEditor({ workspaceSlug }: Props) {
     const data = { ...(edge.data ?? {}), waypoints };
     try { await canvases.patchEdge(workspaceSlug, edge.id, { data }); }
     catch (err) {
-      // eslint-disable-next-line no-console
+
       console.error("waypoint persist failed", err);
     }
   }, [edge, workspaceSlug]);

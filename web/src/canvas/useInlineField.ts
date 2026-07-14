@@ -142,7 +142,7 @@ export function useInlineField<M extends boolean = false>({
       ? { label: next }
       : { data: { ...(useCanvasStore.getState().nodes[nodeId]?.data ?? {}), [field]: next } };
     canvases.patchNode(workspaceSlug, nodeId, body).catch((err) => {
-      // eslint-disable-next-line no-console
+
       console.error(`inline ${field} edit failed`, err);
     });
   }, [canEdit, canonicalValue, multiline, field, nodeId, workspaceSlug]);
@@ -216,7 +216,7 @@ export function useInlineField<M extends boolean = false>({
       ? { label: next }
       : { data: { ...(useCanvasStore.getState().nodes[nodeId]?.data ?? {}), [field]: next } };
     canvases.patchNode(workspaceSlug, nodeId, body).catch((err) => {
-      // eslint-disable-next-line no-console
+
       console.error(`inline ${field} edit failed`, err);
     });
   }, [value, canonicalValue, workspaceSlug, nodeId, field, multiline]);

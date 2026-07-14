@@ -97,7 +97,7 @@ export function QuickAddPopover({
         useUiStore.getState().requestInlineRename(newId);
       }
     } catch (err) {
-      // eslint-disable-next-line no-console
+
       console.error("quick-add creation failed", err);
     } finally {
       onClose();

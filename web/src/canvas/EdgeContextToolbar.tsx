@@ -129,7 +129,7 @@ export function EdgeContextToolbar({ workspaceSlug }: Props) {
     try {
       await canvases.patchEdge(workspaceSlug, edge.id, fields);
     } catch (err) {
-      // eslint-disable-next-line no-console
+
       console.error("edge patch failed", err);
     }
   };
@@ -155,7 +155,7 @@ export function EdgeContextToolbar({ workspaceSlug }: Props) {
     try {
       await canvases.removeEdge(workspaceSlug, edge.id);
     } catch (err) {
-      // eslint-disable-next-line no-console
+
       console.error("edge delete failed", err);
     }
     setSelectedEdgeId(null);

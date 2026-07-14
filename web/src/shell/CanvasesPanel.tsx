@@ -22,6 +22,8 @@ import {
   type WorkspaceListEntry,
 } from "@/api/canvases";
 
+import { filterAttachable } from "./canvasesPanelModel";
+
 type Props = { workspaceSlug: string };
 
 export const CANVAS_LINK_MIME = "application/x-anchor-canvas-link";
@@ -80,21 +82,6 @@ export function CanvasesPanel({ workspaceSlug }: Props) {
         <div className="px-2 text-[10px] text-red-600">error: {error}</div>
       ) : null}
     </div>
-  );
-}
-
-/**
- * Pure filter — exported for test. Drops the current canvas plus any
- * canvas already in the current canvas's outgoing `references`.
- */
-export function filterAttachable(
-  items: WorkspaceListEntry[],
-  currentSlug: string,
-): WorkspaceListEntry[] {
-  const current = items.find((it) => it.slug === currentSlug);
-  const alreadyLinked = new Set<string>(current?.references ?? []);
-  return items.filter(
-    (it) => it.slug !== currentSlug && !alreadyLinked.has(it.slug),
   );
 }
 

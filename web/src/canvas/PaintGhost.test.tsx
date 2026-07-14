@@ -11,13 +11,13 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
+import { PaintGhost } from "./PaintGhost";
 import {
-  PaintGhost,
   ghostIsSquare,
   ghostOutlineKind,
   maybeSquareRect,
   paintRectFrom,
-} from "./PaintGhost";
+} from "./paintGeometry";
 
 describe("paintRectFrom", () => {
   it("normalises the rect when current is bottom-right of down", () => {

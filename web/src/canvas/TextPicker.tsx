@@ -41,7 +41,7 @@ async function patchField(
       try {
         await canvases.patchNode(workspaceSlug, id, { data });
       } catch (err) {
-        // eslint-disable-next-line no-console
+
         console.error(`text patch failed for ${id}`, err);
       }
     }),

@@ -15,7 +15,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { WorkspaceListEntry } from "@/api/canvases";
 
-import { CanvasTree, pickRoots } from "./CanvasTree";
+import { CanvasTree } from "./CanvasTree";
+import { pickRoots } from "./canvasTreeModel";
 
 function entry(
   slug: string,

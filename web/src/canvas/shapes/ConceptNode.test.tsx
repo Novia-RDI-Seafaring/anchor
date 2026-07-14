@@ -17,7 +17,7 @@ import { describe, expect, it } from "vitest";
 
 import { ConceptNode } from "./ConceptNode";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 const Mount = ({ selected }: { selected: boolean }) => (
   <ConceptNode
     {...({

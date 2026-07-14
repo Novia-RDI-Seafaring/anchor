@@ -14,9 +14,11 @@ import {
   userMarkerUrls,
 } from "./edge-style";
 import {
-  EVIDENCE_EDGE_QUIET_OPACITY,
   EdgeEndpointSockets,
   EvidencePathUnderlay,
+} from "./EvidenceEdgeDecorations";
+import {
+  EVIDENCE_EDGE_QUIET_OPACITY,
   evidenceStroke,
   evidenceStrokeWidth,
   isActiveEvidence,

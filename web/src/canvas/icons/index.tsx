@@ -145,7 +145,3 @@ export function Pictogram({
   if (!Icon) return null;
   return <Icon width={size} height={size} className={className} {...rest} />;
 }
-
-export function pictogramNames(): string[] {
-  return Object.keys(ICONS).sort();
-}

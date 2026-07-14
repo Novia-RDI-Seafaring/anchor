@@ -15,8 +15,8 @@ import type { WorkspaceListEntry } from "@/api/canvases";
 import {
   CANVAS_LINK_MIME,
   CanvasesPanel,
-  filterAttachable,
 } from "./CanvasesPanel";
+import { filterAttachable } from "./canvasesPanelModel";
 
 function entry(
   slug: string,

@@ -82,7 +82,7 @@ export function PageWithBboxViewer() {
         });
       }
     } catch (err) {
-      // eslint-disable-next-line no-console
+
       console.error("send region to canvas failed", err);
     } finally {
       setSending(null);

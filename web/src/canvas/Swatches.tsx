@@ -52,7 +52,7 @@ async function patchColor(
       try {
         await canvases.patchNode(workspaceSlug, id, { data });
       } catch (err) {
-        // eslint-disable-next-line no-console
+
         console.error(`color patch failed for ${id}`, err);
       }
     }),
