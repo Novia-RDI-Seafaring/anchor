@@ -1,8 +1,4 @@
-"""IngestService orchestrates the bronze -> silver -> gold pipeline.
-
-Pure orchestrator over ports; does not import docling/pymupdf/openai.
-Emits IngestProgress + DocBronzed/Silvered/.../Ingested on the bus.
-"""
+"""Port-based orchestration for the bronze -> silver -> gold pipeline."""
 from __future__ import annotations
 
 import json
@@ -77,10 +73,8 @@ class IngestService:
         self.polisher = polisher
         self.region_extractor = region_extractor
         self.embedder = embedder
-        # The embed_model id is what gets persisted in embeddings.json so
-        # consumers (server-side search, in-browser WASM) know which model
-        # was used. If not given, fall back to a string attribute exposed
-        # by the embedder if it has one (e.g. LocalSentenceTransformerEmbedder).
+        # Persist the model id so server and browser consumers can interpret
+        # embeddings. Prefer an explicit id over the embedder's own attribute.
         self.embed_model_id = embed_model_id or getattr(embedder, "model_id", None)
         self.default_polish_model = default_polish_model
         self.default_region_model = default_region_model
