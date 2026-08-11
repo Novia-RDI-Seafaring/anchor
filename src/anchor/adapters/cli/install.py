@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sys
 import tomllib
@@ -186,45 +187,55 @@ def _toml_scalar(value: Any) -> str:
     raise TypeError(f"Unsupported TOML scalar: {value!r}")
 
 
+_BARE_TOML_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _toml_key(key: str) -> str:
+    """Render a TOML key, quoting names such as Windows project paths."""
+    return key if _BARE_TOML_KEY.fullmatch(key) else _toml_scalar(key)
+
+
 def _toml_value(value: Any) -> str:
-    """Render a TOML value: a scalar or an array of scalars."""
+    """Render a TOML value, including arrays and inline tables."""
     if isinstance(value, list):
-        return "[" + ", ".join(_toml_scalar(item) for item in value) + "]"
+        return "[" + ", ".join(_toml_value(item) for item in value) + "]"
+    if isinstance(value, dict):
+        items = ", ".join(f"{_toml_key(key)} = {_toml_value(item)}" for key, item in value.items())
+        return "{ " + items + " }"
     return _toml_scalar(value)
 
 
 def _render_codex_toml(data: dict[str, Any]) -> str:
     """Serialize the Codex config dict back to TOML.
 
-    Handles the shape Codex uses: top-level scalar/array keys, then nested
-    ``[mcp_servers.<name>]`` tables with a string ``command`` and an array
-    ``args``. It does NOT preserve comments or the original key order beyond
-    top-level-scalars-first, tables-after; that is why the caller backs the
-    file up before overwriting it.
+    Reconstructs arbitrary nested tables emitted by Codex, including MCP
+    server environment maps and project tables keyed by Windows paths. It does
+    NOT preserve comments or the original key order; that is why the caller
+    backs the file up before overwriting it.
     """
     lines: list[str] = []
-    tables: dict[str, Any] = {}
+
+    def emit_table(path: list[str], table: dict[str, Any]) -> None:
+        if lines:
+            lines.append("")
+        lines.append("[" + ".".join(_toml_key(part) for part in path) + "]")
+        nested: list[tuple[str, dict[str, Any]]] = []
+        for key, value in table.items():
+            if isinstance(value, dict):
+                nested.append((key, value))
+            else:
+                lines.append(f"{_toml_key(key)} = {_toml_value(value)}")
+        for key, value in nested:
+            emit_table([*path, key], value)
+
+    root_tables: list[tuple[str, dict[str, Any]]] = []
     for key, value in data.items():
         if isinstance(value, dict):
-            tables[key] = value
-            continue
-        lines.append(f"{key} = {_toml_value(value)}")
-    for table_name, table in tables.items():
-        # Emit each sub-table as its own [parent.child] header. Only one level
-        # of nesting is needed for Codex's mcp_servers.<name> structure.
-        if all(isinstance(v, dict) for v in table.values()):
-            for sub_name, sub in table.items():
-                if lines and lines[-1] != "":
-                    lines.append("")
-                lines.append(f"[{table_name}.{sub_name}]")
-                for k, v in sub.items():
-                    lines.append(f"{k} = {_toml_value(v)}")
+            root_tables.append((key, value))
         else:
-            if lines and lines[-1] != "":
-                lines.append("")
-            lines.append(f"[{table_name}]")
-            for k, v in table.items():
-                lines.append(f"{k} = {_toml_value(v)}")
+            lines.append(f"{_toml_key(key)} = {_toml_value(value)}")
+    for key, value in root_tables:
+        emit_table([key], value)
     return "\n".join(lines) + "\n"
 
 
