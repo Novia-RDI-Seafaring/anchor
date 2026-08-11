@@ -216,6 +216,17 @@ def _build_pipeline_options(device: str, full_page_ocr: bool = False) -> Any:
     pipeline_options.ocr_options = RapidOcrOptions(
         backend="onnxruntime", force_full_page_ocr=full_page_ocr
     )
+    # Docling enables torch.compile for the Transformers layout model by
+    # default. On Windows CPU installs that sends the first page through
+    # TorchInductor, which requires the MSVC `cl` compiler and can fail with
+    # InvalidCxxCompiler or appear stuck during the first inference. Anchor
+    # does not need a compiled model for local ingestion, so keep this path
+    # portable. The attribute guard preserves compatibility with older
+    # Docling releases that do not expose this option.
+    layout_options = getattr(pipeline_options, "layout_options", None)
+    engine_options = getattr(layout_options, "engine_options", None)
+    if engine_options is not None and hasattr(engine_options, "compile_model"):
+        engine_options.compile_model = False
     return pipeline_options
 
 
