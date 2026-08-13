@@ -201,6 +201,15 @@ type UiState = {
    */
   selectedEdgeId: string | null;
   setSelectedEdgeId: (id: string | null) => void;
+
+  // --- Reference selection ----------------------------------------------
+  /**
+   * Id of the reference the user is focused on, shared between the PDF viewer
+   * (its green source boxes) and the References list in the left explorer, so
+   * clicking one highlights the other. Null when nothing is focused.
+   */
+  activeReferenceId: string | null;
+  setActiveReferenceId: (id: string | null) => void;
 };
 
 /** Default split: source pane takes a touch under half the width. */
@@ -296,6 +305,8 @@ export const useUiStore = create<UiState>((set) => ({
       },
     })),
   closePdf: () => set({ pdfViewer: null }),
+  activeReferenceId: null,
+  setActiveReferenceId: (id) => set({ activeReferenceId: id }),
   setPdfPage: (page) =>
     set((state) =>
       state.pdfViewer ? { pdfViewer: { ...state.pdfViewer, page } } : state,

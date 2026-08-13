@@ -45,6 +45,12 @@ export function FilesExplorer({ workspaceSlug }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const openPdf = useUiStore((s) => s.openPdf);
+  // Bring the References tab forward when a reference becomes active (e.g. the
+  // user clicked its green box in the PDF viewer), so the selection is visible.
+  const activeReferenceId = useUiStore((s) => s.activeReferenceId);
+  useEffect(() => {
+    if (activeReferenceId) setTab("references");
+  }, [activeReferenceId]);
   // The active document is whatever the shared viewer currently shows.
   const activeSlug = useUiStore((s) => s.pdfViewer?.slug ?? null);
 
