@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "pdfjs-dist/web/pdf_viewer.css";
 
 import { documents, type Region } from "@/api/documents";
-import { references } from "@/api/references";
+import { REFERENCES_CHANGED_EVENT, references } from "@/api/references";
 import { bboxToViewportRect } from "@/lib/pdfHighlight";
 import {
   buildPageLayout,
@@ -118,8 +118,55 @@ export function PdfSourceView({
   // Lightweight confirmation: toast text + the page/bbox to flash (PDF points).
   const [toast, setToast] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ page: number; bbox: number[] } | null>(null);
+  // Persistent green highlights for every reference whose source is THIS doc,
+  // keyed by page — so created references stay visible on the page.
+  const [refBboxesByPage, setRefBboxesByPage] = useState<Map<number, number[][]>>(new Map());
+  // The blue "jump-to" highlight is a transient pulse, not a permanent mark: it
+  // fades a few seconds after opening a reference so it does not linger.
+  const [highlightVisible, setHighlightVisible] = useState(true);
   // Set after a programmatic scroll-to-highlight so we only do it once per target.
   const lastHighlightRef = useRef<string | null>(null);
+
+  // Keep the persistent reference highlights in sync with the canvas bibliography.
+  useEffect(() => {
+    if (!canvasSlug) {
+      setRefBboxesByPage(new Map());
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const list = await references.list(canvasSlug);
+        if (cancelled) return;
+        const byPage = new Map<number, number[][]>();
+        for (const ref of list) {
+          const sr = ref.source_ref;
+          if (sr.slug !== slug || !sr.bbox || sr.bbox.length !== 4) continue;
+          const arr = byPage.get(sr.page) ?? [];
+          arr.push(sr.bbox);
+          byPage.set(sr.page, arr);
+        }
+        setRefBboxesByPage(byPage);
+      } catch {
+        // best-effort overlay
+      }
+    };
+    void load();
+    const onChanged = () => void load();
+    window.addEventListener(REFERENCES_CHANGED_EVENT, onChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(REFERENCES_CHANGED_EVENT, onChanged);
+    };
+  }, [canvasSlug, slug]);
+
+  // Fade the blue jump-to highlight a few seconds after it (re)appears.
+  useEffect(() => {
+    if (!highlightPage || !highlightBbox) return;
+    setHighlightVisible(true);
+    const id = window.setTimeout(() => setHighlightVisible(false), 4000);
+    return () => window.clearTimeout(id);
+  }, [highlightPage, highlightBbox]);
 
   // Load (and reload on slug change) the PDF document. One shared instance.
   useEffect(() => {
@@ -554,8 +601,9 @@ export function PdfSourceView({
                   rendered={rendered[it.page]}
                   shouldRender={shouldRenderPage(it.page)}
                   regions={canvasSlug ? regionsByPage[it.page] ?? [] : []}
+                  referenceBboxes={refBboxesByPage.get(it.page) ?? []}
                   canvasSlug={canvasSlug}
-                  highlightBbox={highlightPage === it.page ? highlightBbox : undefined}
+                  highlightBbox={highlightVisible && highlightPage === it.page ? highlightBbox : undefined}
                   confirmBbox={confirm?.page === it.page ? confirm.bbox : undefined}
                   pending={pending?.page === it.page ? pending : null}
                   bboxToRect={(bbox) => bboxToRectOnPage(it.page, bbox)}
@@ -595,6 +643,7 @@ type SlotProps = {
   rendered?: { w: number; h: number };
   shouldRender: boolean;
   regions: Region[];
+  referenceBboxes: number[][];
   canvasSlug?: string;
   highlightBbox?: number[];
   confirmBbox?: number[];
@@ -616,9 +665,9 @@ type SlotProps = {
  */
 function PageSlot(props: SlotProps) {
   const {
-    item, doc, zoom, rendered, shouldRender, regions, canvasSlug, highlightBbox,
-    confirmBbox, pending, bboxToRect, onMouseUp, onCaptureRegion, onRendered,
-    onConfirmReference, onCancelPending, saving, registerRef,
+    item, doc, zoom, rendered, shouldRender, regions, referenceBboxes, canvasSlug,
+    highlightBbox, confirmBbox, pending, bboxToRect, onMouseUp, onCaptureRegion,
+    onRendered, onConfirmReference, onCancelPending, saving, registerRef,
   } = props;
 
   const viewportSize = rendered ?? null;
@@ -701,6 +750,37 @@ function PageSlot(props: SlotProps) {
               >
                 <title>{region.title ?? region.kind ?? rid} — click outline to make reference</title>
               </rect>
+            );
+          })}
+        </svg>
+      ) : null}
+
+      {/* Persistent green marks for every reference sourced from this page, so
+          created references stay visible (not just the transient confirm flash). */}
+      {referenceBboxes.length > 0 && viewportSize ? (
+        <svg
+          data-testid="reference-highlights"
+          className="pointer-events-none absolute left-0 top-0"
+          width={viewportSize.w}
+          height={viewportSize.h}
+          style={{ width: viewportSize.w, height: viewportSize.h }}
+        >
+          {referenceBboxes.map((bbox, i) => {
+            const rect = bboxToRect(bbox);
+            if (!rect) return null;
+            return (
+              <rect
+                key={i}
+                data-testid="reference-highlight"
+                x={rect.left}
+                y={rect.top}
+                width={rect.width}
+                height={rect.height}
+                fill="rgba(34, 197, 94, 0.12)"
+                stroke="#16A34A"
+                strokeWidth={1.5}
+                rx={2}
+              />
             );
           })}
         </svg>
