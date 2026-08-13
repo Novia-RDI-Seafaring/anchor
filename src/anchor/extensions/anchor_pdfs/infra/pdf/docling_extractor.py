@@ -251,15 +251,15 @@ def _flatten(doc: Any) -> dict[str, Any]:
     page_heights = _page_heights(doc)
 
     for it in getattr(doc, "texts", []) or []:
-        prov = (it.prov or [None])[0] if hasattr(it, "prov") else None
-        page = getattr(prov, "page_no", 0) if prov else 0
-        bbox = _bbox_from_prov(prov)
-        items.append({
-            "label": getattr(it, "label", "text"),
-            "text": getattr(it, "text", ""),
-            "page": page,
-            "bbox": bbox,
-        })
+        for prov in getattr(it, "prov", []) or [None]:
+            page = getattr(prov, "page_no", 0) if prov else 0
+            bbox = _bbox_from_prov(prov)
+            items.append({
+                "label": getattr(it, "label", "text"),
+                "text": _text_for_prov(getattr(it, "text", ""), prov),
+                "page": page,
+                "bbox": bbox,
+            })
 
     for tbl in getattr(doc, "tables", []) or []:
         prov = (tbl.prov or [None])[0] if hasattr(tbl, "prov") else None
@@ -300,6 +300,20 @@ def _bbox_from_prov(prov: Any) -> list[float]:
         return []
     bb = prov.bbox
     return [float(bb.l), float(bb.t), float(bb.r), float(bb.b)]
+
+
+def _text_for_prov(text: str, prov: Any) -> str:
+    charspan = getattr(prov, "charspan", None)
+    if (
+        isinstance(text, str)
+        and isinstance(charspan, tuple)
+        and len(charspan) == 2
+        and all(isinstance(v, int) for v in charspan)
+    ):
+        start, end = charspan
+        if 0 <= start <= end <= len(text):
+            return text[start:end]
+    return text
 
 
 def _bbox_from_cell(cell: Any, page_height: float | None) -> list[float]:

@@ -140,3 +140,29 @@ def test_flatten_preserves_table_cell_bbox_as_bottom_left():
         "text": "cell value",
         "bbox": [10.0, 80.0, 30.0, 60.0],
     }
+
+
+def test_flatten_keeps_each_text_provenance_bbox():
+    doc = SimpleNamespace(
+        texts=[
+            SimpleNamespace(
+                label="text",
+                text="left right",
+                prov=[
+                    SimpleNamespace(page_no=1, bbox=_Box(10, 90, 80, 80), charspan=(0, 4)),
+                    SimpleNamespace(page_no=1, bbox=_Box(300, 500, 550, 300), charspan=(5, 10)),
+                ],
+            ),
+        ],
+        pictures=[],
+        pages={},
+        tables=[],
+    )
+
+    out = dx._flatten(doc)
+
+    assert [item["text"] for item in out["items"]] == ["left", "right"]
+    assert [item["bbox"] for item in out["items"]] == [
+        [10.0, 90.0, 80.0, 80.0],
+        [300.0, 500.0, 550.0, 300.0],
+    ]
