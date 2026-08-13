@@ -22,6 +22,7 @@ import {
   canvases,
   type WorkspaceListEntry,
 } from "@/api/canvases";
+import { ReferencesPanel } from "@/canvas/primitives/viewers/ReferencesPanel";
 import { documents, type DocumentSummary } from "@/api/documents";
 import { cn } from "@/lib/cn";
 import { useUiStore } from "@/stores/uiStore";
@@ -34,7 +35,7 @@ import {
 
 type Props = { workspaceSlug: string };
 
-type TabKey = "files" | "canvases";
+type TabKey = "files" | "canvases" | "references";
 
 export function FilesExplorer({ workspaceSlug }: Props) {
   const [tab, setTab] = useState<TabKey>("files");
@@ -103,9 +104,19 @@ export function FilesExplorer({ workspaceSlug }: Props) {
           active={tab === "canvases"}
           onClick={() => setTab("canvases")}
         />
+        <ExplorerTab
+          label="References"
+          active={tab === "references"}
+          onClick={() => setTab("references")}
+        />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+      {tab === "references" ? (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <ReferencesPanel canvasSlug={workspaceSlug} />
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {tab === "files" ? (
           <div className="space-y-3">
             <Section title={`Documents (${docs.length})`} subtitle="anchor_pdfs">
@@ -163,7 +174,8 @@ export function FilesExplorer({ workspaceSlug }: Props) {
         {error ? (
           <div className="px-2 pt-2 text-[10px] text-red-600">error: {error}</div>
         ) : null}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

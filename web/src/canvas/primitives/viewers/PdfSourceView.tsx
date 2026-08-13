@@ -72,6 +72,8 @@ type Props = {
 // float the action button (page-pixel space) and a label for the toast.
 type PendingAction = {
   page: number;
+  /** Text selection (native highlight shows the extent) vs a captured region. */
+  kind: "text" | "region";
   sourceRef: SourceRef;
   label: string;
   anchor: { left: number; top: number };
@@ -320,6 +322,7 @@ export function PdfSourceView({
       setConfirm(null);
       setPending({
         page: p,
+        kind: "text",
         sourceRef,
         label: defaultReferenceLabel({ quote, page: p }),
         anchor: { left: rect.left + rect.width / 2, top: rect.top },
@@ -341,6 +344,7 @@ export function PdfSourceView({
       setConfirm(null);
       setPending({
         page: p,
+        kind: "region",
         sourceRef,
         label: defaultReferenceLabel({ region, page: p }),
         anchor: { left: rect.left + rect.width / 2, top: rect.top },
@@ -354,6 +358,30 @@ export function PdfSourceView({
     setPending(null);
     window.getSelection()?.removeAllRanges();
   }, []);
+
+  // Dismiss the floating "Make reference" menu when the user clicks away or
+  // presses Escape, so it never lingers over unrelated content. A mousedown
+  // that starts a fresh selection clears it too; onPageMouseUp re-arms it.
+  useEffect(() => {
+    if (!pending) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('[data-testid="make-reference-action"]')) return;
+      setPending(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setPending(null);
+        window.getSelection()?.removeAllRanges();
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [pending]);
 
   const confirmReference = useCallback(async () => {
     if (!canvasSlug || !pending || saving) return;
@@ -669,7 +697,7 @@ function PageSlot(props: SlotProps) {
         </svg>
       ) : null}
 
-      {pending && viewportSize ? (
+      {pending && pending.kind === "region" && viewportSize ? (
         <svg
           className="pointer-events-none absolute left-0 top-0"
           width={viewportSize.w}

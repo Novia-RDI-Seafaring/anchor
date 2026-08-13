@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { pdfjs, type PdfDoc, type PdfViewport } from "./pdfjs";
+import { registerTextLayerSelection } from "./textLayerSelection";
 
 /**
  * PdfPageCanvas — renders ONE page of the continuous viewer (#220 part A).
@@ -27,6 +28,7 @@ export function PdfPageCanvas({ doc, page, zoom, onRendered }: Props) {
 
   useEffect(() => {
     let cancelled = false;
+    let disposeSelection: (() => void) | null = null;
     const token = ++tokenRef.current;
     const canvas = canvasRef.current;
     const textLayerDiv = textLayerRef.current;
@@ -74,12 +76,16 @@ export function PdfPageCanvas({ doc, page, zoom, onRendered }: Props) {
         // text layer is best-effort; the canvas raster is the source of truth
       }
       if (cancelled || token !== tokenRef.current) return;
+      // Constrain selection to this page (multi-column gap handling) — the raw
+      // TextLayer does not do this on its own.
+      disposeSelection = registerTextLayerSelection(textLayerDiv);
       onRendered?.(page, { w: viewport.width, h: viewport.height });
     }
 
     void renderPage();
     return () => {
       cancelled = true;
+      disposeSelection?.();
     };
   }, [doc, page, zoom, onRendered]);
 

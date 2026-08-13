@@ -104,7 +104,7 @@ export function ReferencesPanel({ canvasSlug }: Props) {
 
   return (
     <div
-      className="flex max-h-[45%] min-h-0 shrink-0 flex-col border-b border-neutral-200 bg-white"
+      className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-white"
       data-testid="references-panel"
     >
       <div className="flex items-baseline justify-between border-b border-neutral-200 bg-neutral-50 px-2 py-1">
