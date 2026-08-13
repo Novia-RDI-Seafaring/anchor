@@ -80,6 +80,22 @@ export function SourceDock() {
     };
   }, [dragging, onPointerMove, stopDrag]);
 
+  // Escape closes the dock — but let the floating "Make reference" menu (and an
+  // active text selection) consume the first Escape, so it takes two presses to
+  // go from "menu open" to "viewer closed" rather than closing everything at once.
+  useEffect(() => {
+    if (!isDock) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (document.querySelector('[data-testid="make-reference-action"]')) return;
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return;
+      close();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isDock, close]);
+
   if (!viewer || !slug || !isDock) return null;
 
   const total = index?.document?.page_count ?? 0;

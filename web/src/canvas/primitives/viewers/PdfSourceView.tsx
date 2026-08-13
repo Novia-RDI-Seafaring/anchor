@@ -625,6 +625,34 @@ function PageSlot(props: SlotProps) {
   const highlightRect = bboxToRect(highlightBbox);
   const confirmRect = bboxToRect(confirmBbox);
 
+  // Right-click inside a section -> capture it for a reference. The region
+  // overlay is pointer-events:none (so it never blocks text selection), so we
+  // hit-test the click against the region bboxes here and pick the smallest
+  // one containing the point (the most specific region).
+  const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!canvasSlug || !viewportSize || regions.length === 0) return;
+    const host = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - host.left;
+    const y = e.clientY - host.top;
+    let best: Region | null = null;
+    let bestArea = Infinity;
+    for (const region of regions) {
+      const rect = bboxToRect(region.bbox);
+      if (!rect) continue;
+      if (x >= rect.left && x <= rect.left + rect.width && y >= rect.top && y <= rect.top + rect.height) {
+        const area = rect.width * rect.height;
+        if (area < bestArea) {
+          bestArea = area;
+          best = region;
+        }
+      }
+    }
+    if (best) {
+      e.preventDefault();
+      onCaptureRegion(best);
+    }
+  };
+
   return (
     <div
       ref={registerRef}
@@ -633,6 +661,7 @@ function PageSlot(props: SlotProps) {
       className="absolute left-1/2 -translate-x-1/2 bg-white shadow-lg"
       style={{ top: item.top, height: item.height, width: item.width }}
       onMouseUp={onMouseUp}
+      onContextMenu={handleContextMenu}
     >
       {shouldRender && doc ? (
         <PdfPageCanvas doc={doc} page={item.page} zoom={zoom} onRendered={onRendered} />
