@@ -192,17 +192,18 @@ class AnchorConfig(BaseSettings):
         Keeping env above the toml means an operator's `ANCHOR_*` override
         always wins over a committed project default.
         """
+        layers = _ACTIVE_LAYERS.get()
         sources: list[PydanticBaseSettingsSource] = [
             init_settings,
             env_settings,
-            dotenv_settings,
         ]
-        layers = _ACTIVE_LAYERS.get()
+        if layers is None:
+            sources.append(dotenv_settings)
         if layers is not None:
             # The environment/project resolver has already merged the
-            # environment env.toml under the project anchor.toml. Use that
-            # as the single toml-level source instead of walking up for a stray
-            # anchor.toml, so the resolved layering is honored exactly.
+            # environment env.toml under the project anchor.toml and has loaded
+            # that environment's .env into os.environ. Do not also load an
+            # unrelated .env from the process working directory.
             sources.append(_MappingSettingsSource(settings_cls, layers))
         else:
             toml_path = discover_config_file()
