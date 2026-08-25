@@ -9,6 +9,7 @@ from anchor.core.clock import Clock, SystemClock
 from anchor.core.events.envelope import DomainEvent
 from anchor.core.ids import new_event_id, slugify
 from anchor.core.ports.event_bus import EventBus
+from anchor.extensions.anchor_pdfs.core.document_retrieval import DocumentRetrieval
 from anchor.extensions.anchor_pdfs.core.events import (
     DocBronzed,
     DocIngested,
@@ -35,7 +36,6 @@ from anchor.extensions.anchor_pdfs.core.ports.md_polisher import PageMdPolisher
 from anchor.extensions.anchor_pdfs.core.ports.pdf_extractor import PdfExtractor
 from anchor.extensions.anchor_pdfs.core.ports.pdf_renderer import PdfRenderer
 from anchor.extensions.anchor_pdfs.core.ports.region_extractor import RegionExtractor
-from anchor.extensions.anchor_pdfs.core.search import search as _search_topk
 from anchor.extensions.anchor_pdfs.core.silver import (
     build_index,
     build_page_candidates,
@@ -82,6 +82,13 @@ class IngestService:
         self.default_dpi = default_dpi
         self.clock: Clock = clock or SystemClock()
         self._gid = global_workspace_id
+        self._retrieval = DocumentRetrieval(
+            store,
+            embedder=self.embedder,
+            embed_model_id=self.embed_model_id,
+            clock=self.clock,
+            publish=self._publish,
+        )
 
     async def ingest_pdf(
         self,
@@ -434,123 +441,15 @@ class IngestService:
         *,
         publish_workspace_id: str | None = None,
     ) -> int:
-        """Embed every gold region of `slug` and write embeddings.json.
-
-        Called automatically at the end of ``ingest_pdf`` when an embedder
-        is wired, and exposed publicly so the CLI / agents can backfill
-        embeddings for already-ingested gold layers without re-running the
-        full pipeline.
-
-        The embedded text per region is ``"{title}. {description}"`` —
-        short enough to keep encode fast on CPU, dense enough that synonym
-        queries hit. Region markdown is omitted on purpose (it's already
-        captured in the page-level silver markdown which can be indexed
-        separately if needed).
-
-        Returns the number of regions embedded. Raises if no embedder
-        is wired.
-        """
-        if self.embedder is None:
-            raise RuntimeError("IngestService.embed_document called but no embedder wired")
-        gold = await self.store.get_gold_map(slug)
-        if gold is None:
-            return 0
-        items: list[tuple[int, str, str]] = []  # (page, region_id, text)
-        for page_key, regions in (gold.get("pages") or {}).items():
-            try:
-                page = int(page_key)
-            except (TypeError, ValueError):
-                continue
-            for r in regions:
-                rid = r.get("id")
-                if not rid:
-                    continue
-                title = (r.get("title") or "").strip()
-                description = (r.get("description") or "").strip()
-                if not title and not description:
-                    continue
-                text = f"{title}. {description}".strip(". ").strip()
-                items.append((page, rid, text))
-        if not items:
-            return 0
-        vectors = await self.embedder.embed([t for _, _, t in items])
-        dim = len(vectors[0]) if vectors else 0
-        payload: dict[str, Any] = {
-            "embed_model": self.embed_model_id or "unknown",
-            "dim": dim,
-            "embedded_at": self.clock.now(),
-            "vectors": [
-                {"page": p, "region_id": rid, "text": text, "vector": vec}
-                for (p, rid, text), vec in zip(items, vectors, strict=True)
-            ],
-        }
-        await self.store.write_embeddings(slug, payload)
-        await self._publish(
-            IngestProgress(slug=slug, stage="embed", current=len(items), total=len(items)),
-            publish_workspace_id,
+        """Embed one document through the retrieval collaborator."""
+        return await self._retrieval.embed_document(
+            slug,
+            publish_workspace_id=publish_workspace_id,
         )
-        return len(items)
 
     async def search(self, query: str, *, k: int = 10) -> dict[str, Any]:
-        """Semantic search across every doc that has embeddings.json.
-
-        Embeds the query with the same model used at ingest (carried on
-        the embedder instance), pulls all embeddings.json on demand, and
-        delegates to the pure-core ``search`` function for cosine top-k.
-
-        Returns a small envelope so consumers can verify the query model
-        before consuming hits. Documents embedded with another model are
-        reported in ``skipped`` instead of being dropped silently:
-
-            { "query": str, "embed_model": str, "k": int,
-              "hits": [{"slug","page","region_id","text","score"}],
-              "skipped": [{"slug","stored_model","query_model","reason"}] }
-        """
-        if self.embedder is None:
-            raise RuntimeError("IngestService.search called but no embedder wired")
-        # bge-style models don't need a prefix; e5-style ones do. We leave
-        # this to the embedder impl to handle (LocalSentenceTransformer
-        # currently passes through).
-        query_model = self.embed_model_id or "unknown"
-        vecs = await self.embedder.embed([query])
-        if not vecs:
-            return {
-                "query": query,
-                "embed_model": query_model,
-                "k": k,
-                "hits": [],
-                "doc_count": 0,
-                "skipped": [],
-            }
-        qv = vecs[0]
-        # Pull every doc's embeddings file. For the POC this is fine; we
-        # can cache in memory once the doc count grows.
-        manifest = await self.store.list_embeddings()
-        compatible = [m for m in manifest if m.get("embed_model") == query_model]
-        skipped = [
-            {
-                "slug": m.get("slug", ""),
-                "stored_model": m.get("embed_model") or "unknown",
-                "query_model": query_model,
-                "reason": "embed_model_mismatch",
-            }
-            for m in manifest
-            if m.get("embed_model") != query_model
-        ]
-        docs: list[tuple[str, dict]] = []
-        for m in compatible:
-            payload = await self.store.get_embeddings(m["slug"])
-            if payload is not None:
-                docs.append((m["slug"], payload))
-        hits = _search_topk(query_vector=qv, docs=docs, k=k)
-        return {
-            "query": query,
-            "embed_model": query_model,
-            "k": k,
-            "hits": hits,
-            "doc_count": len(docs),
-            "skipped": skipped,
-        }
+        """Search document embeddings through the retrieval collaborator."""
+        return await self._retrieval.search(query, k=k)
 
     async def derive_region(
         self, slug: str, parent_region_id: str, region: dict[str, Any]
