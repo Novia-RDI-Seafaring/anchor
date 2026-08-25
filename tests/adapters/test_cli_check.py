@@ -140,6 +140,75 @@ def test_check_harness_mode_is_ready_without_key(tmp_path):
     assert "Ready" in result.output
 
 
+def test_check_missing_key_prints_actionable_remedy(tmp_path):
+    # A keyed provider with no ANCHOR_OPENAI_API_KEY: gold is silently skipped.
+    # check must name the .env path, the exact key var, and the offline fallback.
+    _init_azure(tmp_path)
+    result = _run_check(tmp_path)
+    assert result.exit_code == 1, result.output
+    assert "silently skipped" in result.output
+    assert "ANCHOR_OPENAI_API_KEY" in result.output
+    assert "OPENAI_API_KEY in that .env is ignored" in result.output
+    assert str(_env_dir(tmp_path) / ".env") in result.output
+    assert "--provider harness" in result.output
+    assert "ingest_begin" in result.output
+
+
+def test_check_unset_provider_prints_remedy(tmp_path):
+    # An env.toml with no provider set at all: gold would be silently skipped.
+    _write_env(
+        tmp_path,
+        'embed_model = "BAAI/bge-small-en-v1.5"\n',
+    )
+    result = _run_check(tmp_path)
+    assert result.exit_code == 1, result.output
+    assert "provider" in result.output
+    assert "silently skipped" in result.output
+    assert "ANCHOR_OPENAI_API_KEY" in result.output
+    assert "--provider harness" in result.output
+
+
+def test_check_no_remedy_when_key_present(tmp_path):
+    _init_azure(tmp_path)
+    result = _run_check(tmp_path, env={"ANCHOR_OPENAI_API_KEY": "az-secret"})
+    assert result.exit_code == 0, result.output
+    assert "silently skipped" not in result.output
+    assert "--provider harness" not in result.output
+
+
+def test_check_no_remedy_for_harness_provider(tmp_path):
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "harness"])
+    result = _run_check(tmp_path)
+    assert result.exit_code == 0, result.output
+    assert "silently skipped" not in result.output
+
+
+def _provider_help(func) -> str:
+    """The --provider option's help text from a typer command callback.
+
+    Introspects the default value of the ``provider`` parameter (a
+    ``typer.Option``) rather than rendering ``--help``, which is brittle under
+    this environment's Click/Typer version.
+    """
+    import inspect
+
+    default = inspect.signature(func).parameters["provider"].default
+    return getattr(default, "help", "") or ""
+
+
+def test_env_create_provider_help_lists_harness():
+    from anchor.adapters.cli.envcmd import env_create
+
+    assert "harness" in _provider_help(env_create)
+
+
+def test_init_provider_help_lists_harness():
+    from anchor.adapters.cli.init import create_environment, init
+
+    assert "harness" in _provider_help(init)
+    assert "harness" in _provider_help(create_environment)
+
+
 def test_check_harness_mode_lists_open_sessions(tmp_path):
     import json
 

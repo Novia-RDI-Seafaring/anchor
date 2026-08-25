@@ -12,6 +12,8 @@ Targets:
                   also write a project-scoped .cursor/rules/anchor.mdc that
                   points a Cursor agent in this workspace at AGENTS.md + the
                   anchor CLI/MCP surfaces.
+    codex         Add a named MCP server entry to ~/.codex/config.toml (honors
+                  $CODEX_HOME). Additive and collision-safe like claude-desktop.
     print         Print what would be installed without writing anything.
 
 Idempotent: existing entries are updated in place; re-running is safe.
@@ -22,8 +24,10 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -124,6 +128,16 @@ def _claude_desktop_config_path() -> Path:
     return home / ".config" / "Claude" / "claude_desktop_config.json"
 
 
+def _codex_config_path() -> Path:
+    """The Codex MCP config location.
+
+    Codex reads ``$CODEX_HOME/config.toml`` (default ``~/.codex/config.toml``).
+    """
+    base = os.environ.get("CODEX_HOME")
+    root = Path(base) if base else Path.home() / ".codex"
+    return root / "config.toml"
+
+
 
 # ── installer impl ─────────────────────────────────────────────────────
 
@@ -148,6 +162,96 @@ def _write_json(path: Path, data: dict[str, Any]) -> None:
             backup.write_bytes(path.read_bytes())
     tmp = path.parent / (path.name + ".tmp")
     tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _load_toml(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        return {}
+    return tomllib.loads(text)
+
+
+def _toml_scalar(value: Any) -> str:
+    """Render a single TOML scalar. Handles str, bool, int, float."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        # Basic string with escaped backslashes and quotes. ASCII configs only.
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    raise TypeError(f"Unsupported TOML scalar: {value!r}")
+
+
+_BARE_TOML_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
+
+
+def _toml_key(key: str) -> str:
+    """Render a TOML key, quoting names such as Windows project paths."""
+    return key if _BARE_TOML_KEY.fullmatch(key) else _toml_scalar(key)
+
+
+def _toml_value(value: Any) -> str:
+    """Render a TOML value, including arrays and inline tables."""
+    if isinstance(value, list):
+        return "[" + ", ".join(_toml_value(item) for item in value) + "]"
+    if isinstance(value, dict):
+        items = ", ".join(f"{_toml_key(key)} = {_toml_value(item)}" for key, item in value.items())
+        return "{ " + items + " }"
+    return _toml_scalar(value)
+
+
+def _render_codex_toml(data: dict[str, Any]) -> str:
+    """Serialize the Codex config dict back to TOML.
+
+    Reconstructs arbitrary nested tables emitted by Codex, including MCP
+    server environment maps and project tables keyed by Windows paths. It does
+    NOT preserve comments or the original key order; that is why the caller
+    backs the file up before overwriting it.
+    """
+    lines: list[str] = []
+
+    def emit_table(path: list[str], table: dict[str, Any]) -> None:
+        if lines:
+            lines.append("")
+        lines.append("[" + ".".join(_toml_key(part) for part in path) + "]")
+        nested: list[tuple[str, dict[str, Any]]] = []
+        for key, value in table.items():
+            if isinstance(value, dict):
+                nested.append((key, value))
+            else:
+                lines.append(f"{_toml_key(key)} = {_toml_value(value)}")
+        for key, value in nested:
+            emit_table([*path, key], value)
+
+    root_tables: list[tuple[str, dict[str, Any]]] = []
+    for key, value in data.items():
+        if isinstance(value, dict):
+            root_tables.append((key, value))
+        else:
+            lines.append(f"{_toml_key(key)} = {_toml_value(value)}")
+    for key, value in root_tables:
+        emit_table([key], value)
+    return "\n".join(lines) + "\n"
+
+
+def _write_toml(path: Path, data: dict[str, Any]) -> None:
+    """Back up once, then atomically write the rendered Codex config."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # config.toml may hold unrelated Codex settings, and the round-trip via
+    # tomllib normalizes formatting and drops comments. Back the file up once
+    # before the first overwrite so the original is recoverable, and write
+    # atomically (temp + os.replace) so a crash cannot truncate it.
+    if path.exists():
+        backup = path.parent / (path.name + ".anchorbak")
+        if not backup.exists():
+            backup.write_bytes(path.read_bytes())
+    tmp = path.parent / (path.name + ".tmp")
+    tmp.write_text(_render_codex_toml(data), encoding="utf-8")
     os.replace(tmp, path)
 
 
@@ -225,6 +329,7 @@ def install_claude_code(
     typer.echo(f"          command: {entry['command']}")
     typer.echo(f"          args:    {entry['args']}")
     typer.echo(("[dry-run] " if dry_run else "") + f"Skill    -> {skill_path}")
+    _warn_no_key(env_name, dry_run=dry_run)
     if not dry_run:
         typer.echo("")
         typer.echo("Next:")
@@ -300,6 +405,61 @@ def _environment_zone(env_name: str) -> tuple[bool, str]:
     return True, provider.zone if provider else "unknown"
 
 
+# Providers that authenticate against an endpoint (mirror of init/check's set).
+_KEYED_PROVIDERS = ("openai", "azure", "custom")
+
+
+def _no_key_remedy(env_name: str) -> list[str] | None:
+    """Remedy lines when this env would silently skip gold, else None.
+
+    An initialized env whose provider is unset, or a keyed provider
+    (openai/azure/custom) with no ``ANCHOR_OPENAI_API_KEY``, ingests silver but
+    silently skips gold. Return the shared onboarding remedy so ``install`` can
+    warn without blocking; ``harness``/``local`` (no key needed) return None.
+    """
+    import os
+
+    from anchor.infra.environment import (
+        DEFAULT_PROJECT,
+        resolve_environment,
+        resolve_project_config,
+    )
+    from anchor.infra.providers import no_key_remedy_lines
+
+    env = resolve_environment(env_name)
+    if not env.initialized:
+        return None
+    cfg = resolve_project_config(env, DEFAULT_PROJECT)
+    provider_key = (cfg.provider or "").lower()
+    if not provider_key:
+        return no_key_remedy_lines(str(env.root / ".env"))
+    if provider_key in _KEYED_PROVIDERS:
+        personal = bool(os.environ.get("OPENAI_API_KEY"))
+        has_key = bool(cfg.openai_api_key) or (provider_key == "openai" and personal)
+        if not has_key:
+            return no_key_remedy_lines(str(env.root / ".env"))
+    return None
+
+
+def _warn_no_key(env_name: str, *, dry_run: bool) -> None:
+    """Echo a one-block no-key gold-skip warning for ``env_name`` if applicable.
+
+    Non-blocking: it only makes the silent gold-skip visible and points at
+    ``anchor check`` and the harness fallback (issue #226)."""
+    remedy = _no_key_remedy(env_name)
+    if not remedy:
+        return
+    prefix = "[dry-run] " if dry_run else ""
+    typer.echo("")
+    typer.echo(
+        prefix + "! No provider/key for this environment — gold extraction will be "
+        "silently skipped."
+    )
+    for line in remedy:
+        typer.echo(f"  - {line}")
+    typer.echo(f"  Verify with: anchor check --env {env_name}")
+
+
 @install_app.command("claude-desktop")
 def install_claude_desktop(
     env: str = typer.Option(
@@ -355,6 +515,7 @@ def install_claude_desktop(
     initialized, zone = _environment_zone(env_name)
     typer.echo(f"Environment : {env_name}")
     typer.echo(f"Data zone   : {zone}")
+    _warn_no_key(env_name, dry_run=dry_run)
     if not dry_run and not yes:
         if not typer.confirm(
             f"Wire MCP server '{name}' for environment '{env_name}'?",
@@ -377,6 +538,91 @@ def install_claude_desktop(
         typer.echo("  3. Then ingest a PDF and build a canvas — all in chat, no terminal.")
 
 
+@install_app.command("codex")
+def install_codex(
+    env: str = typer.Option(
+        None, "--env", help="Environment NAME to point at (default: the default env)."
+    ),
+    name: str = typer.Option(
+        None,
+        "--name",
+        help="MCP server entry name (default: 'anchor-<env>', so the name tells you "
+        "which environment it is and multiple environments never collide).",
+    ),
+    create: bool = typer.Option(
+        False, "--create", help="Create the environment now instead of on first use."
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Repoint an existing entry of this name at a different environment."
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the egress-zone confirmation."),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+) -> None:
+    """Register an Anchor environment as a named MCP server in Codex.
+
+    Writes a ``[mcp_servers.<name>]`` table into ``~/.codex/config.toml``
+    (honors ``$CODEX_HOME``). The entry is a pointer
+    (``anchor-mcp --env <name>``): settings live in the environment's profile,
+    so the CLI and MCP always resolve the same thing. Additive and
+    collision-safe: other servers and top-level Codex settings are preserved,
+    and an existing name pointing at a different environment is refused (pass
+    ``--name`` to add a second, or ``--force`` to repoint).
+
+    Limitation: the config is round-tripped through a TOML parser, which
+    normalizes formatting and drops comments. The original file is backed up
+    once to ``config.toml.anchorbak`` before the first overwrite.
+    """
+    from anchor.infra.environment import create_env, default_env_name
+
+    env_name = env or default_env_name()
+    if name is None:
+        # 'anchor-<env>' so the entry name tells you which environment it is and
+        # wiring one server per environment never collides on the config key.
+        name = f"anchor-{env_name}"
+    if create and not dry_run:
+        create_env(env_name)
+
+    config_path = _codex_config_path()
+    cfg = _load_toml(config_path)
+    servers = cfg.setdefault("mcp_servers", {})
+
+    existing = servers.get(name)
+    entry = _env_pointer_entry(env_name)
+    # Codex tables use string keys with a command + args array.
+    desired = {"command": entry["command"], "args": entry["args"]}
+    if existing is not None and existing.get("args") != desired["args"] and not force:
+        typer.echo(
+            f"MCP server '{name}' already points at {existing.get('args')}. "
+            f"Use --name <other> to add a second environment, or --force to repoint.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    initialized, zone = _environment_zone(env_name)
+    typer.echo(f"Environment : {env_name}")
+    typer.echo(f"Data zone   : {zone}")
+    if not dry_run and not yes:
+        if not typer.confirm(
+            f"Wire MCP server '{name}' for environment '{env_name}'?",
+            default=initialized,
+        ):
+            raise typer.Exit(code=1)
+
+    servers[name] = desired
+    if not dry_run:
+        _write_toml(config_path, cfg)
+
+    typer.echo(("[dry-run] " if dry_run else "") + f"MCP entry '{name}' -> {config_path}")
+    typer.echo(f"          command: {desired['command']}")
+    typer.echo(f"          args:    {desired['args']}")
+    if not dry_run:
+        typer.echo("")
+        typer.echo("Next:")
+        typer.echo("  1. Run `codex mcp list` to confirm the 'anchor' server is registered.")
+        typer.echo("  2. Ask Codex to create a project: 'make an Anchor project for my pumps'.")
+        typer.echo("  3. Then ingest a PDF and build a canvas from chat.")
+
+
 @install_app.command("print")
 def install_print(
     env: str = typer.Option(None, "--env", help="Environment NAME (default: the default env)."),
@@ -389,6 +635,9 @@ def install_print(
     install_claude_desktop(
         env=env, name=None, create=False, force=False, yes=True, dry_run=True
     )
+    typer.echo("")
+    typer.echo("=== codex ===")
+    install_codex(env=env, name=None, create=False, force=False, yes=True, dry_run=True)
     typer.echo("")
     typer.echo("=== cursor ===")
     install_cursor(env=env, rules=False, project_dir=None, force=False, dry_run=True)

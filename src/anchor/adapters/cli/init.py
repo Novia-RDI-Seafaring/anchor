@@ -523,7 +523,7 @@ def _provision_environment(
 def create_environment(
     name: str = typer.Argument(None, help="Environment name to create (required)."),
     env: str = typer.Option(None, "--env", help="Environment name to create (same as NAME)."),
-    provider: str = typer.Option(None, "--provider", help="local|ollama|openai|azure|custom."),
+    provider: str = typer.Option(None, "--provider", help="local|harness|ollama|openai|azure|custom."),
     embed_model: str = typer.Option(None, "--embed-model", help="Local embedding model id."),
     base_url: str = typer.Option(None, "--base-url", help="Endpoint for the chosen provider."),
     vision_model: str = typer.Option(

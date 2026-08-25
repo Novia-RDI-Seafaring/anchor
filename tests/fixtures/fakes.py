@@ -11,7 +11,11 @@ from anchor.extensions.anchor_pdfs.core.ports.pdf_renderer import CropFormat
 
 
 class FakePdfExtractor:
-    """Returns a pre-canned docling dict, ignoring the PDF entirely."""
+    """Returns a pre-canned docling dict, ignoring the PDF entirely.
+
+    Records the ``full_page_ocr`` kwarg it was called with so flag-plumbing
+    tests can assert it reached the extractor (issue #231).
+    """
 
     def __init__(self, docling: dict[str, Any] | None = None) -> None:
         # Bboxes are BOTTOMLEFT [left, top, right, bottom] with top > bottom,
@@ -23,8 +27,12 @@ class FakePdfExtractor:
                 {"label": "text", "text": "First paragraph.", "page": 1, "bbox": [0, 595, 200, 580]},
             ],
         }
+        self.calls: list[dict[str, Any]] = []
 
-    async def extract(self, pdf_path: Path) -> dict[str, Any]:
+    async def extract(
+        self, pdf_path: Path, *, full_page_ocr: bool = False
+    ) -> dict[str, Any]:
+        self.calls.append({"pdf_path": pdf_path, "full_page_ocr": full_page_ocr})
         return dict(self.docling)
 
 

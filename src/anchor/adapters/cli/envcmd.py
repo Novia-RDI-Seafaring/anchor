@@ -52,7 +52,7 @@ def _zone(env_name: str) -> str:
 @env_app.command("create")
 def env_create(
     name: str = typer.Argument(..., help="Environment name to create."),
-    provider: str = typer.Option(None, "--provider", help="local|ollama|openai|azure|custom."),
+    provider: str = typer.Option(None, "--provider", help="local|harness|ollama|openai|azure|custom."),
     embed_model: str = typer.Option(None, "--embed-model", help="Local embedding model id."),
     base_url: str = typer.Option(None, "--base-url", help="Endpoint for the chosen provider."),
     vision_model: str = typer.Option(None, "--vision-model", help="Polish + region model/deployment."),

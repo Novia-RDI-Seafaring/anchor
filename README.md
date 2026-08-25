@@ -33,6 +33,23 @@ uv tool install anchor-kb
 includes the prebuilt frontend, so no Node toolchain is required to
 just run it.
 
+The web UI ships prebuilt in the PyPI wheel. If you want the latest
+`main` and PyPI is behind, install from a local checkout. Installing
+directly from git source
+(`uv tool install "git+https://github.com/Novia-RDI-Seafaring/anchor@main"`)
+does not build the frontend and fails at the wheel build hook. Build the
+frontend first:
+
+```bash
+git clone https://github.com/Novia-RDI-Seafaring/anchor && cd anchor
+pnpm --dir web install --frozen-lockfile
+pnpm --dir web build
+uv tool install --force .
+```
+
+See [Install from source](./docs/getting-started/installation.md#install-from-source)
+for pnpm-not-on-PATH fallbacks.
+
 If you want LLM-backed gold region extraction on your first PDF upload,
 create a `.env` file before starting ANCHOR; see
 [Enable gold region extraction](#enable-gold-region-extraction). Installation
@@ -105,37 +122,23 @@ to PyPI via OIDC trusted publishing (no token sits in the repo). See
 
 ## Quick start
 
-To produce gold regions, configure a `.env` file before running `anchor demo`
-or `anchor ingest`; see [Enable gold region extraction](#enable-gold-region-extraction).
-Without it, ANCHOR still produces the silver document extraction.
+Nothing to a source-grounded value in about five minutes, no API key:
 
 ```bash
-# 0. One-shot: seed a `demo` workspace with six placeholder spec slots
-#    and start the server. If you already have the optional local demo PDF,
-#    ANCHOR ingests it too; otherwise ingest your own PDF in step 3.
-anchor demo
-
-# Or step by step:
-
-# 1. Start a project in a folder. The first time, `anchor init` asks you to
-#    pick a provider - this is the ENVIRONMENT, the trust boundary that decides
-#    where document content may go (local keeps everything on your machine).
-#    Pass --provider to skip the prompt, e.g. `anchor init --provider local`.
-mkdir my-anchor-project
-cd my-anchor-project
-anchor init
-anchor canvas create my-first-canvas
-
-# 2. Start the server (serves the canvas UI, HTTP API, and browser SSE updates)
-anchor serve
-
-# 3. (in another terminal) Ingest a PDF
-anchor ingest /path/to/datasheet.pdf
-
-# 4. Open http://localhost:8002/c/my-first-canvas in your browser
+uv tool install anchor-kb
+anchor env create home --provider harness --yes   # no-key, no-egress data zone
+anchor install claude-desktop --env home          # or claude-code / cursor
+# restart your harness, drag a PDF into the chat, ask it to ingest
+anchor serve                                       # http://127.0.0.1:8002
 ```
 
-See [`docs/getting-started/tutorial.md`](./docs/getting-started/tutorial.md) for a walked-through `anchor demo` -> "agent fills the placeholders" tour.
+On the `harness` provider your agent reads the pages, so you get gold regions
+(values with page + bbox provenance) with no key and nothing leaving your
+machine. Full walkthrough, provider decision table, and troubleshooting:
+**[Quickstart](./docs/getting-started/quickstart.md)**.
+
+Then [`docs/getting-started/tutorial.md`](./docs/getting-started/tutorial.md)
+walks the `anchor demo` -> "agent fills the placeholders" tour.
 
 ### Drag-drop, CLI ingest, and harness ingest
 
