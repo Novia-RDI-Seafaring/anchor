@@ -11,9 +11,14 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
-from anchor.adapters.mcp.canvas_tool_definitions import tool_definitions as tool_definitions
+from anchor.adapters.mcp import canvas_tool_definitions
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.core.workspace.workspace import CommandError
+
+
+def tool_definitions() -> list[dict[str, Any]]:
+    """Return the canvas MCP catalog from its focused definition module."""
+    return canvas_tool_definitions.tool_definitions()
 
 
 # ── Byte-fetch envelope ─────────────────────────────────────────────────────

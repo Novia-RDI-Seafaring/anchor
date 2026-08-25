@@ -22,7 +22,8 @@ INGEST_LOCK_WAIT_SECONDS = 30 * 60
 
 
 class Publish(Protocol):
-    async def __call__(self, event: Any, workspace_id: str | None = None) -> None: ...
+    async def __call__(self, event: Any, workspace_id: str | None = None) -> None:
+        pass
 
 
 class RecordActivity(Protocol):
@@ -34,11 +35,13 @@ class RecordActivity(Protocol):
         total: int = 0,
         status: str = "running",
         error: str | None = None,
-    ) -> None: ...
+    ) -> None:
+        pass
 
 
 class FinishStage(Protocol):
-    def __call__(self, stage: str, started_at: float, **fields: Any) -> None: ...
+    def __call__(self, stage: str, started_at: float, **fields: Any) -> None:
+        pass
 
 
 @dataclass(frozen=True)

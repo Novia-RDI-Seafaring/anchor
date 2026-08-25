@@ -19,10 +19,10 @@ from anchor.extensions.anchor_pdfs.core.events import (
     IngestProgress,
 )
 from anchor.extensions.anchor_pdfs.core.gold_ingest import (
-    GOLD_EMPTY_MAX_ATTEMPTS as GOLD_EMPTY_MAX_ATTEMPTS,
+    GOLD_EMPTY_MAX_ATTEMPTS as _GOLD_EMPTY_MAX_ATTEMPTS,
 )
 from anchor.extensions.anchor_pdfs.core.gold_ingest import (
-    INGEST_LOCK_WAIT_SECONDS as INGEST_LOCK_WAIT_SECONDS,
+    INGEST_LOCK_WAIT_SECONDS as _INGEST_LOCK_WAIT_SECONDS,
 )
 from anchor.extensions.anchor_pdfs.core.gold_ingest import (
     GoldIngest,
@@ -45,8 +45,12 @@ from anchor.extensions.anchor_pdfs.core.silver import (
     render_pages_md,
 )
 from anchor.extensions.anchor_pdfs.core.synopsis_service import (
-    SynopsisService as SynopsisService,
+    SynopsisService as _SynopsisService,
 )
+
+GOLD_EMPTY_MAX_ATTEMPTS = _GOLD_EMPTY_MAX_ATTEMPTS
+INGEST_LOCK_WAIT_SECONDS = _INGEST_LOCK_WAIT_SECONDS
+SynopsisService = _SynopsisService
 
 
 class IngestService:

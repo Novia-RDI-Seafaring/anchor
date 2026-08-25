@@ -7,10 +7,15 @@ import mimetypes
 from pathlib import Path
 from typing import Any
 
+from anchor.extensions.anchor_pdfs import mcp_tool_definitions
 from anchor.extensions.anchor_pdfs.core.ingest.session import IngestSessionService
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
-from anchor.extensions.anchor_pdfs.mcp_tool_definitions import tool_definitions as tool_definitions
+
+
+def tool_definitions() -> list[dict[str, Any]]:
+    """Return the PDF MCP catalog from its focused definition module."""
+    return mcp_tool_definitions.tool_definitions()
 
 
 # ── Byte-fetch envelope ────────────────────────────────────────────────────

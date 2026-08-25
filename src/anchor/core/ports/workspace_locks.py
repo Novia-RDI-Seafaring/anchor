@@ -11,4 +11,4 @@ class WorkspaceLocks(Protocol):
 
     def lock(self, workspace_id: str) -> AbstractAsyncContextManager[None]:
         """Return a context manager that serializes writes to the workspace."""
-        ...
+        pass

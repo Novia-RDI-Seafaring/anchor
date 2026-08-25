@@ -228,7 +228,8 @@ class ExtensionHost:
         *,
         bus: EventBus,
         workspace: WorkspaceService | None = None,
-    ) -> CadService: ...
+    ) -> CadService:
+        pass
 
     @overload
     def start(
@@ -237,7 +238,8 @@ class ExtensionHost:
         *,
         bus: EventBus,
         workspace: WorkspaceService | None = None,
-    ) -> FmuService: ...
+    ) -> FmuService:
+        pass
 
     @overload
     def start(
@@ -246,7 +248,8 @@ class ExtensionHost:
         *,
         bus: EventBus,
         workspace: WorkspaceService | None = None,
-    ) -> SysmlService: ...
+    ) -> SysmlService:
+        pass
 
     def start(
         self,

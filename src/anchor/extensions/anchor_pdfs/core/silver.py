@@ -9,14 +9,18 @@ from __future__ import annotations
 from typing import Any
 
 from anchor.extensions.anchor_pdfs.core.silver_quality import (
-    LOW_TEXT_CHAR_THRESHOLD as LOW_TEXT_CHAR_THRESHOLD,
+    LOW_TEXT_CHAR_THRESHOLD as _LOW_TEXT_CHAR_THRESHOLD,
 )
 from anchor.extensions.anchor_pdfs.core.silver_quality import (
-    find_low_text_pages as find_low_text_pages,
+    find_low_text_pages as _find_low_text_pages,
 )
 from anchor.extensions.anchor_pdfs.core.silver_quality import (
-    low_text_pages_warning as low_text_pages_warning,
+    low_text_pages_warning as _low_text_pages_warning,
 )
+
+LOW_TEXT_CHAR_THRESHOLD = _LOW_TEXT_CHAR_THRESHOLD
+find_low_text_pages = _find_low_text_pages
+low_text_pages_warning = _low_text_pages_warning
 
 # Silver Docling section-header labels we promote into the outline.
 _SECTION_LABELS = {"section_header", "title"}
