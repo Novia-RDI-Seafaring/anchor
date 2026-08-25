@@ -5,13 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def _egress_settings(config) -> tuple[str | None, bool, str | None]:
-    """Keep the existing private CLI interface over shared egress policy."""
-    from anchor.adapters.project_runtime import egress_settings
-
-    return egress_settings(config)
-
-
 def _build_real_services(data_dir: Path, *, base_url: str = "http://localhost:8002"):
     """Return the historical tuple backed by the ingest runtime profile."""
     from anchor.adapters.project_runtime import (
@@ -45,13 +38,6 @@ def _build_canvas_runtime(data_dir: Path, *, base_url: str = "http://localhost:8
         profile=RuntimeProfile.CANVAS,
         base_url=base_url,
     )
-
-
-def _build_ingest_session_service(config, bus, doc_store):
-    """Keep the existing private CLI interface over shared session wiring."""
-    from anchor.adapters.project_runtime import build_ingest_session_service
-
-    return build_ingest_session_service(config, bus, doc_store)
 
 
 def _build_session_services(data_dir: Path):

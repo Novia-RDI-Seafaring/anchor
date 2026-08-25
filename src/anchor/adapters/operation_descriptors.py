@@ -104,7 +104,3 @@ CANVAS_OPERATION_DESCRIPTORS: tuple[OperationDescriptor, ...] = (
         cli_command=("canvas", "clear"),
     ),
 )
-
-
-def canvas_operation_descriptors() -> tuple[OperationDescriptor, ...]:
-    return CANVAS_OPERATION_DESCRIPTORS

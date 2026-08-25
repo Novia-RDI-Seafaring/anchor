@@ -15,7 +15,6 @@ from anchor.core.upload_safety import (
     safe_upload_name,
 )
 
-
 # ── workspace slugs ────────────────────────────────────────────────────
 
 

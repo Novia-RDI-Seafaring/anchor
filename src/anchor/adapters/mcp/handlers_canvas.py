@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import base64
 import json
-import mimetypes
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -57,13 +56,6 @@ def _byte_envelope_from_result(*, path: Path | None, bytes_: bytes | None, conte
             "size_bytes": len(raw),
         })
     return json.dumps({"error": f"unknown format: {fmt!r} (use 'path', 'base64', or 'inline')"})
-
-
-def _ctype_for(name: str) -> str:
-    guess, _ = mimetypes.guess_type(name)
-    return guess or "application/octet-stream"
-
-
 # Non-fatal nudge for the #131 failure mode: an agent dumps tabular facts into
 # a spec node's prose `description` instead of structured `data.rows`. Prose is
 # still allowed (some specs really are a caption), so this never blocks the

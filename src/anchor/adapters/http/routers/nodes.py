@@ -55,8 +55,8 @@ async def add_node(slug: str, req: AddNodeRequest, svc: WorkspaceService = Depen
     kwargs["node_type"] = node_type
     try:
         state, env = await svc.add_node(slug, place=place, **kwargs)
-    except CommandError as e:
-        raise HTTPException(400, str(e))
+    except CommandError as exc:
+        raise HTTPException(400, str(exc)) from exc
     resp = {
         "event": env.model_dump(),
         "state": state.get_state(),
@@ -115,8 +115,8 @@ async def update_node(
                 if "data" in fields:
                     fields["data"] = await enrich_spec_row_source_refs(fields["data"], doc_store)
                 state, env = await svc.update_node(slug, node_id, fields)
-    except CommandError as e:
-        raise HTTPException(400, str(e))
+    except CommandError as exc:
+        raise HTTPException(400, str(exc)) from exc
     resp = {"event": env.model_dump(), "state": state.get_state()}
     if data_patch is not None:
         node = state.nodes.get(node_id)
@@ -130,6 +130,6 @@ async def update_node(
 async def remove_node(slug: str, node_id: str, svc: WorkspaceService = Depends(get_workspace_service)):
     try:
         state, envelopes = await svc.remove_node(slug, node_id)
-    except CommandError as e:
-        raise HTTPException(400, str(e))
+    except CommandError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return {"events": [e.model_dump() for e in envelopes], "state": state.get_state()}

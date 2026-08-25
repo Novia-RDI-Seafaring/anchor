@@ -22,17 +22,26 @@ can change it later by editing the config or by re-running `anchor install`.
 """
 from __future__ import annotations
 
-import json
 import os
-import re
 import shutil
 import sys
-import tomllib
 from pathlib import Path
 from typing import Any
 
 import typer
 
+from anchor.adapters.cli.harness_config_io import (
+    load_json as _load_json,
+)
+from anchor.adapters.cli.harness_config_io import (
+    load_toml as _load_toml,
+)
+from anchor.adapters.cli.harness_config_io import (
+    write_json as _write_json,
+)
+from anchor.adapters.cli.harness_config_io import (
+    write_toml as _write_toml,
+)
 from anchor.adapters.skills import compose_skill_md, discover_third_party_manifests
 
 install_app = typer.Typer(
@@ -137,122 +146,6 @@ def _codex_config_path() -> Path:
     root = Path(base) if base else Path.home() / ".codex"
     return root / "config.toml"
 
-
-
-# ── installer impl ─────────────────────────────────────────────────────
-
-
-def _load_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    text = path.read_text(encoding="utf-8").strip()
-    if not text:
-        return {}
-    return json.loads(text)
-
-
-def _write_json(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # ~/.claude.json also holds unrelated Claude Code state, so guard the
-    # write: back the file up once before the first overwrite, and write
-    # atomically (temp + os.replace) so a crash mid-write cannot truncate it.
-    if path.exists():
-        backup = path.parent / (path.name + ".anchorbak")
-        if not backup.exists():
-            backup.write_bytes(path.read_bytes())
-    tmp = path.parent / (path.name + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
-
-
-def _load_toml(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    text = path.read_text(encoding="utf-8").strip()
-    if not text:
-        return {}
-    return tomllib.loads(text)
-
-
-def _toml_scalar(value: Any) -> str:
-    """Render a single TOML scalar. Handles str, bool, int, float."""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (int, float)):
-        return str(value)
-    if isinstance(value, str):
-        # Basic string with escaped backslashes and quotes. ASCII configs only.
-        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-        return f'"{escaped}"'
-    raise TypeError(f"Unsupported TOML scalar: {value!r}")
-
-
-_BARE_TOML_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
-
-
-def _toml_key(key: str) -> str:
-    """Render a TOML key, quoting names such as Windows project paths."""
-    return key if _BARE_TOML_KEY.fullmatch(key) else _toml_scalar(key)
-
-
-def _toml_value(value: Any) -> str:
-    """Render a TOML value, including arrays and inline tables."""
-    if isinstance(value, list):
-        return "[" + ", ".join(_toml_value(item) for item in value) + "]"
-    if isinstance(value, dict):
-        items = ", ".join(f"{_toml_key(key)} = {_toml_value(item)}" for key, item in value.items())
-        return "{ " + items + " }"
-    return _toml_scalar(value)
-
-
-def _render_codex_toml(data: dict[str, Any]) -> str:
-    """Serialize the Codex config dict back to TOML.
-
-    Reconstructs arbitrary nested tables emitted by Codex, including MCP
-    server environment maps and project tables keyed by Windows paths. It does
-    NOT preserve comments or the original key order; that is why the caller
-    backs the file up before overwriting it.
-    """
-    lines: list[str] = []
-
-    def emit_table(path: list[str], table: dict[str, Any]) -> None:
-        if lines:
-            lines.append("")
-        lines.append("[" + ".".join(_toml_key(part) for part in path) + "]")
-        nested: list[tuple[str, dict[str, Any]]] = []
-        for key, value in table.items():
-            if isinstance(value, dict):
-                nested.append((key, value))
-            else:
-                lines.append(f"{_toml_key(key)} = {_toml_value(value)}")
-        for key, value in nested:
-            emit_table([*path, key], value)
-
-    root_tables: list[tuple[str, dict[str, Any]]] = []
-    for key, value in data.items():
-        if isinstance(value, dict):
-            root_tables.append((key, value))
-        else:
-            lines.append(f"{_toml_key(key)} = {_toml_value(value)}")
-    for key, value in root_tables:
-        emit_table([key], value)
-    return "\n".join(lines) + "\n"
-
-
-def _write_toml(path: Path, data: dict[str, Any]) -> None:
-    """Back up once, then atomically write the rendered Codex config."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # config.toml may hold unrelated Codex settings, and the round-trip via
-    # tomllib normalizes formatting and drops comments. Back the file up once
-    # before the first overwrite so the original is recoverable, and write
-    # atomically (temp + os.replace) so a crash cannot truncate it.
-    if path.exists():
-        backup = path.parent / (path.name + ".anchorbak")
-        if not backup.exists():
-            backup.write_bytes(path.read_bytes())
-    tmp = path.parent / (path.name + ".tmp")
-    tmp.write_text(_render_codex_toml(data), encoding="utf-8")
-    os.replace(tmp, path)
 
 
 def _resolve_anchor_mcp() -> str:
