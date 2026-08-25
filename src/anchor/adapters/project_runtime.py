@@ -186,6 +186,7 @@ def build_project_runtime(
         HeadlessChromiumSnapshotter,
     )
     from anchor.infra.stores.fs_workspace_store import FsWorkspaceStore
+    from anchor.infra.workspace_locks import InProcessWorkspaceLocks
 
     profile = RuntimeProfile(profile)
     features = _PROFILE_FEATURES[profile]
@@ -195,6 +196,7 @@ def build_project_runtime(
     workspace = WorkspaceService(
         FsWorkspaceStore(config.canvases_dir),
         bus,
+        locks=InProcessWorkspaceLocks(),
         snapshotter=HeadlessChromiumSnapshotter(
             base_url=base_url,
             output_dir=data_dir / "snapshots",

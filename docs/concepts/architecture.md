@@ -46,6 +46,14 @@ their operation. Listing or moving canvas nodes therefore does not load
 Docling or an embedding model. Commands that require an omitted service
 fail with an error that names the active profile.
 
+Each runtime gives `WorkspaceService` an
+`InProcessWorkspaceLocks` adapter. Mutations to one workspace are
+serialized across concurrent requests for the complete load, validate,
+append, snapshot, and publish sequence. Different workspaces can still
+progress independently. These locks do not coordinate separate
+operating-system processes, so one server process must remain the
+authoritative writer for a shared data directory.
+
 ---
 
 ## The three substrates

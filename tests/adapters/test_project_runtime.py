@@ -5,6 +5,7 @@ import pytest
 from anchor.adapters import project_runtime
 from anchor.adapters.project_runtime import RuntimeProfile, build_project_runtime
 from anchor.infra.config import AnchorConfig
+from anchor.infra.workspace_locks import InProcessWorkspaceLocks
 
 
 @pytest.fixture
@@ -24,6 +25,7 @@ def test_canvas_profile_does_not_build_ingest(config, monkeypatch):
     assert runtime.profile is RuntimeProfile.CANVAS
     assert runtime.ingest is None
     assert runtime.workspace is not None
+    assert isinstance(runtime.workspace.locks, InProcessWorkspaceLocks)
 
 
 def test_ingest_profile_excludes_unrelated_runtime_modules(config):

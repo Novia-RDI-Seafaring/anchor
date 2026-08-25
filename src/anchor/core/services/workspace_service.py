@@ -5,8 +5,9 @@ against current state, applies events, persists, and publishes.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -31,21 +32,26 @@ from anchor.core.events.envelope import DomainEvent
 from anchor.core.ids import new_event_id, new_id
 from anchor.core.ports.event_bus import EventBus
 from anchor.core.ports.snapshot import SnapshotPort, SnapshotResult
+from anchor.core.ports.workspace_locks import WorkspaceLocks
 from anchor.core.ports.workspace_store import WorkspaceStore
 from anchor.core.workspace.align import (
     Anchor,
     Axis,
     SelectedNode,
+)
+from anchor.core.workspace.align import (
     align_nodes as _align_nodes_pure,
+)
+from anchor.core.workspace.align import (
     distribute_nodes as _distribute_nodes_pure,
 )
+from anchor.core.workspace.builtin_node_types import builtin_node_type_registry
 from anchor.core.workspace.layout import (
     EdgeLike,
     NodeLike,
     find_free_position,
     organize_subtree,
 )
-from anchor.core.workspace.builtin_node_types import builtin_node_type_registry
 from anchor.core.workspace.node_types import NodeTypeRegistry
 from anchor.core.workspace.reducer import apply, cascade_events_for_remove
 from anchor.core.workspace.references import (
@@ -54,11 +60,6 @@ from anchor.core.workspace.references import (
     validate_source_ref,
 )
 from anchor.core.workspace.workspace import CommandError, Workspace, validate_command
-
-
-class _LocksProto(Protocol):
-    def lock(self, workspace_id: str) -> AbstractAsyncContextManager[None]:
-        raise NotImplementedError
 
 
 @asynccontextmanager
@@ -79,14 +80,14 @@ class WorkspaceService:
         bus: EventBus,
         *,
         clock: Clock | None = None,
-        locks: _LocksProto | None = None,
+        locks: WorkspaceLocks | None = None,
         node_types: NodeTypeRegistry | None = None,
         snapshotter: SnapshotPort | None = None,
     ) -> None:
         self.store = store
         self.bus = bus
         self.clock: Clock = clock or SystemClock()
-        self.locks: _LocksProto = locks or _NoLocks()
+        self.locks: WorkspaceLocks = locks or _NoLocks()
         # Default to the built-in shape/card contract so every adapter gets
         # the #191 unknown-data-key warning + queryable node-types schema
         # without each builder wiring it. The built-in types carry no
@@ -665,7 +666,7 @@ class WorkspaceService:
         self,
         slug: str,
         ids: list[str],
-        compute: "callable[[list[SelectedNode]], dict[str, tuple[float, float]]]",  # noqa: F821
+        compute: Callable[[list[SelectedNode]], dict[str, tuple[float, float]]],
         *,
         op_label: str,
         min_count: int,
