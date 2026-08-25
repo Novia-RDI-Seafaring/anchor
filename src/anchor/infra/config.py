@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextvars
 import os
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -43,6 +44,21 @@ CONFIG_FILENAME = "anchor.toml"
 _ACTIVE_LAYERS: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
     "anchor_active_config_layers", default=None
 )
+
+_POSIX_ENV_VAR_PATTERN = re.compile(r"\$(\w+)|\$\{([^}]+)\}")
+
+
+def expand_env_vars(value: str) -> str:
+    """Expand Windows and POSIX environment-variable syntax."""
+    expanded = os.path.expandvars(value)
+
+    def replace(match: re.Match[str]) -> str:
+        name = match.group(1) or match.group(2) or ""
+        if name == "HOME" and name not in os.environ:
+            return str(Path.home())
+        return os.environ.get(name, match.group(0))
+
+    return _POSIX_ENV_VAR_PATTERN.sub(replace, expanded)
 
 
 def _load_toml_tolerant(path: Path) -> dict[str, Any]:
@@ -116,7 +132,7 @@ class AnchorConfig(BaseSettings):
         expanding here fixes the tilde once for all adapters rather than at
         each call site.
         """
-        return Path(os.path.expandvars(str(value))).expanduser()
+        return Path(expand_env_vars(str(value))).expanduser()
     # Loopback by default: the HTTP server is unauthenticated and edits
     # local engineering data. Users who want LAN access can opt in via
     # ``ANCHOR_HTTP_HOST=0.0.0.0`` or ``--host 0.0.0.0``, and at that
