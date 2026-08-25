@@ -2,14 +2,48 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
 from anchor.adapters.cli.extensions import extensions_app
+from anchor.adapters.extension_host import ExtensionRuntimeStatus
 
 
 def _runner():
     return CliRunner()
+
+
+def test_status_emits_shared_runtime_diagnostics(tmp_path, monkeypatch):
+    from anchor.adapters import project_runtime
+
+    runtime = SimpleNamespace(
+        extension_status={
+            "anchor-fmus": ExtensionRuntimeStatus(
+                name="anchor-fmus",
+                source="bundled",
+                available=False,
+                reason="FMPy missing",
+                error_type="RuntimeError",
+            )
+        }
+    )
+    monkeypatch.setattr(
+        project_runtime,
+        "build_project_runtime_for_data_dir",
+        lambda *_args, **_kwargs: runtime,
+    )
+
+    result = _runner().invoke(
+        extensions_app,
+        ["status", "--data-dir", str(tmp_path / "data")],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["summary"] == {
+        "available": 0,
+        "unavailable": 1,
+    }
 
 
 def test_list_shows_bundled_pdf_producer(tmp_path, monkeypatch):

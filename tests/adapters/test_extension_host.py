@@ -5,9 +5,12 @@ import json
 import pytest
 
 from anchor.adapters.extension_host import (
+    ExtensionHost,
+    ExtensionRuntimeStatus,
     bundled_manifests,
     discover_manifests,
     discover_third_party_manifest_paths,
+    extension_runtime_status_payload,
     load_manifest,
     project_producers_dir,
     registration_dir,
@@ -35,8 +38,7 @@ def _manifest(name: str) -> dict[str, object]:
 
 def test_bundled_manifests_match_current_public_discovery():
     names = [m["producer"]["name"] for m in bundled_manifests()]
-    assert names == ["anchor-pdfs", "anchor-fmus", "anchor-cad"]
-    assert "anchor-sysml" not in names
+    assert names == ["anchor-pdfs", "anchor-fmus", "anchor-cad", "anchor-sysml"]
 
 
 def test_discover_manifests_groups_bundled_system_and_project(tmp_path, monkeypatch):
@@ -63,6 +65,84 @@ def test_discover_manifests_groups_bundled_system_and_project(tmp_path, monkeypa
         "anchor-pdfs",
         "anchor-fmus",
         "anchor-cad",
+        "anchor-sysml",
+    ]
+
+
+def test_extension_host_starts_bundled_runtimes(tmp_path, monkeypatch):
+    from anchor.extensions.anchor_cad import extension as cad_extension
+    from anchor.extensions.anchor_fmus import extension as fmu_extension
+    from anchor.extensions.anchor_sysml import extension as sysml_extension
+
+    cad_service = object()
+    fmu_service = object()
+    sysml_service = object()
+    calls: list[tuple[str, object, object, object | None]] = []
+
+    def build_cad(data_dir, bus):
+        calls.append(("cad", data_dir, bus, None))
+        return cad_service
+
+    def build_fmu(data_dir, bus):
+        calls.append(("fmu", data_dir, bus, None))
+        return fmu_service
+
+    def build_sysml(data_dir, bus, *, workspace):
+        calls.append(("sysml", data_dir, bus, workspace))
+        return sysml_service
+
+    monkeypatch.setattr(cad_extension, "build_service", build_cad)
+    monkeypatch.setattr(fmu_extension, "build_service", build_fmu)
+    monkeypatch.setattr(sysml_extension, "build_service", build_sysml)
+    bus = object()
+    workspace = object()
+
+    runtimes = ExtensionHost(tmp_path).start_bundled(
+        bus=bus,  # type: ignore[arg-type]
+        workspace=workspace,  # type: ignore[arg-type]
+    )
+
+    assert runtimes.cad is cad_service
+    assert runtimes.fmu is fmu_service
+    assert runtimes.sysml is sysml_service
+    assert calls == [
+        ("cad", tmp_path, bus, None),
+        ("fmu", tmp_path, bus, None),
+        ("sysml", tmp_path, bus, workspace),
+    ]
+    assert set(runtimes.status) == {"anchor-cad", "anchor-fmus", "anchor-sysml"}
+
+
+def test_extension_host_requires_data_dir_for_runtime_startup():
+    with pytest.raises(RuntimeError, match="requires a project data_dir"):
+        ExtensionHost().start_bundled(
+            bus=object(),  # type: ignore[arg-type]
+            workspace=object(),  # type: ignore[arg-type]
+        )
+
+
+def test_extension_runtime_status_payload_is_stable():
+    payload = extension_runtime_status_payload(
+        {
+            "anchor-fmus": ExtensionRuntimeStatus(
+                name="anchor-fmus",
+                source="bundled",
+                available=False,
+                reason="missing runtime",
+                error_type="RuntimeError",
+            ),
+            "anchor-cad": ExtensionRuntimeStatus(
+                name="anchor-cad",
+                source="bundled",
+                available=True,
+            ),
+        }
+    )
+
+    assert payload["summary"] == {"available": 1, "unavailable": 1}
+    assert [item["name"] for item in payload["extensions"]] == [
+        "anchor-cad",
+        "anchor-fmus",
     ]
 
 

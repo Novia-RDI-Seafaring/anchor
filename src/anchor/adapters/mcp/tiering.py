@@ -46,6 +46,7 @@ CORE_LIFECYCLE_NAMES: set[str] = {
 
 CORE_STATUS_NAMES: set[str] = {
     "anchor_status",
+    "anchor_extension_status",
     "server_info",
 }
 
