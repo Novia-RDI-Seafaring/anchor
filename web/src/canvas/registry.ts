@@ -213,7 +213,7 @@ registerNodeRenderer("note", NoteNode, {
 registerNodeRenderer("document", DocumentPrimitive, {
   group: "producers",
   label: "Document",
-  hint: "ingested PDFs · open Library",
+  hint: "ingested PDFs · open from the Files explorer",
   glyph: "page",
   order: 10,
 });
@@ -246,7 +246,7 @@ registerNodeRenderer("model3d", Model3DPrimitive, {
 registerNodeRenderer("cad:model", Model3DPrimitive, {
   group: "producers",
   label: "CAD model",
-  hint: "anchor_cad · open Library",
+  hint: "anchor_cad · open from the Files explorer",
   glyph: "cube",
   order: 40,
 });

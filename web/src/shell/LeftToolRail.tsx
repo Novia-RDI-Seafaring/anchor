@@ -6,7 +6,10 @@
  *   - Shapes   · Rectangle / Circle / Diamond / Container (dashed)
  *   - Cards    · Fact / Note
  *   - Add (+)  · producer upload menu — PDF / CAD / FMU / SysML
- *   - Library  · toggles the right-side Library drawer (`]` shortcut also)
+ *
+ * Ingested files now live in the left files explorer (SourceCluster); the
+ * old Library drawer + its `]` shortcut are retired (#220). The `[` shortcut
+ * toggles the source cluster (explorer + viewer) so it can yield full width.
  *
  * Two complementary gestures per shape/card icon:
  *
@@ -22,14 +25,12 @@
  * Producers (Document / CAD model / FMU / SysML model) don't arm — they
  * need real content. The `+` button opens a popover; picking a type
  * opens a file-input Dialog that POSTs to the matching ingest endpoint.
- *
- * The drawer keeps tabbed sub-sections per source type if the existing
- * `<Library>` component already does. As of this PR it doesn't — that's
- * a separate task.
+ * On success the left files explorer (SourceCluster) is expanded so the new
+ * artefact is visible.
  */
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
-import { Library as LibraryIcon, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { cad } from "@/api/cad";
@@ -64,9 +65,8 @@ const PRODUCER_ACCEPT: Record<ProducerKind, string> = {
 };
 
 export function LeftToolRail({ workspaceSlug }: Props) {
-  const setLibraryDrawerOpen = useUiStore((s) => s.setLibraryDrawerOpen);
-  const toggleLibraryDrawer = useUiStore((s) => s.toggleLibraryDrawer);
-  const libraryDrawerOpen = useUiStore((s) => s.libraryDrawerOpen);
+  const toggleSourceCluster = useUiStore((s) => s.toggleSourceCluster);
+  const setSourceClusterCollapsed = useUiStore((s) => s.setSourceClusterCollapsed);
   const armedTool = useUiStore((s) => s.armedTool);
   const armTool = useUiStore((s) => s.armTool);
   const disarmTool = useUiStore((s) => s.disarmTool);
@@ -77,7 +77,8 @@ export function LeftToolRail({ workspaceSlug }: Props) {
   const [activeProducer, setActiveProducer] = useState<ProducerKind | null>(null);
 
   // Keyboard shortcuts:
-  //   `]` toggles the Library drawer (preserved from the previous Toolbar).
+  //   `[` toggles the source cluster (files explorer + viewer) so the canvas
+  //       can go full width. (The old `]` Library-drawer shortcut is gone.)
   //   `Esc` disarms whatever tool is armed.
   // Ignore both when the user is typing into an input/textarea — rename
   // fields use the same keys.
@@ -89,10 +90,10 @@ export function LeftToolRail({ workspaceSlug }: Props) {
         (target.tagName === "INPUT" ||
           target.tagName === "TEXTAREA" ||
           target.isContentEditable);
-      if (event.key === "]" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      if (event.key === "[" && !event.metaKey && !event.ctrlKey && !event.altKey) {
         if (typing) return;
         event.preventDefault();
-        toggleLibraryDrawer();
+        toggleSourceCluster();
       } else if (event.key === "Escape") {
         // Disarming on Esc is the most "draw.io expected" behaviour. Don't
         // preventDefault — other components may also want a chance at Esc.
@@ -106,7 +107,7 @@ export function LeftToolRail({ workspaceSlug }: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleLibraryDrawer, armedTool, disarmTool, setSelectedNodeId, setPropertiesOpen]);
+  }, [toggleSourceCluster, armedTool, disarmTool, setSelectedNodeId, setPropertiesOpen]);
 
   const shapes = paletteEntries("shapes");
   const cards = paletteEntries("cards");
@@ -243,28 +244,6 @@ export function LeftToolRail({ workspaceSlug }: Props) {
             </PopoverPrimitive.Content>
           </PopoverPrimitive.Portal>
         </PopoverPrimitive.Root>
-
-        <RailDivider />
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={toggleLibraryDrawer}
-              aria-label="Library"
-              aria-pressed={libraryDrawerOpen}
-              className={cn(
-                "flex h-9 w-9 items-center justify-center rounded-md text-neutral-700 transition hover:bg-neutral-100",
-                libraryDrawerOpen && "bg-neutral-200 text-neutral-900",
-              )}
-            >
-              <LibraryIcon className="size-4" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="right">
-            Library · <kbd className="font-mono">]</kbd>
-          </TooltipContent>
-        </Tooltip>
       </div>
 
       {/* Top-of-canvas hint strip when a tool is armed. */}
@@ -286,9 +265,10 @@ export function LeftToolRail({ workspaceSlug }: Props) {
           workspaceSlug={workspaceSlug}
           onClose={() => {
             setActiveProducer(null);
-            // Library is the natural place to confirm a successful upload —
-            // open it so the user sees the new doc / CAD / FMU appear.
-            setLibraryDrawerOpen(true);
+            // The left files explorer is where a successful upload shows up —
+            // make sure the source cluster is expanded so the user sees the
+            // new doc / CAD / FMU appear in the list.
+            setSourceClusterCollapsed(false);
           }}
         />
       ) : null}

@@ -80,6 +80,12 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
   // Read ReactFlow's own selection state and viewport transform.
   const rfNodes = useStore((s) => s.nodes);
   const transform = useStore((s) => s.transform);
+  // Pane dimensions: when the source dock opens/closes the canvas resizes but
+  // the transform does not change, so without these the toolbar would keep its
+  // stale screen position (floating over the PDF viewer). Re-anchoring on a
+  // resize moves it back above its node.
+  const rfWidth = useStore((s) => s.width);
+  const rfHeight = useStore((s) => s.height);
   const { flowToScreenPosition } = useReactFlow();
 
   const selectedNodeIds = useMemo(
@@ -122,7 +128,7 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
     // dep on `transform` is what does it. flowToScreenPosition itself is
     // stable across the lifetime of the provider.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedNodeIds, nodes, transform]);
+  }, [selectedNodeIds, nodes, transform, rfWidth, rfHeight]);
 
   const setPropertiesOpen = useUiStore((s) => s.setPropertiesOpen);
 

@@ -82,14 +82,19 @@ describe("SourceDock", () => {
     expect(views[0]!.getAttribute("data-page")).toBe("4");
   });
 
-  it("applies the dock ratio as the pane width", async () => {
+  it("sizes the pane as a definite fraction of the viewport space right of the explorer", async () => {
     useUiStore.getState().setSourceDockRatio(0.6);
     await renderDock();
     await act(async () => {
       useUiStore.getState().openPdf("doc-a", { page: 1 });
     });
     const dock = screen.getByTestId("source-dock");
-    expect(dock.style.width).toBe("60%");
+    // Definite width (not a % of the shrink-wrapped cluster) so a wide child
+    // can't stretch the dock past the window, plus a hard cap so the canvas
+    // stays reachable. See the ballooning-references fix.
+    const ew = useUiStore.getState().explorerWidth;
+    expect(dock.style.width).toBe(`calc(0.6 * (100vw - ${ew}px))`);
+    expect(dock.style.maxWidth).toBe("70vw");
   });
 
   it("closing the dock returns to canvas-full (unmounts the pane)", async () => {
