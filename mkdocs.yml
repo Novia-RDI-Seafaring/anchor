@@ -109,6 +109,7 @@ nav:
     - Install: getting-started/installation.md
     - Tutorial: getting-started/tutorial.md
   - Guides:
+    - Choose a provider and enable gold: guides/provider-setup.md
     - Environments and projects: guides/environments-and-projects.md
     - Working with documents and canvases: guides/documents-and-canvases.md
     - Agent setup: guides/agent-setup.md

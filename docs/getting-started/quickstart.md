@@ -32,10 +32,15 @@ data zone.
 | Provider | What extracts gold regions | Data leaves your machine? | Key needed? |
 |---|---|---|---|
 | `harness` | Your agent reads pages, ANCHOR embeds locally | Depends on the harness and its model provider | No Anchor key |
-| `local` | Nothing (silver only: page text + search) | No | No |
+| `local` | Nothing (silver only: page text, no gold-region embeddings) | No | No |
 | `openai` | OpenAI vision, server-side | Yes (to OpenAI) | Yes |
 | `azure` | Azure OpenAI vision, server-side | Yes (to your Azure) | Yes |
 | `ollama` | A local vision model you run | No | No |
+
+Not sure which boundary is appropriate? Read
+[Choose a provider and enable gold](../guides/provider-setup.md) before
+uploading the document. It explains exactly which component receives pages
+and why an API key does not select a provider.
 
 Start with `harness` for documents approved for that harness. It produces gold
 regions (structured values with page + bbox provenance) with no Anchor key and
@@ -134,15 +139,30 @@ For Azure OpenAI, the base URL and deployment-name specifics are in the
 ## Troubleshooting
 
 **Ingest finished but there are 0 gold regions or no embeddings.**
-The environment has no vision provider or no key. Two fixes:
+First run:
+
+```bash
+anchor env list
+anchor check --env <name>
+```
+
+If the environment does not exist, create it before trying another upload. A
+`.env` containing `ANCHOR_OPENAI_API_KEY` does not create an environment and
+does not choose a provider. The key file is loaded only after the selected
+environment has a valid `env.toml`.
+
+Then choose the appropriate fix:
 
 - Use the no-key path: switch to a `harness` environment and let the agent do
-  the reading (steps 2 to 4). This is the recommended default.
-- Or configure a keyed provider: `openai` / `azure`, with the key in
+  the reading (steps 2 to 4), but only for documents approved for that harness.
+- Use `ollama` for local gold with no user API key.
+- Configure a keyed provider: `openai`, `azure`, or `custom`, with the key in
   `~/.anchor/envs/<name>/.env` named `ANCHOR_OPENAI_API_KEY` (not a bare
   `OPENAI_API_KEY`).
 
-Run `anchor check --env <name> --probe` to see which one you are missing.
+Restart `anchor serve` after changing the environment. Existing silver-only
+documents are not backfilled; reingest the original PDF with `--force`. See
+[Provider setup](../guides/provider-setup.md) for the exact commands.
 
 **`/mcp` does not list `anchor`.**
 Restart the harness fully (quit and reopen, not just close the window). MCP

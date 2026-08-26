@@ -85,13 +85,14 @@ client's `api_key`. This is Microsoft's documented pattern for the v1 API.
 If `anchor env create` did not capture it:
 
 ```bash
-echo 'ANCHOR_OPENAI_API_KEY=<your-azure-key>' >> .env
+echo 'ANCHOR_OPENAI_API_KEY=<your-azure-key>' >> ~/.anchor/envs/work/.env
 ```
 
 A personal `OPENAI_API_KEY` in your shell is **not** the right credential for
 Azure. Use `ANCHOR_OPENAI_API_KEY` for Azure projects. If you already have a
 personal `OPENAI_API_KEY` in your shell, do not treat that as proof the Azure
-project is configured.
+project is configured. The environment `.env` is loaded only after `work` has
+a valid `env.toml`; the key does not select the provider by itself.
 
 ## 4. Verify before ingesting
 
