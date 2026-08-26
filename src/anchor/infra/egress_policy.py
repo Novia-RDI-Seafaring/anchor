@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from anchor.infra.config import AnchorConfig
 
-_NO_SERVER_EGRESS_PROVIDERS = frozenset({"harness", "local"})
 _SERVER_EGRESS_PROVIDERS = frozenset({"azure", "custom", "ollama", "openai"})
 _PROJECT_IMMUTABLE_FIELDS = frozenset({"openai_base_url", "provider"})
 _PROJECT_FORBIDDEN_FIELDS = frozenset({"openai_api_key"})
