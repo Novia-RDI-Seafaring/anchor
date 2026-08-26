@@ -7,18 +7,47 @@
  * twice fails to disarm, or where arming a tool leaves a stale value
  * around, would make the canvas un-clickable. Pin both gestures.
  */
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { DEFAULT_SOURCE_DOCK_RATIO, useUiStore } from "./uiStore";
+import {
+  DEFAULT_EXPLORER_WIDTH,
+  DEFAULT_SOURCE_DOCK_RATIO,
+  useUiStore,
+} from "./uiStore";
+
+/**
+ * Install an in-memory localStorage stub. This jsdom build does not provide a
+ * working Storage (its methods are missing), and the store guards against that
+ * by falling back to in-memory. To assert the *persistence* behaviour we swap
+ * in a real stub for the duration of a test.
+ */
+function installLocalStorageStub(): Record<string, string> {
+  const store: Record<string, string> = {};
+  vi.stubGlobal("localStorage", {
+    getItem: (k: string) => (k in store ? store[k] : null),
+    setItem: (k: string, v: string) => {
+      store[k] = v;
+    },
+    removeItem: (k: string) => {
+      delete store[k];
+    },
+    clear: () => {
+      for (const k of Object.keys(store)) delete store[k];
+    },
+  });
+  return store;
+}
 
 beforeEach(() => {
+  vi.unstubAllGlobals();
   // Reset to the initial state by setting every field individually — the
   // store has no `reset()` action.
   useUiStore.setState({
     pdfViewer: null,
     sourceDockRatio: DEFAULT_SOURCE_DOCK_RATIO,
+    explorerWidth: DEFAULT_EXPLORER_WIDTH,
+    sourceClusterCollapsed: false,
     hoveredSourceRef: null,
-    libraryDrawerOpen: false,
     armedTool: null,
     selectedNodeId: null,
     selectedEdgeId: null,
@@ -265,20 +294,67 @@ describe("uiStore split-screen source dock (#110a)", () => {
   });
 });
 
-describe("uiStore mutual exclusion (library vs properties)", () => {
-  it("opening Properties closes the Library drawer", () => {
-    useUiStore.setState({ libraryDrawerOpen: true });
+describe("uiStore properties panel (inspector)", () => {
+  it("setPropertiesOpen toggles the inspector", () => {
     useUiStore.getState().setPropertiesOpen(true);
-    const s = useUiStore.getState();
-    expect(s.propertiesOpen).toBe(true);
-    expect(s.libraryDrawerOpen).toBe(false);
+    expect(useUiStore.getState().propertiesOpen).toBe(true);
+    useUiStore.getState().setPropertiesOpen(false);
+    expect(useUiStore.getState().propertiesOpen).toBe(false);
   });
 
-  it("toggleProperties on closes the Library drawer", () => {
-    useUiStore.setState({ libraryDrawerOpen: true, propertiesOpen: false });
+  it("toggleProperties flips the inspector open/closed", () => {
+    useUiStore.setState({ propertiesOpen: false });
     useUiStore.getState().toggleProperties();
-    const s = useUiStore.getState();
-    expect(s.propertiesOpen).toBe(true);
-    expect(s.libraryDrawerOpen).toBe(false);
+    expect(useUiStore.getState().propertiesOpen).toBe(true);
+    useUiStore.getState().toggleProperties();
+    expect(useUiStore.getState().propertiesOpen).toBe(false);
+  });
+});
+
+describe("uiStore source cluster layout (#220 part B)", () => {
+  it("explorer width defaults to the documented default", () => {
+    expect(useUiStore.getState().explorerWidth).toBe(DEFAULT_EXPLORER_WIDTH);
+  });
+
+  it("setExplorerWidth stores a width within the band", () => {
+    useUiStore.getState().setExplorerWidth(300);
+    expect(useUiStore.getState().explorerWidth).toBe(300);
+  });
+
+  it("setExplorerWidth clamps below the minimum", () => {
+    useUiStore.getState().setExplorerWidth(10);
+    expect(useUiStore.getState().explorerWidth).toBe(160);
+  });
+
+  it("setExplorerWidth clamps above the maximum", () => {
+    useUiStore.getState().setExplorerWidth(9999);
+    expect(useUiStore.getState().explorerWidth).toBe(520);
+  });
+
+  it("setExplorerWidth persists to localStorage", () => {
+    const store = installLocalStorageStub();
+    useUiStore.getState().setExplorerWidth(280);
+    expect(store["anchor.explorerWidth"]).toBe("280");
+  });
+
+  it("source cluster is expanded by default", () => {
+    expect(useUiStore.getState().sourceClusterCollapsed).toBe(false);
+  });
+
+  it("toggleSourceCluster flips and persists the collapsed flag", () => {
+    const store = installLocalStorageStub();
+    useUiStore.getState().toggleSourceCluster();
+    expect(useUiStore.getState().sourceClusterCollapsed).toBe(true);
+    expect(store["anchor.sourceClusterCollapsed"]).toBe("1");
+    useUiStore.getState().toggleSourceCluster();
+    expect(useUiStore.getState().sourceClusterCollapsed).toBe(false);
+    expect(store["anchor.sourceClusterCollapsed"]).toBe("0");
+  });
+
+  it("setSourceClusterCollapsed persists the flag", () => {
+    const store = installLocalStorageStub();
+    useUiStore.getState().setSourceClusterCollapsed(true);
+    expect(useUiStore.getState().sourceClusterCollapsed).toBe(true);
+    expect(store["anchor.sourceClusterCollapsed"]).toBe("1");
   });
 });

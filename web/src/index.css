@@ -88,3 +88,17 @@
   box-shadow: 0 0 0 3px rgb(16 185 129 / 0.14);
   opacity: 0.9;
 }
+
+/* PDF text-layer selection feedback.
+   pdf.js 6.x sets `.textLayer ::selection { background: transparent }` because
+   it expects its own JS-driven highlight layer (not wired up for the bare
+   TextLayer used here). Restore a visible selection colour so dragging shows
+   live, character-level feedback and a sentence can be selected precisely.
+   `!important` is needed because pdf_viewer.css is imported from a component
+   and so cascades after this global stylesheet. */
+.textLayer ::selection {
+  background: rgb(14 165 233 / 0.4) !important;
+}
+.textLayer ::-moz-selection {
+  background: rgb(14 165 233 / 0.4) !important;
+}

@@ -37,4 +37,23 @@ export async function loadPdf(url: string): Promise<LoadedPdf> {
   return { doc, destroy: () => task.destroy() };
 }
 
+/**
+ * Page sizes in PDF points (unscaled), keyed by 1-based page number. The
+ * continuous viewer (#220) uses these to lay every page out at the right height
+ * before any canvas renders, so the scroll height and scroll-to-page math are
+ * correct from the start. Cheap: `getPage` only parses the page dict, not its
+ * content stream.
+ */
+export async function pageSizes(
+  doc: PdfDoc,
+): Promise<Record<number, { w: number; h: number }>> {
+  const out: Record<number, { w: number; h: number }> = {};
+  for (let page = 1; page <= doc.numPages; page++) {
+    const pdfPage = await doc.getPage(page);
+    const [x0, y0, x1, y1] = pdfPage.view; // [x0, y0, x1, y1] in points
+    out[page] = { w: (x1 ?? 0) - (x0 ?? 0), h: (y1 ?? 0) - (y0 ?? 0) };
+  }
+  return out;
+}
+
 export { pdfjs };
