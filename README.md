@@ -297,6 +297,12 @@ only for the public `openai` provider with no custom base URL. Using
 `ANCHOR_OPENAI_API_KEY` consistently is clearer and keeps the credential scoped
 to the named environment.
 
+For `openai`, `azure`, and `custom`, omit `--yes` during interactive setup.
+ANCHOR asks for the key with hidden input and saves it to the selected
+environment's `.env`. With `--yes`, no prompt runs and no key is saved; create
+the environment `.env` separately. Never put a key directly in a command-line
+argument because shell history may retain it.
+
 Run `anchor init --env <name>` to bind a working folder to an existing
 environment. It writes a non-secret project `anchor.toml` and a hidden
 `.anchor_data/`. A project cannot redirect its environment's provider or
