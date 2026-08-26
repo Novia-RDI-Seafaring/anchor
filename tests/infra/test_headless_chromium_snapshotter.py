@@ -38,7 +38,7 @@ def test_snapshotter_satisfies_port_protocol(tmp_path: Path):
     # `Protocol` runtime check isn't available without @runtime_checkable;
     # assert the method shape instead — it's what the port actually
     # promises callers.
-    assert callable(getattr(s, "snapshot"))
+    assert callable(s.snapshot)
     params = signature(s.snapshot).parameters
     assert set(params.keys()) >= {"slug", "format", "viewport", "full_page"}
     # Reference the port symbol so the import stays useful (catches drift

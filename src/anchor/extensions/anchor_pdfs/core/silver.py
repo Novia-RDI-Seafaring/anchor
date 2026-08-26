@@ -8,6 +8,20 @@ from __future__ import annotations
 
 from typing import Any
 
+from anchor.extensions.anchor_pdfs.core.silver_quality import (
+    LOW_TEXT_CHAR_THRESHOLD as _LOW_TEXT_CHAR_THRESHOLD,
+)
+from anchor.extensions.anchor_pdfs.core.silver_quality import (
+    find_low_text_pages as _find_low_text_pages,
+)
+from anchor.extensions.anchor_pdfs.core.silver_quality import (
+    low_text_pages_warning as _low_text_pages_warning,
+)
+
+LOW_TEXT_CHAR_THRESHOLD = _LOW_TEXT_CHAR_THRESHOLD
+find_low_text_pages = _find_low_text_pages
+low_text_pages_warning = _low_text_pages_warning
+
 # Silver Docling section-header labels we promote into the outline.
 _SECTION_LABELS = {"section_header", "title"}
 
@@ -276,7 +290,7 @@ def _render_page_md(items: list[dict[str, Any]]) -> str:
             lines.append(f"_[figure: {cap}]_")
             lines.append("")
         elif label == "table":
-            md = _render_table_md(it.get("cells"))
+            md = render_table_cells_md(it.get("cells"))
             if md:
                 lines.append(md)
                 lines.append("")
@@ -286,11 +300,13 @@ def _render_page_md(items: list[dict[str, Any]]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _render_table_md(cells: Any) -> str:
+def render_table_cells_md(cells: Any) -> str:
+    """Render table cells as compact markdown while preserving cell order."""
     if not isinstance(cells, list) or not cells:
         return ""
     grid: dict[tuple[int, int], str] = {}
-    rows = cols = 0
+    row_indexes: set[int] = set()
+    column_indexes: set[int] = set()
     for cell in cells:
         if not isinstance(cell, dict):
             continue
@@ -310,16 +326,18 @@ def _render_table_md(cells: Any) -> str:
             grid[(r, c)] = f"{existing} {text}"
         elif not existing:
             grid[(r, c)] = text
-        rows = max(rows, r + 1)
-        cols = max(cols, c + 1)
-    if rows == 0 or cols == 0:
+        row_indexes.add(r)
+        column_indexes.add(c)
+    rows = sorted(row_indexes)
+    columns = sorted(column_indexes)
+    if not rows or not columns:
         return ""
 
     def row_md(r: int) -> str:
-        return "| " + " | ".join(grid.get((r, c), "") for c in range(cols)) + " |"
+        return "| " + " | ".join(grid.get((r, c), "") for c in columns) + " |"
 
-    out = [row_md(0), "| " + " | ".join(["---"] * cols) + " |"]
-    for r in range(1, rows):
+    out = [row_md(rows[0]), "| " + " | ".join(["---"] * len(columns)) + " |"]
+    for r in rows[1:]:
         out.append(row_md(r))
     return "\n".join(out)
 
@@ -378,6 +396,44 @@ def build_pages_meta(docling: dict[str, Any]) -> dict[str, Any]:
 # page image and raw markdown for the full content; candidate text is a
 # grouping aid, not the content channel.
 _CANDIDATE_TEXT_MAX = 800
+
+# Cap server-derived region content so gold and embedding payloads remain
+# bounded on dense tables.
+_REGION_CONTENT_MAX = 6000
+
+
+def region_content_from_items(
+    items: Any,
+    indexes: list[int] | None = None,
+) -> str:
+    """Render selected Docling items as trusted gold-region content."""
+    if not isinstance(items, list):
+        return ""
+    selected = items
+    if indexes is not None:
+        selected = [items[index] for index in indexes if 0 <= index < len(items)]
+    if not selected:
+        return ""
+    content = _render_page_md(
+        [item for item in selected if isinstance(item, dict)]
+    ).strip()
+    return content[:_REGION_CONTENT_MAX].rstrip()
+
+
+def region_search_text(region: dict[str, Any]) -> str:
+    """Combine unique region fields for embedding and retrieval."""
+    parts: list[str] = []
+    seen: set[str] = set()
+    for key in ("title", "description", "content"):
+        value = region.get(key)
+        if not isinstance(value, str):
+            continue
+        text = value.strip()
+        normalized = " ".join(text.split()).casefold()
+        if text and normalized not in seen:
+            seen.add(normalized)
+            parts.append(text)
+    return "\n\n".join(parts)
 
 
 def build_page_candidates(docling: dict[str, Any]) -> dict[int, list[dict[str, Any]]]:
@@ -528,76 +584,3 @@ def needs_polish(
         return True
     labels = {it.get("label") for it in page_items}
     return "table" in labels or "picture" in labels
-
-
-#: A page with fewer than this many non-whitespace extractable characters is
-#: treated as having "no text layer" for the low-text warning. Datasheet pages
-#: are text-dense; a real page clears this by an order of magnitude. A page
-#: docling could not read (no text layer, vector outlines, scanned bitmap the
-#: default OCR skipped) lands near zero. Kept low so a genuinely sparse-but-real
-#: page (a single caption) is not flagged.
-LOW_TEXT_CHAR_THRESHOLD = 20
-
-
-def _page_text_len(items: list[dict[str, Any]], page: int) -> int:
-    """Non-whitespace extractable char count docling emitted for one page.
-
-    Sums text-item text plus table cell text (the two places silver draws
-    real characters from). Whitespace is stripped so a page of blank runs
-    still counts as empty.
-    """
-    total = 0
-    for it in items:
-        if not isinstance(it, dict) or it.get("page") != page:
-            continue
-        text = it.get("text")
-        if isinstance(text, str):
-            total += len("".join(text.split()))
-        for cell in it.get("cells") or []:
-            if isinstance(cell, dict):
-                cell_text = cell.get("text")
-                if isinstance(cell_text, str):
-                    total += len("".join(cell_text.split()))
-    return total
-
-
-def find_low_text_pages(
-    docling: dict[str, Any],
-    page_count: int,
-    *,
-    threshold: int = LOW_TEXT_CHAR_THRESHOLD,
-) -> list[int]:
-    """Page numbers that yielded near-zero extractable text (issue #231).
-
-    A page docling emitted almost no characters for usually has no text layer
-    (vector outlines or a scanned bitmap the default region OCR skipped). We
-    scan pages 1..page_count so a page docling dropped entirely (no items at
-    all) is caught, not just pages with a few empty items. Returns an empty
-    list when the document has no pages.
-    """
-    items = docling.get("items")
-    if not isinstance(items, list) or page_count <= 0:
-        return []
-    return [
-        page
-        for page in range(1, page_count + 1)
-        if _page_text_len(items, page) < threshold
-    ]
-
-
-def low_text_pages_warning(pages: list[int]) -> str | None:
-    """One-line, non-fatal warning naming low-text pages + the OCR remedy.
-
-    Returns None when there is nothing to warn about, so callers can do
-    ``if (msg := low_text_pages_warning(pages)): ...`` without a branch on the
-    list themselves.
-    """
-    if not pages:
-        return None
-    joined = ", ".join(str(p) for p in pages)
-    noun = "Page" if len(pages) == 1 else "Pages"
-    return (
-        f"{noun} {joined} had little or no extractable text (likely no text "
-        "layer / vector or scanned content). Retry with full-page OCR "
-        "(anchor ingest --full-page-ocr / ingest_pdf full_page_ocr=true)."
-    )

@@ -20,8 +20,8 @@ async def add_edge(slug: str, req: AddEdgeRequest, svc: WorkspaceService = Depen
     kwargs["edge_type"] = edge_type
     try:
         state, env = await svc.add_edge(slug, **kwargs)
-    except CommandError as e:
-        raise HTTPException(400, str(e))
+    except CommandError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return {"event": env.model_dump(), "state": state.get_state()}
 
 
@@ -39,8 +39,8 @@ async def update_edge(
         fields.pop("type", None)
     try:
         state, env = await svc.update_edge(slug, edge_id, fields)
-    except CommandError as e:
-        raise HTTPException(400, str(e))
+    except CommandError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return {"event": env.model_dump(), "state": state.get_state()}
 
 
@@ -48,6 +48,6 @@ async def update_edge(
 async def remove_edge(slug: str, edge_id: str, svc: WorkspaceService = Depends(get_workspace_service)):
     try:
         state, env = await svc.remove_edge(slug, edge_id)
-    except CommandError as e:
-        raise HTTPException(400, str(e))
+    except CommandError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return {"event": env.model_dump(), "state": state.get_state()}

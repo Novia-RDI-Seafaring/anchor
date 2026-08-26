@@ -5,7 +5,6 @@ from pathlib import Path
 
 from anchor.extensions.anchor_sysml.infra.parser import parse_text
 
-
 FIXTURES = Path(__file__).parent / "fixtures"
 
 

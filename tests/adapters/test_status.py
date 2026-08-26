@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from anchor.infra.config import AnchorConfig
 from anchor.adapters.status import build_status_summary
+from anchor.infra.config import AnchorConfig
 from tests.fixtures.services import make_in_memory_services
 
 

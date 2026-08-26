@@ -114,6 +114,60 @@ def test_search_reports_skipped_docs_with_incompatible_embed_model():
     asyncio.run(run())
 
 
+def test_keyed_ingest_persists_region_content_and_embeds_it():
+    async def run():
+        docling = {
+            "items": [
+                {
+                    "label": "table",
+                    "text": "",
+                    "page": 1,
+                    "bbox": [0, 100, 200, 20],
+                    "cells": [
+                        {"row": 0, "col": 0, "text": "Field"},
+                        {"row": 0, "col": 1, "text": "Value"},
+                        {"row": 1, "col": 0, "text": "limit"},
+                        {"row": 1, "col": 1, "text": "10"},
+                    ],
+                },
+            ],
+        }
+        store = MemoryDocStore()
+        ingest = IngestService(
+            store,
+            MemoryEventBus(),
+            extractor=FakePdfExtractor(docling=docling),
+            renderer=FakePdfRenderer(page_count=1),
+            polisher=FakePolisher(),
+            region_extractor=FakeRegionExtractor(
+                regions_per_page=[
+                    {
+                        "id": "r1",
+                        "kind": "table",
+                        "title": "Limits",
+                        "description": "",
+                        "bbox": [0, 105, 205, 15],
+                        "tags": [],
+                        "entities": [],
+                    },
+                ]
+            ),
+            embedder=StaticEmbedder(),
+        )
+
+        await ingest.ingest_pdf(b"%PDF-fake", "sample.pdf")
+
+        gold = await store.get_gold_map("sample")
+        assert gold is not None
+        region = gold["pages"][1][0]
+        assert "| Field | Value |" in region["content"]
+        embeddings = await store.get_embeddings("sample")
+        assert embeddings is not None
+        assert "| limit | 10 |" in embeddings["vectors"][0]["text"]
+
+    asyncio.run(run())
+
+
 def test_ingest_is_idempotent_unless_forced():
     async def run():
         s = make_in_memory_services(page_count=1)

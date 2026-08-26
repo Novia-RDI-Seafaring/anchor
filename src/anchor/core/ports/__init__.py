@@ -8,6 +8,13 @@ split shows up at the import boundary.
 """
 from anchor.core.ports.event_bus import EventBus
 from anchor.core.ports.snapshot import SnapshotPort, SnapshotResult
+from anchor.core.ports.workspace_locks import WorkspaceLocks
 from anchor.core.ports.workspace_store import WorkspaceStore
 
-__all__ = ["WorkspaceStore", "EventBus", "SnapshotPort", "SnapshotResult"]
+__all__ = [
+    "EventBus",
+    "SnapshotPort",
+    "SnapshotResult",
+    "WorkspaceLocks",
+    "WorkspaceStore",
+]

@@ -9,9 +9,20 @@ from pathlib import Path
 import typer
 
 from anchor.adapters.cli.common import DEFAULT_DATA_DIR
-from anchor.adapters.cli.services import _build_real_services
+from anchor.adapters.cli.services import _build_canvas_runtime
+from anchor.adapters.extension_host import ExtensionHost
 
 sysml_app = typer.Typer(help="Render and export SysML v2 diagrams.")
+
+
+def _build_sysml_service(data_dir: Path):
+    """Build SysML against the shared reduced canvas runtime."""
+    runtime = _build_canvas_runtime(data_dir)
+    return ExtensionHost(data_dir).start(
+        "sysml",
+        bus=runtime.bus,
+        workspace=runtime.workspace,
+    )
 
 
 @sysml_app.command("render")
@@ -26,10 +37,7 @@ def sysml_render(
     if not sysml_path.exists():
         typer.echo(f"SysML file not found: {sysml_path}", err=True)
         raise typer.Exit(code=1)
-    _, bus, workspace, _, _ = _build_real_services(data_dir)
-    from anchor.extensions.anchor_sysml import extension as sysml_ext
-
-    svc = sysml_ext.build_service(data_dir, bus, workspace=workspace)
+    svc = _build_sysml_service(data_dir)
 
     async def run():
         return await svc.render(
@@ -49,10 +57,7 @@ def sysml_export(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Export the workspace's SysML elements back to text (Phase 1 stub)."""
-    _, bus, workspace, _, _ = _build_real_services(data_dir)
-    from anchor.extensions.anchor_sysml import extension as sysml_ext
-
-    svc = sysml_ext.build_service(data_dir, bus, workspace=workspace)
+    svc = _build_sysml_service(data_dir)
 
     async def run():
         return await svc.export(workspace_slug=workspace_slug)

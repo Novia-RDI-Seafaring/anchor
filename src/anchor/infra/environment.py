@@ -1,8 +1,8 @@
-"""Environments and projects — named-env profiles + folder-based projects.
+"""Environments and projects: named profiles plus folder-based projects.
 
 ## Terms
 
-- **environment** (env): a *named, reusable configuration profile* — provider,
+- **environment** (env): a *named, reusable configuration profile* for provider,
   models, and the data **zone**. The trust / egress boundary. Lives at
   ``~/.anchor/envs/<name>/`` (``env.toml`` + a ``projects.toml`` registry).
 
@@ -12,31 +12,31 @@
   so the working folder stays clean. A project can live anywhere (created with
   ``anchor init`` in a folder) or in a managed location under the env (created
   by the agent, which has no working folder). Either way it is registered in
-  its env's ``projects.toml`` (name → folder), so both are addressed by name.
+  its env's ``projects.toml`` (name -> folder), so both are addressed by name.
 
-- **documents** — a project's ingested corpus (bronze/silver/gold).
-- **canvas** — a board inside a project.
-- **zone** — the data egress / privacy boundary; a property of the environment.
+- **documents**: a project's ingested corpus (bronze/silver/gold).
+- **canvas**: a board inside a project.
+- **zone**: the data egress / privacy boundary; an environment property.
 
 ## On disk
 
 ```
 ~/.anchor/
-├── default                      # the default environment's name (one line)
-├── use.toml                     # optional CLI session selection (env + project)
-└── envs/
-    └── <env>/
-        ├── env.toml             # the profile: provider, models, zone, [meta]
-        ├── .env                 # gitignored API key (never the profile)
-        ├── projects.toml        # registry: project name -> folder path
-        └── projects/            # managed projects created by the agent
-            └── <name>/ { anchor.toml, .anchor_data/ }
+|-- default                      # the default environment's name (one line)
+|-- use.toml                     # optional CLI session selection (env + project)
+`-- envs/
+    `-- <env>/
+        |-- env.toml             # the profile: provider, models, zone, [meta]
+        |-- .env                 # gitignored API key (never the profile)
+        |-- projects.toml        # registry: project name -> folder path
+        `-- projects/            # managed projects created by the agent
+            `-- <name>/ { anchor.toml, .anchor_data/ }
 
 ~/work/pumps/                    # a project created with `anchor init` here
-├── anchor.toml                  # env = "<env>", name = "pumps", [meta]
-└── .anchor_data/
-    ├── bronze/ silver/ gold/
-    └── canvases/<slug>/
+|-- anchor.toml                  # env = "<env>", name = "pumps", [meta]
+`-- .anchor_data/
+    |-- bronze/ silver/ gold/
+    `-- canvases/<slug>/
 ```
 
 ## Resolution
@@ -53,123 +53,46 @@ from __future__ import annotations
 
 import os
 import shutil
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from anchor.core.ids import validate_env_name, validate_project_name
-from anchor.infra.config import AnchorConfig, _load_toml_tolerant
-
-#: Root of the environment registry. Monkeypatched in tests.
-ANCHOR_HOME = Path.home() / ".anchor"
-
-#: Environments live under ``<ANCHOR_HOME>/envs/<name>/``.
-ENVS_DIRNAME = "envs"
-
-#: The environment profile file (provider/models/zone + metadata).
-ENV_CONFIG_FILENAME = "env.toml"
-
-#: Managed projects (agent-created) live under ``<env>/projects/``.
-PROJECTS_DIRNAME = "projects"
-
-#: The project marker dropped in a project folder (``env`` + ``name`` + meta).
-PROJECT_MARKER_FILENAME = "anchor.toml"
-
-#: The per-env registry mapping project name -> folder path.
-REGISTRY_FILENAME = "projects.toml"
-
-#: A project's artifacts live in this hidden subfolder of the project folder.
-DATA_DIRNAME = ".anchor_data"
-
-#: One-line file under ANCHOR_HOME holding the default environment's name.
-DEFAULT_ENV_FILE = "default"
-
-#: Optional CLI session selection (env + project) under ANCHOR_HOME.
-USE_FILE = "use.toml"
-
-#: The environment / project used when a call names neither.
-DEFAULT_ENV = "local"
-DEFAULT_PROJECT = "default"
-
-#: Environment variable overrides (peers of ``--env`` / ``--project``).
-ENV_VAR = "ANCHOR_ENV"
-PROJECT_VAR = "ANCHOR_PROJECT"
-
-#: Today's pre-rework single data directory. Honored as the default env's
-#: default project location until ``anchor migrate`` runs. Monkeypatched in tests.
-LEGACY_DATA_DIR = Path.home() / "anchor-data"
-
-#: The per-project storage sub-directories created under ``.anchor_data/``.
-PROJECT_SUBDIRS = ("bronze", "silver", "gold", "canvases")
-
-
-class NoEnvironmentError(Exception):
-    """The named environment is not set up (no ``env.toml``)."""
-
-    def __init__(self, name: str) -> None:
-        self.name = name
-        super().__init__(
-            f"environment {name!r} is not set up. Create it with "
-            f"`anchor env create {name}`."
-        )
-
-
-class NoProjectError(Exception):
-    """A project was required but is missing or unnamed."""
-
-    def __init__(self, name: str | None, available: list[str]) -> None:
-        self.name = name
-        self.available = available
-        if name:
-            msg = f"project {name!r} does not exist in this environment. "
-        else:
-            msg = "this call needs a project. "
-        if available:
-            msg += f"Create one with create_project(name), or pick one: {available}."
-        else:
-            msg += "Create one with create_project(name)."
-        super().__init__(msg)
-
-
-class ProjectNotEmptyError(Exception):
-    """A project still holds documents/canvases and was removed without force."""
-
-    def __init__(self, name: str, documents: int, canvases: int) -> None:
-        self.name = name
-        self.documents = documents
-        self.canvases = canvases
-        super().__init__(
-            f"project {name!r} still has {documents} document(s) and "
-            f"{canvases} canvas(es). Pass force=True to remove it anyway."
-        )
-
-
-@dataclass(frozen=True)
-class Meta:
-    """User-editable metadata for an environment or a project."""
-
-    name: str = ""
-    description: str = ""
-    tags: tuple[str, ...] = ()
-
-
-# --------------------------------------------------------------------------- #
-# Small IO helpers
-# --------------------------------------------------------------------------- #
-def _safe_toml(path: Path) -> dict[str, Any]:
-    try:
-        return _load_toml_tolerant(path)
-    except Exception:  # noqa: BLE001 — a broken config must not brick resolution
-        return {}
-
-
-def _expand(value: Any) -> Path:
-    return Path(os.path.expandvars(str(value))).expanduser()
-
-
-def _flat_settings(data: dict[str, Any]) -> dict[str, Any]:
-    """Top-level scalar/list settings only — drops ``[meta]`` and other tables."""
-    return {k: v for k, v in data.items() if not isinstance(v, dict)}
+from anchor.infra.config import AnchorConfig
+from anchor.infra.environment_storage import (
+    ANCHOR_HOME,
+    DATA_DIRNAME,
+    DEFAULT_ENV,
+    DEFAULT_ENV_FILE,
+    DEFAULT_PROJECT,
+    ENV_CONFIG_FILENAME,
+    ENV_VAR,
+    ENVS_DIRNAME,
+    LEGACY_DATA_DIR,
+    PROJECT_MARKER_FILENAME,
+    PROJECT_SUBDIRS,
+    PROJECT_VAR,
+    PROJECTS_DIRNAME,
+    REGISTRY_FILENAME,
+    USE_FILE,
+    Environment,
+    Meta,
+    NoEnvironmentError,
+    NoProjectError,
+    ProjectNotEmptyError,
+    ResolvedProject,
+    _expand,
+    _flat_settings,
+    _meta_from_table,
+    _read_project_marker,
+    _safe_toml,
+    _walk_up_for_project,
+    _write_project_marker,
+    _write_toml,
+    environment_meta,
+    project_meta,
+    register_project,
+    unregister_project,
+)
 
 
 def anchor_home() -> Path:
@@ -178,156 +101,6 @@ def anchor_home() -> Path:
 
 def envs_dir() -> Path:
     return ANCHOR_HOME / ENVS_DIRNAME
-
-
-# --------------------------------------------------------------------------- #
-# Environment
-# --------------------------------------------------------------------------- #
-@dataclass(frozen=True)
-class Environment:
-    """A resolved environment: a named profile = the trust boundary."""
-
-    name: str
-    root: Path
-    config_path: Path | None = None
-
-    @property
-    def initialized(self) -> bool:
-        return self.config_path is not None
-
-    @property
-    def projects_dir(self) -> Path:
-        """Managed location for agent-created projects."""
-        return self.root / PROJECTS_DIRNAME
-
-    @property
-    def registry_path(self) -> Path:
-        return self.root / REGISTRY_FILENAME
-
-    def _registry(self) -> dict[str, Path]:
-        return _read_registry(self.root)
-
-    def project_root(self, project: str) -> Path:
-        """The project's folder (holds its ``anchor.toml`` marker)."""
-        validate_project_name(project)
-        reg = self._registry()
-        if project in reg:
-            return reg[project]
-        return self.projects_dir / project
-
-    def project_dir(self, project: str) -> Path:
-        """The project's data directory (bronze/.../canvases live here)."""
-        validate_project_name(project)
-        reg = self._registry()
-        if project in reg:
-            return reg[project] / DATA_DIRNAME
-        # Back-compat: the default env's default project keeps using today's
-        # ~/anchor-data until `anchor migrate` folds it in.
-        if (
-            project == DEFAULT_PROJECT
-            and self.name == DEFAULT_ENV
-            and not (self.projects_dir / project).is_dir()
-            and LEGACY_DATA_DIR.is_dir()
-        ):
-            return LEGACY_DATA_DIR
-        return self.projects_dir / project / DATA_DIRNAME
-
-    def project_exists(self, project: str) -> bool:
-        try:
-            validate_project_name(project)
-        except ValueError:
-            return False
-        if project in self._registry():
-            return True
-        return self.project_dir(project).is_dir()
-
-    def list_project_names(self) -> list[str]:
-        """Registry entries + managed projects/ + the legacy default. Sorted."""
-        names: list[str] = list(self._registry().keys())
-        if self.projects_dir.is_dir():
-            for child in sorted(self.projects_dir.iterdir()):
-                if not child.is_dir() or child.name in names:
-                    continue
-                try:
-                    validate_project_name(child.name)
-                except ValueError:
-                    continue
-                names.append(child.name)
-        if (
-            self.name == DEFAULT_ENV
-            and DEFAULT_PROJECT not in names
-            and self.project_dir(DEFAULT_PROJECT) == LEGACY_DATA_DIR
-            and LEGACY_DATA_DIR.is_dir()
-        ):
-            names.append(DEFAULT_PROJECT)
-        return sorted(names)
-
-
-@dataclass(frozen=True)
-class ResolvedProject:
-    """A project resolved to its concrete data dir and layered config."""
-
-    environment: Environment
-    name: str
-    data_dir: Path
-    config: AnchorConfig
-
-
-# --------------------------------------------------------------------------- #
-# Registry (project name -> folder path, per environment)
-# --------------------------------------------------------------------------- #
-def _read_registry(env_root: Path) -> dict[str, Path]:
-    table = _safe_toml(_expand(env_root) / REGISTRY_FILENAME).get("projects", {})
-    if not isinstance(table, dict):
-        return {}
-    return {str(k): _expand(v) for k, v in table.items() if isinstance(v, str)}
-
-
-def _write_registry(env_root: Path, mapping: dict[str, Path]) -> None:
-    env_root = _expand(env_root)
-    env_root.mkdir(parents=True, exist_ok=True)
-    lines = ["[projects]"]
-    for name, path in sorted(mapping.items()):
-        lines.append(f"{_toml_scalar(name)} = {_toml_scalar(str(path))}")
-    (env_root / REGISTRY_FILENAME).write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def register_project(env: Environment, name: str, root: Path | str) -> None:
-    validate_project_name(name)
-    reg = _read_registry(env.root)
-    reg[name] = _expand(root)
-    _write_registry(env.root, reg)
-
-
-def unregister_project(env: Environment, name: str) -> None:
-    reg = _read_registry(env.root)
-    if reg.pop(name, None) is not None:
-        _write_registry(env.root, reg)
-
-
-# --------------------------------------------------------------------------- #
-# Project marker (anchor.toml in the project folder)
-# --------------------------------------------------------------------------- #
-def _write_project_marker(
-    root: Path, env_name: str, name: str, settings: dict[str, Any], meta: Meta | None
-) -> None:
-    root = _expand(root)
-    root.mkdir(parents=True, exist_ok=True)
-    fields: dict[str, Any] = {"env": env_name, "name": name, **settings}
-    _write_toml(root / PROJECT_MARKER_FILENAME, fields, meta)
-
-
-def _read_project_marker(root: Path) -> dict[str, Any]:
-    return _safe_toml(_expand(root) / PROJECT_MARKER_FILENAME)
-
-
-def _walk_up_for_project(start: Path | None = None) -> Path | None:
-    """Find the nearest ancestor folder holding an ``anchor.toml`` marker."""
-    cwd = start or Path.cwd()
-    for directory in (cwd, *cwd.parents):
-        if (directory / PROJECT_MARKER_FILENAME).is_file():
-            return directory
-    return None
 
 
 # --------------------------------------------------------------------------- #
@@ -370,7 +143,12 @@ def set_use(env: str, project: str | None = None) -> None:
 def _load_env(name: str) -> Environment:
     root = envs_dir() / name
     cfg = root / ENV_CONFIG_FILENAME
-    return Environment(name=name, root=root, config_path=cfg if cfg.is_file() else None)
+    return Environment(
+        name=name,
+        root=root,
+        config_path=cfg if cfg.is_file() else None,
+        legacy_data_dir=LEGACY_DATA_DIR,
+    )
 
 
 def resolve_environment(env: str | None = None) -> Environment:
@@ -492,70 +270,6 @@ def identify_data_dir(data_dir: Path | str) -> tuple[str | None, str | None]:
         name = marker.get("name") or root.name
         return (str(env_name) if env_name else None, str(name) if name else None)
     return None, None
-
-
-# --------------------------------------------------------------------------- #
-# Metadata
-# --------------------------------------------------------------------------- #
-def _meta_from_table(table: Any) -> Meta:
-    if not isinstance(table, dict):
-        return Meta()
-    tags = table.get("tags", [])
-    if not isinstance(tags, list):
-        tags = []
-    return Meta(
-        name=str(table.get("name", "") or ""),
-        description=str(table.get("description", "") or ""),
-        tags=tuple(str(t) for t in tags),
-    )
-
-
-def environment_meta(env: Environment) -> Meta:
-    if env.config_path is None:
-        return Meta()
-    return _meta_from_table(_safe_toml(env.config_path).get("meta", {}))
-
-
-def project_meta(env: Environment, project: str) -> Meta:
-    return _meta_from_table(_read_project_marker(env.project_root(project)).get("meta", {}))
-
-
-# --------------------------------------------------------------------------- #
-# Minimal TOML writer (flat scalars + one [meta] table)
-# --------------------------------------------------------------------------- #
-def _toml_scalar(value: Any) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (int, float)):
-        return str(value)
-    if isinstance(value, (list, tuple)):
-        return "[" + ", ".join(_toml_scalar(v) for v in value) + "]"
-    text = str(value).replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{text}"'
-
-
-def _render_toml(settings: dict[str, Any], meta: Meta | None) -> str:
-    lines: list[str] = []
-    for key, value in settings.items():
-        if value is None:
-            continue
-        lines.append(f"{key} = {_toml_scalar(value)}")
-    if meta is not None and (meta.name or meta.description or meta.tags):
-        if lines:
-            lines.append("")
-        lines.append("[meta]")
-        if meta.name:
-            lines.append(f"name = {_toml_scalar(meta.name)}")
-        if meta.description:
-            lines.append(f"description = {_toml_scalar(meta.description)}")
-        if meta.tags:
-            lines.append(f"tags = {_toml_scalar(list(meta.tags))}")
-    return "\n".join(lines) + "\n"
-
-
-def _write_toml(path: Path, settings: dict[str, Any], meta: Meta | None) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_render_toml(settings, meta), encoding="utf-8")
 
 
 # --------------------------------------------------------------------------- #
@@ -750,7 +464,7 @@ def remove_project(
 
     Always deregisters the project from the env's ``projects.toml``. A *managed*
     project (its folder lives under the env's ``projects/``) is auto-discovered
-    from disk, so its folder is removed too — otherwise it would re-appear in
+    from disk, so its folder is removed too; otherwise it would reappear in
     ``list_projects``. An *external* ``anchor init`` project keeps its folder by
     default (it is the user's working directory); ``delete_data=True`` then also
     wipes that folder's ``.anchor_data/`` and its ``anchor.toml`` marker. Refuses

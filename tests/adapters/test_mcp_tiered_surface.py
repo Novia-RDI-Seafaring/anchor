@@ -71,7 +71,7 @@ async def test_base_single_project_advertises_core_not_full_surface(tmp_path):
     # The full dispatchable surface is ~45+; the tiered default stays a small
     # curated slice (~20, the 90% path + extract_pointed from #132 +
     # server_info from #177/#179).
-    assert len(names) <= 22
+    assert len(names) <= 23
     assert set(names) == set(tiering.CORE_NAMES) - tiering.CORE_LIFECYCLE_NAMES
     # No lifecycle tools in single-project mode.
     assert "create_environment" not in names
@@ -84,7 +84,7 @@ async def test_base_multiproject_advertises_core_plus_lifecycle(tmp_path):
     # Multiproject advertises the full core including the two lifecycle tools
     # (create_project, list_projects), so the cap is one higher than the
     # single-project slice: 21 curated + 2 lifecycle = 23 with server_info.
-    assert len(names) <= 23
+    assert len(names) <= 24
     assert tiering.CORE_NAMES.issubset(set(names))
     # The long tail is gated out by default.
     for gated in ("fmu_inspect", "inspect", "sysml_render", "create_environment",
@@ -98,9 +98,21 @@ async def test_core_includes_the_ninety_percent_path():
         "get_page_text", "get_crop", "search_documents", "extract_pointed",
         "canvas_create_workspace", "canvas_get_state", "canvas_add_node",
         "canvas_update_node", "canvas_add_edge", "canvas_snapshot",
-        "anchor_list_capabilities",
+        "anchor_list_capabilities", "anchor_extension_status",
     }
     assert expected.issubset(tiering.CORE_NAMES)
+
+
+async def test_extension_status_dispatches_shared_payload(tmp_path):
+    server, bundle = _single_project_server(tmp_path)
+
+    payload = json.loads(await _call(server, "anchor_extension_status"))
+
+    assert {item["name"] for item in payload["extensions"]} == set(
+        bundle.extension_status
+    )
+    summary = payload["summary"]
+    assert summary["available"] + summary["unavailable"] == 3
 
 
 # -- gated reachability ------------------------------------------------------ #

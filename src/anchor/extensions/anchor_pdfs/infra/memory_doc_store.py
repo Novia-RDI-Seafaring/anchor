@@ -70,7 +70,7 @@ class MemoryDocStore:
         elif timeout is not None:
             try:
                 await asyncio.wait_for(lock.acquire(), timeout=timeout)
-            except (TimeoutError, asyncio.TimeoutError) as exc:
+            except TimeoutError as exc:
                 raise IngestLockHeld(
                     f"timed out after {timeout}s waiting for the ingest lock on "
                     f"{slug!r}; another ingest is still running for this slug"
