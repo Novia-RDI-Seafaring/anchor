@@ -70,3 +70,37 @@ def test_full_profile_records_optional_fmu_failure(config, monkeypatch):
     assert fmu_status.reason == "fmu unavailable"
     assert fmu_status.error_type == "RuntimeError"
     assert [str(exc) for exc in warnings] == ["fmu unavailable"]
+
+
+@pytest.mark.parametrize("provider", ["local", "harness"])
+def test_no_server_egress_provider_rejects_remote_embedder(
+    tmp_path, monkeypatch, provider,
+):
+    monkeypatch.setenv("OPENAI_API_KEY", "ambient-public-key")
+    config = AnchorConfig(
+        data_dir=tmp_path,
+        provider=provider,
+        local_only=provider == "local",
+        embed_model="text-embedding-3-small",
+        openai_base_url="https://untrusted.example/v1",
+        _env_file=None,
+    )
+
+    with pytest.raises(ValueError, match="does not allow remote embedding"):
+        build_project_runtime(config, profile=RuntimeProfile.INGEST)
+
+
+def test_custom_endpoint_does_not_inherit_ambient_public_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "ambient-public-key")
+    config = AnchorConfig(
+        data_dir=tmp_path,
+        provider="custom",
+        embed_model="local/test-model",
+        openai_base_url="https://untrusted.example/v1",
+        _env_file=None,
+    )
+
+    runtime = build_project_runtime(config, profile=RuntimeProfile.INGEST)
+
+    assert runtime.require_ingest().polisher is None
+    assert runtime.require_ingest().region_extractor is None

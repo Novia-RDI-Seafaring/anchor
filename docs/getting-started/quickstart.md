@@ -3,9 +3,11 @@
 From nothing to a source-grounded value in about five minutes. No API key.
 
 This is the opinionated path. It uses the `harness` provider, so your agent
-reads the PDF pages and ANCHOR keeps every byte on your machine. When you want
-server-side extraction later, [step 6](#6-optional-server-side-gold-with-openai)
-adds it.
+reads the PDF pages while Anchor keeps its own extraction and embedding local.
+The harness may send those pages to its configured model provider. Use this
+path only when that provider's data policy is approved for the document. When
+you want Anchor-side extraction later,
+[step 6](#6-optional-server-side-gold-with-openai) adds it.
 
 ## 1. Install
 
@@ -29,14 +31,15 @@ data zone.
 
 | Provider | What extracts gold regions | Data leaves your machine? | Key needed? |
 |---|---|---|---|
-| `harness` | Your agent reads pages, ANCHOR embeds locally | No | No |
+| `harness` | Your agent reads pages, ANCHOR embeds locally | Depends on the harness and its model provider | No Anchor key |
 | `local` | Nothing (silver only: page text + search) | No | No |
 | `openai` | OpenAI vision, server-side | Yes (to OpenAI) | Yes |
 | `azure` | Azure OpenAI vision, server-side | Yes (to your Azure) | Yes |
 | `ollama` | A local vision model you run | No | No |
 
-Start with `harness`. It produces gold regions (structured values with page +
-bbox provenance) with no key and no new egress:
+Start with `harness` for documents approved for that harness. It produces gold
+regions (structured values with page + bbox provenance) with no Anchor key and
+no Anchor-side model endpoint:
 
 ```bash
 anchor env create home --provider harness --yes
@@ -78,7 +81,9 @@ Drag a PDF into your harness chat, or point it at a file, and ask it to ingest.
 On the `harness` provider the agent runs the page-by-page session itself:
 `ingest_begin` -> `ingest_get_page` -> `ingest_submit_page` (once per page) ->
 `ingest_finalize`. The agent reads each page; ANCHOR computes the region boxes
-and embeds them locally on finalize. Nothing is sent to a cloud model.
+and embeds them locally on finalize. The page work items pass through the
+connected harness. Whether they reach a cloud model is controlled by that
+harness, not by Anchor.
 
 > Ingest the PDF at ~/Downloads/lkh-pump.pdf into ANCHOR, then tell me the
 > max inlet pressure with its source page.

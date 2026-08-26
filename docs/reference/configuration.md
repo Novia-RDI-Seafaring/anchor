@@ -4,6 +4,8 @@ ANCHOR resolves configuration from, in priority order: explicit command-line
 flags, `ANCHOR_*` environment variables, the project `anchor.toml` marker, the
 environment `env.toml`, then built-in defaults. The API key is the exception:
 it stays in `ANCHOR_OPENAI_API_KEY` or a gitignored `.env`, never in a profile.
+Provider, endpoint, and local-only policy are also exceptions: they belong to
+the environment trust boundary and a project cannot redirect or weaken them.
 
 ## Environments: `anchor env create`
 
@@ -61,9 +63,11 @@ use` session selection, else the default environment and its `default` project.
 | `docling_device` | `auto` | Bronze-stage accelerator (see below). |
 
 A project usually has no settings of its own and inherits the environment's. A
-project overrides a value by adding it to its own `anchor.toml` marker (alongside
-the `env` and `name` keys). A malformed config is ignored with a warning. It
-never crashes the CLI.
+project may override non-security values by adding them to its own `anchor.toml`
+marker (alongside the `env` and `name` keys). Attempts to override `provider` or
+`openai_base_url`, weaken `local_only`, or select remote embeddings in a
+no-egress environment fail before runtime startup. A malformed config is
+ignored with a warning. It never crashes the CLI.
 
 ## Command-line settings
 
@@ -104,10 +108,19 @@ The provider you pick determines where document content may go:
   and region extraction.
 - **`azure` / `custom`**: the same content is sent only to the endpoint you
   configure (your tenant / region, or a self-hosted gateway).
+- **`harness`**: Anchor constructs no remote model client, but the connected
+  agent receives page content during harness-driven ingest. Its model provider
+  and retention policy are outside Anchor and must be approved separately.
 
 Embeddings stay **local** (`bge-small`) by default, so text never leaves the
 host even when the vision model is remote. Choosing a `text-embedding-*` model
 sends embedding text to the configured endpoint.
+
+Custom and Azure endpoints use only the explicit `ANCHOR_OPENAI_API_KEY` scoped
+to the selected environment. They never inherit an ambient public
+`OPENAI_API_KEY`. Environment `.env` values are read without being copied into
+process-global state, so one resolved environment cannot leave its credential
+active in another.
 
 ## Accelerator (docling)
 

@@ -1,6 +1,8 @@
 """MCP stdio assembly keeps document-search configuration usable."""
 from __future__ import annotations
 
+import pytest
+
 from anchor.adapters.mcp.services import _build_ingest_service
 from anchor.adapters.mcp.stdio_main import _config_for_data_dir
 from anchor.extensions.anchor_pdfs.infra.llm.local_sentence_transformer_embedder import (
@@ -43,6 +45,7 @@ def test_mcp_wires_configured_local_embedder_without_openai_key(tmp_path, monkey
 def test_mcp_applies_openai_compatible_pipeline_configuration(tmp_path):
     config = AnchorConfig(
         data_dir=tmp_path,
+        provider="custom",
         openai_api_key="test-key",
         openai_base_url="http://models.test/v1",
         embed_model="text-embedding-3-large",
@@ -115,3 +118,17 @@ def test_mcp_local_only_pins_offline_env(tmp_path, monkeypatch):
 
     assert os.environ.get("HF_HUB_OFFLINE") == "1"
     assert os.environ.get("TRANSFORMERS_OFFLINE") == "1"
+
+
+def test_mcp_local_only_rejects_remote_embedding_model(tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "stray-personal-key")
+    config = AnchorConfig(
+        data_dir=tmp_path,
+        provider="local",
+        local_only=True,
+        embed_model="text-embedding-3-small",
+        _env_file=None,
+    )
+
+    with pytest.raises(ValueError, match="does not allow remote embedding"):
+        _build_ingest_service(config, MemoryEventBus(), MemoryDocStore())

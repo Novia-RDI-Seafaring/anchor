@@ -111,7 +111,9 @@ For normal use, run `anchor init` in a project folder. It writes an
 to an environment (the provider and data zone). Commands run inside the folder
 then resolve it automatically. Configuration precedence is: explicit flags,
 `ANCHOR_*` environment variables, the project `anchor.toml`, the environment
-`env.toml`, then built-in defaults.
+`env.toml`, then built-in defaults. Provider, endpoint, and local-only policy
+are environment-owned security settings: projects cannot redirect or weaken
+them, and process variables cannot retarget a named environment.
 
 Releases are tag-driven: pushing a `v*` tag triggers the
 [release workflow](./.github/workflows/release.yml), which publishes
@@ -126,15 +128,17 @@ Nothing to a source-grounded value in about five minutes, no API key:
 
 ```bash
 uv tool install anchor-kb
-anchor env create home --provider harness --yes   # no-key, no-egress data zone
+anchor env create home --provider harness --yes   # no Anchor-side model endpoint
 anchor install claude-desktop --env home          # or claude-code / cursor
 # restart your harness, drag a PDF into the chat, ask it to ingest
 anchor serve                                       # http://127.0.0.1:8002
 ```
 
 On the `harness` provider your agent reads the pages, so you get gold regions
-(values with page + bbox provenance) with no key and nothing leaving your
-machine. Full walkthrough, provider decision table, and troubleshooting:
+(values with page + bbox provenance) with no Anchor API key. Page content is
+visible to the connected harness and may reach its model provider. Use only a
+harness whose data policy is approved for the document. Full walkthrough,
+provider decision table, and troubleshooting:
 **[Quickstart](./docs/getting-started/quickstart.md)**.
 
 Then [`docs/getting-started/tutorial.md`](./docs/getting-started/tutorial.md)
@@ -372,8 +376,11 @@ anchor ingest "C:\path\to\datasheet.pdf"
 
 The `local` provider records `local_only = true` in the environment's
 `env.toml`, which the runtime honors identically across the CLI, HTTP and MCP
-adapters (so an agent-launched `anchor-mcp` gets the same no-egress posture). On
-a fully locked-down host, also export the HuggingFace offline switches so a
+adapters (so an agent-launched `anchor-mcp` gets the same no-egress posture). For
+a confidential corpus, use Anchor's built-in local ingest path. Do not hand the
+document to a cloud-backed harness or ask it to perform harness-driven ingest,
+because the harness itself would then receive the page content. On a fully
+locked-down host, also export the HuggingFace offline switches so a
 cache miss fails fast instead of attempting a download:
 
 ```bash
