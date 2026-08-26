@@ -148,6 +148,7 @@ export function SourceDock() {
           total={total}
           highlightBbox={viewer.highlightBbox}
           highlightPage={viewer.highlightPage}
+          highlightNonce={viewer.nonce}
           title={docTitle}
           onPageChange={setPage}
           canvasSlug={viewer.workspaceSlug}

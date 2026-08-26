@@ -59,6 +59,8 @@ type Props = {
   /** Region bbox to highlight (PDF points), applies only on `highlightPage`. */
   highlightBbox?: number[];
   highlightPage?: number;
+  /** Bumped by the store on each openPdf; forces re-navigation on a re-click. */
+  highlightNonce?: number;
   title?: string;
   onPageChange: (page: number) => void;
   /**
@@ -87,6 +89,7 @@ export function PdfSourceView({
   total,
   highlightBbox,
   highlightPage,
+  highlightNonce,
   title,
   onPageChange,
   canvasSlug,
@@ -165,13 +168,15 @@ export function PdfSourceView({
     };
   }, [canvasSlug, slug]);
 
-  // Fade the blue jump-to highlight a few seconds after it (re)appears.
+  // Fade the blue jump-to highlight a few seconds after it (re)appears. Keyed
+  // on the nav nonce too, so a re-click re-shows the flash even when the target
+  // page/bbox is unchanged.
   useEffect(() => {
     if (!highlightPage || !highlightBbox) return;
     setHighlightVisible(true);
     const id = window.setTimeout(() => setHighlightVisible(false), 4000);
     return () => window.clearTimeout(id);
-  }, [highlightPage, highlightBbox]);
+  }, [highlightPage, highlightBbox, highlightNonce]);
 
   // Load (and reload on slug change) the PDF document. One shared instance.
   useEffect(() => {
@@ -301,32 +306,30 @@ export function PdfSourceView({
     [items, totalHeight],
   );
 
-  // Deep-zoom: when the highlight targets a page, scroll the continuous view to
-  // that page's bbox once the geometry needed to place it is known. Runs once
-  // per (page,bbox) target.
+  // Navigate to the highlight target when it changes. Two-phase so a click is
+  // never a no-op: scroll to the page by index first (works from continuous
+  // layout alone), then refine to the bbox once the page's size is known. The
+  // key carries the nav nonce, so an explicit re-click (even onto the same or an
+  // already-shown target, or one sharing a region bbox with another) re-scrolls,
+  // while unrelated re-renders (a page drawing in) do not.
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || !highlightPage || !highlightBbox || items.length === 0) return;
-    const size = pdfPageSizes[highlightPage];
-    if (!size) return;
-    const key = `${highlightPage}:${highlightBbox.join(",")}:${zoom}`;
+    if (!el || !highlightPage || items.length === 0) return;
+    const size = highlightBbox ? pdfPageSizes[highlightPage] : undefined;
+    const rect = size
+      ? bboxToViewportRect(highlightBbox as number[], size.w, size.h, {
+          width: size.w * zoom,
+          height: size.h * zoom,
+        })
+      : null;
+    const key = `${highlightNonce ?? 0}:${highlightPage}:${highlightBbox?.join(",") ?? ""}:${rect ? "b" : "p"}:${zoom}`;
     if (lastHighlightRef.current === key) return;
-    const rect = bboxToViewportRect(highlightBbox, size.w, size.h, {
-      width: size.w * zoom,
-      height: size.h * zoom,
-    });
-    if (!rect) return;
-    const top = scrollTopForPageRect(
-      items,
-      highlightPage,
-      rect.top,
-      rect.height,
-      el.clientHeight,
-      totalHeight,
-    );
+    const top = rect
+      ? scrollTopForPageRect(items, highlightPage, rect.top, rect.height, el.clientHeight, totalHeight)
+      : scrollTopForPage(items, highlightPage, el.clientHeight, totalHeight);
     el.scrollTo({ top, behavior: "smooth" });
     lastHighlightRef.current = key;
-  }, [highlightPage, highlightBbox, items, pdfPageSizes, zoom, totalHeight]);
+  }, [highlightNonce, highlightPage, highlightBbox, items, pdfPageSizes, zoom, totalHeight]);
 
   // Map a PDF-points bbox to pixel space on a given page using its best-known
   // size (rendered viewport if drawn, else points * zoom).

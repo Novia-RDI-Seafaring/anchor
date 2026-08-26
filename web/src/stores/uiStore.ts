@@ -28,6 +28,12 @@ type PdfViewerState = {
    * region-level highlight when the text cannot be located.
    */
   highlightQuery?: string;
+  /**
+   * Bumped on every `openPdf` call so the viewer re-navigates and re-flashes
+   * even when the target page/bbox is unchanged — i.e. an intentional re-click
+   * on the same (or an already-shown) reference is never a no-op.
+   */
+  nonce?: number;
 };
 
 /**
@@ -302,6 +308,7 @@ export const useUiStore = create<UiState>((set) => ({
         highlightPage: options?.highlightRegionId || options?.highlightBbox
           ? options?.page ?? 1
           : undefined,
+        nonce: (state.pdfViewer?.nonce ?? 0) + 1,
       },
     })),
   closePdf: () => set({ pdfViewer: null }),
