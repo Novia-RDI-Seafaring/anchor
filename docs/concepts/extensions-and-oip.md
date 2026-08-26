@@ -171,6 +171,13 @@ A producer becomes discoverable by writing one file. Removing it is
 deleting one file. There is no registry, no plugin manager, no
 "please restart ANCHOR."
 
+`anchor extensions add` accepts exactly two registration scopes:
+`system` and `project`. The manifest's `producer.name` becomes the
+registration filename, so ANCHOR requires a portable file stem of 1 to
+128 letters, digits, dots, underscores, or hyphens, with no leading dot.
+Malformed manifests are skipped with a diagnostic, and unsafe names are
+rejected before ANCHOR creates or removes a file.
+
 ---
 
 ## What OIP is *not* for

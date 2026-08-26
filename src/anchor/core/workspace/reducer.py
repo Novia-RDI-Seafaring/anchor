@@ -47,7 +47,8 @@ def apply(state: Workspace, evt: BaseModel) -> Workspace:
         new.nodes[evt.id] = Node(
             id=evt.id, node_type=evt.node_type, label=evt.label,
             x=evt.x, y=evt.y, width=evt.width, height=evt.height,
-            parent=evt.parent, data=dict(evt.data),
+            parent=evt.parent, locked=evt.locked, visible=evt.visible,
+            layer=evt.layer, opacity=evt.opacity, data=dict(evt.data),
         )
     elif isinstance(evt, NodeRemoved):
         new.nodes.pop(evt.id, None)

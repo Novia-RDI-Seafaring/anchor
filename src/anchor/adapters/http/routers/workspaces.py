@@ -34,7 +34,7 @@ def _check_slug(slug: str) -> None:
     try:
         validate_workspace_slug(slug)
     except InvalidWorkspaceSlugError as exc:
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
 
 router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
@@ -55,8 +55,8 @@ async def delete_workspace(slug: str, svc: WorkspaceService = Depends(get_worksp
     _check_slug(slug)
     try:
         return await svc.delete_workspace(slug)
-    except FileNotFoundError:
-        raise HTTPException(404, f"workspace {slug!r} not found")
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"workspace {slug!r} not found") from exc
 
 
 @router.patch("/{slug}")
@@ -68,8 +68,8 @@ async def rename_workspace(
     _check_slug(slug)
     try:
         return await svc.rename_workspace(slug, title=req.title)
-    except FileNotFoundError:
-        raise HTTPException(404, f"workspace {slug!r} not found")
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"workspace {slug!r} not found") from exc
 
 
 @router.get("/{slug}/state")
@@ -93,8 +93,8 @@ async def list_placeholders(slug: str, svc: WorkspaceService = Depends(get_works
     """
     try:
         return await svc.list_placeholders(slug)
-    except (KeyError, FileNotFoundError):
-        raise HTTPException(404, f"workspace {slug!r} not found")
+    except (KeyError, FileNotFoundError) as exc:
+        raise HTTPException(404, f"workspace {slug!r} not found") from exc
 
 
 @router.get("/{slug}/references")
@@ -107,8 +107,8 @@ async def list_references(slug: str, svc: WorkspaceService = Depends(get_workspa
     _check_slug(slug)
     try:
         return await svc.list_references(slug)
-    except (KeyError, FileNotFoundError):
-        raise HTTPException(404, f"workspace {slug!r} not found")
+    except (KeyError, FileNotFoundError) as exc:
+        raise HTTPException(404, f"workspace {slug!r} not found") from exc
 
 
 @router.post("/{slug}/references", status_code=201)
@@ -130,8 +130,8 @@ async def create_reference(
             label=req.label,
             created_by=req.created_by,
         )
-    except CommandError as e:
-        raise HTTPException(400, str(e))
+    except CommandError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.delete("/{slug}/references/{reference_id}")
@@ -148,8 +148,8 @@ async def remove_reference(
     _check_slug(slug)
     try:
         state, env = await svc.remove_reference(slug, reference_id)
-    except CommandError as e:
-        raise HTTPException(400, str(e))
+    except CommandError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return {"event": env.model_dump(), "state": state.get_state()}
 
 
@@ -169,8 +169,8 @@ async def update_reference(
     _check_slug(slug)
     try:
         state, env = await svc.update_reference(slug, reference_id, label=req.label)
-    except CommandError as e:
-        raise HTTPException(400, str(e))
+    except CommandError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return {"event": env.model_dump(), "state": state.get_state()}
 
 
@@ -191,8 +191,8 @@ async def attach_reference(
         state, env = await svc.attach_reference(
             slug, reference_id, node_id=req.node_id, row_index=req.row_index,
         )
-    except CommandError as e:
-        raise HTTPException(400, str(e))
+    except CommandError as exc:
+        raise HTTPException(400, str(exc)) from exc
     return {"event": env.model_dump(), "state": state.get_state()}
 
 
@@ -223,14 +223,14 @@ async def snapshot(
             viewport=req.viewport,
             full_page=req.full_page,
         )
-    except NotImplementedError as e:
-        raise HTTPException(501, str(e))
-    except RuntimeError as e:
+    except NotImplementedError as exc:
+        raise HTTPException(501, str(exc)) from exc
+    except RuntimeError as exc:
         # No snapshotter wired (dev served without playwright). 501 makes
         # it obvious this isn't a missing-workspace problem.
-        raise HTTPException(501, str(e))
-    except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(501, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
     if result.path is not None:
         return FileResponse(result.path, media_type=result.content_type)
@@ -257,10 +257,10 @@ async def organize_subtree(
             slug, req.root_id,
             orientation=req.orientation, algo=req.algo, direction=req.direction,
         )
-    except CommandError as e:
-        raise HTTPException(400, str(e))
-    except ValueError as e:
-        raise HTTPException(400, str(e))
+    except CommandError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     moves = [
         {"id": env.payload["id"], "x": env.payload["x"], "y": env.payload["y"]}
         for env in envelopes
@@ -286,10 +286,10 @@ async def align_nodes(
     so the SSE feed can group them as a single "align" gesture."""
     try:
         state, envelopes = await svc.align_nodes(slug, req.ids, req.anchor)  # type: ignore[arg-type]
-    except CommandError as e:
-        raise HTTPException(400, str(e))
-    except ValueError as e:
-        raise HTTPException(400, str(e))
+    except CommandError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     moves = [
         {"id": env.payload["id"], "x": env.payload["x"], "y": env.payload["y"]}
         for env in envelopes
@@ -319,8 +319,8 @@ async def create_sub_canvas(
         return await svc.create_sub_canvas(
             parent_slug, req.slug, title=req.title, x=req.x, y=req.y,
         )
-    except CommandError as e:
-        raise HTTPException(400, str(e))
+    except CommandError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/{slug}/distribute")
@@ -335,10 +335,10 @@ async def distribute_nodes(
     Requires at least three ids; the end nodes stay put."""
     try:
         state, envelopes = await svc.distribute_nodes(slug, req.ids, req.axis)  # type: ignore[arg-type]
-    except CommandError as e:
-        raise HTTPException(400, str(e))
-    except ValueError as e:
-        raise HTTPException(400, str(e))
+    except CommandError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     moves = [
         {"id": env.payload["id"], "x": env.payload["x"], "y": env.payload["y"]}
         for env in envelopes

@@ -21,7 +21,6 @@ from anchor.extensions.anchor_cad.core.schemas import (
     CadParameter,
 )
 
-
 _PARAM_RE = re.compile(
     r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([\-\+]?[0-9]*\.?[0-9]+)\s*;?",
     flags=re.MULTILINE,

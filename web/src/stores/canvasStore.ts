@@ -8,6 +8,8 @@ type Node = {
   label: string;
   x: number;
   y: number;
+  width?: number | null;
+  height?: number | null;
   /**
    * Parent node id (for area/container nesting). When set, ReactFlow
    * treats this node as a child of `parent`. Moving the parent moves the child,
@@ -15,6 +17,10 @@ type Node = {
    * Mirrors the backend `Node.parent` top-level field.
    */
   parent?: string | null;
+  locked?: boolean;
+  visible?: boolean;
+  layer?: "background" | "content" | "annotation";
+  opacity?: number | null;
   data?: Record<string, unknown>;
 };
 type Edge = {
@@ -27,6 +33,33 @@ type Edge = {
   targetHandle?: string | null;
   data?: Record<string, unknown>;
 };
+
+export const CANVAS_NODE_WIRE_FIELDS = [
+  "id",
+  "node_type",
+  "label",
+  "x",
+  "y",
+  "width",
+  "height",
+  "parent",
+  "locked",
+  "visible",
+  "layer",
+  "opacity",
+  "data",
+] as const;
+
+export const CANVAS_EDGE_WIRE_FIELDS = [
+  "id",
+  "source",
+  "target",
+  "label",
+  "edge_type",
+  "sourceHandle",
+  "targetHandle",
+  "data",
+] as const;
 
 /**
  * A locator into a source document (mirrors the backend `SourceRef`).
@@ -134,7 +167,13 @@ function asNode(row: WireRow): Node {
     label: (row.label as string) ?? "",
     x: (row.x as number) ?? 0,
     y: (row.y as number) ?? 0,
+    width: (row.width as number | null | undefined) ?? null,
+    height: (row.height as number | null | undefined) ?? null,
     parent: (row.parent as string | null | undefined) ?? null,
+    locked: (row.locked as boolean | undefined) ?? false,
+    visible: (row.visible as boolean | undefined) ?? true,
+    layer: (row.layer as Node["layer"] | undefined) ?? "content",
+    opacity: (row.opacity as number | null | undefined) ?? null,
     data: (row.data as Record<string, unknown>) ?? {},
   };
 }
@@ -347,7 +386,13 @@ export const useCanvasStore = create<State>((set) => ({
           label: (p.label as string) ?? "",
           x: (p.x as number) ?? 0,
           y: (p.y as number) ?? 0,
+          width: (p.width as number | null | undefined) ?? null,
+          height: (p.height as number | null | undefined) ?? null,
           parent: (p.parent as string | null | undefined) ?? null,
+          locked: (p.locked as boolean | undefined) ?? false,
+          visible: (p.visible as boolean | undefined) ?? true,
+          layer: (p.layer as Node["layer"] | undefined) ?? "content",
+          opacity: (p.opacity as number | null | undefined) ?? null,
           data: (p.data as Record<string, unknown>) ?? {},
         };
         break;
@@ -377,7 +422,20 @@ export const useCanvasStore = create<State>((set) => ({
         if (nodes[id]) {
           const cur = nodes[id];
           const fields = (p.fields as Record<string, unknown>) ?? {};
-          const known = new Set(["node_type", "label", "x", "y", "parent", "data"]);
+          const known = new Set([
+            "node_type",
+            "label",
+            "x",
+            "y",
+            "width",
+            "height",
+            "parent",
+            "locked",
+            "visible",
+            "layer",
+            "opacity",
+            "data",
+          ]);
           const next: Node = { ...cur };
           const data: Record<string, unknown> = { ...(cur.data ?? {}) };
           for (const [k, v] of Object.entries(fields)) {

@@ -6,7 +6,7 @@ workspace_id (or all events if subscribed globally with `None`).
 from __future__ import annotations
 
 import asyncio
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from anchor.core.events.envelope import DomainEvent
 
