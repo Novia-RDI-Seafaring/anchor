@@ -3,6 +3,9 @@
 Anchor has two levels: **environments** and **projects**. This page defines
 both, shows where things live on disk, and lists the commands.
 
+For a step-by-step provider decision, API-key explanation, and gold recovery
+workflow, start with [Choose a provider and enable gold](provider-setup.md).
+
 ## Terms
 
 | Term | Definition |
@@ -35,10 +38,24 @@ letters.
   and `anchor init` does not create one. The environment's settings live in
   `env.toml`, not a `.env`.
 
-The one place a `.env` may appear is the endpoint API key. That key is never
-written to `env.toml`; it stays in `ANCHOR_OPENAI_API_KEY`, optionally captured
-into a gitignored `.env` next to the profile. That file holds only the secret.
-It does not define the environment.
+The one supported use of an environment `.env` is an endpoint credential. The
+key is never written to `env.toml`; it stays in
+`ANCHOR_OPENAI_API_KEY`, optionally captured in:
+
+```text
+~/.anchor/envs/<environment-name>/.env
+```
+
+That file holds only the secret. It does not define the environment and it is
+not loaded until the environment has a valid `env.toml`. A key file by itself
+cannot choose a provider or enable model traffic. The provider in `env.toml`
+remains the trust decision:
+
+- An absent provider fails closed and skips gold.
+- `local` and `harness` do not build an endpoint client, even if a key exists.
+- `ollama` needs no user key.
+- `openai`, `azure`, and `custom` use `ANCHOR_OPENAI_API_KEY` for their approved
+  endpoint. A bare `OPENAI_API_KEY` inside the environment `.env` is ignored.
 
 ## On disk
 
@@ -81,7 +98,7 @@ stays in `ANCHOR_OPENAI_API_KEY` or the gitignored `.env`, never in the profile.
 ## Configuration layering
 
 ```
-built-in defaults  <  env.toml  <  project anchor.toml  <  ANCHOR_* env vars / flags
+built-in defaults  <  env.toml  <  project anchor.toml  <  environment .env  <  process ANCHOR_* / flags
 ```
 
 Settings live in the environment's `env.toml`. A project usually has none and
@@ -91,6 +108,11 @@ policy belong to the environment and cannot be redirected or weakened by a
 project. A remote embedding model is also rejected when the environment does
 not allow server egress. The CLI and the MCP server resolve the same policy, so
 `anchor check` can audit the active provider and zone.
+
+The environment `.env` is shown in the precedence diagram because it is merged
+after the TOML files. Do not use it as a second profile. Keep provider,
+endpoint, and model names in `env.toml`, and keep only the credential in
+`.env`.
 
 ## Selecting an environment and project
 
