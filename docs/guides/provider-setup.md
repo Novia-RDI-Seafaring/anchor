@@ -90,6 +90,16 @@ ignored. Also do not put API keys in `env.toml` or `anchor.toml`.
 Choose one recipe. Environment names are labels; use names that make the data
 boundary obvious.
 
+!!! tip "Interactive setup versus `--yes`"
+    For `openai`, `azure`, and `custom`, omit `--yes` when a person is running
+    the command. ANCHOR then asks for the endpoint key with hidden input and
+    saves it to `~/.anchor/envs/<name>/.env`. This is the simplest setup.
+
+    `--yes` means no prompts. It creates the non-secret `env.toml` but does not
+    ask for or save a key. Use it for automation only, then create the
+    environment `.env` separately. Never put the key directly in a command-line
+    argument because shell history may retain it.
+
 ### Local, no model and no gold
 
 ```bash
@@ -132,10 +142,16 @@ provider and retention policy decide where those pages may go.
 ### Gold with public OpenAI
 
 ```bash
-anchor env create cloud-openai --provider openai --yes
+anchor env create cloud-openai --provider openai \
+  --vision-model gpt-5.4
 ```
 
-Add the credential to the environment, not the project.
+Enter the OpenAI key at the hidden prompt. ANCHOR saves it to
+`~/.anchor/envs/cloud-openai/.env`.
+
+For non-interactive setup, add `--yes` to the command and then create the
+credential file yourself. Add the credential to the environment, not the
+project:
 
 === "PowerShell"
 
@@ -164,11 +180,12 @@ Use the Azure OpenAI v1 base URL and a vision-capable deployment name:
 ```bash
 anchor env create work-azure --provider azure \
   --base-url https://<resource>.openai.azure.com/openai/v1/ \
-  --vision-model <deployment-name> --yes
+  --vision-model <deployment-name>
 ```
 
-Add `ANCHOR_OPENAI_API_KEY=<azure-resource-key>` to
-`~/.anchor/envs/work-azure/.env`, then run:
+Enter the Azure resource key at the hidden prompt. For non-interactive setup,
+add `--yes`, then add `ANCHOR_OPENAI_API_KEY=<azure-resource-key>` to
+`~/.anchor/envs/work-azure/.env`. Verify the result:
 
 ```bash
 anchor check --env work-azure --probe
