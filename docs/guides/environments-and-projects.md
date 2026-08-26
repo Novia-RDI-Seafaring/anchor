@@ -85,10 +85,12 @@ built-in defaults  <  env.toml  <  project anchor.toml  <  ANCHOR_* env vars / f
 ```
 
 Settings live in the environment's `env.toml`. A project usually has none and
-inherits. A project overrides a value by adding it to its own `anchor.toml`
-marker (alongside the `env` and `name` keys). The CLI and the MCP server
-resolve the same layered config, so `anchor check` can audit the active
-provider and zone.
+inherits. A project may override non-security settings in its `anchor.toml`
+marker (alongside the `env` and `name` keys). Provider, endpoint, and local-only
+policy belong to the environment and cannot be redirected or weakened by a
+project. A remote embedding model is also rejected when the environment does
+not allow server egress. The CLI and the MCP server resolve the same policy, so
+`anchor check` can audit the active provider and zone.
 
 ## Selecting an environment and project
 
@@ -207,6 +209,12 @@ Two environments are two named servers, set up on purpose. The agent can never
 cross from one environment into another, and moving a project across
 environments is not an MCP operation. That is the human, zone-confirmed
 `anchor project move`.
+
+This isolates Anchor's storage and model clients. It does not constrain the
+agent harness itself. With the `harness` provider, page content is returned to
+the connected agent during ingest. The harness and its model provider must be
+approved for that content. Use `local` plus built-in ingest for documents that
+must not be disclosed to a remote harness.
 
 `anchor install claude-desktop --env <name>` writes a named pointer entry. It
 is additive (other servers are preserved), collision-safe (an existing name

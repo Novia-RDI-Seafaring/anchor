@@ -54,6 +54,30 @@ progress independently. These locks do not coordinate separate
 operating-system processes, so one server process must remain the
 authoritative writer for a shared data directory.
 
+### Environment egress boundary
+
+The environment, not the project or canvas, owns model egress. Its provider,
+endpoint, and local-only setting form one trust policy shared by every project
+in that environment. A project may keep its own corpus and canvas state, but it
+cannot redirect the endpoint or weaken local-only mode. Process configuration
+cannot silently retarget a named environment either. Use a second environment
+and a second named MCP server when a corpus needs a different trust policy.
+
+Runtime composition resolves one `EgressPolicy` before constructing model
+clients. The `local` and `harness` providers construct no Anchor-side remote
+model client, and a remote embedding model is rejected for either provider.
+Public OpenAI may deliberately use `OPENAI_API_KEY`; Azure and custom endpoints
+require an explicit environment-scoped `ANCHOR_OPENAI_API_KEY`. The low-level
+client factory never reads ambient credentials. Each environment's gitignored
+`.env` is parsed into that environment's config without mutating process-global
+state, so resolving one environment cannot leave its key active in another.
+
+`harness` means no Anchor-side model endpoint, not no document disclosure. In
+harness-driven ingest, the connected agent reads page work items and submits
+results. Its model provider and retention policy are outside Anchor. Classified
+or otherwise restricted documents require the `local` provider and must not be
+given to a cloud-backed harness.
+
 ---
 
 ## The three substrates
