@@ -173,6 +173,46 @@ def test_region_search_text_includes_server_content_once():
     assert "| limit | 10 |" in text
 
 
+def test_region_search_text_falls_back_to_cells_when_no_description():
+    # #242: a caption-less table (no description, no derived content) would
+    # embed as just its title. The fallback renders its cells so the values
+    # stay findable by search.
+    region = {
+        "title": "Table",
+        "kind": "table",
+        "cells": [
+            {"row": 0, "col": 0, "text": "Flow"},
+            {"row": 0, "col": 1, "text": "Head"},
+            {"row": 1, "col": 0, "text": "35 m3/h"},
+            {"row": 1, "col": 1, "text": "55 m"},
+        ],
+    }
+
+    text = region_search_text(region)
+
+    assert "35 m3/h" in text
+    assert "55 m" in text
+
+
+def test_region_search_text_skips_cell_fallback_when_described():
+    # A well-described table keeps its authored text; the cell fallback does
+    # not fire (avoids double-embedding the grid the model already summarised).
+    region = {
+        "title": "Operating limits",
+        "description": "Max flow 35 m3/h at 55 m head.",
+        "content": "| Flow | Head |\n| --- | --- |\n| 35 m3/h | 55 m |",
+        "kind": "table",
+        "cells": [{"row": 0, "col": 0, "text": "Flow"}],
+    }
+
+    text = region_search_text(region)
+
+    assert "Max flow 35 m3/h at 55 m head." in text
+    # `content` still contributes the grid once; the standalone cell fallback
+    # is not appended on top.
+    assert text.count("| Flow | Head |") == 1
+
+
 def test_point_in_bbox_tolerates_reversed_y_order():
     assert point_in_bbox((5, 5), [0, 0, 10, 10]) is True
     assert point_in_bbox((5, 5), [0, 10, 10, 0]) is True
