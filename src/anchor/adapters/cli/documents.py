@@ -11,6 +11,10 @@ import typer
 from anchor.adapters.cli.common import DEFAULT_DATA_DIR, _emit_bytes
 from anchor.adapters.cli.document_synopsis import synopsis
 from anchor.adapters.cli.services import _build_real_services
+from anchor.extensions.anchor_pdfs.core.region_inspect import (
+    get_region_content,
+    inspect_region,
+)
 
 
 def ingest(
@@ -326,6 +330,38 @@ def regions(
     typer.echo(json.dumps(asyncio.run(doc_store.get_regions(slug, page=effective_page)), indent=2))
 
 
+def inspect_region_cmd(
+    slug: str,
+    region_id: str,
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Print one gold region's full record by id (e.g. ``p2/r4`` or ``r4``).
+
+    The search -> inspect -> answer path: `search` ranks regions, then this
+    reads one without paging the whole document.
+    """
+    _, _, _, _, doc_store = _build_real_services(data_dir)
+    out = asyncio.run(inspect_region(doc_store, slug, region_id))
+    if out is None:
+        typer.echo(f"region not found: {region_id}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps(out, indent=2))
+
+
+def region_content_cmd(
+    slug: str,
+    region_id: str,
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Print one gold region's reconstructed content (markdown + cells) by id."""
+    _, _, _, _, doc_store = _build_real_services(data_dir)
+    out = asyncio.run(get_region_content(doc_store, slug, region_id))
+    if out is None:
+        typer.echo(f"region not found: {region_id}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps(out, indent=2))
+
+
 def embeddings_meta(
     slug: str,
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
@@ -524,6 +560,8 @@ def register_document_commands(app: typer.Typer) -> None:
     app.command()(embed)
     app.command()(index)
     app.command()(regions)
+    app.command("inspect-region")(inspect_region_cmd)
+    app.command("region-content")(region_content_cmd)
     app.command("embeddings-meta")(embeddings_meta)
     app.command("page-text")(page_text)
     app.command("locate-text")(locate_text)
