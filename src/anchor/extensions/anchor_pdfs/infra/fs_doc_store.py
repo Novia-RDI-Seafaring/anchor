@@ -98,7 +98,13 @@ class FsDocStore:
         """
         if not slug or "/" in slug or "\\" in slug or slug in {".", ".."}:
             raise UnsafeUploadError(f"unsafe document slug: {slug!r}")
-        return assert_within(root / slug, root)
+        # Inline normalise-then-prefix-check (not delegated) so the containment
+        # barrier sits in the same function that builds the path.
+        base = os.path.realpath(os.fspath(root))
+        candidate = os.path.normpath(os.path.join(base, slug))
+        if not candidate.startswith(base + os.sep):
+            raise UnsafeUploadError(f"document slug {slug!r} escapes {root!s}")
+        return Path(candidate)
 
     def _try_create_lock(self, path: Path) -> bool:
         """Atomically create the lock file. True on success, False if held.
