@@ -180,6 +180,11 @@ uv run --extra dev pytest
 uv run --extra dev lint-imports
 pnpm --dir web test
 pnpm --dir web exec tsc --noEmit
+
+# Local-only integration tests (`@pytest.mark.slow`; excluded on CI by the
+# default `-m 'not slow'`). Run these before changing anything that touches
+# extraction, bboxes, or the viewer: they exercise real Docling / chromium.
+uv run --extra dev pytest -m slow tests/extensions/anchor_pdfs/test_docling_roundtrip_slow.py
 ```
 
 ## AX testing (Agent Experience)
