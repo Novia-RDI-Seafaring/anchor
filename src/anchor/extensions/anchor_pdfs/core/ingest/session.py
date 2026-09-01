@@ -40,6 +40,7 @@ from anchor.extensions.anchor_pdfs.core.events import (
     DocPolished,
     DocSilvered,
 )
+from anchor.extensions.anchor_pdfs.core.ingest.coverage import synthesize_coverage_regions
 from anchor.extensions.anchor_pdfs.core.ingest.region_resolution import (
     PAGE_INSTRUCTIONS,
     resolve_regions,
@@ -450,6 +451,7 @@ class IngestSessionService:
             if info.get("status") == "submitted"
         )
         region_count = 0
+        coverage_fallback_count = 0
         polished_pages: list[int] = []
         staged_regions: dict[int, list[dict[str, Any]]] = {}
         for page in submitted_pages:
@@ -458,6 +460,14 @@ class IngestSessionService:
                 continue
             payload = json.loads(raw)
             regions = payload.get("regions", []) if isinstance(payload, dict) else []
+            # Coverage invariant (#242): synthesize additive chunks for the
+            # meaningful silver candidates the agent left uncovered, so they
+            # stay searchable. Authored regions are untouched.
+            candidates = await self.doc_store.get_page_candidates(slug, page) or []
+            extra = synthesize_coverage_regions(page, candidates, regions)
+            if extra:
+                regions = [*regions, *extra]
+                coverage_fallback_count += len(extra)
             staged_regions[page] = regions
             await self.doc_store.write_gold_region_file(slug, page, regions)
             region_count += len(regions)
@@ -505,6 +515,7 @@ class IngestSessionService:
             "page_count": session.get("page_count", 0),
             "polished_page_count": len(polished_pages),
             "region_count": region_count,
+            "coverage_fallback_count": coverage_fallback_count,
             "embedded_count": embedded_count,
             "missing_pages": missing_pages,
             "options": {"dpi": session.get("dpi"), "embed_model": self.embed_model_id if embedded_count else None},
@@ -534,6 +545,7 @@ class IngestSessionService:
             "page_count": session.get("page_count", 0),
             "polished_pages": polished_pages,
             "region_count": region_count,
+            "coverage_fallback_count": coverage_fallback_count,
             "embedded_count": embedded_count,
             "missing_pages": missing_pages,
         }

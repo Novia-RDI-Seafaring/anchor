@@ -39,15 +39,17 @@ that matters first, **where may document content go?**, and writes a non-secret
 
 | Provider | Data zone |
 | --- | --- |
-| `local` | on-host; nothing leaves the network (bronze/silver + local search; no gold regions) |
+| `local` | on-host; nothing leaves the network (bronze/silver; no gold regions or region embeddings) |
 | `ollama` | your machine / LAN; no internet egress, with offline gold regions via a local vision model |
+| `harness` | the connected agent reads pages; its provider policy controls any further egress |
 | `openai` | public cloud |
 | `azure` | your Azure tenant / region |
 | `custom` | any OpenAI-compatible endpoint; you label the zone |
 
 It scaffolds the environment's `default` project and prints the next steps. The
 API key is **never** written to the profile. Keep it in `ANCHOR_OPENAI_API_KEY`
-or a gitignored `.env` next to the profile.
+or a gitignored `.env` next to the profile. The key file does not choose a
+provider and is not loaded until the environment has a valid `env.toml`.
 
 `anchor init` runs inside a working folder and starts a project there. With no
 name it uses the folder's basename. It binds to an environment via `--env
@@ -153,5 +155,7 @@ Embeddings stay **local** (`bge-small`) by default, so text never leaves the
 host even when the vision model is remote. Choosing a `text-embedding-*` model
 opts those vectors into the endpoint.
 
-See [Configuration](../reference/configuration.md) for the full key reference
-and [Agent setup](../guides/agent-setup.md) for connecting a harness.
+See [Choose a provider and enable gold](../guides/provider-setup.md) for the
+setup and recovery workflow, [Configuration](../reference/configuration.md)
+for the full key reference, and [Agent setup](../guides/agent-setup.md) for
+connecting a harness.

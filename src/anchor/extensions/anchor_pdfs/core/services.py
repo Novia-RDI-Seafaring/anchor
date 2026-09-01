@@ -303,6 +303,7 @@ class IngestService:
 
             region_count = 0
             invalid_region_count = 0
+            coverage_fallback_count = 0
             region_errors: list[dict[str, Any]] = []
             gold_completed = False
             empty_gold = False
@@ -327,6 +328,7 @@ class IngestService:
                 )
                 region_count = gold.region_count
                 invalid_region_count = gold.invalid_region_count
+                coverage_fallback_count = gold.coverage_fallback_count
                 region_errors = gold.region_errors
                 gold_completed = gold.completed
                 empty_gold = gold.empty
@@ -372,6 +374,7 @@ class IngestService:
                 "polished_page_count": len(polished_pages),
                 "region_count": region_count,
                 "invalid_region_count": invalid_region_count,
+                "coverage_fallback_count": coverage_fallback_count,
                 "region_errors": region_errors,
                 "gold_complete": gold_completed,
                 "gold_attempts": gold_attempts,
@@ -404,6 +407,7 @@ class IngestService:
                 "polished_pages": polished_pages,
                 "region_count": region_count,
                 "invalid_region_count": invalid_region_count,
+                "coverage_fallback_count": coverage_fallback_count,
                 "embedded_count": embedded_count,
                 "embed_model": self.embed_model_id if embedded_count else None,
                 "timing_report_path": str(timing_report_path),

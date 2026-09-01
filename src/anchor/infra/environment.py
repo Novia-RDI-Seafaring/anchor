@@ -158,34 +158,30 @@ def resolve_environment(env: str | None = None) -> Environment:
     return _load_env(name)
 
 
-def _load_env_dotenv(env: Environment) -> None:
-    """Load ``<env>/.env`` into the process env (ANCHOR_* keys, if unset)."""
-    if env.config_path is None:
-        return
-    dotenv = env.root / ".env"
-    if not dotenv.is_file():
-        return
-    for raw in dotenv.read_text(encoding="utf-8", errors="ignore").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        if key.startswith("ANCHOR_") and key not in os.environ:
-            os.environ[key] = value.strip()
-
-
 def _layered_config(env: Environment, data_dir: Path, marker: dict[str, Any]) -> AnchorConfig:
-    _load_env_dotenv(env)
-    layers: dict[str, Any] = {}
+    from anchor.infra.egress_policy import (
+        read_environment_dotenv,
+        secure_environment_layers,
+        validate_environment_config,
+    )
+
+    environment_values: dict[str, Any] = {}
     if env.config_path is not None:
-        layers.update(_flat_settings(_safe_toml(env.config_path)))
+        environment_values.update(_flat_settings(_safe_toml(env.config_path)))
+    dotenv_path = env.root / ".env" if env.config_path is not None else None
+    dotenv_values = read_environment_dotenv(dotenv_path)
+    environment_values.update(dotenv_values)
     overrides = _flat_settings(marker)
     overrides.pop("env", None)
     overrides.pop("name", None)
-    layers.update(overrides)
+    layers = secure_environment_layers(environment_values, overrides)
+    # The environment's private .env has the same precedence it had when it
+    # was process-global, but its values now remain scoped to this resolution.
+    layers.update(dotenv_values)
     layers.pop("data_dir", None)
-    return AnchorConfig.from_layers(layer_values=layers, data_dir=data_dir)
+    config = AnchorConfig.from_layers(layer_values=layers, data_dir=data_dir)
+    validate_environment_config(environment_values, config)
+    return config
 
 
 def resolve_project_config(env: Environment, project: str) -> AnchorConfig:

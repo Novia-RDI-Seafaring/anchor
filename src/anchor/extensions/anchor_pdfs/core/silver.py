@@ -515,18 +515,35 @@ def region_content_from_items(
 
 
 def region_search_text(region: dict[str, Any]) -> str:
-    """Combine unique region fields for embedding and retrieval."""
+    """Combine unique region fields for embedding and retrieval.
+
+    #242 embedding fallback: the default text is ``title`` + ``description`` +
+    ``content``. When the model authored no ``description``, a caption-less
+    table (issue #231) would otherwise embed as just its title — and its cell
+    values, the only searchable content it has, are invisible. In that case we
+    fall back to the reconstructed table-cell text so the values stay findable.
+    Deduped so a well-described table whose ``content`` already renders the grid
+    is not double-counted.
+    """
     parts: list[str] = []
     seen: set[str] = set()
-    for key in ("title", "description", "content"):
-        value = region.get(key)
+
+    def add(value: Any) -> None:
         if not isinstance(value, str):
-            continue
+            return
         text = value.strip()
         normalized = " ".join(text.split()).casefold()
         if text and normalized not in seen:
             seen.add(normalized)
             parts.append(text)
+
+    for key in ("title", "description", "content"):
+        add(region.get(key))
+
+    description = region.get("description")
+    if not (isinstance(description, str) and description.strip()):
+        add(render_table_cells_md(region.get("cells")))
+
     return "\n\n".join(parts)
 
 

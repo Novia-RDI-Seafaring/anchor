@@ -193,6 +193,38 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "inspect_region",
+            "description": (
+                "One gold region's full record (kind, title, description, bbox, "
+                "cells, source_ref) by region id (e.g. 'p2/r4' or 'r4'). Use "
+                "after search_documents to read a hit without paging the doc."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {"type": "string"},
+                    "region_id": {"type": "string"},
+                },
+                "required": ["slug", "region_id"],
+            },
+        },
+        {
+            "name": "get_region_content",
+            "description": (
+                "One gold region's reconstructed content (markdown + table "
+                "cells) by region id. Rebuilds from silver when the region "
+                "stored none."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {"type": "string"},
+                    "region_id": {"type": "string"},
+                },
+                "required": ["slug", "region_id"],
+            },
+        },
+        {
             "name": "get_page_text",
             "description": "Polished or raw markdown for one page.",
             "inputSchema": {

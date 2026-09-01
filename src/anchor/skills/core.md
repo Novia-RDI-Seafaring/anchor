@@ -97,6 +97,13 @@ A project inherits its environment's config. A human creates one in any working
 folder with `anchor init`; an agent creates a *managed* one (folder under
 `~/.anchor/envs/<name>/projects/<project>/`) with `create_project`.
 
+Provider, endpoint, and local-only mode are environment-owned security
+settings. A project cannot redirect or weaken them. The `local` and `harness`
+providers construct no Anchor-side remote model client, and remote embeddings
+are rejected in both. However, harness-driven ingest gives page content to the
+connected agent. Its model provider is outside Anchor's egress boundary. Never
+use a cloud-backed harness for content that is restricted to the local host.
+
 Over MCP, this server serves one environment. Project-scoped tools take an
 optional `project` argument; omit it for the default project. Use
 `list_projects` to see the options and `create_project` to make one. A

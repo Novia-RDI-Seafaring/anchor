@@ -140,9 +140,9 @@ class AnchorConfig(BaseSettings):
     http_host: str = "127.0.0.1"
     http_port: int = 8002
 
-    # The provider chosen by `anchor init` (see anchor.infra.providers). Purely
-    # a record of intent: it does not change wiring on its own — the endpoint /
-    # models below do — but it lets the status surface name the active data zone.
+    # The provider chosen by `anchor init` (see anchor.infra.providers). This is
+    # the environment's model-egress capability; runtime composition fails
+    # closed when it is absent or names a no-server-egress provider.
     provider: str | None = None
 
     openai_api_key: SecretStr | None = None

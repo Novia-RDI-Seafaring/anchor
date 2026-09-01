@@ -110,8 +110,6 @@ def _write_env_key(target: Path, key: str) -> Path:
     with env_file.open("a", encoding="utf-8") as handle:
         handle.write(f"{sep}{line}\n")
     _ensure_gitignored(target, ".env")
-    # Reflect it in-process so the readback below shows the key as detected.
-    os.environ["ANCHOR_OPENAI_API_KEY"] = key
     return env_file
 
 

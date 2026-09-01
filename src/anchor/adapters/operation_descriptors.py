@@ -104,3 +104,53 @@ CANVAS_OPERATION_DESCRIPTORS: tuple[OperationDescriptor, ...] = (
         cli_command=("canvas", "clear"),
     ),
 )
+
+
+# Document (anchor_pdfs) read ops. `service_method` resolves against DocStore or
+# IngestService; CLI commands are root-level (`anchor <cmd>`), so the tuple is a
+# single element. inspect_region / get_region_content are #242 P1 additions
+# backed by DocStore.get_regions.
+DOCUMENT_OPERATION_DESCRIPTORS: tuple[OperationDescriptor, ...] = (
+    OperationDescriptor(
+        id="document.get_index",
+        service_method="get_index",
+        http=HttpSurface("GET", "/api/documents/{slug}/index"),
+        mcp_tool="get_document_index",
+        cli_command=("index",),
+    ),
+    OperationDescriptor(
+        id="document.get_regions",
+        service_method="get_regions",
+        http=HttpSurface("GET", "/api/documents/{slug}/regions"),
+        mcp_tool="get_gold_regions",
+        cli_command=("regions",),
+    ),
+    OperationDescriptor(
+        id="document.get_page_text",
+        service_method="get_page_text",
+        http=HttpSurface("GET", "/api/documents/{slug}/pages/{page}/text"),
+        mcp_tool="get_page_text",
+        cli_command=("page-text",),
+    ),
+    OperationDescriptor(
+        id="document.search",
+        service_method="search",
+        http=HttpSurface("GET", "/api/documents/_search"),
+        mcp_tool="search_documents",
+        cli_command=("search",),
+    ),
+    OperationDescriptor(
+        id="document.inspect_region",
+        service_method="get_regions",
+        http=HttpSurface("GET", "/api/documents/{slug}/regions/{region_id:path}"),
+        mcp_tool="inspect_region",
+        cli_command=("inspect-region",),
+    ),
+    OperationDescriptor(
+        id="document.get_region_content",
+        service_method="get_regions",
+        http=HttpSurface("GET", "/api/documents/{slug}/region-content/{region_id:path}"),
+        mcp_tool="get_region_content",
+        cli_command=("region-content",),
+    ),
+)
