@@ -15,10 +15,13 @@ from anchor.adapters.mcp.server import (
 )
 from anchor.infra import environment as env_mod
 from anchor.infra.environment import (
+    DEFAULT_PROJECT,
     NoEnvironmentError,
     NoProjectError,
     create_env,
     create_project,
+    resolve_environment,
+    resolve_project_config,
 )
 
 _CLEAR = ("ANCHOR_ENV", "ANCHOR_PROJECT", "ANCHOR_DATA_DIR")
@@ -126,6 +129,25 @@ def test_router_create_environment(tmp_path):
     assert result["environment"] == "work"
     router.create_project("pumps")
     assert "pumps" in [p["name"] for p in router.list_projects()["projects"]]
+    config = resolve_project_config(resolve_environment("work"), "pumps")
+    assert config.local_only is True
+
+
+def test_router_rejects_custom_environment_without_endpoint(tmp_path):
+    router = ProjectRouter(env_arg=None)
+
+    with pytest.raises(ValueError, match="requires an explicit model endpoint"):
+        router.create_environment("work", provider="custom")
+
+    assert not (tmp_path / ".anchor" / "envs" / "work" / "env.toml").exists()
+
+
+def test_router_applies_ollama_default_endpoint(tmp_path):
+    router = ProjectRouter(env_arg=None)
+    router.create_environment("work", provider="ollama")
+    config = resolve_project_config(resolve_environment("work"), DEFAULT_PROJECT)
+
+    assert config.openai_base_url == "http://localhost:11434/v1"
 
 
 # -- multiplexing isolation -------------------------------------------------- #

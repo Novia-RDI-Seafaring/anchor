@@ -8,7 +8,6 @@ graph and prevent lightweight commands from starting unrelated runtimes.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -27,6 +26,7 @@ if TYPE_CHECKING:
     from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
     from anchor.extensions.anchor_sysml.core.services import SysmlService
     from anchor.infra.config import AnchorConfig
+    from anchor.infra.egress_policy import EgressPolicy
 
 
 class RuntimeProfile(StrEnum):
@@ -88,23 +88,12 @@ class ProjectRuntime:
         return self.ingest
 
 
-def egress_settings(config: AnchorConfig) -> tuple[str | None, bool, str | None]:
-    """Resolve API key, client availability, and base URL for one project."""
-    if config.local_only:
-        from anchor.infra.models import enforce_offline
-
-        enforce_offline()
-        return None, False, None
-    api_key = config.openai_api_key.get_secret_value() if config.openai_api_key else None
-    has_openai = bool(api_key) or bool(os.environ.get("OPENAI_API_KEY"))
-    openai_base_url = (config.openai_base_url or "").strip() or None
-    return api_key, has_openai, openai_base_url
-
-
 def build_ingest_service(
     config: AnchorConfig,
     bus: EventBus,
     doc_store: DocStore,
+    *,
+    egress: EgressPolicy | None = None,
 ) -> IngestService:
     """Build the keyed PDF ingest module for one project."""
     from anchor.extensions.anchor_pdfs.core.services import IngestService
@@ -115,23 +104,24 @@ def build_ingest_service(
     )
     from anchor.extensions.anchor_pdfs.infra.pdf.docling_extractor import DoclingPdfExtractor
     from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
+    from anchor.infra.egress_policy import resolve_egress_policy
 
-    api_key, has_openai, openai_base_url = egress_settings(config)
+    policy = egress or resolve_egress_policy(config)
     embedder = build_embedder(
         model=config.embed_model,
-        api_key=api_key,
-        base_url=openai_base_url,
+        api_key=policy.api_key,
+        base_url=policy.base_url,
     )
     return IngestService(
         doc_store,
         bus,
         extractor=DoclingPdfExtractor(device=config.docling_device),
         renderer=PymupdfPdfRenderer(),
-        polisher=OpenAIPageMdPolisher(api_key=api_key, base_url=openai_base_url)
-        if has_openai
+        polisher=OpenAIPageMdPolisher(api_key=policy.api_key, base_url=policy.base_url)
+        if policy.remote_clients_enabled
         else None,
-        region_extractor=OpenAIRegionExtractor(api_key=api_key, base_url=openai_base_url)
-        if has_openai
+        region_extractor=OpenAIRegionExtractor(api_key=policy.api_key, base_url=policy.base_url)
+        if policy.remote_clients_enabled
         else None,
         embedder=embedder,
         embed_model_id=getattr(embedder, "model_id", None),
@@ -145,6 +135,8 @@ def build_ingest_session_service(
     config: AnchorConfig,
     bus: EventBus,
     doc_store: DocStore,
+    *,
+    egress: EgressPolicy | None = None,
 ) -> IngestSessionService:
     """Build harness ingestion against an existing project document store."""
     from anchor.extensions.anchor_pdfs.core.ingest.session import IngestSessionService
@@ -152,12 +144,13 @@ def build_ingest_session_service(
     from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
     from anchor.extensions.anchor_pdfs.infra.pdf.docling_extractor import DoclingPdfExtractor
     from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
+    from anchor.infra.egress_policy import resolve_egress_policy
 
-    api_key, _has_openai, openai_base_url = egress_settings(config)
+    policy = egress or resolve_egress_policy(config)
     embedder = build_embedder(
         model=config.embed_model,
-        api_key=api_key,
-        base_url=openai_base_url,
+        api_key=policy.api_key,
+        base_url=policy.base_url,
     )
     return IngestSessionService(
         doc_store,
@@ -182,6 +175,7 @@ def build_project_runtime(
     from anchor.core.services.workspace_service import WorkspaceService
     from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
     from anchor.infra.bus.memory_bus import MemoryEventBus
+    from anchor.infra.egress_policy import resolve_egress_policy
     from anchor.infra.snapshot.headless_chromium_snapshotter import (
         HeadlessChromiumSnapshotter,
     )
@@ -190,6 +184,7 @@ def build_project_runtime(
 
     profile = RuntimeProfile(profile)
     features = _PROFILE_FEATURES[profile]
+    egress = resolve_egress_policy(config)
     data_dir = config.data_dir
     bus = MemoryEventBus()
     doc_store = FsDocStore(data_dir)
@@ -211,9 +206,13 @@ def build_project_runtime(
 
         intents = IntentService(FsIntentStore(data_dir), bus, now=SystemClock().now)
 
-    ingest = build_ingest_service(config, bus, doc_store) if features.ingest else None
+    ingest = (
+        build_ingest_service(config, bus, doc_store, egress=egress)
+        if features.ingest
+        else None
+    )
     ingest_session = (
-        build_ingest_session_service(config, bus, doc_store)
+        build_ingest_session_service(config, bus, doc_store, egress=egress)
         if features.ingest_session
         else None
     )

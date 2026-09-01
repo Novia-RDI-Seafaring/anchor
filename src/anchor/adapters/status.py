@@ -9,6 +9,7 @@ from typing import Any
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.infra.config import AnchorConfig, discover_config_file
+from anchor.infra.egress_policy import resolve_egress_policy
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,10 @@ async def build_status_summary(
     workspaces, workspace_error = await _safe_list_workspaces(workspace)
     documents, document_error = await _safe_list_documents(doc_store)
     embeddings, embedding_error = await _safe_list_embeddings(doc_store)
+    egress = resolve_egress_policy(config, require_remote_credential=False)
+    endpoint = None
+    if egress.server_egress_allowed:
+        endpoint = egress.base_url or "api.openai.com"
 
     return {
         "process": {
@@ -72,7 +77,10 @@ async def build_status_summary(
             # OpenAI client and model loading is pinned offline. The runtime
             # asserts this the same way across CLI, HTTP and MCP.
             "local_only": config.local_only,
-            "openai_base_url": config.openai_base_url or "api.openai.com",
+            "server_model_egress_allowed": egress.server_egress_allowed,
+            "server_model_egress_enabled": egress.remote_clients_enabled,
+            "credential_source": egress.credential_source,
+            "openai_base_url": endpoint,
             "embed_model": config.embed_model,
             "polish_model": config.polish_model,
             "region_model": config.region_model,

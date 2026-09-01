@@ -157,9 +157,26 @@ class ProjectRouter:
         env_name = name or self.env_arg or DEFAULT_ENV
         settings: dict[str, Any] = {}
         if provider:
-            settings["provider"] = provider
-        if base_url:
-            settings["openai_base_url"] = base_url
+            from anchor.infra.providers import get_provider, normalize_base_url
+
+            selected = get_provider(provider)
+            if selected is None:
+                raise ValueError(f"unknown provider {provider!r}")
+            endpoint = base_url or selected.default_base_url
+            if selected.base_url_required and not endpoint:
+                raise ValueError(
+                    f"provider {selected.key!r} requires an explicit model endpoint"
+                )
+            settings["provider"] = selected.key
+            if selected.local_only:
+                settings["local_only"] = True
+            if endpoint:
+                settings["openai_base_url"] = normalize_base_url(
+                    selected.key,
+                    endpoint,
+                )
+        elif base_url:
+            raise ValueError("a model endpoint requires an explicit provider")
         if embed_model:
             settings["embed_model"] = embed_model
         meta = Meta(description=description or "")

@@ -3,6 +3,9 @@
 Anchor has two levels: **environments** and **projects**. This page defines
 both, shows where things live on disk, and lists the commands.
 
+For a step-by-step provider decision, API-key explanation, and gold recovery
+workflow, start with [Choose a provider and enable gold](provider-setup.md).
+
 ## Terms
 
 | Term | Definition |
@@ -35,10 +38,24 @@ letters.
   and `anchor init` does not create one. The environment's settings live in
   `env.toml`, not a `.env`.
 
-The one place a `.env` may appear is the endpoint API key. That key is never
-written to `env.toml`; it stays in `ANCHOR_OPENAI_API_KEY`, optionally captured
-into a gitignored `.env` next to the profile. That file holds only the secret.
-It does not define the environment.
+The one supported use of an environment `.env` is an endpoint credential. The
+key is never written to `env.toml`; it stays in
+`ANCHOR_OPENAI_API_KEY`, optionally captured in:
+
+```text
+~/.anchor/envs/<environment-name>/.env
+```
+
+That file holds only the secret. It does not define the environment and it is
+not loaded until the environment has a valid `env.toml`. A key file by itself
+cannot choose a provider or enable model traffic. The provider in `env.toml`
+remains the trust decision:
+
+- An absent provider fails closed and skips gold.
+- `local` and `harness` do not build an endpoint client, even if a key exists.
+- `ollama` needs no user key.
+- `openai`, `azure`, and `custom` use `ANCHOR_OPENAI_API_KEY` for their approved
+  endpoint. A bare `OPENAI_API_KEY` inside the environment `.env` is ignored.
 
 ## On disk
 
@@ -81,14 +98,21 @@ stays in `ANCHOR_OPENAI_API_KEY` or the gitignored `.env`, never in the profile.
 ## Configuration layering
 
 ```
-built-in defaults  <  env.toml  <  project anchor.toml  <  ANCHOR_* env vars / flags
+built-in defaults  <  env.toml  <  project anchor.toml  <  environment .env  <  process ANCHOR_* / flags
 ```
 
 Settings live in the environment's `env.toml`. A project usually has none and
-inherits. A project overrides a value by adding it to its own `anchor.toml`
-marker (alongside the `env` and `name` keys). The CLI and the MCP server
-resolve the same layered config, so `anchor check` can audit the active
-provider and zone.
+inherits. A project may override non-security settings in its `anchor.toml`
+marker (alongside the `env` and `name` keys). Provider, endpoint, and local-only
+policy belong to the environment and cannot be redirected or weakened by a
+project. A remote embedding model is also rejected when the environment does
+not allow server egress. The CLI and the MCP server resolve the same policy, so
+`anchor check` can audit the active provider and zone.
+
+The environment `.env` is shown in the precedence diagram because it is merged
+after the TOML files. Do not use it as a second profile. Keep provider,
+endpoint, and model names in `env.toml`, and keep only the credential in
+`.env`.
 
 ## Selecting an environment and project
 
@@ -207,6 +231,12 @@ Two environments are two named servers, set up on purpose. The agent can never
 cross from one environment into another, and moving a project across
 environments is not an MCP operation. That is the human, zone-confirmed
 `anchor project move`.
+
+This isolates Anchor's storage and model clients. It does not constrain the
+agent harness itself. With the `harness` provider, page content is returned to
+the connected agent during ingest. The harness and its model provider must be
+approved for that content. Use `local` plus built-in ingest for documents that
+must not be disclosed to a remote harness.
 
 `anchor install claude-desktop --env <name>` writes a named pointer entry. It
 is additive (other servers are preserved), collision-safe (an existing name

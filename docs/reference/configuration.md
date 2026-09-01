@@ -1,9 +1,16 @@
 # Configuration
 
 ANCHOR resolves configuration from, in priority order: explicit command-line
-flags, `ANCHOR_*` environment variables, the project `anchor.toml` marker, the
-environment `env.toml`, then built-in defaults. The API key is the exception:
-it stays in `ANCHOR_OPENAI_API_KEY` or a gitignored `.env`, never in a profile.
+flags, process-level `ANCHOR_*` variables, the selected environment's private
+`.env`, the project `anchor.toml` marker, the environment `env.toml`, then
+built-in defaults. Provider, endpoint, and local-only policy belong to the
+environment trust boundary. A project cannot redirect or weaken them.
+
+The API key is intentionally separate from the non-secret profile. Keep it in
+`ANCHOR_OPENAI_API_KEY` or the selected environment's gitignored `.env`, never
+in `env.toml` or `anchor.toml`. See
+[Choose a provider and enable gold](../guides/provider-setup.md) for complete
+recipes and the silver-only recovery workflow.
 
 ## Environments: `anchor env create`
 
@@ -48,7 +55,25 @@ use` session selection, else the default environment and its `default` project.
 !!! warning "Secrets stay out of the profile"
     The API key is never written to `env.toml`. Put it in
     `ANCHOR_OPENAI_API_KEY` (environment or a gitignored `.env` next to the
-    profile), so a committed config never carries credentials.
+    profile), so a committed config never carries credentials. The supported
+    file is `~/.anchor/envs/<name>/.env`, not a project or repository `.env`.
+    This file is loaded only after the environment has a valid `env.toml`.
+
+### Why a key does not enable gold by itself
+
+`ANCHOR_OPENAI_API_KEY` authenticates a provider that the environment already
+allows. It does not select that provider:
+
+- No `env.toml` or no provider: model egress is disabled and gold is skipped.
+- `local`: no endpoint client is built, regardless of key presence.
+- `harness`: no endpoint client is built; the harness performs the vision work.
+- `ollama`: no user key is required.
+- `openai`, `azure`, and `custom`: the key authenticates the configured
+  destination.
+
+The environment `.env` loader imports only `ANCHOR_` variables. A bare
+`OPENAI_API_KEY` in that file is ignored. A process-level `OPENAI_API_KEY` is a
+fallback only for the public `openai` provider when no custom base URL is set.
 
 ### `env.toml` keys
 
@@ -61,9 +86,11 @@ use` session selection, else the default environment and its `default` project.
 | `docling_device` | `auto` | Bronze-stage accelerator (see below). |
 
 A project usually has no settings of its own and inherits the environment's. A
-project overrides a value by adding it to its own `anchor.toml` marker (alongside
-the `env` and `name` keys). A malformed config is ignored with a warning. It
-never crashes the CLI.
+project may override non-security values by adding them to its own `anchor.toml`
+marker (alongside the `env` and `name` keys). Attempts to override `provider` or
+`openai_base_url`, weaken `local_only`, or select remote embeddings in a
+no-egress environment fail before runtime startup. A malformed config is
+ignored with a warning. It never crashes the CLI.
 
 ## Command-line settings
 
@@ -97,17 +124,27 @@ deployment layer.
 
 The provider you pick determines where document content may go:
 
-- **`local` / `ollama`**: bronze, silver, and embeddings run on your machine;
-  no document content leaves the network. `ollama` adds offline gold regions via
-  a local vision model.
+- **`local`**: bronze and silver run on your machine, with no model client.
+  Gold regions and their semantic embeddings are not created.
+- **`ollama`**: bronze, silver, gold, and gold-region embeddings run against
+  your local or LAN Ollama service. No user API key is needed.
 - **`openai`**: page images and extracted text are sent to OpenAI for polish
   and region extraction.
 - **`azure` / `custom`**: the same content is sent only to the endpoint you
   configure (your tenant / region, or a self-hosted gateway).
+- **`harness`**: Anchor constructs no remote model client, but the connected
+  agent receives page content during harness-driven ingest. Its model provider
+  and retention policy are outside Anchor and must be approved separately.
 
 Embeddings stay **local** (`bge-small`) by default, so text never leaves the
 host even when the vision model is remote. Choosing a `text-embedding-*` model
 sends embedding text to the configured endpoint.
+
+Custom and Azure endpoints use only the explicit `ANCHOR_OPENAI_API_KEY` scoped
+to the selected environment. They never inherit an ambient public
+`OPENAI_API_KEY`. Environment `.env` values are read without being copied into
+process-global state, so one resolved environment cannot leave its credential
+active in another.
 
 ## Accelerator (docling)
 
@@ -132,23 +169,20 @@ polish_model    = "<vision-capable-deployment-name>"
 region_model    = "<vision-capable-deployment-name>"
 ```
 
-```bash
-export ANCHOR_OPENAI_API_KEY=<your-azure-key>   # never written to env.toml
-```
-
 Use the **deployment name** (not the base model name) as `polish_model` /
 `region_model`. For Azure, do not rely on a personal `OPENAI_API_KEY`; set
-`ANCHOR_OPENAI_API_KEY` to the Azure resource key, ideally in the project
-folder's gitignored `.env`:
+`ANCHOR_OPENAI_API_KEY` to the Azure resource key in the selected environment's
+gitignored `.env`:
 
 ```bash
-echo 'ANCHOR_OPENAI_API_KEY=<your-azure-key>' >> .env
+echo 'ANCHOR_OPENAI_API_KEY=<your-azure-key>' >> ~/.anchor/envs/<name>/.env
 ```
 
 PowerShell:
 
 ```powershell
-Add-Content .env "ANCHOR_OPENAI_API_KEY=<your-azure-key>"
+$envFile = Join-Path $HOME ".anchor\envs\<name>\.env"
+Add-Content -LiteralPath $envFile -Value "ANCHOR_OPENAI_API_KEY=<your-azure-key>"
 ```
 
 Gold extraction through `anchor ingest` needs this keyed vision setup. If the
@@ -179,10 +213,16 @@ that URL with the `custom` provider.
 ## Example: OpenAI-compatible extraction
 
 ```bash
-export ANCHOR_OPENAI_API_KEY=<your-key>
-export ANCHOR_OPENAI_BASE_URL=https://api.openai.com/v1
+anchor env create approved-endpoint --provider custom \
+  --base-url https://models.example.org/v1 \
+  --vision-model <vision-model-name> --yes
+echo 'ANCHOR_OPENAI_API_KEY=<your-key>' \
+  >> ~/.anchor/envs/approved-endpoint/.env
+anchor check --env approved-endpoint --probe
 ```
 
-`anchor env create` writes the matching `env.toml` for you. Without an API key,
-local document storage, page rendering, search, and canvas operations still
-work; gold-region extraction is the only step that needs the vision endpoint.
+`anchor env create` writes the provider, endpoint, and model to `env.toml`. The
+private `.env` holds only the endpoint credential. Without an approved vision
+provider, local document storage, bronze and silver extraction, page rendering,
+and canvas operations still work; gold regions and their semantic embeddings
+are not created.
