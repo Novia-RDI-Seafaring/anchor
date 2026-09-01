@@ -8,17 +8,18 @@ from copy import deepcopy
 from anchor.extensions.anchor_pdfs.core.ingest.session import PROTOCOL_VERSION
 from tests.fixtures.services import make_in_memory_services
 
+# Top-left PDF points (#281): y grows downward, so the title has the smallest y.
 _TWO_PAGE_DOCLING = {
     "items": [
-        {"label": "title", "text": "Demo Doc", "page": 1, "bbox": [0, 720, 200, 700]},
-        {"label": "section_header", "text": "Specs", "page": 1, "bbox": [0, 620, 100, 600]},
-        {"label": "text", "text": "First paragraph.", "page": 1, "bbox": [0, 595, 200, 580]},
-        {"label": "table", "text": "", "page": 2, "bbox": [0, 700, 500, 400],
+        {"label": "title", "text": "Demo Doc", "page": 1, "bbox": [0, 72, 200, 92]},
+        {"label": "section_header", "text": "Specs", "page": 1, "bbox": [0, 172, 100, 192]},
+        {"label": "text", "text": "First paragraph.", "page": 1, "bbox": [0, 197, 200, 212]},
+        {"label": "table", "text": "", "page": 2, "bbox": [0, 92, 500, 392],
          "cells": [
-             {"row": 0, "col": 0, "text": "Field", "bbox": [10, 690, 80, 660]},
-             {"row": 0, "col": 1, "text": "Value", "bbox": [100, 690, 180, 660]},
+             {"row": 0, "col": 0, "text": "Field", "bbox": [10, 102, 80, 132]},
+             {"row": 0, "col": 1, "text": "Value", "bbox": [100, 102, 180, 132]},
          ]},
-        {"label": "text", "text": "Footnote.", "page": 2, "bbox": [0, 100, 200, 80]},
+        {"label": "text", "text": "Footnote.", "page": 2, "bbox": [0, 692, 200, 712]},
     ],
 }
 
@@ -132,7 +133,7 @@ def test_submit_page_computes_bbox_from_member_union_and_stages_only():
             await s.session_store.read_text(sid, "gold/pages/1.regions.json")
         )
         region = staged["regions"][0]
-        assert region["bbox"] == [0.0, 620.0, 200.0, 580.0]
+        assert region["bbox"] == [0.0, 172.0, 200.0, 212.0]
         assert region["geometry"] == "members"
         # Nothing is published: the doc store has no gold and no regions.
         assert await s.doc_store.has_gold("demo") is False
@@ -171,9 +172,9 @@ def test_submit_page_approx_bbox_is_snapped_or_stamped_coarse():
         sid = order["session_id"]
         verdict = await s.ingest_session.ingest_submit_page(sid, 1, regions=[
             # Covers the section header + paragraph centers -> snapped.
-            {"kind": "text", "title": "snapped", "approx_bbox": [0, 630, 210, 570]},
+            {"kind": "text", "title": "snapped", "approx_bbox": [0, 160, 210, 220]},
             # Covers nothing -> kept coarse, honestly stamped.
-            {"kind": "figure", "title": "coarse", "approx_bbox": [300, 300, 400, 200]},
+            {"kind": "figure", "title": "coarse", "approx_bbox": [300, 200, 400, 300]},
         ])
         assert verdict["accepted"] is True
         staged = json.loads(
@@ -181,9 +182,9 @@ def test_submit_page_approx_bbox_is_snapped_or_stamped_coarse():
         )
         snapped, coarse = staged["regions"]
         assert snapped["geometry"] == "snapped"
-        assert snapped["bbox"] == [0.0, 620.0, 200.0, 580.0]
+        assert snapped["bbox"] == [0.0, 172.0, 200.0, 212.0]
         assert coarse["geometry"] == "coarse"
-        assert coarse["bbox"] == [300.0, 300.0, 400.0, 200.0]
+        assert coarse["bbox"] == [300.0, 200.0, 400.0, 300.0]
 
     asyncio.run(run())
 
@@ -235,8 +236,8 @@ def test_status_is_the_resume_surface_by_id_and_slug():
             await s.session_store.read_text(sid, "gold/pages/2.regions.json")
         )
         assert staged["regions"][0]["cells"] == [
-            {"row": 0, "col": 0, "text": "Field", "bbox": [10.0, 690.0, 80.0, 660.0]},
-            {"row": 0, "col": 1, "text": "Value", "bbox": [100.0, 690.0, 180.0, 660.0]},
+            {"row": 0, "col": 0, "text": "Field", "bbox": [10.0, 102.0, 80.0, 132.0]},
+            {"row": 0, "col": 1, "text": "Value", "bbox": [100.0, 102.0, 180.0, 132.0]},
         ]
         by_slug = await s.ingest_session.ingest_status(slug="demo")
         assert by_slug["session_id"] == sid
@@ -254,10 +255,10 @@ def test_submit_page_resolves_table_slice_to_selected_cells_and_bbox():
         s = _services()
         docling = deepcopy(_TWO_PAGE_DOCLING)
         docling["items"][3]["cells"].extend([
-            {"row": 1, "col": 0, "text": "Flow", "bbox": [10, 650, 80, 620]},
-            {"row": 1, "col": 1, "text": "10 l/s", "bbox": [100, 650, 180, 620]},
-            {"row": 2, "col": 0, "text": "Head", "bbox": [10, 610, 80, 580]},
-            {"row": 2, "col": 1, "text": "5 m", "bbox": [100, 610, 180, 580]},
+            {"row": 1, "col": 0, "text": "Flow", "bbox": [10, 142, 80, 172]},
+            {"row": 1, "col": 1, "text": "10 l/s", "bbox": [100, 142, 180, 172]},
+            {"row": 2, "col": 0, "text": "Head", "bbox": [10, 182, 80, 212]},
+            {"row": 2, "col": 1, "text": "5 m", "bbox": [100, 182, 180, 212]},
         ])
         s.extractor.docling = docling
         order = await _begin(s)
@@ -282,7 +283,8 @@ def test_submit_page_resolves_table_slice_to_selected_cells_and_bbox():
         ))
         region = staged["regions"][0]
         assert region["geometry"] == "table_slice"
-        assert region["bbox"] == [10.0, 690.0, 180.0, 580.0]
+        # Union of the selected cells (rows 0 and 2) only.
+        assert region["bbox"] == [10.0, 102.0, 180.0, 212.0]
         assert region["table_slice"] == {
             "candidate_id": "p2-i0",
             "rows": [0, 2],

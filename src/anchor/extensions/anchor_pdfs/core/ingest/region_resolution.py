@@ -48,7 +48,7 @@ PAGE_INSTRUCTIONS = (
     "part of a table, use table_slice {candidate_id, rows, columns?}; row and "
     "column indexes come from the candidate cells, and the server computes "
     "cell-level content and geometry. Only when no candidate covers a visual, "
-    "send approx_bbox [left, top, right, bottom] in BOTTOMLEFT page coordinates "
+    "send approx_bbox [left, top, right, bottom] in top-left PDF points (y down) "
     "instead. Optional: tags[], entities[] (product/model identifiers). For "
     "table/spec_block regions, split visual sub-tables and repeat duplicate "
     "values for each key instead of deduplicating them. "

@@ -89,9 +89,13 @@ Three-layer medallion architecture under `~/anchor-data/`:
 | **Silver** | `silver/<slug>/` | Docling extraction: items, pages, bboxes |
 | **Gold** | `gold/<slug>/` | Structured product knowledge JSON, region crops |
 
-Every region carries `page` + `bbox` (BOTTOMLEFT coordinates from
-Docling). The agent's `get_product_data(slug)` tool returns the full
-gold JSON in one call.
+Every region carries `page` + `bbox` in the canonical convention (#281,
+mirrors OIP `pdf-page-bbox`): PDF points, **top-left origin**,
+`[left, top, right, bottom]` with `top <= bottom`. Extractors that work in
+PDF user space (bottom-left) are converted at the ingest boundary
+(`silver.normalize_items`); never emit or assume bottom-left downstream.
+The agent's `get_product_data(slug)` tool returns the full gold JSON in
+one call.
 
 ## Agent intent queue (your inbox)
 
@@ -176,6 +180,11 @@ uv run --extra dev pytest
 uv run --extra dev lint-imports
 pnpm --dir web test
 pnpm --dir web exec tsc --noEmit
+
+# Local-only integration tests (`@pytest.mark.slow`; excluded on CI by the
+# default `-m 'not slow'`). Run these before changing anything that touches
+# extraction, bboxes, or the viewer: they exercise real Docling / chromium.
+uv run --extra dev pytest -m slow tests/extensions/anchor_pdfs/test_docling_roundtrip_slow.py
 ```
 
 ## AX testing (Agent Experience)

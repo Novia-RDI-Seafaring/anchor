@@ -25,6 +25,34 @@ def _find_free_port(host: str, start: int, *, limit: int = 20) -> int:
     raise OSError(f"no free port in {start}..{start + limit - 1}")
 
 
+def _migrate_bbox_origin(runtime) -> None:
+    """Flip legacy bottom-left bboxes to top-left before serving (#281)."""
+    import asyncio
+
+    from anchor.extensions.anchor_pdfs.core.bbox_migration import migrate_all
+
+    try:
+        renderer = getattr(runtime.ingest, "renderer", None)
+        report = asyncio.run(migrate_all(runtime.doc_store, renderer, runtime.workspace))
+    except Exception as exc:  # noqa: BLE001 - never block serving on a migration hiccup
+        typer.echo(f"[anchor serve] bbox migration skipped: {exc}", err=True)
+        return
+    if report.get("migrated"):
+        typer.echo(
+            f"[anchor serve] migrated {len(report['migrated'])} document(s) to top-left "
+            f"bboxes (#281): {', '.join(report['migrated'])}",
+            err=True,
+        )
+    for item in report.get("skipped", []):
+        typer.echo(
+            f"[anchor serve] bbox migration skipped {item['slug']}: {item.get('reason')} "
+            "(run `anchor migrate bbox-origin` once the PDF is available)",
+            err=True,
+        )
+    if report.get("recommendation"):
+        typer.echo(f"[anchor serve] {report['recommendation']}", err=True)
+
+
 def _warn_fmu_for_serve(exc: Exception) -> None:
     if exc.__class__.__name__ == "FmuRuntimeUnavailableError":
         typer.echo(f"Warning: FMU extension disabled: {exc}", err=True)
@@ -94,6 +122,12 @@ def serve(
     if not static_dir.is_dir():
         # development: walk up to web/dist in the repository checkout
         static_dir = Path(__file__).resolve().parents[4] / "web" / "dist"
+
+    # Self-correct legacy data (#281): flip any bottom-left silver/gold/canvas
+    # bboxes to top-left once, before serving. Idempotent and cheap on an
+    # already-migrated project; a document whose page sizes are unavailable is
+    # reported and left untouched rather than half-flipped.
+    _migrate_bbox_origin(runtime)
 
     app_ = build_app(runtime, static_dir=static_dir if static_dir.is_dir() else None)
 

@@ -22,16 +22,11 @@ export function sameBbox(a: number[] | undefined, b: number[] | undefined): bool
 /**
  * Convert a gold-region bbox to an image-space rectangle.
  *
- * Gold bboxes use Docling's BOTTOM-LEFT (PDF user-space) origin, but the
- * element ORDER within the 4-tuple is not guaranteed: the vision-LLM region
- * extractor emits `[left, top, right, bottom]` for some documents and
- * `[left, bottom, right, top]` for others. The previous code assumed a fixed
- * order (`height = bbox[1] - bbox[3]`), so for the other ordering every region
- * collapsed to a negative height and rendered invisibly.
- *
- * Taking min/max per axis makes the mapping order-independent: the box spans
- * `[min..max]` horizontally and `[min..max]` in PDF-y, and bottom-left origin
- * maps the larger PDF-y to the image's top edge. A region can never collapse.
+ * Gold bboxes use the canonical top-left PDF-points convention (#281), the
+ * same orientation as the rendered image, so this is a pure scale. Element
+ * order within the 4-tuple is still normalised per axis (min/max), so a
+ * legacy or hand-typed `[left, bottom, right, top]` box can never collapse to
+ * a negative height and render invisibly.
  */
 export function bboxToImageRect(
   bbox: number[] | undefined,
@@ -52,7 +47,7 @@ export function bboxToImageRect(
   const sy = imgH / pageH;
   return {
     x: left * sx,
-    y: (pageH - yHigh) * sy,
+    y: yLow * sy,
     w: (right - left) * sx,
     h: (yHigh - yLow) * sy,
   };

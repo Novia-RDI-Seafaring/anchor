@@ -16,16 +16,18 @@ from anchor.extensions.anchor_pdfs.core.silver import build_page_candidates
 
 
 def _cands(*items: tuple[str, str]) -> list[dict]:
-    """(label, text) tuples -> page-1 candidates with stacked bboxes."""
+    """(label, text) tuples -> page-1 candidates stacked down the page.
+
+    Top-left PDF points (#281): item idx sits at y = 100 + 20*idx."""
     out = []
     for idx, (label, text) in enumerate(items):
-        top = 700 - idx * 20
+        top = 100 + idx * 20
         cand = {"id": f"p1-i{idx}", "label": label, "text": text,
-                "bbox": [0, top, 200, top - 15]}
+                "bbox": [0, top, 200, top + 15]}
         if label == "table":
             cand["cells"] = [
-                {"row": 0, "col": 0, "text": "Flow", "bbox": [0, top, 90, top - 15]},
-                {"row": 0, "col": 1, "text": "35 m3/h", "bbox": [100, top, 200, top - 15]},
+                {"row": 0, "col": 0, "text": "Flow", "bbox": [0, top, 90, top + 15]},
+                {"row": 0, "col": 1, "text": "35 m3/h", "bbox": [100, top, 200, top + 15]},
             ]
             cand["cells_preview"] = {"shape": [1, 2], "header_row": ["Flow", "35 m3/h"]}
         out.append(cand)
@@ -53,7 +55,7 @@ def test_uncovered_captionless_table_becomes_its_own_chunk():
     assert region["title"] == "Operating data"
     assert region["description"] == ""
     assert region["cells"][1]["text"] == "35 m3/h"
-    assert region["bbox"] == [0, 680, 200, 665]
+    assert region["bbox"] == [0, 120, 200, 135]
 
 
 def test_contiguous_uncovered_text_merges_into_one_chunk_under_heading():
@@ -71,7 +73,7 @@ def test_contiguous_uncovered_text_merges_into_one_chunk_under_heading():
     # The uncovered heading joins the run; all three text items are members.
     assert region["member_item_ids"] == ["p1-i0", "p1-i1", "p1-i2", "p1-i3"]
     assert "Hygienic design" in region["content"]
-    assert region["bbox"] == [0, 700, 200, 625]
+    assert region["bbox"] == [0, 100, 200, 175]
 
 
 def test_covered_items_split_runs_and_are_never_re_chunked():

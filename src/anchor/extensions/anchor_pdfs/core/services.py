@@ -42,6 +42,7 @@ from anchor.extensions.anchor_pdfs.core.silver import (
     build_pages_meta,
     find_low_text_pages,
     low_text_pages_warning,
+    normalize_items,
     render_pages_md,
 )
 from anchor.extensions.anchor_pdfs.core.synopsis_service import (
@@ -188,8 +189,10 @@ class IngestService:
             await self._publish(IngestProgress(slug=slug, stage="silver_extract", current=0, total=1), publish_workspace_id)
             await record_activity("silver_extract", current=0, total=1)
             stage_started_at = self.clock.now()
-            docling = await self.extractor.extract(
-                bronze_path, full_page_ocr=full_page_ocr
+            # Boundary normaliser (#281): every extractor's boxes leave here as
+            # top-left PDF points, validated against the reported page sizes.
+            docling = normalize_items(
+                await self.extractor.extract(bronze_path, full_page_ocr=full_page_ocr)
             )
             finish_stage(
                 "silver_extract",

@@ -15,7 +15,8 @@ through a transactional work-order protocol:
 
 The server is the trust boundary: submissions pass a closed schema, and
 region geometry is named by grouping candidate item ids or selecting table
-cells. The server computes BOTTOMLEFT provenance coordinates. The
+cells. The server computes provenance coordinates in the canonical top-left
+PDF-points convention (#281). The
 `approx_bbox` escape hatch (for visuals docling missed) is snapped to docling
 items and stamped `geometry: snapped|coarse` so consumers see the difference.
 
@@ -54,6 +55,7 @@ from anchor.extensions.anchor_pdfs.core.silver import (
     build_page_candidates,
     build_pages_meta,
     needs_polish,
+    normalize_items,
     region_search_text,
     render_pages_md,
 )
@@ -228,7 +230,8 @@ class IngestSessionService:
         bronze_path = await self.doc_store.stash_bronze(pdf_bytes, filename)
         await self._publish(DocBronzed(slug=slug, bronze_path=str(bronze_path)))
 
-        docling = await self.extractor.extract(bronze_path)
+        # Boundary normaliser (#281): top-left PDF points regardless of extractor.
+        docling = normalize_items(await self.extractor.extract(bronze_path))
         index = build_index(docling, filename=filename)
         pages_md = render_pages_md(docling)
         pages_meta = build_pages_meta(docling)
