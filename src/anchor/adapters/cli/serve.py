@@ -49,6 +49,8 @@ def _migrate_bbox_origin(runtime) -> None:
             "(run `anchor migrate bbox-origin` once the PDF is available)",
             err=True,
         )
+    if report.get("recommendation"):
+        typer.echo(f"[anchor serve] {report['recommendation']}", err=True)
 
 
 def _warn_fmu_for_serve(exc: Exception) -> None:

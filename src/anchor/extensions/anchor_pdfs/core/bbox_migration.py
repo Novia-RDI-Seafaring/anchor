@@ -9,8 +9,10 @@ data once, idempotently:
   stamp that marks a document migrated) and ``page_size`` per page;
 - ``silver/<slug>/index.json`` outline / tables / figures bboxes and table
   cells, and ``pages/<n>.candidates.json`` bboxes + cells, are flipped;
-- ``gold/<slug>/pages/<n>.regions.json`` bboxes, ``approx_bbox`` and cells
-  are flipped;
+- ``gold/<slug>/pages/<n>.regions.json``: harness-derived regions (they carry
+  ``geometry``, built from Docling coordinates) are flipped exactly; legacy
+  keyed-path regions are *reconstructed* instead — see
+  :func:`reconstruct_keyed_region` for why a flip would keep them wrong;
 - canvas nodes / edges whose ``source_ref`` (or spec ``rows[].source_ref``)
   points into a migrated document are flipped and stamped
   ``coord_origin: "top-left"``.
@@ -28,9 +30,76 @@ from typing import Any
 
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.ports.pdf_renderer import PdfRenderer
-from anchor.extensions.anchor_pdfs.core.silver import BBOX_ORIGIN, flip_bbox_y, union_bbox
+from anchor.extensions.anchor_pdfs.core.silver import (
+    BBOX_ORIGIN,
+    flip_bbox_y,
+    region_content_from_items,
+    snap_to_docling_items,
+    table_cells_from_items,
+    union_bbox,
+)
 
 _BBOX_KEYS = ("bbox", "approx_bbox", "approximate_bbox")
+
+
+def _clamp(bbox: list[float], width: float, height: float) -> list[float]:
+    left, right = sorted((float(bbox[0]), float(bbox[2])))
+    top, bottom = sorted((float(bbox[1]), float(bbox[3])))
+    return [
+        max(0.0, min(left, width)), max(0.0, min(top, height)),
+        max(0.0, min(right, width)), max(0.0, min(bottom, height)),
+    ]
+
+
+def reconstruct_keyed_region(
+    region: dict[str, Any],
+    page: int,
+    size: tuple[float, float],
+    candidates_top_left: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Recover a legacy keyed-path gold region (#281).
+
+    Verified on real data: the vision model emitted TOP-LEFT boxes even when
+    prompted for bottom-left, and the old snapper then absorbed the
+    mirror-image Docling items — so a stored keyed bbox is the union of the
+    *wrong* items, sitting at the mirror position of the region the model
+    meant. Reading the stored box as top-left recovers the model's intent;
+    flipping it would keep the mirror. We then re-snap against the migrated
+    (top-left) silver so bbox / content / cells come from the right items.
+    Harness regions carry ``geometry`` and are not routed here."""
+    width, height = size
+    out = dict(region)
+    raw = region.get("bbox")
+    if not (isinstance(raw, list) and len(raw) == 4):
+        return out
+    approx = _clamp([float(v) for v in raw], width, height)
+    items = [{**c, "page": page} for c in candidates_top_left if isinstance(c, dict)]
+    snapped, idx = snap_to_docling_items({"items": items}, page, approx)
+    out.pop("cells", None)
+    out.pop("content", None)
+    if snapped:
+        out["bbox"] = snapped
+        out["geometry"] = "snapped"
+        content = region_content_from_items(items, idx)
+        if content:
+            out["content"] = content
+        cells = table_cells_from_items(items, idx, region_bbox=approx)
+        if cells and out.get("kind") in {"table", "spec_block"}:
+            out["cells"] = cells
+    elif (approx[2] - approx[0]) <= 1e-6 or (approx[3] - approx[1]) <= 1e-6:
+        # The model's numbers were not page coordinates at all (e.g. pixels
+        # beyond the page); clamping collapsed them. Keep the region (its
+        # title/description still embed and search) but say the geometry is
+        # unrecoverable rather than draw a degenerate box.
+        out["bbox"] = approx
+        out["geometry"] = "coarse"
+        out["migration"] = "keyed-unrecoverable"
+        return out
+    else:
+        out["bbox"] = approx
+        out["geometry"] = "coarse"
+    out["migration"] = "keyed-resnap"
+    return out
 
 
 def needs_migration(pages_meta: dict[str, Any] | None) -> bool:
@@ -150,20 +219,36 @@ async def migrate_document(
             slug, "index.json", json.dumps(flip_index(index, heights), indent=2)
         )
     pages_done = 0
+    resnapped = 0
+    flipped_candidates: dict[int, list[dict[str, Any]]] = {}
     for page in sorted(heights):
         candidates = await store.get_page_candidates(slug, page)
         if candidates is not None:
+            flipped_candidates[page] = flip_candidates(candidates, heights[page])
             await store.write_silver_artifact(
                 slug,
                 f"pages/{page}.candidates.json",
-                json.dumps(flip_candidates(candidates, heights[page])),
+                json.dumps(flipped_candidates[page]),
             )
     gold = await store.get_regions(slug)
     for page, regions in (gold.get("pages") or {}).items():
         p = int(page)
-        if p in heights and isinstance(regions, list):
-            await store.write_gold_region_file(slug, p, flip_regions(regions, heights[p]))
-            pages_done += 1
+        if p not in heights or not isinstance(regions, list):
+            continue
+        out: list[dict[str, Any]] = []
+        for region in regions:
+            if not isinstance(region, dict):
+                out.append(region)
+            elif region.get("geometry"):
+                # Harness-derived: built from Docling coordinates, so a flip is exact.
+                out.append(_flip_obj(region, heights[p]))
+            else:
+                out.append(reconstruct_keyed_region(
+                    region, p, sizes[p], flipped_candidates.get(p, []),
+                ))
+                resnapped += 1
+        await store.write_gold_region_file(slug, p, out)
+        pages_done += 1
     # The stamp is written last: a crash before this point leaves the doc
     # detectably legacy (and the flip is re-run wholesale; it is not
     # idempotent per file, so partial state is never left stamped).
@@ -171,7 +256,15 @@ async def migrate_document(
     await store.write_silver_artifact(
         slug, "pages.meta.json", json.dumps(flip_pages_meta(base_meta, sizes), indent=2)
     )
-    return {"slug": slug, "status": "migrated", "gold_pages": pages_done, "pages": len(heights)}
+    return {
+        "slug": slug,
+        "status": "migrated",
+        "gold_pages": pages_done,
+        "pages": len(heights),
+        # Keyed regions were re-snapped; their embed text may have changed.
+        # Run `anchor embed <slug>` to refresh search vectors.
+        "keyed_regions_resnapped": resnapped,
+    }
 
 
 def _heights_from_meta(meta: dict[str, Any] | None) -> dict[int, float]:
@@ -272,4 +365,18 @@ async def migrate_all(
     canvases = await migrate_canvases(store, workspace) if workspace is not None else {}
     migrated = [d["slug"] for d in docs if d.get("status") == "migrated"]
     skipped = [d for d in docs if d.get("status") == "skipped"]
-    return {"documents": docs, "migrated": migrated, "skipped": skipped, "canvases": canvases}
+    report: dict[str, Any] = {
+        "documents": docs, "migrated": migrated, "skipped": skipped, "canvases": canvases,
+    }
+    resnapped = [d["slug"] for d in docs if d.get("keyed_regions_resnapped")]
+    if resnapped:
+        # Reconstruction recovers the model's intent only as well as its
+        # original approximate box allows. With top-left now consistent end to
+        # end, a fresh gold pass snaps to the right items first time.
+        report["recommendation"] = (
+            "keyed-path gold was reconstructed best-effort for: "
+            + ", ".join(resnapped)
+            + ". For exact regions re-run `anchor ingest --force <pdf>` (billed gold "
+            "pass), then `anchor embed <slug>`."
+        )
+    return report

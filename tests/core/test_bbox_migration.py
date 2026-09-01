@@ -42,7 +42,8 @@ def _seed_legacy(store):
              "cells": [{"row": 0, "col": 0, "text": "x", "bbox": [10, 590, 80, 560]}]},
         ]))
         await store.write_gold_region_file("doc", 1, [{
-            "id": "r1", "kind": "table", "title": "T", "page": 1,
+            # Harness-derived (carries geometry): Docling coordinates -> exact flip.
+            "id": "r1", "kind": "table", "title": "T", "page": 1, "geometry": "members",
             "bbox": [0, 600, 500, 400], "approx_bbox": [0, 610, 510, 390],
             "cells": [{"row": 0, "col": 0, "text": "x", "bbox": [10, 590, 80, 560]}],
         }])
@@ -98,6 +99,54 @@ def test_migrate_document_flips_silver_and_gold_then_stamps():
         again = await migrate_document(s.doc_store, None, "doc")
         assert again["status"] == "already_top_left"
         assert (await s.doc_store.get_regions("doc"))["pages"][1][0]["bbox"] == [0.0, 192.0, 500.0, 392.0]
+
+    asyncio.run(run())
+
+
+def test_keyed_gold_is_reconstructed_not_flipped():
+    """The mirror case verified on real data (#281).
+
+    Page is 792pt tall. Silver (bottom-left) has the *table* near the bottom
+    (BL y 80-300, i.e. TL y 492-712) and a *picture* at the table's mirror
+    position (BL y 492-712, i.e. TL y 80-300). The vision model meant the
+    table and emitted its TOP-LEFT box (y 492-712); the old snapper read that
+    box as bottom-left and absorbed the picture instead, so the stored keyed
+    region "Table" carries the picture's bbox. A flip would keep it on the
+    picture; reading it as top-left + re-snapping lands it on the table with
+    the table's cells."""
+    s = make_in_memory_services(page_count=1)
+    store = s.doc_store
+
+    async def seed():
+        await store.write_silver_artifact("doc", "pages.meta.json", json.dumps({
+            "page_count": 1,
+            "pages": {"1": {"item_count": 2, "labels": {}, "item_ids": ["p1-i0", "p1-i1"],
+                            "bbox_union": [0, 712, 500, 80], "page_size": [612.0, _LEGACY_H]}},
+        }))
+        await store.write_silver_artifact("doc", "pages/1.candidates.json", json.dumps([
+            {"id": "p1-i0", "label": "picture", "bbox": [50, 712, 300, 492], "text": ""},
+            {"id": "p1-i1", "label": "table", "bbox": [50, 300, 500, 80], "text": "",
+             "cells": [{"row": 0, "col": 0, "text": "Flow", "bbox": [60, 290, 120, 270]},
+                       {"row": 0, "col": 1, "text": "35 m3/h", "bbox": [130, 290, 200, 270]}]},
+        ]))
+        await store.write_gold_region_file("doc", 1, [{
+            # Keyed path: no geometry, bbox = the picture's box (mirror-snapped).
+            "id": "r1", "kind": "table", "title": "Table", "page": 1,
+            "bbox": [50, 712, 300, 492],
+        }])
+
+    asyncio.run(seed())
+
+    async def run():
+        report = await migrate_document(store, None, "doc")
+        assert report["keyed_regions_resnapped"] == 1
+        region = (await store.get_regions("doc"))["pages"][1][0]
+        # Re-snapped onto the table's (now top-left) box: y 792-300 .. 792-80.
+        assert region["bbox"] == [50.0, 492.0, 500.0, 712.0]
+        assert region["geometry"] == "snapped"
+        assert region["migration"] == "keyed-resnap"
+        assert [c["text"] for c in region["cells"]] == ["Flow", "35 m3/h"]
+        assert "35 m3/h" in region["content"]
 
     asyncio.run(run())
 
