@@ -243,11 +243,12 @@ def test_ingest_uses_service_level_pipeline_defaults():
 def test_ingest_promotes_approximate_bbox_before_storing_gold_regions():
     async def run():
         s = make_in_memory_services(page_count=1)
+        # Top-left PDF points (#281): y grows downward.
         s.extractor.docling = {
             "items": [
-                {"label": "title", "text": "Demo Doc", "page": 1, "bbox": [0, 720, 200, 700]},
-                {"label": "section_header", "text": "Section A", "page": 1, "bbox": [0, 620, 100, 600]},
-                {"label": "text", "text": "First paragraph.", "page": 1, "bbox": [0, 595, 200, 580]},
+                {"label": "title", "text": "Demo Doc", "page": 1, "bbox": [0, 72, 200, 92]},
+                {"label": "section_header", "text": "Section A", "page": 1, "bbox": [0, 172, 100, 192]},
+                {"label": "text", "text": "First paragraph.", "page": 1, "bbox": [0, 197, 200, 212]},
             ],
         }
 
@@ -258,7 +259,7 @@ def test_ingest_promotes_approximate_bbox_before_storing_gold_regions():
                     "kind": "text",
                     "title": "approx region",
                     "description": "x",
-                    "approximate_bbox": [0, 720, 210, 570],
+                    "approximate_bbox": [0, 60, 210, 230],
                 },
             ]
 
@@ -268,8 +269,9 @@ def test_ingest_promotes_approximate_bbox_before_storing_gold_regions():
 
         regions = await s.doc_store.get_regions("approx")
         region = regions["pages"][1][0]
-        assert region["approximate_bbox"] == [0, 720, 210, 570]
-        assert region["bbox"] == [0, 720, 200, 580]
+        assert region["approximate_bbox"] == [0, 60, 210, 230]
+        # Snapped to the union of the three absorbed items.
+        assert region["bbox"] == [0, 72, 200, 212]
 
     asyncio.run(run())
 

@@ -25,6 +25,96 @@ low_text_pages_warning = _low_text_pages_warning
 # Silver Docling section-header labels we promote into the outline.
 _SECTION_LABELS = {"section_header", "title"}
 
+#: Canonical bbox convention for every silver/gold/source_ref bbox (#281,
+#: mirrors OIP `pdf-page-bbox`): PDF points, top-left origin,
+#: ``[left, top, right, bottom]`` with ``top <= bottom``.
+BBOX_ORIGIN = "top-left"
+
+
+def normalize_items(docling: dict[str, Any]) -> dict[str, Any]:
+    """Enforce the bbox contract at the extractor boundary (#281).
+
+    Every ``PdfExtractor`` must deliver ``BBOX_ORIGIN`` boxes in PDF points.
+    This normaliser is the one place that guarantees it, so a second
+    extractor cannot silently ship flipped or out-of-page boxes:
+
+    - an extractor that declares ``coord_origin: "bottom-left"`` is converted
+      here using the page heights it reported (``docling["pages"]``);
+    - every bbox is normalised to ``top <= bottom`` / ``left <= right``;
+    - boxes that are not four finite numbers are dropped (``[]``), and boxes
+      outside the page are clamped to it when the page size is known.
+
+    Returns a new dict stamped ``coord_origin: BBOX_ORIGIN``.
+    """
+    items = docling.get("items")
+    if not isinstance(items, list):
+        return {**docling, "coord_origin": BBOX_ORIGIN}
+    pages = docling.get("pages") if isinstance(docling.get("pages"), dict) else {}
+    origin = str(docling.get("coord_origin") or BBOX_ORIGIN).lower().replace("_", "-")
+    if origin not in {"top-left", "bottom-left"}:
+        raise ValueError(f"extractor declared unsupported coord_origin {origin!r}")
+
+    def size_of(page: Any) -> tuple[float, float] | None:
+        entry = pages.get(page) if pages else None
+        if entry is None and pages:
+            entry = pages.get(str(page))
+        if isinstance(entry, dict):
+            w, h = entry.get("width"), entry.get("height")
+            if isinstance(w, (int, float)) and isinstance(h, (int, float)) and w > 0 and h > 0:
+                return float(w), float(h)
+        return None
+
+    def fix(bbox: Any, size: tuple[float, float] | None) -> list[float]:
+        clean = _clean_bbox(bbox)
+        if len(clean) != 4:
+            return []
+        if origin == "bottom-left":
+            if size is None:
+                raise ValueError(
+                    "extractor declared bottom-left bboxes but reported no page sizes"
+                )
+            clean = flip_bbox_y(clean, size[1])
+        left, right = sorted((clean[0], clean[2]))
+        top, bottom = sorted((clean[1], clean[3]))
+        if size is not None:
+            w, h = size
+            left, right = max(0.0, min(left, w)), max(0.0, min(right, w))
+            top, bottom = max(0.0, min(top, h)), max(0.0, min(bottom, h))
+        return [left, top, right, bottom]
+
+    out_items: list[dict[str, Any]] = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        size = size_of(it.get("page"))
+        fixed = {**it, "bbox": fix(it.get("bbox"), size)}
+        cells = it.get("cells")
+        if isinstance(cells, list):
+            fixed["cells"] = [
+                {**c, "bbox": fix(c.get("bbox"), size)} if isinstance(c, dict) and c.get("bbox") else c
+                for c in cells
+            ]
+        out_items.append(fixed)
+    tables = docling.get("tables")
+    out_tables = None
+    if isinstance(tables, list):
+        out_tables = []
+        for t in tables:
+            if not isinstance(t, dict):
+                continue
+            size = size_of(t.get("page"))
+            fixed_t = {**t, "bbox": fix(t.get("bbox"), size)}
+            if isinstance(t.get("cells"), list):
+                fixed_t["cells"] = [
+                    {**c, "bbox": fix(c.get("bbox"), size)} if isinstance(c, dict) and c.get("bbox") else c
+                    for c in t["cells"]
+                ]
+            out_tables.append(fixed_t)
+    out = {**docling, "items": out_items, "coord_origin": BBOX_ORIGIN}
+    if out_tables is not None:
+        out["tables"] = out_tables
+    return out
+
 
 def build_index(docling: dict[str, Any], *, filename: str = "", title: str = "") -> dict[str, Any]:
     """Build an index dict from a silver Docling JSON dict."""
@@ -252,10 +342,11 @@ def render_pages_md(docling: dict[str, Any]) -> dict[int, str]:
 
 def _render_page_md(items: list[dict[str, Any]]) -> str:
     def sort_key(it: dict[str, Any]) -> tuple[float, float]:
+        # Reading order: top-left origin, so a smaller y is higher on the page.
         bbox = it.get("bbox") or [0, 0, 0, 0]
-        top = bbox[1] if len(bbox) == 4 else 0
+        top = min(bbox[1], bbox[3]) if len(bbox) == 4 else 0
         left = bbox[0] if len(bbox) == 4 else 0
-        return (-float(top), float(left))
+        return (float(top), float(left))
 
     ordered = sorted(items, key=sort_key)
     lines: list[str] = []
@@ -359,34 +450,37 @@ def build_pages_meta(docling: dict[str, Any]) -> dict[str, Any]:
             continue
         by_page.setdefault(int(page), []).append(it)
 
+    page_sizes = docling.get("pages") if isinstance(docling.get("pages"), dict) else {}
+
     pages: dict[str, Any] = {}
     for page in sorted(by_page):
         page_items = by_page[page]
         labels: dict[str, int] = {}
         item_ids: list[str] = []
-        union: list[float] | None = None
+        bboxes: list[list[float]] = []
         for idx, it in enumerate(page_items):
             label = it.get("label") or "unknown"
             labels[label] = labels.get(label, 0) + 1
             item_ids.append(f"p{page}-i{idx}")
             bbox = _clean_bbox(it.get("bbox"))
             if len(bbox) == 4:
-                if union is None:
-                    union = list(bbox)
-                else:
-                    union[0] = min(union[0], bbox[0])
-                    union[1] = max(union[1], bbox[1])
-                    union[2] = max(union[2], bbox[2])
-                    union[3] = min(union[3], bbox[3])
-        pages[str(page)] = {
+                bboxes.append(bbox)
+        entry: dict[str, Any] = {
             "item_count": len(page_items),
             "labels": labels,
             "item_ids": item_ids,
-            "bbox_union": union or [],
+            "bbox_union": union_bbox(bboxes),
         }
+        size = page_sizes.get(page) or page_sizes.get(str(page))
+        if isinstance(size, dict) and size.get("width") and size.get("height"):
+            entry["page_size"] = [float(size["width"]), float(size["height"])]
+        pages[str(page)] = entry
 
     return {
         "page_count": max(by_page) if by_page else 0,
+        # Every bbox in silver/gold is top-left PDF points (#281). The stamp
+        # lets a reader tell migrated data from legacy bottom-left files.
+        "bbox_origin": BBOX_ORIGIN,
         "pages": pages,
     }
 
@@ -512,15 +606,30 @@ def find_items_by_text(
 
 
 def union_bbox(bboxes: list[list[float]]) -> list[float]:
-    """Compute the BOTTOMLEFT bbox union of a list of bboxes."""
+    """Union of bboxes in the canonical top-left convention (#281).
+
+    Order-tolerant on input (either y ordering per box); the result is
+    ``[left, top, right, bottom]`` with ``top <= bottom``."""
     cleaned = [b for b in bboxes if len(b) == 4]
     if not cleaned:
         return []
-    left = min(b[0] for b in cleaned)
-    top = max(b[1] for b in cleaned)
-    right = max(b[2] for b in cleaned)
-    bottom = min(b[3] for b in cleaned)
+    left = min(min(b[0], b[2]) for b in cleaned)
+    top = min(min(b[1], b[3]) for b in cleaned)
+    right = max(max(b[0], b[2]) for b in cleaned)
+    bottom = max(max(b[1], b[3]) for b in cleaned)
     return [left, top, right, bottom]
+
+
+def flip_bbox_y(bbox: list[float], page_height: float) -> list[float]:
+    """Convert a bbox between bottom-left and top-left origins (``y' = h - y``).
+
+    The mapping is its own inverse. Returns ``[left, top, right, bottom]``
+    normalised to ``top <= bottom`` in the target orientation."""
+    if len(bbox) != 4:
+        return []
+    left, right = sorted((float(bbox[0]), float(bbox[2])))
+    y0, y1 = sorted((page_height - float(bbox[1]), page_height - float(bbox[3])))
+    return [left, y0, right, y1]
 
 
 def bbox_center(bbox: list[float]) -> tuple[float, float] | None:
@@ -530,7 +639,8 @@ def bbox_center(bbox: list[float]) -> tuple[float, float] | None:
 
 
 def point_in_bbox(point: tuple[float, float], bbox: list[float]) -> bool:
-    """BOTTOMLEFT containment. Tolerates either Y ordering."""
+    """Containment in page space (top-left convention; tolerates either Y
+    ordering, so it is orientation-agnostic)."""
     if len(bbox) != 4:
         return False
     x, y = point

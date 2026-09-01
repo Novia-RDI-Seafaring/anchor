@@ -9,9 +9,9 @@
  *     which we union into a single page-relative pixel rect via
  *     `unionRectsRelativeTo`.
  *   - `viewportRectToBbox` inverts `bboxToViewportRect` (lib/pdfHighlight): it
- *     maps that rendered pixel rect back to PDF user-space points (bottom-left
- *     origin) so the stored `bbox` matches the convention every other locator
- *     uses (spec rows, gold regions, deep-zoom highlight).
+ *     scales that rendered pixel rect back to PDF points in the canonical
+ *     top-left convention (#281) so the stored `bbox` matches every other
+ *     locator (spec rows, gold regions, deep-zoom highlight).
  */
 import type { PixelRect } from "@/lib/pdfHighlight";
 import type { Region } from "@/api/documents";
@@ -48,10 +48,10 @@ export function unionRectsRelativeTo(
 
 /**
  * Invert `bboxToViewportRect`: map a rendered-pixel rect (top-left origin, CSS
- * px) back to a PDF user-space bbox in points (bottom-left origin), returned as
- * `[x0, y0, x1, y1]` with `y0 < y1`. `pageW`/`pageH` are the page size in
- * points; `viewportW`/`viewportH` are the rendered size in CSS px (page size *
- * scale). Returns null when any dimension is unusable.
+ * px) back to a PDF bbox in points (top-left origin, #281), returned as
+ * `[left, top, right, bottom]` with `top < bottom`. `pageW`/`pageH` are the
+ * page size in points; `viewportW`/`viewportH` are the rendered size in CSS px
+ * (page size * scale). Returns null when any dimension is unusable.
  */
 export function viewportRectToBbox(
   rect: PixelRect,
@@ -66,11 +66,10 @@ export function viewportRectToBbox(
   const sy = pageH / viewportH;
   const x0 = rect.left * sx;
   const x1 = (rect.left + rect.width) * sx;
-  // Top-left pixel origin -> bottom-left PDF origin: the smaller pixel-y (top)
-  // maps to the larger PDF-y.
-  const yTop = pageH - rect.top * sy;
-  const yBottom = pageH - (rect.top + rect.height) * sy;
-  return [x0, Math.min(yBottom, yTop), x1, Math.max(yBottom, yTop)];
+  // Both spaces are top-left, so this is a pure scale.
+  const y0 = rect.top * sy;
+  const y1 = (rect.top + rect.height) * sy;
+  return [x0, y0, x1, y1];
 }
 
 /** Normalise a 4-tuple bbox to `[xMin, yMin, xMax, yMax]` (order-independent). */

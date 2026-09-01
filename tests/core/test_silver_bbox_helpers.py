@@ -26,8 +26,14 @@ def test_point_in_bbox_bottomleft_semantics():
 
 
 def test_union_bbox_combines_extents():
-    u = union_bbox([[10, 100, 20, 50], [15, 110, 30, 40]])
-    assert u == [10, 110, 30, 40]
+    # Top-left convention (#281): union = [min left, min top, max right, max bottom].
+    u = union_bbox([[10, 40, 20, 100], [15, 50, 30, 110]])
+    assert u == [10, 40, 30, 110]
+
+
+def test_union_bbox_tolerates_legacy_y_order():
+    # A legacy [l, b, r, t] box still contributes its full extent.
+    assert union_bbox([[10, 100, 20, 50]]) == [10, 50, 20, 100]
 
 
 def test_union_empty_returns_empty():
@@ -54,13 +60,13 @@ def test_find_items_filters_by_page():
 
 def test_snap_absorbs_items_with_centers_inside_approx():
     docling = {"items": [
-        {"label": "text", "text": "a", "page": 1, "bbox": [10, 100, 20, 80]},   # center (15, 90) — inside
-        {"label": "text", "text": "b", "page": 1, "bbox": [15, 95, 25, 85]},    # center (20, 90) — inside
-        {"label": "text", "text": "c", "page": 1, "bbox": [200, 50, 250, 30]},  # outside
+        {"label": "text", "text": "a", "page": 1, "bbox": [10, 80, 20, 100]},   # center (15, 90) — inside
+        {"label": "text", "text": "b", "page": 1, "bbox": [15, 85, 25, 95]},    # center (20, 90) — inside
+        {"label": "text", "text": "c", "page": 1, "bbox": [200, 30, 250, 50]},  # outside
     ]}
-    snapped, idxs = snap_to_docling_items(docling, page=1, approx_bbox=[5, 110, 30, 70])
+    snapped, idxs = snap_to_docling_items(docling, page=1, approx_bbox=[5, 70, 30, 110])
     assert idxs == [0, 1]
-    assert snapped == [10, 100, 25, 80]
+    assert snapped == [10, 80, 25, 100]
 
 
 def test_snap_returns_empty_for_invalid_bbox():

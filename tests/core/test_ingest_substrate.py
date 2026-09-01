@@ -168,7 +168,7 @@ def test_candidates_are_persisted_with_stable_item_ids(tmp_path):
         assert [c["id"] for c in candidates] == ["p1-i0", "p1-i1", "p1-i2"]
         assert candidates[0]["label"] == "title"
         assert candidates[0]["text"] == "Demo Doc"
-        assert candidates[0]["bbox"] == [0.0, 720.0, 200.0, 700.0]
+        assert candidates[0]["bbox"] == [0.0, 72.0, 200.0, 92.0]
         # Ids agree with pages.meta.json (build_pages_meta mints the same).
         meta = await store.get_pages_meta("demo")
         assert meta["pages"]["1"]["item_ids"] == [c["id"] for c in candidates]

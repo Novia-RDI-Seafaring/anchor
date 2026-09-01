@@ -102,30 +102,46 @@ def test_non_accelerator_error_is_not_retried(monkeypatch):
 
 
 class _Box:
-    def __init__(self, left, top, right, bottom):
+    """Models docling's BoundingBox: an explicit coord_origin plus converters.
+
+    Docling provenance boxes are BOTTOMLEFT (PDF user space) by default; table
+    cell boxes are TOPLEFT. `_flatten` must convert both to Anchor's canonical
+    top-left convention (#281) using the page height."""
+
+    def __init__(self, left, top, right, bottom, origin="BOTTOMLEFT"):
         self.l = left
         self.t = top
         self.r = right
         self.b = bottom
+        self.coord_origin = origin
 
     def to_bottom_left_origin(self, page_height):
-        return _Box(self.l, page_height - self.t, self.r, page_height - self.b)
+        if self.coord_origin == "BOTTOMLEFT":
+            return self
+        return _Box(self.l, page_height - self.t, self.r, page_height - self.b, "BOTTOMLEFT")
+
+    def to_top_left_origin(self, page_height):
+        if self.coord_origin == "TOPLEFT":
+            return self
+        return _Box(self.l, page_height - self.t, self.r, page_height - self.b, "TOPLEFT")
 
 
-def test_flatten_preserves_table_cell_bbox_as_bottom_left():
+def test_flatten_emits_top_left_boxes_page_sizes_and_origin_stamp():
     doc = SimpleNamespace(
         texts=[],
         pictures=[],
-        pages={1: SimpleNamespace(size=SimpleNamespace(height=100))},
+        pages={1: SimpleNamespace(size=SimpleNamespace(width=80, height=100))},
         tables=[
             SimpleNamespace(
+                # BOTTOMLEFT provenance: top y=90 is near the page top.
                 prov=[SimpleNamespace(page_no=1, bbox=_Box(0, 90, 80, 10))],
                 data=SimpleNamespace(table_cells=[
                     SimpleNamespace(
                         start_row_offset_idx=1,
                         start_col_offset_idx=1,
                         text="cell value",
-                        bbox=_Box(10, 20, 30, 40),
+                        # Cell boxes are already TOPLEFT in docling.
+                        bbox=_Box(10, 20, 30, 40, "TOPLEFT"),
                     ),
                 ]),
             ),
@@ -134,11 +150,15 @@ def test_flatten_preserves_table_cell_bbox_as_bottom_left():
 
     out = dx._flatten(doc)
 
+    assert out["coord_origin"] == "top-left"
+    assert out["pages"] == {1: {"width": 80.0, "height": 100.0}}
+    # Table bbox flipped into top-left: y' = 100 - y.
+    assert out["tables"][0]["bbox"] == [0.0, 10.0, 80.0, 90.0]
     assert out["tables"][0]["cells"][0] == {
         "row": 1,
         "col": 1,
         "text": "cell value",
-        "bbox": [10.0, 80.0, 30.0, 60.0],
+        "bbox": [10.0, 20.0, 30.0, 40.0],
     }
 
 
@@ -155,14 +175,28 @@ def test_flatten_keeps_each_text_provenance_bbox():
             ),
         ],
         pictures=[],
-        pages={},
+        pages={1: SimpleNamespace(size=SimpleNamespace(width=600, height=1000))},
         tables=[],
     )
 
     out = dx._flatten(doc)
 
     assert [item["text"] for item in out["items"]] == ["left", "right"]
+    # Each provenance box is converted from BOTTOMLEFT to top-left (y' = 1000 - y)
+    # and normalised to top <= bottom.
     assert [item["bbox"] for item in out["items"]] == [
-        [10.0, 90.0, 80.0, 80.0],
-        [300.0, 500.0, 550.0, 300.0],
+        [10.0, 910.0, 80.0, 920.0],
+        [300.0, 500.0, 550.0, 700.0],
     ]
+
+
+def test_flatten_fails_closed_without_a_page_height():
+    # A BOTTOMLEFT box cannot be converted without the page height; emit []
+    # rather than a silently mis-oriented bbox.
+    doc = SimpleNamespace(
+        texts=[SimpleNamespace(label="text", text="x", prov=[
+            SimpleNamespace(page_no=1, bbox=_Box(10, 90, 80, 80), charspan=(0, 1)),
+        ])],
+        pictures=[], pages={}, tables=[],
+    )
+    assert dx._flatten(doc)["items"][0]["bbox"] == []

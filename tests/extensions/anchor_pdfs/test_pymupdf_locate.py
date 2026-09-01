@@ -1,10 +1,11 @@
 """locate_text renderer: page-space quad in the region-bbox coordinate space.
 
 Slice 2 of #145 (issue #197). Given a value and (optionally) a region bbox,
-PyMuPDF `page.search_for` finds the text; we convert the TOPLEFT match rect
-back to the BOTTOMLEFT origin gold/region bboxes use so the returned quad rides
-through the frontend's `bboxToImageRect` mapping unchanged. Not-found returns an
-empty list so the caller falls back to the region-level highlight.
+PyMuPDF `page.search_for` finds the text. Region bboxes and PyMuPDF share the
+canonical top-left PDF-points convention (#281), so the match rect is returned
+as-is (order-normalised) and rides through the frontend's `bboxToImageRect`
+mapping unchanged. Not-found returns an empty list so the caller falls back to
+the region-level highlight.
 """
 from __future__ import annotations
 
@@ -37,10 +38,10 @@ def text_pdf(tmp_path: Path) -> Path:
     return path
 
 
-def _bl_to_tl_top(quad: list[float]) -> float:
-    """Image-space top edge for a returned BOTTOMLEFT quad (yHigh -> top)."""
-    _, yb0, _, yb1 = quad
-    return PAGE_H - max(yb0, yb1)
+def _top(quad: list[float]) -> float:
+    """Top edge of a returned top-left quad."""
+    _, y0, _, y1 = quad
+    return min(y0, y1)
 
 
 def test_locates_known_value(text_pdf: Path) -> None:
@@ -50,28 +51,27 @@ def test_locates_known_value(text_pdf: Path) -> None:
     assert right > left
     # Inserted at baseline TOPLEFT y=100; the glyph box top sits just above the
     # baseline, so the image top edge lands a little under 100.
-    assert _bl_to_tl_top(quads[0]) == pytest.approx(92, abs=15)
+    assert _top(quads[0]) == pytest.approx(92, abs=15)
 
 
-def test_returns_bottomleft_ascending_quads(text_pdf: Path) -> None:
+def test_returns_topleft_ascending_quads(text_pdf: Path) -> None:
     quads = _locate_text_sync(text_pdf, 1, "LKH-5", None)
-    left, yb0, right, yb1 = quads[0]
+    left, y0, right, y1 = quads[0]
     assert left <= right
-    assert yb0 <= yb1
-    # BOTTOMLEFT: a top-of-page match has a large y (page height minus a small
-    # TOPLEFT y), so it sits high in PDF user-space.
-    assert yb1 > PAGE_H / 2
+    assert y0 <= y1
+    # Top-left: a top-of-page match has a small y.
+    assert y1 < PAGE_H / 2
 
 
 def test_within_bbox_disambiguates_repeats(text_pdf: Path) -> None:
     # Both copies match with no clip.
     assert len(_locate_text_sync(text_pdf, 1, "600 kPa", None)) == 2
-    # Clip to the TOP region (BOTTOMLEFT bbox covering the upper band only) ->
-    # only the top copy. BOTTOMLEFT y for the top band is the high end.
-    top_region = [80.0, PAGE_H - 80.0, 300.0, PAGE_H - 200.0]
+    # Clip to the TOP region (top-left bbox covering the upper band only) ->
+    # only the top copy.
+    top_region = [80.0, 80.0, 300.0, 200.0]
     top_hits = _locate_text_sync(text_pdf, 1, "600 kPa", top_region)
     assert len(top_hits) == 1
-    assert _bl_to_tl_top(top_hits[0]) == pytest.approx(112, abs=15)
+    assert _top(top_hits[0]) == pytest.approx(112, abs=15)
 
 
 def test_not_found_returns_empty(text_pdf: Path) -> None:
