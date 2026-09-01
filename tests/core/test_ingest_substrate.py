@@ -135,12 +135,12 @@ def test_invalid_regions_are_rejected_and_reported(tmp_path):
     async def run():
         bad_regions = FakeRegionExtractor(regions_per_page=[
             {"id": "ok", "kind": "text", "title": "valid", "description": "x",
-             "bbox": [10, 600, 200, 580], "tags": [], "entities": []},
+             "bbox": [10, 195, 200, 215], "tags": [], "entities": []},
             {"id": "bad-kind", "kind": "banner", "title": "nope",
-             "bbox": [10, 600, 200, 580]},
+             "bbox": [10, 195, 200, 215]},
             {"id": "bad-bbox", "kind": "text", "title": "inverted box",
              "bbox": [200, 600, 10, 580]},
-            {"id": "no-title", "kind": "text", "bbox": [10, 600, 200, 580]},
+            {"id": "no-title", "kind": "text", "bbox": [10, 195, 200, 215]},
         ])
         store, ingest = _fs_ingest(tmp_path, region_extractor=bad_regions)
         summary = await ingest.ingest_pdf(b"%PDF-fake", "demo.pdf")

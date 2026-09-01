@@ -16,7 +16,9 @@ from anchor.adapters.operation_descriptors import (
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.services import IngestService
-from anchor.extensions.anchor_pdfs.mcp_tool_definitions import tool_definitions as pdf_tool_definitions
+from anchor.extensions.anchor_pdfs.mcp_tool_definitions import (
+    tool_definitions as pdf_tool_definitions,
+)
 from tests.fixtures.services import make_in_memory_services
 
 

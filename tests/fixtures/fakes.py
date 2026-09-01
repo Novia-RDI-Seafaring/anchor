@@ -18,8 +18,8 @@ class FakePdfExtractor:
     """
 
     def __init__(self, docling: dict[str, Any] | None = None) -> None:
-        # Bboxes are BOTTOMLEFT [left, top, right, bottom] with top > bottom,
-        # matching the convention docling and core/silver.py use.
+        # Bboxes are top-left PDF points [left, top, right, bottom] with
+        # top <= bottom (#281), matching the contract core/silver.py enforces.
         self.docling = docling or {
             "items": [
                 # Top-left PDF points (#281): y grows downward, title first.
@@ -67,7 +67,7 @@ class FakePolisher:
 class FakeRegionExtractor:
     def __init__(self, regions_per_page: list[dict[str, Any]] | None = None) -> None:
         self._regions = regions_per_page or [
-            {"id": "r1", "kind": "text", "title": "fake region", "description": "x", "bbox": [10, 600, 200, 580], "tags": [], "entities": []}
+            {"id": "r1", "kind": "text", "title": "fake region", "description": "x", "bbox": [10, 195, 200, 215], "tags": [], "entities": []}
         ]
 
     async def extract_page(
