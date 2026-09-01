@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
+import typer
 from fastapi.routing import APIRoute
 
 from anchor.adapters.cli.canvas import canvas_app
+from anchor.adapters.cli.documents import register_document_commands
 from anchor.adapters.http.app import build_app
 from anchor.adapters.mcp import handlers_canvas
-from anchor.adapters.operation_descriptors import CANVAS_OPERATION_DESCRIPTORS
+from anchor.adapters.operation_descriptors import (
+    CANVAS_OPERATION_DESCRIPTORS,
+    DOCUMENT_OPERATION_DESCRIPTORS,
+)
 from anchor.core.services.workspace_service import WorkspaceService
+from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
+from anchor.extensions.anchor_pdfs.core.services import IngestService
+from anchor.extensions.anchor_pdfs.mcp_tool_definitions import tool_definitions as pdf_tool_definitions
 from tests.fixtures.services import make_in_memory_services
 
 
@@ -50,3 +58,39 @@ def test_canvas_operation_descriptors_match_adapter_surfaces():
         assert op.mcp_tool in mcp, op.id
         assert op.cli_command[0] == "canvas", op.id
         assert op.cli_command[1] in cli, op.id
+
+
+def _document_cli_commands() -> set[str]:
+    app = typer.Typer()
+    register_document_commands(app)
+    names: set[str] = set()
+    for cmd in app.registered_commands:
+        # Bare `app.command()(fn)` leaves name=None; typer derives it from the
+        # callback name (underscores -> hyphens) at build time.
+        name = cmd.name
+        if name is None and cmd.callback is not None:
+            name = cmd.callback.__name__.replace("_", "-")
+        if name:
+            names.add(name)
+    return names
+
+
+def test_document_operation_descriptors_are_unique():
+    ids = [op.id for op in DOCUMENT_OPERATION_DESCRIPTORS]
+    assert len(ids) == len(set(ids))
+
+
+def test_document_operation_descriptors_match_adapter_surfaces():
+    http = _http_surfaces()
+    mcp = {tool["name"] for tool in pdf_tool_definitions()}
+    cli = _document_cli_commands()
+
+    for op in DOCUMENT_OPERATION_DESCRIPTORS:
+        assert (
+            hasattr(DocStore, op.service_method)
+            or hasattr(IngestService, op.service_method)
+        ), op.id
+        assert (op.http.method, op.http.path) in http, op.id
+        assert op.mcp_tool in mcp, op.id
+        assert len(op.cli_command) == 1, op.id
+        assert op.cli_command[0] in cli, op.id

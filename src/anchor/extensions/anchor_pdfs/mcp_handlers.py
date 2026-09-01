@@ -10,6 +10,10 @@ from typing import Any
 from anchor.extensions.anchor_pdfs import mcp_tool_definitions
 from anchor.extensions.anchor_pdfs.core.ingest.session import IngestSessionService
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
+from anchor.extensions.anchor_pdfs.core.region_inspect import (
+    get_region_content,
+    inspect_region,
+)
 from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
 
 
@@ -202,6 +206,12 @@ async def call_tool(
         return json.dumps(out) if out else json.dumps({"error": "not found"})
     if name == "get_gold_regions":
         return json.dumps(await store.get_regions(args["slug"], page=args.get("page")))
+    if name == "inspect_region":
+        out = await inspect_region(store, args["slug"], args["region_id"])
+        return json.dumps(out) if out else json.dumps({"error": "region not found"})
+    if name == "get_region_content":
+        out = await get_region_content(store, args["slug"], args["region_id"])
+        return json.dumps(out) if out else json.dumps({"error": "region not found"})
     if name == "get_page_text":
         text = await store.get_page_text(args["slug"], int(args["page"]))
         return text if text is not None else json.dumps({"error": "not found"})

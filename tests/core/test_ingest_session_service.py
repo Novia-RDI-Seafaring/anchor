@@ -364,16 +364,26 @@ def test_finalize_publishes_atomically_with_embeddings_and_report():
         assert summary["finalized"] is True
         assert summary["mode"] == "harness"
         assert summary["declared_model"] == "claude-fable-5"
-        assert summary["region_count"] == 2
-        assert summary["embedded_count"] == 2
+        # 2 authored + 1 coverage fallback: the agent left p2-i1 ("Footnote.")
+        # uncovered, so the coverage invariant (#242) chunked it. p1-i0 is a
+        # bare title, which is not required on its own.
+        assert summary["region_count"] == 3
+        assert summary["coverage_fallback_count"] == 1
+        assert summary["embedded_count"] == 3
         assert summary["polished_pages"] == [1]
 
         # Published and visible.
         assert await s.doc_store.has_gold("demo") is True
         gold = await s.doc_store.get_gold_map("demo")
         assert {int(p) for p in gold["pages"]} == {1, 2}
+        fallback = [r for r in gold["pages"][2] if r.get("coverage_fallback")]
+        assert len(fallback) == 1
+        assert fallback[0]["member_item_ids"] == ["p2-i1"]
+        assert fallback[0]["kind"] == "text"
         embeddings = await s.doc_store.get_embeddings("demo")
-        assert len(embeddings["vectors"]) == 2
+        # The fallback chunk is embedded too — that is the point (#231).
+        assert len(embeddings["vectors"]) == 3
+        assert any("Footnote." in v["text"] for v in embeddings["vectors"])
         assert await s.doc_store.get_page_text("demo", 1) == "# Demo Doc polished"
         # Marker records the harness mode + declared model.
         assert await s.doc_store.has_gold("demo")

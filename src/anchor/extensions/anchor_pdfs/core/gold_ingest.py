@@ -7,10 +7,12 @@ from typing import Any, Protocol
 
 from anchor.core.clock import Clock
 from anchor.extensions.anchor_pdfs.core.events import DocGoldExtracted, IngestProgress
+from anchor.extensions.anchor_pdfs.core.ingest.coverage import synthesize_coverage_regions
 from anchor.extensions.anchor_pdfs.core.ingest.validation import validate_regions
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.ports.region_extractor import RegionExtractor
 from anchor.extensions.anchor_pdfs.core.silver import (
+    build_page_candidates,
     region_content_from_items,
     snap_to_docling_items,
     table_bbox_from_items,
@@ -52,6 +54,10 @@ class GoldIngestResult:
     completed: bool
     empty: bool
     attempts: int
+    #: Chunks synthesized by the coverage invariant (#242); included in
+    #: ``region_count``. The extractor's own output is
+    #: ``region_count - coverage_fallback_count``.
+    coverage_fallback_count: int = 0
 
 
 class GoldIngest:
@@ -100,6 +106,7 @@ class GoldIngest:
                 stage_started_at = self.clock.now()
                 page_timings: list[dict[str, Any]] = []
                 await self.store.clear_gold_complete(slug)
+                pages_valid: dict[int, list[dict[str, Any]]] = {}
 
                 for page, png in page_pngs.items():
                     page_started_at = self.clock.now()
@@ -118,6 +125,7 @@ class GoldIngest:
                             for error in page_errors
                         )
                     await self.store.write_gold_region_file(slug, page, valid)
+                    pages_valid[page] = valid
                     region_count += len(valid)
                     page_finished_at = self.clock.now()
                     page_timings.append({
@@ -168,17 +176,37 @@ class GoldIngest:
                     workspace_id,
                 )
 
+            # Empty/retry is judged on the extractor's own output; the coverage
+            # pass below must not mask a model that returned nothing.
             empty = region_count == 0
+            fallback_count = 0
             if empty:
                 await self.publish(
                     DocGoldExtracted(slug=slug, region_count=0),
                     workspace_id,
                 )
             else:
+                # Coverage invariant (#242): every meaningful silver item lands
+                # in at least one chunk. Additive post-pass over the final
+                # authored gold; rewrites only pages that gained chunks.
+                page_candidates = build_page_candidates(docling)
+                items_by_page_full = _items_by_page(docling)
+                for page, valid in pages_valid.items():
+                    extra = synthesize_coverage_regions(
+                        page,
+                        page_candidates.get(page, []),
+                        valid,
+                        full_items=items_by_page_full.get(page),
+                    )
+                    if extra:
+                        await self.store.write_gold_region_file(slug, page, valid + extra)
+                        fallback_count += len(extra)
+                region_count += fallback_count
                 await self.store.mark_gold_complete(slug, {
                     "mode": "keyed",
                     "model": model,
                     "region_count": region_count,
+                    "coverage_fallback_count": fallback_count,
                     "completed_at": self.clock.now(),
                 })
                 await self.publish(
@@ -193,6 +221,7 @@ class GoldIngest:
             completed=not empty,
             empty=empty,
             attempts=attempts,
+            coverage_fallback_count=fallback_count,
         )
 
     @staticmethod
@@ -202,6 +231,17 @@ class GoldIngest:
         raw_regions: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         items = docling.get("items", [])
+        # Global item index -> position within this page (the `p{page}-i{idx}`
+        # candidate id scheme), so snapped regions can record exactly which
+        # silver items they cover — the same provenance the harness path
+        # writes, and what the coverage invariant (#242) reads.
+        page_position = {
+            idx: pos
+            for pos, idx in enumerate(
+                i for i, it in enumerate(items)
+                if isinstance(it, dict) and it.get("page") == page
+            )
+        }
         snapped: list[dict[str, Any]] = []
         for region in raw_regions:
             if not isinstance(region, dict):
@@ -212,7 +252,11 @@ class GoldIngest:
             if len(bbox) == 4:
                 snap_bbox, item_indexes = snap_to_docling_items(docling, page, bbox)
                 if snap_bbox:
-                    region = {**region, "bbox": snap_bbox}
+                    member_ids = [
+                        f"p{page}-i{page_position[i]}"
+                        for i in item_indexes if i in page_position
+                    ]
+                    region = {**region, "bbox": snap_bbox, "member_item_ids": member_ids}
                     content = region_content_from_items(items, item_indexes)
                     if content:
                         region = {**region, "content": content}
@@ -234,3 +278,16 @@ class GoldIngest:
                     region = {**region, "bbox": bbox}
             snapped.append(region)
         return snapped
+
+
+def _items_by_page(docling: dict[str, Any]) -> dict[int, list[dict[str, Any]]]:
+    """Docling items grouped per page in docling order (aligned with
+    ``build_page_candidates`` positions)."""
+    out: dict[int, list[dict[str, Any]]] = {}
+    for it in docling.get("items") or []:
+        if not isinstance(it, dict):
+            continue
+        page = it.get("page")
+        if isinstance(page, (int, float)):
+            out.setdefault(int(page), []).append(it)
+    return out
