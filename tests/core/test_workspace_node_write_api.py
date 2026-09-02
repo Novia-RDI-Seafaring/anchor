@@ -5,7 +5,6 @@ import asyncio
 
 from tests.fixtures.services import make_in_memory_services
 
-
 # ── #192: update-node --data merges, not replaces ───────────────────────────
 
 def test_update_node_data_merges_and_preserves_source_ref():
@@ -102,3 +101,18 @@ def test_unknown_data_keys_flags_body_on_fact():
     assert s.workspace.unknown_data_keys("fact", {"text": "x"}) == []
     # Unregistered/producer types stay open (no warning).
     assert s.workspace.unknown_data_keys("spec", {"rows": []}) == []
+
+
+def test_producer_types_are_discoverable_but_open():
+    # Producer types (cad:model, spec, document, model3d) are now DESCRIBED by
+    # the node-types surface (was "unknown"), so an agent can learn the key
+    # that matters — e.g. a CAD node's slug lives in `cad_slug`, not `slug`.
+    s = make_in_memory_services()
+    only = s.workspace.node_types_schema("cad:model")
+    assert len(only) == 1 and only[0]["name"] == "cad:model"
+    assert "cad_slug" in only[0]["description"].lower()
+    # Still OPEN: no closed field list, so no false unknown-key warning on the
+    # rich producer shape (the common `slug` mistake included).
+    assert only[0]["data_fields"] is None
+    assert s.workspace.unknown_data_keys("cad:model", {"slug": "x", "kind": "stl"}) == []
+    assert s.workspace.unknown_data_keys("spec", {"rows": [], "source_ref": {}}) == []

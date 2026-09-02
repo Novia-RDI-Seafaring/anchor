@@ -6,11 +6,11 @@ independent of any specific output stack.
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Awaitable, Callable, Protocol
+from typing import Protocol
 
 from anchor.extensions.anchor_pdfs.core.synopsis import SynopsisData
-
 
 CropPathResolver = Callable[[str, str], Awaitable[Path | None]]
 

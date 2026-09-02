@@ -7,7 +7,10 @@ from pathlib import Path
 
 import typer
 
-from anchor.adapters.cli.services import _build_ingest_session_service, _build_real_services
+from anchor.adapters.project_runtime import (
+    RuntimeProfile,
+    build_project_runtime_for_data_dir,
+)
 
 
 def _find_free_port(host: str, start: int, *, limit: int = 20) -> int:
@@ -20,6 +23,41 @@ def _find_free_port(host: str, start: int, *, limit: int = 20) -> int:
             except OSError:
                 continue
     raise OSError(f"no free port in {start}..{start + limit - 1}")
+
+
+def _migrate_bbox_origin(runtime) -> None:
+    """Flip legacy bottom-left bboxes to top-left before serving (#281)."""
+    import asyncio
+
+    from anchor.extensions.anchor_pdfs.core.bbox_migration import migrate_all
+
+    try:
+        renderer = getattr(runtime.ingest, "renderer", None)
+        report = asyncio.run(migrate_all(runtime.doc_store, renderer, runtime.workspace))
+    except Exception as exc:  # noqa: BLE001 - never block serving on a migration hiccup
+        typer.echo(f"[anchor serve] bbox migration skipped: {exc}", err=True)
+        return
+    if report.get("migrated"):
+        typer.echo(
+            f"[anchor serve] migrated {len(report['migrated'])} document(s) to top-left "
+            f"bboxes (#281): {', '.join(report['migrated'])}",
+            err=True,
+        )
+    for item in report.get("skipped", []):
+        typer.echo(
+            f"[anchor serve] bbox migration skipped {item['slug']}: {item.get('reason')} "
+            "(run `anchor migrate bbox-origin` once the PDF is available)",
+            err=True,
+        )
+    if report.get("recommendation"):
+        typer.echo(f"[anchor serve] {report['recommendation']}", err=True)
+
+
+def _warn_fmu_for_serve(exc: Exception) -> None:
+    if exc.__class__.__name__ == "FmuRuntimeUnavailableError":
+        typer.echo(f"Warning: FMU extension disabled: {exc}", err=True)
+    else:
+        typer.echo(f"Warning: FMU extension failed to start: {exc}", err=True)
 
 
 def serve(
@@ -72,81 +110,26 @@ def serve(
     # The snapshotter points at the same server we're about to start so
     # snapshots taken via CLI / MCP loop back to this process.
     base_url = f"http://localhost:{port}"
-    config, bus, workspace, ingest, doc_store = _build_real_services(data_dir, base_url=base_url)
+    runtime = build_project_runtime_for_data_dir(
+        data_dir,
+        profile=RuntimeProfile.FULL,
+        base_url=base_url,
+        fmu_warning=_warn_fmu_for_serve,
+    )
+    config = runtime.config
     data_dir = config.data_dir
     static_dir = Path(__file__).resolve().parents[2] / "_web_dist"
     if not static_dir.is_dir():
         # development: walk up to web/dist in the repository checkout
         static_dir = Path(__file__).resolve().parents[4] / "web" / "dist"
 
-    # Wire the CAD extension service. Manifest already lives in
-    # _bundled_producers; the service handles ingestion and storage.
-    from anchor.extensions.anchor_cad import extension as cad_ext
+    # Self-correct legacy data (#281): flip any bottom-left silver/gold/canvas
+    # bboxes to top-left once, before serving. Idempotent and cheap on an
+    # already-migrated project; a document whose page sizes are unavailable is
+    # reported and left untouched rather than half-flipped.
+    _migrate_bbox_origin(runtime)
 
-    cad_service = cad_ext.build_service(data_dir, bus)
-
-    # Wire the SysML extension — pure-Python, always available.
-    from anchor.extensions.anchor_sysml import extension as sysml_ext
-
-    sysml_service = sysml_ext.build_service(data_dir, bus, workspace=workspace)
-
-    # Wire the synopsis service — pdf + marp renderers are first-party.
-    from anchor.extensions.anchor_pdfs.core.services import SynopsisService
-    from anchor.extensions.anchor_pdfs.infra.synopsis_renderers import (
-        MarpSynopsisRenderer,
-        PymupdfSynopsisRenderer,
-    )
-
-    synopsis_service = SynopsisService(
-        doc_store,
-        pdf_renderer=PymupdfSynopsisRenderer(),
-        md_renderer=MarpSynopsisRenderer(),
-    )
-
-    # Wire the FMU extension — optional. Real runtime requires FMPy
-    # (`uv tool install 'anchor-kb[fmus]'`); the synthetic demo runtime is
-    # gated behind ANCHOR_FMU_DEMO=1. Without either, build_service now
-    # raises FmuRuntimeUnavailableError (we deliberately do NOT silently
-    # mount the fake runtime — see the OSS review). The user sees a
-    # one-line hint and the server boots fine without the FMU routes.
-    fmu_service = None
-    try:
-        from anchor.extensions.anchor_fmus import extension as fmu_ext
-
-        fmu_service = fmu_ext.build_service(data_dir, bus)
-    except fmu_ext.FmuRuntimeUnavailableError as exc:
-        typer.echo(f"Warning: FMU extension disabled: {exc}", err=True)
-    except Exception as exc:  # noqa: BLE001
-        typer.echo(f"Warning: FMU extension failed to start: {exc}", err=True)
-
-    ingest_session_service = _build_ingest_session_service(config, bus, doc_store)
-
-    # The agent intent queue (#148): durable project-level store on the same
-    # bus, so a drop-to-ingest enqueued here is visible to CLI/MCP and fires the
-    # IntentPending SSE signal.
-    from anchor.core.clock import SystemClock
-    from anchor.core.services.intent_service import IntentService
-    from anchor.infra.stores.fs_intent_store import FsIntentStore
-
-    intent_service = IntentService(
-        FsIntentStore(data_dir), bus, now=SystemClock().now
-    )
-
-    app_ = build_app(
-        workspace_service=workspace,
-        ingest_service=ingest,
-        doc_store=doc_store,
-        bus=bus,
-        intent_service=intent_service,
-        ingest_session_service=ingest_session_service,
-        static_dir=static_dir if static_dir.is_dir() else None,
-        cad_service=cad_service,
-        sysml_service=sysml_service,
-        synopsis_service=synopsis_service,
-        fmu_service=fmu_service,
-        canvases_dir=data_dir / "canvases",
-        config=config,
-    )
+    app_ = build_app(runtime, static_dir=static_dir if static_dir.is_dir() else None)
 
     # Self-identification surface (#177, #179): record this server's actual
     # binding so /api/whoami, the MCP server_info tool, and `anchor serve-info`

@@ -8,13 +8,12 @@ crop-path resolver and return ``bytes`` (PDF) or ``str`` (Marp).
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Awaitable, Callable
 
-import fitz
+import pymupdf
 
 from anchor.extensions.anchor_pdfs.core.synopsis import SynopsisData
-
 
 CropPathResolver = Callable[[str, str], Awaitable[Path | None]]
 """(slug, rel_path) → absolute path to the crop image. Usually
@@ -37,17 +36,17 @@ class PymupdfSynopsisRenderer:
         *,
         resolve_crop: CropPathResolver,
     ) -> bytes:
-        doc = fitz.open()
+        doc = pymupdf.open()
 
         # Cover
         p = doc.new_page(width=self.PAGE_W, height=self.PAGE_H)
         _text(p, (self.MARGIN, 90), data.title, size=24, font="hebo")
         if data.operating_conditions:
-            _box(p, fitz.Rect(self.MARGIN, 130, self.PAGE_W - self.MARGIN, 160),
+            _box(p, pymupdf.Rect(self.MARGIN, 130, self.PAGE_W - self.MARGIN, 160),
                  " · ".join(data.operating_conditions), size=10)
         _box(
             p,
-            fitz.Rect(self.MARGIN, 180, self.PAGE_W - self.MARGIN, 310),
+            pymupdf.Rect(self.MARGIN, 180, self.PAGE_W - self.MARGIN, 310),
             f"Synopsis for {data.entity}, derived from the source document. "
             "All values are filtered to {entity} or are general properties that apply to every model. "
             "Consult the source datasheet for context, footnotes, and option lists.".format(entity=data.entity),
@@ -80,7 +79,7 @@ class PymupdfSynopsisRenderer:
                   f"From page {crop.source_ref.page} of the source (region {crop.source_ref.region_id}).",
                   size=10)
             try:
-                pix = fitz.Pixmap(str(path))
+                pix = pymupdf.Pixmap(str(path))
                 w, h = pix.width, pix.height
                 max_w = self.PAGE_W - 2 * self.MARGIN
                 max_h = self.PAGE_H - 240
@@ -88,11 +87,11 @@ class PymupdfSynopsisRenderer:
                 dw, dh = w * s, h * s
                 x = (self.PAGE_W - dw) / 2
                 p.insert_image(
-                    fitz.Rect(x, 120, x + dw, 120 + dh),
+                    pymupdf.Rect(x, 120, x + dw, 120 + dh),
                     filename=str(path),
                 )
                 if crop.description:
-                    _box(p, fitz.Rect(self.MARGIN, 120 + dh + 20,
+                    _box(p, pymupdf.Rect(self.MARGIN, 120 + dh + 20,
                                        self.PAGE_W - self.MARGIN, 120 + dh + 90),
                          crop.description, size=9)
             except Exception:  # noqa: BLE001 — best effort on bad crops

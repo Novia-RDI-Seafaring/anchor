@@ -82,6 +82,11 @@ session protocol:
    - Name region geometry with `member_item_ids: ["p3-i0", "p3-i1"]`;
      the server computes the bbox. Use `approx_bbox` only when no
      candidate covers a visual.
+   - For one logical part of a table, use `table_slice` with the table
+     candidate id and exact `rows` plus optional `columns`, for example
+     `{"candidate_id": "p3-i2", "rows": [0, 4, 5], "columns": [0, 1]}`.
+     Candidate cells provide the indexes. The server keeps only those cells
+     and computes cell-level content and bbox provenance.
    - A rejection returns `errors` naming the bad fields; fix and
      resubmit (resubmitting a page replaces it).
 3. For documents over ~4 pages, fan out: spawn subagents, each given

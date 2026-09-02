@@ -24,6 +24,62 @@ layers are shown together in [The hexagon](#the-hexagon).
 
 ---
 
+## Runtime composition
+
+Each project is wired through `ProjectRuntime`, the shared composition
+root for one resolved project config and data directory. It owns the
+service instances that adapters should share: workspace service,
+document store, event bus, ingest services, agent intents, and optional
+extension services.
+
+HTTP, MCP, and CLI entry points ask for that runtime instead of each
+building their own copies. This keeps adapter behaviour aligned: a
+canvas mutation, PDF ingest, search, or intent operation reaches the
+same stores and event bus no matter which interface started it. Tests
+can still pass explicit services to the HTTP app when they need a small
+isolated runtime.
+
+Callers select a named profile: `canvas`, `ingest`, `extensions`,
+or `full`. Long-running HTTP and MCP processes use the full profile.
+Short-lived CLI commands request the smallest profile that supports
+their operation. Listing or moving canvas nodes therefore does not load
+Docling or an embedding model. Commands that require an omitted service
+fail with an error that names the active profile.
+
+Each runtime gives `WorkspaceService` an
+`InProcessWorkspaceLocks` adapter. Mutations to one workspace are
+serialized across concurrent requests for the complete load, validate,
+append, snapshot, and publish sequence. Different workspaces can still
+progress independently. These locks do not coordinate separate
+operating-system processes, so one server process must remain the
+authoritative writer for a shared data directory.
+
+### Environment egress boundary
+
+The environment, not the project or canvas, owns model egress. Its provider,
+endpoint, and local-only setting form one trust policy shared by every project
+in that environment. A project may keep its own corpus and canvas state, but it
+cannot redirect the endpoint or weaken local-only mode. Process configuration
+cannot silently retarget a named environment either. Use a second environment
+and a second named MCP server when a corpus needs a different trust policy.
+
+Runtime composition resolves one `EgressPolicy` before constructing model
+clients. The `local` and `harness` providers construct no Anchor-side remote
+model client, and a remote embedding model is rejected for either provider.
+Public OpenAI may deliberately use `OPENAI_API_KEY`; Azure and custom endpoints
+require an explicit environment-scoped `ANCHOR_OPENAI_API_KEY`. The low-level
+client factory never reads ambient credentials. Each environment's gitignored
+`.env` is parsed into that environment's config without mutating process-global
+state, so resolving one environment cannot leave its key active in another.
+
+`harness` means no Anchor-side model endpoint, not no document disclosure. In
+harness-driven ingest, the connected agent reads page work items and submits
+results. Its model provider and retention policy are outside Anchor. Classified
+or otherwise restricted documents require the `local` provider and must not be
+given to a cloud-backed harness.
+
+---
+
 ## The three substrates
 
 | Substrate     | Lifetime                | Where it lives             | Owned by             |
@@ -113,6 +169,23 @@ add their own. Today there are two:
 `simulate`, `list_simulations`, ...). ANCHOR's canvas core never
 imports either.
 
+### Region retrieval
+
+PDF ingest writes bronze, silver, and gold artifacts. Silver is the
+Docling view: page markdown, item metadata, bboxes, and table cells.
+Gold is the agent-facing view: source regions with page, bbox, title,
+description, tags, optional cells, and server-derived `content`.
+
+That `content` is rendered by ANCHOR from the Docling items or table
+cells selected by the region geometry. It is not submitted by the
+agent. Harness ingestion can select a logical sub-table with
+`table_slice {candidate_id, rows, columns?}`. ANCHOR persists only those
+cells and computes their bbox union, so adjacent tables no longer share one
+coarse region. Search embeds region title, description, and content. In
+normal use an agent should search gold regions and call `get_gold_regions`
+for the matching region. Loading the whole page markdown remains a fallback
+for ambiguous or missing region content.
+
 ---
 
 ## Four ways to talk to it
@@ -134,6 +207,13 @@ The MCP server hosts both canvas tools (`canvas_get_state`,
 SysML. Extension tool names use safe prefixes such as `ingest_pdf`,
 `fmu_simulate` and `sysml_render` so they can coexist with other tools
 and pass MCP client name validation.
+
+Extension discovery lives in the `anchor.adapters.extension_host`
+module. It reads bundled extension manifests and exposes the public
+extension list and skill metadata without making adapters know each
+extension's filesystem layout. Discovery is separate from runtime
+wiring: a manifest says what the extension offers, while service
+builders wire the concrete stores, clients, and optional runtimes.
 
 ---
 

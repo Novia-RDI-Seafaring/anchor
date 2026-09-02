@@ -154,6 +154,21 @@ def test_check_missing_key_prints_actionable_remedy(tmp_path):
     assert "ingest_begin" in result.output
 
 
+def test_check_remote_embedding_without_key_prints_remedy(tmp_path):
+    _write_env(
+        tmp_path,
+        'provider = "azure"\n'
+        'openai_base_url = "https://x.openai.azure.com/openai/v1/"\n'
+        'embed_model = "text-embedding-3-small"\n',
+    )
+
+    result = _run_check(tmp_path)
+
+    assert result.exit_code == 1, result.output
+    assert "ANCHOR_OPENAI_API_KEY" in result.output
+    assert "Not ready" in result.output
+
+
 def test_check_unset_provider_prints_remedy(tmp_path):
     # An env.toml with no provider set at all: gold would be silently skipped.
     _write_env(

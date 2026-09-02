@@ -135,12 +135,12 @@ def test_invalid_regions_are_rejected_and_reported(tmp_path):
     async def run():
         bad_regions = FakeRegionExtractor(regions_per_page=[
             {"id": "ok", "kind": "text", "title": "valid", "description": "x",
-             "bbox": [10, 600, 200, 580], "tags": [], "entities": []},
+             "bbox": [10, 195, 200, 215], "tags": [], "entities": []},
             {"id": "bad-kind", "kind": "banner", "title": "nope",
-             "bbox": [10, 600, 200, 580]},
+             "bbox": [10, 195, 200, 215]},
             {"id": "bad-bbox", "kind": "text", "title": "inverted box",
              "bbox": [200, 600, 10, 580]},
-            {"id": "no-title", "kind": "text", "bbox": [10, 600, 200, 580]},
+            {"id": "no-title", "kind": "text", "bbox": [10, 195, 200, 215]},
         ])
         store, ingest = _fs_ingest(tmp_path, region_extractor=bad_regions)
         summary = await ingest.ingest_pdf(b"%PDF-fake", "demo.pdf")
@@ -168,7 +168,7 @@ def test_candidates_are_persisted_with_stable_item_ids(tmp_path):
         assert [c["id"] for c in candidates] == ["p1-i0", "p1-i1", "p1-i2"]
         assert candidates[0]["label"] == "title"
         assert candidates[0]["text"] == "Demo Doc"
-        assert candidates[0]["bbox"] == [0.0, 720.0, 200.0, 700.0]
+        assert candidates[0]["bbox"] == [0.0, 72.0, 200.0, 92.0]
         # Ids agree with pages.meta.json (build_pages_meta mints the same).
         meta = await store.get_pages_meta("demo")
         assert meta["pages"]["1"]["item_ids"] == [c["id"] for c in candidates]

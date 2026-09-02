@@ -1,6 +1,8 @@
 """Named-environment + folder-based project resolution and config layering."""
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from anchor.core.ids import InvalidEnvNameError, InvalidProjectNameError
@@ -37,8 +39,11 @@ _CLEAR = (
     "ANCHOR_CONFIG",
     "ANCHOR_DATA_DIR",
     "ANCHOR_EMBED_MODEL",
+    "ANCHOR_LOCAL_ONLY",
+    "ANCHOR_OPENAI_BASE_URL",
     "ANCHOR_PROVIDER",
     "ANCHOR_OPENAI_API_KEY",
+    "OPENAI_API_KEY",
 )
 
 
@@ -401,11 +406,114 @@ def test_layering_env_then_project_then_envvar(tmp_path, monkeypatch):
 
 
 def test_config_for_data_dir_layers_project(tmp_path):
-    env = create_env("local", settings={"provider": "azure", "embed_model": "m"})
+    env = create_env(
+        "local",
+        settings={
+            "provider": "azure",
+            "embed_model": "m",
+            "openai_base_url": "https://models.example/v1",
+        },
+    )
     create_project(env, "pumps")
     cfg = config_for_data_dir(env.project_dir("pumps"))
     assert cfg.provider == "azure"
     assert cfg.data_dir == env.project_dir("pumps")
+
+
+def test_local_environment_rejects_project_egress_override(tmp_path):
+    env = create_env(
+        "secret",
+        settings={
+            "provider": "local",
+            "local_only": True,
+            "embed_model": "BAAI/bge-small-en-v1.5",
+        },
+    )
+    create_project(env, "paper")
+    (env.project_root("paper") / "anchor.toml").write_text(
+        'env = "secret"\n'
+        'name = "paper"\n'
+        'local_only = false\n'
+        'provider = "custom"\n'
+        'openai_base_url = "https://untrusted.example/v1"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="cannot weaken.*local-only"):
+        resolve_project_config(env, "paper")
+
+
+def test_local_environment_rejects_remote_embedding_override(tmp_path):
+    env = create_env(
+        "secret",
+        settings={
+            "provider": "local",
+            "local_only": True,
+            "embed_model": "BAAI/bge-small-en-v1.5",
+        },
+    )
+    create_project(env, "paper")
+    (env.project_root("paper") / "anchor.toml").write_text(
+        'env = "secret"\n'
+        'name = "paper"\n'
+        'embed_model = "text-embedding-3-small"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="does not allow remote embedding"):
+        resolve_project_config(env, "paper")
+
+
+def test_project_cannot_define_environment_credential(tmp_path):
+    env = create_env(
+        "work",
+        settings={
+            "provider": "custom",
+            "openai_base_url": "https://models.example/v1",
+        },
+    )
+    create_project(env, "paper")
+    (env.project_root("paper") / "anchor.toml").write_text(
+        'env = "work"\n'
+        'name = "paper"\n'
+        'openai_api_key = "project-key"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="cannot define environment credential"):
+        resolve_project_config(env, "paper")
+
+
+def test_remote_environment_resolves_before_credential_is_configured(tmp_path):
+    env = create_env(
+        "work",
+        settings={
+            "provider": "custom",
+            "openai_base_url": "https://models.example/v1",
+            "embed_model": "text-embedding-3-small",
+        },
+    )
+
+    config = resolve_project_config(env, DEFAULT_PROJECT)
+
+    assert config.openai_api_key is None
+
+
+def test_process_cannot_retarget_named_environment(tmp_path, monkeypatch):
+    env = create_env(
+        "secret",
+        settings={
+            "provider": "local",
+            "local_only": True,
+            "embed_model": "BAAI/bge-small-en-v1.5",
+        },
+    )
+    monkeypatch.setenv("ANCHOR_PROVIDER", "custom")
+    monkeypatch.setenv("ANCHOR_LOCAL_ONLY", "false")
+    monkeypatch.setenv("ANCHOR_OPENAI_BASE_URL", "https://untrusted.example/v1")
+
+    with pytest.raises(ValueError, match="cannot change environment provider"):
+        resolve_project_config(env, DEFAULT_PROJECT)
 
 
 def test_config_for_data_dir_external_is_plain(tmp_path):
@@ -415,11 +523,44 @@ def test_config_for_data_dir_external_is_plain(tmp_path):
 
 def test_env_dotenv_is_loaded(tmp_path, monkeypatch):
     monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
-    env = create_env("work", settings={"provider": "azure"})
+    env = create_env(
+        "work",
+        settings={
+            "provider": "azure",
+            "openai_base_url": "https://models.example/v1",
+        },
+    )
     (env.root / ".env").write_text("ANCHOR_OPENAI_API_KEY=secret-key\n")
     cfg = resolve_project_config(env, DEFAULT_PROJECT)
     assert cfg.openai_api_key is not None
     assert cfg.openai_api_key.get_secret_value() == "secret-key"
+
+
+def test_env_dotenv_credentials_do_not_leak_between_environments(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
+    settings = {
+        "provider": "azure",
+        "openai_base_url": "https://models.example/v1",
+    }
+    first = create_env("first", settings=settings)
+    second = create_env("second", settings=settings)
+    (first.root / ".env").write_text(
+        "ANCHOR_OPENAI_API_KEY=first-key\n",
+        encoding="utf-8",
+    )
+    (second.root / ".env").write_text(
+        "ANCHOR_OPENAI_API_KEY=second-key\n",
+        encoding="utf-8",
+    )
+
+    first_config = resolve_project_config(first, DEFAULT_PROJECT)
+    second_config = resolve_project_config(second, DEFAULT_PROJECT)
+
+    assert first_config.openai_api_key is not None
+    assert first_config.openai_api_key.get_secret_value() == "first-key"
+    assert second_config.openai_api_key is not None
+    assert second_config.openai_api_key.get_secret_value() == "second-key"
+    assert "ANCHOR_OPENAI_API_KEY" not in os.environ
 
 
 # --------------------------------------------------------------------------- #

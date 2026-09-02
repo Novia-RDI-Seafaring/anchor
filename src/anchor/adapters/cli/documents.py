@@ -9,7 +9,12 @@ from pathlib import Path
 import typer
 
 from anchor.adapters.cli.common import DEFAULT_DATA_DIR, _emit_bytes
+from anchor.adapters.cli.document_synopsis import synopsis
 from anchor.adapters.cli.services import _build_real_services
+from anchor.extensions.anchor_pdfs.core.region_inspect import (
+    get_region_content,
+    inspect_region,
+)
 
 
 def ingest(
@@ -325,6 +330,38 @@ def regions(
     typer.echo(json.dumps(asyncio.run(doc_store.get_regions(slug, page=effective_page)), indent=2))
 
 
+def inspect_region_cmd(
+    slug: str,
+    region_id: str,
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Print one gold region's full record by id (e.g. ``p2/r4`` or ``r4``).
+
+    The search -> inspect -> answer path: `search` ranks regions, then this
+    reads one without paging the whole document.
+    """
+    _, _, _, _, doc_store = _build_real_services(data_dir)
+    out = asyncio.run(inspect_region(doc_store, slug, region_id))
+    if out is None:
+        typer.echo(f"region not found: {region_id}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps(out, indent=2))
+
+
+def region_content_cmd(
+    slug: str,
+    region_id: str,
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Print one gold region's reconstructed content (markdown + cells) by id."""
+    _, _, _, _, doc_store = _build_real_services(data_dir)
+    out = asyncio.run(get_region_content(doc_store, slug, region_id))
+    if out is None:
+        typer.echo(f"region not found: {region_id}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps(out, indent=2))
+
+
 def embeddings_meta(
     slug: str,
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
@@ -511,74 +548,6 @@ def pdf(
     _emit_bytes(path, copy_to=copy_to, out=out, label=f"{slug} pdf")
 
 
-def synopsis(
-    slug: str,
-    entity: str = typer.Option(..., "--entity", "-e", help="e.g. 'LKH-5'"),
-    format: str = typer.Option("json", "--format", "-f", help="json | pdf | md"),
-    output: Path | None = typer.Option(
-        None, "--output", "-o", help="Write artefact to this path (for pdf/md)."
-    ),
-    crop_url_base: str | None = typer.Option(
-        None, "--crop-url-base", help="(md only) URL prefix for crop references."
-    ),
-    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
-) -> None:
-    """Compose an entity-scoped synopsis from gold data.
-
-    `--format json` (default): prints SynopsisData as JSON to stdout.
-    `--format pdf`: writes a multi-page PDF synopsis (cover + specs + charts).
-    `--format md`: writes a Marp-compatible markdown slide deck.
-    """
-    _, _, _, _, doc_store = _build_real_services(data_dir)
-    from anchor.extensions.anchor_pdfs.core.services import SynopsisService
-    from anchor.extensions.anchor_pdfs.infra.synopsis_renderers import (
-        MarpSynopsisRenderer,
-        PymupdfSynopsisRenderer,
-    )
-
-    svc = SynopsisService(
-        doc_store,
-        pdf_renderer=PymupdfSynopsisRenderer(),
-        md_renderer=MarpSynopsisRenderer(),
-    )
-
-    if format == "json":
-        from dataclasses import asdict
-
-        async def run():
-            return asdict(await svc.compose(slug=slug, entity=entity))
-
-        typer.echo(json.dumps(asyncio.run(run()), indent=2))
-        return
-    if format == "pdf":
-
-        async def run():
-            return await svc.render_pdf(slug=slug, entity=entity)
-
-        pdf_bytes = asyncio.run(run())
-        if output is None:
-            output = Path(f"{slug}-{entity}.pdf")
-        output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_bytes(pdf_bytes)
-        typer.echo(str(output))
-        return
-    if format == "md":
-
-        async def run():
-            return await svc.render_markdown(slug=slug, entity=entity, crop_url_base=crop_url_base)
-
-        md = asyncio.run(run())
-        if output is None:
-            typer.echo(md)
-        else:
-            output.parent.mkdir(parents=True, exist_ok=True)
-            output.write_text(md, encoding="utf-8")
-            typer.echo(str(output))
-        return
-    typer.echo(f"unknown --format {format!r} (use json | pdf | md)", err=True)
-    raise typer.Exit(code=2)
-
-
 def register_document_commands(app: typer.Typer) -> None:
     """Attach root document commands without changing their public names."""
     app.command()(ingest)
@@ -591,6 +560,8 @@ def register_document_commands(app: typer.Typer) -> None:
     app.command()(embed)
     app.command()(index)
     app.command()(regions)
+    app.command("inspect-region")(inspect_region_cmd)
+    app.command("region-content")(region_content_cmd)
     app.command("embeddings-meta")(embeddings_meta)
     app.command("page-text")(page_text)
     app.command("locate-text")(locate_text)

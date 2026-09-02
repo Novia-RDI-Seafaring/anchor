@@ -11,7 +11,6 @@ import asyncio
 import pytest
 
 from anchor.core.workspace.workspace import CommandError
-
 from tests.fixtures.services import make_in_memory_services
 
 

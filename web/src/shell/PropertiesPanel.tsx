@@ -1,17 +1,11 @@
 /**
- * PropertiesPanel — right-side off-canvas Sheet for editing the currently
- * selected node.
+ * PropertiesPanel — right-side off-canvas Sheet (the inspector) for editing
+ * the currently selected node.
  *
- * Coexistence rule (Library vs Properties):
- *   Only one right-side drawer is open at a time. When a node is selected
- *   on the canvas, the Library closes and Properties opens. When the user
- *   manually opens Library again, Properties closes. The mutual exclusion
- *   is enforced in `uiStore.setPropertiesOpen` and `setLibraryDrawerOpen`
- *   (the parallel Library agent owns the latter; we coordinated on the
- *   contract). Rationale: side-by-side drawers crowd a narrow viewport
- *   and the "open Library and select a node" gesture would otherwise be
- *   ambiguous. Letting selection win keeps the panel attached to the
- *   user's current focus.
+ * The right edge hosts the inspector only. Ingested files moved to the left
+ * files explorer and the old right-side Library drawer was retired (#220),
+ * so there is no longer a competing right-side drawer to coordinate with.
+ * The panel opens when a node is selected and closes on deselect / Esc.
  *
  * Architecture:
  *   - Selected node is sourced from `useCanvasStore.nodes[selectedNodeId]`

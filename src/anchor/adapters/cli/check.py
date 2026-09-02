@@ -325,9 +325,14 @@ def _probe_ocr_backend() -> tuple[bool, str | None]:
 def _probe(cfg: AnchorConfig, embed_remote: bool, problems: list[str]) -> None:
     """Make minimal calls to confirm the chat (and remote embed) deployments work."""
     from anchor.extensions.anchor_pdfs.infra.llm.openai_client import make_openai_client
+    from anchor.infra.egress_policy import resolve_egress_policy
 
-    key = cfg.openai_api_key.get_secret_value() if cfg.openai_api_key else None
-    client = make_openai_client(key, cfg.openai_base_url)
+    policy = resolve_egress_policy(cfg)
+    if not policy.remote_clients_enabled:
+        typer.echo("  skipped - this environment does not allow server model egress")
+        return
+
+    client = make_openai_client(policy.api_key, policy.base_url)
     try:
         # No token-cap parameter: it isn't portable. Newer models (gpt-5.x,
         # o-series) reject ``max_tokens`` and want ``max_completion_tokens``,

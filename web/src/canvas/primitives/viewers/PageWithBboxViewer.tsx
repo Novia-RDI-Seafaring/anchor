@@ -12,8 +12,8 @@ import { useUiStore } from "@/stores/uiStore";
  * from gold regions, scaled to the rendered image. Click a region to focus
  * it; double-click to lock and show metadata.
  *
- * Bbox coordinates from gold regions arrive in Docling's BOTTOMLEFT
- * (PDF user-space) origin. We convert to image (top-left) coordinates
+ * Bbox coordinates from gold regions arrive in the canonical top-left
+ * PDF-points convention (#281). We scale to image (top-left) coordinates
  * using the page's width/height in points from pages.meta.json.
  */
 

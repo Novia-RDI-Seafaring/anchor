@@ -88,6 +88,24 @@ class FsDocStore:
         assert_within(target, self.ingest_locks)
         return target
 
+    def _doc_dir(self, root: Path, slug: str) -> Path:
+        """``root/<slug>`` for a caller-supplied slug, refusing traversal.
+
+        Slugs reach the store from HTTP/MCP/CLI arguments, so a read path built
+        from one is a path-injection sink. Reject path components and traversal
+        tokens, then assert the resolved directory stays under ``root`` — the
+        same guard the ingest lock and bronze stash apply.
+        """
+        if not slug or "/" in slug or "\\" in slug or slug in {".", ".."}:
+            raise UnsafeUploadError(f"unsafe document slug: {slug!r}")
+        # Inline normalise-then-prefix-check (not delegated) so the containment
+        # barrier sits in the same function that builds the path.
+        base = os.path.realpath(os.fspath(root))
+        candidate = os.path.normpath(os.path.join(base, slug))
+        if not candidate.startswith(base + os.sep):
+            raise UnsafeUploadError(f"document slug {slug!r} escapes {root!s}")
+        return Path(candidate)
+
     def _try_create_lock(self, path: Path) -> bool:
         """Atomically create the lock file. True on success, False if held.
 
@@ -330,18 +348,19 @@ class FsDocStore:
         return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
     async def get_page_text(self, slug: str, page: int) -> str | None:
-        for name in (f"{page}.md", f"{page}.raw.md"):
-            p = self.silver / slug / "pages" / name
+        pages = self._doc_dir(self.silver, slug) / "pages"
+        for name in (f"{int(page)}.md", f"{int(page)}.raw.md"):
+            p = pages / name
             if p.exists():
                 return p.read_text(encoding="utf-8")
         return None
 
     async def get_page_image_path(self, slug: str, page: int) -> Path | None:
-        p = self.silver / slug / "pages" / f"{page}.png"
+        p = self._doc_dir(self.silver, slug) / "pages" / f"{int(page)}.png"
         return p if p.exists() else None
 
     async def get_page_candidates(self, slug: str, page: int) -> list[dict[str, Any]] | None:
-        p = self.silver / slug / "pages" / f"{page}.candidates.json"
+        p = self._doc_dir(self.silver, slug) / "pages" / f"{int(page)}.candidates.json"
         if not p.is_file():
             return None
         try:
@@ -352,7 +371,7 @@ class FsDocStore:
 
     async def get_regions(self, slug: str, page: int | None = None) -> dict[str, Any]:
         result: dict[str, Any] = {"slug": slug, "pages": {}}
-        d = self.gold / slug / "pages"
+        d = self._doc_dir(self.gold, slug) / "pages"
         if not d.is_dir():
             return result
         for rf in sorted(d.glob("*.regions.json")):
