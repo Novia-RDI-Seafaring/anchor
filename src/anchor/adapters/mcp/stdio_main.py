@@ -104,6 +104,13 @@ def main() -> None:
     args = parser.parse_args()
     if args.verbose:
         logging.basicConfig(level=logging.INFO)
+    # Stdout IS the JSON-RPC channel here — any unsilenced third-party print
+    # or warning (HuggingFace, docling) corrupts the stream a client is
+    # parsing as JSON. The embedder starts a background preload thread as
+    # soon as a bundle is built, so this must run before that can happen.
+    from anchor.infra.quiet import quiet_dependency_logs
+
+    quiet_dependency_logs()
     asyncio.run(
         _run(env=args.env, project=args.project, data_dir=args.data_dir, base_url=args.base_url)
     )

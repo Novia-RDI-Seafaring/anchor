@@ -16,7 +16,6 @@ import asyncio
 import threading
 from typing import Any
 
-
 DEFAULT_EMBED_MODEL = "BAAI/bge-small-en-v1.5"
 
 

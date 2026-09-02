@@ -107,11 +107,12 @@ def test_pages_grouped_by_page_number():
 
 
 def test_reading_order_top_to_bottom():
+    # Top-left convention (#281): a smaller y is higher on the page.
     docling = {"items": [
-        # bottom item (low top y)
-        {"label": "text", "text": "bottom", "page": 1, "bbox": [0, 100, 100, 120]},
-        # top item (high top y)
-        {"label": "text", "text": "top", "page": 1, "bbox": [0, 700, 100, 720]},
+        # bottom item (large y)
+        {"label": "text", "text": "bottom", "page": 1, "bbox": [0, 700, 100, 720]},
+        # top item (small y)
+        {"label": "text", "text": "top", "page": 1, "bbox": [0, 100, 100, 120]},
     ]}
     md = render_pages_md(docling)[1]
     assert md.index("top") < md.index("bottom")

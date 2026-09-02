@@ -12,7 +12,6 @@ from anchor.extensions.anchor_sysml.infra.parser import SysmlTextParser
 from anchor.infra.bus.memory_bus import MemoryEventBus
 from anchor.infra.stores.memory_stores import MemoryWorkspaceStore
 
-
 FIXTURES = Path(__file__).parent / "fixtures"
 
 

@@ -132,49 +132,50 @@ needed.
 
 ## 4. LLM endpoints and local operation
 
-Without an LLM key, PDF ingestion still creates the local bronze and silver
-layers. Gold-region extraction and page polishing require a vision-capable
-OpenAI-compatible endpoint.
+An API key is not the first setup step. Create an environment first so
+`env.toml` records the provider and data boundary. The key only authenticates
+an endpoint that this environment already permits. A key cannot select a
+provider or enable egress on its own.
 
-For OpenAI:
+For local gold through Ollama, start a vision-capable model and create an
+Ollama environment:
 
-```dotenv
-ANCHOR_OPENAI_API_KEY=<your-api-key>
-ANCHOR_POLISH_MODEL=gpt-5.4
-ANCHOR_REGION_MODEL=gpt-5.4
+```bash
+anchor env create private-gold --provider ollama \
+  --base-url http://localhost:11434/v1 \
+  --vision-model llava --yes
+anchor check --env private-gold --probe
 ```
 
-For an OpenAI-compatible endpoint, set `ANCHOR_OPENAI_BASE_URL` as well. For
-example, Azure OpenAI v1 uses deployment names as model identifiers:
+Ollama does not need `ANCHOR_OPENAI_API_KEY`. ANCHOR supplies the harmless
+local placeholder required by the OpenAI-compatible client library.
 
-```dotenv
-ANCHOR_OPENAI_API_KEY=<your-azure-key>
-ANCHOR_OPENAI_BASE_URL=https://<resource-name>.openai.azure.com/openai/v1/
-ANCHOR_POLISH_MODEL=<vision-capable-deployment-name>
-ANCHOR_REGION_MODEL=<vision-capable-deployment-name>
+For a keyed provider, create the environment, then put the endpoint credential
+in the selected environment's private file:
+
+```text
+~/.anchor/envs/<environment-name>/.env
 ```
 
-For Azure, `ANCHOR_OPENAI_API_KEY` must be the Azure resource key. A personal
-`OPENAI_API_KEY` in your shell is not proof that the Azure project is
-configured. The model values must be Azure deployment names, not base model
-names.
-
-An Ollama or other local OpenAI-compatible server can use the same wiring:
-
 ```dotenv
-ANCHOR_OPENAI_API_KEY=local
-ANCHOR_OPENAI_BASE_URL=http://localhost:11434/v1
-ANCHOR_POLISH_MODEL=<vision-model-name>
-ANCHOR_REGION_MODEL=<vision-model-name>
+ANCHOR_OPENAI_API_KEY=<credential-for-that-endpoint>
 ```
+
+Do not put `OPENAI_API_KEY` in this file. The environment-scoped loader imports
+only `ANCHOR_` names. The environment must also have a valid `env.toml`; an
+orphan `.env` is not loaded. Provider, endpoint, and model names belong in
+`env.toml`, which `anchor env create` writes for you.
 
 Use a model that accepts image input and evaluate extraction quality on your
-own documents before relying on extracted engineering values.
+own documents before relying on extracted engineering values. See
+[Choose a provider and enable gold](provider-setup.md) for all provider
+recipes, server restart instructions, and silver-only recovery.
 
-Embeddings use the local sentence-transformer model
+Gold-region embeddings use the local sentence-transformer model
 `BAAI/bge-small-en-v1.5` by default. The Python dependency ships with ANCHOR;
 the model weights must already be cached or downloaded before fully offline
-use.
+use. A silver-only document has no gold regions to embed, so its region
+embedding count is zero.
 
 ## 5. Offline boundary
 
@@ -183,7 +184,7 @@ use.
 | Store source PDF and render pages | Yes | Files stay under the project's `.anchor_data/`. |
 | Silver extraction | Yes | Docling and local rendering. |
 | Gold extraction and page polish | Conditional | Requires a configured vision endpoint; this may be local. |
-| Region embeddings and search | Yes, after model availability | Local sentence-transformer default. |
+| Gold-region embeddings and search | Yes, after gold and model availability | Local sentence-transformer default. Silver-only documents have no region vectors. |
 | Workspace state, HTTP, SSE, MCP-stdio | Yes | Runs on the local machine. |
 | Canvas snapshot | Yes | Requires local `anchor serve` and Chromium support. |
 | Agent harness model calls | Outside ANCHOR | Governed by the harness you choose. |

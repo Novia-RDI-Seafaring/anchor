@@ -2,14 +2,48 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
 from anchor.adapters.cli.extensions import extensions_app
+from anchor.adapters.extension_host import ExtensionRuntimeStatus
 
 
 def _runner():
     return CliRunner()
+
+
+def test_status_emits_shared_runtime_diagnostics(tmp_path, monkeypatch):
+    from anchor.adapters import project_runtime
+
+    runtime = SimpleNamespace(
+        extension_status={
+            "anchor-fmus": ExtensionRuntimeStatus(
+                name="anchor-fmus",
+                source="bundled",
+                available=False,
+                reason="FMPy missing",
+                error_type="RuntimeError",
+            )
+        }
+    )
+    monkeypatch.setattr(
+        project_runtime,
+        "build_project_runtime_for_data_dir",
+        lambda *_args, **_kwargs: runtime,
+    )
+
+    result = _runner().invoke(
+        extensions_app,
+        ["status", "--data-dir", str(tmp_path / "data")],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["summary"] == {
+        "available": 0,
+        "unavailable": 1,
+    }
 
 
 def test_list_shows_bundled_pdf_producer(tmp_path, monkeypatch):
@@ -71,6 +105,47 @@ def test_add_refuses_invalid_manifest(tmp_path, monkeypatch):
     assert "missing oip_version" in result.output or "failed validation" in result.output
 
 
+def test_add_refuses_producer_name_path_traversal(tmp_path, monkeypatch):
+    config_home = tmp_path / "config"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps({
+            "oip_version": "0.1",
+            "producer": {"name": "../../outside", "version": "0.1.0"},
+        }),
+        encoding="utf-8",
+    )
+
+    result = _runner().invoke(extensions_app, ["add", str(manifest)])
+
+    assert result.exit_code != 0
+    assert "producer.name" in result.output
+    assert not (config_home / "outside.json").exists()
+
+
+def test_add_refuses_unknown_registration_scope(tmp_path, monkeypatch):
+    config_home = tmp_path / "config"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps({
+            "oip_version": "0.1",
+            "producer": {"name": "safe-name", "version": "0.1.0"},
+        }),
+        encoding="utf-8",
+    )
+
+    result = _runner().invoke(
+        extensions_app,
+        ["add", str(manifest), "--scope", "somewhere"],
+    )
+
+    assert result.exit_code != 0
+    assert "scope must be 'system' or 'project'" in result.output
+    assert not (config_home / "oip" / "producers.d").exists()
+
+
 def test_add_dedupes_by_default(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
@@ -115,6 +190,20 @@ def test_remove(tmp_path, monkeypatch):
     result = runner.invoke(extensions_app, ["remove", "x"])
     assert result.exit_code == 0, result.output
     assert "removed" in result.output
+
+
+def test_remove_refuses_producer_name_path_traversal(tmp_path, monkeypatch):
+    config_home = tmp_path / "config"
+    victim = config_home / "victim.json"
+    victim.parent.mkdir(parents=True)
+    victim.write_text("keep", encoding="utf-8")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+
+    result = _runner().invoke(extensions_app, ["remove", "../../victim"])
+
+    assert result.exit_code != 0
+    assert "producer.name" in result.output
+    assert victim.read_text(encoding="utf-8") == "keep"
 
 
 def test_discover_prints_paths(tmp_path, monkeypatch):

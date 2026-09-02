@@ -24,8 +24,9 @@ top-left of the node's bounding box.
 """
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Iterable, Literal
+from typing import Literal
 
 Anchor = Literal["top", "bottom", "left", "right", "center-h", "center-v"]
 Axis = Literal["horizontal", "vertical"]
@@ -140,7 +141,7 @@ def distribute_nodes(
 
 def _diff(
     items: list[SelectedNode],
-    target: "callable[[SelectedNode], tuple[float, float]]",  # noqa: F821
+    target: Callable[[SelectedNode], tuple[float, float]],
 ) -> dict[str, tuple[float, float]]:
     out: dict[str, tuple[float, float]] = {}
     for n in items:

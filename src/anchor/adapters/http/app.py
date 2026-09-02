@@ -19,6 +19,7 @@ from anchor.adapters.http.routers import (
     whoami,
     workspaces,
 )
+from anchor.adapters.project_runtime import ProjectRuntime
 from anchor.core.clock import SystemClock
 from anchor.core.ids import InvalidWorkspaceSlugError
 from anchor.core.ports.event_bus import EventBus
@@ -38,11 +39,12 @@ from anchor.infra.config import AnchorConfig
 
 
 def build_app(
+    runtime: ProjectRuntime | None = None,
     *,
-    workspace_service: WorkspaceService,
-    ingest_service: IngestService,
-    doc_store: DocStore,
-    bus: EventBus,
+    workspace_service: WorkspaceService | None = None,
+    ingest_service: IngestService | None = None,
+    doc_store: DocStore | None = None,
+    bus: EventBus | None = None,
     intent_service: IntentService | None = None,
     static_dir: Path | None = None,
     cad_service: CadService | None = None,
@@ -53,6 +55,30 @@ def build_app(
     canvases_dir: Path | None = None,
     config: AnchorConfig | None = None,
 ) -> FastAPI:
+    extension_status = {}
+    if runtime is not None:
+        workspace_service = runtime.workspace
+        ingest_service = runtime.require_ingest()
+        doc_store = runtime.doc_store
+        bus = runtime.bus
+        intent_service = runtime.intents
+        cad_service = runtime.cad
+        sysml_service = runtime.sysml
+        synopsis_service = runtime.synopsis
+        ingest_session_service = runtime.ingest_session
+        fmu_service = runtime.fmu
+        canvases_dir = runtime.config.canvases_dir
+        config = runtime.config
+        extension_status = runtime.extension_status
+
+    if (
+        workspace_service is None
+        or ingest_service is None
+        or doc_store is None
+        or bus is None
+    ):
+        raise ValueError("build_app requires a ProjectRuntime or explicit core services")
+
     app = FastAPI(title="Anchor v2", version="0.2.0")
     app.state.workspace_service = workspace_service
     app.state.ingest_service = ingest_service
@@ -74,6 +100,7 @@ def build_app(
     app.state.synopsis_service = synopsis_service
     app.state.ingest_session_service = ingest_session_service
     app.state.anchor_config = config
+    app.state.extension_status = extension_status
 
     # Bridge cross-process writes (CLI / MCP-stdio in another process) into
     # this app's bus by tailing each workspace's events.jsonl. SSE router

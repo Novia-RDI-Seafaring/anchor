@@ -4,6 +4,8 @@ from __future__ import annotations
 from anchor.extensions.anchor_pdfs.core.silver import (
     build_index,
     point_in_bbox,
+    region_content_from_items,
+    region_search_text,
     table_bbox_from_items,
     table_cells_from_items,
 )
@@ -134,6 +136,81 @@ def test_table_cells_from_items_prefers_best_geometric_fit():
         200.0,
         10.0,
     ]
+
+
+def test_region_content_from_items_renders_selected_table():
+    items = [
+        {"label": "text", "text": "Intro", "bbox": [0, 120, 80, 100]},
+        {
+            "label": "table",
+            "bbox": [10, 100, 110, 10],
+            "cells": [
+                {"row": 0, "col": 0, "text": "Field"},
+                {"row": 0, "col": 1, "text": "Value"},
+                {"row": 1, "col": 0, "text": "limit"},
+                {"row": 1, "col": 1, "text": "10"},
+            ],
+        },
+    ]
+
+    content = region_content_from_items(items, [1])
+
+    assert "| Field | Value |" in content
+    assert "| limit | 10 |" in content
+    assert "Intro" not in content
+
+
+def test_region_search_text_includes_server_content_once():
+    region = {
+        "title": "Limits",
+        "description": "Limits",
+        "content": "| Field | Value |\n| --- | --- |\n| limit | 10 |",
+    }
+
+    text = region_search_text(region)
+
+    assert text.count("Limits") == 1
+    assert "| limit | 10 |" in text
+
+
+def test_region_search_text_falls_back_to_cells_when_no_description():
+    # #242: a caption-less table (no description, no derived content) would
+    # embed as just its title. The fallback renders its cells so the values
+    # stay findable by search.
+    region = {
+        "title": "Table",
+        "kind": "table",
+        "cells": [
+            {"row": 0, "col": 0, "text": "Flow"},
+            {"row": 0, "col": 1, "text": "Head"},
+            {"row": 1, "col": 0, "text": "35 m3/h"},
+            {"row": 1, "col": 1, "text": "55 m"},
+        ],
+    }
+
+    text = region_search_text(region)
+
+    assert "35 m3/h" in text
+    assert "55 m" in text
+
+
+def test_region_search_text_skips_cell_fallback_when_described():
+    # A well-described table keeps its authored text; the cell fallback does
+    # not fire (avoids double-embedding the grid the model already summarised).
+    region = {
+        "title": "Operating limits",
+        "description": "Max flow 35 m3/h at 55 m head.",
+        "content": "| Flow | Head |\n| --- | --- |\n| 35 m3/h | 55 m |",
+        "kind": "table",
+        "cells": [{"row": 0, "col": 0, "text": "Flow"}],
+    }
+
+    text = region_search_text(region)
+
+    assert "Max flow 35 m3/h at 55 m head." in text
+    # `content` still contributes the grid once; the standalone cell fallback
+    # is not appended on top.
+    assert text.count("| Flow | Head |") == 1
 
 
 def test_point_in_bbox_tolerates_reversed_y_order():

@@ -30,7 +30,6 @@ from anchor.extensions.anchor_sysml.infra.parser_helpers import (
     skip_to_semi,
 )
 
-
 # ── Public API ───────────────────────────────────────────────────────────
 
 

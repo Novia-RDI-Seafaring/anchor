@@ -1,5 +1,10 @@
 /**
- * CanvasesPanel — peer of `Library.tsx` inside the LibraryDrawer.
+ * CanvasesPanel — workspace list + the canvas-link drag contract.
+ *
+ * The left files explorer (`FilesExplorer`) renders its own Canvases tab but
+ * reuses this module's `filterAttachable`, `CANVAS_LINK_MIME`, and
+ * `CanvasLinkPayload` so the drag-to-link contract lives in one place. The
+ * standalone panel below is kept for direct use / tests.
  *
  * Lists every workspace returned by `canvases.list()` so the user can drag
  * an *existing* canvas onto the current canvas and have it become a linked

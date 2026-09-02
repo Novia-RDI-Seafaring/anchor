@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -34,7 +35,7 @@ def test_install_writes_named_pointer_entry(_paths):
     assert result.exit_code == 0, result.output
     entry = _servers(_paths)["anchor-local"]
     assert entry["args"] == ["--env", "local"]
-    assert entry["command"].endswith("anchor-mcp")
+    assert Path(entry["command"]).stem == "anchor-mcp"
 
 
 def test_install_is_additive(_paths):
