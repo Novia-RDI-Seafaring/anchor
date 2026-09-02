@@ -21,15 +21,19 @@ def test_version_flag_matches_subcommand():
     assert flag.output.strip() == sub.output.strip() == version("anchor-kb")
 
 
-def test_canvas_url_prints_route(monkeypatch):
+def test_canvas_url_prints_route(monkeypatch, tmp_path):
+    # An isolated data dir keeps the serve-registry lookup (#177) from
+    # matching a live `anchor serve` on the developer's machine.
     monkeypatch.delenv("ANCHOR_HTTP_PORT", raising=False)
     monkeypatch.delenv("ANCHOR_HTTP_HOST", raising=False)
-    result = runner.invoke(app, ["canvas", "url", "pump-analysis"])
+    result = runner.invoke(
+        app, ["canvas", "url", "pump-analysis", "--data-dir", str(tmp_path)]
+    )
     assert result.exit_code == 0, result.output
     assert "http://127.0.0.1:8002/c/pump-analysis" in result.output
 
 
-def test_canvas_url_honors_configured_port(monkeypatch):
+def test_canvas_url_honors_configured_port(monkeypatch, tmp_path):
     monkeypatch.setenv("ANCHOR_HTTP_PORT", "9000")
-    result = runner.invoke(app, ["canvas", "url", "x"])
+    result = runner.invoke(app, ["canvas", "url", "x", "--data-dir", str(tmp_path)])
     assert "http://127.0.0.1:9000/c/x" in result.output
