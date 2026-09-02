@@ -62,7 +62,7 @@ PROVIDERS: tuple[Provider, ...] = (
         base_url_required=False,
         note="Gold extraction runs through your agent (Claude Code, Codex, ...) via "
         "ingest sessions; where the harness sends page content is governed by the "
-        "harness's own provider agreement. No key, no new egress paths.",
+        "harness's own provider agreement. Anchor creates no additional model endpoint.",
     ),
     Provider(
         key="ollama",

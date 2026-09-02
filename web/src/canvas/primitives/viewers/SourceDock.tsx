@@ -4,7 +4,6 @@ import { documents, type DocumentIndex } from "@/api/documents";
 import { useUiStore } from "@/stores/uiStore";
 
 import { PdfSourceView } from "./PdfSourceView";
-import { ReferencesPanel } from "./ReferencesPanel";
 
 /**
  * SourceDock — the left-docked split-screen source pane (#110a).
@@ -21,6 +20,7 @@ import { ReferencesPanel } from "./ReferencesPanel";
 export function SourceDock() {
   const viewer = useUiStore((s) => s.pdfViewer);
   const ratio = useUiStore((s) => s.sourceDockRatio);
+  const explorerWidth = useUiStore((s) => s.explorerWidth);
   const setRatio = useUiStore((s) => s.setSourceDockRatio);
   const setPage = useUiStore((s) => s.setPdfPage);
   const setMode = useUiStore((s) => s.setPdfViewerMode);
@@ -80,6 +80,22 @@ export function SourceDock() {
     };
   }, [dragging, onPointerMove, stopDrag]);
 
+  // Escape closes the dock — but let the floating "Make reference" menu (and an
+  // active text selection) consume the first Escape, so it takes two presses to
+  // go from "menu open" to "viewer closed" rather than closing everything at once.
+  useEffect(() => {
+    if (!isDock) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (document.querySelector('[data-testid="make-reference-action"]')) return;
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return;
+      close();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isDock, close]);
+
   if (!viewer || !slug || !isDock) return null;
 
   const total = index?.document?.page_count ?? 0;
@@ -88,16 +104,21 @@ export function SourceDock() {
   return (
     <div
       ref={containerRef}
-      className="flex h-full min-h-0 shrink-0 flex-col border-r border-neutral-300 bg-white"
-      style={{ width: `${ratio * 100}%` }}
+      className="flex h-full min-h-0 min-w-0 shrink-0 flex-col overflow-hidden border-r border-neutral-300 bg-white"
+      // Definite width = ratio of the viewport space right of the explorer.
+      // A `%` width here would resolve against the shrink-to-fit source cluster
+      // (indefinite), letting a long reference line shrink-wrap the dock past
+      // the whole window. min-w-0 + overflow-hidden keep content truncating
+      // instead of ballooning; the max cap guarantees the canvas stays reachable.
+      style={{
+        width: `calc(${ratio} * (100vw - ${explorerWidth}px))`,
+        minWidth: "16rem",
+        maxWidth: "70vw",
+      }}
       data-testid="source-dock"
     >
-      {/* References bibliography sits above the PDF source pane (#147 slice 3).
-          Both share the LEFT dock so the canvas's citations live next to the
-          source they point at. Rendered only when we know the canvas slug. */}
-      {viewer.workspaceSlug ? (
-        <ReferencesPanel canvasSlug={viewer.workspaceSlug} />
-      ) : null}
+      {/* References now live inside the viewer's left rail as a tab next to
+          Pages (see PdfSourceView), so a long citation can't stretch the dock. */}
       <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-2 py-1 text-xs text-neutral-600">
         <span className="font-medium uppercase tracking-wide">Source</span>
         <div className="flex items-center gap-1">
@@ -127,6 +148,7 @@ export function SourceDock() {
           total={total}
           highlightBbox={viewer.highlightBbox}
           highlightPage={viewer.highlightPage}
+          highlightNonce={viewer.nonce}
           title={docTitle}
           onPageChange={setPage}
           canvasSlug={viewer.workspaceSlug}

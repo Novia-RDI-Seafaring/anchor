@@ -1,7 +1,7 @@
 """HTTP request/response Pydantic schemas."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -41,6 +41,10 @@ class AddNodeRequest(BaseModel):
     width: float | None = None
     height: float | None = None
     parent: str | None = None
+    locked: bool | None = None
+    visible: bool | None = None
+    layer: Literal["background", "content", "annotation"] | None = None
+    opacity: float | None = None
     data: dict[str, Any] = {}
 
 
@@ -51,6 +55,10 @@ class UpdateNodeRequest(BaseModel):
     width: float | None = None
     height: float | None = None
     parent: str | None = None
+    locked: bool | None = None
+    visible: bool | None = None
+    layer: Literal["background", "content", "annotation"] | None = None
+    opacity: float | None = None
     data: dict[str, Any] | None = None
 
 

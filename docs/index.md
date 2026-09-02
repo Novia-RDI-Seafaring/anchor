@@ -41,7 +41,8 @@ Then open <http://127.0.0.1:8002> in your browser.
 For your own work, `cd` into a working folder and run `anchor init` to start a
 project there. To use a non-local data zone, run `anchor env create` first to
 pick the AI provider / data zone. See
-[Environments and projects](concepts/projects.md).
+[Choose a provider and enable gold](guides/provider-setup.md), then read
+[Environments and projects](concepts/projects.md) for the full model.
 
 Requires Python 3.12+. CI tests Linux and runs CLI smoke checks on macOS and
 Windows; verify browser and PDF workflows on your target platform.
@@ -55,6 +56,7 @@ Windows; verify browser and PDF workflows on your target platform.
 
 - **[Tutorial](getting-started/tutorial.md)** - first day, from install to "agent fills in my engineering specs"
 - **[Install](getting-started/installation.md)** - paths for end users and contributors, plus optional extras
+- **[Provider setup](guides/provider-setup.md)** - choose a data boundary, configure credentials, and recover silver-only documents
 - **[Usage](guides/documents-and-canvases.md)** - ingest documents, create canvases, and connect an agent
 - **[Projects](concepts/projects.md)** - a folder is a project; providers, data zones, and how every adapter finds it
 - **[Architecture](concepts/architecture.md)** - the hexagonal monolith, ports + adapters

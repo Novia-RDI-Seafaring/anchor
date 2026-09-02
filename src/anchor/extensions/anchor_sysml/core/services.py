@@ -25,8 +25,8 @@ from anchor.core.ports.event_bus import EventBus
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.extensions.anchor_sysml.core.events import (
     SysmlExported,
-    SysmlRenderFailed,
     SysmlRendered,
+    SysmlRenderFailed,
 )
 from anchor.extensions.anchor_sysml.core.ports import (
     CanvasMapper,

@@ -51,8 +51,9 @@ bump `SIB_GAP` for crowded ones.
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Iterable, Literal, Mapping
+from typing import Literal
 
 Orientation = Literal["vertical", "horizontal"]
 Direction = Literal["outgoing", "incoming", "any"]

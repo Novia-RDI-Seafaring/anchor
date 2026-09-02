@@ -13,8 +13,8 @@ transition / flow / calc) without an ANTLR runtime in the core deps.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from typing import Iterable, Iterator
 
 from anchor.extensions.anchor_sysml.infra.lexer_tables import (
     ANGLE_ID,

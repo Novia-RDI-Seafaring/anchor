@@ -1116,6 +1116,25 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
                 useUiStore.getState().setHoveredNodeId(null);
               },
               onEdgeClick: (_event, edge) => { setSelectedEdgeId(edge.id); },
+              // Double-click an anchored evidence edge to open its source region
+              // in the viewer. The doc slug comes from the ref, else the target
+              // document node (mirrors onEdgeMouseEnter's resolution).
+              onEdgeDoubleClick: (_event, edge) => {
+                const ref = (edge.data as
+                  | { source_ref?: { slug?: string; page?: number; region_id?: string; bbox?: number[] } }
+                  | undefined)?.source_ref;
+                if (!ref?.page) return;
+                const tgt = useCanvasStore.getState().nodes[edge.target];
+                const docSlug = ref.slug ?? (tgt?.data as { slug?: string } | undefined)?.slug;
+                if (!docSlug) return;
+                openPdf(docSlug, {
+                  page: ref.page,
+                  mode: "dock",
+                  workspaceSlug: slug,
+                  highlightRegionId: ref.region_id,
+                  highlightBbox: ref.bbox,
+                });
+              },
               onEdgeContextMenu: (event, edge) => {
                 event.preventDefault();
                 setSelectedEdgeId(edge.id);

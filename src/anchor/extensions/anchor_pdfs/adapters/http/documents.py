@@ -9,6 +9,10 @@ from pydantic import BaseModel
 
 from anchor.adapters.http.deps import get_doc_store, get_ingest_service
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
+from anchor.extensions.anchor_pdfs.core.region_inspect import (
+    get_region_content,
+    inspect_region,
+)
 from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -48,6 +52,27 @@ async def get_index(slug: str, store: DocStore = Depends(get_doc_store)):
 @router.get("/{slug}/regions")
 async def get_regions(slug: str, page: int | None = None, store: DocStore = Depends(get_doc_store)):
     return await store.get_regions(slug, page=page)
+
+
+@router.get("/{slug}/regions/{region_id:path}")
+async def inspect_region_route(
+    slug: str, region_id: str, store: DocStore = Depends(get_doc_store)
+):
+    # region_id may be a token like "p2/r4" (hence :path) or a bare "r4".
+    out = await inspect_region(store, slug, region_id)
+    if out is None:
+        raise HTTPException(404)
+    return out
+
+
+@router.get("/{slug}/region-content/{region_id:path}")
+async def region_content_route(
+    slug: str, region_id: str, store: DocStore = Depends(get_doc_store)
+):
+    out = await get_region_content(store, slug, region_id)
+    if out is None:
+        raise HTTPException(404)
+    return out
 
 
 @router.get("/{slug}/gold-map")

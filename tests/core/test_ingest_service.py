@@ -114,6 +114,60 @@ def test_search_reports_skipped_docs_with_incompatible_embed_model():
     asyncio.run(run())
 
 
+def test_keyed_ingest_persists_region_content_and_embeds_it():
+    async def run():
+        docling = {
+            "items": [
+                {
+                    "label": "table",
+                    "text": "",
+                    "page": 1,
+                    "bbox": [0, 100, 200, 20],
+                    "cells": [
+                        {"row": 0, "col": 0, "text": "Field"},
+                        {"row": 0, "col": 1, "text": "Value"},
+                        {"row": 1, "col": 0, "text": "limit"},
+                        {"row": 1, "col": 1, "text": "10"},
+                    ],
+                },
+            ],
+        }
+        store = MemoryDocStore()
+        ingest = IngestService(
+            store,
+            MemoryEventBus(),
+            extractor=FakePdfExtractor(docling=docling),
+            renderer=FakePdfRenderer(page_count=1),
+            polisher=FakePolisher(),
+            region_extractor=FakeRegionExtractor(
+                regions_per_page=[
+                    {
+                        "id": "r1",
+                        "kind": "table",
+                        "title": "Limits",
+                        "description": "",
+                        "bbox": [0, 105, 205, 15],
+                        "tags": [],
+                        "entities": [],
+                    },
+                ]
+            ),
+            embedder=StaticEmbedder(),
+        )
+
+        await ingest.ingest_pdf(b"%PDF-fake", "sample.pdf")
+
+        gold = await store.get_gold_map("sample")
+        assert gold is not None
+        region = gold["pages"][1][0]
+        assert "| Field | Value |" in region["content"]
+        embeddings = await store.get_embeddings("sample")
+        assert embeddings is not None
+        assert "| limit | 10 |" in embeddings["vectors"][0]["text"]
+
+    asyncio.run(run())
+
+
 def test_ingest_is_idempotent_unless_forced():
     async def run():
         s = make_in_memory_services(page_count=1)
@@ -189,11 +243,12 @@ def test_ingest_uses_service_level_pipeline_defaults():
 def test_ingest_promotes_approximate_bbox_before_storing_gold_regions():
     async def run():
         s = make_in_memory_services(page_count=1)
+        # Top-left PDF points (#281): y grows downward.
         s.extractor.docling = {
             "items": [
-                {"label": "title", "text": "Demo Doc", "page": 1, "bbox": [0, 720, 200, 700]},
-                {"label": "section_header", "text": "Section A", "page": 1, "bbox": [0, 620, 100, 600]},
-                {"label": "text", "text": "First paragraph.", "page": 1, "bbox": [0, 595, 200, 580]},
+                {"label": "title", "text": "Demo Doc", "page": 1, "bbox": [0, 72, 200, 92]},
+                {"label": "section_header", "text": "Section A", "page": 1, "bbox": [0, 172, 100, 192]},
+                {"label": "text", "text": "First paragraph.", "page": 1, "bbox": [0, 197, 200, 212]},
             ],
         }
 
@@ -204,7 +259,7 @@ def test_ingest_promotes_approximate_bbox_before_storing_gold_regions():
                     "kind": "text",
                     "title": "approx region",
                     "description": "x",
-                    "approximate_bbox": [0, 720, 210, 570],
+                    "approximate_bbox": [0, 60, 210, 230],
                 },
             ]
 
@@ -214,8 +269,9 @@ def test_ingest_promotes_approximate_bbox_before_storing_gold_regions():
 
         regions = await s.doc_store.get_regions("approx")
         region = regions["pages"][1][0]
-        assert region["approximate_bbox"] == [0, 720, 210, 570]
-        assert region["bbox"] == [0, 720, 200, 580]
+        assert region["approximate_bbox"] == [0, 60, 210, 230]
+        # Snapped to the union of the three absorbed items.
+        assert region["bbox"] == [0, 72, 200, 212]
 
     asyncio.run(run())
 

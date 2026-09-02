@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import tomllib
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -34,14 +35,14 @@ def test_install_writes_named_pointer_entry(_paths):
     assert result.exit_code == 0, result.output
     entry = _servers(_paths)["anchor-local"]
     assert entry["args"] == ["--env", "local"]
-    assert entry["command"].endswith("anchor-mcp")
+    assert Path(entry["command"]).stem == "anchor-mcp"
 
 
 def test_config_is_valid_toml_and_reparses(_paths):
     create_env("local")
     runner.invoke(app, ["install", "codex", "--env", "local", "--name", "anchor", "--yes"])
     data = tomllib.loads(_paths.read_text())
-    assert data["mcp_servers"]["anchor"]["command"].endswith("anchor-mcp")
+    assert Path(data["mcp_servers"]["anchor"]["command"]).stem == "anchor-mcp"
     assert data["mcp_servers"]["anchor"]["args"] == ["--env", "local"]
 
 
@@ -65,6 +66,33 @@ def test_install_preserves_unrelated_content(_paths):
     assert data["mcp_servers"]["other"]["args"] == ["--foo"]
     # New entry added.
     assert data["mcp_servers"]["anchor-local"]["args"] == ["--env", "local"]
+
+
+def test_install_preserves_nested_config_tables(_paths):
+    _paths.parent.mkdir(parents=True, exist_ok=True)
+    _paths.write_text(
+        """\
+[mcp_servers.other]
+command = "other-mcp"
+args = ["--stdio"]
+
+[mcp_servers.other.env]
+NPM_CONFIG_CACHE = "C:\\\\cache"
+
+[projects."C:\\\\work\\\\pump-kb"]
+trust_level = "trusted"
+""",
+        encoding="utf-8",
+    )
+    create_env("home")
+
+    result = runner.invoke(app, ["install", "codex", "--env", "home", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    data = tomllib.loads(_paths.read_text(encoding="utf-8"))
+    assert data["mcp_servers"]["other"]["env"]["NPM_CONFIG_CACHE"] == "C:\\cache"
+    assert data["projects"]["C:\\work\\pump-kb"]["trust_level"] == "trusted"
+    assert data["mcp_servers"]["anchor-home"]["args"] == ["--env", "home"]
 
 
 def test_backup_written_before_overwrite(_paths):

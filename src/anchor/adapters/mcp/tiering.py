@@ -46,6 +46,7 @@ CORE_LIFECYCLE_NAMES: set[str] = {
 
 CORE_STATUS_NAMES: set[str] = {
     "anchor_status",
+    "anchor_extension_status",
     "server_info",
 }
 
@@ -55,6 +56,9 @@ CORE_PDF_NAMES: set[str] = {
     "list_documents",
     "get_document_index",
     "get_gold_regions",
+    # search -> inspect -> answer (#242 P1): read one hit without paging.
+    "inspect_region",
+    "get_region_content",
     "get_page_text",
     "locate_text",
     "get_crop",
