@@ -9,6 +9,67 @@ next version section on tag.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-08
+
+Everything since v0.2.5: the v0.2.6–v0.2.8 tags shipped without rolling
+the changelog, so their contents are part of this section.
+
+### Added
+
+- Gold region crops are rendered lazily on first read at the canonical
+  `gold/<slug>/pages/<page>/<region_id>.png` path (300 dpi default, `--dpi`
+  up to 600), fixing every already-ingested document retroactively — the
+  crop contract the skill and the OIP `consumes` handoff promised but the
+  pipeline never wrote. `anchor page-image` (and its HTTP/MCP peers) gained
+  a `dpi` option that renders from the bronze PDF and caches the variant.
+  Parity across `anchor crop` / MCP `get_crop` / HTTP `/crops/{rel_path}`,
+  with tolerant region addressing (`4/r1.png`, `p4/r1`, bare `r1`) and
+  errors that say whether the region exists and where. (#310)
+- `source_ref` can point below the region (#242 P2): optional `item_id`
+  (one silver item, `p<page>-i<n>`) and `cell` (`{row, col}`) selectors,
+  resolved by the new `resolve_source_ref` with precedence
+  cell > item > region > bbox and a `precision` field naming the layer
+  that answered. Legacy refs resolve byte-identically. MCP
+  `resolve_source_ref`, HTTP `GET /api/documents/{slug}/resolve-ref`,
+  CLI `anchor resolve-ref`. (#311)
+- `inspect_region` / `get_region_content` return a region's stored
+  provenance: `derived_from`, the stored (parent) `source_ref`, the
+  producer payload as `data`, and — on inspect — `members`, the silver
+  items behind `member_item_ids` with their bboxes. `derive_region`
+  synthesizes the parent's ref when the parent stores none, and mints
+  provenance for ordinary gold parents. (#301)
+- Gold coverage invariant (#242 P1): every meaningful silver item belongs
+  to at least one searchable gold chunk, with an embedding fallback that
+  renders reconstructed cell content when a region has no model
+  description (fixes caption-less tables being invisible to search,
+  #231). Region read-ops `inspect_region` / `get_region_content` landed
+  on all three adapters, plus the checked operation-descriptor parity
+  table. (#280)
+- Preview-style document viewer and left files explorer redesign (#220):
+  Files / Canvases / References tabs, drag-to-canvas, continuous PDF
+  viewing. (#268)
+
+### Changed
+
+- Bounding boxes are standardized on top-left-origin PDF points across
+  silver, gold, and canvas refs, with an automatic migration for stored
+  bottom-left data (`anchor migrate bbox-origin`; a running serve
+  migrates on start). (#281, #282)
+- Extension services are wired through a shared project-runtime module so
+  MCP, HTTP, and CLI construct identical per-project bundles. (#270)
+
+### Fixed
+
+- Three MCP/HTTP adapter parity breaks: `GET /api/fmu/simulations` was
+  shadowed by the `/{slug}` route and unreachable; `sysml.render` /
+  `sysml.export` legacy aliases never routed; the `sysml` capability
+  could never activate (it now activates when a canvas holds `sysml:*`
+  nodes). Also contained the FMU store's `get_model` / `get_series` read
+  paths against traversal ids. (#300)
+- MCP Python SDK pinned to v1-compatible imports and the fitz "Loading
+  weights" progress noise kept off stdout, so CLI JSON output and MCP
+  stdio framing stay clean. (#259, #261)
+
 ### Added
 
 - Canvas References panel, docked on the LEFT with the PDF source pane (slice 3
