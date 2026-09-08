@@ -32,6 +32,33 @@ async def list_models(service: FmuService = Depends(get_fmu_service)) -> JSONRes
     return JSONResponse([m.model_dump() for m in models])
 
 
+# The /simulations routes must be registered before /{slug}: FastAPI matches
+# in registration order, so a later fixed path is shadowed by the catch-all
+# (GET /api/fmu/simulations used to resolve as slug="simulations" and 404).
+
+
+@router.get("/simulations")
+async def list_simulations(
+    fmu_slug: str | None = None,
+    service: FmuService = Depends(get_fmu_service),
+) -> JSONResponse:
+    """List simulation runs, optionally filtered to one FMU."""
+    runs = await service.list_simulations(fmu_slug)
+    return JSONResponse([r.model_dump() for r in runs])
+
+
+@router.get("/simulations/{simulation_id}/results")
+async def get_results(
+    simulation_id: str,
+    service: FmuService = Depends(get_fmu_service),
+) -> JSONResponse:
+    """Return the time series for a completed simulation."""
+    series = await service.get_series(simulation_id)
+    if series is None:
+        raise HTTPException(404, f"unknown simulation: {simulation_id}")
+    return JSONResponse(series.model_dump())
+
+
 @router.get("/{slug}")
 async def get_model(slug: str, service: FmuService = Depends(get_fmu_service)) -> JSONResponse:
     """Return one FMU's model description by slug."""
@@ -89,23 +116,3 @@ async def simulate(
     return JSONResponse(run.model_dump())
 
 
-@router.get("/simulations/{simulation_id}/results")
-async def get_results(
-    simulation_id: str,
-    service: FmuService = Depends(get_fmu_service),
-) -> JSONResponse:
-    """Return the time series for a completed simulation."""
-    series = await service.get_series(simulation_id)
-    if series is None:
-        raise HTTPException(404, f"unknown simulation: {simulation_id}")
-    return JSONResponse(series.model_dump())
-
-
-@router.get("/simulations")
-async def list_simulations(
-    fmu_slug: str | None = None,
-    service: FmuService = Depends(get_fmu_service),
-) -> JSONResponse:
-    """List simulation runs, optionally filtered to one FMU."""
-    runs = await service.list_simulations(fmu_slug)
-    return JSONResponse([r.model_dump() for r in runs])

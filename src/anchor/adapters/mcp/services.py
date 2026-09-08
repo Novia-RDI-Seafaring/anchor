@@ -23,7 +23,11 @@ def fmu_tools_available() -> bool:
 
 
 async def active_extensions_for_bundle(bundle: ProjectRuntime) -> set[str]:
-    """Return data-bearing extension capabilities active in one project."""
+    """Return data-bearing extension capabilities active in one project.
+
+    FMU and CAD count uploaded models; SysML has no model store, so its
+    per-project data is ``sysml:*`` nodes on canvases.
+    """
     active: set[str] = set()
     if bundle.fmu is not None:
         try:
@@ -37,7 +41,24 @@ async def active_extensions_for_bundle(bundle: ProjectRuntime) -> set[str]:
                 active.add("cad")
         except Exception:  # noqa: BLE001 - discovery must not break list_tools
             pass
+    if bundle.sysml is not None:
+        try:
+            if await _project_has_sysml_nodes(bundle):
+                active.add("sysml")
+        except Exception:  # noqa: BLE001 - discovery must not break list_tools
+            pass
     return active
+
+
+async def _project_has_sysml_nodes(bundle: ProjectRuntime) -> bool:
+    for meta in await bundle.workspace.list_workspaces():
+        state = await bundle.workspace.get_state(meta["slug"])
+        if any(
+            str(node.get("node_type", "")).startswith("sysml:")
+            for node in state.get("nodes", [])
+        ):
+            return True
+    return False
 
 
 def _warn_fmu_disabled(exc: Exception) -> None:
