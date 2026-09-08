@@ -115,3 +115,83 @@ def test_crop_route_degenerate_bbox_is_4xx_not_500(tmp_path):
         "/api/documents/demo/pages/1/crop?bbox=100,100,100,400&dpi=300"
     )
     assert 400 <= response.status_code < 500, response.text
+
+
+def _build_fake_renderer_app_with_gold(tmp_path):
+    """App over FsDocStore + FakePdfRenderer with one gold region seeded."""
+    import asyncio
+
+    store = FsDocStore(tmp_path)
+    (store.bronze / "demo.pdf").write_bytes(b"%PDF-fake")
+    silver_dir = store.silver / "demo"
+    (silver_dir / "pages").mkdir(parents=True)
+    (silver_dir / "index.json").write_text(
+        json.dumps({
+            "document": {"filename": "demo.pdf", "title": "Demo", "page_count": 1},
+            "outline": [],
+        }),
+        encoding="utf-8",
+    )
+    (silver_dir / "pages" / "1.png").write_bytes(b"silver-150dpi-png")
+    asyncio.run(store.write_gold_region_file("demo", 1, [
+        {"id": "r1", "kind": "chart", "title": "Pump curve", "page": 1,
+         "bbox": [10.0, 195.0, 200.0, 215.0], "tags": [], "entities": []},
+    ]))
+
+    bus = MemoryEventBus()
+    workspace = WorkspaceService(MemoryWorkspaceStore(), bus)
+    renderer = FakePdfRenderer()
+    ingest = IngestService(
+        store,
+        bus,
+        extractor=FakePdfExtractor(),
+        renderer=renderer,
+        polisher=FakePolisher(),
+        region_extractor=FakeRegionExtractor(),
+    )
+    app = build_app(
+        workspace_service=workspace,
+        ingest_service=ingest,
+        doc_store=store,
+        bus=bus,
+    )
+    return app, store, renderer
+
+
+def test_crops_route_generates_missing_crop_lazily(tmp_path):
+    app, store, renderer = _build_fake_renderer_app_with_gold(tmp_path)
+    response = TestClient(app).get("/api/documents/demo/crops/1/r1.png")
+    assert response.status_code == 200, response.text
+    assert response.content.startswith(b"CROP-1-")
+    # Persisted at the canonical path so the next read is served from disk.
+    assert (store.gold / "demo" / "pages" / "1" / "r1.png").exists()
+    assert renderer.crop_calls[-1]["dpi"] == 300
+
+
+def test_crops_route_dpi_param_rerenders(tmp_path):
+    app, _store, renderer = _build_fake_renderer_app_with_gold(tmp_path)
+    response = TestClient(app).get("/api/documents/demo/crops/1/r1.png?dpi=600")
+    assert response.status_code == 200, response.text
+    assert renderer.crop_calls[-1]["dpi"] == 600
+
+
+def test_crops_route_unknown_region_is_404_with_guidance(tmp_path):
+    app, _store, _renderer = _build_fake_renderer_app_with_gold(tmp_path)
+    response = TestClient(app).get("/api/documents/demo/crops/1/r9.png")
+    assert response.status_code == 404
+    assert "r9" in response.json()["detail"]
+    assert "<page>/<region_id>.png" in response.json()["detail"]
+
+
+def test_page_image_route_dpi_param_renders_variant(tmp_path):
+    app, store, renderer = _build_fake_renderer_app_with_gold(tmp_path)
+    # Without dpi: the stored silver image, untouched.
+    default = TestClient(app).get("/api/documents/demo/pages/1/image")
+    assert default.status_code == 200
+    assert default.content == b"silver-150dpi-png"
+    # With dpi: rendered from bronze and cached as a variant.
+    hi = TestClient(app).get("/api/documents/demo/pages/1/image?dpi=600")
+    assert hi.status_code == 200
+    assert hi.content.startswith(b"CROP-1-")
+    assert renderer.crop_calls[-1]["dpi"] == 600
+    assert (store.silver / "demo" / "pages" / "1@600dpi.png").exists()

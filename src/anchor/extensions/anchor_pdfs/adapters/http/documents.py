@@ -1,6 +1,7 @@
 """Documents — shared substrate, not per-workspace."""
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -9,6 +10,11 @@ from pydantic import BaseModel
 
 from anchor.adapters.http.deps import get_doc_store, get_ingest_service
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
+from anchor.extensions.anchor_pdfs.core.region_crops import (
+    CropUnavailable,
+    get_page_image,
+    get_region_crop,
+)
 from anchor.extensions.anchor_pdfs.core.region_inspect import (
     get_region_content,
     inspect_region,
@@ -124,9 +130,22 @@ async def page_text(slug: str, page: int, store: DocStore = Depends(get_doc_stor
 
 
 @router.get("/{slug}/pages/{page}/image")
-async def page_image(slug: str, page: int, store: DocStore = Depends(get_doc_store)):
-    p = await store.get_page_image_path(slug, page)
-    if p is None:
+async def page_image(
+    slug: str,
+    page: int,
+    dpi: int | None = Query(
+        None,
+        description="Re-render the page from the bronze PDF at this DPI "
+        "(clamped to 72-600) instead of the ~150 dpi silver image.",
+    ),
+    store: DocStore = Depends(get_doc_store),
+    ingest: IngestService = Depends(get_ingest_service),
+):
+    try:
+        p = await get_page_image(store, ingest.renderer, slug, page, dpi=dpi)
+    except CropUnavailable as e:
+        raise HTTPException(404, str(e)) from e
+    if p is None or str(p).startswith("memory://"):
         raise HTTPException(404)
     return FileResponse(p, media_type="image/png")
 
@@ -207,11 +226,37 @@ async def locate_text(
 
 
 @router.get("/{slug}/crops/{rel_path:path}")
-async def crop(slug: str, rel_path: str, store: DocStore = Depends(get_doc_store)):
-    p = await store.get_crop_path(slug, rel_path)
-    if p is None:
-        raise HTTPException(404)
-    return FileResponse(p)
+async def crop(
+    slug: str,
+    rel_path: str,
+    dpi: int | None = Query(
+        None,
+        description="Render DPI (clamped to 72-600, default 300). An explicit "
+        "value re-renders and overwrites the cached crop.",
+    ),
+    store: DocStore = Depends(get_doc_store),
+    ingest: IngestService = Depends(get_ingest_service),
+):
+    """One gold region's crop, rendered lazily from the bronze PDF on first
+    request and cached at gold/<slug>/pages/<page>/<region_id>.png."""
+    try:
+        p = await get_region_crop(store, ingest.renderer, slug, rel_path, dpi=dpi)
+    except CropUnavailable as e:
+        raise HTTPException(404, str(e)) from e
+    if str(p).startswith("memory://"):
+        raise HTTPException(501, "in-memory store cannot serve crops over HTTP")
+    # Inline normalise-then-prefix-check at the response sink: the path the
+    # store hands back derives from request input, and the barrier must sit
+    # in the function that serves it (the store port has non-fs impls). The
+    # store's own gold root is server-constructed, hence trusted.
+    gold_root = getattr(store, "gold", None)
+    if gold_root is None:
+        raise HTTPException(501, "this store cannot serve crops over HTTP")
+    base = os.path.realpath(os.fspath(gold_root))
+    candidate = os.path.normpath(os.fspath(p))
+    if not candidate.startswith(base + os.sep):
+        raise HTTPException(404, "crop path escapes the document store")
+    return FileResponse(candidate)
 
 
 @router.get("/{slug}/pdf")

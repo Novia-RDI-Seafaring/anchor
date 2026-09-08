@@ -73,9 +73,14 @@ the producer itself.
 ## The flow (agent-driven)
 
 1. Ingest the datasheet in ANCHOR. The PDF producer extracts regions; a chart
-   region has `kind: chart` and a `png` crop.
-2. Read the crop. `anchor get_crop` (or `get_page_image`) returns the image
-   path. Inspect it.
+   region has `kind: chart`, and its crop is addressable as
+   `<page>/<region_id>.png`.
+2. Read the crop. `anchor crop <slug> <page>/<region_id>.png` (MCP `get_crop`,
+   HTTP `/api/documents/<slug>/crops/<page>/<region_id>.png`) renders it
+   lazily from the bronze PDF on first request and returns the image path.
+   The default 300 dpi is usually enough; for a thin curve pass `--dpi 600`
+   (MCP `dpi` arg, HTTP `?dpi=600`) to re-render sharper. `anchor page-image`
+   takes the same `--dpi` when you want the whole page.
 3. Place calibration and seeds. Read two tick values per axis and their pixel
    positions; drop a few waypoints along each line. All in pixels.
 4. Trace. Call `graphtracer.trace_series(image_path, request)`. It returns
@@ -106,6 +111,11 @@ Built and verified:
 - Contract: OIP 0.3 `consumes` / `derived_from` / `chart` token (RFC 0001).
 - Consumer: discovery + skill composition (no per-producer code), and the
   `chart` render token (`ChartPrimitive`) with source provenance.
+- Region crops on demand: gold ships no pre-rendered crops; the first read of
+  `gold/<slug>/pages/<page>/<region_id>.png` renders it from the bronze PDF
+  (bbox + 3 pt margin, 300 dpi default, `dpi` up to 600) and caches it.
+  Reachable on all three adapters (CLI `anchor crop`, MCP `get_crop`, HTTP
+  `GET /api/documents/{slug}/crops/{page}/{region_id}.png`).
 - Durable persistence: `derive_region` stores the `chart_series` beside the
   chart region it came from, inheriting the parent's `source_ref` and
   recording `derived_from`. Reachable on all three adapters (MCP

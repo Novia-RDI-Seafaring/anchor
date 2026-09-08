@@ -340,7 +340,14 @@ class FsDocStore:
         os.replace(tmp, target)
 
     async def get_index(self, slug: str) -> dict[str, Any] | None:
-        p = self.silver / slug / "index.json"
+        # The slug arrives from HTTP/MCP/CLI arguments. Inline
+        # normalise-then-prefix-check (not delegated) so the containment
+        # barrier sits in the same function that builds the path.
+        base = os.path.realpath(os.fspath(self.silver))
+        candidate = os.path.normpath(os.path.join(base, slug, "index.json"))
+        if not candidate.startswith(base + os.sep):
+            return None
+        p = Path(candidate)
         return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
     async def get_pages_meta(self, slug: str) -> dict[str, Any] | None:
@@ -355,8 +362,11 @@ class FsDocStore:
                 return p.read_text(encoding="utf-8")
         return None
 
-    async def get_page_image_path(self, slug: str, page: int) -> Path | None:
-        p = self._doc_dir(self.silver, slug) / "pages" / f"{int(page)}.png"
+    async def get_page_image_path(
+        self, slug: str, page: int, dpi: int | None = None
+    ) -> Path | None:
+        name = f"{int(page)}.png" if dpi is None else f"{int(page)}@{int(dpi)}dpi.png"
+        p = self._doc_dir(self.silver, slug) / "pages" / name
         return p if p.exists() else None
 
     async def get_page_candidates(self, slug: str, page: int) -> list[dict[str, Any]] | None:
@@ -407,14 +417,41 @@ class FsDocStore:
         # directory. The previous implementation used an ad-hoc
         # ``re.sub(r"\.\.+", ".", ...)`` replacement which fails closed for
         # ``..`` but does nothing about backslashes, absolute paths, or
-        # symlink escapes. Resolve the candidate and verify containment.
-        base = self.gold / slug / "pages"
-        candidate = (base / rel_path)
-        try:
-            resolved = assert_within(candidate, base)
-        except UnsafeUploadError:
+        # symlink escapes. Inline normalise-then-prefix-check (not delegated,
+        # trusted root only in the realpath base) so the containment barrier
+        # sits in the same function that builds the path.
+        if not slug or "/" in slug or "\\" in slug or slug in {".", ".."}:
             return None
+        base = os.path.realpath(os.fspath(self.gold))
+        doc_base = os.path.normpath(os.path.join(base, slug, "pages"))
+        candidate = os.path.normpath(os.path.join(base, slug, "pages", rel_path))
+        if not candidate.startswith(base + os.sep):
+            return None
+        # Second prefix: rel_path must not cross into a sibling document.
+        if not candidate.startswith(doc_base + os.sep):
+            return None
+        resolved = Path(candidate)
         return resolved if resolved.exists() else None
+
+    async def write_crop(self, slug: str, rel_path: str, data: bytes) -> Path:
+        # Both components arrive from CLI/MCP/HTTP arguments, so the write
+        # path is a path-injection sink. Inline normalise-then-prefix-check
+        # (not delegated) so the containment barrier sits in the same function
+        # that builds the path - the same guard `_doc_dir` applies on reads.
+        if not slug or "/" in slug or "\\" in slug or slug in {".", ".."}:
+            raise UnsafeUploadError(f"unsafe document slug: {slug!r}")
+        base = os.path.realpath(os.fspath(self.gold))
+        doc_base = os.path.normpath(os.path.join(base, slug, "pages"))
+        candidate = os.path.normpath(os.path.join(base, slug, "pages", rel_path))
+        if not candidate.startswith(base + os.sep):
+            raise UnsafeUploadError(f"crop rel_path {rel_path!r} escapes the gold dir")
+        if not candidate.startswith(doc_base + os.sep):
+            raise UnsafeUploadError(f"crop rel_path {rel_path!r} escapes the gold pages dir")
+        target = Path(candidate)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        async with aiofiles.open(target, "wb") as f:
+            await f.write(data)
+        return target
 
     async def get_raw_pdf_path(self, slug: str) -> Path | None:
         # bronze/ uses the original filename, not the slug — recover from
@@ -443,7 +480,17 @@ class FsDocStore:
             return target
 
     async def write_silver_artifact(self, slug: str, name: str, payload: bytes | str) -> Path:
-        target = self.silver / slug / name
+        # Callers pass pipeline-internal names, but the slug can arrive from
+        # HTTP/MCP/CLI arguments (e.g. the DPI page-image variants). Inline
+        # normalise-then-prefix-check (not delegated) so the containment
+        # barrier sits in the same function that builds the path.
+        base = os.path.realpath(os.fspath(self.silver))
+        candidate = os.path.normpath(os.path.join(base, slug, name))
+        if not candidate.startswith(base + os.sep):
+            raise UnsafeUploadError(
+                f"silver artifact path escapes the silver dir: {slug!r}/{name!r}"
+            )
+        target = Path(candidate)
         target.parent.mkdir(parents=True, exist_ok=True)
         if isinstance(payload, str):
             async with aiofiles.open(target, "w", encoding="utf-8") as f:

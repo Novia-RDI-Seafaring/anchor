@@ -156,7 +156,8 @@ Storage is structural (no `data_dir` key). The default environment is in
 
 - `bronze/` — raw PDFs
 - `silver/<slug>/` — per-page markdown + page PNGs
-- `gold/<slug>/` — structured regions with crops
+- `gold/<slug>/` — structured regions with crops (crop PNGs render lazily on
+  first `get_crop` / `anchor crop`, addressed `<page>/<region_id>.png`)
 - `canvases/<slug>/` — per-canvas durable state + events log
 
 ## Extensions

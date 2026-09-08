@@ -528,6 +528,12 @@ def page_image(
         show_default=False,
     ),
     page: int | None = typer.Option(None, "--page", "-p", help="Page number (option form)."),
+    dpi: int | None = typer.Option(
+        None,
+        "--dpi",
+        help="Re-render the page from the bronze PDF at this DPI (72-600) "
+        "instead of serving the ~150 dpi silver image. The variant is cached.",
+    ),
     copy_to: Path | None = typer.Option(None, "--copy-to"),
     out: str | None = typer.Option(None, "--out", help="Pass '-' to stream the bytes to stdout."),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
@@ -538,6 +544,11 @@ def page_image(
     Both forms are equivalent: ``anchor page-image SLUG PAGE`` and
     ``anchor page-image SLUG --page PAGE`` do the same thing.
     """
+    from anchor.extensions.anchor_pdfs.core.region_crops import (
+        CropUnavailable,
+        get_page_image,
+    )
+
     if page_pos is not None and page is not None:
         typer.echo("error: supply page as a positional argument or --page, not both", err=True)
         raise typer.Exit(code=2)
@@ -545,21 +556,52 @@ def page_image(
     if effective_page is None:
         typer.echo("error: page is required (positional or --page/-p)", err=True)
         raise typer.Exit(code=2)
-    _, _, _, _, doc_store = _build_real_services(data_dir)
-    path = asyncio.run(doc_store.get_page_image_path(slug, effective_page))
+    _, _, _, ingest_svc, doc_store = _build_real_services(data_dir)
+    try:
+        path = asyncio.run(
+            get_page_image(doc_store, ingest_svc.renderer, slug, effective_page, dpi=dpi)
+        )
+    except CropUnavailable as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from None
     _emit_bytes(path, copy_to=copy_to, out=out, label=f"{slug} page {effective_page}")
 
 
 def crop(
     slug: str,
-    rel_path: str,
+    rel_path: str = typer.Argument(
+        ..., help="Region address '<page>/<region_id>.png', e.g. '4/r1.png' "
+        "('p4/r1' is also accepted).",
+    ),
+    dpi: int | None = typer.Option(
+        None,
+        "--dpi",
+        help="Render DPI (72-600, default 300). An explicit value re-renders "
+        "and overwrites the cached crop.",
+    ),
     copy_to: Path | None = typer.Option(None, "--copy-to"),
     out: str | None = typer.Option(None, "--out"),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
-    """Gold-extracted region crop (e.g. '4/r1.png') by its rel_path."""
-    _, _, _, _, doc_store = _build_real_services(data_dir)
-    path = asyncio.run(doc_store.get_crop_path(slug, rel_path))
+    """One gold region's crop PNG, e.g. 'anchor crop my-doc 4/r1.png'.
+
+    Rendered lazily from the bronze PDF on first request (region bbox plus a
+    small margin, 300 dpi) and cached at gold/<slug>/pages/<page>/<id>.png,
+    so already-ingested documents work without re-ingesting.
+    """
+    from anchor.extensions.anchor_pdfs.core.region_crops import (
+        CropUnavailable,
+        get_region_crop,
+    )
+
+    _, _, _, ingest_svc, doc_store = _build_real_services(data_dir)
+    try:
+        path = asyncio.run(
+            get_region_crop(doc_store, ingest_svc.renderer, slug, rel_path, dpi=dpi)
+        )
+    except CropUnavailable as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from None
     _emit_bytes(path, copy_to=copy_to, out=out, label=f"{slug} crop {rel_path}")
 
 

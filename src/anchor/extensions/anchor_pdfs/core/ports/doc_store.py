@@ -45,7 +45,12 @@ class DocStore(Protocol):
     async def get_page_text(self, slug: str, page: int) -> str | None:
         raise NotImplementedError
 
-    async def get_page_image_path(self, slug: str, page: int) -> Path | None:
+    async def get_page_image_path(
+        self, slug: str, page: int, dpi: int | None = None
+    ) -> Path | None:
+        """The stored page PNG. ``dpi=None`` is the silver default (~150 dpi);
+        an explicit ``dpi`` addresses the cached re-render variant written by
+        ``region_crops.get_page_image`` (None when not cached yet)."""
         raise NotImplementedError
 
     async def get_regions(self, slug: str, page: int | None = None) -> dict[str, Any]:
@@ -86,6 +91,16 @@ class DocStore(Protocol):
         raise NotImplementedError
 
     async def get_crop_path(self, slug: str, rel_path: str) -> Path | None:
+        raise NotImplementedError
+
+    async def write_crop(self, slug: str, rel_path: str, data: bytes) -> Path:
+        """Persist one region crop at ``gold/<slug>/pages/<rel_path>``.
+
+        The write half of the lazy crop contract: ``region_crops.
+        get_region_crop`` renders a missing crop from the bronze PDF and
+        stores it here so the next read is served from disk. ``rel_path`` is
+        the canonical ``<page>/<region_id>.png`` and must stay inside the
+        document's gold pages directory."""
         raise NotImplementedError
 
     async def get_raw_pdf_path(self, slug: str) -> Path | None:
