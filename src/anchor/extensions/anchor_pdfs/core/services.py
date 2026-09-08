@@ -481,10 +481,12 @@ class IngestService:
         """
         regions = await self.store.get_regions(slug)
         parent: dict[str, Any] | None = None
+        parent_page: int | None = None
         for _page, regs in (regions.get("pages") or {}).items():
             for r in regs:
                 if isinstance(r, dict) and r.get("id") == parent_region_id:
                     parent = r
+                    parent_page = int(_page)
                     break
             if parent is not None:
                 break
@@ -496,8 +498,19 @@ class IngestService:
         derived = dict(region)
         derived["derived_from"] = parent_region_id
         # Inherit the parent's provenance unless the producer set its own.
-        if not derived.get("source_ref") and parent.get("source_ref"):
-            derived["source_ref"] = parent["source_ref"]
+        # Ordinary gold regions store no source_ref, so synthesize the
+        # parent's — otherwise the docstring's promise (provenance points at
+        # the same page and bbox) silently fails for the common case.
+        if not derived.get("source_ref"):
+            parent_ref = parent.get("source_ref")
+            if not isinstance(parent_ref, dict) or not parent_ref:
+                parent_ref = {
+                    "slug": slug,
+                    "page": parent_page,
+                    "region_id": parent_region_id,
+                    "bbox": parent.get("bbox") or parent.get("approx_bbox"),
+                }
+            derived["source_ref"] = parent_ref
 
         path = await self.store.add_derived_region(slug, derived)
         return {
