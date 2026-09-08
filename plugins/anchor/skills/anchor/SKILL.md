@@ -78,7 +78,10 @@ provider as needed.
 - **Slug naming.** Document slugs are filename-derived (lowercase,
   hyphenated). Canvas slugs are user-chosen, e.g. `pump-analysis`.
 - **Don't re-ingest.** `list_documents()` first; if the slug exists with
-  `has_gold: true`, skip ingest unless the user asks for a fresh pass.
+  `has_gold: true`, skip ingest unless the user asks for a fresh pass. A row
+  with `status: "empty_gold"` is the exception: gold extraction yielded 0
+  regions on a non-empty document (usually a transient failure), so `has_gold`
+  is false and you should re-ingest that slug to recover its regions.
 
 ## Live state
 
@@ -86,58 +89,78 @@ The canvas has SSE. If a browser tab is open at the same time, the user
 sees your changes appear live. The server is authoritative and serialises
 commands per workspace, so you don't need to coordinate with the browser.
 
-## Projects: a folder is the unit
+## Environments and projects
 
-A folder containing an `anchor.toml` (created by `anchor init`) is an ANCHOR
-project. It declares the data dir, the AI provider/data-zone, and the models.
-**Run ANCHOR from inside that folder** and every adapter resolves the project
-automatically. The CLI and `anchor serve` walk up from the working directory to
-find `anchor.toml`; `anchor-mcp` does the same, or name it explicitly with
-`anchor-mcp --project <folder>`. So a single MCP registration
-(`anchor install claude-code`, no `--data-dir`) works for *every* project: open
-the agent in the project folder and it targets that project, with no reinstall.
+An **environment** is a named config profile (provider, models, data zone) and
+the trust/egress boundary. It holds **projects**, each a corpus (documents) plus
+its canvases. Environments live under `~/.anchor/envs/<name>/`. A project is a
+folder with an `anchor.toml` marker and a hidden `.anchor_data/` holding its
+corpus; the environment's `projects.toml` maps each project name to its folder.
+A project inherits its environment's config. A human creates one in any working
+folder with `anchor init`; an agent creates a *managed* one (folder under
+`~/.anchor/envs/<name>/projects/<project>/`) with `create_project`.
 
-If you are unsure which project is active, run `anchor` from the folder you mean
-(or pass `--project`/`ANCHOR_CONFIG`). Don't pass `--data-dir ~/anchor-data`
-unless you specifically want the global default rather than the current project.
+Provider, endpoint, and local-only mode are environment-owned security
+settings. A project cannot redirect or weaken them. The `local` and `harness`
+providers construct no Anchor-side remote model client, and remote embeddings
+are rejected in both. However, harness-driven ingest gives page content to the
+connected agent. Its model provider is outside Anchor's egress boundary. Never
+use a cloud-backed harness for content that is restricted to the local host.
 
-### Set up a project (agent-drivable, like `npm init` / `uv init`)
+Over MCP, this server serves one environment. Project-scoped tools take an
+optional `project` argument; omit it for the default project. Use
+`list_projects` to see the options and `create_project` to make one. A
+missing/unknown project returns a self-correcting error. You cannot cross to
+another environment from here; that is a separate named server.
 
-You can scaffold ANCHOR in any folder non-interactively. `anchor init` accepts
-every choice as a flag, so no prompt blocks you:
+On the CLI, select with `--env` / `--project`, or set a session default with
+`anchor use <env> <project>`. `ANCHOR_ENV` / `ANCHOR_PROJECT` also work.
+
+### Set up an environment (agent-drivable, like `nvm install`)
+
+`anchor env create <name>` creates an environment (the trust boundary) and its
+default project. Every choice is a flag, so no prompt blocks you:
 
 ```bash
-# local-only (no document egress): no key, no endpoint
-anchor init . --yes --provider local
+# local-only (no document egress): no key, no endpoint. Ingest + embed make
+# NO external network calls; model loading is pinned offline. Run
+# `anchor models prefetch` once (with network) so a later offline run works.
+anchor env create local --yes --provider local
 
 # a named endpoint (Azure shown): the deployment name is the model
-anchor init . --yes --provider azure \
+anchor env create work --yes --provider azure \
   --base-url https://<resource>.openai.azure.com/openai/v1/ \
   --vision-model <deployment> --embed-model text-embedding-3-small
 ```
 
-`init` self-corrects an Azure URL that is missing `/openai/v1/`. The API key is
-never written to `anchor.toml`. Set `ANCHOR_OPENAI_API_KEY` in the environment
-or a gitignored `.env` in the folder. Then **verify before ingesting**:
+Then `anchor init` in a working folder starts a project bound to an environment
+(`--env <name>`, default the default env), dropping an `anchor.toml` + a hidden
+`.anchor_data/` there. `anchor env create` self-corrects an Azure URL missing
+`/openai/v1/`. The API key is never
+written to the profile. Set `ANCHOR_OPENAI_API_KEY` in the environment or a
+gitignored `.env` next to the profile. Then **verify before ingesting**:
 
 ```bash
-anchor check            # offline: prints the data zone, repairs a bad endpoint
-anchor check --probe    # also makes one tiny call to confirm deployment + key
+anchor check --env <name>          # offline: data zone, repairs a bad endpoint
+anchor check --env <name> --probe  # also one tiny call to confirm deployment + key
 ```
 
 `anchor check` exits non-zero when something would break a real ingest, so you
-can gate on it. Register the MCP once with `anchor install claude-code`.
+can gate on it. Register the MCP with `anchor install claude-desktop --env <name>`.
 
 ## Where things live
 
-Each project's data lives in its own `data_dir` (default `<project>/anchor-data/`
-from `anchor init`, or the global `~/anchor-data/` when no project is found).
-`ANCHOR_DATA_DIR` or an explicit `--data-dir <path>` override it; the HTTP
-adapter uses the path passed to `anchor serve`.
+A project's data lives in a hidden `.anchor_data/` inside the project folder —
+`<your-folder>/.anchor_data/` for a folder you ran `anchor init` in, or
+`~/.anchor/envs/<env>/projects/<project>/.anchor_data/` for a managed one.
+Storage is structural (no `data_dir` key). The default environment is in
+`~/.anchor/default`; a pre-existing `~/anchor-data/` keeps working until
+`anchor migrate` folds it in.
 
 - `bronze/` — raw PDFs
 - `silver/<slug>/` — per-page markdown + page PNGs
-- `gold/<slug>/` — structured regions with crops
+- `gold/<slug>/` — structured regions with crops (crop PNGs render lazily on
+  first `get_crop` / `anchor crop`, addressed `<page>/<region_id>.png`)
 - `canvases/<slug>/` — per-canvas durable state + events log
 
 ## Extensions
@@ -160,20 +183,9 @@ real time on every connected client via SSE.
 - `canvas_list_placeholders(workspace_slug)` — every node flagged
   `data.placeholder == true` with its `placeholder_hint`. The entry
   point when the user says "fill in the specs I marked".
-- `canvas_add_node(workspace_slug, node_type, label, x?, y?, data?)`.
-  Omit `x`/`y` (or pass `place="auto"`) and the server picks a
-  non-overlapping spot and returns it under `position` — prefer this when
-  scaffolding many nodes so they don't pile up. `type` is accepted as an
-  alias for `node_type`.
-- `canvas_node_types(node_type?)` — which `data` keys each node type
-  renders and which is its body field. Call this BEFORE add/update so you
-  put the body in the right key (e.g. `fact` -> `data.text`, `concept` ->
-  `data.subtitle`; there is no generic `data.body`). add/update return a
-  `warning` when you pass a key the type ignores.
+- `canvas_add_node(workspace_slug, node_type, label, x, y, data?)`.
 - `canvas_update_node(workspace_slug, id, ...)` and
-  `canvas_remove_node(workspace_slug, id)`. The `data` field DEEP-MERGES
-  into the node's existing data (unmentioned keys like `source_ref`
-  survive; a key set to `null` is deleted) — no read-modify-write needed.
+  `canvas_remove_node(workspace_slug, id)`.
 - `canvas_add_edge(workspace_slug, source, target, edge_type?, data?)`
   and `canvas_remove_edge(workspace_slug, id)`.
 - `canvas_clear(workspace_slug)` — destructive; ask first.
@@ -189,11 +201,38 @@ real time on every connected client via SSE.
 | `concept` / `entity` | Generic shapes for grouping or schematics. |
 | `canvas` | A tile that links to a child canvas. |
 
-This is the shortlist of the types agents touch most. For the exact
-`data` keys each type renders — and which key holds the visible body —
-call `canvas_node_types` (or `anchor canvas node-types`) instead of
-guessing; the body key differs per type (`fact` -> `text`, `concept` ->
-`subtitle`, `note` -> `text`, `area` -> `subtitle`).
+The full list and the data shapes live in the on-disk substrate docs;
+this is the shortlist of the ones agents touch most.
+
+### Spec nodes carry structured rows, not prose
+
+When an extraction yields several values — say every pump ID and its
+diameter — put them in `data.rows`, one row per fact. Each row is
+`{key, value, source_ref}`, where `source_ref` is `{slug, page, bbox?,
+region_id?}` grounding that value to its source page. Rows render as a
+clean table on the canvas, and every row stays clickable back to the
+page it came from.
+
+Do NOT pack those values into `data.description`. The description is a
+short prose caption only; a multi-value answer dumped there shows up as
+one blob of text with no per-value provenance and no table view.
+
+```json
+{
+  "node_type": "spec",
+  "label": "Pump diameters",
+  "data": {
+    "rows": [
+      {"key": "P-101", "value": "150 mm", "source_ref": {"slug": "datasheet", "page": 3}},
+      {"key": "P-102", "value": "200 mm", "source_ref": {"slug": "datasheet", "page": 3}}
+    ]
+  }
+}
+```
+
+`canvas_add_node` returns a non-fatal `hint` when a `spec` node is
+created with a `description` but no `rows` — a reminder to move tabular
+facts into rows. The write still succeeds; prose-only specs are allowed.
 
 ## `anchor_pdfs` — ingest engineering PDFs
 
@@ -279,6 +318,11 @@ session protocol:
    - Name region geometry with `member_item_ids: ["p3-i0", "p3-i1"]`;
      the server computes the bbox. Use `approx_bbox` only when no
      candidate covers a visual.
+   - For one logical part of a table, use `table_slice` with the table
+     candidate id and exact `rows` plus optional `columns`, for example
+     `{"candidate_id": "p3-i2", "rows": [0, 4, 5], "columns": [0, 1]}`.
+     Candidate cells provide the indexes. The server keeps only those cells
+     and computes cell-level content and bbox provenance.
    - A rejection returns `errors` naming the bad fields; fix and
      resubmit (resubmitting a page replaces it).
 3. For documents over ~4 pages, fan out: spawn subagents, each given

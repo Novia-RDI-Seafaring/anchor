@@ -76,6 +76,8 @@ PDF tools (extension anchor_pdfs):
 - ingest_pdf / list_documents / get_document_index
 - search_documents - semantic search across embedded gold regions
 - get_gold_regions / get_page_text / get_page_image / get_crop / get_pdf
+  (get_crop takes rel_path '<page>/<region_id>.png' and renders the crop
+  lazily from the bronze PDF; both image tools take an optional dpi, 72-600)
 - locate_text - where a value appears on a page (page-space quads), for value-precise highlights
 
 Harness ingestion (provider = harness, no API key):

@@ -139,7 +139,9 @@ class MemoryDocStore:
     async def get_page_text(self, slug: str, page: int) -> str | None:
         return self._page_text.get((slug, page))
 
-    async def get_page_image_path(self, slug: str, page: int) -> Path | None:
+    async def get_page_image_path(
+        self, slug: str, page: int, dpi: int | None = None
+    ) -> Path | None:
         return None  # in-memory has no path
 
     async def get_regions(self, slug: str, page: int | None = None) -> dict[str, Any]:
@@ -228,6 +230,11 @@ class MemoryDocStore:
 
     async def get_crop_path(self, slug: str, rel_path: str) -> Path | None:
         return None
+
+    async def write_crop(self, slug: str, rel_path: str, data: bytes) -> Path:
+        async with self._lock:
+            self._crops[(slug, rel_path)] = data
+        return Path(f"memory://gold/{slug}/pages/{rel_path}")
 
     async def get_raw_pdf_path(self, slug: str) -> Path | None:
         idx = self._indexes.get(slug)

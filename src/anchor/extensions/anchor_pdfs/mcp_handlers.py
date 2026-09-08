@@ -233,10 +233,32 @@ async def call_tool(
         out = await store.get_gold_map(args["slug"])
         return json.dumps(out) if out is not None else json.dumps({"error": "not found"})
     if name == "get_page_image":
-        path = await store.get_page_image_path(args["slug"], int(args["page"]))
+        from anchor.extensions.anchor_pdfs.core.region_crops import (
+            CropUnavailable,
+            get_page_image,
+        )
+        dpi = args.get("dpi")
+        try:
+            path = await get_page_image(
+                store, ingest.renderer, args["slug"], int(args["page"]),
+                dpi=int(dpi) if dpi is not None else None,
+            )
+        except CropUnavailable as e:
+            return json.dumps({"error": str(e)})
         return _byte_envelope(path, fmt=args.get("format", "path"), fallback_ext=".png")
     if name == "get_crop":
-        path = await store.get_crop_path(args["slug"], args["rel_path"])
+        from anchor.extensions.anchor_pdfs.core.region_crops import (
+            CropUnavailable,
+            get_region_crop,
+        )
+        dpi = args.get("dpi")
+        try:
+            path = await get_region_crop(
+                store, ingest.renderer, args["slug"], args["rel_path"],
+                dpi=int(dpi) if dpi is not None else None,
+            )
+        except CropUnavailable as e:
+            return json.dumps({"error": str(e)})
         # Content-type inference falls back to the extension of rel_path
         # for memory-backed stores that return None.
         ext = "." + args["rel_path"].rsplit(".", 1)[-1] if "." in args["rel_path"] else ""

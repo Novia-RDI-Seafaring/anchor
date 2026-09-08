@@ -275,12 +275,17 @@ def tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "get_page_image",
-            "description": "Page screenshot as a path (default) or base64. Use format='base64' from off-machine agents.",
+            "description": (
+                "Page screenshot as a path (default) or base64. Use format='base64' from off-machine agents. "
+                "Pass dpi to re-render from the bronze PDF at higher resolution "
+                "(clamped to 72-600; the stored default is ~150 dpi, too coarse for e.g. chart tracing)."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "slug": {"type": "string"},
                     "page": {"type": "integer"},
+                    "dpi": {"type": "integer", "description": "Optional re-render DPI (72-600); cached per DPI."},
                     "format": {"type": "string", "enum": ["path", "base64"], "default": "path"},
                 },
                 "required": ["slug", "page"],
@@ -288,12 +293,17 @@ def tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "get_crop",
-            "description": "A gold-extracted region crop (PNG/SVG/PDF) by its rel_path (returned by get_gold_regions). Path or base64.",
+            "description": (
+                "One gold region's crop PNG, addressed as '<page>/<region_id>.png' (e.g. '4/r1.png'). "
+                "Rendered lazily from the bronze PDF on first request (region bbox + margin, 300 dpi) "
+                "and cached; pass dpi to re-render at another resolution. Path or base64."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "slug": {"type": "string"},
-                    "rel_path": {"type": "string", "description": "Like '4/r1.png' - comes from region.crops.{png,svg,pdf}."},
+                    "rel_path": {"type": "string", "description": "'<page>/<region_id>.png' like '4/r1.png' ('p4/r1' also accepted)."},
+                    "dpi": {"type": "integer", "description": "Optional render DPI (72-600, default 300); an explicit value re-renders the cached crop."},
                     "format": {"type": "string", "enum": ["path", "base64"], "default": "path"},
                 },
                 "required": ["slug", "rel_path"],
