@@ -14,6 +14,9 @@ from anchor.extensions.anchor_pdfs.core.region_inspect import (
     get_region_content,
     inspect_region,
 )
+from anchor.extensions.anchor_pdfs.core.source_ref_resolve import (
+    resolve_source_ref,
+)
 from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
 
 
@@ -212,6 +215,12 @@ async def call_tool(
     if name == "get_region_content":
         out = await get_region_content(store, args["slug"], args["region_id"])
         return json.dumps(out) if out else json.dumps({"error": "region not found"})
+    if name == "resolve_source_ref":
+        ref = args.get("ref")
+        if not isinstance(ref, dict):
+            return json.dumps({"error": "ref must be an object"})
+        out = await resolve_source_ref(store, args["slug"], ref)
+        return json.dumps(out) if out else json.dumps({"error": "unresolvable ref"})
     if name == "get_page_text":
         text = await store.get_page_text(args["slug"], int(args["page"]))
         return text if text is not None else json.dumps({"error": "not found"})

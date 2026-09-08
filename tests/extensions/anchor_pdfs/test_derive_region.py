@@ -53,6 +53,27 @@ async def test_derive_region_inherits_provenance_and_persists():
     assert series[0]["source_ref"]["bbox"] == [56.5, 783.4, 252.8, 605.7]
 
 
+async def test_derive_region_synthesizes_ref_when_parent_stores_none():
+    # Ordinary gold regions carry only a bbox, no source_ref; the derived
+    # region must still point at the parent's page and bbox (#242 P2a).
+    store = MemoryDocStore()
+    await store.write_gold_region_file("lkh", 4, [
+        {"id": "r1", "kind": "chart", "title": "Flow chart",
+         "bbox": [56.5, 58.5, 252.8, 223.2]},
+    ])
+    svc = _service(store)
+
+    await svc.derive_region("lkh", "r1", dict(CHART_SERIES))
+    regs = (await store.get_regions("lkh", page=4))["pages"][4]
+    series = next(r for r in regs if r["kind"] == "chart_series")
+    assert series["source_ref"] == {
+        "slug": "lkh",
+        "page": 4,
+        "region_id": "r1",
+        "bbox": [56.5, 58.5, 252.8, 223.2],
+    }
+
+
 async def test_derive_region_unknown_parent_raises():
     store = MemoryDocStore()
     await _seed_parent(store)

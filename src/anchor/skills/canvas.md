@@ -37,9 +37,14 @@ this is the shortlist of the ones agents touch most.
 When an extraction yields several values — say every pump ID and its
 diameter — put them in `data.rows`, one row per fact. Each row is
 `{key, value, source_ref}`, where `source_ref` is `{slug, page, bbox?,
-region_id?}` grounding that value to its source page. Rows render as a
-clean table on the canvas, and every row stays clickable back to the
-page it came from.
+region_id?, item_id?, cell?}` grounding that value to its source page.
+The optional selectors point below the region: `item_id` names one
+silver item (`p<page>-i<n>`, listed by `inspect_region` under
+`members`), and `cell` is `{row, col}` of a table. Resolution
+precedence is cell > item > region > bbox — `resolve_source_ref`
+answers with the tightest stored bbox and names the layer that
+resolved. Rows render as a clean table on the canvas, and every row
+stays clickable back to the page it came from.
 
 Do NOT pack those values into `data.description`. The description is a
 short prose caption only; a multi-value answer dumped there shows up as

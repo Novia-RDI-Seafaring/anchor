@@ -149,6 +149,7 @@ _CAPABILITY_GROUPS: list[dict[str, Any]] = [
             "get_pdf",
             "embed_document",
             "derive_region",
+            "resolve_source_ref",
             "get_embeddings_meta",
             "compose_synopsis",
         ],

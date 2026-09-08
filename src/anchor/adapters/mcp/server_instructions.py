@@ -97,7 +97,8 @@ A placeholder node carries `data.placeholder == true` and optionally
 `data.placeholder_hint == "<what we want here>"`. Visual: dashed
 sky-blue outline + hint chip. Agent: enumerate via
 `canvas_list_placeholders`, fill via `canvas_update_node({id, data: {
-placeholder: false, source_ref: {slug, page, bbox, region_id?}, rows: [
+placeholder: false, source_ref: {slug, page, bbox, region_id?, item_id?,
+cell?}, rows: [
 {key, value, source_ref}, ... ]}})`. Keep `placeholder_hint` in `data`
 even after filling. It is useful audit history.
 
