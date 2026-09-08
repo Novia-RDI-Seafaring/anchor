@@ -238,3 +238,46 @@ async def test_single_project_autoexposes_fmu_with_data(tmp_path, monkeypatch):
     await bundle.fmu.upload_and_inspect(b"dummy-fmu", "pump.fmu")
     names = await _advertised(server)
     assert "fmu_inspect" in names
+
+
+async def test_sysml_legacy_alias_routes_to_sysml_handler(tmp_path):
+    # `sysml.render`/`sysml.export` used to fall through to the catch-all
+    # handler ("unknown tool") because the module exported no
+    # LEGACY_TOOL_NAMES; the fmu aliases always routed. anchor parity audit.
+    create_env("local")
+    create_project(env_mod.resolve_environment("local"), "pumps")
+    server, _ = _multiproject_server()
+    out = json.loads(
+        await _call(server, "sysml.export", project="pumps", workspace_slug="ghost")
+    )
+    # Routed to the sysml handler: its Phase-1 export answers with `text`.
+    # The old failure mode was the catch-all's {"error": "unknown tool: ..."}.
+    assert "text" in out, out
+    assert "unknown tool" not in json.dumps(out).lower()
+
+
+async def test_sysml_autoexposed_when_canvas_has_sysml_nodes(tmp_path):
+    # SysML has no model store; its per-project data is sysml:* canvas nodes.
+    # Before this activation existed the sysml group could never go active.
+    create_env("local")
+    router = ProjectRouter(env_arg="local")
+    create_project(router.environment(), "pumps")
+    server = build_mcp_server(router=router)
+    router.open_project("pumps")
+
+    before = await _advertised(server)
+    assert "sysml_render" not in before
+    payload = json.loads(await _call(server, "anchor_list_capabilities", project="pumps"))
+    sysml = next(g for g in payload["capabilities"] if g["capability"] == "sysml")
+    assert sysml["active"] is False
+
+    bundle = router.bundle_for("pumps")
+    await bundle.workspace.create_workspace("model")
+    await bundle.workspace.add_node("model", node_type="sysml:block", label="Pump", x=0, y=0)
+
+    after = await _advertised(server)
+    assert "sysml_render" in after
+    assert "sysml_export" in after
+    payload = json.loads(await _call(server, "anchor_list_capabilities", project="pumps"))
+    sysml = next(g for g in payload["capabilities"] if g["capability"] == "sysml")
+    assert sysml["active"] is True

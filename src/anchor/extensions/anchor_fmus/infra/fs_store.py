@@ -10,6 +10,7 @@ On-disk layout (mirrors the OIP convention):
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 
 import aiofiles
@@ -68,7 +69,14 @@ class FsFmuStore(FmuStore):
         return target
 
     async def get_model(self, slug: str) -> FmuModel | None:
-        path = self.models / f"{slug}.json"
+        # Inline normalise-then-prefix-check (not delegated) so the containment
+        # barrier sits in the same function that builds the path; the slug
+        # arrives from the URL / tool arguments.
+        base = os.path.realpath(os.fspath(self.models))
+        candidate = os.path.normpath(os.path.join(base, f"{slug}.json"))
+        if not candidate.startswith(base + os.sep):
+            return None
+        path = Path(candidate)
         if not path.exists():
             return None
         return FmuModel.model_validate_json(path.read_text(encoding="utf-8"))
@@ -94,7 +102,14 @@ class FsFmuStore(FmuStore):
         return out
 
     async def get_series(self, simulation_id: str) -> TimeSeries | None:
-        path = self.simulations / simulation_id / "series.json"
+        # Inline normalise-then-prefix-check (not delegated) so the containment
+        # barrier sits in the same function that builds the path; the id
+        # arrives from the URL / tool arguments.
+        base = os.path.realpath(os.fspath(self.simulations))
+        candidate = os.path.normpath(os.path.join(base, simulation_id, "series.json"))
+        if not candidate.startswith(base + os.sep):
+            return None
+        path = Path(candidate)
         if not path.exists():
             return None
         return TimeSeries.model_validate_json(path.read_text(encoding="utf-8"))
