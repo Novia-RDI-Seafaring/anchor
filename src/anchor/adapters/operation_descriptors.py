@@ -153,4 +153,11 @@ DOCUMENT_OPERATION_DESCRIPTORS: tuple[OperationDescriptor, ...] = (
         mcp_tool="get_region_content",
         cli_command=("region-content",),
     ),
+    OperationDescriptor(
+        id="document.resolve_source_ref",
+        service_method="resolve_source_ref",
+        http=HttpSurface("GET", "/api/documents/{slug}/resolve-ref"),
+        mcp_tool="resolve_source_ref",
+        cli_command=("resolve-ref",),
+    ),
 )
