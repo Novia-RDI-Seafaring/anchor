@@ -150,6 +150,21 @@ def test_fs_store_round_trip(tmp_path):
     asyncio.run(run())
 
 
+def test_fs_store_read_paths_contained(tmp_path):
+    # slug / simulation_id arrive from URLs and tool args; a traversal
+    # value must read nothing outside the store (py/path-injection).
+    secret = tmp_path / "secret.json"
+    secret.write_text("{}", encoding="utf-8")
+
+    async def run():
+        store = FsFmuStore(tmp_path / "data")
+        assert await store.get_model("../../secret") is None
+        assert await store.get_series("../..") is None
+        assert await store.get_series("x/../../../..") is None
+
+    asyncio.run(run())
+
+
 # ── MCP handlers ────────────────────────────────────────────────────────
 
 
