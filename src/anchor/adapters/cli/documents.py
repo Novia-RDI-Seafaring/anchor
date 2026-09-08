@@ -177,6 +177,33 @@ def derive_region(
     typer.echo(json.dumps(out, indent=2))
 
 
+def resolve_ref(
+    slug: str = typer.Argument(..., help="Document slug."),
+    ref: str = typer.Option(
+        ..., "--ref", help="The source_ref as a JSON string, or @path to a JSON file."
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Resolve a source_ref to the most precise stored evidence bbox.
+
+    Precedence: cell {row, col} > item_id (silver item 'p<page>-i<n>') >
+    region_id > the ref's own bbox. The answer carries `precision` naming
+    the layer that resolved.
+    """
+    raw = Path(ref[1:]).read_text(encoding="utf-8") if ref.startswith("@") else ref
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        typer.echo(f"--ref is not valid JSON: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    _, _, _, ingest_svc, _ = _build_real_services(data_dir)
+    out = asyncio.run(ingest_svc.resolve_source_ref(slug, payload))
+    if out is None:
+        typer.echo("unresolvable ref (no page, and no region/item/bbox to answer from)", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(json.dumps(out, indent=2))
+
+
 def extract(
     slug: str = typer.Argument(..., help="Document slug to extract from."),
     shape: Path = typer.Option(
@@ -556,6 +583,7 @@ def register_document_commands(app: typer.Typer) -> None:
     app.command("ingest-status")(ingest_status)
     app.command()(search)
     app.command("derive-region")(derive_region)
+    app.command("resolve-ref")(resolve_ref)
     app.command()(extract)
     app.command()(embed)
     app.command()(index)

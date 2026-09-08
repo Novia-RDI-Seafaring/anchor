@@ -372,6 +372,32 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "resolve_source_ref",
+            "description": (
+                "Resolve a source_ref to the most precise stored evidence "
+                "bbox. Precedence: cell {row, col} > item_id (silver item, "
+                "'p<page>-i<n>') > region_id > the ref's own bbox. Returns "
+                "{slug, page, bbox, precision} where precision names the "
+                "layer that answered, so a viewer or citation can trust the "
+                "geometry. A selector without stored geometry falls through "
+                "to the next layer; a legacy ref resolves exactly as before."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {"type": "string"},
+                    "ref": {
+                        "type": "object",
+                        "description": (
+                            "The source_ref: {page?, region_id?, item_id?, "
+                            "cell?: {row, col}, bbox?}"
+                        ),
+                    },
+                },
+                "required": ["slug", "ref"],
+            },
+        },
+        {
             "name": "get_embeddings_meta",
             "description": (
                 "Return metadata about a document's embeddings (model id, "

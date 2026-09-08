@@ -462,6 +462,17 @@ class IngestService:
         """Search document embeddings through the retrieval collaborator."""
         return await self._retrieval.search(query, k=k)
 
+    async def resolve_source_ref(
+        self, slug: str, ref: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Resolve a source_ref to the most precise stored evidence bbox
+        (cell > item > region > bbox); see core.source_ref_resolve."""
+        from anchor.extensions.anchor_pdfs.core.source_ref_resolve import (
+            resolve_source_ref,
+        )
+
+        return await resolve_source_ref(self.store, slug, ref)
+
     async def derive_region(
         self, slug: str, parent_region_id: str, region: dict[str, Any]
     ) -> dict[str, Any]:

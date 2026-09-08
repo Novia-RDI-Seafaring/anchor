@@ -23,7 +23,7 @@ from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.silver import region_content_from_items
 
 
-async def _find_region(
+async def find_region(
     store: DocStore, slug: str, region_id: str
 ) -> tuple[int, dict[str, Any]] | None:
     """Locate one gold region by id. Honours a `p<page>/` prefix when present,
@@ -102,7 +102,7 @@ async def inspect_region(
     store: DocStore, slug: str, region_id: str
 ) -> dict[str, Any] | None:
     """Return one gold region's full record + a grounding `source_ref`."""
-    found = await _find_region(store, slug, region_id)
+    found = await find_region(store, slug, region_id)
     if found is None:
         return None
     page, region = found
@@ -136,7 +136,7 @@ async def get_region_content(
     Prefers the region's stored `content`; when absent (e.g. a region whose
     bbox snapped to nothing), rebuilds it from the page's silver candidates via
     `member_item_ids`."""
-    found = await _find_region(store, slug, region_id)
+    found = await find_region(store, slug, region_id)
     if found is None:
         return None
     page, region = found

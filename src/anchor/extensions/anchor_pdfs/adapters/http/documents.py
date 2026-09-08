@@ -14,6 +14,7 @@ from anchor.extensions.anchor_pdfs.core.region_inspect import (
     inspect_region,
 )
 from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
+from anchor.extensions.anchor_pdfs.core.source_ref_resolve import resolve_source_ref
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -72,6 +73,37 @@ async def region_content_route(
     out = await get_region_content(store, slug, region_id)
     if out is None:
         raise HTTPException(404)
+    return out
+
+
+@router.get("/{slug}/resolve-ref")
+async def resolve_ref_route(
+    slug: str,
+    page: int | None = None,
+    region_id: str | None = None,
+    item_id: str | None = None,
+    row: int | None = None,
+    col: int | None = None,
+    store: DocStore = Depends(get_doc_store),
+):
+    """Resolve a source_ref to the most precise stored evidence bbox.
+
+    Precedence: cell (row+col) > item_id > region_id > nothing (404).
+    The viewer's highlight calls this instead of re-implementing the
+    precedence rules client-side.
+    """
+    ref: dict[str, Any] = {}
+    if page is not None:
+        ref["page"] = page
+    if region_id:
+        ref["region_id"] = region_id
+    if item_id:
+        ref["item_id"] = item_id
+    if row is not None and col is not None:
+        ref["cell"] = {"row": row, "col": col}
+    out = await resolve_source_ref(store, slug, ref)
+    if out is None:
+        raise HTTPException(404, "unresolvable ref")
     return out
 
 
