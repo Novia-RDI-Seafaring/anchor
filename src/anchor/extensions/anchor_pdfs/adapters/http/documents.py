@@ -1,6 +1,7 @@
 """Documents — shared substrate, not per-workspace."""
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -244,7 +245,18 @@ async def crop(
         raise HTTPException(404, str(e)) from e
     if str(p).startswith("memory://"):
         raise HTTPException(501, "in-memory store cannot serve crops over HTTP")
-    return FileResponse(p)
+    # Inline normalise-then-prefix-check at the response sink: the path the
+    # store hands back derives from request input, and the barrier must sit
+    # in the function that serves it (the store port has non-fs impls). The
+    # store's own gold root is server-constructed, hence trusted.
+    gold_root = getattr(store, "gold", None)
+    if gold_root is None:
+        raise HTTPException(501, "this store cannot serve crops over HTTP")
+    base = os.path.realpath(os.fspath(gold_root))
+    candidate = os.path.normpath(os.fspath(p))
+    if not candidate.startswith(base + os.sep):
+        raise HTTPException(404, "crop path escapes the document store")
+    return FileResponse(candidate)
 
 
 @router.get("/{slug}/pdf")
