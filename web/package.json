@@ -29,7 +29,7 @@
     "pdfjs-dist": "^6.2.108",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^6.30.4",
+    "react-router-dom": "^6.30.6",
     "tailwind-merge": "^2.5.4",
     "three": "^0.184.0",
     "zustand": "^5.0.1"
