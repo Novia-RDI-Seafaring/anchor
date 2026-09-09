@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Coroutine
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -17,6 +19,23 @@ from anchor.adapters.cli.services import _build_canvas_runtime
 from anchor.extensions.anchor_pdfs.core.value_provenance import enrich_spec_row_source_refs
 
 canvas_app = typer.Typer(help="Manage workspaces (canvases).")
+
+
+def _run(coro: Coroutine[Any, Any, Any]) -> Any:
+    """Run a canvas command body, turning domain errors into the one-line
+    stderr message + exit 1 other anchor commands print (#305).
+
+    ``CommandError`` (unknown node/edge id, invariant violations) and pydantic
+    validation errors are ``ValueError`` subclasses; ``FileNotFoundError`` is
+    what the workspace store raises for an unknown workspace slug. Without
+    this, a bad node id crashed the CLI with a Rich traceback.
+    """
+    try:
+        return asyncio.run(coro)
+    except (ValueError, KeyError, FileNotFoundError) as exc:
+        message = str(exc) or exc.__class__.__name__
+        typer.echo(message, err=True)
+        raise typer.Exit(code=1) from None
 
 
 def _canvas_url(slug: str, data_dir: Path | None = None) -> str:
@@ -99,7 +118,7 @@ def canvas_placeholders(
     the "Max inlet pressure" slot at a glance.
     """
     ws = _build_canvas_runtime(data_dir).workspace
-    items = asyncio.run(ws.list_placeholders(slug))
+    items = _run(ws.list_placeholders(slug))
     if format == "json":
         typer.echo(json.dumps(items, indent=2))
         return
@@ -210,7 +229,7 @@ def canvas_state(
 ) -> None:
     """Print the full workspace state (nodes + edges + metadata)."""
     ws = _build_canvas_runtime(data_dir).workspace
-    typer.echo(json.dumps(asyncio.run(ws.get_state(slug)), indent=2))
+    typer.echo(json.dumps(_run(ws.get_state(slug)), indent=2))
 
 
 @canvas_app.command("add-node")
@@ -278,6 +297,9 @@ def canvas_add_node(
     async def run():
         state, env = await ws.add_node(slug, place=place, **kwargs)
         out: dict = {
+            # The created node's id at top level (#307) - additive; the
+            # event/state envelope stays as-is for existing consumers.
+            "node_id": env.payload.get("id"),
             "event": env.model_dump(),
             "state": state.get_state(),
             "position": {"x": env.payload.get("x"), "y": env.payload.get("y")},
@@ -290,7 +312,7 @@ def canvas_add_node(
             )
         return out
 
-    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+    typer.echo(json.dumps(_run(run()), indent=2))
 
 
 @canvas_app.command("node-types")
@@ -438,7 +460,7 @@ def canvas_update_node(
                 )
         return out
 
-    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+    typer.echo(json.dumps(_run(run()), indent=2))
 
 
 @canvas_app.command("remove-node")
@@ -454,7 +476,7 @@ def canvas_remove_node(
         state, envelopes = await ws.remove_node(slug, node_id)
         return {"events": [e.model_dump() for e in envelopes], "state": state.get_state()}
 
-    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+    typer.echo(json.dumps(_run(run()), indent=2))
 
 
 @canvas_app.command("add-edge")
@@ -486,9 +508,14 @@ def canvas_add_edge(
 
     async def run():
         state, env = await ws.add_edge(slug, **kwargs)
-        return {"event": env.model_dump(), "state": state.get_state()}
+        return {
+            # The created edge's id at top level (#307), mirroring add-node.
+            "edge_id": env.payload.get("id"),
+            "event": env.model_dump(),
+            "state": state.get_state(),
+        }
 
-    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+    typer.echo(json.dumps(_run(run()), indent=2))
 
 
 @canvas_app.command("remove-edge")
@@ -504,7 +531,7 @@ def canvas_remove_edge(
         state, env = await ws.remove_edge(slug, edge_id)
         return {"event": env.model_dump(), "state": state.get_state()}
 
-    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+    typer.echo(json.dumps(_run(run()), indent=2))
 
 
 @canvas_app.command("update-edge")
@@ -544,7 +571,7 @@ def canvas_update_edge(
         state, env = await ws.update_edge(slug, edge_id, fields)
         return {"event": env.model_dump(), "state": state.get_state()}
 
-    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+    typer.echo(json.dumps(_run(run()), indent=2))
 
 
 @canvas_app.command("clear")
@@ -565,7 +592,7 @@ def canvas_clear(
         state, env = await ws.clear(slug)
         return {"event": env.model_dump(), "state": state.get_state()}
 
-    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+    typer.echo(json.dumps(_run(run()), indent=2))
 
 register_layout_commands(canvas_app)
 canvas_app.add_typer(reference_app, name="reference")

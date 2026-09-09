@@ -139,7 +139,13 @@ async def call_tool(
             hint = _spec_rows_hint(args.get("node_type"), args.get("data"))
             warning = _data_warning(svc, args.get("node_type"), args.get("data"))
             state, env = await svc.add_node(slug, place=place, **args)
-            result: dict[str, Any] = {"event": env.model_dump(), "state": state.get_state()}
+            result: dict[str, Any] = {
+                # The created node's id at top level (#307) - additive; the
+                # event/state envelope stays as-is for existing consumers.
+                "node_id": env.payload.get("id"),
+                "event": env.model_dump(),
+                "state": state.get_state(),
+            }
             # Echo the resolved position so the agent can track layout (#189).
             result["position"] = {"x": env.payload.get("x"), "y": env.payload.get("y")}
             if hint is not None:
@@ -193,7 +199,12 @@ async def call_tool(
             slug = args.pop("workspace_slug")
             _alias_type(args, "edge_type")
             state, env = await svc.add_edge(slug, **args)
-            return json.dumps({"event": env.model_dump(), "state": state.get_state()})
+            return json.dumps({
+                # The created edge's id at top level (#307), mirroring add_node.
+                "edge_id": env.payload.get("id"),
+                "event": env.model_dump(),
+                "state": state.get_state(),
+            })
         if name == "canvas_remove_edge":
             state, env = await svc.remove_edge(args["workspace_slug"], args["id"])
             return json.dumps({"event": env.model_dump(), "state": state.get_state()})

@@ -14,10 +14,10 @@ from anchor.extensions.anchor_pdfs.core.region_inspect import (
     get_region_content,
     inspect_region,
 )
+from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
 from anchor.extensions.anchor_pdfs.core.source_ref_resolve import (
     resolve_source_ref,
 )
-from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
 
 
 def tool_definitions() -> list[dict[str, Any]]:
@@ -300,6 +300,13 @@ async def call_tool(
                 )
             )
         except (ValueError, RuntimeError) as e:
+            return json.dumps({"error": str(e)})
+    if name == "remove_region":
+        try:
+            return json.dumps(
+                await ingest.remove_region(args["slug"], args["region_id"])
+            )
+        except ValueError as e:  # includes RegionNotRemovableError
             return json.dumps({"error": str(e)})
     if name == "get_embeddings_meta":
         slug = args["slug"]

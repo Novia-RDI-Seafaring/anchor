@@ -58,6 +58,9 @@ async def add_node(slug: str, req: AddNodeRequest, svc: WorkspaceService = Depen
     except CommandError as exc:
         raise HTTPException(400, str(exc)) from exc
     resp = {
+        # The created node's id at top level (#307) - additive; the
+        # event/state envelope stays as-is for existing consumers.
+        "node_id": env.payload.get("id"),
         "event": env.model_dump(),
         "state": state.get_state(),
         # Echo the resolved position so the client can track layout (#189).

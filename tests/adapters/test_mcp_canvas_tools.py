@@ -18,6 +18,25 @@ def test_canvas_create_and_add_node():
         })
         out = json.loads(body)
         assert out["event"]["type"] == "NodeAdded"
+        # #307: the created node's id at top level, beside the envelope.
+        assert out["node_id"] == "a"
+
+    asyncio.run(run())
+
+
+def test_canvas_add_edge_surfaces_edge_id_top_level():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await s.workspace.add_node("w1", id="a")
+        await s.workspace.add_node("w1", id="b")
+        body = await handlers_canvas.call_tool(s.workspace, "canvas_add_edge", {
+            "workspace_slug": "w1", "source": "a", "target": "b",
+        })
+        out = json.loads(body)
+        # #307: the created edge's id at top level, matching event.payload.id.
+        assert out["edge_id"]
+        assert out["edge_id"] == out["event"]["payload"]["id"]
 
     asyncio.run(run())
 

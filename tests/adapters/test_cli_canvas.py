@@ -203,6 +203,61 @@ def test_cli_reference_remove_unknown_errors(tmp_path):
     assert r.exit_code == 2
 
 
+def test_cli_add_node_surfaces_node_id_top_level(tmp_path):
+    # #307: the created node's id at top level, matching event.payload.id.
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    r = _add(runner, data_dir, "w1", "fact", x=0, y=0)
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out["node_id"]
+    assert out["node_id"] == out["event"]["payload"]["id"]
+    # The existing envelope is untouched (additive key only).
+    assert set(out) >= {"event", "state", "position"}
+
+
+def test_cli_add_edge_surfaces_edge_id_top_level(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    a = json.loads(_add(runner, data_dir, "w1", "fact", x=0, y=0).output)["node_id"]
+    b = json.loads(_add(runner, data_dir, "w1", "fact", x=100, y=0).output)["node_id"]
+    r = runner.invoke(app, ["canvas", "add-edge", "w1", a, b, "--data-dir", str(data_dir)])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out["edge_id"]
+    assert out["edge_id"] == out["event"]["payload"]["id"]
+
+
+def test_cli_add_edge_unknown_node_prints_one_line_error(tmp_path):
+    # #305: a domain error is a one-line stderr message + exit 1, not a
+    # Rich traceback.
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    r = runner.invoke(app, [
+        "canvas", "add-edge", "w1", "ghost-src", "ghost-dst",
+        "--data-dir", str(data_dir),
+    ])
+    assert r.exit_code == 1
+    assert "ghost-src" in r.output and "does not exist" in r.output
+    assert "Traceback" not in r.output
+
+
+def test_cli_update_node_unknown_id_prints_one_line_error(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    r = runner.invoke(app, [
+        "canvas", "update-node", "w1", "ghost", "--label", "x",
+        "--data-dir", str(data_dir),
+    ])
+    assert r.exit_code == 1
+    assert "does not exist" in r.output
+    assert "Traceback" not in r.output
+
+
 def test_cli_reference_create_rejects_malformed(tmp_path):
     data_dir = tmp_path / "anchor-data"
     runner = CliRunner()

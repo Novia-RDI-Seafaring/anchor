@@ -22,7 +22,12 @@ async def add_edge(slug: str, req: AddEdgeRequest, svc: WorkspaceService = Depen
         state, env = await svc.add_edge(slug, **kwargs)
     except CommandError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"event": env.model_dump(), "state": state.get_state()}
+    return {
+        # The created edge's id at top level (#307), mirroring add_node.
+        "edge_id": env.payload.get("id"),
+        "event": env.model_dump(),
+        "state": state.get_state(),
+    }
 
 
 @router.patch("/{slug}/edges/{edge_id}")

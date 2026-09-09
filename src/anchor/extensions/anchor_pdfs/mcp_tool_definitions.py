@@ -382,6 +382,26 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "remove_region",
+            "description": (
+                "Remove one OIP-derived gold region - the cleanup half of "
+                "derive_region. Only regions carrying derived_from are "
+                "deletable; model-extracted gold is the ground truth of an "
+                "ingest pass and is refused. The region id accepts 'p4/r2', "
+                "'4/r2', or a bare 'r2' (first match across pages). Also "
+                "drops the region's vector from the embedding index so "
+                "search stays consistent."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {"type": "string"},
+                    "region_id": {"type": "string"},
+                },
+                "required": ["slug", "region_id"],
+            },
+        },
+        {
             "name": "resolve_source_ref",
             "description": (
                 "Resolve a source_ref to the most precise stored evidence "

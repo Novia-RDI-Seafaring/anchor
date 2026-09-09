@@ -177,6 +177,28 @@ def derive_region(
     typer.echo(json.dumps(out, indent=2))
 
 
+def remove_region(
+    slug: str = typer.Argument(..., help="Document slug."),
+    region_id: str = typer.Argument(
+        ..., help="Region id to remove, e.g. 'p4/r2' or a bare 'r2'."
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Remove one OIP-derived gold region (the cleanup half of derive-region).
+
+    Only regions carrying `derived_from` are deletable; model-extracted gold
+    is the ground truth of an ingest pass and stays. Drops the region's
+    vector from embeddings.json when one exists so search stays consistent.
+    """
+    _, _, _, ingest_svc, _ = _build_real_services(data_dir)
+    try:
+        out = asyncio.run(ingest_svc.remove_region(slug, region_id))
+    except ValueError as exc:  # includes RegionNotRemovableError
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(json.dumps(out, indent=2))
+
+
 def resolve_ref(
     slug: str = typer.Argument(..., help="Document slug."),
     ref: str = typer.Option(
@@ -629,6 +651,7 @@ def register_document_commands(app: typer.Typer) -> None:
     app.command("ingest-status")(ingest_status)
     app.command()(search)
     app.command("derive-region")(derive_region)
+    app.command("remove-region")(remove_region)
     app.command("resolve-ref")(resolve_ref)
     app.command()(extract)
     app.command()(embed)

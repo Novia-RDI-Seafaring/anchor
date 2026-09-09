@@ -19,7 +19,11 @@ from anchor.extensions.anchor_pdfs.core.region_inspect import (
     get_region_content,
     inspect_region,
 )
-from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
+from anchor.extensions.anchor_pdfs.core.services import (
+    IngestService,
+    RegionNotRemovableError,
+    SynopsisService,
+)
 from anchor.extensions.anchor_pdfs.core.source_ref_resolve import resolve_source_ref
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -70,6 +74,26 @@ async def inspect_region_route(
     if out is None:
         raise HTTPException(404)
     return out
+
+
+@router.delete("/{slug}/regions/{region_id:path}")
+async def remove_region_route(
+    slug: str,
+    region_id: str,
+    ingest: IngestService = Depends(get_ingest_service),
+):
+    """Remove one OIP-derived gold region (#304).
+
+    Only regions carrying ``derived_from`` are deletable — model-extracted
+    gold is the ground truth of an ingest pass and stays (409). The region's
+    embedding vector is dropped alongside so search stays consistent.
+    """
+    try:
+        return await ingest.remove_region(slug, region_id)
+    except RegionNotRemovableError as exc:
+        raise HTTPException(409, str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from None
 
 
 @router.get("/{slug}/region-content/{region_id:path}")

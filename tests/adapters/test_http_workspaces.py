@@ -71,8 +71,23 @@ def test_add_node_and_get_state():
     assert rsp.status_code == 201
     body = rsp.json()
     assert body["event"]["type"] == "NodeAdded"
+    # #307: the created node's id at top level, beside the envelope.
+    assert body["node_id"] == "a"
     state = client.get("/api/workspaces/w1/state").json()
     assert any(n["id"] == "a" for n in state["nodes"])
+
+
+def test_add_edge_surfaces_edge_id_top_level():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.post("/api/workspaces/w1/nodes", json={"id": "a"})
+    client.post("/api/workspaces/w1/nodes", json={"id": "b"})
+    rsp = client.post("/api/workspaces/w1/edges", json={"source": "a", "target": "b"})
+    assert rsp.status_code == 201
+    body = rsp.json()
+    # #307: the created edge's id at top level, matching event.payload.id.
+    assert body["edge_id"]
+    assert body["edge_id"] == body["event"]["payload"]["id"]
 
 
 def test_add_edge_rejects_orphan_endpoint():

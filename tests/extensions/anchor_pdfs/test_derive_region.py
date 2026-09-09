@@ -80,3 +80,34 @@ async def test_derive_region_unknown_parent_raises():
     svc = _service(store)
     with pytest.raises(ValueError, match="not found"):
         await svc.derive_region("lkh", "lkh:p9-nope", dict(CHART_SERIES))
+
+
+async def test_derive_region_mints_next_free_id_when_omitted():
+    # A producer that omits the id must not persist an unaddressable record
+    # (#304): the consumer mints the next free r<n> on the parent's page.
+    store = MemoryDocStore()
+    await _seed_parent(store)  # page 4 holds "lkh:p4-r1" (trailing r1)
+    svc = _service(store)
+
+    region = dict(CHART_SERIES)
+    del region["id"]
+    out = await svc.derive_region("lkh", "lkh:p4-r1", region)
+    assert out["region_id"] == "r2"
+
+    regs = (await store.get_regions("lkh", page=4))["pages"][4]
+    stored = next(r for r in regs if r["kind"] == "chart_series")
+    assert stored["id"] == "r2"
+
+    # A second id-less derivation lands on the next free number.
+    region2 = dict(CHART_SERIES)
+    del region2["id"]
+    out2 = await svc.derive_region("lkh", "lkh:p4-r1", region2)
+    assert out2["region_id"] == "r3"
+
+
+async def test_derive_region_explicit_id_still_wins():
+    store = MemoryDocStore()
+    await _seed_parent(store)
+    svc = _service(store)
+    out = await svc.derive_region("lkh", "lkh:p4-r1", dict(CHART_SERIES))
+    assert out["region_id"] == "lkh:p4-series-b"
