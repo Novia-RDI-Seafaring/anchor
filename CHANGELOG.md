@@ -9,6 +9,8 @@ next version section on tag.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-09
+
 ### Added
 
 - Every canvas event now records who caused it (closes #322, part 1 of
