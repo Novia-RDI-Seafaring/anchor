@@ -303,8 +303,12 @@ def embed(
 ) -> None:
     """Embed gold regions of a document and persist to embeddings.json.
 
-    Uses the local sentence-transformer embedder (BAAI/bge-small-en-v1.5
-    by default). Auto-runs at the end of `anchor ingest`; this command
+    Uses the environment's configured `embed_model`: the local
+    sentence-transformer BAAI/bge-small-en-v1.5 is the local-provider
+    default, but a configured remote model (e.g. text-embedding-3-small)
+    is used instead when the environment names one. Note that `anchor
+    search` skips documents whose stored embed_model does not match the
+    active one. Auto-runs at the end of `anchor ingest`; this command
     backfills already-ingested docs without re-running the full pipeline.
     """
     _, _, _, ingest_svc, doc_store = _build_real_services(data_dir)

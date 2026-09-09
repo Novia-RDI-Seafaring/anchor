@@ -12,7 +12,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useUiStore } from "@/stores/uiStore";
 
@@ -24,6 +24,7 @@ beforeEach(() => {
 
 afterEach(() => {
   useUiStore.setState({ hoveredSourceRef: null, pdfViewer: null });
+  vi.unstubAllGlobals();
 });
 
 async function renderTable(data: Record<string, unknown>) {
@@ -234,5 +235,108 @@ describe("TablePrimitive row handles", () => {
     expect(markers[0]!.textContent).toBe("600 kPa");
     expect(markers[0]!.className).toContain("group-hover/tr:bg-yellow-200");
     expect(screen.getByText("no source").getAttribute("data-testid")).toBeNull();
+  });
+
+  // --- #242 P2c: highlight through the resolver (closes #274) -------------
+
+  it("opens a selector-less ref with its own bbox and never calls the resolver", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await renderTable({
+      label: "Spec-Config",
+      rows: [
+        {
+          key: "min temp",
+          value: "-10 C",
+          source_ref: { slug: "alfa-laval-lkh", page: 2, region_id: "r9", bbox: [50, 40, 550, 200] },
+        },
+      ],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open source page 2" }));
+    // Synchronous, region-level path — unchanged by P2c.
+    expect(useUiStore.getState().pdfViewer).toMatchObject({
+      slug: "alfa-laval-lkh",
+      page: 2,
+      highlightRegionId: "r9",
+      highlightBbox: [50, 40, 550, 200],
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("resolves a cell-selector ref via resolve-ref and highlights the cell bbox", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        slug: "alfa-laval-lkh",
+        page: 2,
+        bbox: [280, 120, 340, 132],
+        precision: "cell",
+        region_id: "r4",
+        cell: { row: 0, col: 1 },
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    await renderTable({
+      label: "Spec-Config",
+      rows: [
+        {
+          key: "Flow",
+          value: "35 m3/h",
+          source_ref: {
+            slug: "alfa-laval-lkh",
+            page: 2,
+            region_id: "r4",
+            bbox: [50, 40, 550, 200],
+            cell: { row: 0, col: 1 },
+          },
+        },
+      ],
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open source page 2" }));
+    });
+    const url = (fetchMock.mock.calls[0] as unknown[] | undefined)?.[0] as string ?? "";
+    expect(url).toContain("/api/documents/alfa-laval-lkh/resolve-ref");
+    expect(url).toContain("row=0");
+    expect(url).toContain("col=1");
+    expect(useUiStore.getState().pdfViewer).toMatchObject({
+      slug: "alfa-laval-lkh",
+      page: 2,
+      highlightRegionId: "r4",
+      highlightBbox: [280, 120, 340, 132],
+    });
+  });
+
+  it("falls back to the ref's own bbox when the resolver answers 404", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      text: async () => "unresolvable ref",
+    })));
+    await renderTable({
+      label: "Spec-Config",
+      rows: [
+        {
+          key: "Flow",
+          value: "35 m3/h",
+          source_ref: {
+            slug: "alfa-laval-lkh",
+            page: 2,
+            region_id: "r4",
+            bbox: [50, 40, 550, 200],
+            cell: { row: 0, col: 1 },
+          },
+        },
+      ],
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open source page 2" }));
+    });
+    expect(useUiStore.getState().pdfViewer).toMatchObject({
+      slug: "alfa-laval-lkh",
+      page: 2,
+      highlightBbox: [50, 40, 550, 200],
+    });
   });
 });

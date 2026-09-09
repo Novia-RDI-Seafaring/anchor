@@ -92,7 +92,8 @@ def test_canvas_snapshot_forwards_viewport_and_full_page():
             },
         )
         assert snap.calls == [
-            {"slug": "w1", "format": "png", "viewport": (1024, 768), "full_page": False},
+            {"slug": "w1", "format": "png", "viewport": (1024, 768), "full_page": False,
+             "expect_nodes": 0},
         ]
     asyncio.run(run())
 

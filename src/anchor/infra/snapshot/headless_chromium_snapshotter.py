@@ -20,6 +20,37 @@ from pathlib import Path
 from anchor.core.ids import validate_workspace_slug
 from anchor.core.ports.snapshot import SnapshotResult
 
+#: CSS selector matched by every rendered React Flow node.
+NODE_SELECTOR = ".react-flow__node"
+
+
+def node_wait_selector(expect_nodes: int | None) -> str | None:
+    """Selector to await before screenshotting, or ``None`` to skip the wait.
+
+    The caller (``WorkspaceService.snapshot``) knows from the workspace state
+    how many nodes the canvas holds. When it says nodes exist, screenshotting
+    after only the ``.react-flow`` shell appeared can capture an empty grid —
+    the state fetch may still be in flight — so we additionally wait for at
+    least one node element. An empty canvas (0 nodes) or an unknown count
+    (``None``) keeps the old shell-plus-settle behaviour.
+    """
+    if expect_nodes is not None and expect_nodes > 0:
+        return NODE_SELECTOR
+    return None
+
+
+def node_wait_timeout_message(
+    slug: str, *, expect_nodes: int, url: str, timeout_ms: int
+) -> str:
+    """Error text for a node wait that timed out — names what was waited for."""
+    return (
+        f"snapshot of {slug!r} timed out after {timeout_ms} ms waiting for "
+        f"canvas nodes to render: the workspace state has {expect_nodes} "
+        f"node(s) but no {NODE_SELECTOR!r} element appeared at {url}. "
+        "Check that the serve at that URL hosts this project's data dir "
+        "(`anchor serve-info`) and that the canvas loads in a browser."
+    )
+
 
 class HeadlessChromiumSnapshotter:
     """Render a workspace canvas to PNG/SVG via headless chromium.
@@ -54,6 +85,7 @@ class HeadlessChromiumSnapshotter:
         format: str = "png",
         viewport: tuple[int, int] | None = None,
         full_page: bool = True,
+        expect_nodes: int | None = None,
     ) -> SnapshotResult:
         # The slug is interpolated into both the navigation URL and the
         # output filename. Validate it here so the snapshotter is hardened
@@ -109,6 +141,26 @@ class HeadlessChromiumSnapshotter:
                     # through to the settle delay and screenshot whatever
                     # rendered.
                     pass
+                # When the caller says the workspace has nodes, the shell
+                # alone is not proof the canvas rendered: the state fetch
+                # may still be in flight, and screenshotting now yields an
+                # empty grid with no error (#306). Wait for a node element
+                # and fail loudly, naming what we waited for.
+                node_selector = node_wait_selector(expect_nodes)
+                if node_selector is not None:
+                    try:
+                        await page.wait_for_selector(
+                            node_selector, timeout=self.nav_timeout_ms,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        raise RuntimeError(
+                            node_wait_timeout_message(
+                                slug,
+                                expect_nodes=expect_nodes or 0,
+                                url=url,
+                                timeout_ms=self.nav_timeout_ms,
+                            ),
+                        ) from exc
                 # Give React Flow a beat to finish its initial layout +
                 # fitView animation. Cheaper than waiting on a custom
                 # ready-flag the frontend would have to publish.

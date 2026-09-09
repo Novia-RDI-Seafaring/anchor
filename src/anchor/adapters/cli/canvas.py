@@ -48,14 +48,13 @@ def _canvas_url(slug: str, data_dir: Path | None = None) -> str:
     (anchor#177). Falls back to the configured host/port when no serve for this
     data dir is up.
     """
-    from anchor.infra.config import AnchorConfig
-
     if data_dir is not None:
-        from anchor.infra.serve_registry import find_serve_for_data_dir
+        from anchor.adapters.cli.common import resolve_serve_base_url
 
-        record = find_serve_for_data_dir(data_dir)
-        if record is not None:
-            return f"{record.base_url()}/c/{slug}"
+        base_url, _found = resolve_serve_base_url(data_dir)
+        return f"{base_url}/c/{slug}"
+
+    from anchor.infra.config import AnchorConfig
 
     cfg = AnchorConfig()
     host = cfg.http_host if cfg.http_host not in ("0.0.0.0", "::") else "127.0.0.1"

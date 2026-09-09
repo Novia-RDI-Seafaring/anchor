@@ -11,6 +11,13 @@ next version section on tag.
 
 ### Added
 
+- Spec-row enrichment records the matched table cell (#242 P2c, closes
+  #274): when a row's value matches one gold cell, the row's `source_ref`
+  gains a `cell: {row, col}` selector alongside the cached cell bbox, and
+  the web viewer resolves selector-bearing refs through
+  `GET /api/documents/{slug}/resolve-ref` so the click-to-source highlight
+  lands on the referenced cell instead of the whole table region. Refs
+  without selectors keep the unchanged region-level highlight path.
 - `remove-region`: the cleanup half of `derive_region`, with adapter parity —
   MCP `remove_region`, HTTP `DELETE /api/documents/{slug}/regions/{region_id}`,
   CLI `anchor remove-region`. Only regions carrying `derived_from` are
@@ -32,6 +39,28 @@ next version section on tag.
   `placeholders`) print a one-line structured message to stderr and exit 1
   on domain errors (unknown node/edge id, unknown workspace) instead of
   crashing with a Rich traceback. (#305)
+
+- `anchor check` now leads with the project the current directory actually
+  resolves to — the same cwd `anchor.toml` walk every other command uses —
+  naming the project, where its name came from (marker path, `--project`,
+  `ANCHOR_PROJECT`, `anchor use`, or the env default), its data dir, and the
+  serve bound to *that* project's data dir. A new `--project` flag joins
+  `--env`; both override the cwd marker. Previously check always reported the
+  env default project, so "Ready ✓" could describe a different data dir than
+  the one an `ingest` from that folder would use. (#303)
+- `anchor canvas snapshot` resolves its default `--base-url` through the
+  serve registry (the lookup `anchor canvas url` uses), so a serve on a
+  bumped or per-project port is found instead of a guessed `:8002`; an
+  explicit `--base-url` still overrides, and a missing serve is warned about.
+  The headless snapshotter also waits for at least one rendered node when
+  the workspace state says nodes exist, and times out with an error naming
+  what it waited for — no more silent empty-grid PNGs. (#306)
+- Skill/help drift: the core skill no longer claims gold extraction requires
+  `ANCHOR_OPENAI_API_KEY` unconditionally (a plain `OPENAI_API_KEY` is
+  accepted for the `openai` provider; `local`/`ollama`/`harness` need no
+  key), and `anchor embed --help` states the environment's configured
+  `embed_model` is used — local bge is only the local-provider default — and
+  that search skips documents whose stored embed_model mismatches. (#302)
 
 ## [0.3.0] - 2026-09-08
 

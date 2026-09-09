@@ -30,6 +30,44 @@ export type Region = {
 
 type RegionsResponse = { slug: string; pages: Record<string, Region[]> };
 
+/**
+ * A source_ref loose enough to cover node / row / edge refs. The optional
+ * selectors point below the region (#242 P2): `item_id` names one silver
+ * item (`p<page>-i<n>`), `cell` a `{row, col}` of a table.
+ */
+export type ResolvableRef = {
+  slug?: string;
+  page?: number;
+  bbox?: number[];
+  region_id?: string;
+  item_id?: string;
+  cell?: { row?: number; col?: number } | null;
+};
+
+/** Answer of `GET /api/documents/{slug}/resolve-ref` (#242 P2b). */
+export type ResolvedRef = {
+  slug: string;
+  page: number;
+  bbox: number[];
+  /** Which layer resolved: cell > item > region > bbox. */
+  precision: "cell" | "item" | "region" | "bbox";
+  region_id?: string;
+  item_id?: string;
+  cell?: { row: number; col: number };
+};
+
+/**
+ * True when `ref` carries a below-region selector (`cell` or `item_id`)
+ * the backend resolver can turn into a tighter stored bbox (#242 P2c).
+ * Refs without a selector take the unchanged region-level highlight path —
+ * no request is made for them.
+ */
+export function refHasSelector(ref: ResolvableRef | null | undefined): boolean {
+  if (!ref) return false;
+  if (typeof ref.item_id === "string" && ref.item_id.length > 0) return true;
+  return typeof ref.cell?.row === "number" && typeof ref.cell?.col === "number";
+}
+
 function normaliseRegion(region: Region): Region {
   if (region.bbox || !region.approximate_bbox) return region;
   return { ...region, bbox: region.approximate_bbox };
@@ -46,6 +84,34 @@ export const documents = {
     return Object.values(rsp.pages ?? {}).flat().map(normaliseRegion);
   },
   goldMap: (slug: string) => api.get<Record<string, unknown>>(`/api/documents/${slug}/gold-map`),
+  /**
+   * Resolve a source_ref to the most precise stored evidence bbox via
+   * `GET /api/documents/{slug}/resolve-ref` (#242 P2b/P2c). Precedence
+   * (cell > item > region) is decided server-side, so the viewer never
+   * re-implements it. Resolves to `null` (never throws) on 404/error so
+   * the caller falls back to the ref's own bbox — the pre-#274 highlight.
+   */
+  resolveRef: async (slug: string, ref: ResolvableRef): Promise<ResolvedRef | null> => {
+    const params = new URLSearchParams();
+    if (typeof ref.page === "number") params.set("page", String(ref.page));
+    if (ref.region_id) params.set("region_id", ref.region_id);
+    if (ref.item_id) params.set("item_id", ref.item_id);
+    if (typeof ref.cell?.row === "number" && typeof ref.cell?.col === "number") {
+      params.set("row", String(ref.cell.row));
+      params.set("col", String(ref.cell.col));
+    }
+    try {
+      const rsp = await api.get<ResolvedRef>(
+        `/api/documents/${slug}/resolve-ref?${params.toString()}`,
+      );
+      if (typeof rsp?.page === "number" && Array.isArray(rsp.bbox) && rsp.bbox.length === 4) {
+        return rsp;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  },
   /**
    * Locate `query` on a page and return its page-space quad(s) (value-precise
    * highlight, #197). `bbox` clips the search to a region so a value that
