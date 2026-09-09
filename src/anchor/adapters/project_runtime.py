@@ -204,7 +204,7 @@ def build_project_runtime(
         HeadlessChromiumSnapshotter,
     )
     from anchor.infra.stores.fs_workspace_store import FsWorkspaceStore
-    from anchor.infra.workspace_locks import InProcessWorkspaceLocks
+    from anchor.infra.workspace_locks import process_workspace_locks
 
     profile = RuntimeProfile(profile)
     features = _PROFILE_FEATURES[profile]
@@ -216,7 +216,10 @@ def build_project_runtime(
         FsWorkspaceStore(config.canvases_dir),
         bus,
         node_types=_node_type_registry(data_dir),
-        locks=InProcessWorkspaceLocks(),
+        # Process-level, keyed by data dir: locks must survive runtime-bundle
+        # eviction (MCP LRU) so concurrent writers to one workspace always
+        # serialize on the same lock object (#272).
+        locks=process_workspace_locks(data_dir),
         snapshotter=HeadlessChromiumSnapshotter(
             base_url=base_url,
             output_dir=data_dir / "snapshots",
