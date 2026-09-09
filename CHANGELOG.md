@@ -9,6 +9,8 @@ next version section on tag.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-09
+
 ### Added
 
 - The intents queue is visible in the web UI (closes #323, part 2 of
