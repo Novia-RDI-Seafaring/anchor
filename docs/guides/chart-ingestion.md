@@ -91,8 +91,12 @@ the producer itself.
    bbox.
 
 The node type registry is open, so `chart` needs no registration; the canvas
-renders it through the `chart` token. Provenance is preserved end to end: the
-chart on the canvas points back at the page region it was traced from.
+renders it through the `chart` token. A namespaced producer node type works
+too: a `graphtracer:chart_series` node has no renderer of its own, so the
+canvas resolves it through the `renders: "chart"` token its manifest declares
+(exact registration first, then the token, then the default box). Provenance
+is preserved end to end: the chart on the canvas points back at the page
+region it was traced from.
 
 ## The human-click path
 

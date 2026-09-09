@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from anchor.core.ports.event_bus import EventBus
     from anchor.core.services.intent_service import IntentService
     from anchor.core.services.workspace_service import WorkspaceService
+    from anchor.core.workspace.node_types import NodeTypeRegistry
     from anchor.extensions.anchor_cad.core.services import CadService
     from anchor.extensions.anchor_fmus.core.services import FmuService
     from anchor.extensions.anchor_pdfs.core.ingest.session import IngestSessionService
@@ -164,6 +165,29 @@ def build_ingest_session_service(
     )
 
 
+def _node_type_registry(data_dir: Path) -> NodeTypeRegistry:
+    """Built-in node types plus producer types declared by OIP manifests.
+
+    Discovered manifests' ui_hints.node_types entries (bundled, system, and
+    project scopes) register additively with their declared `renders` token
+    (#309), so every adapter's node-types surface (HTTP GET /api/node-types,
+    MCP canvas_node_types, CLI `anchor canvas node-types`) describes them
+    without per-adapter wiring. Exact registrations win: a name already in
+    the built-in registry, or declared by an earlier scope, is kept as-is.
+    Discovery is failure-tolerant; a broken manifest is skipped in
+    `load_manifest` and never blocks the runtime."""
+    from anchor.adapters.extension_host import SOURCE_ORDER, discover_manifests
+    from anchor.core.workspace.builtin_node_types import builtin_node_type_registry
+    from anchor.core.workspace.node_types import node_types_from_ui_hints
+
+    registry = builtin_node_type_registry()
+    groups = discover_manifests(data_dir)
+    manifests = [m for source in SOURCE_ORDER for m in groups.get(source, [])]
+    for node_type in node_types_from_ui_hints(manifests):
+        registry.register_if_absent(node_type)
+    return registry
+
+
 def build_project_runtime(
     config: AnchorConfig,
     *,
@@ -191,6 +215,7 @@ def build_project_runtime(
     workspace = WorkspaceService(
         FsWorkspaceStore(config.canvases_dir),
         bus,
+        node_types=_node_type_registry(data_dir),
         locks=InProcessWorkspaceLocks(),
         snapshotter=HeadlessChromiumSnapshotter(
             base_url=base_url,

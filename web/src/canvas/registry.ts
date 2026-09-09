@@ -35,6 +35,8 @@
 import type { ComponentType } from "react";
 import type { NodeProps, NodeTypes } from "@xyflow/react";
 
+import { api } from "@/api/client";
+
 // Primitives — generic OIP-aware renderers
 import { DocumentPrimitive } from "./primitives/DocumentPrimitive";
 import { Model3DPrimitive } from "./primitives/Model3DPrimitive";
@@ -320,22 +322,98 @@ export function renderA2UIFragment(_a2uiMessage: unknown): null {
 }
 
 /**
+ * OIP `renders`-token fallback (issue #309, OIP#6).
+ *
+ * Producers declare namespaced node types in their manifest's
+ * `ui_hints.node_types`, each carrying a `renders` token (e.g.
+ * `graphtracer:chart_series` renders `chart`). The server folds those
+ * declarations into `GET /api/node-types`; this map remembers
+ * `node_type -> renders` so an unknown node_type can resolve to the
+ * renderer registered under its token. Resolution order (OIP#6):
+ *
+ *   1. exact node_type registration
+ *   2. the type's declared `renders` token
+ *   3. default (undefined here; ReactFlow falls back to its default node)
+ *
+ * Unrecognised tokens fall through to default, never error. No map (fetch
+ * failed, never primed) means exact-key-only resolution, today's behavior.
+ */
+let rendersTokens: ReadonlyMap<string, string> | null = null;
+let primeStarted = false;
+
+/** Directly install (or clear) the node_type -> renders map. Tests use this. */
+export function setRendersTokenMap(map: ReadonlyMap<string, string> | null): void {
+  rendersTokens = map;
+}
+
+/** Reset the prime guard + map so tests can exercise `primeRendersTokenMap`. */
+export function resetRendersTokenMapForTests(): void {
+  rendersTokens = null;
+  primeStarted = false;
+}
+
+/**
+ * Fetch `/api/node-types` once at app start and cache the renders-token
+ * map. Failure-tolerant: on any error the map stays unset and resolution
+ * keeps today's exact-key behavior.
+ */
+export async function primeRendersTokenMap(): Promise<void> {
+  if (primeStarted) return;
+  primeStarted = true;
+  try {
+    const entries = await api.get<Array<{ name?: unknown; renders?: unknown }>>(
+      "/api/node-types",
+    );
+    const map = new Map<string, string>();
+    for (const entry of entries) {
+      if (
+        entry &&
+        typeof entry.name === "string" &&
+        entry.name &&
+        typeof entry.renders === "string" &&
+        entry.renders
+      ) {
+        map.set(entry.name, entry.renders);
+      }
+    }
+    rendersTokens = map;
+  } catch {
+    // No server data: keep exact-key-only resolution.
+  }
+}
+
+/** Resolve per OIP#6: exact registration, then renders token, then default. */
+export function resolveNodeRenderer(name: string): ComponentType<NodeProps> | undefined {
+  const exact = registry.get(name);
+  if (exact) return exact;
+  const token = rendersTokens?.get(name);
+  if (token) return registry.get(token);
+  return undefined;
+}
+
+/**
  * The proxy ReactFlow consumes. ReactFlow asks for `nodeTypes[name]`;
- * we serve from the registry without recompilation.
+ * we serve from the registry without recompilation, resolving unknown
+ * node types through their OIP `renders` token (#309).
  */
 export const nodeTypes: NodeTypes = new Proxy({} as NodeTypes, {
   get(_target, prop: string) {
-    return registry.get(prop);
+    return resolveNodeRenderer(prop);
   },
   has(_target, prop: string) {
-    return registry.has(prop);
+    return resolveNodeRenderer(prop) !== undefined;
   },
   ownKeys() {
-    return [...registry.keys()];
+    const keys = new Set(registry.keys());
+    for (const [name] of rendersTokens ?? []) {
+      if (resolveNodeRenderer(name)) keys.add(name);
+    }
+    return [...keys];
   },
   getOwnPropertyDescriptor(_target, prop: string) {
-    if (registry.has(prop)) {
-      return { enumerable: true, configurable: true, value: registry.get(prop) };
+    const value = resolveNodeRenderer(prop);
+    if (value) {
+      return { enumerable: true, configurable: true, value };
     }
     return undefined;
   },
