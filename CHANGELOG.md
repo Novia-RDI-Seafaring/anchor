@@ -29,6 +29,32 @@ next version section on tag.
   a new additive `WorkspaceMetadataUpdated` event (deep-merge patch
   semantics, `None` deletes), which older readers skip on replay.
 
+### Fixed
+
+- Cold-boot replay now applies `ReferenceRemoved` and `ReferenceUpdated`
+  events: both were missing from the replay type map, so a bibliography
+  deletion or caption edit newer than the snapshot was silently dropped
+  when state was rebuilt from `events.jsonl`. (#324)
+
+## [0.4.0] - 2026-09-09
+
+### Added
+
+- The intents queue is visible in the web UI (closes #323, part 2 of
+  #321): a new Intents tab in the left files explorer lists the project's
+  open intents live (SSE `intent_pending` signal plus an 8s polling
+  fallback that catches agents resolving over stdio MCP / CLI from other
+  processes) with a collapsed "recently resolved" section that shows each
+  record's resolution text. The panel authors free-text intents via the
+  new additive `user_request` kind — its payload carries the text plus,
+  when the user attaches the selected canvas node as the target, the same
+  `{workspace_id, node_id}` node-ref shape `drop_to_ingest` uses — and can
+  dismiss an open intent (resolve with `{dismissed: true}`). An unread
+  badge on the tab counts open intents from any tab, so a canvas file-drop
+  in a harness project surfaces immediately. The kind is recognized across
+  HTTP / MCP / CLI unchanged (adapter parity via the existing enqueue /
+  list / resolve surfaces).
+
 - Every canvas event now records who caused it (closes #322, part 1 of
   #321): the `DomainEvent` envelope gains an additive optional
   `actor: {kind: human|agent|system, id?, label?}` field. Adapters stamp
@@ -84,10 +110,6 @@ next version section on tag.
 
 ### Fixed
 
-- Cold-boot replay now applies `ReferenceRemoved` and `ReferenceUpdated`
-  events: both were missing from the replay type map, so a bibliography
-  deletion or caption edit newer than the snapshot was silently dropped
-  when state was rebuilt from `events.jsonl`. (#324)
 - `derive_region` parent lookup is no longer page-ambiguous: region ids are
   only unique per page, so `parent_region_id` accepts the `p4/r1` token form
   `inspect_region` uses, an explicit page wins, and a bare id matching

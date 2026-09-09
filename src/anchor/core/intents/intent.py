@@ -32,12 +32,16 @@ from anchor.core.ids import new_event_id
 #:   (#147). The queue SUPPORTS them (they are valid kinds and persist like any
 #:   other intent), but their authoring UX is built separately under #147; the
 #:   queue does not enqueue them yet.
-IntentKind = Literal["drop_to_ingest", "make_reference", "attach_to_fact"]
+#: - ``user_request`` — a free-text request a human typed into the web Intents
+#:   panel (#323). ``payload`` carries ``{"text": <the request>}`` plus, when
+#:   the author attached a canvas node as the target, the same node-ref shape
+#:   ``drop_to_ingest`` uses: ``{"workspace_id": <slug>, "node_id": <id>}``.
+IntentKind = Literal["drop_to_ingest", "make_reference", "attach_to_fact", "user_request"]
 
 #: Every recognized kind, as a plain set so callers (storage, validation,
 #: tests) can check membership without importing typing internals.
 INTENT_KINDS: frozenset[str] = frozenset(
-    {"drop_to_ingest", "make_reference", "attach_to_fact"}
+    {"drop_to_ingest", "make_reference", "attach_to_fact", "user_request"}
 )
 
 #: Status values an intent can carry. ``pending`` = waiting for the agent;
