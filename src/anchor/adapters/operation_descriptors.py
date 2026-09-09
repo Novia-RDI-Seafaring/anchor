@@ -154,6 +154,20 @@ DOCUMENT_OPERATION_DESCRIPTORS: tuple[OperationDescriptor, ...] = (
         cli_command=("region-content",),
     ),
     OperationDescriptor(
+        id="document.derive_region",
+        service_method="derive_region",
+        http=HttpSurface("POST", "/api/documents/{slug}/derived-regions"),
+        mcp_tool="derive_region",
+        cli_command=("derive-region",),
+    ),
+    OperationDescriptor(
+        id="document.remove_region",
+        service_method="remove_region",
+        http=HttpSurface("DELETE", "/api/documents/{slug}/regions/{region_id:path}"),
+        mcp_tool="remove_region",
+        cli_command=("remove-region",),
+    ),
+    OperationDescriptor(
         id="document.resolve_source_ref",
         service_method="resolve_source_ref",
         http=HttpSurface("GET", "/api/documents/{slug}/resolve-ref"),

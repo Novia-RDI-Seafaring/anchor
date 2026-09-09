@@ -584,7 +584,20 @@ class FsDocStore:
         return out
 
     async def write_gold_region_file(self, slug: str, page: int, regions: list[dict[str, Any]]) -> Path:
-        target = self.gold / slug / "pages" / f"{page}.regions.json"
+        # The slug reaches this write from CLI/MCP/HTTP arguments (derive /
+        # remove region), so the path is a path-injection sink. Inline
+        # normalise-then-prefix-check (not delegated) so the containment
+        # barrier sits in the same function that builds the path — the same
+        # guard `write_crop` applies.
+        if not slug or "/" in slug or "\\" in slug or slug in {".", ".."}:
+            raise UnsafeUploadError(f"unsafe document slug: {slug!r}")
+        base = os.path.realpath(os.fspath(self.gold))
+        candidate = os.path.normpath(
+            os.path.join(base, slug, "pages", f"{int(page)}.regions.json")
+        )
+        if not candidate.startswith(base + os.sep):
+            raise UnsafeUploadError(f"document slug {slug!r} escapes the gold dir")
+        target = Path(candidate)
         target.parent.mkdir(parents=True, exist_ok=True)
         normalised = _normalise_regions(regions)
         async with aiofiles.open(target, "w", encoding="utf-8") as f:
@@ -599,7 +612,18 @@ class FsDocStore:
                 "or region.page"
             )
         async with self._lock:
-            target = self.gold / slug / "pages" / f"{page}.regions.json"
+            # Same inline barrier as `write_gold_region_file`: the slug is
+            # caller-supplied, so check containment right where the read path
+            # is built.
+            if not slug or "/" in slug or "\\" in slug or slug in {".", ".."}:
+                raise UnsafeUploadError(f"unsafe document slug: {slug!r}")
+            base = os.path.realpath(os.fspath(self.gold))
+            candidate = os.path.normpath(
+                os.path.join(base, slug, "pages", f"{page}.regions.json")
+            )
+            if not candidate.startswith(base + os.sep):
+                raise UnsafeUploadError(f"document slug {slug!r} escapes the gold dir")
+            target = Path(candidate)
             existing: list[dict[str, Any]] = []
             if target.is_file():
                 data = json.loads(target.read_text())

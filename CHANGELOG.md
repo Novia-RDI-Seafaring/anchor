@@ -9,6 +9,30 @@ next version section on tag.
 
 ## [Unreleased]
 
+### Added
+
+- `remove-region`: the cleanup half of `derive_region`, with adapter parity —
+  MCP `remove_region`, HTTP `DELETE /api/documents/{slug}/regions/{region_id}`,
+  CLI `anchor remove-region`. Only regions carrying `derived_from` are
+  deletable (model-extracted gold is refused with a structured error), and
+  the region's vector is dropped from `embeddings.json` so search stays
+  consistent. (#304)
+- `canvas add-node` / `add-edge` responses surface the created `node_id` /
+  `edge_id` at top level on all three adapters (CLI JSON, MCP result, HTTP
+  response) — additive keys; the `event`/`state`/`position` envelope is
+  unchanged. (#307)
+
+### Fixed
+
+- `derive_region` mints the next free `r<n>` id on the target page when the
+  producer omits one, so a stored region is always addressable; explicit
+  producer ids pass through untouched. (#304)
+- `anchor canvas` mutation commands (`add-edge`, `add-node`, `update-node`,
+  `update-edge`, `remove-node`, `remove-edge`, `state`, `clear`,
+  `placeholders`) print a one-line structured message to stderr and exit 1
+  on domain errors (unknown node/edge id, unknown workspace) instead of
+  crashing with a Rich traceback. (#305)
+
 ## [0.3.0] - 2026-09-08
 
 Everything since v0.2.5: the v0.2.6–v0.2.8 tags shipped without rolling
