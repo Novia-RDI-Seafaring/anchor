@@ -57,10 +57,9 @@
     "vitest": "^4.1.0"
   },
   "pnpm": {
-    "auditConfig": {
-      "ignoreGhsas": [
-        "GHSA-f88m-g3jw-g9cj"
-      ]
+    "overrides": {
+      "sharp": "^0.35.4",
+      "protobufjs": "^7.6.1"
     }
   }
 }
