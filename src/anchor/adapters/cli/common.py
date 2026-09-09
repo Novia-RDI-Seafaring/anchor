@@ -27,6 +27,29 @@ def default_data_dir() -> Path:
 DEFAULT_DATA_DIR = default_data_dir()
 
 
+def resolve_serve_base_url(data_dir: Path) -> tuple[str, bool]:
+    """Base URL of the ``anchor serve`` actually bound to ``data_dir``.
+
+    Returns ``(base_url, found)``. When a running serve is registered for this
+    project's data dir, its real ``http://host:port`` wins — so a serve that
+    bumped to a free port (or a non-default project on :8003) is reached, not a
+    guessed ``:8002`` pointing at someone else's server (anchor#177, #306).
+    ``found`` is False when no serve is bound to the dir; the fallback is then
+    the configured host/port, which may not resolve — callers should say so.
+    """
+    from anchor.infra.serve_registry import find_serve_for_data_dir
+
+    record = find_serve_for_data_dir(data_dir)
+    if record is not None:
+        return record.base_url(), True
+
+    from anchor.infra.config import AnchorConfig
+
+    cfg = AnchorConfig()
+    host = cfg.http_host if cfg.http_host not in ("0.0.0.0", "::") else "127.0.0.1"
+    return f"http://{host}:{cfg.http_port}", False
+
+
 def _emit_bytes(path: Path | None, *, copy_to: Path | None, out: str | None, label: str) -> None:
     if path is None:
         typer.echo(f"{label}: not found", err=True)

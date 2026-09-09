@@ -50,9 +50,12 @@ pipx install anchor-kb
 `anchor install <harness>` registers an installed ANCHOR tool with an AI
 harness. It does not install the tool itself.
 
-Bronze and silver extraction run locally. Gold extraction requires
-`ANCHOR_OPENAI_API_KEY`; set the other `ANCHOR_OPENAI_*` variables for your
-provider as needed.
+Bronze and silver extraction run locally. Gold extraction needs an API key
+for keyed providers: set `ANCHOR_OPENAI_API_KEY` (the endpoint's own key —
+required for `azure` and `custom`). With the `openai` provider a plain
+`OPENAI_API_KEY` is also accepted. The `local`, `ollama`, and `harness`
+providers need no key. Set the other `ANCHOR_OPENAI_*` variables for your
+provider as needed; `anchor check` reports what the resolved config accepts.
 
 ## When to use
 
