@@ -636,14 +636,24 @@ class FsDocStore:
             return await self.write_gold_region_file(slug, page, kept)
 
     async def write_embeddings(self, slug: str, payload: dict[str, Any]) -> Path:
-        target = self.gold / slug / "embeddings.json"
+        # Inline normalise-then-prefix-check (not delegated): the slug can
+        # arrive from a request (remove_region's cleanup writes here).
+        base = os.path.realpath(os.fspath(self.gold))
+        candidate = os.path.normpath(os.path.join(base, slug, "embeddings.json"))
+        if not candidate.startswith(base + os.sep):
+            raise UnsafeUploadError(f"document slug {slug!r} escapes the gold dir")
+        target = Path(candidate)
         target.parent.mkdir(parents=True, exist_ok=True)
         async with aiofiles.open(target, "w", encoding="utf-8") as f:
             await f.write(json.dumps(payload))
         return target
 
     async def get_embeddings(self, slug: str) -> dict[str, Any] | None:
-        target = self.gold / slug / "embeddings.json"
+        base = os.path.realpath(os.fspath(self.gold))
+        candidate = os.path.normpath(os.path.join(base, slug, "embeddings.json"))
+        if not candidate.startswith(base + os.sep):
+            return None
+        target = Path(candidate)
         if not target.is_file():
             return None
         async with aiofiles.open(target, encoding="utf-8") as f:
