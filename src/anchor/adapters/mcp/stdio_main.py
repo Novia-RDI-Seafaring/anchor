@@ -71,6 +71,21 @@ async def _run(
         await server.run(read, write, server.create_initialization_options())
 
 
+def _preload_native_math() -> None:
+    """Load numpy (and its bundled OpenBLAS) on the main thread at startup.
+
+    The embedder otherwise first imports numpy from an ``asyncio.to_thread``
+    worker on the first ``search_documents``. On Windows that first load of
+    OpenBLAS's DLL runs its ``DllMain`` under the loader lock, spawns a thread
+    pool, and waits for it, while the spawned threads need the same loader lock
+    for ``DLL_THREAD_ATTACH`` -- a deadlock that only bites once the process is
+    busy (event loop running, pymupdf / pywin32 resident). Importing on the
+    main thread here (~0.1 s, no loop running) makes the later worker import a
+    no-op that loads no DLL. See #334.
+    """
+    import numpy  # noqa: F401
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Anchor v2 MCP (stdio)")
     parser.add_argument(
@@ -111,6 +126,7 @@ def main() -> None:
     from anchor.infra.quiet import quiet_dependency_logs
 
     quiet_dependency_logs()
+    _preload_native_math()
     asyncio.run(
         _run(env=args.env, project=args.project, data_dir=args.data_dir, base_url=args.base_url)
     )

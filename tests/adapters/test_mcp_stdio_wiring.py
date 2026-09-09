@@ -4,16 +4,26 @@ from __future__ import annotations
 import pytest
 
 from anchor.adapters.mcp.services import _build_ingest_service
-from anchor.adapters.mcp.stdio_main import _config_for_data_dir
-from anchor.extensions.anchor_pdfs.infra.llm.local_sentence_transformer_embedder import (
-    LocalSentenceTransformerEmbedder,
-)
+from anchor.adapters.mcp.stdio_main import _config_for_data_dir, _preload_native_math
+from anchor.extensions.anchor_pdfs.infra.llm.onnx_bge_embedder import OnnxBgeEmbedder
 from anchor.extensions.anchor_pdfs.infra.llm.openai_embedder import OpenAIEmbedder
 from anchor.extensions.anchor_pdfs.infra.llm.openai_md_polisher import OpenAIPageMdPolisher
 from anchor.extensions.anchor_pdfs.infra.llm.openai_region_extractor import OpenAIRegionExtractor
 from anchor.extensions.anchor_pdfs.infra.memory_doc_store import MemoryDocStore
 from anchor.infra.bus.memory_bus import MemoryEventBus
 from anchor.infra.config import AnchorConfig
+
+
+def test_preload_native_math_imports_numpy_on_the_main_thread():
+    # Regression guard: the MCP entrypoint must import numpy at startup, on the
+    # main thread, so the embedder's later worker-thread `import numpy` loads no
+    # DLL. Loading OpenBLAS's DLL from an asyncio.to_thread worker deadlocks in
+    # its DllMain under the Windows loader lock once the server is busy.
+    import sys
+
+    _preload_native_math()
+
+    assert "numpy" in sys.modules
 
 
 def test_mcp_data_dir_defaults_to_anchor_data_dir(tmp_path, monkeypatch):
@@ -38,7 +48,7 @@ def test_mcp_wires_configured_local_embedder_without_openai_key(tmp_path, monkey
 
     ingest = _build_ingest_service(config, MemoryEventBus(), MemoryDocStore())
 
-    assert isinstance(ingest.embedder, LocalSentenceTransformerEmbedder)
+    assert isinstance(ingest.embedder, OnnxBgeEmbedder)
     assert ingest.embed_model_id == "local/test-model"
 
 
@@ -79,7 +89,7 @@ def test_mcp_openai_key_does_not_override_configured_local_embedder(tmp_path):
 
     ingest = _build_ingest_service(config, MemoryEventBus(), MemoryDocStore())
 
-    assert isinstance(ingest.embedder, LocalSentenceTransformerEmbedder)
+    assert isinstance(ingest.embedder, OnnxBgeEmbedder)
     assert ingest.embed_model_id == "local/test-model"
 
 
@@ -100,7 +110,7 @@ def test_mcp_local_only_builds_no_openai_client_despite_key(tmp_path, monkeypatc
 
     assert ingest.polisher is None
     assert ingest.region_extractor is None
-    assert isinstance(ingest.embedder, LocalSentenceTransformerEmbedder)
+    assert isinstance(ingest.embedder, OnnxBgeEmbedder)
 
 
 def test_mcp_local_only_pins_offline_env(tmp_path, monkeypatch):
