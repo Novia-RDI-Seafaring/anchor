@@ -46,3 +46,42 @@ def test_build_app_accepts_project_runtime(tmp_path):
     response = TestClient(app).get("/api/extensions/status")
     assert response.status_code == 200
     assert response.json()["summary"] == {"available": 0, "unavailable": 1}
+
+
+def test_extension_status_route_lists_discovered_producers(tmp_path, monkeypatch):
+    """#308 parity: HTTP serves the same producers section as CLI/MCP."""
+    import json
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "home" / ".config"))
+    services = make_in_memory_services()
+    data_dir = tmp_path / "anchor-data"
+    project_dir = data_dir / ".oip" / "producers.d"
+    project_dir.mkdir(parents=True)
+    (project_dir / "tracer.json").write_text(json.dumps({
+        "oip_version": "0.1",
+        "producer": {"name": "tracer", "version": "1.0.0"},
+        "invocation": {"kind": "mcp-stdio", "command": "no-such-binary-xyz"},
+    }))
+    config = AnchorConfig(data_dir=data_dir, _env_file=None)
+    runtime = ProjectRuntime(
+        profile=RuntimeProfile.FULL,
+        config=config,
+        bus=services.bus,
+        workspace=services.workspace,
+        ingest=services.ingest,
+        doc_store=services.doc_store,
+        intents=services.intents,
+        ingest_session=services.ingest_session,
+    )
+
+    response = TestClient(build_app(runtime)).get("/api/extensions/status")
+
+    assert response.status_code == 200
+    producers = response.json()["producers"]
+    assert "never started by Anchor" in producers["note"]
+    items = {item["name"]: item for item in producers["items"]}
+    assert items["tracer"]["source"] == "project"
+    assert items["tracer"]["command_found"] is False
+    assert items["tracer"]["check"] == "command not found on PATH"
+    assert items["tracer"]["started"] is False

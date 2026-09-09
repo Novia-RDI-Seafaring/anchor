@@ -268,3 +268,104 @@ def test_cli_reference_create_rejects_malformed(tmp_path):
         "--data-dir", str(data_dir),
     ])
     assert r.exit_code == 2
+
+
+# ── --data @path (#288) ─────────────────────────────────────────────────────
+#
+# `derive-region --region` reads `@path`; every `--data`-taking canvas
+# command gets the same affordance so large payloads skip shell quoting.
+
+
+def test_cli_add_node_data_accepts_at_path(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    payload = tmp_path / "node.json"
+    payload.write_text(json.dumps({"text": "from-file", "metadata": {"tag": "demo"}}))
+
+    r = runner.invoke(app, [
+        "canvas", "add-node", "w1", "fact", "--label", "F",
+        "--data", f"@{payload}", "--data-dir", str(data_dir),
+    ])
+
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    node = next(n for n in out["state"]["nodes"] if n["id"] == out["node_id"])
+    assert node["data"]["text"] == "from-file"
+    assert node["data"]["metadata"] == {"tag": "demo"}
+
+
+def test_cli_update_node_data_accepts_at_path_and_merges(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    added = runner.invoke(app, [
+        "canvas", "add-node", "w1", "fact",
+        "--data", json.dumps({"text": "x", "source_ref": {"page": 1}}),
+        "--data-dir", str(data_dir),
+    ])
+    node_id = json.loads(added.output)["node_id"]
+    patch = tmp_path / "patch.json"
+    patch.write_text(json.dumps({"text": "y"}))
+
+    r = runner.invoke(app, [
+        "canvas", "update-node", "w1", node_id,
+        "--data", f"@{patch}", "--data-dir", str(data_dir),
+    ])
+
+    assert r.exit_code == 0, r.output
+    state = json.loads(r.output)["state"]
+    node = next(n for n in state["nodes"] if n["id"] == node_id)
+    assert node["data"]["text"] == "y"
+    # Deep-merge semantics unchanged: unmentioned keys survive.
+    assert node["data"]["source_ref"] == {"page": 1}
+
+
+def test_cli_add_edge_and_update_edge_data_accept_at_path(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    n1 = json.loads(runner.invoke(app, [
+        "canvas", "add-node", "w1", "fact", "--data-dir", str(data_dir),
+    ]).output)["node_id"]
+    n2 = json.loads(runner.invoke(app, [
+        "canvas", "add-node", "w1", "fact", "--data-dir", str(data_dir),
+    ]).output)["node_id"]
+    edge_payload = tmp_path / "edge.json"
+    edge_payload.write_text(json.dumps({"kind": "evidence"}))
+
+    added = runner.invoke(app, [
+        "canvas", "add-edge", "w1", n1, n2,
+        "--data", f"@{edge_payload}", "--data-dir", str(data_dir),
+    ])
+    assert added.exit_code == 0, added.output
+    out = json.loads(added.output)
+    edge_id = out["edge_id"]
+    edge = next(e for e in out["state"]["edges"] if e["id"] == edge_id)
+    assert edge["data"] == {"kind": "evidence"}
+
+    patch = tmp_path / "edge-patch.json"
+    patch.write_text(json.dumps({"weight": 2}))
+    updated = runner.invoke(app, [
+        "canvas", "update-edge", "w1", edge_id,
+        "--data", f"@{patch}", "--data-dir", str(data_dir),
+    ])
+    assert updated.exit_code == 0, updated.output
+    upd_state = json.loads(updated.output)["state"]
+    edge = next(e for e in upd_state["edges"] if e["id"] == edge_id)
+    assert edge["data"] == {"kind": "evidence", "weight": 2}
+
+
+def test_cli_add_node_data_at_path_missing_file_is_usage_error(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+
+    r = runner.invoke(app, [
+        "canvas", "add-node", "w1", "fact",
+        "--data", f"@{tmp_path / 'missing.json'}", "--data-dir", str(data_dir),
+    ])
+
+    assert r.exit_code == 2
+    assert "cannot read" in r.output
+    assert "Traceback" not in r.output

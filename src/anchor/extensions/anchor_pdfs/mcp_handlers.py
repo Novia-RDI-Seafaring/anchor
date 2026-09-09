@@ -300,7 +300,13 @@ async def call_tool(
                 )
             )
         except (ValueError, RuntimeError) as e:
-            return json.dumps({"error": str(e)})
+            # AmbiguousRegionError (#287) carries the colliding pages; keep
+            # the error structured so an agent can retry page-qualified.
+            err: dict[str, Any] = {"error": str(e)}
+            pages = getattr(e, "pages", None)
+            if pages:
+                err["candidate_pages"] = pages
+            return json.dumps(err)
     if name == "remove_region":
         try:
             return json.dumps(

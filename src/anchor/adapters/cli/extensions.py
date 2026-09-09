@@ -18,7 +18,7 @@ from anchor.adapters.cli.common import DEFAULT_DATA_DIR
 from anchor.adapters.extension_host import (
     SOURCE_ORDER,
     discover_manifests,
-    extension_runtime_status_payload,
+    extension_status_payload,
     load_manifest,
     project_producers_dir,
     registration_path,
@@ -119,7 +119,17 @@ def extensions_info(
 def extensions_status(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
-    """Report whether bundled extension runtimes start successfully."""
+    """Report bundled runtime health and discovered producer resolvability.
+
+    Bundled extension runtimes (cad / fmus / sysml) are actually started and
+    report `available` with a failure reason when startup failed. Discovered
+    system/project OIP producers are listed under `producers` with a static
+    check only — does each manifest's `invocation.command` resolve on PATH
+    ("command found on PATH" / "command not found on PATH")? Anchor never
+    spawns discovered producers (the harness does), so every producer entry
+    carries `started: false`. Same payload as the `anchor_extension_status`
+    MCP tool and `GET /api/extensions/status`.
+    """
     from anchor.adapters.project_runtime import (
         RuntimeProfile,
         build_project_runtime_for_data_dir,
@@ -130,7 +140,10 @@ def extensions_status(
         profile=RuntimeProfile.EXTENSIONS,
         fmu_warning=lambda _exc: None,
     )
-    payload = extension_runtime_status_payload(runtime.extension_status)
+    payload = extension_status_payload(
+        runtime.extension_status,
+        data_dir if data_dir.exists() else None,
+    )
     typer.echo(json.dumps(payload, indent=2))
 
 

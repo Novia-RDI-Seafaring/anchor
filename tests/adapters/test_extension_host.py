@@ -10,7 +10,9 @@ from anchor.adapters.extension_host import (
     bundled_manifests,
     discover_manifests,
     discover_third_party_manifest_paths,
+    discovered_producer_statuses,
     extension_runtime_status_payload,
+    extension_status_payload,
     load_manifest,
     project_producers_dir,
     registration_dir,
@@ -144,6 +146,65 @@ def test_extension_runtime_status_payload_is_stable():
         "anchor-cad",
         "anchor-fmus",
     ]
+    # Bundled-runtimes-only payload stays producer-free for callers that
+    # pass no producers.
+    assert "producers" not in payload
+
+
+def test_discovered_producer_statuses_checks_command_on_path(tmp_path, monkeypatch):
+    """#308: system/project manifests get a static PATH check, never a spawn."""
+    home = tmp_path / "home"
+    system_dir = home / ".config" / "oip" / "producers.d"
+    system_dir.mkdir(parents=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    tool = bin_dir / "tracer-mcp"
+    tool.write_text("#!/bin/sh\n")
+    tool.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    (system_dir / "tracer.json").write_text(json.dumps({
+        "oip_version": "0.1",
+        "producer": {"name": "tracer", "version": "2.0.0"},
+        "invocation": {"kind": "mcp-stdio", "command": "tracer-mcp --serve"},
+    }))
+    data_dir = tmp_path / "anchor-data"
+    project_dir = project_producers_dir(data_dir)
+    project_dir.mkdir(parents=True)
+    (project_dir / "ghost.json").write_text(json.dumps({
+        "oip_version": "0.1",
+        "producer": {"name": "ghost", "version": "0.1.0"},
+        "invocation": {"kind": "mcp-stdio", "command": "no-such-binary-xyz"},
+    }))
+    (project_dir / "mute.json").write_text(json.dumps({
+        "oip_version": "0.1",
+        "producer": {"name": "mute", "version": "0.1.0"},
+    }))
+
+    producers = {p["name"]: p for p in discovered_producer_statuses(data_dir)}
+
+    assert producers["tracer"]["source"] == "system"
+    assert producers["tracer"]["command"] == "tracer-mcp --serve"
+    assert producers["tracer"]["command_found"] is True
+    assert producers["tracer"]["command_path"] == str(tool)
+    assert producers["tracer"]["check"] == "command found on PATH"
+    assert producers["ghost"]["source"] == "project"
+    assert producers["ghost"]["command_found"] is False
+    assert producers["ghost"]["check"] == "command not found on PATH"
+    assert producers["mute"]["command"] is None
+    assert producers["mute"]["check"] == "manifest has no invocation.command"
+    assert all(p["started"] is False for p in producers.values())
+
+
+def test_extension_status_payload_combines_runtimes_and_producers(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "home" / ".config"))
+    payload = extension_status_payload(
+        {"anchor-cad": ExtensionRuntimeStatus(name="anchor-cad", source="bundled", available=True)},
+    )
+    assert payload["summary"] == {"available": 1, "unavailable": 0}
+    assert payload["producers"]["items"] == []
+    assert payload["producers"]["summary"] == {"discovered": 0, "command_found": 0}
+    assert "never started by Anchor" in payload["producers"]["note"]
 
 
 def test_discover_third_party_manifest_paths_is_stable(tmp_path, monkeypatch):

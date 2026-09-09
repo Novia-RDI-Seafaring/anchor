@@ -27,6 +27,25 @@ def default_data_dir() -> Path:
 DEFAULT_DATA_DIR = default_data_dir()
 
 
+def read_json_arg(value: str) -> str:
+    """Return the raw JSON text for a CLI value, dereferencing ``@path``.
+
+    A value starting with ``@`` names a local file whose contents stand in
+    for the inline JSON (``--data @node.json`` reads ``node.json``); any
+    other value is returned unchanged. The file is the user's own shell
+    argument pointing at their own file — same trust as a shell redirect —
+    so an unreadable path is a plain usage error (exit 2), not a traceback.
+    """
+    if not value.startswith("@"):
+        return value
+    path = Path(value[1:])
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as exc:
+        typer.echo(f"cannot read {str(path)!r}: {exc}", err=True)
+        raise typer.Exit(code=2) from None
+
+
 def resolve_serve_base_url(data_dir: Path) -> tuple[str, bool]:
     """Base URL of the ``anchor serve`` actually bound to ``data_dir``.
 
