@@ -177,7 +177,9 @@ in the current install.
 
 The canvas is the visible substrate humans and agents share. Each
 workspace is an isolated folder under `canvases/`. Edits land in
-real time on every connected client via SSE.
+real time on every connected client via SSE. Every edit is recorded
+with an actor (human, agent, or system), so your writes over MCP show
+up attributed to your client name in the event log and the UI.
 
 ### Tools
 

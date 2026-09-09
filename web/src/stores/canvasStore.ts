@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import type { CanvasEvent } from "@/realtime/sseClient";
+import type { CanvasEvent, EventActor } from "@/realtime/sseClient";
 
 type Node = {
   id: string;
@@ -200,7 +200,23 @@ export type Activity = {
   type: string;
   text: string;
   at: number;
+  /** Display name of who caused the event (#322): actor label, or kind. */
+  by?: string;
 };
+
+/** Human-readable name for an event's actor ("browser", "claude-code", ...). */
+export function actorLabel(actor?: EventActor | null): string | undefined {
+  if (!actor) return undefined;
+  return actor.label || actor.kind;
+}
+
+const NODE_TOUCHING_EVENTS = new Set([
+  "NodeAdded",
+  "NodeMoved",
+  "NodeResized",
+  "NodeUpdated",
+  "NodeReparented",
+]);
 
 function describeEvent(
   evt: CanvasEvent,
@@ -258,6 +274,12 @@ type State = {
   nodes: Record<string, Node>;
   edges: Record<string, Edge>;
   activity: Activity[];
+  /**
+   * Latest actor to touch each node, from live SSE events only (#322).
+   * The snapshot carries no attribution, so this covers edits seen during
+   * this session; persisted per-node attribution is the fuller #325 slice.
+   */
+  lastEditors: Record<string, EventActor>;
   setSnapshot: (snap: Snapshot) => void;
   applyEvent: (evt: CanvasEvent) => void;
   reset: () => void;
@@ -269,6 +291,7 @@ export const useCanvasStore = create<State>((set) => ({
   nodes: {},
   edges: {},
   activity: [],
+  lastEditors: {},
   setSnapshot: (snap) => set({
     slug: snap.slug,
     version: snap.version,
@@ -281,6 +304,7 @@ export const useCanvasStore = create<State>((set) => ({
       return [e.id, e];
     })),
     activity: [],
+    lastEditors: {},
   }),
   applyEvent: (evt) => set((state) => {
     if (evt.type === "IngestProgress") {
@@ -375,9 +399,19 @@ export const useCanvasStore = create<State>((set) => ({
     }
     if (state.version >= evt.version) return state;
     const text = describeEvent(evt, state.nodes, state.edges);
+    const by = actorLabel(evt.actor);
     const nodes = { ...state.nodes };
     const edges = { ...state.edges };
     const p = evt.payload as Record<string, unknown>;
+    // Track the latest actor per node from the live stream (#322).
+    const lastEditors = { ...state.lastEditors };
+    const touchedNodeId = p.id as string | undefined;
+    if (touchedNodeId && evt.actor && NODE_TOUCHING_EVENTS.has(evt.type)) {
+      lastEditors[touchedNodeId] = evt.actor;
+    }
+    if (evt.type === "NodeRemoved" && touchedNodeId) {
+      delete lastEditors[touchedNodeId];
+    }
     switch (evt.type) {
       case "NodeAdded":
         nodes[p.id as string] = {
@@ -506,8 +540,9 @@ export const useCanvasStore = create<State>((set) => ({
           nodes: {},
           edges: {},
           version: evt.version,
+          lastEditors: {},
           activity: [
-            { id: evt.id, type: evt.type, text, at: Date.now() },
+            { id: evt.id, type: evt.type, text, at: Date.now(), by },
             ...state.activity,
           ].slice(0, 8),
         };
@@ -517,11 +552,14 @@ export const useCanvasStore = create<State>((set) => ({
       nodes,
       edges,
       version: evt.version,
+      lastEditors,
       activity: [
-        { id: evt.id, type: evt.type, text, at: Date.now() },
+        { id: evt.id, type: evt.type, text, at: Date.now(), by },
         ...state.activity,
       ].slice(0, 8),
     };
   }),
-  reset: () => set({ slug: null, version: 0, nodes: {}, edges: {}, activity: [] }),
+  reset: () => set({
+    slug: null, version: 0, nodes: {}, edges: {}, activity: [], lastEditors: {},
+  }),
 }));

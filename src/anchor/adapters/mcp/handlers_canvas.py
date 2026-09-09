@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from anchor.adapters.mcp import canvas_tool_definitions
+from anchor.core.events.actor import Actor, actor_scope
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.core.workspace.workspace import CommandError
 
@@ -117,6 +118,29 @@ NodeFieldsEnricher = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
 
 async def call_tool(
+    svc: WorkspaceService,
+    name: str,
+    args: dict[str, Any],
+    *,
+    enrich_node_fields: NodeFieldsEnricher | None = None,
+    actor: Actor | None = None,
+) -> str:
+    """Dispatch one canvas MCP tool call.
+
+    Every write is attributed to ``actor`` (#322); when the server layer
+    can't name the connected MCP client it falls back to the generic
+    ``{kind: "agent", label: "mcp-agent"}`` so agent edits are never
+    mistaken for human ones.
+    """
+    if actor is None:
+        actor = Actor(kind="agent", label="mcp-agent")
+    with actor_scope(actor):
+        return await _dispatch_tool(
+            svc, name, args, enrich_node_fields=enrich_node_fields,
+        )
+
+
+async def _dispatch_tool(
     svc: WorkspaceService,
     name: str,
     args: dict[str, Any],

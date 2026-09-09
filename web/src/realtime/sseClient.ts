@@ -1,5 +1,11 @@
 import { BACKEND_URL } from "@/api/client";
 
+export type EventActor = {
+  kind: "human" | "agent" | "system";
+  id?: string | null;
+  label?: string | null;
+};
+
 export type CanvasEvent = {
   id: string;
   type: string;
@@ -7,6 +13,9 @@ export type CanvasEvent = {
   version: number;
   payload: Record<string, unknown>;
   ts: number;
+  // Who caused the event (#322). Absent/null on events recorded before
+  // actor attribution existed.
+  actor?: EventActor | null;
 };
 
 export type SseHandlers = {

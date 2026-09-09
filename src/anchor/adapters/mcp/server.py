@@ -26,6 +26,7 @@ from anchor.adapters.mcp.server_instructions import HELP_RESOURCE_TEXT, INSTRUCT
 from anchor.adapters.mcp.services import active_extensions_for_bundle, fmu_tools_available
 from anchor.adapters.project_runtime import ProjectRuntime
 from anchor.adapters.status import build_status_summary
+from anchor.core.events.actor import Actor
 from anchor.extensions.anchor_cad import mcp_handlers as cad_handlers
 from anchor.extensions.anchor_fmus import mcp_handlers as fmu_handlers
 from anchor.extensions.anchor_pdfs import mcp_handlers as pdf_handlers
@@ -343,6 +344,21 @@ def build_mcp_server(
         assert bundle is not None
         return bundle
 
+    def _client_actor() -> Actor:
+        """Actor for canvas writes over MCP (#322): always an agent, labeled
+        with the connected client's self-declared name (``clientInfo.name``
+        from the initialize handshake) when the session exposes it."""
+        label = "mcp-agent"
+        try:
+            params = app.request_context.session.client_params
+            client_info = getattr(params, "clientInfo", None)
+            client_name = getattr(client_info, "name", None)
+            if client_name:
+                label = str(client_name)
+        except Exception:  # noqa: BLE001 -- attribution must never break a call
+            pass
+        return Actor(kind="agent", label=label)
+
     @app.list_resources()
     async def list_resources() -> list[Resource]:
         return [
@@ -485,6 +501,7 @@ def build_mcp_server(
 
                 text = await handlers_canvas.call_tool(
                     b.workspace, name, args, enrich_node_fields=enrich_fields,
+                    actor=_client_actor(),
                 )
             elif name in intent_names:
                 b = get_bundle(args.pop("project", None))

@@ -6,6 +6,7 @@ from collections.abc import Callable
 from typing import Literal
 
 from anchor.core.clock import Clock
+from anchor.core.events.actor import current_actor
 from anchor.core.events.canvas import NodeMoved
 from anchor.core.events.envelope import DomainEvent
 from anchor.core.ids import new_event_id
@@ -167,6 +168,9 @@ class WorkspaceGeometryOperations:
                 type=event.type,
                 payload=event.model_dump(),
                 causation_id=cause,
+                # Layout moves are the caller's own edit (unlike remove
+                # cascades) so they carry the adapter-scoped actor (#322).
+                actor=current_actor(),
             )
             version = await self.store.append_event(slug, envelope)
             envelope.version = version

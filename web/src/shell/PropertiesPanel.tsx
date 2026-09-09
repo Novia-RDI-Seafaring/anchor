@@ -28,7 +28,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { useCanvasStore } from "@/stores/canvasStore";
+import { actorLabel, useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
 import { OrganizeEditor } from "./editors/OrganizeEditor";
@@ -41,6 +41,11 @@ export function PropertiesPanel() {
   const setSelectedNodeId = useUiStore((s) => s.setSelectedNodeId);
   const node = useCanvasStore((s) =>
     selectedNodeId ? s.nodes[selectedNodeId] ?? null : null,
+  );
+  // Latest actor to touch the selected node, from live SSE events (#322).
+  // Session-scoped only — persisted per-node attribution is #325.
+  const lastEditor = useCanvasStore((s) =>
+    selectedNodeId ? s.lastEditors[selectedNodeId] ?? null : null,
   );
   // Whether the selected node touches any edge — the Organize section
   // is hidden entirely when not, so the panel doesn't show a buttons
@@ -83,6 +88,14 @@ export function PropertiesPanel() {
               ? <>Editing <code className="rounded bg-neutral-100 px-1 font-mono">{node.node_type}</code> · {node.id}</>
               : "Select a node on the canvas to edit it."}
           </SheetDescription>
+          {node && lastEditor ? (
+            <span
+              data-testid="edited-by-chip"
+              className="inline-flex w-fit items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-500"
+            >
+              edited by {actorLabel(lastEditor)}
+            </span>
+          ) : null}
         </SheetHeader>
         <div className="flex-1 overflow-y-auto p-3">
           {node && Editor ? (

@@ -11,6 +11,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from anchor.core.clock import Clock, SystemClock
+from anchor.core.events.actor import SYSTEM_ACTOR, Actor, current_actor
 from anchor.core.events.canvas import (
     CanvasCleared,
     EdgeAdded,
@@ -333,7 +334,12 @@ class WorkspaceService:
             new_state = state
             cause = new_event_id()
             for ev in [*cascade, cmd]:
-                env = self._envelope(slug, ev, causation_id=cause)
+                # Cascade events are the system reacting to the command, not
+                # the caller's own edit — attribute them to `system` (#322).
+                # The command itself keeps the adapter-scoped actor. Causation
+                # still groups the whole batch.
+                actor = None if ev is cmd else SYSTEM_ACTOR
+                env = self._envelope(slug, ev, causation_id=cause, actor=actor)
                 version = await self.store.append_event(slug, env)
                 env.version = version
                 new_state = apply(new_state, ev)
@@ -519,7 +525,18 @@ class WorkspaceService:
         await self.bus.publish(env)
         return new_state, env
 
-    def _envelope(self, slug: str, evt: BaseModel, *, causation_id: str | None = None) -> DomainEvent:
+    def _envelope(
+        self,
+        slug: str,
+        evt: BaseModel,
+        *,
+        causation_id: str | None = None,
+        actor: Actor | None = None,
+    ) -> DomainEvent:
+        # Actor precedence (#322): an explicit override (system cascades)
+        # wins; otherwise whatever actor the calling adapter scoped via
+        # `actor_scope` / `set_current_actor`; otherwise None (legacy /
+        # direct service calls — old logs replay identically).
         return DomainEvent(
             id=new_event_id(),
             ts=self.clock.now(),
@@ -527,4 +544,5 @@ class WorkspaceService:
             type=getattr(evt, "type", evt.__class__.__name__),
             payload=evt.model_dump(),
             causation_id=causation_id,
+            actor=actor if actor is not None else current_actor(),
         )

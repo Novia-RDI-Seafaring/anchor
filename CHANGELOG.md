@@ -11,6 +11,21 @@ next version section on tag.
 
 ### Added
 
+- Every canvas event now records who caused it (closes #322, part 1 of
+  #321): the `DomainEvent` envelope gains an additive optional
+  `actor: {kind: human|agent|system, id?, label?}` field. Adapters stamp
+  defaults — HTTP writes are `human`/"browser" (a request-body `actor`
+  overrides), MCP writes are `agent` labeled with the connected client's
+  name (falling back to "mcp-agent"), and the CLI is `human`/"cli" unless
+  `ANCHOR_AGENT` is set or `anchor canvas --actor kind[:label]` is given.
+  System-generated cascades (the `EdgeRemoved` fan-out of a `NodeRemoved`)
+  are attributed `system` with causation preserved. Events logged before
+  the field existed read back with a null actor and replay unchanged. The
+  actor rides the SSE stream; the web UI shows "by <label>" on live
+  activity toasts for non-browser actors and an "edited by <label>" chip
+  in the properties panel for nodes touched during the session (persisted
+  per-node attribution and presence are #325).
+
 - Producer node types resolve through their OIP `renders` token (closes
   #309, spec side OIP#6): the node-types registry folds in every discovered
   manifest's `ui_hints.node_types` entries, so `GET /api/node-types`, MCP
