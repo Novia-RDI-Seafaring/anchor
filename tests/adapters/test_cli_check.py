@@ -241,3 +241,79 @@ def test_check_harness_mode_lists_open_sessions(tmp_path):
     assert result.exit_code == 0, result.output
     assert "ing-abc123" in result.output
     assert "1/3 pages submitted" in result.output
+
+
+# --------------------------------------------------------------------------- #
+# #303 — check leads with cwd project resolution
+# --------------------------------------------------------------------------- #
+def _make_marker_project(tmp_path, name="pumps", env_name="local"):
+    folder = tmp_path / name
+    folder.mkdir()
+    (folder / "anchor.toml").write_text(
+        f'env = "{env_name}"\nname = "{name}"\n', encoding="utf-8"
+    )
+    return folder
+
+
+def test_check_leads_with_cwd_project(monkeypatch, tmp_path):
+    # In a folder with an anchor.toml, bare `anchor check` reports THAT
+    # project — its name, the marker it came from, and its data dir —
+    # before anything else, so "where will my ingest land?" is answered.
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
+    folder = _make_marker_project(tmp_path)
+    monkeypatch.chdir(folder)
+    result = runner.invoke(app, ["check"])
+    assert result.exit_code == 0, result.output
+    assert result.output.startswith("Project"), result.output
+    assert f"project        : pumps  (from {folder / 'anchor.toml'})" in result.output
+    assert str(folder / ".anchor_data") in result.output
+    assert "serve          : none running for this project" in result.output
+
+
+def test_check_without_marker_names_env_default(monkeypatch, tmp_path):
+    # In a folder with no anchor.toml, check must say so and name the
+    # project commands will actually use, instead of printing "Ready"
+    # against an unstated default.
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    result = _run_check(tmp_path)
+    assert result.exit_code == 0, result.output
+    assert "no anchor.toml here" in result.output
+    assert "project        : default" in result.output
+    assert str(_default_dir(tmp_path)) in result.output
+
+
+def test_check_project_flag_overrides_cwd_marker(monkeypatch, tmp_path):
+    # Explicit --project wins over the cwd anchor.toml, and the report
+    # names --project as the source rather than claiming the marker.
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
+    folder = _make_marker_project(tmp_path)
+    monkeypatch.chdir(folder)
+    result = runner.invoke(app, ["check", "--env", "local", "--project", "other"])
+    assert "project        : other  (from --project)" in result.output
+    assert "pumps" not in result.output
+    expected_dir = _env_dir(tmp_path) / "projects" / "other" / ".anchor_data"
+    assert str(expected_dir) in result.output
+
+
+def test_check_serve_report_scoped_to_resolved_project(monkeypatch, tmp_path):
+    # The serve line must reflect the serve bound to the RESOLVED project's
+    # data dir — a serve on :8003 for the cwd project was invisible while
+    # check reported the env default's :8002 (#303).
+    from anchor.infra import serve_registry as sr
+
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
+    folder = _make_marker_project(tmp_path)
+    data_dir = folder / ".anchor_data"
+    data_dir.mkdir()
+    monkeypatch.chdir(folder)
+    path = sr.register_serve(
+        host="127.0.0.1", port=8009, data_dir=data_dir, started_at="t"
+    )
+    try:
+        result = runner.invoke(app, ["check"])
+        assert "serve          : running at http://127.0.0.1:8009" in result.output
+    finally:
+        sr.unregister_serve(path)

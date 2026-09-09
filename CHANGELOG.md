@@ -19,6 +19,30 @@ next version section on tag.
   lands on the referenced cell instead of the whole table region. Refs
   without selectors keep the unchanged region-level highlight path.
 
+### Fixed
+
+- `anchor check` now leads with the project the current directory actually
+  resolves to — the same cwd `anchor.toml` walk every other command uses —
+  naming the project, where its name came from (marker path, `--project`,
+  `ANCHOR_PROJECT`, `anchor use`, or the env default), its data dir, and the
+  serve bound to *that* project's data dir. A new `--project` flag joins
+  `--env`; both override the cwd marker. Previously check always reported the
+  env default project, so "Ready ✓" could describe a different data dir than
+  the one an `ingest` from that folder would use. (#303)
+- `anchor canvas snapshot` resolves its default `--base-url` through the
+  serve registry (the lookup `anchor canvas url` uses), so a serve on a
+  bumped or per-project port is found instead of a guessed `:8002`; an
+  explicit `--base-url` still overrides, and a missing serve is warned about.
+  The headless snapshotter also waits for at least one rendered node when
+  the workspace state says nodes exist, and times out with an error naming
+  what it waited for — no more silent empty-grid PNGs. (#306)
+- Skill/help drift: the core skill no longer claims gold extraction requires
+  `ANCHOR_OPENAI_API_KEY` unconditionally (a plain `OPENAI_API_KEY` is
+  accepted for the `openai` provider; `local`/`ollama`/`harness` need no
+  key), and `anchor embed --help` states the environment's configured
+  `embed_model` is used — local bge is only the local-provider default — and
+  that search skips documents whose stored embed_model mismatches. (#302)
+
 ## [0.3.0] - 2026-09-08
 
 Everything since v0.2.5: the v0.2.6–v0.2.8 tags shipped without rolling

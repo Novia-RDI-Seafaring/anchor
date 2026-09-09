@@ -53,9 +53,12 @@ pipx install anchor-kb
 `anchor install <harness>` registers an installed ANCHOR tool with an AI
 harness. It does not install the tool itself.
 
-Bronze and silver extraction run locally. Gold extraction requires
-`ANCHOR_OPENAI_API_KEY`; set the other `ANCHOR_OPENAI_*` variables for your
-provider as needed.
+Bronze and silver extraction run locally. Gold extraction needs an API key
+for keyed providers: set `ANCHOR_OPENAI_API_KEY` (the endpoint's own key —
+required for `azure` and `custom`). With the `openai` provider a plain
+`OPENAI_API_KEY` is also accepted. The `local`, `ollama`, and `harness`
+providers need no key. Set the other `ANCHOR_OPENAI_*` variables for your
+provider as needed; `anchor check` reports what the resolved config accepts.
 
 ## When to use
 
@@ -209,9 +212,14 @@ this is the shortlist of the ones agents touch most.
 When an extraction yields several values — say every pump ID and its
 diameter — put them in `data.rows`, one row per fact. Each row is
 `{key, value, source_ref}`, where `source_ref` is `{slug, page, bbox?,
-region_id?}` grounding that value to its source page. Rows render as a
-clean table on the canvas, and every row stays clickable back to the
-page it came from.
+region_id?, item_id?, cell?}` grounding that value to its source page.
+The optional selectors point below the region: `item_id` names one
+silver item (`p<page>-i<n>`, listed by `inspect_region` under
+`members`), and `cell` is `{row, col}` of a table. Resolution
+precedence is cell > item > region > bbox — `resolve_source_ref`
+answers with the tightest stored bbox and names the layer that
+resolved. Rows render as a clean table on the canvas, and every row
+stays clickable back to the page it came from.
 
 Do NOT pack those values into `data.description`. The description is a
 short prose caption only; a multi-value answer dumped there shows up as

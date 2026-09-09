@@ -48,21 +48,81 @@ def check(
     env: str = typer.Option(
         None, "--env", help="Environment NAME to check (default: the default env)."
     ),
+    project: str = typer.Option(
+        None,
+        "--project",
+        help="Project NAME to check (default: the cwd project, then the env default).",
+    ),
 ) -> None:
-    """Verify the resolved data zone + config for this environment."""
+    """Verify the resolved project + data zone + config.
+
+    Resolves the project the same way every other command does — a cwd
+    ``anchor.toml`` wins unless ``--env`` / ``--project`` override it — and
+    says which project that is and where it came from, so "where will my
+    ingest land?" is answered before anything else (#303).
+    """
     from anchor.infra.environment import (
-        DEFAULT_PROJECT,
         LEGACY_DATA_DIR,
-        resolve_environment,
-        resolve_project_config,
+        get_use,
+        resolve_project,
+    )
+    from anchor.infra.environment_storage import (
+        PROJECT_MARKER_FILENAME,
+        PROJECT_VAR,
+        _walk_up_for_project,
     )
 
-    env = resolve_environment(env)
-    cfg = resolve_project_config(env, DEFAULT_PROJECT)
-    default_dir = env.project_dir(DEFAULT_PROJECT)
+    env_flag, project_flag = env, project
+    resolved = resolve_project(env_flag, project_flag)
+    env = resolved.environment
+    cfg = resolved.config
+    project_dir = resolved.data_dir
     config_path = env.config_path  # the env.toml, target of endpoint repair
     prov = get_provider(cfg.provider) if cfg.provider else None
 
+    # Where the project name came from — mirrors resolve_project's own
+    # precedence so the report never claims a source the resolver didn't use.
+    marker_root = _walk_up_for_project()
+    if project_flag is not None:
+        source = "from --project"
+    elif env_flag is None and marker_root is not None:
+        source = f"from {marker_root / PROJECT_MARKER_FILENAME}"
+    elif os.environ.get(PROJECT_VAR):
+        source = "from ANCHOR_PROJECT"
+    elif get_use().get("project"):
+        source = "from `anchor use`"
+    elif marker_root is not None:
+        # A cwd anchor.toml exists but --env was given, which resolves by
+        # name and skips the marker. Say so instead of silently diverging.
+        source = (
+            "env default — cwd "
+            f"{marker_root / PROJECT_MARKER_FILENAME} ignored because --env was given"
+        )
+    else:
+        source = "no anchor.toml here — commands in this folder use the env default"
+
+    typer.echo("Project")
+    typer.echo(f"  project        : {resolved.name}  ({source})")
+    # Be honest when the project dir is not on disk yet: a fresh project has
+    # none until first ingest, but a bare path here reads as "all set" and has
+    # masked a misconfigured zone before. Say so rather than imply it exists.
+    data_dir_note = "" if project_dir.exists() else "  (created on first ingest)"
+    typer.echo(f"  data dir       : {project_dir}{data_dir_note}")
+
+    # Running serve binding (#177, #179, #303): tie the *resolved* project's
+    # data dir to a live `anchor serve` port so an agent or user knows where
+    # this project's canvas is actually hosted, instead of assuming :8002.
+    from anchor.infra.serve_registry import find_serve_for_data_dir
+
+    serve_record = find_serve_for_data_dir(project_dir)
+    if serve_record is not None:
+        typer.echo(f"  serve          : running at {serve_record.base_url()} "
+                   f"(pid {serve_record.pid})")
+    else:
+        typer.echo("  serve          : none running for this project "
+                   "(start with `anchor serve`)")
+
+    typer.echo("")
     typer.echo("Data zone")
     typer.echo(f"  environment    : {env.name}")
     # The "environment" is a named provider/data-zone/trust profile, not a .env
@@ -76,13 +136,6 @@ def check(
         typer.echo(f"  provider       : {prov.label} — {prov.zone}")
     elif cfg.provider:
         typer.echo(f"  provider       : {cfg.provider}")
-    # Be honest when the project dir is not on disk yet: a fresh project has
-    # none until first ingest, but a bare path here reads as "all set" and has
-    # masked a misconfigured zone before. Say so rather than imply it exists.
-    data_dir_note = (
-        "" if default_dir.exists() else "  (created on first ingest)"
-    )
-    typer.echo(f"  default project: {default_dir}{data_dir_note}")
     embed_remote = cfg.embed_model.startswith("text-embedding-")
     typer.echo(
         f"  embed model    : {cfg.embed_model}  "
@@ -112,22 +165,9 @@ def check(
         typer.echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com (public)'}")
         typer.echo(f"  vision model   : {cfg.region_model}")
 
-    # Running serve binding (#177, #179): tie this project's data dir to a live
-    # `anchor serve` port so an agent or user knows where the canvas is actually
-    # hosted, instead of assuming :8002.
-    from anchor.infra.serve_registry import find_serve_for_data_dir
-
-    serve_record = find_serve_for_data_dir(default_dir)
-    if serve_record is not None:
-        typer.echo(f"  serve          : running at {serve_record.base_url()} "
-                   f"(pid {serve_record.pid})")
-    else:
-        typer.echo("  serve          : none running for this project "
-                   "(start with `anchor serve`)")
-
     # Lean one-time awareness: an existing ~/anchor-data still serving the
     # default project, but the user should know they can fold it into the env.
-    if default_dir == LEGACY_DATA_DIR and LEGACY_DATA_DIR.is_dir():
+    if project_dir == LEGACY_DATA_DIR and LEGACY_DATA_DIR.is_dir():
         typer.echo("")
         typer.echo(f"  note           : using legacy {LEGACY_DATA_DIR}.")
         typer.echo("                   Run `anchor migrate` to adopt it as this "
@@ -242,7 +282,7 @@ def check(
             if apply and config_path and _rewrite_base_url(config_path, cfg.openai_base_url, fixed):
                 typer.echo("    fixed.")
                 # Reload so the probe uses the repaired URL.
-                cfg = resolve_project_config(resolve_environment(env.name), DEFAULT_PROJECT)
+                cfg = resolve_project(env_flag, project_flag).config
             else:
                 problems.append("Azure endpoint is missing the /openai/v1/ suffix.")
 
