@@ -19,6 +19,18 @@ next version section on tag.
   renderer by exact node_type first, then its declared token, then the
   default box (a `graphtracer:chart_series` node now draws with
   `ChartPrimitive`; unrecognised tokens fall through, never error).
+- `extensions status` now also lists discovered system/project OIP producers
+  (from `~/.config/oip/producers.d/` and `<data-dir>/.oip/producers.d/`) with
+  a static resolvability check on each manifest's `invocation.command`
+  ("command found on PATH" / "command not found on PATH"), marked
+  `started: false` — Anchor never spawns discovered producers; the harness
+  does. Adapter parity via the shared payload builder: the
+  `anchor_extension_status` MCP tool and `GET /api/extensions/status` serve
+  the same `producers` section. (#308)
+- `canvas add-node` / `update-node` / `add-edge` / `update-edge` `--data`
+  accepts `@path` to a JSON file, with the same semantics as
+  `derive-region --region`; the `@` handling is one shared CLI helper now
+  used by `derive-region` and `resolve-ref` too. (#288)
 - Spec-row enrichment records the matched table cell (#242 P2c, closes
   #274): when a row's value matches one gold cell, the row's `source_ref`
   gains a `cell: {row, col}` selector alongside the cached cell bbox, and
@@ -39,6 +51,12 @@ next version section on tag.
 
 ### Fixed
 
+- `derive_region` parent lookup is no longer page-ambiguous: region ids are
+  only unique per page, so `parent_region_id` accepts the `p4/r1` token form
+  `inspect_region` uses, an explicit page wins, and a bare id matching
+  regions on multiple pages fails with a structured error listing the
+  candidate pages (MCP `candidate_pages`, HTTP 409) instead of silently
+  binding the first match. Bare ids with a single match keep working. (#287)
 - `derive_region` mints the next free `r<n>` id on the target page when the
   producer omits one, so a stored region is always addressable; explicit
   producer ids pass through untouched. (#304)
@@ -69,6 +87,17 @@ next version section on tag.
   key), and `anchor embed --help` states the environment's configured
   `embed_model` is used — local bge is only the local-provider default — and
   that search skips documents whose stored embed_model mismatches. (#302)
+
+### Security
+
+- Web routing moved to react-router 7 (react-router-dom `^7.18.0`,
+  resolving react-router 7.18.3), clearing both open advisories against
+  the 6.x line — GHSA-337j-9hxr-rhxg (constructor injection via SSR error
+  deserialization) and GHSA-wrjc-x8rr-h8h6 (open redirect via backslash
+  in `Link`/`useNavigate`) — which are patched only in 7.18.0. Declarative
+  `BrowserRouter`/`Routes` usage is unchanged, so the three routes (`/`,
+  `/c/:id`, `/m/:id`) behave identically, including the read-only monitor
+  view. (#316)
 
 ## [0.3.0] - 2026-09-08
 

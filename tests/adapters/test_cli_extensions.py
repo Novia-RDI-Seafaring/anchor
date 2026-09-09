@@ -46,6 +46,88 @@ def test_status_emits_shared_runtime_diagnostics(tmp_path, monkeypatch):
     }
 
 
+def _producer_manifest(name: str, command: str) -> dict:
+    return {
+        "oip_version": "0.1",
+        "producer": {"name": name, "version": "0.2.0"},
+        "produces": {"source_kinds": ["application/pdf"]},
+        "invocation": {"kind": "mcp-stdio", "command": command, "tools_namespace": name},
+    }
+
+
+def test_status_lists_discovered_producers_with_path_check(tmp_path, monkeypatch):
+    """#308: discovered producers appear with a resolvability check, not-started."""
+    from anchor.adapters import project_runtime
+
+    monkeypatch.setattr(
+        project_runtime,
+        "build_project_runtime_for_data_dir",
+        lambda *_args, **_kwargs: SimpleNamespace(extension_status={}),
+    )
+    # Isolate discovery + PATH: one resolvable command, one missing.
+    home = tmp_path / "home"
+    system_dir = home / ".config" / "oip" / "producers.d"
+    system_dir.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    tool = bin_dir / "graph-tracer-mcp"
+    tool.write_text("#!/bin/sh\n")
+    tool.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    (system_dir / "graph-tracer.json").write_text(
+        json.dumps(_producer_manifest("graph-tracer", "graph-tracer-mcp --serve"))
+    )
+    data_dir = tmp_path / "data"
+    project_dir = data_dir / ".oip" / "producers.d"
+    project_dir.mkdir(parents=True)
+    (project_dir / "ghost.json").write_text(
+        json.dumps(_producer_manifest("ghost", "no-such-binary-xyz"))
+    )
+
+    result = _runner().invoke(extensions_app, ["status", "--data-dir", str(data_dir)])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    producers = payload["producers"]
+    assert "never started by Anchor" in producers["note"]
+    by_name = {item["name"]: item for item in producers["items"]}
+    tracer = by_name["graph-tracer"]
+    assert tracer["source"] == "system"
+    assert tracer["command_found"] is True
+    assert tracer["check"] == "command found on PATH"
+    assert tracer["command_path"] == str(tool)
+    assert tracer["started"] is False
+    ghost = by_name["ghost"]
+    assert ghost["source"] == "project"
+    assert ghost["command_found"] is False
+    assert ghost["check"] == "command not found on PATH"
+    assert ghost["started"] is False
+    assert producers["summary"] == {"discovered": 2, "command_found": 1}
+
+
+def test_status_with_no_discovered_producers_keeps_empty_section(tmp_path, monkeypatch):
+    from anchor.adapters import project_runtime
+
+    monkeypatch.setattr(
+        project_runtime,
+        "build_project_runtime_for_data_dir",
+        lambda *_args, **_kwargs: SimpleNamespace(extension_status={}),
+    )
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "home" / ".config"))
+
+    result = _runner().invoke(
+        extensions_app, ["status", "--data-dir", str(tmp_path / "data")]
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["producers"]["items"] == []
+    assert payload["producers"]["summary"] == {"discovered": 0, "command_found": 0}
+
+
 def test_list_shows_bundled_pdf_producer(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / ".config"))

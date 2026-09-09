@@ -204,13 +204,10 @@ def canvas_delete(
 # adapters in lockstep is the architecture's standing rule
 # (see `docs/concepts/interfaces.md`).
 #
-# `--data` accepts a JSON string. Shells are awkward at JSON quoting; for
-# multi-field nodes use a here-doc or pipe through a file:
-#   anchor canvas add-node my-canvas concept Foo --x 0 --y 0 \
-#     --data "$(cat <<'JSON'
-#   {"subtitle": "hello", "metadata": {"tag": "demo"}}
-#   JSON
-#   )"
+# `--data` accepts a JSON string or `@path` to a JSON file (#288) — the
+# same affordance `derive-region --region` has, so payloads of any size
+# skip shell quoting entirely:
+#   anchor canvas add-node my-canvas concept Foo --x 0 --y 0 --data @node.json
 
 
 def _validate_layer(layer: str | None) -> str | None:
@@ -256,7 +253,9 @@ def canvas_add_node(
     layer: str | None = typer.Option(None, "--layer"),
     opacity: float | None = typer.Option(None, "--opacity"),
     data: str | None = typer.Option(
-        None, "--data", help="JSON object passed as the node's `data` field"
+        None,
+        "--data",
+        help="JSON object passed as the node's `data` field, or @path to a JSON file",
     ),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
@@ -368,9 +367,10 @@ def canvas_update_node(
         None,
         "--data",
         help=(
-            "JSON object deep-MERGED into the node's existing data: "
-            "unmentioned keys (e.g. source_ref) are kept; a key set to null "
-            "is deleted. Patch one field without read-modify-write."
+            "JSON object (or @path to a JSON file) deep-MERGED into the "
+            "node's existing data: unmentioned keys (e.g. source_ref) are "
+            "kept; a key set to null is deleted. Patch one field without "
+            "read-modify-write."
         ),
     ),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
@@ -488,7 +488,11 @@ def canvas_add_edge(
     label: str = typer.Option("", "--label", "-l"),
     source_handle: str | None = typer.Option(None, "--source-handle"),
     target_handle: str | None = typer.Option(None, "--target-handle"),
-    data: str | None = typer.Option(None, "--data"),
+    data: str | None = typer.Option(
+        None,
+        "--data",
+        help="JSON object passed as the edge's `data` field, or @path to a JSON file",
+    ),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Add an edge between two nodes."""
@@ -543,7 +547,12 @@ def canvas_update_edge(
     source_handle: str | None = typer.Option(None, "--source-handle"),
     target_handle: str | None = typer.Option(None, "--target-handle"),
     data: str | None = typer.Option(
-        None, "--data", help="JSON object deep-MERGED into the edge's `data` field (null deletes a key)"
+        None,
+        "--data",
+        help=(
+            "JSON object (or @path to a JSON file) deep-MERGED into the "
+            "edge's `data` field (null deletes a key)"
+        ),
     ),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:

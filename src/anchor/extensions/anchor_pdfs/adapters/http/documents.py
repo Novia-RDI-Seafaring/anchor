@@ -394,10 +394,18 @@ async def derive_region(
 
     The consumer side of an OIP region producer: inherits the parent's
     source_ref (provenance) and records derived_from, then stores it durably.
+    `parent_region_id` accepts 'p4/r1' or a bare 'r1'; a bare id matching
+    regions on multiple pages is a 409 listing the candidate pages (#287).
     Re-run `POST /{slug}/embed` to make the new region searchable.
     """
+    from anchor.extensions.anchor_pdfs.core.services import AmbiguousRegionError
+
     try:
         return await ingest.derive_region(slug, body.parent_region_id, body.region)
+    except AmbiguousRegionError as exc:
+        raise HTTPException(
+            409, {"error": str(exc), "candidate_pages": exc.pages}
+        ) from None
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from None
 
