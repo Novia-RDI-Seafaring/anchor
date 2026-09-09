@@ -1,4 +1,10 @@
-"""Attach value-cell bboxes to spec-row source refs when gold cells exist."""
+"""Attach value-cell bboxes + `cell` selectors to spec-row source refs.
+
+When a spec row's value matches exactly one gold table cell, the row's
+`source_ref` gets that cell's bbox (the cached resolution) and a
+`cell: {row, col}` selector (#242 P2c) so `resolve_source_ref` can
+re-answer from stored geometry later.
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -48,14 +54,20 @@ async def enrich_spec_row_source_refs(data: Any, store: DocStore) -> Any:
             next_rows.append(row)
             continue
 
-        cell_bbox = _match_value_cell_bbox(region.get("cells"), row.get("key"), value)
-        if not cell_bbox:
+        cell = _match_value_cell(region.get("cells"), row.get("key"), value)
+        if cell is None:
             next_rows.append(row)
             continue
 
-        new_ref = {**source_ref, "slug": slug, "page": page, "bbox": cell_bbox}
+        new_ref = {**source_ref, "slug": slug, "page": page, "bbox": _clean_bbox(cell.get("bbox"))}
         if region_id:
             new_ref["region_id"] = region_id
+        # Record WHICH cell matched (#242 P2c): the bbox above is the cached
+        # resolution, the selector lets `resolve_source_ref` re-answer from
+        # stored geometry (precedence cell > item > region > bbox).
+        row_no, col_no = cell.get("row"), cell.get("col")
+        if isinstance(row_no, int) and isinstance(col_no, int):
+            new_ref["cell"] = {"row": row_no, "col": col_no}
         next_rows.append({**row, "source_ref": new_ref})
         changed = True
 
@@ -87,15 +99,20 @@ def _find_region(regions: list[dict[str, Any]], region_id: str | None) -> dict[s
     return None
 
 
-def _match_value_cell_bbox(cells: Any, key: Any, value: str) -> list[float]:
+def _match_value_cell(cells: Any, key: Any, value: str) -> dict[str, Any] | None:
+    """The gold table cell holding `value` (key-disambiguated), or None.
+
+    Same matching rules as ever — only the return grew from the bbox to the
+    whole cell so the caller can also record the `{row, col}` selector.
+    """
     if not isinstance(cells, list):
-        return []
+        return None
     value_norm = _norm(value)
     if not value_norm:
-        return []
+        return None
     value_cells = _matching_value_cells(cells, value_norm)
     if not value_cells:
-        return []
+        return None
 
     key_norm = _norm(key)
     if key_norm:
@@ -108,11 +125,11 @@ def _match_value_cell_bbox(cells: Any, key: Any, value: str) -> list[float]:
             if any(_norm(c.get("text")) == key_norm for c in row_cells):
                 keyed.append(cell)
         if len(keyed) == 1:
-            return _clean_bbox(keyed[0].get("bbox"))
+            return keyed[0]
 
     if len(value_cells) == 1:
-        return _clean_bbox(value_cells[0].get("bbox"))
-    return []
+        return value_cells[0]
+    return None
 
 
 def _matching_value_cells(cells: list[Any], value_norm: str) -> list[dict[str, Any]]:

@@ -43,8 +43,11 @@ silver item (`p<page>-i<n>`, listed by `inspect_region` under
 `members`), and `cell` is `{row, col}` of a table. Resolution
 precedence is cell > item > region > bbox — `resolve_source_ref`
 answers with the tightest stored bbox and names the layer that
-resolved. Rows render as a clean table on the canvas, and every row
-stays clickable back to the page it came from.
+resolved. Enriched spec rows record the matched cell automatically:
+when a row's value matches one gold table cell, the row's ref gains
+`cell: {row, col}` alongside the cached cell bbox. Rows render as a
+clean table on the canvas, and every row stays clickable back to the
+page it came from.
 
 Do NOT pack those values into `data.description`. The description is a
 short prose caption only; a multi-value answer dumped there shows up as

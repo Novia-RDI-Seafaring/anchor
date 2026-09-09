@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { canvases } from "@/api/canvases";
-import { documents } from "@/api/documents";
+import { documents, refHasSelector } from "@/api/documents";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
 import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
 import { useInlineField } from "@/canvas/useInlineField";
@@ -28,6 +28,8 @@ type Row = {
     region_id?: string;
     source_region_id?: string;
     bbox?: number[];
+    item_id?: string;
+    cell?: { row?: number; col?: number };
   };
 };
 
@@ -38,6 +40,10 @@ type SourceRef = {
   region_id?: string;
   source_region_id?: string;
   bbox?: number[];
+  // Below-region selectors (#242 P2): enriched spec rows record the matched
+  // table cell; agents may name a single silver item.
+  item_id?: string;
+  cell?: { row?: number; col?: number };
 };
 
 /**
@@ -186,17 +192,31 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         }
       }
     }
-    openPdf(slug, {
-      page: ref.page,
-      workspaceSlug,
-      documentNodeId: docNodeId,
-      highlightRegionId: ref.region_id ?? d.source_region_id ?? ref.source_region_id,
-      highlightBbox: ref.bbox,
-      // Value-precise highlight in the PDF viewer modal (#197): the viewer
-      // locates this text inside the region and highlights it over the
-      // region rectangle, falling back to the region when not found.
-      highlightQuery: query,
-    });
+    const open = (page: number, bbox?: number[]) =>
+      openPdf(slug, {
+        page,
+        workspaceSlug,
+        documentNodeId: docNodeId,
+        highlightRegionId: ref.region_id ?? d.source_region_id ?? ref.source_region_id,
+        highlightBbox: bbox,
+        // Value-precise highlight in the PDF viewer modal (#197): the viewer
+        // locates this text inside the region and highlights it over the
+        // region rectangle, falling back to the region when not found.
+        highlightQuery: query,
+      });
+    if (refHasSelector(ref)) {
+      // Selector-bearing ref (#242 P2c, closes #274): ask the backend
+      // resolver for the tightest stored bbox (cell > item > region) and
+      // highlight that instead of the whole table region. The ref's own
+      // page/bbox is the fallback when the resolver cannot answer.
+      const fallbackPage = ref.page;
+      void documents
+        .resolveRef(slug, ref)
+        .then((resolved) => open(resolved?.page ?? fallbackPage, resolved?.bbox ?? ref.bbox));
+    } else {
+      // No selector: the region-level path, unchanged.
+      open(ref.page, ref.bbox);
+    }
   };
   const openSource = () => openSourceRef(d.source_ref);
 

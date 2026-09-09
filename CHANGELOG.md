@@ -9,6 +9,16 @@ next version section on tag.
 
 ## [Unreleased]
 
+### Added
+
+- Spec-row enrichment records the matched table cell (#242 P2c, closes
+  #274): when a row's value matches one gold cell, the row's `source_ref`
+  gains a `cell: {row, col}` selector alongside the cached cell bbox, and
+  the web viewer resolves selector-bearing refs through
+  `GET /api/documents/{slug}/resolve-ref` so the click-to-source highlight
+  lands on the referenced cell instead of the whole table region. Refs
+  without selectors keep the unchanged region-level highlight path.
+
 ### Fixed
 
 - `anchor check` now leads with the project the current directory actually
