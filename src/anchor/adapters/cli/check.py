@@ -11,6 +11,7 @@ would break a real ingest, so an agent or script can gate on it.
 from __future__ import annotations
 
 import os
+import sys
 
 import typer
 
@@ -20,12 +21,51 @@ from anchor.infra.providers import get_provider, no_key_remedy_lines, normalize_
 # Providers that authenticate against an endpoint (mirror of init's set).
 _KEYED_PROVIDERS = ("openai", "azure", "custom")
 
+# ASCII stand-ins for the report's markers, used when stdout cannot encode
+# them (Windows terminals default to cp1252, which has no U+2713 / U+2192 and
+# raises UnicodeEncodeError mid-report, issue #267).
+_ASCII_FALLBACKS = {
+    "✓": "OK",  # check mark
+    "✗": "X",  # ballot X
+    "→": "->",  # rightwards arrow
+    "—": "-",  # em dash
+    "–": "-",  # en dash
+    "·": "*",  # middle dot
+    "…": "...",  # ellipsis
+}
+
+
+def _stdout_encoding() -> str | None:
+    """The encoding stdout will apply, or None when unknown."""
+    return getattr(sys.stdout, "encoding", None)
+
+
+def _echo(message: str = "") -> None:
+    """``typer.echo`` that degrades to ASCII markers when stdout cannot encode.
+
+    A readiness report that crashes with UnicodeEncodeError is worse than one
+    with ASCII markers, so when the active console encoding (cp1252 on stock
+    Windows terminals) cannot represent the glyphs, swap in ASCII stand-ins
+    and replace anything else rather than raising (#267).
+    """
+    encoding = _stdout_encoding()
+    if encoding:
+        try:
+            message.encode(encoding)
+        except (LookupError, UnicodeEncodeError):
+            for glyph, ascii_form in _ASCII_FALLBACKS.items():
+                message = message.replace(glyph, ascii_form)
+            message = message.encode(encoding, errors="replace").decode(
+                encoding, errors="replace"
+            )
+    typer.echo(message)
+
 
 def _echo_remedy(lines: list[str]) -> None:
     """Print the no-key gold-skip remedy under the api-key line, indented."""
-    typer.echo("                   To fix, either:")
+    _echo("                   To fix, either:")
     for line in lines:
-        typer.echo(f"                   - {line}")
+        _echo(f"                   - {line}")
 
 
 def _rewrite_base_url(config_path, old: str, new: str) -> bool:
@@ -61,6 +101,7 @@ def check(
     says which project that is and where it came from, so "where will my
     ingest land?" is answered before anything else (#303).
     """
+    from anchor.infra.egress_policy import EgressPolicyError
     from anchor.infra.environment import (
         LEGACY_DATA_DIR,
         get_use,
@@ -73,7 +114,16 @@ def check(
     )
 
     env_flag, project_flag = env, project
-    resolved = resolve_project(env_flag, project_flag)
+    try:
+        resolved = resolve_project(env_flag, project_flag)
+    except EgressPolicyError as exc:
+        # A config whose egress claims contradict each other (for example
+        # local_only with a remote text-embedding-* embed_model, #271) must
+        # fail this readiness gate with the policy's own explanation, not a
+        # traceback: the same error stops every ingest.
+        _echo("Not ready:")
+        _echo(f"  - {exc}")
+        raise typer.Exit(code=1) from exc
     env = resolved.environment
     cfg = resolved.config
     project_dir = resolved.data_dir
@@ -101,13 +151,13 @@ def check(
     else:
         source = "no anchor.toml here — commands in this folder use the env default"
 
-    typer.echo("Project")
-    typer.echo(f"  project        : {resolved.name}  ({source})")
+    _echo("Project")
+    _echo(f"  project        : {resolved.name}  ({source})")
     # Be honest when the project dir is not on disk yet: a fresh project has
     # none until first ingest, but a bare path here reads as "all set" and has
     # masked a misconfigured zone before. Say so rather than imply it exists.
     data_dir_note = "" if project_dir.exists() else "  (created on first ingest)"
-    typer.echo(f"  data dir       : {project_dir}{data_dir_note}")
+    _echo(f"  data dir       : {project_dir}{data_dir_note}")
 
     # Running serve binding (#177, #179, #303): tie the *resolved* project's
     # data dir to a live `anchor serve` port so an agent or user knows where
@@ -116,28 +166,28 @@ def check(
 
     serve_record = find_serve_for_data_dir(project_dir)
     if serve_record is not None:
-        typer.echo(f"  serve          : running at {serve_record.base_url()} "
+        _echo(f"  serve          : running at {serve_record.base_url()} "
                    f"(pid {serve_record.pid})")
     else:
-        typer.echo("  serve          : none running for this project "
+        _echo("  serve          : none running for this project "
                    "(start with `anchor serve`)")
 
-    typer.echo("")
-    typer.echo("Data zone")
-    typer.echo(f"  environment    : {env.name}")
+    _echo("")
+    _echo("Data zone")
+    _echo(f"  environment    : {env.name}")
     # The "environment" is a named provider/data-zone/trust profile, not a .env
     # dotfile of secrets. The config below is env.toml; an API key (if any) lives
     # in ANCHOR_OPENAI_API_KEY, never in env.toml.
     if env.initialized:
-        typer.echo(f"  config         : {env.config_path}  (env.toml; not a .env dotfile)")
+        _echo(f"  config         : {env.config_path}  (env.toml; not a .env dotfile)")
     else:
-        typer.echo("  config         : (env not set up yet — defaults; `anchor env create`)")
+        _echo("  config         : (env not set up yet — defaults; `anchor env create`)")
     if prov:
-        typer.echo(f"  provider       : {prov.label} — {prov.zone}")
+        _echo(f"  provider       : {prov.label} — {prov.zone}")
     elif cfg.provider:
-        typer.echo(f"  provider       : {cfg.provider}")
+        _echo(f"  provider       : {cfg.provider}")
     embed_remote = cfg.embed_model.startswith("text-embedding-")
-    typer.echo(
+    _echo(
         f"  embed model    : {cfg.embed_model}  "
         f"({'remote — sent to your endpoint' if embed_remote else 'local, no egress'})"
     )
@@ -146,31 +196,31 @@ def check(
     if cfg.local_only:
         from anchor.infra.models import offline_active, required_models
 
-        typer.echo("  local-only     : ON — no external egress; polish + regions disabled")
+        _echo("  local-only     : ON — no external egress; polish + regions disabled")
         cached = "offline env set ✓" if offline_active() else (
             "run `anchor models prefetch` once, then set HF_HUB_OFFLINE=1 to verify"
         )
-        typer.echo(f"  offline models : {cached}")
+        _echo(f"  offline models : {cached}")
         for spec in required_models(cfg.embed_model):
-            typer.echo(f"                   - {spec.repo_id} ({spec.note})")
+            _echo(f"                   - {spec.repo_id} ({spec.note})")
     provider_key = (cfg.provider or "").lower()
     if cfg.local_only:
         # Vision (polish + regions) is disabled in no-egress mode; printing an
         # endpoint here would falsely imply an outbound call could happen.
-        typer.echo("  vision         : disabled (no egress) — bronze/silver + local search only")
+        _echo("  vision         : disabled (no egress) — bronze/silver + local search only")
     elif provider_key == "harness":
-        typer.echo("  vision         : your agent harness — gold extraction runs through")
-        typer.echo("                   ingest sessions (begin → submit pages → finalize)")
+        _echo("  vision         : your agent harness - gold extraction runs through")
+        _echo("                   ingest sessions (begin -> submit pages -> finalize)")
     else:
-        typer.echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com (public)'}")
-        typer.echo(f"  vision model   : {cfg.region_model}")
+        _echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com (public)'}")
+        _echo(f"  vision model   : {cfg.region_model}")
 
     # Lean one-time awareness: an existing ~/anchor-data still serving the
     # default project, but the user should know they can fold it into the env.
     if project_dir == LEGACY_DATA_DIR and LEGACY_DATA_DIR.is_dir():
-        typer.echo("")
-        typer.echo(f"  note           : using legacy {LEGACY_DATA_DIR}.")
-        typer.echo("                   Run `anchor migrate` to adopt it as this "
+        _echo("")
+        _echo(f"  note           : using legacy {LEGACY_DATA_DIR}.")
+        _echo("                   Run `anchor migrate` to adopt it as this "
                    "environment's default project.")
 
     # OCR backend probe: onnxruntime is a declared dependency but may be absent
@@ -178,16 +228,16 @@ def check(
     # force-reinstalled. Report FAIL with a remediation hint so the user (or
     # an agent driving setup) knows exactly what to do; never crash the rest
     # of the check output.
-    typer.echo("")
-    typer.echo("OCR backend")
+    _echo("")
+    _echo("OCR backend")
     ocr_ok, ocr_detail = _probe_ocr_backend()
     problems: list[str] = []
     if ocr_ok:
-        typer.echo("  onnxruntime    : importable ✓")
+        _echo("  onnxruntime    : importable ✓")
     elif ocr_detail == "missing":
         # Genuinely not installed -- a force-reinstall re-syncs the dep.
-        typer.echo("  onnxruntime    : NOT installed")
-        typer.echo(
+        _echo("  onnxruntime    : NOT installed")
+        _echo(
             "                   OCR backend not installed -- your editable install may be "
             "stale; run `uv tool install --force --editable .` to re-sync dependencies."
         )
@@ -198,8 +248,8 @@ def check(
     else:
         # Present but fails to import (ABI mismatch, numpy double-load, ...).
         # A reinstall does NOT fix this; report the actual import error.
-        typer.echo("  onnxruntime    : present but failed to import")
-        typer.echo(
+        _echo("  onnxruntime    : present but failed to import")
+        _echo(
             f"                   OCR backend present but failed to import: {ocr_detail}"
         )
         problems.append(
@@ -226,7 +276,7 @@ def check(
     # An unset provider silently skips gold at ingest time (no vision stage runs),
     # so surface it as a not-ready remedy instead of a bare "not needed" line.
     if not cfg.provider:
-        typer.echo("  provider       : NOT set — gold extraction will be silently skipped")
+        _echo("  provider       : NOT set — gold extraction will be silently skipped")
         problems.append(
             "Provider is not set, so gold extraction is skipped: "
             + "; ".join(no_key_remedy_lines(env_dotenv))
@@ -234,13 +284,13 @@ def check(
         _echo_remedy(no_key_remedy_lines(env_dotenv))
     elif needs_key:
         if cfg.openai_api_key:
-            typer.echo("  api key        : ANCHOR_OPENAI_API_KEY detected ✓")
+            _echo("  api key        : ANCHOR_OPENAI_API_KEY detected ✓")
         elif key_ok:  # openai + personal key
-            typer.echo("  api key        : using OPENAI_API_KEY ✓")
+            _echo("  api key        : using OPENAI_API_KEY ✓")
         else:
-            typer.echo("  api key        : NOT set — gold extraction will be silently skipped")
+            _echo("  api key        : NOT set — gold extraction will be silently skipped")
             if personal:
-                typer.echo("                   (a personal OPENAI_API_KEY is set but is the wrong "
+                _echo("                   (a personal OPENAI_API_KEY is set but is the wrong "
                            "credential for this endpoint)")
             problems.append(
                 "API key missing, so gold extraction is skipped: "
@@ -248,21 +298,21 @@ def check(
             )
             _echo_remedy(no_key_remedy_lines(env_dotenv))
     elif provider_key == "harness":
-        typer.echo("  api key        : not needed — ingestion happens through the agent")
+        _echo("  api key        : not needed — ingestion happens through the agent")
     else:
-        typer.echo("  api key        : not needed (no egress)")
+        _echo("  api key        : not needed (no egress)")
 
     # Harness mode: surface in-flight ingest sessions so a half-submitted
     # document is visible and actionable, not silently parked in staging.
     if provider_key == "harness":
         open_sessions = _open_ingest_sessions(cfg)
-        typer.echo("")
-        typer.echo("Harness ingest sessions")
+        _echo("")
+        _echo("Harness ingest sessions")
         if not open_sessions:
-            typer.echo("  none open — ready for `ingest_begin` (agent) or "
+            _echo("  none open — ready for `ingest_begin` (agent) or "
                        "`anchor ingest-session begin <pdf>`")
         for entry in open_sessions:
-            typer.echo(
+            _echo(
                 f"  {entry['session_id']}  {entry['slug']}: "
                 f"{entry['submitted']}/{entry['page_count']} pages submitted "
                 f"({entry['state']}) — resume with ingest_status / finalize"
@@ -272,15 +322,15 @@ def check(
     if cfg.openai_base_url:
         fixed = normalize_base_url(provider_key, cfg.openai_base_url)
         if fixed and fixed != cfg.openai_base_url.strip():
-            typer.echo("")
-            typer.echo(f"  ! endpoint looks wrong for Azure: {cfg.openai_base_url}")
-            typer.echo(f"    should be: {fixed}")
+            _echo("")
+            _echo(f"  ! endpoint looks wrong for Azure: {cfg.openai_base_url}")
+            _echo(f"    should be: {fixed}")
             apply = fix or (
                 config_path is not None
                 and typer.confirm("    Fix it in env.toml now?", default=True)
             )
             if apply and config_path and _rewrite_base_url(config_path, cfg.openai_base_url, fixed):
-                typer.echo("    fixed.")
+                _echo("    fixed.")
                 # Reload so the probe uses the repaired URL.
                 cfg = resolve_project(env_flag, project_flag).config
             else:
@@ -288,21 +338,21 @@ def check(
 
     # Optional live probe — confirms deployment + auth without sending documents.
     if probe:
-        typer.echo("")
-        typer.echo("Probe (tiny live call, no document content)")
+        _echo("")
+        _echo("Probe (tiny live call, no document content)")
         if not key_ok:
-            typer.echo("  skipped — no usable key to authenticate with.")
+            _echo("  skipped — no usable key to authenticate with.")
             problems.append("Cannot probe without a key.")
         else:
             _probe(cfg, embed_remote, problems)
 
-    typer.echo("")
+    _echo("")
     if problems:
-        typer.echo("Not ready:")
+        _echo("Not ready:")
         for p in problems:
-            typer.echo(f"  - {p}")
+            _echo(f"  - {p}")
         raise typer.Exit(code=1)
-    typer.echo("Ready ✓  config resolves and the data zone is what you expect.")
+    _echo("Ready ✓  config resolves and the data zone is what you expect.")
 
 
 def _open_ingest_sessions(cfg: AnchorConfig) -> list[dict]:
@@ -369,7 +419,7 @@ def _probe(cfg: AnchorConfig, embed_remote: bool, problems: list[str]) -> None:
 
     policy = resolve_egress_policy(cfg)
     if not policy.remote_clients_enabled:
-        typer.echo("  skipped - this environment does not allow server model egress")
+        _echo("  skipped - this environment does not allow server model egress")
         return
 
     client = make_openai_client(policy.api_key, policy.base_url)
@@ -383,14 +433,14 @@ def _probe(cfg: AnchorConfig, embed_remote: bool, problems: list[str]) -> None:
             model=cfg.region_model,
             messages=[{"role": "user", "content": "ping"}],
         )
-        typer.echo(f"  chat deployment '{cfg.region_model}' : reachable ✓")
+        _echo(f"  chat deployment '{cfg.region_model}' : reachable ✓")
     except Exception as exc:  # noqa: BLE001 - surface the endpoint's own error
-        typer.echo(f"  chat deployment '{cfg.region_model}' : FAILED — {exc}")
+        _echo(f"  chat deployment '{cfg.region_model}' : FAILED — {exc}")
         problems.append(f"Vision/region deployment '{cfg.region_model}' did not respond.")
     if embed_remote:
         try:
             client.embeddings.create(model=cfg.embed_model, input=["ping"])
-            typer.echo(f"  embed deployment '{cfg.embed_model}' : reachable ✓")
+            _echo(f"  embed deployment '{cfg.embed_model}' : reachable ✓")
         except Exception as exc:  # noqa: BLE001
-            typer.echo(f"  embed deployment '{cfg.embed_model}' : FAILED — {exc}")
+            _echo(f"  embed deployment '{cfg.embed_model}' : FAILED — {exc}")
             problems.append(f"Embedding deployment '{cfg.embed_model}' did not respond.")

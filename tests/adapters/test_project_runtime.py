@@ -141,3 +141,41 @@ def test_custom_endpoint_does_not_inherit_ambient_public_key(tmp_path, monkeypat
 
     assert runtime.require_ingest().polisher is None
     assert runtime.require_ingest().region_extractor is None
+
+
+def test_local_only_remote_embed_model_constructs_no_remote_client(
+    tmp_path, monkeypatch,
+):
+    # #271: refusal must happen at composition time, before any remote
+    # embedding client object exists, not on the first embed() call.
+    from anchor.extensions.anchor_pdfs.infra.llm import embedder_selection
+
+    constructed = []
+
+    class SpyRemoteEmbedder:
+        def __init__(self, *args, **kwargs):
+            constructed.append((args, kwargs))
+
+    monkeypatch.setattr(embedder_selection, "OpenAIEmbedder", SpyRemoteEmbedder)
+    monkeypatch.setenv("OPENAI_API_KEY", "ambient-public-key")
+    config = AnchorConfig(
+        data_dir=tmp_path,
+        provider="local",
+        local_only=True,
+        embed_model="text-embedding-3-small",
+        _env_file=None,
+    )
+
+    with pytest.raises(ValueError, match="does not allow remote embedding"):
+        build_project_runtime(config, profile=RuntimeProfile.INGEST)
+
+    assert constructed == []
+
+
+def test_runtime_locks_are_process_level_per_data_dir(config):
+    # #272: two runtimes composed for the same project (e.g. an MCP bundle
+    # rebuilt after LRU eviction) must hand writers the same lock objects.
+    first = build_project_runtime(config, profile=RuntimeProfile.CANVAS)
+    second = build_project_runtime(config, profile=RuntimeProfile.CANVAS)
+
+    assert first.workspace.locks.lock("shared") is second.workspace.locks.lock("shared")

@@ -98,3 +98,21 @@ def test_ollama_uses_local_sdk_placeholder(tmp_path):
     assert policy.remote_clients_enabled is True
     assert policy.api_key == "anchor-local-ollama"
     assert policy.credential_source == "local-placeholder"
+
+
+def test_local_only_refuses_remote_embed_model(tmp_path, monkeypatch):
+    # #271: local_only is a no-egress guarantee. A remote text-embedding-*
+    # embed_model would send document text to the endpoint (via an ambient
+    # OPENAI_API_KEY, even with no configured key), so policy resolution must
+    # refuse it loudly, naming the setting.
+    monkeypatch.setenv("OPENAI_API_KEY", "ambient-public-key")
+    config = AnchorConfig(
+        data_dir=tmp_path,
+        provider="openai",
+        local_only=True,
+        embed_model="text-embedding-3-small",
+        _env_file=None,
+    )
+
+    with pytest.raises(EgressPolicyError, match="does not allow remote embedding"):
+        resolve_egress_policy(config)

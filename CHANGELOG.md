@@ -103,8 +103,30 @@ next version section on tag.
   `embed_model` is used — local bge is only the local-provider default — and
   that search skips documents whose stored embed_model mismatches. (#302)
 
+- MCP per-workspace write locks moved to a process-level registry keyed by
+  (project data dir, workspace slug), so evicting a project's runtime bundle
+  from the router's size-8 LRU and re-resolving it hands writers the same
+  lock objects, so bundle eviction can no longer defeat write serialization.
+  Also stops allocating a throwaway `asyncio.Lock` on every lock-map hit.
+  (#272)
+- `anchor check` completes on Windows terminals using the default cp1252
+  console encoding instead of raising `UnicodeEncodeError`: the
+  harness-provider status line is plain ASCII (`begin -> submit pages ->
+  finalize`), and when stdout cannot encode the report's glyphs the check
+  marks / arrows degrade to ASCII markers (`OK`, `->`) with anything else
+  replaced rather than crashing. (#267)
+
 ### Security
 
+- A `local_only` environment can no longer send document text to a remote
+  embedding endpoint (#271): `build_embedder` refuses at construction time to
+  build the remote OpenAI embedding client without an explicit,
+  policy-approved credential. Previously a `text-embedding-*` `embed_model`
+  in a no-egress environment built a client that fell back to the ambient
+  `OPENAI_API_KEY`. The egress-policy refusal now names the `embed_model`
+  setting and the local fix, and `anchor check` reports the contradiction as
+  a clean "Not ready" with exit code 1 instead of printing "local-only : ON"
+  next to a remote embed model (or crashing with a traceback).
 - Web routing moved to react-router 7 (react-router-dom `^7.18.0`,
   resolving react-router 7.18.3), clearing both open advisories against
   the 6.x line — GHSA-337j-9hxr-rhxg (constructor injection via SSR error

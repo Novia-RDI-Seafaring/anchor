@@ -114,6 +114,61 @@ def test_check_local_only_echoes_no_egress_posture(tmp_path):
     assert "BAAI/bge-small-en-v1.5" in result.output
 
 
+def test_check_local_only_with_remote_embed_model_exits_nonzero(tmp_path):
+    # #271: local-only + a remote text-embedding-* model is a contradiction
+    # that would send document text off-host. check must refuse it with the
+    # policy's explanation and a non-zero exit, not print both claims (and
+    # not crash with a traceback).
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
+    cfg = _env_dir(tmp_path) / "env.toml"
+    cfg.write_text(
+        cfg.read_text().replace(
+            'embed_model = "BAAI/bge-small-en-v1.5"',
+            'embed_model = "text-embedding-3-small"',
+        ),
+        encoding="utf-8",
+    )
+    result = _run_check(tmp_path)
+    assert result.exit_code == 1, result.output
+    assert "Not ready" in result.output
+    assert "does not allow remote embedding" in result.output
+    assert "embed_model" in result.output
+
+
+def test_check_completes_on_cp1252_console(tmp_path, monkeypatch):
+    # #267: a stock Windows terminal (cp1252) cannot encode the report's
+    # check marks / arrows. The report must degrade to ASCII markers and
+    # complete instead of raising UnicodeEncodeError.
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
+    monkeypatch.setattr(check_mod, "_stdout_encoding", lambda: "cp1252")
+    result = _run_check(tmp_path)
+    assert result.exit_code == 0, result.output
+    assert "✓" not in result.output  # no raw check marks survive
+    assert "OK" in result.output
+    result.output.encode("cp1252")  # the whole report is cp1252-encodable
+
+
+def test_echo_falls_back_to_ascii_when_stdout_cannot_encode(monkeypatch):
+    captured: list[str] = []
+    monkeypatch.setattr(check_mod.typer, "echo", lambda m="": captured.append(m))
+    monkeypatch.setattr(check_mod, "_stdout_encoding", lambda: "cp1252")
+
+    check_mod._echo("importable ✓ (begin → finalize)")
+
+    assert captured == ["importable OK (begin -> finalize)"]
+    captured[0].encode("cp1252")  # strict-encodable for a cp1252 writer
+
+
+def test_echo_keeps_glyphs_on_capable_consoles(monkeypatch):
+    captured: list[str] = []
+    monkeypatch.setattr(check_mod.typer, "echo", lambda m="": captured.append(m))
+    monkeypatch.setattr(check_mod, "_stdout_encoding", lambda: "utf-8")
+
+    check_mod._echo("importable ✓")
+
+    assert captured == ["importable ✓"]
+
+
 def test_check_flags_nonexistent_project_dir(tmp_path):
     runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
     shutil.rmtree(_default_dir(tmp_path))
