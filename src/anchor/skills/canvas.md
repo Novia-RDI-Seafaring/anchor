@@ -32,6 +32,18 @@ real time on every connected client via SSE.
 The full list and the data shapes live in the on-disk substrate docs;
 this is the shortlist of the ones agents touch most.
 
+### Review states
+
+Some workspaces run in review mode (`metadata.review_mode == true`). In
+those, every node you create is stamped `data.review = {state:
+"proposed", by, at}` automatically — you do not set it yourself. Do not
+set or change a node's `review` state unless the user asks you to. A
+node with `review.state == "rejected"` is feedback: the human turned it
+down, so revise or replace it rather than ignoring or deleting the
+verdict. `accepted` means the human signed off. Evidence edges and
+`source_ref` remain how a value is checked; `review` only records the
+outcome of that check.
+
 ### Spec nodes carry structured rows, not prose
 
 When an extraction yields several values — say every pump ID and its

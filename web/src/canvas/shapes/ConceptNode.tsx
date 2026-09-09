@@ -5,6 +5,7 @@ import { resolveColors, resolveText } from "@/canvas/colors";
 import { Pictogram } from "@/canvas/icons";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
 import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
+import { ReviewBadge } from "@/canvas/ReviewBadge";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
 
@@ -73,6 +74,8 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
         {...resizeHandlers}
       />
       {ph.active ? <PlaceholderChip hint={ph.hint} /> : null}
+      <ReviewBadge data={d} />
+
       <Handle type="target" position={Position.Left} />
       {/* Label / pictogram inherit `color` from the wrapper above (resolveColors
           → stroke). Removing the hardcoded `text-neutral-*` classes lets the

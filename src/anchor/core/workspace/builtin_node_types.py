@@ -50,6 +50,10 @@ _COMMON_FIELDS: tuple[str, ...] = (
     "text_size",
     "placeholder",
     "placeholder_hint",
+    # Review-state convention (#324): rendered by the shared review badge /
+    # dimming helpers (web/src/canvas/review.ts), same cross-cutting status
+    # as the placeholder pair above.
+    "review",
 )
 
 

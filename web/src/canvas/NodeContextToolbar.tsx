@@ -66,6 +66,7 @@ import { useUiStore } from "@/stores/uiStore";
 
 import { DEFAULT_BG, resolveColors } from "./colors";
 import { FillPicker } from "./FillPicker";
+import { ReviewActions } from "./ReviewActions";
 import { StrokePicker } from "./StrokePicker";
 import { TextPicker } from "./TextPicker";
 
@@ -311,6 +312,15 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
             <span className="text-[11px]">Open viewer</span>
           </Button>
         ) : null}
+
+        {/* Review verdicts (#324) — Accept / Reject, shown only when the
+            selection contains a proposed (or rejected) node. One click
+            writes the verdict via a plain update-node data patch. */}
+        <ReviewActions
+          workspaceSlug={workspaceSlug}
+          nodeIds={selectedNodeIds}
+          getNodeData={getNodeData}
+        />
 
         {/* ────── Style chips ────── */}
         {/* Fill chip — square swatch tinted with current bg, falls back to
