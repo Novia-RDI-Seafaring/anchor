@@ -1,6 +1,6 @@
 """Silence noisy third-party output so command output stays machine-readable.
 
-The HuggingFace stack (sentence-transformers loads the local ``bge`` embedder
+The HuggingFace stack (docling pulls transformers for its layout models
 through it) prints an "unauthenticated requests to the HF Hub" warning and a
 "Loading weights" progress bar, and docling logs INFO chatter. Those leak into
 the output of ``anchor search`` / ``anchor embed`` / ``anchor ingest`` and make a
@@ -25,7 +25,7 @@ def quiet_dependency_logs() -> None:
     if _STATE["quieted"] or os.environ.get("ANCHOR_LOG_LEVEL", "").upper() == "DEBUG":
         return
 
-    # HuggingFace / transformers / sentence-transformers (embedder load). These
+    # HuggingFace / transformers / onnxruntime (docling + embedder loads). These
     # env vars are read at *import* time and survive a later re-import, which a
     # logger level does not — the libs reset their own logger when imported.
     os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
@@ -45,7 +45,7 @@ def quiet_dependency_logs() -> None:
         disable_progress_bars()
     except Exception:  # noqa: BLE001 - absent in some installs; harmless
         pass
-    for name in ("huggingface_hub", "transformers", "sentence_transformers"):
+    for name in ("huggingface_hub", "transformers", "onnxruntime"):
         logging.getLogger(name).setLevel(logging.ERROR)
 
     # docling module loggers (the OCR "empty result" warning + INFO chatter).

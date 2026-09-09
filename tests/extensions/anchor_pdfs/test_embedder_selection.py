@@ -33,7 +33,7 @@ def spies(monkeypatch):
         constructed = []
 
     monkeypatch.setattr(embedder_selection, "OpenAIEmbedder", RemoteSpy)
-    monkeypatch.setattr(embedder_selection, "LocalSentenceTransformerEmbedder", LocalSpy)
+    monkeypatch.setattr(embedder_selection, "OnnxBgeEmbedder", LocalSpy)
     return RemoteSpy, LocalSpy
 
 
