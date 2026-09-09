@@ -47,7 +47,11 @@ class EgressPolicy:
         provider = self.provider or "unconfigured"
         if not self.server_egress_allowed:
             raise EgressPolicyError(
-                f"provider {provider!r} does not allow remote embedding model {model!r}"
+                f"provider {provider!r} does not allow remote embedding model "
+                f"{model!r}: embedding would send document text off-host. "
+                "Set embed_model to a local model (for example "
+                "'BAAI/bge-small-en-v1.5'), or move the project to an "
+                "environment that allows model egress."
             )
         if require_credential and not self.remote_clients_enabled:
             raise EgressPolicyError(
