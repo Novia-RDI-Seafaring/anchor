@@ -122,11 +122,13 @@ class FakeSnapshotter:
         format: str = "png",
         viewport: tuple[int, int] | None = None,
         full_page: bool = True,
+        expect_nodes: int | None = None,
     ):
         from anchor.core.ports.snapshot import SnapshotResult
 
         self.calls.append({
-            "slug": slug, "format": format, "viewport": viewport, "full_page": full_page,
+            "slug": slug, "format": format, "viewport": viewport,
+            "full_page": full_page, "expect_nodes": expect_nodes,
         })
         ctype = "image/svg+xml" if format == "svg" else "image/png"
         if self.mode == "path":

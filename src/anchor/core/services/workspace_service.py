@@ -482,12 +482,19 @@ class WorkspaceService:
                 "anchor.infra.snapshot.headless_chromium_snapshotter).",
             )
         # Touch the store to surface 404s as the same error type other
-        # ops raise. This is cheap (snapshot read).
-        await self.store.load(slug)
+        # ops raise. This is cheap (snapshot read). The loaded state also
+        # tells the snapshotter how many nodes to expect, so a browser-based
+        # implementation can wait for them instead of capturing an empty
+        # grid while the state fetch is still in flight (#306).
+        state = await self.store.load(slug)
         if format not in {"png", "svg"}:
             raise ValueError(f"unsupported snapshot format: {format!r} (use 'png' or 'svg')")
         return await self.snapshotter.snapshot(
-            slug, format=format, viewport=viewport, full_page=full_page,
+            slug,
+            format=format,
+            viewport=viewport,
+            full_page=full_page,
+            expect_nodes=len(state.nodes),
         )
 
     async def _dispatch(self, slug: str, cmd: BaseModel) -> tuple[Workspace, DomainEvent]:
