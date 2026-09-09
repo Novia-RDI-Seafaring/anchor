@@ -40,6 +40,43 @@ def test_ingest_profile_excludes_unrelated_runtime_modules(config):
     assert runtime.synopsis is None
 
 
+def test_runtime_node_types_include_discovered_producer_renders_tokens(
+    config, tmp_path, monkeypatch,
+):
+    # #309: a registered producer manifest's ui_hints.node_types reach the
+    # shared node-types surface with their `renders` token, so HTTP / MCP /
+    # CLI all describe them through the one WorkspaceService registry.
+    import json
+
+    from anchor.adapters.extension_host import project_producers_dir
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    producers = project_producers_dir(config.data_dir)
+    producers.mkdir(parents=True)
+    (producers / "graph-data-extractor.json").write_text(
+        json.dumps({
+            "oip_version": "0.3",
+            "producer": {"name": "graph-data-extractor", "version": "0.2.0"},
+            "ui_hints": {
+                "node_types": [
+                    {"name": "graphtracer:chart_series", "renders": "chart"},
+                ]
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    runtime = build_project_runtime(config, profile=RuntimeProfile.CANVAS)
+
+    schema = {e["name"]: e for e in runtime.workspace.node_types_schema()}
+    assert schema["graphtracer:chart_series"]["renders"] == "chart"
+    # Bundled manifests are described too (pdf:document renders "document").
+    assert schema["pdf:document"]["renders"] == "document"
+    # Built-ins keep their exact registration; the new key is additive.
+    assert schema["fact"]["body_field"] == "text"
+    assert schema["fact"]["renders"] is None
+
+
 def test_reduced_profile_reports_missing_ingest(config):
     runtime = build_project_runtime(config, profile=RuntimeProfile.CANVAS)
 

@@ -11,6 +11,14 @@ next version section on tag.
 
 ### Added
 
+- Producer node types resolve through their OIP `renders` token (closes
+  #309, spec side OIP#6): the node-types registry folds in every discovered
+  manifest's `ui_hints.node_types` entries, so `GET /api/node-types`, MCP
+  `canvas_node_types`, and `anchor canvas node-types` describe third-party
+  types with an additive `renders` key, and the canvas resolves a node's
+  renderer by exact node_type first, then its declared token, then the
+  default box (a `graphtracer:chart_series` node now draws with
+  `ChartPrimitive`; unrecognised tokens fall through, never error).
 - `extensions status` now also lists discovered system/project OIP producers
   (from `~/.config/oip/producers.d/` and `<data-dir>/.oip/producers.d/`) with
   a static resolvability check on each manifest's `invocation.command`
@@ -23,7 +31,6 @@ next version section on tag.
   accepts `@path` to a JSON file, with the same semantics as
   `derive-region --region`; the `@` handling is one shared CLI helper now
   used by `derive-region` and `resolve-ref` too. (#288)
-
 - Spec-row enrichment records the matched table cell (#242 P2c, closes
   #274): when a row's value matches one gold cell, the row's `source_ref`
   gains a `cell: {row, col}` selector alongside the cached cell bbox, and
