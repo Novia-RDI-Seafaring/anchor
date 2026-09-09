@@ -376,7 +376,7 @@ async def embed_document(
     backfills already-ingested docs without re-running the full pipeline.
     """
     if ingest.embedder is None:
-        raise HTTPException(503, "no embedder wired — install sentence-transformers")
+        raise HTTPException(503, "no embedder wired — the local onnxruntime embedder failed to build")
     existing = await store.get_embeddings(slug)
     if existing and not overwrite:
         return {"slug": slug, "skipped": True, "reason": "already embedded", "embed_model": existing.get("embed_model")}

@@ -100,6 +100,54 @@ def test_ollama_uses_local_sdk_placeholder(tmp_path):
     assert policy.credential_source == "local-placeholder"
 
 
+@pytest.mark.parametrize("provider", ["local", "harness", None])
+def test_no_server_egress_pins_huggingface_offline(tmp_path, monkeypatch, provider):
+    # A no-server-egress env loads only cached model weights; resolution pins
+    # HF offline so a model load never reaches huggingface.co. Previously only
+    # local_only / provider 'local' did this, so a 'harness' env still hit the
+    # hub on every load.
+    for var in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"):
+        monkeypatch.delenv(var, raising=False)
+    config = AnchorConfig(data_dir=tmp_path, provider=provider, _env_file=None)
+
+    resolve_egress_policy(config)
+
+    import os
+
+    assert os.environ.get("HF_HUB_OFFLINE") == "1"
+    assert os.environ.get("TRANSFORMERS_OFFLINE") == "1"
+
+
+def test_no_server_egress_offline_pin_respects_operator_optout(tmp_path, monkeypatch):
+    # enforce_offline() is setdefault-based: an operator who wants a first-run
+    # download sets HF_HUB_OFFLINE=0 and resolution must not clobber it.
+    monkeypatch.setenv("HF_HUB_OFFLINE", "0")
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
+    config = AnchorConfig(data_dir=tmp_path, provider="harness", _env_file=None)
+
+    resolve_egress_policy(config)
+
+    import os
+
+    assert os.environ.get("HF_HUB_OFFLINE") == "0"
+
+
+def test_server_egress_provider_does_not_pin_offline(tmp_path, monkeypatch):
+    # A provider that CAN egress from the server may legitimately fetch weights;
+    # resolution must not force offline on it.
+    for var in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"):
+        monkeypatch.delenv(var, raising=False)
+    config = AnchorConfig(
+        data_dir=tmp_path, provider="openai", openai_api_key="k", _env_file=None
+    )
+
+    resolve_egress_policy(config)
+
+    import os
+
+    assert "HF_HUB_OFFLINE" not in os.environ
+
+
 def test_local_only_refuses_remote_embed_model(tmp_path, monkeypatch):
     # #271: local_only is a no-egress guarantee. A remote text-embedding-*
     # embed_model would send document text to the endpoint (via an ambient

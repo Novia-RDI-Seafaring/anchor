@@ -98,10 +98,16 @@ def resolve_egress_policy(
     )
     no_server_egress = not server_egress_allowed
     if no_server_egress:
-        if config.local_only or provider == "local":
-            from anchor.infra.models import enforce_offline
+        # No server-side model egress at all (local_only, provider 'local' or
+        # 'harness', or unconfigured): the server loads only cached model
+        # weights, so pin HuggingFace offline. Without this a 'harness' env hits
+        # huggingface.co on every model load, which slows the MCP connect path
+        # and defeats the point of a no-egress posture. setdefault-based, so an
+        # operator can still force a first-run download with HF_HUB_OFFLINE=0,
+        # and `anchor models prefetch` never calls enforce_offline().
+        from anchor.infra.models import enforce_offline
 
-            enforce_offline()
+        enforce_offline()
         policy = EgressPolicy(
             provider=provider,
             api_key=None,

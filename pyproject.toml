@@ -36,9 +36,11 @@ dependencies = [
     "sse-starlette>=2.1.0",
     "trimesh>=4.0",
     "playwright>=1.59.0",
-    "sentence-transformers>=5.4.1",
     "questionary>=2.1.1",
     "onnxruntime>=1.27.0",
+    "tokenizers>=0.20",
+    "huggingface-hub>=0.26",
+    "numpy>=1.26",
 ]
 
 [project.optional-dependencies]
@@ -48,9 +50,6 @@ dev = [
     "import-linter>=2.0",
     "ruff>=0.6.0",
     "Pillow>=10.0",
-]
-local-embed = [
-    "sentence-transformers>=3.0",
 ]
 fmus = [
     "fmpy>=0.3",

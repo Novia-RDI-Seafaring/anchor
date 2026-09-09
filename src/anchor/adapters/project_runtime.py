@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from anchor.extensions.anchor_fmus.core.services import FmuService
     from anchor.extensions.anchor_pdfs.core.ingest.session import IngestSessionService
     from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
+    from anchor.extensions.anchor_pdfs.core.ports.embedder import Embedder
     from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
     from anchor.extensions.anchor_sysml.core.services import SysmlService
     from anchor.infra.config import AnchorConfig
@@ -95,8 +96,14 @@ def build_ingest_service(
     doc_store: DocStore,
     *,
     egress: EgressPolicy | None = None,
+    embedder: Embedder | None = None,
 ) -> IngestService:
-    """Build the keyed PDF ingest module for one project."""
+    """Build the keyed PDF ingest module for one project.
+
+    ``embedder`` lets a caller that builds several ingest services for one
+    project share a single embedder, so one project holds one model rather
+    than one per service.
+    """
     from anchor.extensions.anchor_pdfs.core.services import IngestService
     from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
     from anchor.extensions.anchor_pdfs.infra.llm.openai_md_polisher import OpenAIPageMdPolisher
@@ -108,11 +115,12 @@ def build_ingest_service(
     from anchor.infra.egress_policy import resolve_egress_policy
 
     policy = egress or resolve_egress_policy(config)
-    embedder = build_embedder(
-        model=config.embed_model,
-        api_key=policy.api_key,
-        base_url=policy.base_url,
-    )
+    if embedder is None:
+        embedder = build_embedder(
+            model=config.embed_model,
+            api_key=policy.api_key,
+            base_url=policy.base_url,
+        )
     return IngestService(
         doc_store,
         bus,
@@ -138,8 +146,13 @@ def build_ingest_session_service(
     doc_store: DocStore,
     *,
     egress: EgressPolicy | None = None,
+    embedder: Embedder | None = None,
 ) -> IngestSessionService:
-    """Build harness ingestion against an existing project document store."""
+    """Build harness ingestion against an existing project document store.
+
+    ``embedder`` shares one model with the keyed ingest service — see
+    :func:`build_ingest_service`.
+    """
     from anchor.extensions.anchor_pdfs.core.ingest.session import IngestSessionService
     from anchor.extensions.anchor_pdfs.infra.fs_session_store import FsIngestSessionStore
     from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
@@ -148,11 +161,12 @@ def build_ingest_session_service(
     from anchor.infra.egress_policy import resolve_egress_policy
 
     policy = egress or resolve_egress_policy(config)
-    embedder = build_embedder(
-        model=config.embed_model,
-        api_key=policy.api_key,
-        base_url=policy.base_url,
-    )
+    if embedder is None:
+        embedder = build_embedder(
+            model=config.embed_model,
+            api_key=policy.api_key,
+            base_url=policy.base_url,
+        )
     return IngestSessionService(
         doc_store,
         FsIngestSessionStore(config.data_dir),
@@ -234,13 +248,28 @@ def build_project_runtime(
 
         intents = IntentService(FsIntentStore(data_dir), bus, now=SystemClock().now)
 
+    # One embedder per project, shared by both ingest services: they embed into
+    # the same vector space with the same model id, so a second instance only
+    # duplicated the model in memory.
+    shared_embedder = None
+    if features.ingest or features.ingest_session:
+        from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
+
+        shared_embedder = build_embedder(
+            model=config.embed_model,
+            api_key=egress.api_key,
+            base_url=egress.base_url,
+        )
+
     ingest = (
-        build_ingest_service(config, bus, doc_store, egress=egress)
+        build_ingest_service(config, bus, doc_store, egress=egress, embedder=shared_embedder)
         if features.ingest
         else None
     )
     ingest_session = (
-        build_ingest_session_service(config, bus, doc_store, egress=egress)
+        build_ingest_session_service(
+            config, bus, doc_store, egress=egress, embedder=shared_embedder
+        )
         if features.ingest_session
         else None
     )

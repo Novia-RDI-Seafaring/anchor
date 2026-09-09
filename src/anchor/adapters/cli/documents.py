@@ -140,7 +140,7 @@ def search(
     _, _, _, ingest_svc, _ = _build_real_services(data_dir)
     if ingest_svc.embedder is None:
         typer.echo(
-            "no embedder wired - install sentence-transformers (uv add sentence-transformers)",
+            "no embedder wired - the local onnxruntime embedder failed to build",
             err=True,
         )
         raise typer.Exit(code=1)
@@ -323,7 +323,7 @@ def embed(
     _, _, _, ingest_svc, doc_store = _build_real_services(data_dir)
     if ingest_svc.embedder is None:
         typer.echo(
-            "no embedder wired - install sentence-transformers (uv add sentence-transformers)",
+            "no embedder wired - the local onnxruntime embedder failed to build",
             err=True,
         )
         raise typer.Exit(code=1)

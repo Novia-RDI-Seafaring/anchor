@@ -1,7 +1,7 @@
 """Model provisioning + offline enforcement for local-only ingests.
 
 Anchor's local stages load two model families from the HuggingFace hub on first
-use: the sentence-transformer embedder (``BAAI/bge-small-en-v1.5``) and
+use: the ONNX bge embedder (``BAAI/bge-small-en-v1.5``) and
 docling's layout / OCR models. On a locked-down host that first-run download is
 unexpected outbound traffic. This module is the one place that:
 
@@ -39,7 +39,7 @@ class ModelSpec:
 
     #: HuggingFace repo id (embedder) or a docling family label.
     repo_id: str
-    #: ``embed`` (sentence-transformers) or ``docling`` (layout + OCR bundle).
+    #: ``embed`` (onnxruntime bge graph) or ``docling`` (layout + OCR bundle).
     kind: str
     #: Human one-liner for the prefetch report.
     note: str
@@ -58,7 +58,7 @@ def required_models(embed_model: str = DEFAULT_EMBED_MODEL) -> tuple[ModelSpec, 
             ModelSpec(
                 repo_id=embed_model,
                 kind="embed",
-                note="sentence-transformer embedder (local search vectors)",
+                note="onnxruntime bge embedder (local search vectors)",
             )
         )
     specs.append(
@@ -99,7 +99,7 @@ def _truthy(value: str | None) -> bool:
 def prefetch_models(embed_model: str = DEFAULT_EMBED_MODEL) -> list[dict[str, object]]:
     """Download the required model set so a later offline ingest works.
 
-    Loads each model exactly as ingest would (sentence-transformers for the
+    Fetches each model exactly as ingest needs it (the ONNX bge graph for the
     embedder, docling's converter for layout/OCR), which populates the
     HuggingFace cache. Must run with network access; an offline env would defeat
     the point, so this deliberately does NOT call :func:`enforce_offline`.
@@ -127,11 +127,24 @@ def prefetch_models(embed_model: str = DEFAULT_EMBED_MODEL) -> list[dict[str, ob
     return results
 
 
-def _warm_embedder(model_id: str) -> None:
-    """Force the sentence-transformer weights into the cache."""
-    from sentence_transformers import SentenceTransformer
+#: Repo-relative artefacts an ONNX bge embed needs. Mirrors ``_ONNX_WEIGHTS`` /
+#: ``_TOKENIZER`` in ``anchor.extensions.anchor_pdfs.infra.llm.onnx_bge_embedder``
+#: -- kept as literals here because ``infra`` must not import ``extensions``.
+#: If the embedder changes which files it opens, update both.
+_EMBED_ARTEFACTS = ("onnx/model.onnx", "tokenizer.json")
 
-    SentenceTransformer(model_id)
+
+def _warm_embedder(model_id: str) -> None:
+    """Force the embedder's ONNX graph and tokenizer into the cache.
+
+    Fetches exactly the artefacts the ONNX bge embedder opens, so a later
+    offline embed finds everything it needs. Downloading the files is enough;
+    building the session adds nothing to the cache.
+    """
+    from huggingface_hub import hf_hub_download
+
+    for filename in _EMBED_ARTEFACTS:
+        hf_hub_download(model_id, filename)
 
 
 def _warm_docling() -> None:
