@@ -366,13 +366,22 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "and records derived_from, then stores it durably. Example: a "
                 "chart digitizer returns a chart_series; derive_region files it "
                 "beside the chart region it came from. Re-run `embed` to make "
-                "it searchable."
+                "it searchable. parent_region_id accepts 'p4/r1', '4/r1', or a "
+                "bare 'r1'; region ids are only unique per page, so a bare id "
+                "matching regions on multiple pages fails with the candidate "
+                "pages instead of silently picking the first."
             ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "slug": {"type": "string"},
-                    "parent_region_id": {"type": "string"},
+                    "parent_region_id": {
+                        "type": "string",
+                        "description": (
+                            "'p4/r1' (page-qualified) or a bare 'r1'; bare ids "
+                            "matching multiple pages are rejected as ambiguous."
+                        ),
+                    },
                     "region": {
                         "type": "object",
                         "description": "The derived region: id, kind, title, content.data, ...",

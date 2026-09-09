@@ -29,6 +29,9 @@ from anchor.extensions.anchor_pdfs.core.gold_ingest import (
     GoldIngest,
 )
 from anchor.extensions.anchor_pdfs.core.pointed_extraction import (
+    _parse_region_token,
+)
+from anchor.extensions.anchor_pdfs.core.pointed_extraction import (
     extract_pointed as _extract_pointed,
 )
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
@@ -65,6 +68,22 @@ class RegionNotRemovableError(ValueError):
     Model-extracted gold is the ground truth of an ingest pass and is never
     deletable through the region API; only OIP-derived records may be removed.
     """
+
+
+class AmbiguousRegionError(ValueError):
+    """A bare region id matched regions on more than one page (#287).
+
+    Region ids are only unique per page (``r1`` exists on page 1 *and*
+    page 4), so silently picking the first match binds provenance to the
+    wrong region. Carries the colliding ``region_id`` and the sorted
+    candidate ``pages`` so adapters can render a structured error; the
+    message tells the caller to qualify the page (``p<page>/<id>``).
+    """
+
+    def __init__(self, message: str, *, region_id: str, pages: list[int]) -> None:
+        super().__init__(message)
+        self.region_id = region_id
+        self.pages = pages
 
 
 def _next_region_id(page_regions: list[dict[str, Any]]) -> str:
@@ -520,25 +539,40 @@ class IngestService:
         minted here (#304) — a stored region must always be addressable
         (inspect_region, evidence-edge source_refs), so the consumer never
         persists an id-less record.
+
+        ``parent_region_id`` accepts the same tokens ``inspect_region`` does:
+        ``p4/r1`` (page 4, region r1), ``4/r1``, or a bare ``r1``. Region ids
+        are only unique per page (#287), so a page-qualified token binds to
+        that page's region, and a *bare* id that matches regions on multiple
+        pages raises ``AmbiguousRegionError`` (listing the candidate pages)
+        instead of silently picking the first.
         """
+        page_hint, parent_id = _parse_region_token(parent_region_id)
         regions = await self.store.get_regions(slug)
-        parent: dict[str, Any] | None = None
-        parent_page: int | None = None
+        matches: list[tuple[int, dict[str, Any]]] = []
         for _page, regs in (regions.get("pages") or {}).items():
             for r in regs:
-                if isinstance(r, dict) and r.get("id") == parent_region_id:
-                    parent = r
-                    parent_page = int(_page)
-                    break
-            if parent is not None:
-                break
-        if parent is None:
+                if isinstance(r, dict) and r.get("id") == parent_id:
+                    matches.append((int(_page), r))
+        if page_hint is not None:
+            matches = [(p, r) for p, r in matches if p == page_hint]
+        if not matches:
             raise ValueError(
                 f"derive_region: parent region {parent_region_id!r} not found in {slug!r}"
             )
+        if len(matches) > 1:
+            pages = sorted({p for p, _r in matches})
+            raise AmbiguousRegionError(
+                f"derive_region: parent region id {parent_id!r} exists on "
+                f"pages {pages} of {slug!r}; qualify the page, e.g. "
+                f"'p{pages[0]}/{parent_id}'",
+                region_id=parent_id,
+                pages=pages,
+            )
+        parent_page, parent = matches[0]
 
         derived = dict(region)
-        derived["derived_from"] = parent_region_id
+        derived["derived_from"] = parent_id
         # Inherit the parent's provenance unless the producer set its own.
         # Ordinary gold regions store no source_ref, so synthesize the
         # parent's — otherwise the docstring's promise (provenance points at
@@ -549,7 +583,7 @@ class IngestService:
                 parent_ref = {
                     "slug": slug,
                     "page": parent_page,
-                    "region_id": parent_region_id,
+                    "region_id": parent_id,
                     "bbox": parent.get("bbox") or parent.get("approx_bbox"),
                 }
             derived["source_ref"] = parent_ref
@@ -578,7 +612,7 @@ class IngestService:
             "slug": slug,
             "region_id": derived.get("id"),
             "kind": derived.get("kind"),
-            "derived_from": parent_region_id,
+            "derived_from": parent_id,
             "path": str(path),
         }
 

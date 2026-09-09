@@ -116,6 +116,30 @@ async def test_extension_status_dispatches_shared_payload(tmp_path):
     assert summary["available"] + summary["unavailable"] == 3
 
 
+async def test_extension_status_lists_discovered_producers(tmp_path, monkeypatch):
+    """#308 parity: MCP serves the same discovered-producers section as CLI/HTTP."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "home" / ".config"))
+    data_dir = tmp_path / "data"
+    project_dir = data_dir / ".oip" / "producers.d"
+    project_dir.mkdir(parents=True)
+    (project_dir / "tracer.json").write_text(json.dumps({
+        "oip_version": "0.1",
+        "producer": {"name": "tracer", "version": "1.0.0"},
+        "invocation": {"kind": "mcp-stdio", "command": "no-such-binary-xyz"},
+    }))
+    server, _bundle = _single_project_server(tmp_path)
+
+    payload = json.loads(await _call(server, "anchor_extension_status"))
+
+    producers = payload["producers"]
+    assert "never started by Anchor" in producers["note"]
+    items = {item["name"]: item for item in producers["items"]}
+    assert items["tracer"]["command_found"] is False
+    assert items["tracer"]["check"] == "command not found on PATH"
+    assert items["tracer"]["started"] is False
+
+
 # -- gated reachability ------------------------------------------------------ #
 async def test_gated_tool_not_advertised_but_dispatches(tmp_path):
     create_env("local")

@@ -70,7 +70,9 @@ Agent intent queue (your inbox, issue #148):
 
 Status tools:
 - anchor_status: show cwd, config path, data dir, and document/canvas counts
-- anchor_extension_status: show bundled runtime availability and failure reasons
+- anchor_extension_status: show bundled runtime availability and failure reasons,
+  plus discovered OIP producers with a PATH check on their invocation.command
+  (never started by Anchor; the harness spawns them)
 
 PDF tools (extension anchor_pdfs):
 - ingest_pdf / list_documents / get_document_index

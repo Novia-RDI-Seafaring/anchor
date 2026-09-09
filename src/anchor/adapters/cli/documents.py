@@ -8,7 +8,7 @@ from pathlib import Path
 
 import typer
 
-from anchor.adapters.cli.common import DEFAULT_DATA_DIR, _emit_bytes
+from anchor.adapters.cli.common import DEFAULT_DATA_DIR, _emit_bytes, read_json_arg
 from anchor.adapters.cli.document_synopsis import synopsis
 from anchor.adapters.cli.services import _build_real_services
 from anchor.extensions.anchor_pdfs.core.region_inspect import (
@@ -150,7 +150,14 @@ def search(
 
 def derive_region(
     slug: str = typer.Argument(..., help="Document slug."),
-    parent_region_id: str = typer.Argument(..., help="Region id the new region derives from."),
+    parent_region_id: str = typer.Argument(
+        ...,
+        help=(
+            "Region id the new region derives from: 'p4/r1' (page-qualified) "
+            "or a bare 'r1'. A bare id matching regions on multiple pages is "
+            "an error listing the candidate pages."
+        ),
+    ),
     region: str = typer.Option(
         ..., "--region", help="The derived region as a JSON string, or @path to a JSON file."
     ),
@@ -160,9 +167,11 @@ def derive_region(
 
     The consumer side of an OIP region producer: inherits the parent's
     source_ref (provenance) and records derived_from, then stores it durably.
-    Re-run `anchor embed <slug>` to make the new region searchable.
+    Region ids are only unique per page, so qualify the parent with its page
+    ('p4/r1') when the bare id is ambiguous. Re-run `anchor embed <slug>` to
+    make the new region searchable.
     """
-    raw = Path(region[1:]).read_text(encoding="utf-8") if region.startswith("@") else region
+    raw = read_json_arg(region)
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -212,7 +221,7 @@ def resolve_ref(
     region_id > the ref's own bbox. The answer carries `precision` naming
     the layer that resolved.
     """
-    raw = Path(ref[1:]).read_text(encoding="utf-8") if ref.startswith("@") else ref
+    raw = read_json_arg(ref)
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:

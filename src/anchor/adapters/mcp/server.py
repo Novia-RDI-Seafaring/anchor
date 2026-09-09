@@ -459,7 +459,9 @@ def build_mcp_server(
                 text = _json.dumps(_build_server_info(b.config.data_dir))
             elif name == handlers_extensions.TOOL_NAME:
                 b = get_bundle(args.pop("project", None))
-                text = handlers_extensions.call_tool(b.extension_status)
+                text = handlers_extensions.call_tool(
+                    b.extension_status, b.config.data_dir
+                )
             elif name in status_names:
                 b = get_bundle(args.pop("project", None))
                 summary = await build_status_summary(
