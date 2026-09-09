@@ -28,6 +28,7 @@ from anchor.core.events.canvas import (
     ReferenceCreated,
     ReferenceRemoved,
     ReferenceUpdated,
+    WorkspaceMetadataUpdated,
 )
 from anchor.core.workspace.edges import Edge
 from anchor.core.workspace.merge import deep_merge
@@ -146,6 +147,11 @@ def apply(state: Workspace, evt: BaseModel) -> Workspace:
                     if isinstance(row, dict):
                         row["reference_id"] = evt.reference_id
                         row["source_ref"] = dict(evt.source_ref)
+    elif isinstance(evt, WorkspaceMetadataUpdated):
+        # Same merge-not-replace contract as node/edge data patches (#192):
+        # nested dicts merge, a None value deletes its key. First used for
+        # the review_mode opt-in flag (#324).
+        new.metadata = deep_merge(new.metadata, evt.patch)
     elif isinstance(evt, CanvasCleared):
         new.nodes = {}
         new.edges = {}

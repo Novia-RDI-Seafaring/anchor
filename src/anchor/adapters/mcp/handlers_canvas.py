@@ -14,6 +14,7 @@ from typing import Any
 from anchor.adapters.mcp import canvas_tool_definitions
 from anchor.core.events.actor import Actor, actor_scope
 from anchor.core.services.workspace_service import WorkspaceService
+from anchor.core.workspace.review import review_warning
 from anchor.core.workspace.workspace import CommandError
 
 
@@ -88,19 +89,29 @@ def _alias_type(args: dict[str, Any], canonical: str) -> None:
         args.setdefault(canonical, alias)
 
 
-def _data_warning(svc: WorkspaceService, node_type: str | None, data: dict[str, Any] | None) -> str | None:
-    """Non-blocking warning listing data keys the node type won't render (#191)."""
-    if not node_type:
-        return None
-    unknown = svc.unknown_data_keys(node_type, data)
-    if not unknown:
-        return None
-    keys = ", ".join(unknown)
-    return (
-        f"node_type {node_type!r} does not render these data keys: {keys}. "
-        f"They are stored but never shown. Call canvas_node_types to see "
-        f"which data fields {node_type!r} renders (e.g. its body field)."
-    )
+def _data_warning(
+    svc: WorkspaceService,
+    node_type: str | None,
+    data: dict[str, Any] | None,
+    *,
+    partial: bool = False,
+) -> str | None:
+    """Non-blocking warnings on a data payload: keys the node type won't
+    render (#191) plus a malformed ``data.review`` object (#324)."""
+    parts: list[str] = []
+    if node_type:
+        unknown = svc.unknown_data_keys(node_type, data)
+        if unknown:
+            keys = ", ".join(unknown)
+            parts.append(
+                f"node_type {node_type!r} does not render these data keys: {keys}. "
+                f"They are stored but never shown. Call canvas_node_types to see "
+                f"which data fields {node_type!r} renders (e.g. its body field)."
+            )
+    rw = review_warning(data, partial=partial)
+    if rw is not None:
+        parts.append(rw)
+    return " ".join(parts) or None
 
 
 def _spec_rows_hint(node_type: str | None, data: dict[str, Any] | None) -> str | None:
@@ -156,6 +167,14 @@ async def _dispatch_tool(
             return json.dumps(await svc.delete_workspace(args["workspace_slug"]))
         if name == "canvas_list_workspaces":
             return json.dumps(await svc.list_workspaces())
+        if name == "canvas_set_review_mode":
+            state, env = await svc.set_review_mode(
+                args["workspace_slug"], enabled=bool(args["enabled"]),
+            )
+            return json.dumps({
+                "review_mode": state.metadata.get("review_mode", False) is True,
+                "event": env.model_dump(),
+            })
         if name == "canvas_add_node":
             slug = args.pop("workspace_slug")
             _alias_type(args, "node_type")
@@ -212,6 +231,7 @@ async def _dispatch_tool(
                 node = state.nodes.get(node_id)
                 warning = _data_warning(
                     svc, node.node_type if node else None, data_patch,
+                    partial=True,
                 )
                 if warning is not None:
                     result["warning"] = warning

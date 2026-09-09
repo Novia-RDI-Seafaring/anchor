@@ -369,3 +369,70 @@ def test_cli_add_node_data_at_path_missing_file_is_usage_error(tmp_path):
     assert r.exit_code == 2
     assert "cannot read" in r.output
     assert "Traceback" not in r.output
+
+
+# ── Review mode (#324) ──────────────────────────────────────────────────────
+
+def test_cli_review_mode_toggle_and_status(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+
+    # Default: off.
+    status = runner.invoke(app, ["canvas", "review-mode", "w1", "--data-dir", str(data_dir)])
+    assert status.exit_code == 0, status.output
+    assert json.loads(status.output) == {"slug": "w1", "review_mode": False}
+
+    on = runner.invoke(app, ["canvas", "review-mode", "w1", "--on", "--data-dir", str(data_dir)])
+    assert on.exit_code == 0, on.output
+    assert json.loads(on.output) == {"slug": "w1", "review_mode": True}
+
+    # An agent-attributed add-node now lands as proposed.
+    added = runner.invoke(app, [
+        "canvas", "--actor", "agent:claude", "add-node", "w1", "concept",
+        "--label", "A", "--data-dir", str(data_dir),
+    ])
+    assert added.exit_code == 0, added.output
+    body = json.loads(added.output)
+    review = body["event"]["payload"]["data"]["review"]
+    assert review["state"] == "proposed"
+    assert review["by"] == {"kind": "agent", "label": "claude"}
+    assert "warning" not in body
+
+    # A human add-node in the same workspace is not stamped.
+    human = runner.invoke(app, [
+        "canvas", "add-node", "w1", "concept", "--label", "H",
+        "--data-dir", str(data_dir),
+    ])
+    assert human.exit_code == 0, human.output
+    assert "review" not in json.loads(human.output)["event"]["payload"]["data"]
+
+    off = runner.invoke(app, ["canvas", "review-mode", "w1", "--off", "--data-dir", str(data_dir)])
+    assert off.exit_code == 0, off.output
+    assert json.loads(off.output) == {"slug": "w1", "review_mode": False}
+
+    both = runner.invoke(app, [
+        "canvas", "review-mode", "w1", "--on", "--off", "--data-dir", str(data_dir),
+    ])
+    assert both.exit_code == 2
+
+
+def test_cli_update_node_malformed_review_warns_but_writes(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    added = runner.invoke(app, [
+        "canvas", "add-node", "w1", "concept", "--label", "A",
+        "--data-dir", str(data_dir),
+    ])
+    node_id = json.loads(added.output)["node_id"]
+
+    r = runner.invoke(app, [
+        "canvas", "update-node", "w1", node_id,
+        "--data", '{"review": {"state": "maybe"}}', "--data-dir", str(data_dir),
+    ])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert "review" in out["warning"]
+    node = next(n for n in out["state"]["nodes"] if n["id"] == node_id)
+    assert node["data"]["review"] == {"state": "maybe"}

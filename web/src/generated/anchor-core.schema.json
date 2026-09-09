@@ -89,6 +89,9 @@
     "CanvasCleared",
     "CanvasSnapshot",
     "ReferenceCreated",
-    "ReferenceAttached"
+    "ReferenceAttached",
+    "ReferenceRemoved",
+    "ReferenceUpdated",
+    "WorkspaceMetadataUpdated"
   ]
 }

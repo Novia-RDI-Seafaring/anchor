@@ -17,6 +17,7 @@ from anchor.adapters.cli.canvas_snapshot import register_snapshot_command
 from anchor.adapters.cli.common import DEFAULT_DATA_DIR
 from anchor.adapters.cli.services import _build_canvas_runtime
 from anchor.core.events.actor import parse_actor, resolve_cli_actor, set_current_actor
+from anchor.core.workspace.review import review_warning
 from anchor.extensions.anchor_pdfs.core.value_provenance import enrich_spec_row_source_refs
 
 canvas_app = typer.Typer(help="Manage workspaces (canvases).")
@@ -171,6 +172,42 @@ def canvas_create(
     typer.echo(
         f"View this canvas at {_canvas_url(slug, data_dir)}  (run `anchor serve`)", err=True
     )
+
+
+@canvas_app.command("review-mode")
+def canvas_review_mode(
+    slug: str,
+    on: bool = typer.Option(False, "--on", help="Enable review mode."),
+    off: bool = typer.Option(False, "--off", help="Disable review mode."),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Show or toggle the workspace's review-mode opt-in flag (#324).
+
+    With neither --on nor --off, prints the current setting. When ON,
+    every node an agent creates is stamped `data.review = {state:
+    "proposed", by, at}` so a human can accept or reject it from the
+    canvas. Verdicts are plain `update-node` data patches. Mirrors
+    `PATCH /api/workspaces/{slug}` (`review_mode`) and the
+    `canvas_set_review_mode` MCP tool (adapter parity).
+    """
+    if on and off:
+        typer.echo("--on and --off are mutually exclusive", err=True)
+        raise typer.Exit(code=2)
+    ws = _build_canvas_runtime(data_dir).workspace
+    if not on and not off:
+        state = _run(ws.get_state(slug))
+        enabled = state.get("metadata", {}).get("review_mode", False) is True
+        typer.echo(json.dumps({"slug": slug, "review_mode": enabled}, indent=2))
+        return
+
+    async def run():
+        state, _env = await ws.set_review_mode(slug, enabled=on)
+        return {
+            "slug": slug,
+            "review_mode": state.metadata.get("review_mode", False) is True,
+        }
+
+    typer.echo(json.dumps(_run(run()), indent=2))
 
 
 @canvas_app.command("url")
@@ -328,12 +365,18 @@ def canvas_add_node(
             "state": state.get_state(),
             "position": {"x": env.payload.get("x"), "y": env.payload.get("y")},
         }
+        warnings: list[str] = []
         unknown = ws.unknown_data_keys(node_type, parsed)
         if unknown:
-            out["warning"] = (
+            warnings.append(
                 f"node_type {node_type!r} does not render these data keys: "
                 f"{', '.join(unknown)}. Run `anchor canvas node-types {node_type}`."
             )
+        rw = review_warning(parsed)
+        if rw is not None:
+            warnings.append(rw)
+        if warnings:
+            out["warning"] = " ".join(warnings)
         return out
 
     typer.echo(json.dumps(_run(run()), indent=2))
@@ -472,17 +515,23 @@ def canvas_update_node(
         assert env is not None and state is not None  # for type narrowing
         out: dict = {"event": env.model_dump(), "state": state.get_state()}
         if data is not None:
+            warnings: list[str] = []
             node = state.nodes.get(node_id)
             unknown = (
                 ws.unknown_data_keys(node.node_type, fields.get("data"))
                 if node is not None else []
             )
             if unknown:
-                out["warning"] = (
+                warnings.append(
                     f"node_type {node.node_type!r} does not render these data "
                     f"keys: {', '.join(unknown)}. Run `anchor canvas node-types "
                     f"{node.node_type}`."
                 )
+            rw = review_warning(fields.get("data"), partial=True)
+            if rw is not None:
+                warnings.append(rw)
+            if warnings:
+                out["warning"] = " ".join(warnings)
         return out
 
     typer.echo(json.dumps(_run(run()), indent=2))

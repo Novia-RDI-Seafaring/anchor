@@ -39,6 +39,7 @@ import {
   paintRectFrom,
 } from "@/canvas/PaintGhost";
 import { nodeTypes, paletteEntries } from "@/canvas/registry";
+import { REVIEW_REJECTED_OPACITY, reviewState } from "@/canvas/review";
 import { refreshWorkspaces } from "@/canvas/useWorkspacesList";
 import { CanvasSse, type CanvasEvent } from "@/realtime/sseClient";
 import { useCanvasStore } from "@/stores/canvasStore";
@@ -176,6 +177,10 @@ function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
   // mounting NodeResizer when the prop is read at render time. The flag
   // is forward-compatible: producers / consumers can ignore it today.
   const locked = (n.data as { locked?: boolean } | undefined)?.locked === true;
+  // Review states (#324): a rejected node stays on the canvas as visible
+  // feedback for the proposing agent, but renders dimmed. Applied here at
+  // the wrapper level so every node type gets it without per-shape wiring.
+  const rejected = reviewState(n.data).state === "rejected";
   return {
     id: n.id,
     position: { x: relX, y: relY },
@@ -184,6 +189,7 @@ function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
     ...parentProps,
     ...(isArea ? { zIndex: -1, draggable: true } : {}),
     ...(locked ? { draggable: false } : {}),
+    ...(rejected ? { style: { opacity: REVIEW_REJECTED_OPACITY } } : {}),
   };
 }
 

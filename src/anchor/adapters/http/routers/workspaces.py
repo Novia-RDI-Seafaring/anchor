@@ -65,9 +65,21 @@ async def rename_workspace(
     req: RenameWorkspaceRequest,
     svc: WorkspaceService = Depends(get_workspace_service),
 ):
+    """Update workspace settings: ``title`` (rename) and/or the
+    ``review_mode`` opt-in flag (#324). Same operation is exposed as the
+    ``canvas_set_review_mode`` MCP tool and ``anchor canvas review-mode``
+    CLI (adapter parity)."""
     _check_slug(slug)
+    if req.title is None and req.review_mode is None:
+        raise HTTPException(400, "nothing to update (send title and/or review_mode)")
     try:
-        return await svc.rename_workspace(slug, title=req.title)
+        out: dict = {"slug": slug}
+        if req.title is not None:
+            out = await svc.rename_workspace(slug, title=req.title)
+        if req.review_mode is not None:
+            state, _env = await svc.set_review_mode(slug, enabled=req.review_mode)
+            out["review_mode"] = state.metadata.get("review_mode", False) is True
+        return out
     except FileNotFoundError as exc:
         raise HTTPException(404, f"workspace {slug!r} not found") from exc
 

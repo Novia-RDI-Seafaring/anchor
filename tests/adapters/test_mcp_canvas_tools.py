@@ -674,3 +674,73 @@ def test_canvas_create_reference_malformed_returns_error():
         assert "error" in out
 
     asyncio.run(run())
+
+
+# ── Review mode (#324) ──────────────────────────────────────────────────────
+
+def test_canvas_set_review_mode_tool_is_registered():
+    names = {t["name"] for t in handlers_canvas.tool_definitions()}
+    assert "canvas_set_review_mode" in names
+
+
+def test_canvas_set_review_mode_then_mcp_add_node_is_stamped_proposed():
+    """MCP writes default to an agent actor, so with the flag on the node
+    lands as `proposed` attributed to the MCP client."""
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        out = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_set_review_mode",
+            {"workspace_slug": "w1", "enabled": True},
+        ))
+        assert out["review_mode"] is True
+        assert out["event"]["type"] == "WorkspaceMetadataUpdated"
+        body = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_add_node",
+            {"workspace_slug": "w1", "id": "a", "node_type": "concept"},
+        ))
+        review = body["event"]["payload"]["data"]["review"]
+        assert review["state"] == "proposed"
+        assert review["by"]["kind"] == "agent"
+        # And no false unknown-key warning for the stamped field.
+        assert "warning" not in body
+
+    asyncio.run(run())
+
+
+def test_canvas_set_review_mode_off_removes_the_flag():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await handlers_canvas.call_tool(
+            s.workspace, "canvas_set_review_mode",
+            {"workspace_slug": "w1", "enabled": True},
+        )
+        out = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_set_review_mode",
+            {"workspace_slug": "w1", "enabled": False},
+        ))
+        assert out["review_mode"] is False
+        state = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_get_state", {"workspace_slug": "w1"},
+        ))
+        assert "review_mode" not in state["metadata"]
+
+    asyncio.run(run())
+
+
+def test_canvas_add_node_malformed_review_warns_but_writes():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        body = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_add_node",
+            {
+                "workspace_slug": "w1", "id": "a", "node_type": "concept",
+                "data": {"review": {"state": "maybe"}},
+            },
+        ))
+        assert body["node_id"] == "a"
+        assert "review" in body["warning"]
+
+    asyncio.run(run())

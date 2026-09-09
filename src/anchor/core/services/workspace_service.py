@@ -23,6 +23,7 @@ from anchor.core.events.canvas import (
     NodeReparented,
     NodeResized,
     NodeUpdated,
+    WorkspaceMetadataUpdated,
 )
 from anchor.core.events.envelope import DomainEvent
 from anchor.core.ids import new_event_id, new_id
@@ -37,6 +38,7 @@ from anchor.core.workspace.builtin_node_types import builtin_node_type_registry
 from anchor.core.workspace.layout import NodeLike, find_free_position
 from anchor.core.workspace.node_types import NodeTypeRegistry
 from anchor.core.workspace.reducer import apply, cascade_events_for_remove
+from anchor.core.workspace.review import REVIEW_MODE_KEY, proposed_review
 from anchor.core.workspace.workspace import CommandError, Workspace, validate_command
 
 
@@ -218,7 +220,13 @@ class WorkspaceService:
         Auto-place triggers when ``place == "auto"`` OR neither ``x`` nor ``y``
         was given. When explicit coordinates ARE given (and ``place`` is not
         "auto") the node lands exactly there, as before. The resolved
-        position is always readable from ``event.payload["x"/"y"]``."""
+        position is always readable from ``event.payload["x"/"y"]``.
+
+        Review-mode writer default (#324): when the workspace opted in via
+        ``metadata.review_mode == True``, a node created by an actor of
+        kind ``agent`` gets ``data.review = {state: "proposed", by, at}``
+        stamped server-side — unless the caller supplied its own ``review``
+        object. With the flag off (the default) nothing changes."""
         if place not in (None, "auto", "exact"):
             raise CommandError(
                 f"unknown place mode: {place!r} (use 'auto' or 'exact')",
@@ -227,8 +235,8 @@ class WorkspaceService:
         gave_coords = ("x" in kwargs) or ("y" in kwargs)
         auto = place == "auto" or (place is None and not gave_coords)
         async with self.locks.lock(slug):
+            state = await self.store.load(slug)
             if auto:
-                state = await self.store.load(slug)
                 existing = [
                     NodeLike(id=n.id, x=n.x, y=n.y, width=n.width, height=n.height)
                     for n in state.nodes.values()
@@ -240,8 +248,35 @@ class WorkspaceService:
                 )
                 kwargs["x"] = x
                 kwargs["y"] = y
+            if state.metadata.get(REVIEW_MODE_KEY) is True:
+                actor = current_actor()
+                data = kwargs.get("data")
+                if (
+                    actor is not None
+                    and actor.kind == "agent"
+                    and (not isinstance(data, dict) or "review" not in data)
+                ):
+                    kwargs["data"] = {
+                        **(data if isinstance(data, dict) else {}),
+                        "review": proposed_review(actor, self.clock.now()),
+                    }
             cmd = NodeAdded(id=node_id, **kwargs)
-            return await self._dispatch_locked(slug, cmd)
+            return await self._dispatch_locked(slug, cmd, state=state)
+
+    async def set_review_mode(
+        self, slug: str, *, enabled: bool,
+    ) -> tuple[Workspace, DomainEvent]:
+        """Toggle the workspace's review-mode opt-in flag (#324).
+
+        Emits a ``WorkspaceMetadataUpdated`` event so SSE clients and the
+        event log see the change. Turning it ON stores
+        ``metadata.review_mode = True``; turning it OFF deletes the key
+        (merge semantics: a ``None`` patch value removes it), so a
+        workspace that never opted in — or opted back out — carries no
+        residue and behaves byte-identically to before #324.
+        """
+        patch: dict[str, Any] = {REVIEW_MODE_KEY: True if enabled else None}
+        return await self._dispatch(slug, WorkspaceMetadataUpdated(patch=patch))
 
     def node_types_schema(self, name: str | None = None) -> list[dict[str, Any]]:
         """Return the per-node-type data-field contract (#191).
@@ -507,13 +542,18 @@ class WorkspaceService:
         async with self.locks.lock(slug):
             return await self._dispatch_locked(slug, cmd)
 
-    async def _dispatch_locked(self, slug: str, cmd: BaseModel) -> tuple[Workspace, DomainEvent]:
+    async def _dispatch_locked(
+        self, slug: str, cmd: BaseModel, *, state: Workspace | None = None,
+    ) -> tuple[Workspace, DomainEvent]:
         """Dispatch body assuming the caller already holds the workspace lock.
 
-        Split out so ``add_node`` can read state (for auto-placement) and
-        write the resulting command inside one lock acquisition. The
-        re-entrant lock impls don't all support nesting."""
-        state = await self.store.load(slug)
+        Split out so ``add_node`` can read state (for auto-placement and the
+        review-mode flag) and write the resulting command inside one lock
+        acquisition. The re-entrant lock impls don't all support nesting.
+        A caller that already loaded the state under this lock may pass it
+        via ``state`` to skip the second load."""
+        if state is None:
+            state = await self.store.load(slug)
         validate_command(state, cmd, node_types=self.node_types)
         env = self._envelope(slug, cmd)
         version = await self.store.append_event(slug, env)

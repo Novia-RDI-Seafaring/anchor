@@ -23,8 +23,16 @@ class CreateWorkspaceRequest(BaseModel):
 
 
 class RenameWorkspaceRequest(BaseModel):
-    """Update only the display title; the slug (directory id) is immutable."""
-    title: str
+    """Body for ``PATCH /api/workspaces/{slug}``.
+
+    The slug (directory id) is immutable. ``title`` updates the display
+    title (the historic rename op). ``review_mode`` toggles the
+    workspace's review opt-in (#324): when true, agent-created nodes get
+    ``data.review = {state: "proposed", ...}`` stamped server-side.
+    Both fields are optional; at least one must be present.
+    """
+    title: str | None = None
+    review_mode: bool | None = None
 
 
 class AddNodeRequest(BaseModel):
