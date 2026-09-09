@@ -273,3 +273,58 @@ describe("canvasStore.applyEvent", () => {
     expect(useCanvasStore.getState().version).toBe(99);
   });
 });
+
+describe("actor attribution (#322)", () => {
+  it("records the latest actor per node from live events", () => {
+    const apply = useCanvasStore.getState().applyEvent;
+    apply(evt({
+      type: "NodeAdded",
+      version: 1,
+      payload: { id: "a" },
+      actor: { kind: "agent", label: "claude-code" },
+    }));
+    apply(evt({
+      type: "NodeMoved",
+      version: 2,
+      payload: { id: "a", x: 1, y: 2 },
+      actor: { kind: "human", label: "browser" },
+    }));
+    const s = useCanvasStore.getState();
+    expect(s.lastEditors["a"]).toEqual({ kind: "human", label: "browser" });
+    expect(s.activity[0]!.by).toBe("browser");
+    expect(s.activity[1]!.by).toBe("claude-code");
+  });
+
+  it("tolerates actor-less events (pre-#322 logs) and clears on remove", () => {
+    const apply = useCanvasStore.getState().applyEvent;
+    apply(evt({ type: "NodeAdded", version: 1, payload: { id: "a" } }));
+    let s = useCanvasStore.getState();
+    expect(s.lastEditors["a"]).toBeUndefined();
+    expect(s.activity[0]!.by).toBeUndefined();
+    apply(evt({
+      type: "NodeUpdated",
+      version: 2,
+      payload: { id: "a", fields: { label: "A" } },
+      actor: { kind: "system" },
+    }));
+    expect(useCanvasStore.getState().lastEditors["a"])
+      .toEqual({ kind: "system" });
+    // Label falls back to the kind when the actor has no label.
+    expect(useCanvasStore.getState().activity[0]!.by).toBe("system");
+    apply(evt({ type: "NodeRemoved", version: 3, payload: { id: "a" } }));
+    s = useCanvasStore.getState();
+    expect(s.lastEditors["a"]).toBeUndefined();
+  });
+
+  it("CanvasCleared wipes the lastEditors map", () => {
+    const apply = useCanvasStore.getState().applyEvent;
+    apply(evt({
+      type: "NodeAdded",
+      version: 1,
+      payload: { id: "a" },
+      actor: { kind: "agent", label: "claude-code" },
+    }));
+    apply(evt({ type: "CanvasCleared", version: 2, payload: {} }));
+    expect(useCanvasStore.getState().lastEditors).toEqual({});
+  });
+});

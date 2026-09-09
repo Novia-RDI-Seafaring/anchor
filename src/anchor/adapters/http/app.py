@@ -21,6 +21,7 @@ from anchor.adapters.http.routers import (
 )
 from anchor.adapters.project_runtime import ProjectRuntime
 from anchor.core.clock import SystemClock
+from anchor.core.events.actor import Actor, actor_scope
 from anchor.core.ids import InvalidWorkspaceSlugError
 from anchor.core.ports.event_bus import EventBus
 from anchor.core.services.intent_service import IntentService
@@ -36,6 +37,26 @@ from anchor.extensions.anchor_pdfs.core.services import IngestService
 from anchor.extensions.anchor_sysml.adapters.http import sysml_routes
 from anchor.extensions.anchor_sysml.core.services import SysmlService
 from anchor.infra.config import AnchorConfig
+
+
+class _ActorAttributionMiddleware:
+    """Attribute every HTTP write to ``{kind: human, label: browser}`` (#322).
+
+    Pure ASGI (no BaseHTTPMiddleware task hop) so the ``ContextVar`` set
+    here is visible inside route handlers and the service calls they await.
+    Routes whose request body carries an explicit ``actor`` override the
+    default for their own call.
+    """
+
+    def __init__(self, app) -> None:  # noqa: ANN001 -- ASGI app
+        self._app = app
+
+    async def __call__(self, scope, receive, send) -> None:  # noqa: ANN001
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+        with actor_scope(Actor(kind="human", label="browser")):
+            await self._app(scope, receive, send)
 
 
 def build_app(
@@ -129,6 +150,10 @@ def build_app(
         "http://127.0.0.1:5173",
         *extra_origins,
     ]
+    # Default actor for every request (#322). Added after CORS so it wraps
+    # the routers directly; a request-body `actor` still overrides per-call.
+    app.add_middleware(_ActorAttributionMiddleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,

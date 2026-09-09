@@ -3,7 +3,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from anchor.adapters.http.deps import get_doc_store, get_workspace_service
+from anchor.adapters.http.deps import (
+    apply_actor_override,
+    get_doc_store,
+    get_workspace_service,
+)
 from anchor.adapters.http.schemas import AddNodeRequest, UpdateNodeRequest
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.core.workspace.workspace import CommandError
@@ -48,7 +52,9 @@ async def add_node(slug: str, req: AddNodeRequest, svc: WorkspaceService = Depen
     # `exclude_none` drops omitted x/y so the service auto-places (#189) and
     # drops the unused `type`/`node_type` alias. We resolve the alias and the
     # node_type default ourselves so both shapes are accepted (#186).
+    apply_actor_override(req.actor)
     kwargs = req.model_dump(exclude_none=True)
+    kwargs.pop("actor", None)  # attribution metadata, not a node field (#322)
     place = kwargs.pop("place", None)
     node_type = kwargs.pop("node_type", None) or kwargs.pop("type", None) or "concept"
     kwargs.pop("type", None)
@@ -84,7 +90,9 @@ async def update_node(
     # from "parent explicitly set to null" — the latter is how the
     # frontend unparents a node (drop outside any Area). `exclude_none` is
     # WRONG for parent because null IS a meaningful value.
+    apply_actor_override(req.actor)
     raw = req.model_dump(exclude_unset=True)
+    raw.pop("actor", None)  # attribution metadata, not a node field (#322)
     data_patch = raw.get("data") if isinstance(raw.get("data"), dict) else None
     # Defensive: a node can't be its own parent.
     if raw.get("parent") == node_id:

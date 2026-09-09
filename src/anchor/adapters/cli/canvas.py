@@ -16,9 +16,34 @@ from anchor.adapters.cli.canvas_references import reference_app
 from anchor.adapters.cli.canvas_snapshot import register_snapshot_command
 from anchor.adapters.cli.common import DEFAULT_DATA_DIR
 from anchor.adapters.cli.services import _build_canvas_runtime
+from anchor.core.events.actor import parse_actor, resolve_cli_actor, set_current_actor
 from anchor.extensions.anchor_pdfs.core.value_provenance import enrich_spec_row_source_refs
 
 canvas_app = typer.Typer(help="Manage workspaces (canvases).")
+
+
+@canvas_app.callback()
+def canvas_main(
+    actor: str | None = typer.Option(
+        None,
+        "--actor",
+        help=(
+            "Attribute writes to this actor as 'kind[:label]' "
+            "(kind: human, agent, or system; e.g. --actor agent:claude-code). "
+            "Defaults to human:cli, or agent when ANCHOR_AGENT is set."
+        ),
+    ),
+) -> None:
+    """Stamp the actor on every canvas event this invocation emits (#322)."""
+    if actor is not None:
+        try:
+            parse_actor(actor)
+        except ValueError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=2) from None
+    # asyncio.run copies the current context, so events built inside the
+    # command's coroutine see this actor.
+    set_current_actor(resolve_cli_actor(actor))
 
 
 def _run(coro: Coroutine[Any, Any, Any]) -> Any:

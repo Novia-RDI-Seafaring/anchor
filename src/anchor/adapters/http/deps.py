@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from fastapi import Request
 
+from anchor.core.events.actor import Actor, set_current_actor
 from anchor.core.ports.event_bus import EventBus
 from anchor.core.services.intent_service import IntentService
 from anchor.core.services.workspace_service import WorkspaceService
@@ -28,3 +29,12 @@ def get_event_bus(request: Request) -> EventBus:
 
 def get_intent_service(request: Request) -> IntentService:
     return request.app.state.intent_service
+
+
+def apply_actor_override(actor: Actor | None) -> None:
+    """Replace the middleware's human/browser default with the request
+    body's explicit ``actor`` (#322). No reset needed: the contextvar
+    lives in this request's context only, and the middleware's scope-exit
+    restores the outer state."""
+    if actor is not None:
+        set_current_actor(actor)

@@ -67,7 +67,8 @@
         "workspace_id",
         "type",
         "payload",
-        "causation_id"
+        "causation_id",
+        "actor"
       ],
       "required": [
         "workspace_id",

@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from anchor.core.events.actor import Actor
+
 
 class CreateProjectRequest(BaseModel):
     name: str
@@ -46,6 +48,9 @@ class AddNodeRequest(BaseModel):
     layer: Literal["background", "content", "annotation"] | None = None
     opacity: float | None = None
     data: dict[str, Any] = {}
+    # Explicit actor attribution override (#322). Omitted → the HTTP
+    # default `{kind: "human", label: "browser"}` applies.
+    actor: Actor | None = None
 
 
 class UpdateNodeRequest(BaseModel):
@@ -60,6 +65,8 @@ class UpdateNodeRequest(BaseModel):
     layer: Literal["background", "content", "annotation"] | None = None
     opacity: float | None = None
     data: dict[str, Any] | None = None
+    # Explicit actor attribution override (#322).
+    actor: Actor | None = None
 
 
 class AddEdgeRequest(BaseModel):
@@ -75,6 +82,8 @@ class AddEdgeRequest(BaseModel):
     sourceHandle: str | None = None
     targetHandle: str | None = None
     data: dict[str, Any] = {}
+    # Explicit actor attribution override (#322).
+    actor: Actor | None = None
 
 
 class UpdateEdgeRequest(BaseModel):
@@ -88,6 +97,8 @@ class UpdateEdgeRequest(BaseModel):
     sourceHandle: str | None = None
     targetHandle: str | None = None
     data: dict[str, Any] | None = None
+    # Explicit actor attribution override (#322).
+    actor: Actor | None = None
 
 
 class IngestUploadResponse(BaseModel):
