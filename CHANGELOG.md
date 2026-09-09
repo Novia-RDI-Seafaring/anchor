@@ -81,6 +81,17 @@ next version section on tag.
   `embed_model` is used — local bge is only the local-provider default — and
   that search skips documents whose stored embed_model mismatches. (#302)
 
+### Security
+
+- Web routing moved to react-router 7 (react-router-dom `^7.18.0`,
+  resolving react-router 7.18.3), clearing both open advisories against
+  the 6.x line — GHSA-337j-9hxr-rhxg (constructor injection via SSR error
+  deserialization) and GHSA-wrjc-x8rr-h8h6 (open redirect via backslash
+  in `Link`/`useNavigate`) — which are patched only in 7.18.0. Declarative
+  `BrowserRouter`/`Routes` usage is unchanged, so the three routes (`/`,
+  `/c/:id`, `/m/:id`) behave identically, including the read-only monitor
+  view. (#316)
+
 ## [0.3.0] - 2026-09-08
 
 Everything since v0.2.5: the v0.2.6–v0.2.8 tags shipped without rolling
