@@ -87,3 +87,25 @@ def test_intent_next_peeks_oldest(tmp_path):
         runner.invoke(app, ["intent", "next", "--data-dir", str(tmp_path)]).output
     )
     assert out["intent"]["id"] == seeded.id
+
+
+def test_intents_lists_user_request(tmp_path):
+    """A panel-authored free-text intent (#323) reads back over the CLI with
+    its text and target node ref intact."""
+    seeded = _seed(
+        tmp_path,
+        kind="user_request",
+        payload={
+            "text": "wire the pump into the sim",
+            "workspace_id": "cv",
+            "node_id": "n2",
+        },
+    )
+    result = runner.invoke(app, ["intents", "--data-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    body = json.loads(result.output)
+    assert [i["id"] for i in body["intents"]] == [seeded.id]
+    row = body["intents"][0]
+    assert row["kind"] == "user_request"
+    assert row["payload"]["text"] == "wire the pump into the sim"
+    assert row["payload"]["node_id"] == "n2"

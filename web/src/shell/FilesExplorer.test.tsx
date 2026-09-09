@@ -19,6 +19,8 @@ import * as canvasesApi from "@/api/canvases";
 import type { WorkspaceListEntry } from "@/api/canvases";
 import * as docsApi from "@/api/documents";
 import type { DocumentSummary } from "@/api/documents";
+import * as intentsApi from "@/api/intents";
+import type { Intent } from "@/api/intents";
 import { DEFAULT_EXPLORER_WIDTH, DEFAULT_SOURCE_DOCK_RATIO, useUiStore } from "@/stores/uiStore";
 
 import { CANVAS_LINK_MIME } from "./CanvasesPanel";
@@ -71,6 +73,9 @@ function resetUi() {
 
 beforeEach(() => {
   resetUi();
+  // The explorer mounts the intents feed for the tab badge; keep it quiet by
+  // default (individual tests re-mock to seed the queue).
+  vi.spyOn(intentsApi.intents, "listAll").mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -209,5 +214,50 @@ describe("FilesExplorer drag payloads", () => {
     const payload = JSON.parse(dt.getData(CANVAS_LINK_MIME));
     expect(payload.slug).toBe("loop");
     expect(payload.title).toBe("Loop");
+  });
+});
+
+describe("FilesExplorer intents tab (#323)", () => {
+  function makeOpenIntent(over: Partial<Intent> = {}): Intent {
+    return {
+      id: "i1",
+      kind: "user_request",
+      origin_canvas_id: "plant",
+      target: null,
+      payload: { text: "extract the pump curves" },
+      status: "pending",
+      created_at: 100,
+      ...over,
+    };
+  }
+
+  it("shows an unread badge on the tab while open intents exist", async () => {
+    vi.spyOn(docsApi.documents, "list").mockResolvedValue([]);
+    vi.spyOn(cadApi.cad, "list").mockResolvedValue([]);
+    vi.spyOn(canvasesApi.canvases, "list").mockResolvedValue([]);
+    vi.spyOn(intentsApi.intents, "listAll").mockResolvedValue([
+      makeOpenIntent(),
+      makeOpenIntent({ id: "i2" }),
+      makeOpenIntent({ id: "done", status: "resolved" }),
+    ]);
+
+    render(<FilesExplorer workspaceSlug="plant" />);
+
+    // Badge counts only the OPEN intents, visible from any tab.
+    const badge = await screen.findByTestId("tab-badge-intents");
+    expect(badge.textContent).toBe("2");
+  });
+
+  it("hides the badge at zero and opens the panel from the tab", async () => {
+    vi.spyOn(docsApi.documents, "list").mockResolvedValue([]);
+    vi.spyOn(cadApi.cad, "list").mockResolvedValue([]);
+    vi.spyOn(canvasesApi.canvases, "list").mockResolvedValue([]);
+
+    render(<FilesExplorer workspaceSlug="plant" />);
+    await waitFor(() => expect(intentsApi.intents.listAll).toHaveBeenCalled());
+    expect(screen.queryByTestId("tab-badge-intents")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Intents" }));
+    expect(await screen.findByTestId("intents-panel")).toBeTruthy();
   });
 });

@@ -13,6 +13,21 @@ next version section on tag.
 
 ### Added
 
+- The intents queue is visible in the web UI (closes #323, part 2 of
+  #321): a new Intents tab in the left files explorer lists the project's
+  open intents live (SSE `intent_pending` signal plus an 8s polling
+  fallback that catches agents resolving over stdio MCP / CLI from other
+  processes) with a collapsed "recently resolved" section that shows each
+  record's resolution text. The panel authors free-text intents via the
+  new additive `user_request` kind — its payload carries the text plus,
+  when the user attaches the selected canvas node as the target, the same
+  `{workspace_id, node_id}` node-ref shape `drop_to_ingest` uses — and can
+  dismiss an open intent (resolve with `{dismissed: true}`). An unread
+  badge on the tab counts open intents from any tab, so a canvas file-drop
+  in a harness project surfaces immediately. The kind is recognized across
+  HTTP / MCP / CLI unchanged (adapter parity via the existing enqueue /
+  list / resolve surfaces).
+
 - Every canvas event now records who caused it (closes #322, part 1 of
   #321): the `DomainEvent` envelope gains an additive optional
   `actor: {kind: human|agent|system, id?, label?}` field. Adapters stamp

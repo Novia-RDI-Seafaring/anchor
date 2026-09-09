@@ -32,13 +32,18 @@ import {
   filterAttachable,
   type CanvasLinkPayload,
 } from "./CanvasesPanel";
+import { IntentsPanel } from "./IntentsPanel";
+import { useIntentsFeed } from "./intentsFeed";
 
 type Props = { workspaceSlug: string };
 
-type TabKey = "files" | "canvases" | "references";
+type TabKey = "files" | "canvases" | "references" | "intents";
 
 export function FilesExplorer({ workspaceSlug }: Props) {
   const [tab, setTab] = useState<TabKey>("files");
+  // Mounted here (not in the panel) so the Intents tab badge stays live even
+  // while another tab is showing.
+  const intentsFeed = useIntentsFeed();
   const [docs, setDocs] = useState<DocumentSummary[]>([]);
   const [cads, setCads] = useState<CadModel[]>([]);
   const [workspaces, setWorkspaces] = useState<WorkspaceListEntry[]>([]);
@@ -115,11 +120,26 @@ export function FilesExplorer({ workspaceSlug }: Props) {
           active={tab === "references"}
           onClick={() => setTab("references")}
         />
+        <ExplorerTab
+          label="Intents"
+          active={tab === "intents"}
+          onClick={() => setTab("intents")}
+          badge={intentsFeed.openCount}
+        />
       </div>
 
       {tab === "references" ? (
         <div className="min-h-0 flex-1 overflow-hidden">
           <ReferencesPanel canvasSlug={workspaceSlug} />
+        </div>
+      ) : tab === "intents" ? (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <IntentsPanel
+            workspaceSlug={workspaceSlug}
+            open={intentsFeed.open}
+            resolved={intentsFeed.resolved}
+            error={intentsFeed.error}
+          />
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -190,10 +210,13 @@ function ExplorerTab({
   label,
   active,
   onClick,
+  badge,
 }: {
   label: string;
   active: boolean;
   onClick: () => void;
+  /** Unread count rendered as a small bubble when > 0 (the Intents tab). */
+  badge?: number;
 }) {
   return (
     <button
@@ -202,13 +225,21 @@ function ExplorerTab({
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        "rounded px-2 py-1 text-[11px] font-medium transition",
+        "flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition",
         active
           ? "bg-white text-neutral-900 shadow-sm ring-1 ring-neutral-200"
           : "text-neutral-500 hover:bg-neutral-100",
       )}
     >
       {label}
+      {badge != null && badge > 0 ? (
+        <span
+          data-testid={`tab-badge-${label.toLowerCase()}`}
+          className="inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-semibold leading-none text-white"
+        >
+          {badge > 99 ? "99+" : badge}
+        </span>
+      ) : null}
     </button>
   );
 }

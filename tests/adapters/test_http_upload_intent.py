@@ -46,6 +46,13 @@ def test_harness_project_enqueues_intent_and_awaits_agent():
     assert resp["status"] == "awaiting_agent"
     assert resp["intent_id"]
 
+    # The intent is visible through the same HTTP pull the web Intents panel
+    # uses (#323) — the drop flows end-to-end into the panel's queue view.
+    listed = client.get("/api/intents").json()
+    assert listed["count"] == 1
+    assert listed["intents"][0]["id"] == resp["intent_id"]
+    assert listed["intents"][0]["kind"] == "drop_to_ingest"
+
     # A drop_to_ingest intent is now pending, carrying the doc + node.
     pending = asyncio.run(s.intents.list_pending())
     assert len(pending) == 1

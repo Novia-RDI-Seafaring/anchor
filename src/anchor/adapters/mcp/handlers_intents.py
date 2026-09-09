@@ -38,7 +38,10 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": (
                 "List the pending agent intents for this project: user canvas "
                 "actions waiting for the agent to act on (e.g. a document "
-                "dropped onto the canvas in a harness-ingest project). This is "
+                "dropped onto the canvas in a harness-ingest project, or a "
+                "free-text user_request typed into the web Intents panel — its "
+                "payload carries the text plus an optional target "
+                "workspace_id/node_id). This is "
                 "your inbox. Pull it when the IntentPending signal fires or on "
                 "your own cadence, handle each one, then call resolve_intent. "
                 "Pass `canvas` to see one canvas's view; omit it for the "
