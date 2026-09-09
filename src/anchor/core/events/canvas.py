@@ -29,6 +29,9 @@ CanvasEventType = Literal[
     "CanvasSnapshot",
     "ReferenceCreated",
     "ReferenceAttached",
+    "ReferenceRemoved",
+    "ReferenceUpdated",
+    "WorkspaceMetadataUpdated",
 ]
 
 
@@ -161,6 +164,20 @@ class ReferenceRemoved(BaseModel):
 
     type: Literal["ReferenceRemoved"] = "ReferenceRemoved"
     reference_id: str
+
+
+class WorkspaceMetadataUpdated(BaseModel):
+    """A patch to the workspace-level ``metadata`` dict (#324).
+
+    Same merge contract as node/edge ``data`` patches (#192): nested dicts
+    merge recursively, a ``None`` value deletes its key. First used for the
+    ``review_mode`` opt-in flag; deliberately generic so future workspace
+    settings don't each need a new event type. Old readers skip unknown
+    event types on replay, so this is additive.
+    """
+
+    type: Literal["WorkspaceMetadataUpdated"] = "WorkspaceMetadataUpdated"
+    patch: dict[str, Any]
 
 
 class ReferenceUpdated(BaseModel):

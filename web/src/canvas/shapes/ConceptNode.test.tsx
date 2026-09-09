@@ -249,3 +249,72 @@ describe("ConceptNode placeholder", () => {
     expect(queryByTestId("placeholder-chip")).toBeNull();
   });
 });
+
+/**
+ * Review badge smoke (#324) — a `data.review` in state "proposed" or
+ * "rejected" renders the quiet corner badge; "accepted" (and no review at
+ * all) is the clean, unmarked state. The badge is deliberately distinct
+ * from the sky-blue placeholder chip: violet for proposed, rose for
+ * rejected (graph-level dimming of rejected nodes lives in CanvasGraph).
+ */
+describe("ConceptNode review badge", () => {
+  function renderWith(data: Record<string, unknown>) {
+    return render(
+      <MemoryRouter initialEntries={["/canvas/w1"]}>
+        <Routes>
+          <Route
+            path="/canvas/:id"
+            element={
+              <ReactFlowProvider>
+                <ConceptNode
+                  {...({
+                    id: "n1",
+                    data,
+                    selected: false,
+                    dragging: false,
+                    isConnectable: false,
+                    positionAbsoluteX: 0,
+                    positionAbsoluteY: 0,
+                    type: "concept",
+                    zIndex: 0,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  } as any)}
+                />
+              </ReactFlowProvider>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it("renders the proposed badge with the proposing agent's label", () => {
+    const { queryByTestId } = renderWith({
+      label: "Guess",
+      review: { state: "proposed", by: { kind: "agent", label: "claude" } },
+    });
+    const badge = queryByTestId("review-badge");
+    expect(badge).not.toBeNull();
+    expect(badge?.getAttribute("data-review-state")).toBe("proposed");
+    expect(badge?.textContent).toContain("proposed");
+    expect(badge?.textContent).toContain("claude");
+  });
+
+  it("renders the rejected badge", () => {
+    const { queryByTestId } = renderWith({
+      label: "No",
+      review: { state: "rejected" },
+    });
+    const badge = queryByTestId("review-badge");
+    expect(badge).not.toBeNull();
+    expect(badge?.getAttribute("data-review-state")).toBe("rejected");
+  });
+
+  it("renders no badge for accepted or review-less nodes", () => {
+    expect(
+      renderWith({ label: "ok", review: { state: "accepted" } })
+        .queryByTestId("review-badge"),
+    ).toBeNull();
+    expect(renderWith({ label: "plain" }).queryByTestId("review-badge")).toBeNull();
+  });
+});

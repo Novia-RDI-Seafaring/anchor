@@ -85,8 +85,9 @@ shown. The body key differs per type:
 
 There is **no generic `data.body`**. Every type also honours the shared
 styling keys (`bg_color`, `stroke_color`, `text_color`, `text_bold`,
-`text_align`, `text_family`, `text_size`, `dashed`, `width`, `height`) and
-the placeholder keys (`placeholder`, `placeholder_hint`).
+`text_align`, `text_family`, `text_size`, `dashed`, `width`, `height`),
+the placeholder keys (`placeholder`, `placeholder_hint`), and the review
+key (`review`).
 
 This contract is queryable so an agent never has to read the `.tsx`
 source: `anchor canvas node-types [TYPE]`, `GET /api/node-types[/TYPE]`,
@@ -111,6 +112,24 @@ and stay open — no warning.
 - **Server auto-placement.** Omit `x`/`y` (or pass `place="auto"`) on
   `add-node` and the server picks a non-overlapping position and returns
   it under `position`. Pass explicit coordinates to place exactly there.
+
+### Review states
+
+A node may carry `data.review = {state, by?, at?}` with `state` one of
+`proposed`, `accepted`, `rejected` — a documented convention (like the
+placeholder pair), not an enforced schema. It gives the human half of the
+delegation loop an object to act on: a workspace opts in with
+`metadata.review_mode` (`anchor canvas review-mode <slug> --on`,
+`PATCH /api/workspaces/{slug}` with `review_mode`, or the
+`canvas_set_review_mode` MCP tool; default off — nothing changes for
+existing flows). While it is on, every node created by an `agent` actor
+is stamped `{state: "proposed", by: <actor>, at: <ts>}` server-side.
+The web UI badges proposed nodes and offers one-click Accept / Reject in
+the selection toolbar; a verdict is a plain `update-node` data patch, so
+agents read it from state like any other key. Rejected nodes render
+dimmed with their badge — never hidden, because a rejection is feedback.
+A malformed `review` object surfaces the same non-blocking `warning` as
+an unrenderable data key; the write always succeeds.
 
 ## Edge types
 

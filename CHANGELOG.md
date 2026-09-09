@@ -11,6 +11,24 @@ next version section on tag.
 
 ### Added
 
+- Review states on canvas nodes (closes #324, part 3 of #321): the
+  documented convention `data.review = {state: "proposed" | "accepted" |
+  "rejected", by?, at?}` gives the human half of the delegation loop an
+  object to act on. Opt-in per workspace via `metadata.review_mode`
+  (default off — existing flows are untouched), settable through
+  `PATCH /api/workspaces/{slug}` (`review_mode`), the
+  `canvas_set_review_mode` MCP tool, and `anchor canvas review-mode
+  <slug> --on/--off`. With the flag on, nodes created by an `agent` actor
+  (#322) are stamped `{state: "proposed", by: <actor>, at}` server-side
+  unless the caller supplied its own `review` object. The web UI badges
+  proposed nodes and offers one-click Accept / Reject in the selection
+  toolbar (a plain update-node patch recording the human in `by`);
+  rejected nodes render dimmed with the badge rather than hidden. A
+  malformed `review` object on add-node/update-node surfaces the
+  standard non-blocking `warning`; the write always succeeds. Backed by
+  a new additive `WorkspaceMetadataUpdated` event (deep-merge patch
+  semantics, `None` deletes), which older readers skip on replay.
+
 - Every canvas event now records who caused it (closes #322, part 1 of
   #321): the `DomainEvent` envelope gains an additive optional
   `actor: {kind: human|agent|system, id?, label?}` field. Adapters stamp
@@ -66,6 +84,10 @@ next version section on tag.
 
 ### Fixed
 
+- Cold-boot replay now applies `ReferenceRemoved` and `ReferenceUpdated`
+  events: both were missing from the replay type map, so a bibliography
+  deletion or caption edit newer than the snapshot was silently dropped
+  when state was rebuilt from `events.jsonl`. (#324)
 - `derive_region` parent lookup is no longer page-ambiguous: region ids are
   only unique per page, so `parent_region_id` accepts the `p4/r1` token form
   `inspect_region` uses, an explicit page wins, and a bare id matching

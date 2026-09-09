@@ -21,6 +21,7 @@ from anchor.core.events.canvas import (
     ReferenceCreated,
     ReferenceRemoved,
     ReferenceUpdated,
+    WorkspaceMetadataUpdated,
 )
 from anchor.core.events.envelope import DomainEvent
 
@@ -33,4 +34,5 @@ __all__ = [
     "CanvasCleared", "CanvasSnapshot",
     "ReferenceCreated", "ReferenceAttached",
     "ReferenceRemoved", "ReferenceUpdated",
+    "WorkspaceMetadataUpdated",
 ]

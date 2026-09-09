@@ -169,6 +169,7 @@ _CAPABILITY_GROUPS: list[dict[str, Any]] = [
             "canvas_clear",
             "canvas_delete_workspace",
             "canvas_list_workspaces",
+            "canvas_set_review_mode",
             "canvas_organize_subtree",
             "canvas_align",
             "canvas_distribute",

@@ -541,3 +541,66 @@ def test_http_reference_list_backward_compatible():
     rsp = client.get("/api/workspaces/w1/references")
     assert rsp.status_code == 200
     assert rsp.json() == []
+
+
+# ── Review mode (#324) ──────────────────────────────────────────────────────
+
+def test_http_patch_workspace_toggles_review_mode():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    rsp = client.patch("/api/workspaces/w1", json={"review_mode": True})
+    assert rsp.status_code == 200, rsp.text
+    assert rsp.json()["review_mode"] is True
+    state = client.get("/api/workspaces/w1/state").json()
+    assert state["metadata"]["review_mode"] is True
+    # Toggle off deletes the key — no residue for the golden default.
+    rsp = client.patch("/api/workspaces/w1", json={"review_mode": False})
+    assert rsp.status_code == 200
+    assert rsp.json()["review_mode"] is False
+    state = client.get("/api/workspaces/w1/state").json()
+    assert "review_mode" not in state["metadata"]
+
+
+def test_http_patch_workspace_empty_body_is_400():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    rsp = client.patch("/api/workspaces/w1", json={})
+    assert rsp.status_code == 400
+
+
+def test_http_agent_add_node_in_review_mode_gets_proposed_stamp():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.patch("/api/workspaces/w1", json={"review_mode": True})
+    # Browser default actor is human — no stamp.
+    rsp = client.post("/api/workspaces/w1/nodes", json={"id": "h"})
+    assert "review" not in rsp.json()["event"]["payload"]["data"]
+    # Body actor override to agent — stamped proposed.
+    rsp = client.post(
+        "/api/workspaces/w1/nodes",
+        json={"id": "a", "actor": {"kind": "agent", "label": "copilot"}},
+    )
+    review = rsp.json()["event"]["payload"]["data"]["review"]
+    assert review["state"] == "proposed"
+    assert review["by"] == {"kind": "agent", "label": "copilot"}
+
+
+def test_http_malformed_review_object_warns_but_writes():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    rsp = client.post(
+        "/api/workspaces/w1/nodes",
+        json={"id": "a", "data": {"review": {"state": "maybe"}}},
+    )
+    assert rsp.status_code == 201, rsp.text
+    assert "review" in rsp.json()["warning"]
+    # Patch path too: partial semantics accept a state-less patch...
+    ok = client.patch(
+        "/api/workspaces/w1/nodes/a", json={"data": {"review": {"at": 1.0}}},
+    )
+    assert "warning" not in ok.json()
+    # ...but flag a bad state.
+    bad = client.patch(
+        "/api/workspaces/w1/nodes/a", json={"data": {"review": {"state": "nope"}}},
+    )
+    assert "review" in bad.json()["warning"]

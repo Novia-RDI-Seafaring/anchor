@@ -55,6 +55,7 @@ anchor canvas --help
 | `canvas create SLUG` | Create a workspace. |
 | `canvas state SLUG` | Print current nodes, edges and metadata. |
 | `canvas placeholders SLUG` | List nodes waiting for an agent-populated value. |
+| `canvas review-mode SLUG [--on/--off]` | Show or toggle the review opt-in; when on, agent-created nodes land as `proposed`. |
 | `canvas add-node`, `update-node`, `remove-node` | Mutate canvas nodes. `add-node` auto-places when `--x`/`--y` are omitted; `update-node --data` deep-merges. |
 | `canvas node-types [TYPE]` | Print which `data` fields each node type renders (and its body field). |
 | `canvas add-edge`, `update-edge`, `remove-edge` | Mutate edges. |

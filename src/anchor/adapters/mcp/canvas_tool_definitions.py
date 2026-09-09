@@ -236,6 +236,25 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "canvas_set_review_mode",
+            "description": (
+                "Toggle a workspace's review-mode opt-in (#324). When enabled, "
+                "every node an agent creates is stamped with data.review = "
+                "{state: 'proposed', by, at} so a human can accept or reject "
+                "it. Verdicts are plain canvas_update_node data patches; "
+                "rejected nodes stay on the canvas as feedback. Only flip "
+                "this when the user asks for review mode."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "enabled": {"type": "boolean"},
+                },
+                "required": ["workspace_slug", "enabled"],
+            },
+        },
+        {
             "name": "canvas_list_workspaces",
             "description": (
                 "List all workspaces with node/edge counts and the canvas "

@@ -7,6 +7,7 @@ import { canvases } from "@/api/canvases";
 import { documents, refHasSelector } from "@/api/documents";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
 import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
+import { ReviewBadge } from "@/canvas/ReviewBadge";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
 import { useCanvasStore } from "@/stores/canvasStore";
@@ -278,6 +279,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         {...resizeHandlers}
       />
       {ph.active ? <PlaceholderChip hint={ph.hint} /> : null}
+      <ReviewBadge data={data as Record<string, unknown>} />
       <Handle type="target" position={Position.Left} className="canvas-node-socket" />
       <div
         className="flex items-center justify-between border-b border-neutral-200 px-3 py-2 gap-2"

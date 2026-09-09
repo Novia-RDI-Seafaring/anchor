@@ -10,6 +10,7 @@ from anchor.adapters.http.deps import (
 )
 from anchor.adapters.http.schemas import AddNodeRequest, UpdateNodeRequest
 from anchor.core.services.workspace_service import WorkspaceService
+from anchor.core.workspace.review import review_warning
 from anchor.core.workspace.workspace import CommandError
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.value_provenance import enrich_spec_row_source_refs
@@ -18,18 +19,28 @@ router = APIRouter(prefix="/api/workspaces", tags=["nodes"])
 node_types_router = APIRouter(prefix="/api/node-types", tags=["nodes"])
 
 
-def _data_warning(svc: WorkspaceService, node_type: str | None, data: dict | None) -> str | None:
-    """List data keys ``node_type``'s renderer ignores, as a soft warning (#191)."""
-    if not node_type:
-        return None
-    unknown = svc.unknown_data_keys(node_type, data)
-    if not unknown:
-        return None
-    return (
-        f"node_type {node_type!r} does not render these data keys: "
-        f"{', '.join(unknown)}. They are stored but never shown. "
-        f"GET /api/node-types/{node_type} for the renderable fields."
-    )
+def _data_warning(
+    svc: WorkspaceService,
+    node_type: str | None,
+    data: dict | None,
+    *,
+    partial: bool = False,
+) -> str | None:
+    """Soft warnings on a data payload: keys the renderer ignores (#191)
+    plus a malformed ``data.review`` object (#324). Never blocks the write."""
+    parts: list[str] = []
+    if node_type:
+        unknown = svc.unknown_data_keys(node_type, data)
+        if unknown:
+            parts.append(
+                f"node_type {node_type!r} does not render these data keys: "
+                f"{', '.join(unknown)}. They are stored but never shown. "
+                f"GET /api/node-types/{node_type} for the renderable fields."
+            )
+    rw = review_warning(data, partial=partial)
+    if rw is not None:
+        parts.append(rw)
+    return " ".join(parts) or None
 
 
 @node_types_router.get("")
@@ -131,7 +142,7 @@ async def update_node(
     resp = {"event": env.model_dump(), "state": state.get_state()}
     if data_patch is not None:
         node = state.nodes.get(node_id)
-        warning = _data_warning(svc, node.node_type if node else None, data_patch)
+        warning = _data_warning(svc, node.node_type if node else None, data_patch, partial=True)
         if warning is not None:
             resp["warning"] = warning
     return resp
