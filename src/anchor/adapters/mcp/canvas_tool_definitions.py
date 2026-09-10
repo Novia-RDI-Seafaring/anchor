@@ -375,6 +375,39 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "canvas_changes",
+            "description": (
+                "What changed on the workspace after a point in its "
+                "history — your catch-up diff when returning to a canvas. "
+                "Pass since_version (a previously seen state/event "
+                "version) or since_ts (unix timestamp), not both; with "
+                "neither, the whole log is folded and the response also "
+                "carries `touched` (per surviving node, the last actor to "
+                "touch it). Returns {from_version, to_version, groups} "
+                "where each group is one actor's net effect: "
+                "{actor: {kind, label} | null, nodes_added, nodes_updated, "
+                "nodes_removed, edges_added, edges_updated, edges_removed} "
+                "with one entry per element (repeated updates collapse). "
+                "actor null groups events recorded before attribution "
+                "existed. Cheaper than diffing two canvas_get_state dumps."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "since_version": {
+                        "type": "integer",
+                        "description": "Fold events with version > this.",
+                    },
+                    "since_ts": {
+                        "type": "number",
+                        "description": "Fold events with ts > this (unix seconds).",
+                    },
+                },
+                "required": ["workspace_slug"],
+            },
+        },
+        {
             "name": "canvas_list_placeholders",
             "description": (
                 "List every node on the workspace flagged "

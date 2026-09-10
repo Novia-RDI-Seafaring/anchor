@@ -11,6 +11,27 @@ next version section on tag.
 
 ### Added
 
+- Canvas catch-up diff + persisted attribution (closes #325, part 4 of
+  #321): a new read operation `canvas_changes(workspace_slug,
+  since_version | since_ts)` folds the durable event log server-side into
+  `{from_version, to_version, groups}` — one net entry per element
+  (repeated updates collapse; add+remove inside the window nets to
+  nothing), grouped by the responsible actor (#322), with events recorded
+  before attribution grouped under `actor: null`. Labels resolve from the
+  final state where the element survives, else from the event payload. No
+  storage change. Exposed with adapter parity as
+  `GET /api/workspaces/{slug}/changes?since_version=`, the
+  `canvas_changes` MCP tool (canvas_advanced tier), and `anchor canvas
+  changes <slug> --since-version N`, enforced by an operation descriptor.
+  A whole-log fold additionally carries `touched` — per surviving node,
+  the last actor to touch it — which the web inspector's "edited by" chip
+  now falls back to for nodes not touched this session (fetched lazily on
+  first selection, deferring PR #330's session-only limitation). The web
+  UI remembers the last-seen version per canvas (localStorage) and shows
+  a dismissible "While you were away" panel when a canvas re-opens ahead
+  of it; clicking an entry selects and centers the node if it still
+  exists. Replay/scrubbing stays out of scope.
+
 - Review states on canvas nodes (closes #324, part 3 of #321): the
   documented convention `data.review = {state: "proposed" | "accepted" |
   "rejected", by?, at?}` gives the human half of the delegation loop an

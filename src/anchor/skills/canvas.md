@@ -8,6 +8,10 @@ real time on every connected client via SSE.
 
 - `canvas_create_workspace(slug, title?)` and `canvas_list_workspaces()`.
 - `canvas_get_state(workspace_slug)` — full state for the workspace.
+- `canvas_changes(workspace_slug, since_version?)` — what changed after a
+  version you last saw, one net entry per element grouped by actor. Call
+  it to catch up on a canvas you worked on before instead of diffing two
+  full states.
 - `canvas_list_placeholders(workspace_slug)` — every node flagged
   `data.placeholder == true` with its `placeholder_hint`. The entry
   point when the user says "fill in the specs I marked".

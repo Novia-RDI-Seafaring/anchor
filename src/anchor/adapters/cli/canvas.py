@@ -291,6 +291,69 @@ def canvas_state(
     typer.echo(json.dumps(_run(ws.get_state(slug)), indent=2))
 
 
+@canvas_app.command("changes")
+def canvas_changes(
+    slug: str,
+    since_version: int | None = typer.Option(
+        None,
+        "--since-version",
+        help="Fold events with version > this (e.g. your last-seen version).",
+    ),
+    since_ts: float | None = typer.Option(
+        None,
+        "--since-ts",
+        help="Fold events with ts > this unix timestamp. Mutually exclusive with --since-version.",
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+    format: str = typer.Option(
+        "text",
+        "--format",
+        "-f",
+        help="'text' for a grouped one-per-line summary, 'json' for the full envelope.",
+    ),
+) -> None:
+    """What changed on a canvas after a point in its history (#325).
+
+    Server-side fold over the event log: one net entry per element
+    (repeated updates collapse), grouped by the responsible actor. With
+    neither --since-version nor --since-ts the whole log is folded and the
+    JSON envelope also carries `touched` (per surviving node, the last
+    actor to touch it). Mirrors `GET /api/workspaces/{slug}/changes` and
+    the `canvas_changes` MCP tool (adapter parity).
+    """
+    if since_version is not None and since_ts is not None:
+        typer.echo("--since-version and --since-ts are mutually exclusive", err=True)
+        raise typer.Exit(code=2)
+    ws = _build_canvas_runtime(data_dir).workspace
+    out = _run(ws.canvas_changes(slug, since_version=since_version, since_ts=since_ts))
+    if format == "json":
+        typer.echo(json.dumps(out, indent=2))
+        return
+    if format != "text":
+        typer.echo(f"unknown --format {format!r} (use 'text' or 'json')", err=True)
+        raise typer.Exit(code=2)
+    typer.echo(f"v{out['from_version']} -> v{out['to_version']}")
+    if not out["groups"]:
+        typer.echo("(no changes)")
+        return
+    for group in out["groups"]:
+        actor = group.get("actor")
+        who = (actor.get("label") or actor.get("kind")) if actor else "earlier"
+        typer.echo(f"{who}:")
+        if group.get("canvas_cleared"):
+            typer.echo("  cleared the canvas")
+        for key, sign in (
+            ("nodes_added", "+"), ("nodes_updated", "~"), ("nodes_removed", "-"),
+            ("edges_added", "+"), ("edges_updated", "~"), ("edges_removed", "-"),
+        ):
+            noun = "edge " if key.startswith("edges") else ""
+            for entry in group.get(key, []):
+                name = entry.get("label") or entry.get("id")
+                kind = entry.get("node_type")
+                suffix = f" [{kind}]" if kind else ""
+                typer.echo(f"  {sign} {noun}{name}{suffix}")
+
+
 @canvas_app.command("add-node")
 def canvas_add_node(
     slug: str,

@@ -604,3 +604,47 @@ def test_http_malformed_review_object_warns_but_writes():
         "/api/workspaces/w1/nodes/a", json={"data": {"review": {"state": "nope"}}},
     )
     assert "review" in bad.json()["warning"]
+
+
+def test_http_canvas_changes_folds_since_version():
+    """Mirrors the canvas_changes MCP tool + CLI. Adapter parity rule (#325)."""
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.post(
+        "/api/workspaces/w1/nodes",
+        json={"id": "a", "label": "A", "actor": {"kind": "agent", "label": "copilot"}},
+    )
+    client.patch(
+        "/api/workspaces/w1/nodes/a",
+        json={"label": "A2", "actor": {"kind": "agent", "label": "copilot"}},
+    )
+    rsp = client.get("/api/workspaces/w1/changes", params={"since_version": 0})
+    assert rsp.status_code == 200
+    body = rsp.json()
+    assert body["from_version"] == 0
+    assert body["to_version"] == 2
+    group = next(
+        g for g in body["groups"]
+        if g["actor"] and g["actor"]["label"] == "copilot"
+    )
+    # Add + update collapse to one added entry with the final label.
+    assert [e["id"] for e in group["nodes_added"]] == ["a"]
+    assert group["nodes_added"][0]["label"] == "A2"
+    # Whole-log fold carries the persisted attribution map.
+    assert body["touched"]["a"] == {"kind": "agent", "label": "copilot"}
+    # A caught-up client sees no groups and no touched map.
+    caught_up = client.get(
+        "/api/workspaces/w1/changes", params={"since_version": 2},
+    ).json()
+    assert caught_up["groups"] == []
+    assert "touched" not in caught_up
+
+
+def test_http_canvas_changes_rejects_both_boundaries():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    rsp = client.get(
+        "/api/workspaces/w1/changes",
+        params={"since_version": 0, "since_ts": 0.0},
+    )
+    assert rsp.status_code == 400
