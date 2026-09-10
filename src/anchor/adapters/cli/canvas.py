@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Coroutine
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -233,6 +234,50 @@ def canvas_url(
             err=True,
         )
     typer.echo(_canvas_url(slug, data_dir))
+
+
+@canvas_app.command("presence")
+def canvas_presence(
+    slug: str,
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+    format: str = typer.Option(
+        "text", "--format", "-f", help="'text' (one per line) or 'json'."
+    ),
+) -> None:
+    """Who is on this canvas right now.
+
+    Lists live SSE viewers (web UI, monitors) plus agents whose writes landed
+    in the last ~90s. Presence is in-memory state of the running ``anchor
+    serve`` bound to this project, so this asks that server over HTTP; with
+    no serve up the roster is empty (nobody is watching a UI). Same roster as
+    ``GET /api/workspaces/{slug}/presence`` and the ``canvas_presence`` MCP
+    tool.
+    """
+    from anchor.infra.presence import fetch_presence
+
+    result = fetch_presence(data_dir, slug)
+    if format == "json":
+        typer.echo(json.dumps(result, indent=2))
+        if "error" in result:
+            raise typer.Exit(code=1)
+        return
+    if format != "text":
+        typer.echo(f"unknown --format {format!r} (use 'text' or 'json')", err=True)
+        raise typer.Exit(code=2)
+    if "error" in result:
+        typer.echo(result["error"], err=True)
+        raise typer.Exit(code=1)
+    if note := result.get("note"):
+        typer.echo(note, err=True)
+    present = result.get("present", [])
+    if not present:
+        typer.echo("(nobody on this canvas)")
+        return
+    for entry in present:
+        label = entry.get("label") or entry.get("kind")
+        since = datetime.fromtimestamp(entry["connected_at"]).strftime("%H:%M:%S")
+        via = "watching" if entry.get("via") == "sse" else "writing"
+        typer.echo(f"{entry['kind']} \"{label}\" - {via} since {since}")
 
 
 @canvas_app.command("delete")

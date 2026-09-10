@@ -5,6 +5,7 @@ to work; every tool now takes `workspace_slug` as its first arg.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 from collections.abc import Awaitable, Callable
@@ -135,20 +136,42 @@ async def call_tool(
     *,
     enrich_node_fields: NodeFieldsEnricher | None = None,
     actor: Actor | None = None,
+    data_dir: Path | None = None,
 ) -> str:
     """Dispatch one canvas MCP tool call.
 
     Every write is attributed to ``actor`` (#322); when the server layer
     can't name the connected MCP client it falls back to the generic
     ``{kind: "agent", label: "mcp-agent"}`` so agent edits are never
-    mistaken for human ones.
+    mistaken for human ones. ``data_dir`` locates the project so
+    ``canvas_presence`` can ask the running ``anchor serve`` (presence is
+    that process's in-memory state, not something this process holds).
     """
     if actor is None:
         actor = Actor(kind="agent", label="mcp-agent")
+    if name == "canvas_presence":
+        return await _presence(data_dir, args)
     with actor_scope(actor):
         return await _dispatch_tool(
             svc, name, args, enrich_node_fields=enrich_node_fields,
         )
+
+
+async def _presence(data_dir: Path | None, args: dict[str, Any]) -> str:
+    if data_dir is None:
+        return json.dumps({
+            "error": "canvas_presence needs a project data dir to locate the running serve",
+        })
+    # Imported here, not at module scope: the parity test swaps
+    # `presence.fetch_presence`, which a top-level `from ... import` would
+    # have already bound.
+    from anchor.infra.presence import fetch_presence
+
+    # fetch_presence blocks on an HTTP call to the running serve.
+    result = await asyncio.to_thread(
+        fetch_presence, Path(data_dir), args["workspace_slug"],
+    )
+    return json.dumps(result)
 
 
 async def _dispatch_tool(

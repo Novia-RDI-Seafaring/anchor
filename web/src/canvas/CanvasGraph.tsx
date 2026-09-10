@@ -77,6 +77,13 @@ type Props = {
    * drops) instantiate nodes via the HTTP API.
    */
   readOnly?: boolean;
+  /**
+   * How this viewer announces itself in the presence roster (#322
+   * follow-up). Defaults to the server's human/"browser"; the monitor
+   * route passes "monitor" so wall displays are distinguishable from
+   * editing sessions.
+   */
+  presenceLabel?: string;
 };
 
 type StoreNode = {
@@ -193,22 +200,23 @@ function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
   };
 }
 
-export function CanvasGraph({ slug, readOnly = false }: Props) {
+export function CanvasGraph({ slug, readOnly = false, presenceLabel }: Props) {
   // ReactFlowProvider is mounted by CanvasShell when present. For bare uses
   // (e.g. the monitor route at /m/:id), wrap in a provider here.
   if (readOnly) {
     return (
       <ReactFlowProvider>
-        <CanvasGraphInner slug={slug} readOnly />
+        <CanvasGraphInner slug={slug} readOnly presenceLabel={presenceLabel} />
       </ReactFlowProvider>
     );
   }
-  return <CanvasGraphInner slug={slug} readOnly={false} />;
+  return <CanvasGraphInner slug={slug} readOnly={false} presenceLabel={presenceLabel} />;
 }
 
-function CanvasGraphInner({ slug, readOnly }: Props) {
+function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   const setSnapshot = useCanvasStore((s) => s.setSnapshot);
   const applyEvent = useCanvasStore((s) => s.applyEvent);
+  const applyPresence = useCanvasStore((s) => s.applyPresence);
   const reset = useCanvasStore((s) => s.reset);
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
@@ -277,13 +285,16 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
           refreshWorkspaces().catch(() => {});
         }
       },
-    });
+      onPresence: (payload) => {
+        if (!cancelled) applyPresence(payload);
+      },
+    }, presenceLabel ? { actorLabel: presenceLabel } : {});
     sse.connect();
     return () => {
       cancelled = true;
       sse.disconnect();
     };
-  }, [slug, applyEvent, reset, setSnapshot]);
+  }, [slug, applyEvent, applyPresence, reset, setSnapshot, presenceLabel]);
 
   // Reflect store → ReactFlow. Only updates when the store reference changes;
   // ReactFlow's internal drag state isn't disturbed unless a relevant node

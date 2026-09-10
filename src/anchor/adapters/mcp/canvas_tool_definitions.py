@@ -375,6 +375,25 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "canvas_presence",
+            "description": (
+                "Who is on this canvas right now. Returns {workspace, "
+                "present: [{kind, label, connected_at, via, ...}]}: every "
+                "live viewer of the web UI / monitor (via: 'sse') plus any "
+                "agent whose writes landed in the last ~90s (via: "
+                "'writes'). Your own recent edits list you here too - that "
+                "is how humans watching the canvas know an agent is "
+                "active. Presence lives in the running `anchor serve` "
+                "process for this project (in-memory, per process); with "
+                "no serve up the roster is empty and `note` says why."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {"workspace_slug": {"type": "string"}},
+                "required": ["workspace_slug"],
+            },
+        },
+        {
             "name": "canvas_list_placeholders",
             "description": (
                 "List every node on the workspace flagged "
