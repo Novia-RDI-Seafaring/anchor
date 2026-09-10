@@ -648,3 +648,12 @@ def test_http_canvas_changes_rejects_both_boundaries():
         params={"since_version": 0, "since_ts": 0.0},
     )
     assert rsp.status_code == 400
+
+
+def test_http_canvas_changes_unknown_workspace_is_404():
+    """A read-only catch-up reports an unknown canvas rather than
+    auto-creating one the way a plain state load would (#325)."""
+    client, _ = _client()
+    rsp = client.get("/api/workspaces/ghost/changes", params={"since_version": 0})
+    assert rsp.status_code == 404
+    assert client.get("/api/workspaces").json() == []

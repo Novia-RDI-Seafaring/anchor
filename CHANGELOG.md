@@ -19,7 +19,9 @@ next version section on tag.
   nothing), grouped by the responsible actor (#322), with events recorded
   before attribution grouped under `actor: null`. Labels resolve from the
   final state where the element survives, else from the event payload. No
-  storage change. Exposed with adapter parity as
+  storage change; a slug with no canvas behind it is reported as not
+  found rather than auto-created, since a read-only summary should not
+  bring a canvas into being. Exposed with adapter parity as
   `GET /api/workspaces/{slug}/changes?since_version=`, the
   `canvas_changes` MCP tool (canvas_advanced tier), and `anchor canvas
   changes <slug> --since-version N`, enforced by an operation descriptor.

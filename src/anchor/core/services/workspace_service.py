@@ -239,21 +239,34 @@ class WorkspaceService:
         Same envelope via HTTP ``GET /api/workspaces/{slug}/changes``, the
         ``canvas_changes`` MCP tool, and ``anchor canvas changes <slug>``
         (adapter parity).
+
+        Raises :class:`FileNotFoundError` for a slug with no workspace
+        behind it — a read-only summary should report an unknown canvas,
+        not bring one into being.
         """
         if since_version is not None and since_ts is not None:
             raise CommandError(
                 "pass since_version or since_ts, not both",
             )
-        state = await self.store.load(slug)
+        # Resolve the caller's slug against the workspaces that actually
+        # exist and carry on with the store's own copy of the name. A
+        # read-only catch-up must not conjure a canvas the way `load`'s
+        # auto-create would, and working from a server-known string keeps
+        # a caller-supplied one from reaching the filesystem layer at all.
+        known = await self.store.list_workspaces()
+        trusted_slug = next((m.slug for m in known if m.slug == slug), None)
+        if trusted_slug is None:
+            raise FileNotFoundError(f"workspace {slug!r} does not exist")
+        state = await self.store.load(trusted_slug)
         if since_version is not None:
             if since_version < 0:
                 raise CommandError("since_version must be >= 0")
             from_version = since_version
             window = await self.store.read_events(
-                slug, after_version=since_version,
+                trusted_slug, after_version=since_version,
             )
         else:
-            events = await self.store.read_events(slug)
+            events = await self.store.read_events(trusted_slug)
             if since_ts is not None:
                 window = [e for e in events if e.ts > since_ts]
                 before = [e.version for e in events if e.ts <= since_ts]
