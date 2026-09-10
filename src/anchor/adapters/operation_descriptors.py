@@ -55,6 +55,13 @@ CANVAS_OPERATION_DESCRIPTORS: tuple[OperationDescriptor, ...] = (
         cli_command=("canvas", "state"),
     ),
     OperationDescriptor(
+        id="canvas.changes",
+        service_method="canvas_changes",
+        http=HttpSurface("GET", "/api/workspaces/{slug}/changes"),
+        mcp_tool="canvas_changes",
+        cli_command=("canvas", "changes"),
+    ),
+    OperationDescriptor(
         id="canvas.add_node",
         service_method="add_node",
         http=HttpSurface("POST", "/api/workspaces/{slug}/nodes"),

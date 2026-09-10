@@ -35,6 +35,7 @@ from anchor.core.services.workspace_geometry import WorkspaceGeometryOperations
 from anchor.core.services.workspace_references import WorkspaceReferenceOperations
 from anchor.core.workspace.align import Anchor, Axis
 from anchor.core.workspace.builtin_node_types import builtin_node_type_registry
+from anchor.core.workspace.changes import fold_changes, last_touched_by
 from anchor.core.workspace.layout import NodeLike, find_free_position
 from anchor.core.workspace.node_types import NodeTypeRegistry
 from anchor.core.workspace.reducer import apply, cascade_events_for_remove
@@ -208,6 +209,76 @@ class WorkspaceService:
                 "y": n.y,
                 "data": dict(data),
             })
+        return out
+
+    async def canvas_changes(
+        self,
+        slug: str,
+        *,
+        since_version: int | None = None,
+        since_ts: float | None = None,
+    ) -> dict[str, Any]:
+        """What changed on ``slug`` after a point in its history (#325).
+
+        A server-side fold over the event log — no storage change. Returns
+        ``{from_version, to_version, groups: [{actor, nodes_added,
+        nodes_updated, nodes_removed, edges_added, edges_updated,
+        edges_removed}]}`` where repeated events per element collapse to one
+        net entry, grouped by the responsible actor (``actor: null`` groups
+        events recorded before attribution existed, #322). Labels resolve
+        from the final state where the element still exists, else from the
+        freshest event payload.
+
+        Pass ``since_version`` (the usual path: a client's last-seen
+        version) or ``since_ts`` (a unix timestamp), not both; with neither
+        the fold covers the whole log. A whole-log fold additionally
+        carries ``touched``: per surviving node, the last actor to touch it
+        (``null`` = last touch predates attribution) — the persisted
+        "edited by" answer the web inspector falls back to.
+
+        Same envelope via HTTP ``GET /api/workspaces/{slug}/changes``, the
+        ``canvas_changes`` MCP tool, and ``anchor canvas changes <slug>``
+        (adapter parity).
+
+        Raises :class:`FileNotFoundError` for a slug with no workspace
+        behind it — a read-only summary should report an unknown canvas,
+        not bring one into being.
+        """
+        if since_version is not None and since_ts is not None:
+            raise CommandError(
+                "pass since_version or since_ts, not both",
+            )
+        # Resolve the caller's slug against the workspaces that actually
+        # exist and carry on with the store's own copy of the name. A
+        # read-only catch-up must not conjure a canvas the way `load`'s
+        # auto-create would, and working from a server-known string keeps
+        # a caller-supplied one from reaching the filesystem layer at all.
+        known = await self.store.list_workspaces()
+        trusted_slug = next((m.slug for m in known if m.slug == slug), None)
+        if trusted_slug is None:
+            raise FileNotFoundError(f"workspace {slug!r} does not exist")
+        state = await self.store.load(trusted_slug)
+        if since_version is not None:
+            if since_version < 0:
+                raise CommandError("since_version must be >= 0")
+            from_version = since_version
+            window = await self.store.read_events(
+                trusted_slug, after_version=since_version,
+            )
+        else:
+            events = await self.store.read_events(trusted_slug)
+            if since_ts is not None:
+                window = [e for e in events if e.ts > since_ts]
+                before = [e.version for e in events if e.ts <= since_ts]
+                from_version = max(before, default=0)
+            else:
+                window = events
+                from_version = 0
+        out = fold_changes(window, state, from_version=from_version)
+        if from_version == 0 and since_ts is None:
+            # `window` is the whole log here, so the same read powers the
+            # persisted per-node attribution map without a second pass.
+            out["touched"] = last_touched_by(window, state)
         return out
 
     async def add_node(

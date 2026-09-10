@@ -19,7 +19,7 @@ import aiofiles
 
 from anchor.core.events.envelope import DomainEvent
 from anchor.core.ids import validate_workspace_slug
-from anchor.core.upload_safety import assert_within
+from anchor.core.upload_safety import UnsafeUploadError, assert_within
 from anchor.core.workspace.workspace import Workspace, WorkspaceMeta
 
 
@@ -111,6 +111,41 @@ class FsWorkspaceStore:
     async def snapshot(self, slug: str, state: Workspace) -> None:
         d = self._slug_dir(slug)
         await self._atomic_write_text(d / "state.json", state.model_dump_json(indent=2))
+
+    async def read_events(self, slug: str, *, after_version: int = 0) -> list[DomainEvent]:
+        """Read the append-only log back as ``DomainEvent`` envelopes (#325).
+
+        Skips blank and malformed lines (same tolerance as replay). The log
+        is append-ordered by version already, but sort defensively so a
+        hand-merged file still folds correctly.
+        """
+        # `slug` reaches here from HTTP/MCP/CLI arguments, so this read is a
+        # path-injection sink. Inline normalise-then-prefix-check (not
+        # delegated) so the containment barrier sits in the same function
+        # that builds the path — same idiom as `FsDocStore.write_crop`.
+        validate_workspace_slug(slug)
+        base = os.path.realpath(os.fspath(self.root))
+        slug_dir = os.path.normpath(os.path.join(base, slug))
+        if not slug_dir.startswith(base + os.sep):
+            raise UnsafeUploadError(f"workspace slug {slug!r} escapes the canvases root")
+        if not os.path.exists(os.path.join(slug_dir, "meta.json")):
+            raise FileNotFoundError(f"workspace {slug!r} does not exist")
+        events_path = os.path.join(slug_dir, "events.jsonl")
+        out: list[DomainEvent] = []
+        if not os.path.exists(events_path):
+            return out
+        with open(events_path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                if not line.strip():
+                    continue
+                try:
+                    event = DomainEvent.model_validate_json(line)
+                except Exception:
+                    continue
+                if event.version > after_version:
+                    out.append(event)
+        out.sort(key=lambda e: e.version)
+        return out
 
     async def rename(self, slug: str, *, title: str) -> WorkspaceMeta:
         """Update only the display title in meta.json. The slug (directory

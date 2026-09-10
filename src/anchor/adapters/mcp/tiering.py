@@ -160,7 +160,7 @@ _CAPABILITY_GROUPS: list[dict[str, Any]] = [
         "when_to_use": (
             "Less common canvas operations: remove/clear, edge edits, layout "
             "(organize/align/distribute), sub-canvases, workspace management, "
-            "and placeholder enumeration."
+            "placeholder enumeration, and the since-version catch-up diff."
         ),
         "names": [
             "canvas_remove_node",
@@ -174,6 +174,7 @@ _CAPABILITY_GROUPS: list[dict[str, Any]] = [
             "canvas_align",
             "canvas_distribute",
             "canvas_create_sub_canvas",
+            "canvas_changes",
             "canvas_list_placeholders",
             "canvas_node_types",
             "canvas_create_reference",

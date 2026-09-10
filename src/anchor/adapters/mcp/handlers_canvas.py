@@ -320,6 +320,14 @@ async def _dispatch_tool(
                 x=float(args.get("x", 0.0)),
                 y=float(args.get("y", 0.0)),
             ))
+        if name == "canvas_changes":
+            since_version = args.get("since_version")
+            since_ts = args.get("since_ts")
+            return json.dumps(await svc.canvas_changes(
+                args["workspace_slug"],
+                since_version=int(since_version) if since_version is not None else None,
+                since_ts=float(since_ts) if since_ts is not None else None,
+            ))
         if name == "canvas_list_placeholders":
             return json.dumps(await svc.list_placeholders(args["workspace_slug"]))
         if name == "canvas_create_reference":

@@ -436,3 +436,66 @@ def test_cli_update_node_malformed_review_warns_but_writes(tmp_path):
     assert "review" in out["warning"]
     node = next(n for n in out["state"]["nodes"] if n["id"] == node_id)
     assert node["data"]["review"] == {"state": "maybe"}
+
+
+def test_cli_canvas_changes_folds_and_groups_by_actor(tmp_path):
+    """Mirrors GET /api/workspaces/{slug}/changes + the canvas_changes MCP
+    tool (adapter parity, #325)."""
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    added = runner.invoke(app, [
+        "canvas", "--actor", "agent:claude", "add-node", "w1", "concept",
+        "--label", "A", "--data-dir", str(data_dir),
+    ])
+    assert added.exit_code == 0, added.output
+    node_id = json.loads(added.output)["node_id"]
+    updated = runner.invoke(app, [
+        "canvas", "--actor", "agent:claude", "update-node", "w1", node_id,
+        "--label", "A2", "--data-dir", str(data_dir),
+    ])
+    assert updated.exit_code == 0, updated.output
+
+    r = runner.invoke(app, [
+        "canvas", "changes", "w1", "--since-version", "0",
+        "--format", "json", "--data-dir", str(data_dir),
+    ])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out["from_version"] == 0
+    assert out["to_version"] == 2
+    group = next(
+        g for g in out["groups"]
+        if g["actor"] and g["actor"]["label"] == "claude"
+    )
+    # Add + update collapse to one added entry carrying the final label.
+    assert [e["id"] for e in group["nodes_added"]] == [node_id]
+    assert group["nodes_added"][0]["label"] == "A2"
+    # The whole-log fold carries the persisted attribution map.
+    assert out["touched"][node_id] == {"kind": "agent", "label": "claude"}
+
+    text = runner.invoke(app, [
+        "canvas", "changes", "w1", "--since-version", "0",
+        "--data-dir", str(data_dir),
+    ])
+    assert text.exit_code == 0, text.output
+    assert "claude:" in text.output
+    assert "+ A2 [concept]" in text.output
+
+    caught_up = runner.invoke(app, [
+        "canvas", "changes", "w1", "--since-version", "2",
+        "--data-dir", str(data_dir),
+    ])
+    assert caught_up.exit_code == 0, caught_up.output
+    assert "(no changes)" in caught_up.output
+
+
+def test_cli_canvas_changes_rejects_both_boundaries(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    r = runner.invoke(app, [
+        "canvas", "changes", "w1", "--since-version", "0",
+        "--since-ts", "0", "--data-dir", str(data_dir),
+    ])
+    assert r.exit_code == 2
