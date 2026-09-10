@@ -18,10 +18,45 @@ export type CanvasEvent = {
   actor?: EventActor | null;
 };
 
+/**
+ * One entry in a canvas's live presence roster. `via: "sse"` entries are
+ * connected viewers (web UI, monitors); `via: "writes"` entries are agents
+ * whose writes landed within the server's rolling window (~90s) — agents
+ * don't hold SSE connections, their edits are their presence.
+ */
+export type PresenceEntry = {
+  client_id?: string;
+  id?: string | null;
+  kind: "human" | "agent" | "system";
+  label?: string | null;
+  connected_at: number;
+  last_write_at?: number;
+  via: "sse" | "writes";
+};
+
+/**
+ * A `presence` SSE event: the FULL current roster (clients stay stateless —
+ * each event replaces what they knew). `you` names this connection's own
+ * entry and is only present on the initial roster sent right after the
+ * snapshot.
+ */
+export type PresencePayload = {
+  workspace: string;
+  present: PresenceEntry[];
+  you?: string;
+};
+
 export type SseHandlers = {
   onSnapshot?: (state: unknown) => void;
   onPatch?: (event: CanvasEvent) => void;
+  onPresence?: (payload: PresencePayload) => void;
   onError?: (err: Event) => void;
+};
+
+export type SseOptions = {
+  /** How this viewer appears in the presence roster (default: human/"browser"). */
+  actorKind?: "human" | "agent" | "system";
+  actorLabel?: string;
 };
 
 export class CanvasSse {
@@ -29,15 +64,25 @@ export class CanvasSse {
   private retryMs = 1000;
   private slug: string;
   private handlers: SseHandlers;
+  private options: SseOptions;
 
-  constructor(slug: string, handlers: SseHandlers) {
+  constructor(slug: string, handlers: SseHandlers, options: SseOptions = {}) {
     this.slug = slug;
     this.handlers = handlers;
+    this.options = options;
+  }
+
+  private url(): string {
+    const params = new URLSearchParams();
+    if (this.options.actorKind) params.set("actor_kind", this.options.actorKind);
+    if (this.options.actorLabel) params.set("actor_label", this.options.actorLabel);
+    const query = params.toString();
+    return `${BACKEND_URL}/api/workspaces/${this.slug}/events${query ? `?${query}` : ""}`;
   }
 
   connect(): void {
     if (this.es) return;
-    this.es = new EventSource(`${BACKEND_URL}/api/workspaces/${this.slug}/events`);
+    this.es = new EventSource(this.url());
     this.es.addEventListener("snapshot", (ev) => {
       try {
         this.handlers.onSnapshot?.(JSON.parse((ev as MessageEvent).data));
@@ -51,6 +96,13 @@ export class CanvasSse {
         this.handlers.onPatch?.(JSON.parse((ev as MessageEvent).data));
       } catch (_err) {
         // ignore malformed patch
+      }
+    });
+    this.es.addEventListener("presence", (ev) => {
+      try {
+        this.handlers.onPresence?.(JSON.parse((ev as MessageEvent).data));
+      } catch (_err) {
+        // ignore malformed presence
       }
     });
     this.es.onerror = (err) => {

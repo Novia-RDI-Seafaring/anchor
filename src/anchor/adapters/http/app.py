@@ -1,6 +1,8 @@
 """FastAPI app builder — wires services into routers."""
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -100,7 +102,34 @@ def build_app(
     ):
         raise ValueError("build_app requires a ProjectRuntime or explicit core services")
 
-    app = FastAPI(title="Anchor v2", version="0.2.0")
+    # Canvas presence (#322 follow-up): per-serve-process, in-memory roster
+    # of SSE viewers + recently-writing agents. The SSE router registers
+    # connections; this lifespan runs a bus-firehose feed that counts
+    # agent-actor writes as presence. Nothing is persisted — presence is
+    # ephemeral by definition, and a second serve process has its own
+    # separate roster.
+    from anchor.infra.presence import PresenceTracker
+
+    presence_tracker = PresenceTracker()
+    feed_bus = bus
+
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        async def feed() -> None:
+            async for evt in feed_bus.subscribe(None):
+                presence_tracker.note_event(evt)
+
+        task = asyncio.create_task(feed(), name="presence-feed")
+        try:
+            yield
+        finally:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+            presence_tracker.close()
+
+    app = FastAPI(title="Anchor v2", version="0.2.0", lifespan=_lifespan)
+    app.state.presence = presence_tracker
     app.state.workspace_service = workspace_service
     app.state.ingest_service = ingest_service
     app.state.doc_store = doc_store

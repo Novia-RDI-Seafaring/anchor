@@ -12,6 +12,7 @@
 import { Link, useParams } from "react-router-dom";
 
 import { CanvasGraph } from "@/canvas/CanvasGraph";
+import { PresenceStrip } from "@/canvas/PresenceStrip";
 
 export function MonitorPage() {
   const { id } = useParams<{ id: string }>();
@@ -29,12 +30,15 @@ export function MonitorPage() {
         <div className="text-xs font-semibold text-neutral-700">
           {id} <span className="font-normal italic text-neutral-400">monitor</span>
         </div>
-        <div className="text-[10px] uppercase tracking-wider text-neutral-400">
-          read-only
+        <div className="flex items-center gap-2">
+          <PresenceStrip />
+          <div className="text-[10px] uppercase tracking-wider text-neutral-400">
+            read-only
+          </div>
         </div>
       </header>
       <main className="flex-1 overflow-hidden">
-        <CanvasGraph slug={id} readOnly />
+        <CanvasGraph slug={id} readOnly presenceLabel="monitor" />
       </main>
     </div>
   );

@@ -11,6 +11,21 @@ next version section on tag.
 
 ### Added
 
+- Live canvas presence (deferred half of #322, part of #321): the canvas
+  header now shows who is on this canvas right now. Every SSE subscriber
+  to `GET /api/workspaces/{slug}/events` registers itself with an actor
+  kind and label (optional `?actor_kind=&actor_label=`, default
+  `human`/"browser"; the `/m/:id` monitor view registers as
+  `human`/"monitor"), and each join or leave broadcasts a `presence`
+  event carrying the full current roster, so clients stay stateless.
+  Agents hold no SSE connection, so a write carrying an `agent` actor
+  counts as presence too: the author stays on the roster for 90 seconds
+  past its last write, marked `via: "writes"`. The same roster reads back
+  through `GET /api/workspaces/{slug}/presence`, the `canvas_presence`
+  MCP tool (`canvas_advanced` tier), and `anchor canvas presence <slug>`.
+  Presence is ephemeral, in-memory state of one `anchor serve` process:
+  nothing is persisted, and a second serve sees its own clients only.
+
 - Review states on canvas nodes (closes #324, part 3 of #321): the
   documented convention `data.review = {state: "proposed" | "accepted" |
   "rejected", by?, at?}` gives the human half of the delegation loop an

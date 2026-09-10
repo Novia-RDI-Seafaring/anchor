@@ -179,7 +179,9 @@ The canvas is the visible substrate humans and agents share. Each
 workspace is an isolated folder under `canvases/`. Edits land in
 real time on every connected client via SSE. Every edit is recorded
 with an actor (human, agent, or system), so your writes over MCP show
-up attributed to your client name in the event log and the UI.
+up attributed to your client name in the event log and the UI. You also
+appear in the canvas presence strip while you are actively writing (for
+90s after your last edit), so a human watching sees who is moving things.
 
 ### Tools
 
@@ -193,6 +195,10 @@ up attributed to your client name in the event log and the UI.
   `canvas_remove_node(workspace_slug, id)`.
 - `canvas_add_edge(workspace_slug, source, target, edge_type?, data?)`
   and `canvas_remove_edge(workspace_slug, id)`.
+- `canvas_presence(workspace_slug)` — who is on this canvas right now:
+  live viewers of the web UI or monitor, plus agents (you included) whose
+  writes landed in the last 90s. In-memory state of the running `anchor
+  serve`, so with no serve up the roster is empty.
 - `canvas_clear(workspace_slug)` — destructive; ask first.
 
 ### Picking a node type

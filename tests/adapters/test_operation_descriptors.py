@@ -19,6 +19,7 @@ from anchor.extensions.anchor_pdfs.core.services import IngestService
 from anchor.extensions.anchor_pdfs.mcp_tool_definitions import (
     tool_definitions as pdf_tool_definitions,
 )
+from anchor.infra.presence import PresenceTracker
 from tests.fixtures.services import make_in_memory_services
 
 
@@ -55,7 +56,11 @@ def test_canvas_operation_descriptors_match_adapter_surfaces():
     cli = _canvas_cli_commands()
 
     for op in CANVAS_OPERATION_DESCRIPTORS:
-        assert hasattr(WorkspaceService, op.service_method), op.id
+        # Presence is per-serve in-memory state: its service is the
+        # PresenceTracker, not WorkspaceService.
+        assert hasattr(WorkspaceService, op.service_method) or hasattr(
+            PresenceTracker, op.service_method
+        ), op.id
         assert (op.http.method, op.http.path) in http, op.id
         assert op.mcp_tool in mcp, op.id
         assert op.cli_command[0] == "canvas", op.id

@@ -103,6 +103,16 @@ CANVAS_OPERATION_DESCRIPTORS: tuple[OperationDescriptor, ...] = (
         mcp_tool="canvas_clear",
         cli_command=("canvas", "clear"),
     ),
+    # Presence is served by the in-memory PresenceTracker (per serve
+    # process), not WorkspaceService; the parity test resolves
+    # `service_method` against either.
+    OperationDescriptor(
+        id="canvas.presence",
+        service_method="roster",
+        http=HttpSurface("GET", "/api/workspaces/{slug}/presence"),
+        mcp_tool="canvas_presence",
+        cli_command=("canvas", "presence"),
+    ),
 )
 
 
