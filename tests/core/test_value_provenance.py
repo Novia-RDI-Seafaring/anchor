@@ -24,13 +24,18 @@ async def test_enrich_spec_row_source_refs_uses_matching_gold_cell_bbox():
         "rows": [{
             "key": "Field",
             "value": "Value",
-            "source_ref": {"slug": "doc", "page": 2, "region_id": "r1", "bbox": [0, 100, 200, 0]},
+            "source_ref": {"slug": "doc", "page": 2, "region_id": "r1", "bbox": [0, 100, 200, 0],
+                           "coord_origin": "bottom-left", "detail": {"cell_bbox": [10, 700, 30, 680]},
+                           "approx_bbox": [0, 700, 200, 680]},
         }],
     }
 
     enriched = await enrich_spec_row_source_refs(data, store)
 
     assert enriched["rows"][0]["source_ref"]["bbox"] == [80.0, 90.0, 140.0, 80.0]
+    assert enriched["rows"][0]["source_ref"]["coord_origin"] == "top-left"
+    assert enriched["rows"][0]["source_ref"]["detail"]["cell_bbox"] == [80.0, 90.0, 140.0, 80.0]
+    assert enriched["rows"][0]["source_ref"]["approx_bbox"] is None
 
 
 @pytest.mark.asyncio
@@ -91,6 +96,7 @@ async def test_enrich_spec_row_source_refs_uses_key_to_disambiguate_duplicate_va
     enriched = await enrich_spec_row_source_refs(data, store)
 
     assert enriched["rows"][0]["source_ref"] == {
+        "coord_origin": "top-left",
         "slug": "doc",
         "page": 1,
         "region_id": "r1",
@@ -125,6 +131,7 @@ async def test_enrich_spec_row_source_refs_accepts_row_level_region_id():
     enriched = await enrich_spec_row_source_refs(data, store)
 
     assert enriched["rows"][0]["source_ref"] == {
+        "coord_origin": "top-left",
         "slug": "doc",
         "page": 1,
         "region_id": "r1",

@@ -41,6 +41,8 @@ class SourceRef:
     page: int
     region_id: str | None = None
     bbox: list[float] | None = None
+    # Computed current output, not a model used to load historical references.
+    coord_origin: str = "top-left"
 
 
 @dataclass

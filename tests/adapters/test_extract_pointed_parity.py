@@ -53,6 +53,7 @@ def _assert_envelope(out: dict) -> None:
     assert out["doc_slug"] == "lkh"
     assert out["data"] == {"model": "LKH-5", "max_inlet_pressure": "600 kPa"}
     assert out["provenance"]["/model"]["quote"] == "LKH-5"
+    assert all(ref["coord_origin"] == "top-left" for ref in out["provenance"].values())
     assert out["provenance"]["/max_inlet_pressure"]["bbox"] == [210.0, 455.0, 360.0, 438.0]
     assert out["unfilled"] == []
 

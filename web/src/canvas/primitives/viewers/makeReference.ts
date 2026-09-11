@@ -138,6 +138,7 @@ export function buildTextSourceRef(input: {
   if (!quote || !input.bbox) return null;
   const region = findOverlappingRegion(input.bbox, input.regions, input.page);
   const source_ref: SourceRef = {
+    coord_origin: "top-left",
     slug: input.slug,
     page: input.page,
     bbox: input.bbox,
@@ -159,6 +160,7 @@ export function buildRegionSourceRef(input: {
   const { region } = input;
   if (!region.bbox) return null;
   const source_ref: SourceRef = {
+    coord_origin: "top-left",
     slug: input.slug,
     page: input.page,
     bbox: region.bbox,

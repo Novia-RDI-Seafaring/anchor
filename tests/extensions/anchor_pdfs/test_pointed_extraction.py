@@ -87,6 +87,7 @@ async def test_fills_leaves_with_provenance_and_reports_unfilled():
     assert out["data"]["max_inlet_pressure"] == "600 kPa"
     # Every filled leaf has a provenance entry with a real source_ref.
     assert out["provenance"]["/model"] == {
+        "coord_origin": "top-left",
         "slug": "lkh", "page": 2, "region_id": "r4",
         "bbox": [210.0, 477.0, 360.0, 460.0], "quote": "LKH-5",
     }

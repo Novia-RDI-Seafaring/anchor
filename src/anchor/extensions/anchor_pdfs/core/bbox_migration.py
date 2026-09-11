@@ -13,9 +13,10 @@ data once, idempotently:
   ``geometry``, built from Docling coordinates) are flipped exactly; legacy
   keyed-path regions are *reconstructed* instead — see
   :func:`reconstruct_keyed_region` for why a flip would keep them wrong;
-- canvas nodes / edges whose ``source_ref`` (or spec ``rows[].source_ref``)
-  points into a migrated document are flipped and stamped
-  ``coord_origin: "top-left"``.
+- canvas node, row, edge and bibliography source refs explicitly marked
+  ``coord_origin: "bottom-left"`` are converted and stamped top-left.
+  Missing origin is ambiguous, even for a document migrated in this run.
+  Already top-left refs are preserved, not revalidated or repaired.
 
 Page heights come from the PDF itself (``PdfRenderer.page_sizes``), falling
 back to a ``page_size`` already recorded in pages.meta. A document whose
@@ -26,6 +27,7 @@ Pure orchestration over ports; no I/O of its own.
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
@@ -169,8 +171,8 @@ def flip_pages_meta(
 
 
 def flip_source_ref(ref: dict[str, Any], height: float) -> dict[str, Any]:
-    """Flip one canvas ``source_ref`` and stamp it; already-stamped refs pass."""
-    if ref.get("coord_origin") == BBOX_ORIGIN:
+    """Convert explicitly bottom-left geometry; absent origin is ambiguous."""
+    if ref.get("coord_origin") != "bottom-left":
         return ref
     out = _flip_obj(ref, height)
     detail = out.get("detail")
@@ -273,18 +275,29 @@ def _heights_from_meta(meta: dict[str, Any] | None) -> dict[int, float]:
         return out
     for key, entry in (meta.get("pages") or {}).items():
         ps = entry.get("page_size") if isinstance(entry, dict) else None
-        if isinstance(ps, list) and len(ps) == 2:
-            out[int(key)] = float(ps[1])
+        if (isinstance(ps, list) and len(ps) == 2
+                and all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                        and math.isfinite(v) and v > 0 for v in ps)):
+            try:
+                out[int(key)] = float(ps[1])
+            except (TypeError, ValueError):
+                continue
     return out
 
 
 async def migrate_canvases(store: DocStore, workspace: Any) -> dict[str, Any]:
-    """Flip unstamped canvas source_refs that point into migrated documents.
+    """Convert only explicitly legacy refs, preserving ambiguous/history data.
 
-    ``workspace`` is the WorkspaceService (``list_workspaces`` / ``get_state``
-    / ``update_node`` / ``update_edge``). Refs into unknown documents, or
-    documents that are still legacy, are left alone."""
+    All representations use one policy and one event-backed snapshot per
+    changed canvas. The document's origin cannot establish a copied ref's
+    origin. Previously corrupted top-left stamps require separate, proven
+    recovery; no universal inverse flip is safe.
+    """
     heights_by_slug: dict[str, dict[int, float]] = {}
+    report: dict[str, Any] = {
+        "nodes_updated": 0, "edges_updated": 0, "references_updated": 0,
+        "top_left_preserved": 0, "skipped_refs": [],
+    }
 
     async def heights_for(doc_slug: str | None) -> dict[int, float]:
         if not doc_slug:
@@ -296,48 +309,69 @@ async def migrate_canvases(store: DocStore, workspace: Any) -> dict[str, Any]:
             )
         return heights_by_slug[doc_slug]
 
-    async def convert(ref: Any, fallback_slug: str | None) -> dict[str, Any] | None:
-        if not isinstance(ref, dict) or ref.get("coord_origin") == BBOX_ORIGIN:
+    async def convert(ref: Any, fallback_slug: str | None, location: str) -> dict[str, Any] | None:
+        if not isinstance(ref, dict):
+            return None
+        detail = ref.get("detail")
+        if not (any(isinstance(ref.get(key), list) for key in _BBOX_KEYS)
+                or isinstance(detail, dict) and isinstance(detail.get("cell_bbox"), list)):
+            return None
+        origin = ref.get("coord_origin")
+        if origin == BBOX_ORIGIN:
+            report["top_left_preserved"] += 1
+            return None
+        if origin != "bottom-left":
+            report["skipped_refs"].append({
+                "location": location,
+                "reason": "ambiguous coordinate origin" if origin is None else "unsupported coordinate origin",
+            })
+            return None
+        if ref.get("kind") not in (None, "pdf-page-bbox"):
+            report["skipped_refs"].append({"location": location, "reason": "unsupported source kind"})
+            return None
+        boxes = [ref[key] for key in _BBOX_KEYS if ref.get(key) is not None]
+        if isinstance(detail, dict) and detail.get("cell_bbox") is not None:
+            boxes.append(detail["cell_bbox"])
+        if not all(isinstance(box, list) and len(box) == 4 and all(
+            isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in box
+        ) for box in boxes):
+            report["skipped_refs"].append({"location": location, "reason": "invalid geometry"})
             return None
         page = ref.get("page")
-        if not isinstance(page, int):
+        if not isinstance(page, int) or isinstance(page, bool):
+            report["skipped_refs"].append({"location": location, "reason": "page unavailable"})
             return None
         heights = await heights_for(ref.get("slug") or fallback_slug)
         if page not in heights:
+            report["skipped_refs"].append({"location": location, "reason": "canonical page dimensions unavailable"})
             return None
         return flip_source_ref(ref, heights[page])
 
-    nodes_updated = edges_updated = 0
-    for ws in await workspace.list_workspaces():
-        ws_slug = ws.get("slug") if isinstance(ws, dict) else None
-        if not ws_slug:
-            continue
-        state = await workspace.get_state(ws_slug)
+    async def transform(state: dict[str, Any]) -> bool:
+        changed = False
+        ws_slug = state["slug"]
         for node in state.get("nodes") or []:
             data = node.get("data") if isinstance(node, dict) else None
             if not isinstance(data, dict):
                 continue
-            patch: dict[str, Any] = {}
+            node_changed = False
+            location = f"{ws_slug}/nodes/{node['id']}"
             doc_slug = data.get("source_doc_slug") or data.get("slug")
-            new_ref = await convert(data.get("source_ref"), doc_slug)
+            new_ref = await convert(data.get("source_ref"), doc_slug, location)
             if new_ref is not None:
-                patch["source_ref"] = new_ref
+                data["source_ref"] = new_ref
+                node_changed = True
             rows = data.get("rows")
             if isinstance(rows, list):
-                new_rows = []
-                changed = False
-                for row in rows:
+                for index, row in enumerate(rows):
                     if isinstance(row, dict):
-                        r = await convert(row.get("source_ref"), doc_slug)
+                        r = await convert(row.get("source_ref"), doc_slug, f"{location}/rows/{index}")
                         if r is not None:
-                            row = {**row, "source_ref": r}
-                            changed = True
-                    new_rows.append(row)
-                if changed:
-                    patch["rows"] = new_rows
-            if patch:
-                await workspace.update_node(ws_slug, node["id"], {"data": patch})
-                nodes_updated += 1
+                            row["source_ref"] = r
+                            node_changed = True
+            if node_changed:
+                report["nodes_updated"] += 1
+                changed = True
         for edge in state.get("edges") or []:
             data = edge.get("data") if isinstance(edge, dict) else None
             if not isinstance(data, dict):
@@ -346,11 +380,32 @@ async def migrate_canvases(store: DocStore, workspace: Any) -> dict[str, Any]:
                 (n for n in state.get("nodes") or [] if n.get("id") == edge.get("target")), None
             )
             tdata = (target or {}).get("data") or {}
-            new_ref = await convert(data.get("source_ref"), tdata.get("slug"))
+            new_ref = await convert(
+                data.get("source_ref"), data.get("source_doc_slug") or tdata.get("slug"),
+                f"{ws_slug}/edges/{edge['id']}",
+            )
             if new_ref is not None:
-                await workspace.update_edge(ws_slug, edge["id"], {"data": {"source_ref": new_ref}})
-                edges_updated += 1
-    return {"nodes_updated": nodes_updated, "edges_updated": edges_updated}
+                data["source_ref"] = new_ref
+                report["edges_updated"] += 1
+                changed = True
+        refs = (state.get("metadata") or {}).get("references")
+        for reference in refs if isinstance(refs, list) else []:
+            if not isinstance(reference, dict):
+                continue
+            new_ref = await convert(
+                reference.get("source_ref"), None, f"{ws_slug}/references/{reference.get('id')}",
+            )
+            if new_ref is not None:
+                reference["source_ref"] = new_ref
+                report["references_updated"] += 1
+                changed = True
+        return changed
+
+    for ws in await workspace.list_workspaces():
+        ws_slug = ws.get("slug") if isinstance(ws, dict) else None
+        if ws_slug:
+            await workspace._migrate_snapshot(ws_slug, transform)
+    return report
 
 
 async def migrate_all(

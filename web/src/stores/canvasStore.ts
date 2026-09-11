@@ -70,6 +70,7 @@ export const CANVAS_EDGE_WIRE_FIELDS = [
 export type SourceRef = {
   slug: string;
   page: number;
+  coord_origin?: string | null;
   bbox?: number[];
   region_id?: string;
   detail?: {

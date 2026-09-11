@@ -5,7 +5,9 @@ against current state, applies events, persists, and publishes.
 """
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from copy import deepcopy
 from typing import Any, Literal
 
 from pydantic import BaseModel
@@ -13,6 +15,7 @@ from pydantic import BaseModel
 from anchor.core.clock import Clock, SystemClock
 from anchor.core.events.canvas import (
     CanvasCleared,
+    CanvasSnapshot,
     EdgeAdded,
     EdgeRemoved,
     EdgeUpdated,
@@ -36,6 +39,7 @@ from anchor.core.workspace.builtin_node_types import builtin_node_type_registry
 from anchor.core.workspace.layout import NodeLike, find_free_position
 from anchor.core.workspace.node_types import NodeTypeRegistry
 from anchor.core.workspace.reducer import apply, cascade_events_for_remove
+from anchor.core.workspace.references import stamp_authored_source_refs
 from anchor.core.workspace.workspace import CommandError, Workspace, validate_command
 
 
@@ -494,6 +498,25 @@ class WorkspaceService:
         async with self.locks.lock(slug):
             return await self._dispatch_locked(slug, cmd)
 
+    async def _migrate_snapshot(
+        self, slug: str, transform: Callable[[dict[str, Any]], Awaitable[bool]],
+    ) -> bool:
+        """Internal maintenance seam: transform one locked snapshot with an audit event.
+
+        The caller owns migration policy. Core only preserves IDs, metadata,
+        event replay and publication atomically with respect to other writes.
+        Historical snapshots deliberately bypass current authoring defaults.
+        """
+        async with self.locks.lock(slug):
+            state = await self.store.load(slug)
+            snapshot = deepcopy(state.get_state())
+            if not await transform(snapshot):
+                return False
+            await self._dispatch_locked(slug, CanvasSnapshot(
+                nodes=snapshot["nodes"], edges=snapshot["edges"], metadata=snapshot["metadata"],
+            ))
+            return True
+
     async def _dispatch_locked(self, slug: str, cmd: BaseModel) -> tuple[Workspace, DomainEvent]:
         """Dispatch body assuming the caller already holds the workspace lock.
 
@@ -501,6 +524,12 @@ class WorkspaceService:
         write the resulting command inside one lock acquisition. The
         re-entrant lock impls don't all support nesting."""
         state = await self.store.load(slug)
+        if isinstance(cmd, (NodeAdded, EdgeAdded)):
+            cmd = cmd.model_copy(update={"data": stamp_authored_source_refs(cmd.data)})
+        elif isinstance(cmd, (NodeUpdated, EdgeUpdated)):
+            entity = (state.nodes if isinstance(cmd, NodeUpdated) else state.edges).get(cmd.id)
+            previous = entity.model_dump() if entity is not None else None
+            cmd = cmd.model_copy(update={"fields": stamp_authored_source_refs(cmd.fields, previous)})
         validate_command(state, cmd, node_types=self.node_types)
         env = self._envelope(slug, cmd)
         version = await self.store.append_event(slug, env)

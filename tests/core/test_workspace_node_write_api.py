@@ -20,7 +20,7 @@ def test_update_node_data_merges_and_preserves_source_ref():
         data = state.nodes["f"].data
         # source_ref + doc survive; new key added.
         assert data["text"] == "hello"
-        assert data["source_ref"] == {"page": 1, "bbox": [0, 0, 1, 1]}
+        assert data["source_ref"] == {"page": 1, "bbox": [0, 0, 1, 1], "coord_origin": "top-left"}
         assert data["doc"] == "d"
 
     asyncio.run(run())

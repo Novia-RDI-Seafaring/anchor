@@ -371,6 +371,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                           description: (r as { description?: string }).description,
                           tags: (r as { tags?: string[] }).tags ?? [],
                           source_ref: {
+                            coord_origin: "top-left",
                             kind: "pdf-page-bbox",
                             page,
                             bbox,

@@ -54,6 +54,7 @@ def test_inspect_region_returns_full_record_and_source_ref():
     assert out["title"] == "Specifications"
     assert out["entities"] == ["LKH-5"]
     assert out["source_ref"] == {
+        "coord_origin": "top-left",
         "slug": "lkh",
         "page": 2,
         "region_id": "r4",

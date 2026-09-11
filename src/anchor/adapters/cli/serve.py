@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import socket
+from collections import Counter
 from pathlib import Path
 
 import typer
@@ -47,6 +48,26 @@ def _migrate_bbox_origin(runtime) -> None:
         typer.echo(
             f"[anchor serve] bbox migration skipped {item['slug']}: {item.get('reason')} "
             "(run `anchor migrate bbox-origin` once the PDF is available)",
+            err=True,
+        )
+    canvases = report.get("canvases", {})
+    if any(canvases.get(key, 0) for key in ("nodes_updated", "edges_updated", "references_updated")):
+        typer.echo(
+            "[anchor serve] migrated explicitly bottom-left canvas source refs: "
+            f"nodes={canvases['nodes_updated']} edges={canvases['edges_updated']} "
+            f"references={canvases['references_updated']}",
+            err=True,
+        )
+    for reason, count in Counter(item["reason"] for item in canvases.get("skipped_refs", [])).items():
+        typer.echo(
+            f"[anchor serve] preserved {count} source ref(s): {reason}; "
+            "no coordinate changes (details: `anchor migrate bbox-origin`)",
+            err=True,
+        )
+    if canvases.get("top_left_preserved"):
+        typer.echo(
+            f"[anchor serve] preserved {canvases['top_left_preserved']} top-left source ref(s); "
+            "not revalidated or repaired",
             err=True,
         )
     if report.get("recommendation"):

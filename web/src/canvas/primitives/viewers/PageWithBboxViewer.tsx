@@ -59,6 +59,7 @@ export function PageWithBboxViewer() {
           description: region.description,
           tags: (region as { tags?: string[] }).tags ?? [],
           source_ref: {
+            coord_origin: "top-left",
             kind: "pdf-page-bbox",
             page: region.page ?? viewer.page,
             bbox: region.bbox,
@@ -74,6 +75,7 @@ export function PageWithBboxViewer() {
           edge_type: "anchored",
           data: {
             source_ref: {
+              coord_origin: "top-left",
               kind: "pdf-page-bbox",
               page: region.page ?? viewer.page,
               bbox: region.bbox,

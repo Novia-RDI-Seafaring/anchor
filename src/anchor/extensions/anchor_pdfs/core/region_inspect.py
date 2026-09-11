@@ -40,6 +40,7 @@ async def _find_region(
 
 def _source_ref(slug: str, page: int, region: dict[str, Any]) -> dict[str, Any]:
     return {
+        "coord_origin": "top-left",
         "slug": slug,
         "page": page,
         "region_id": region.get("id"),

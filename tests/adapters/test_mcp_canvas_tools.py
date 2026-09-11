@@ -564,7 +564,7 @@ def test_canvas_update_node_data_merges_via_mcp():
         out = json.loads(body)
         node = next(n for n in out["state"]["nodes"] if n["id"] == "a")
         assert node["data"]["text"] == "y"
-        assert node["data"]["source_ref"] == {"page": 1}
+        assert node["data"]["source_ref"] == {"page": 1, "coord_origin": "top-left"}
 
     asyncio.run(run())
 
@@ -584,6 +584,7 @@ def test_canvas_reference_create_list_attach_roundtrip():
         ))
         ref = created["reference"]
         assert ref["id"]
+        assert ref["source_ref"]["coord_origin"] == "top-left"
         assert ref["created_by"] == "agent"  # MCP default
         listed = json.loads(await handlers_canvas.call_tool(
             s.workspace, "canvas_list_references", {"workspace_slug": "w1"},

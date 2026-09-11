@@ -114,7 +114,7 @@ def test_cli_update_node_data_merges(tmp_path):
     state = json.loads(upd.output)["state"]
     node = next(n for n in state["nodes"] if n["id"] == node_id)
     assert node["data"]["text"] == "y"
-    assert node["data"]["source_ref"] == {"page": 1}
+    assert node["data"]["source_ref"] == {"page": 1, "coord_origin": "top-left"}
 
 
 def test_cli_node_types_command(tmp_path):
@@ -146,6 +146,7 @@ def test_cli_reference_create_list_attach_roundtrip(tmp_path):
     assert created.exit_code == 0, created.output
     ref = json.loads(created.output)
     assert ref["id"]
+    assert ref["source_ref"]["coord_origin"] == "top-left"
     assert ref["created_by"] == "human"  # CLI default
 
     listed = runner.invoke(app, ["canvas", "reference", "list", "w1", "--data-dir", str(data_dir)])

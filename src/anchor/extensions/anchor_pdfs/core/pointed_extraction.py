@@ -406,6 +406,7 @@ class _CellIndex:
                 if not isinstance(value_text, str) or not value_text.strip():
                     continue
                 source_ref: dict[str, Any] = {
+                    "coord_origin": "top-left",
                     "slug": self._slug,
                     "quote": value_text.strip(),
                 }

@@ -53,7 +53,16 @@ async def enrich_spec_row_source_refs(data: Any, store: DocStore) -> Any:
             next_rows.append(row)
             continue
 
-        new_ref = {**source_ref, "slug": slug, "page": page, "bbox": cell_bbox}
+        new_ref = {**source_ref, "slug": slug, "page": page, "bbox": cell_bbox, "coord_origin": "top-left"}
+        # Both boxes describe this matched cell. Do not retain an inherited
+        # cell locator from another coordinate space under the new stamp.
+        detail = source_ref.get("detail")
+        if isinstance(detail, dict) and "cell_bbox" in detail:
+            new_ref["detail"] = {**detail, "cell_bbox": cell_bbox}
+        if source_ref.get("coord_origin") != "top-left":
+            for key in ("approx_bbox", "approximate_bbox"):
+                if key in new_ref:
+                    new_ref[key] = None
         if region_id:
             new_ref["region_id"] = region_id
         next_rows.append({**row, "source_ref": new_ref})
