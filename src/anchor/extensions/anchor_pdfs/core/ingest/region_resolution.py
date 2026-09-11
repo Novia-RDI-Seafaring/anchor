@@ -19,9 +19,10 @@ from anchor.extensions.anchor_pdfs.core.silver import (
     render_table_cells_md,
     snap_to_docling_items,
     table_bbox_from_items,
-    table_cells_from_items,
+    table_data_from_items,
     union_bbox,
 )
+from anchor.extensions.anchor_pdfs.core.table_topology import select_table_cells, topology_status
 
 _SUBMIT_REGION_FIELDS = frozenset({
     "id",
@@ -112,7 +113,7 @@ def resolve_regions(
             ))
             continue
 
-        geometry, bbox, cells, content, normalized, geometry_errors = (
+        geometry, bbox, table_data, content, normalized, geometry_errors = (
             _resolve_geometry(
                 index=index,
                 kind=raw.get("kind"),
@@ -142,8 +143,8 @@ def resolve_regions(
             region["table_slice"] = normalized
         if content:
             region["content"] = content
-        if cells and region.get("kind") in {"table", "spec_block"}:
-            region["cells"] = cells
+        if table_data and region.get("kind") in {"table", "spec_block"}:
+            region.update(table_data)
 
         shape_errors = validate_region(region, index=index)
         if shape_errors:
@@ -194,7 +195,7 @@ def _resolve_geometry(
 ) -> tuple[
     str,
     list[float],
-    list[dict[str, Any]],
+    dict[str, Any],
     str,
     Any,
     list[dict[str, Any]],
@@ -228,7 +229,7 @@ def _resolve_members(
     index: int,
     page: int,
     by_id: dict[str, dict[str, Any]],
-) -> tuple[str, list[float], list[dict[str, Any]], str, Any, list[dict[str, Any]]]:
+) -> tuple[str, list[float], dict[str, Any], str, Any, list[dict[str, Any]]]:
     if not isinstance(member_ids, list) or not member_ids:
         return _failed_geometry(
             _err(index, "member_item_ids", "member_item_ids must be a non-empty list")
@@ -256,7 +257,7 @@ def _resolve_members(
     return (
         "members",
         bbox,
-        table_cells_from_items(selected_items),
+        table_data_from_items(selected_items),
         region_content_from_items(selected_items),
         list(member_ids),
         [],
@@ -270,17 +271,17 @@ def _resolve_approx_bbox(
     kind: Any,
     page: int,
     docling_view: dict[str, list[dict[str, Any]]],
-) -> tuple[str, list[float], list[dict[str, Any]], str, Any, list[dict[str, Any]]]:
+) -> tuple[str, list[float], dict[str, Any], str, Any, list[dict[str, Any]]]:
     message = bbox_error(approx_bbox)
     if message:
         return _failed_geometry(_err(index, "approx_bbox", message))
     normalized = [float(value) for value in approx_bbox]
     snapped, item_indexes = snap_to_docling_items(docling_view, page, normalized)
     if not snapped:
-        return "coarse", normalized, [], "", normalized, []
+        return "coarse", normalized, {}, "", normalized, []
 
     items = docling_view["items"]
-    cells = table_cells_from_items(items, item_indexes, region_bbox=normalized)
+    table_data = table_data_from_items(items, item_indexes, region_bbox=normalized)
     content = region_content_from_items(items, item_indexes)
     if kind == "table":
         table_bbox = table_bbox_from_items(
@@ -290,7 +291,7 @@ def _resolve_approx_bbox(
         )
         if table_bbox:
             snapped = table_bbox
-    return "snapped", snapped, cells, content, normalized, []
+    return "snapped", snapped, table_data, content, normalized, []
 
 
 def _resolve_table_slice(
@@ -299,7 +300,7 @@ def _resolve_table_slice(
     index: int,
     kind: Any,
     by_id: dict[str, dict[str, Any]],
-) -> tuple[str, list[float], list[dict[str, Any]], str, Any, list[dict[str, Any]]]:
+) -> tuple[str, list[float], dict[str, Any], str, Any, list[dict[str, Any]]]:
     if not isinstance(selector, dict):
         return _failed_geometry(
             _err(index, "table_slice", "table_slice must be an object")
@@ -326,23 +327,28 @@ def _resolve_table_slice(
             "table_slice.candidate_id",
             "candidate_id must name a table candidate on this page",
         ))
-    cells = table_cells_from_items([candidate])
+    table_data = table_data_from_items([candidate])
+    cells = table_data.get("cells", [])
     if not cells:
         return _failed_geometry(_err(
             index,
             "table_slice.candidate_id",
             "the selected table candidate has no addressable cells",
         ))
+    if topology_status(table_data)["status"] not in {"valid", "reconciled"}:
+        return _failed_geometry(_err(
+            index, "table_slice", "table topology is unverified; re-ingest or select the whole candidate for inspection",
+        ))
 
     rows, row_error = _indexes(
         selector.get("rows"),
-        available={cell["row"] for cell in cells},
+        available={r for cell in cells for r in range(cell["row"], cell.get("row_end", cell["row"] + 1))},
         field="table_slice.rows",
         required=True,
     )
     columns, column_error = _indexes(
         selector.get("columns"),
-        available={cell["col"] for cell in cells},
+        available={c for cell in cells for c in range(cell["col"], cell.get("col_end", cell["col"] + 1))},
         field="table_slice.columns",
         required=False,
     )
@@ -352,12 +358,13 @@ def _resolve_table_slice(
         if field
     ]
     if errors:
-        return "", [], [], "", None, errors
+        return "", [], {}, "", None, errors
 
     selected = [
         cell
         for cell in cells
-        if cell["row"] in rows and (not columns or cell["col"] in columns)
+        if set(range(cell["row"], cell.get("row_end", cell["row"] + 1))).intersection(rows)
+        and (not columns or set(range(cell["col"], cell.get("col_end", cell["col"] + 1))).intersection(columns))
     ]
     bbox = union_bbox([list(cell.get("bbox") or []) for cell in selected])
     if not selected or not bbox:
@@ -369,11 +376,15 @@ def _resolve_table_slice(
     normalized = {"candidate_id": candidate_id, "rows": rows}
     if columns:
         normalized["columns"] = columns
+    # A slice may include an entire merged cell, never a fabricated fragment.
+    # Pair projection preserves the full-table decision even if the caller
+    # selects just two columns from a previously ambiguous multicolumn row.
+    selected_data = select_table_cells(table_data, selected)
     return (
         "table_slice",
         bbox,
-        selected,
-        render_table_cells_md(selected),
+        selected_data,
+        render_table_cells_md(selected, selected_data.get("table_topology")),
         normalized,
         [],
     )
@@ -405,8 +416,8 @@ def _indexes(
 
 def _failed_geometry(
     error: dict[str, Any],
-) -> tuple[str, list[float], list[dict[str, Any]], str, Any, list[dict[str, Any]]]:
-    return "", [], [], "", None, [error]
+) -> tuple[str, list[float], dict[str, Any], str, Any, list[dict[str, Any]]]:
+    return "", [], {}, "", None, [error]
 
 
 def _reject_duplicate_ids(

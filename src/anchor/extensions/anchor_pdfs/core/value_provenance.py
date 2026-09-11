@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
+from anchor.extensions.anchor_pdfs.core.table_topology import validated_pairs
 
 
 async def enrich_spec_row_source_refs(data: Any, store: DocStore) -> Any:
@@ -48,7 +49,11 @@ async def enrich_spec_row_source_refs(data: Any, store: DocStore) -> Any:
             next_rows.append(row)
             continue
 
-        cell_bbox = _match_value_cell_bbox(region.get("cells"), row.get("key"), value)
+        # Only cells participating in an upstream-certified association may
+        # refine a source bbox. Region selection/value matching is unchanged.
+        pairs = validated_pairs(region)
+        cells = list({cell["cell_id"]: cell for pair in pairs for cell in pair}.values())
+        cell_bbox = _match_value_cell_bbox(cells, row.get("key"), value)
         if not cell_bbox:
             next_rows.append(row)
             continue

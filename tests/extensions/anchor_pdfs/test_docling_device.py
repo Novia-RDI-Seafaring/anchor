@@ -139,6 +139,8 @@ def test_flatten_emits_top_left_boxes_page_sizes_and_origin_stamp():
                     SimpleNamespace(
                         start_row_offset_idx=1,
                         start_col_offset_idx=1,
+                        end_row_offset_idx=2,
+                        end_col_offset_idx=2,
                         text="cell value",
                         # Cell boxes are already TOPLEFT in docling.
                         bbox=_Box(10, 20, 30, 40, "TOPLEFT"),
@@ -157,6 +159,8 @@ def test_flatten_emits_top_left_boxes_page_sizes_and_origin_stamp():
     assert out["tables"][0]["cells"][0] == {
         "row": 1,
         "col": 1,
+        "row_end": 2, "col_end": 2, "row_span": 1, "col_span": 1,
+        "column_header": False, "row_header": False, "row_section": False,
         "text": "cell value",
         "bbox": [10.0, 20.0, 30.0, 40.0],
     }

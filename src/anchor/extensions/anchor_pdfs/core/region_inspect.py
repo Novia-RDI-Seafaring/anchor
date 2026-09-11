@@ -21,6 +21,7 @@ from typing import Any
 from anchor.extensions.anchor_pdfs.core.pointed_extraction import _parse_region_token
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.silver import region_content_from_items
+from anchor.extensions.anchor_pdfs.core.table_topology import topology_status
 
 
 async def _find_region(
@@ -70,6 +71,7 @@ async def inspect_region(
         "member_item_ids": region.get("member_item_ids"),
         "table_slice": region.get("table_slice"),
         "cells": region.get("cells"),
+        "table_topology": topology_status(region) if region.get("cells") else None,
         "content": region.get("content"),
         "source_ref": _source_ref(slug, page, region),
     }
@@ -105,5 +107,6 @@ async def get_region_content(
         "kind": region.get("kind"),
         "content": content or "",
         "cells": region.get("cells"),
+        "table_topology": topology_status(region) if region.get("cells") else None,
         "source_ref": _source_ref(slug, page, region),
     }

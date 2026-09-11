@@ -24,6 +24,7 @@ from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
 from anchor.extensions.anchor_pdfs.infra.memory_doc_store import MemoryDocStore
 from anchor.infra.bus.memory_bus import MemoryEventBus
 from anchor.infra.stores.memory_stores import MemoryWorkspaceStore
+from tests.fixtures.tables import canonical_regions
 
 _SHAPE = {"model": "string", "max_inlet_pressure": "quantity"}
 
@@ -36,7 +37,7 @@ async def _seed(store) -> None:
             "outline": [],
         }),
     )
-    await store.write_gold_region_file("lkh", 2, [{
+    await store.write_gold_region_file("lkh", 2, canonical_regions([{
         "id": "r4", "kind": "table", "title": "Spec", "page": 2,
         "bbox": [50, 480, 550, 410],
         "cells": [
@@ -45,7 +46,7 @@ async def _seed(store) -> None:
             {"row": 1, "col": 0, "text": "Max inlet pressure", "bbox": [55, 455, 200, 438]},
             {"row": 1, "col": 1, "text": "600 kPa", "bbox": [210, 455, 360, 438]},
         ],
-    }])
+    }]))
     await store.mark_gold_complete("lkh", {"mode": "keyed"})
 
 
@@ -54,7 +55,7 @@ def _assert_envelope(out: dict) -> None:
     assert out["data"] == {"model": "LKH-5", "max_inlet_pressure": "600 kPa"}
     assert out["provenance"]["/model"]["quote"] == "LKH-5"
     assert all(ref["coord_origin"] == "top-left" for ref in out["provenance"].values())
-    assert out["provenance"]["/max_inlet_pressure"]["bbox"] == [210.0, 455.0, 360.0, 438.0]
+    assert out["provenance"]["/max_inlet_pressure"]["bbox"] == [210.0, 145.0, 360.0, 162.0]
     assert out["unfilled"] == []
 
 

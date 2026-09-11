@@ -16,7 +16,7 @@ from anchor.extensions.anchor_pdfs.core.silver import (
     region_content_from_items,
     snap_to_docling_items,
     table_bbox_from_items,
-    table_cells_from_items,
+    table_data_from_items,
 )
 
 GOLD_EMPTY_MAX_ATTEMPTS = 2
@@ -260,13 +260,13 @@ class GoldIngest:
                     content = region_content_from_items(items, item_indexes)
                     if content:
                         region = {**region, "content": content}
-                    cells = table_cells_from_items(
+                    table_data = table_data_from_items(
                         items,
                         item_indexes,
                         region_bbox=bbox,
                     )
-                    if cells and region.get("kind") in {"table", "spec_block"}:
-                        region = {**region, "cells": cells}
+                    if table_data and region.get("kind") in {"table", "spec_block"}:
+                        region = {**region, **table_data}
                     table_bbox = table_bbox_from_items(
                         items,
                         item_indexes,

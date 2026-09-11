@@ -4,12 +4,13 @@ import pytest
 
 from anchor.extensions.anchor_pdfs.core.value_provenance import enrich_spec_row_source_refs
 from anchor.extensions.anchor_pdfs.infra.memory_doc_store import MemoryDocStore
+from tests.fixtures.tables import canonical_regions
 
 
 @pytest.mark.asyncio
 async def test_enrich_spec_row_source_refs_uses_matching_gold_cell_bbox():
     store = MemoryDocStore()
-    await store.write_gold_region_file("doc", 2, [{
+    await store.write_gold_region_file("doc", 2, canonical_regions([{
         "id": "r1",
         "kind": "table",
         "title": "Data",
@@ -19,7 +20,7 @@ async def test_enrich_spec_row_source_refs_uses_matching_gold_cell_bbox():
             {"row": 0, "col": 0, "text": "Field", "bbox": [10, 90, 60, 80]},
             {"row": 0, "col": 1, "text": "Value", "bbox": [80, 90, 140, 80]},
         ],
-    }])
+    }]))
     data = {
         "rows": [{
             "key": "Field",
@@ -32,16 +33,16 @@ async def test_enrich_spec_row_source_refs_uses_matching_gold_cell_bbox():
 
     enriched = await enrich_spec_row_source_refs(data, store)
 
-    assert enriched["rows"][0]["source_ref"]["bbox"] == [80.0, 90.0, 140.0, 80.0]
+    assert enriched["rows"][0]["source_ref"]["bbox"] == [80.0, 510.0, 140.0, 520.0]
     assert enriched["rows"][0]["source_ref"]["coord_origin"] == "top-left"
-    assert enriched["rows"][0]["source_ref"]["detail"]["cell_bbox"] == [80.0, 90.0, 140.0, 80.0]
+    assert enriched["rows"][0]["source_ref"]["detail"]["cell_bbox"] == [80.0, 510.0, 140.0, 520.0]
     assert enriched["rows"][0]["source_ref"]["approx_bbox"] is None
 
 
 @pytest.mark.asyncio
 async def test_enrich_spec_row_source_refs_accepts_value_with_unit_suffix():
     store = MemoryDocStore()
-    await store.write_gold_region_file("doc", 1, [{
+    await store.write_gold_region_file("doc", 1, canonical_regions([{
         "id": "r1",
         "kind": "table",
         "title": "Data",
@@ -51,7 +52,7 @@ async def test_enrich_spec_row_source_refs_accepts_value_with_unit_suffix():
             {"row": 0, "col": 0, "text": "Length", "bbox": [10, 90, 60, 80]},
             {"row": 0, "col": 1, "text": "42", "bbox": [80, 90, 140, 80]},
         ],
-    }])
+    }]))
     data = {
         "source_doc_slug": "doc",
         "rows": [{
@@ -64,13 +65,13 @@ async def test_enrich_spec_row_source_refs_accepts_value_with_unit_suffix():
 
     enriched = await enrich_spec_row_source_refs(data, store)
 
-    assert enriched["rows"][0]["source_ref"]["bbox"] == [80.0, 90.0, 140.0, 80.0]
+    assert enriched["rows"][0]["source_ref"]["bbox"] == [80.0, 510.0, 140.0, 520.0]
 
 
 @pytest.mark.asyncio
 async def test_enrich_spec_row_source_refs_uses_key_to_disambiguate_duplicate_values():
     store = MemoryDocStore()
-    await store.write_gold_region_file("doc", 1, [{
+    await store.write_gold_region_file("doc", 1, canonical_regions([{
         "id": "r1",
         "kind": "table",
         "title": "Data",
@@ -82,7 +83,7 @@ async def test_enrich_spec_row_source_refs_uses_key_to_disambiguate_duplicate_va
             {"row": 1, "col": 0, "text": "Second", "bbox": [10, 70, 60, 60]},
             {"row": 1, "col": 1, "text": "Shared", "bbox": [80, 70, 140, 60]},
         ],
-    }])
+    }]))
     data = {
         "source_doc_slug": "doc",
         "source_region_id": "r1",
@@ -100,14 +101,14 @@ async def test_enrich_spec_row_source_refs_uses_key_to_disambiguate_duplicate_va
         "slug": "doc",
         "page": 1,
         "region_id": "r1",
-        "bbox": [80.0, 70.0, 140.0, 60.0],
+        "bbox": [80.0, 530.0, 140.0, 540.0],
     }
 
 
 @pytest.mark.asyncio
 async def test_enrich_spec_row_source_refs_accepts_row_level_region_id():
     store = MemoryDocStore()
-    await store.write_gold_region_file("doc", 1, [{
+    await store.write_gold_region_file("doc", 1, canonical_regions([{
         "id": "r1",
         "kind": "table",
         "title": "Data",
@@ -117,7 +118,7 @@ async def test_enrich_spec_row_source_refs_accepts_row_level_region_id():
             {"row": 0, "col": 0, "text": "Field", "bbox": [10, 90, 60, 80]},
             {"row": 0, "col": 1, "text": "Result", "bbox": [80, 90, 140, 80]},
         ],
-    }])
+    }]))
     data = {
         "source_doc_slug": "doc",
         "rows": [{
@@ -135,14 +136,14 @@ async def test_enrich_spec_row_source_refs_accepts_row_level_region_id():
         "slug": "doc",
         "page": 1,
         "region_id": "r1",
-        "bbox": [80.0, 90.0, 140.0, 80.0],
+        "bbox": [80.0, 510.0, 140.0, 520.0],
     }
 
 
 @pytest.mark.asyncio
 async def test_enrich_spec_row_source_refs_leaves_ambiguous_values_unchanged():
     store = MemoryDocStore()
-    await store.write_gold_region_file("doc", 1, [{
+    await store.write_gold_region_file("doc", 1, canonical_regions([{
         "id": "r1",
         "kind": "table",
         "title": "Data",
@@ -152,7 +153,7 @@ async def test_enrich_spec_row_source_refs_leaves_ambiguous_values_unchanged():
             {"row": 0, "col": 0, "text": "Shared", "bbox": [10, 90, 60, 80]},
             {"row": 1, "col": 0, "text": "Shared", "bbox": [10, 70, 60, 60]},
         ],
-    }])
+    }]))
     data = {
         "rows": [{
             "key": "Unknown",
