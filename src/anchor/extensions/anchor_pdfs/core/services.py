@@ -19,6 +19,7 @@ from anchor.extensions.anchor_pdfs.core.events import (
     DocSilvered,
     IngestProgress,
 )
+from anchor.extensions.anchor_pdfs.core.generation import complete_pages
 from anchor.extensions.anchor_pdfs.core.gold_ingest import (
     GOLD_EMPTY_MAX_ATTEMPTS as _GOLD_EMPTY_MAX_ATTEMPTS,
 )
@@ -133,6 +134,9 @@ class IngestService:
                 "reason": "already ingested (gold exists); pass force=True / --force to "
                 "re-ingest and overwrite",
             }
+        store = self.store.snapshot(slug)
+        previous_index = await store.get_index(slug)
+        generation = None
         publish_workspace_id = workspace_id or self._gid
         ingest_started_at = self.clock.now()
         # Reject identity conflicts before publishing even an activity record.
@@ -232,16 +236,25 @@ class IngestService:
             pages_md = render_pages_md(docling)
             pages_meta = build_pages_meta(docling)
             page_candidates = build_page_candidates(docling)
-            await self.store.write_silver_artifact(slug, "index.json", json.dumps(index))
-            await self.store.write_silver_artifact(slug, "pages.meta.json", json.dumps(pages_meta))
+            replacement_pngs = None
+            if previous_index is not None:
+                current_stage = "silver_render_pages"
+                replacement_pngs = await self.renderer.render_pages(bronze_path, dpi=dpi)
+                page_count = len(complete_pages(index, pages_meta, pages_md, page_candidates, replacement_pngs))
+                current_stage = "silver_index"
+            if previous_index is not None:
+                generation = await self.store.begin_replacement(slug, sorted(page_candidates))
+                store = self.store.replacement(slug, generation)
+            await store.write_silver_artifact(slug, "index.json", json.dumps(index))
+            await store.write_silver_artifact(slug, "pages.meta.json", json.dumps(pages_meta))
             for page, md in pages_md.items():
-                await self.store.write_silver_artifact(slug, f"pages/{page}.raw.md", md)
+                await store.write_silver_artifact(slug, f"pages/{page}.raw.md", md)
             # Persist the per-page docling candidate items (id, label, bbox,
             # text). They power region grouping in the harness protocol and
             # make a session survivable across a crash; until now they only
             # existed in memory during this call.
             for page, candidates in page_candidates.items():
-                await self.store.write_silver_artifact(
+                await store.write_silver_artifact(
                     slug, f"pages/{page}.candidates.json", json.dumps(candidates),
                 )
             finish_stage(
@@ -256,9 +269,9 @@ class IngestService:
             if page_count:
                 current_stage = "silver_render_pages"
                 stage_started_at = self.clock.now()
-                page_pngs = await self.renderer.render_pages(bronze_path, dpi=dpi)
+                page_pngs = replacement_pngs if replacement_pngs is not None else await self.renderer.render_pages(bronze_path, dpi=dpi)
                 for page, png in page_pngs.items():
-                    await self.store.write_silver_artifact(slug, f"pages/{page}.png", png)
+                    await store.write_silver_artifact(slug, f"pages/{page}.png", png)
                 for it in docling.get("items", []):
                     if isinstance(it.get("page"), (int, float)):
                         items_by_page.setdefault(int(it["page"]), []).append(it)
@@ -284,7 +297,7 @@ class IngestService:
                         docling_items=items_by_page.get(page, []),
                         model=polish_model,
                     )
-                    await self.store.write_silver_artifact(slug, f"pages/{page}.md", polished)
+                    await store.write_silver_artifact(slug, f"pages/{page}.md", polished)
                     polished_pages.append(page)
                     page_finished_at = self.clock.now()
                     page_timings.append({
@@ -316,7 +329,7 @@ class IngestService:
             if regions and self.region_extractor and page_count:
                 current_stage = "gold_regions"
                 gold = await GoldIngest(
-                    self.store,
+                    store,
                     self.region_extractor,
                     self.clock,
                     self._publish,
@@ -345,9 +358,10 @@ class IngestService:
                 current_stage = "embed"
                 await record_activity("embed")
                 stage_started_at = self.clock.now()
-                embedded_count = await self.embed_document(
-                    slug, publish_workspace_id=publish_workspace_id,
-                )
+                embedded_count = await DocumentRetrieval(
+                    store, embedder=self.embedder, embed_model_id=self.embed_model_id,
+                    clock=self.clock, publish=self._publish,
+                ).embed_document(slug, publish_workspace_id=publish_workspace_id)
                 finish_stage(
                     "embed",
                     stage_started_at,
@@ -399,11 +413,14 @@ class IngestService:
                 timing_report["reason"] = empty_gold_reason
             if low_text_warning:
                 timing_report["warnings"] = [low_text_warning]
-            timing_report_path = await self.store.write_silver_artifact(
+            timing_report_path = await store.write_silver_artifact(
                 slug,
                 "ingest-report.json",
                 json.dumps(timing_report, indent=2),
             )
+
+            if generation is not None and not empty_gold:
+                await self.store.publish_replacement(slug, generation, sorted(page_pngs or page_candidates))
 
             summary = {
                 "slug": slug,
@@ -437,14 +454,15 @@ class IngestService:
             # list_documents instead of silently absent. Bookkeeping is
             # wrapped so a write hiccup can never mask the original error.
             try:
-                await self.store.write_ingest_failure(
-                    slug,
-                    filename=filename,
-                    stage=current_stage,
-                    error=str(exc),
-                    bronze_path=str(bronze_path) if bronze_path is not None else None,
-                    failed_at=self.clock.now(),
-                )
+                if previous_index is None:
+                    await store.write_ingest_failure(
+                        slug,
+                        filename=filename,
+                        stage=current_stage,
+                        error=str(exc),
+                        bronze_path=str(bronze_path) if bronze_path is not None else None,
+                        failed_at=self.clock.now(),
+                    )
             except Exception:  # noqa: BLE001 - never let bookkeeping mask the real failure
                 pass
             await record_activity(current_stage, status="failed", error=str(exc))
@@ -484,7 +502,8 @@ class IngestService:
         searchable after the next ``embed`` pass. Raises ``ValueError`` if
         the parent region does not exist.
         """
-        regions = await self.store.get_regions(slug)
+        store = self.store.snapshot(slug)
+        regions = await store.get_regions(slug)
         parent: dict[str, Any] | None = None
         for _page, regs in (regions.get("pages") or {}).items():
             for r in regs:
@@ -504,7 +523,7 @@ class IngestService:
         if not derived.get("source_ref") and parent.get("source_ref"):
             derived["source_ref"] = parent["source_ref"]
 
-        path = await self.store.add_derived_region(slug, derived)
+        path = await store.add_derived_region(slug, derived)
         return {
             "slug": slug,
             "region_id": derived.get("id"),

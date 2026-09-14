@@ -216,7 +216,7 @@ async def call_tool(
         text = await store.get_page_text(args["slug"], int(args["page"]))
         return text if text is not None else json.dumps({"error": "not found"})
     if name == "locate_text":
-        path = await store.get_raw_pdf_path(args["slug"])
+        path = await store.get_raw_pdf_path(args["slug"], page=args["page"])
         if path is None or str(path).startswith("memory://"):
             return json.dumps({"error": f"raw PDF not available for slug: {args['slug']}"})
         try:

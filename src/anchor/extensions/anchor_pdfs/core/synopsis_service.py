@@ -30,10 +30,11 @@ class SynopsisService:
     async def render_pdf(self, *, slug: str, entity: str) -> bytes:
         if self.pdf_renderer is None:
             raise RuntimeError("SynopsisService: no pdf_renderer wired")
-        data = await self.compose(slug=slug, entity=entity)
+        store = self.store.snapshot(slug)
+        data = await compose_synopsis(store=store, slug=slug, entity=entity)
         return await self.pdf_renderer.render_pdf(
             data,
-            resolve_crop=self.store.get_crop_path,
+            resolve_crop=store.get_crop_path,
         )
 
     async def render_markdown(

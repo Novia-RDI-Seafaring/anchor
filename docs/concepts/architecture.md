@@ -171,6 +171,9 @@ imports either.
 
 ### Region retrieval
 
+For source hashes, replacement membership and failure behavior, see
+[PDF replacement generations](document-generations.md).
+
 PDF ingest writes bronze, silver, and gold artifacts. Silver is the
 Docling view: page markdown, item metadata, bboxes, and table cells.
 Gold is the agent-facing view: source regions with page, bbox, title,

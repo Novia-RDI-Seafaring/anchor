@@ -53,6 +53,7 @@ async def inspect_region(
     store: DocStore, slug: str, region_id: str
 ) -> dict[str, Any] | None:
     """Return one gold region's full record + a grounding `source_ref`."""
+    store = store.snapshot(slug)
     found = await _find_region(store, slug, region_id)
     if found is None:
         return None
@@ -85,6 +86,7 @@ async def get_region_content(
     Prefers the region's stored `content`; when absent (e.g. a region whose
     bbox snapped to nothing), rebuilds it from the page's silver candidates via
     `member_item_ids`."""
+    store = store.snapshot(slug)
     found = await _find_region(store, slug, region_id)
     if found is None:
         return None

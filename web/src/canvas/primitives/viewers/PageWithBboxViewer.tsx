@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 
 import { canvases } from "@/api/canvases";
-import { documents, type DocumentIndex, type Region } from "@/api/documents";
+import { documents, type Region } from "@/api/documents";
+import { useDocumentIndex } from "@/api/useDocumentIndex";
 import { bboxToImageRect, sameBbox } from "@/lib/bbox";
 import { useUiStore } from "@/stores/uiStore";
 
@@ -28,7 +29,8 @@ export function PageWithBboxViewer() {
   const setPage = useUiStore((s) => s.setPdfPage);
   const setMode = useUiStore((s) => s.setPdfViewerMode);
 
-  const [index, setIndex] = useState<DocumentIndex | null>(null);
+  const index = useDocumentIndex(viewer?.slug, viewer?.mode === "modal");
+  const generation = index?.document.generation?.id;
   const [regions, setRegions] = useState<Region[]>([]);
   const [pageMeta, setPageMeta] = useState<Record<number, PageMeta>>({});
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
@@ -94,12 +96,9 @@ export function PageWithBboxViewer() {
   useEffect(() => {
     if (!viewerSlug) return;
     let cancel = false;
-    setIndex(null);
+    setPageMeta({});
     setRegions([]);
     setActiveRegion(null);
-    documents.index(viewerSlug).then((idx) => {
-      if (!cancel) setIndex(idx);
-    }).catch(() => {});
     fetch(`${(import.meta.env.VITE_BACKEND_URL as string | undefined) ?? ""}/api/documents/${viewerSlug}/gold-map`)
       .then((r) => r.ok ? r.json() : null)
       .then((map) => {
@@ -115,7 +114,7 @@ export function PageWithBboxViewer() {
     return () => {
       cancel = true;
     };
-  }, [viewerSlug]);
+  }, [viewerSlug, generation]);
 
   useEffect(() => {
     if (!viewerSlug || viewerPage == null) return;
@@ -134,7 +133,7 @@ export function PageWithBboxViewer() {
     return () => {
       cancel = true;
     };
-  }, [viewerSlug, viewerPage, viewerHighlightRegionId, viewerHighlightPage]);
+  }, [viewerSlug, viewerPage, viewerHighlightRegionId, viewerHighlightPage, generation]);
 
   // Value-precise highlight (#197): when the viewer was opened for a grounded
   // value, locate that text inside the region and overlay it (yellow) on top
@@ -158,7 +157,12 @@ export function PageWithBboxViewer() {
     return () => {
       cancel = true;
     };
-  }, [viewerSlug, viewerPage, viewerHighlightQuery, viewerHighlightBbox, viewerHighlightPage]);
+  }, [viewerSlug, viewerPage, viewerHighlightQuery, viewerHighlightBbox, viewerHighlightPage, generation]);
+
+  const total = index?.document?.page_count ?? 0;
+  useEffect(() => {
+    if (viewerPage && total > 0 && viewerPage > total) setPage(total);
+  }, [viewerPage, total, setPage]);
 
   useEffect(() => {
     // Only the modal owns global Escape / arrow keys. In dock mode the
@@ -182,7 +186,6 @@ export function PageWithBboxViewer() {
   // by SourceDock for "dock" mode.
   if (!viewer || viewer.mode !== "modal") return null;
 
-  const total = index?.document?.page_count ?? 0;
   const explicitW = pageMeta[viewer.page]?.width ?? 0;
   const explicitH = pageMeta[viewer.page]?.height ?? 0;
   const derivedW = imgSize ? imgSize.w * POINTS_PER_INCH / RENDER_DPI : 0;
@@ -243,7 +246,8 @@ export function PageWithBboxViewer() {
         <main className="relative flex flex-1 items-center justify-center overflow-auto p-6">
           <div className="relative">
             <img
-              src={documents.pageImageUrl(viewer.slug, viewer.page)}
+              key={`${viewer.slug}:${viewer.page}:${generation}`}
+              src={documents.pageImageUrl(viewer.slug, viewer.page, generation)}
               alt={`${viewer.slug} page ${viewer.page}`}
               className="max-h-[calc(100vh-7rem)] w-auto rounded shadow-lg"
               onLoad={(e) => {

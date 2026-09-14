@@ -42,7 +42,8 @@ class DocumentRetrieval:
         """Embed every gold region and persist its vectors."""
         if self.embedder is None:
             raise RuntimeError("IngestService.embed_document called but no embedder wired")
-        gold = await self.store.get_gold_map(slug)
+        store = self.store.snapshot(slug)
+        gold = await store.get_gold_map(slug)
         if gold is None:
             return 0
 
@@ -60,9 +61,7 @@ class DocumentRetrieval:
                 if text:
                     items.append((page, region_id, text))
 
-        if not items:
-            return 0
-        vectors = await self.embedder.embed([text for _, _, text in items])
+        vectors = await self.embedder.embed([text for _, _, text in items]) if items else []
         payload: dict[str, Any] = {
             "embed_model": self.embed_model_id or "unknown",
             "dim": len(vectors[0]) if vectors else 0,
@@ -81,7 +80,7 @@ class DocumentRetrieval:
                 )
             ],
         }
-        await self.store.write_embeddings(slug, payload)
+        await store.write_embeddings(slug, payload)
         await self.publish(
             IngestProgress(
                 slug=slug,
@@ -127,6 +126,12 @@ class DocumentRetrieval:
         for item in compatible:
             payload = await self.store.get_embeddings(item["slug"])
             if payload is not None:
+                # Publication can occur after the manifest read. Compare the
+                # model of the actual pinned payload before scoring vectors.
+                if payload.get("embed_model") != query_model:
+                    skipped.append({"slug": item["slug"], "stored_model": payload.get("embed_model") or "unknown",
+                                    "query_model": query_model, "reason": "embed_model_mismatch"})
+                    continue
                 documents.append((item["slug"], payload))
 
         return {

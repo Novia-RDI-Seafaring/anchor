@@ -7,7 +7,7 @@
  * value-precise yellow highlight on top of the region rectangle. When no query
  * is present it must NOT locate (region-level highlight only).
  */
-import { act, render } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -31,6 +31,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   useUiStore.setState({ pdfViewer: null });
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -47,6 +48,18 @@ async function renderViewer() {
 }
 
 describe("PageWithBboxViewer value-precise highlight", () => {
+  it("refreshes a removed real-datasheet page in an already-open modal", async () => {
+    vi.useFakeTimers();
+    await renderViewer();
+    await act(async () => { useUiStore.getState().openPdf("alfa-laval-lkh", { page: 2, mode: "modal" }); });
+    expect(screen.getByText("2 / 3")).toBeTruthy();
+    vi.mocked(documents.index).mockResolvedValue({ document: { page_count: 1, title: "Alfa Laval LKH", filename: "Alfa Laval LKH.pdf",
+      generation: { id: "replacement-b", pages: [1] } }, outline: [] } as Awaited<ReturnType<typeof documents.index>>);
+    await act(async () => { await vi.advanceTimersByTimeAsync(8000); });
+    expect(screen.getByText("1 / 1")).toBeTruthy();
+    expect(screen.getByRole("img").getAttribute("src")).toContain("generation=replacement-b");
+  });
+
   it("locates the value text scoped to the region bbox when opened for a value", async () => {
     await renderViewer();
     await act(async () => {

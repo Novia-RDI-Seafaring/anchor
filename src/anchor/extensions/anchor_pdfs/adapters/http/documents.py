@@ -108,7 +108,7 @@ async def page_crop(
     store: DocStore = Depends(get_doc_store),
     ingest: IngestService = Depends(get_ingest_service),
 ):
-    path = await store.get_raw_pdf_path(slug)
+    path = await store.get_raw_pdf_path(slug, page=page)
     if path is None:
         raise HTTPException(404, f"raw PDF not available for slug: {slug}")
     if str(path).startswith("memory://"):
@@ -154,7 +154,7 @@ async def locate_text(
     an empty ``quads`` list when the text is not found; the caller then falls
     back to the region-level highlight.
     """
-    path = await store.get_raw_pdf_path(slug)
+    path = await store.get_raw_pdf_path(slug, page=page)
     if path is None:
         raise HTTPException(404, f"raw PDF not available for slug: {slug}")
     if str(path).startswith("memory://"):

@@ -455,7 +455,7 @@ def locate_text(
     _, _, _, ingest_svc, doc_store = _build_real_services(data_dir)
 
     async def run() -> dict:
-        path = await doc_store.get_raw_pdf_path(slug)
+        path = await doc_store.get_raw_pdf_path(slug, page=page)
         if path is None or str(path).startswith("memory://"):
             raise FileNotFoundError(f"raw PDF not available for slug: {slug}")
         quads = await ingest_svc.renderer.locate_text(path, page, query, within_bbox)

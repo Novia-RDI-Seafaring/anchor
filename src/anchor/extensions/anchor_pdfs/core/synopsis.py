@@ -177,6 +177,7 @@ async def compose_synopsis(
     JSON, post to a canvas, etc. Renderers live in
     ``anchor.extensions.anchor_pdfs.infra.synopsis_renderers``.
     """
+    store = store.snapshot(slug)
     gold = await store.get_gold_map(slug)
     if gold is None:
         raise SynopsisError(f"no gold data for slug {slug!r}")

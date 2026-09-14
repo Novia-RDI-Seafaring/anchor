@@ -91,6 +91,7 @@ async def resolve_selection(
     it). Regions are unioned across the ``regions`` / ``pages`` / ``entity``
     selectors; an empty / absent ``select`` selects every gold region.
     """
+    store = store.snapshot(slug)
     gold = await store.get_gold_map(slug)
     if gold is None:
         raise PointedExtractionError(f"no gold data for slug {slug!r}")

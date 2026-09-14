@@ -207,6 +207,7 @@ async def migrate_document(
     store: DocStore, renderer: PdfRenderer | None, slug: str
 ) -> dict[str, Any]:
     """Flip one document's silver + gold to top-left. Idempotent."""
+    store = store.snapshot(slug)
     meta = await store.get_pages_meta(slug)
     if not needs_migration(meta):
         return {"slug": slug, "status": "already_top_left"}

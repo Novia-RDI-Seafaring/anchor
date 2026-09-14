@@ -3,7 +3,8 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
 import { BACKEND_URL } from "@/api/client";
-import { documents, type DocumentIndex, type Region } from "@/api/documents";
+import { documents, type Region } from "@/api/documents";
+import { useDocumentIndex } from "@/api/useDocumentIndex";
 import { bboxToImageRect, sameBbox } from "@/lib/bbox";
 import { useUiStore } from "@/stores/uiStore";
 
@@ -118,7 +119,8 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   // source ref broadcast by a selected referencing node (#187). A transient
   // hover flip never touches it, so hover-out always reverts here.
   const restingPage = useRef(1);
-  const [index, setIndex] = useState<DocumentIndex | null>(null);
+  const index = useDocumentIndex(slug, isReady);
+  const generation = index?.document.generation?.id;
   const [regions, setRegions] = useState<Region[]>([]);
   const [pageMeta, setPageMeta] = useState<Record<number, PageMeta>>({});
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
@@ -133,11 +135,11 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     return () => window.clearInterval(timer);
   }, [isReady]);
 
-  // Fetch index + page metadata once per slug.
+  // Refresh page metadata when authoritative membership changes.
   useEffect(() => {
     if (!isReady || !slug) return;
     let cancelled = false;
-    documents.index(slug).then((idx) => { if (!cancelled) setIndex(idx); }).catch(() => {});
+    setPageMeta({});
     fetch(
       `${(import.meta.env.VITE_BACKEND_URL as string | undefined) ?? ""}/api/documents/${slug}/gold-map`,
     )
@@ -153,7 +155,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [slug, isReady]);
+  }, [slug, isReady, generation]);
 
   // Fetch regions whenever the page changes.
   useEffect(() => {
@@ -165,7 +167,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
       if (!cancelled) setRegions(rs);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [slug, page, isReady]);
+  }, [slug, page, isReady, generation]);
 
   // Phase B: react to a cross-component hover. If something else broadcasts
   // a source_ref pointing into this document, flip to the right page. The
@@ -193,6 +195,12 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   }, [pointsHere, hoveredSourceRef, slug]);
 
   const total = index?.document?.page_count ?? d.page_count ?? 0;
+  useEffect(() => {
+    if (total > 0 && page > total) {
+      restingPage.current = total;
+      setPage(total);
+    }
+  }, [page, total]);
   // Prefer explicit page dimensions when the producer exposes them; otherwise
   // derive from the PNG's natural size and the known render DPI (the producer
   // defaults to 150 DPI, so 1 PDF point = 150/72 image pixels).
@@ -203,7 +211,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   const pageW = explicitW > 0 ? explicitW : derivedW;
   const pageH = explicitH > 0 ? explicitH : derivedH;
   const canScale = imgSize && pageW > 0 && pageH > 0;
-  const coverUrl = isReady && slug ? documents.pageImageUrl(slug, page) : null;
+  const coverUrl = isReady && slug ? documents.pageImageUrl(slug, page, generation) : null;
   const ingestProgress = typeof d.ingest_progress === "number"
     ? Math.max(0, Math.min(100, Math.round(d.ingest_progress)))
     : status === "pending"
@@ -273,6 +281,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
       {coverUrl ? (
         <div className="relative overflow-hidden rounded-t-md bg-neutral-100 cursor-move">
           <img
+            key={coverUrl}
             ref={imgRef}
             src={coverUrl}
             alt={d.filename ?? "document"}

@@ -40,6 +40,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   useUiStore.setState({ hoveredSourceRef: null, pdfViewer: null });
   vi.restoreAllMocks();
 });
@@ -96,6 +97,21 @@ const READY_DOC = {
 };
 
 describe("DocumentPrimitive click isolation", () => {
+  it("drops the removed LKH page and region when replacement publishes", async () => {
+    vi.useFakeTimers();
+    vi.mocked(documents.regions).mockResolvedValue([{ id: "removed", title: "Water pressure inlet", bbox: [10, 10, 30, 30] }]);
+    await renderDoc(READY_DOC);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "›" })); });
+    expect(screen.getByText(/page 2 \/ 3/)).toBeTruthy();
+    vi.mocked(documents.regions).mockResolvedValue([]);
+    vi.mocked(documents.index).mockResolvedValue({ document: { page_count: 1, title: "Alfa Laval LKH", filename: "Alfa Laval LKH.pdf",
+      generation: { id: "replacement-b", pages: [1] } }, outline: [] } as Awaited<ReturnType<typeof documents.index>>);
+    await act(async () => { await vi.advanceTimersByTimeAsync(8000); });
+    expect(screen.getByText("1 page")).toBeTruthy();
+    expect(screen.queryByText("Water pressure inlet")).toBeNull();
+    expect(screen.getByRole("button", { name: "Open viewer at page 1" })).toBeTruthy();
+  });
+
   it("paging via the next arrow changes the page and never opens the viewer", async () => {
     await renderDoc(READY_DOC);
     expect(screen.getByText(/page 1 \/ 3/)).toBeTruthy();

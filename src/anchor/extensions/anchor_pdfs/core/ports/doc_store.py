@@ -16,6 +16,30 @@ class IngestLockHeld(RuntimeError):
 
 
 class DocStore(Protocol):
+    def snapshot(self, slug: str) -> DocStore:
+        """Pin one document's current derived generation across compound reads."""
+        raise NotImplementedError
+
+    async def begin_replacement(self, slug: str, pages: list[int]) -> str:
+        """Create an isolated replacement. Retain only same-page polished text.
+
+        Gold, crops, raw extraction and embeddings start empty. Retaining
+        polished text preserves the separate, existing same-page policy.
+        """
+        raise NotImplementedError
+
+    def replacement(self, slug: str, generation: str) -> DocStore:
+        """Reopen a durable candidate view, including across harness restarts."""
+        raise NotImplementedError
+
+    async def publish_replacement(self, slug: str, generation: str, pages: list[int]) -> None:
+        """Publish the complete set, rejecting a superseded candidate.
+
+        Source index, silver, gold and embeddings switch together. No prior
+        member is inherited implicitly; failed publication keeps current data.
+        """
+        raise NotImplementedError
+
     def ingest_lock(
         self, slug: str, *, wait: bool = True, timeout: float | None = None,
     ) -> AbstractAsyncContextManager[None]:
@@ -88,12 +112,13 @@ class DocStore(Protocol):
     async def get_crop_path(self, slug: str, rel_path: str) -> Path | None:
         raise NotImplementedError
 
-    async def get_raw_pdf_path(self, slug: str) -> Path | None:
+    async def get_raw_pdf_path(self, slug: str, *, page: int | None = None) -> Path | None:
         """Return the bronze-layer raw PDF for a document, if available.
         Stores that don't keep the raw bytes addressable (in-memory test
         doubles, S3-backed stores without a local mirror, ...) may return
         ``None``; callers must handle that case rather than reach into
-        store internals."""
+        store internals. A page outside authoritative replacement membership
+        is unavailable even if an old original contained it."""
         raise NotImplementedError
 
     async def stash_bronze(self, pdf_bytes: bytes, filename: str, *, slug: str) -> Path:
