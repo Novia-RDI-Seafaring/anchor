@@ -25,6 +25,10 @@ def test_read_paths_reject_traversal_slugs(tmp_path, slug):
             lambda: store.get_page_image_path(slug, 1),
             lambda: store.get_page_candidates(slug, 1),
             lambda: store.get_regions(slug),
+            lambda: store.get_pages_meta(slug),
+            lambda: store.get_gold_map(slug),
+            lambda: store.mark_gold_complete(slug, {}),
+            lambda: store.clear_gold_complete(slug),
         ):
             with pytest.raises(UnsafeUploadError):
                 await call()
@@ -46,3 +50,21 @@ def test_read_paths_still_resolve_a_normal_slug(tmp_path):
         assert (await store.get_regions("lkh"))["pages"] == {}
 
     asyncio.run(run())
+
+
+def test_list_documents_skips_a_directory_that_is_not_a_valid_slug(tmp_path):
+    # list_documents feeds each silver directory name through the slug guard.
+    # A name the guard rejects cannot be a document; it must be skipped, not
+    # fail the listing for every other document.
+    store = FsDocStore(tmp_path)
+    good = tmp_path / "silver" / "lkh"
+    good.mkdir(parents=True)
+    (good / "index.json").write_text(
+        json.dumps({"document": {"title": "LKH", "page_count": 2}}), encoding="utf-8"
+    )
+    (tmp_path / "silver" / "bad\\name").mkdir()
+
+    docs = asyncio.run(store.list_documents())
+
+    assert [d["slug"] for d in docs] == ["lkh"]
+    assert docs[0]["page_count"] == 2

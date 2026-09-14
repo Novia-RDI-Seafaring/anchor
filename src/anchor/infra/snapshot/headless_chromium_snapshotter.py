@@ -14,10 +14,11 @@ fails to navigate (so the CLI can map it to a 1-liner hint).
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 
-from anchor.core.ids import validate_workspace_slug
+from anchor.core.ids import InvalidWorkspaceSlugError, validate_workspace_slug
 from anchor.core.ports.snapshot import SnapshotResult
 
 #: CSS selector matched by every rendered React Flow node.
@@ -113,7 +114,14 @@ class HeadlessChromiumSnapshotter:
         w, h = viewport or self.default_viewport
 
         ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        slug_dir = self.output_dir / slug
+        # Inline normalise-then-prefix-check (not delegated): the regex above
+        # already rejects traversal, but the analyzer only recognises the
+        # barrier in the function that builds the path.
+        base = os.path.realpath(os.fspath(self.output_dir))
+        candidate = os.path.normpath(os.path.join(base, slug))
+        if not candidate.startswith(base + os.sep):
+            raise InvalidWorkspaceSlugError(f"workspace slug {slug!r} escapes the snapshot dir")
+        slug_dir = Path(candidate)
         slug_dir.mkdir(parents=True, exist_ok=True)
         target = slug_dir / f"{ts}.png"
 
