@@ -109,6 +109,34 @@ async def list_placeholders(slug: str, svc: WorkspaceService = Depends(get_works
         raise HTTPException(404, f"workspace {slug!r} not found") from exc
 
 
+@router.get("/{slug}/changes")
+async def canvas_changes(
+    slug: str,
+    since_version: int | None = None,
+    since_ts: float | None = None,
+    svc: WorkspaceService = Depends(get_workspace_service),
+):
+    """What changed on this canvas after a point in its history (#325).
+
+    Query: ``since_version`` (a client's last-seen version) OR ``since_ts``
+    (unix timestamp) — not both; with neither the fold covers the whole log
+    and additionally carries the per-node ``touched`` attribution map.
+    Same envelope as the ``canvas_changes`` MCP tool and the
+    ``anchor canvas changes <slug>`` CLI (adapter parity). The web UI's
+    "While you were away" panel and the inspector's persisted "edited by"
+    chip both read this.
+    """
+    _check_slug(slug)
+    try:
+        return await svc.canvas_changes(
+            slug, since_version=since_version, since_ts=since_ts,
+        )
+    except CommandError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except (KeyError, FileNotFoundError) as exc:
+        raise HTTPException(404, f"workspace {slug!r} not found") from exc
+
+
 @router.get("/{slug}/references")
 async def list_references(slug: str, svc: WorkspaceService = Depends(get_workspace_service)):
     """List the canvas bibliography (``metadata['references']``).

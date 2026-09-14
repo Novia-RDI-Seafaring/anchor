@@ -744,3 +744,67 @@ def test_canvas_add_node_malformed_review_warns_but_writes():
         assert "review" in body["warning"]
 
     asyncio.run(run())
+
+
+def test_canvas_changes_tool_is_registered():
+    names = {t["name"] for t in handlers_canvas.tool_definitions()}
+    assert "canvas_changes" in names
+
+
+def test_canvas_changes_folds_since_version_with_mcp_actor():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await handlers_canvas.call_tool(s.workspace, "canvas_add_node", {
+            "workspace_slug": "w1", "id": "a", "label": "A",
+        })
+        await handlers_canvas.call_tool(s.workspace, "canvas_update_node", {
+            "workspace_slug": "w1", "id": "a", "label": "A2",
+        })
+        body = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_changes",
+            {"workspace_slug": "w1", "since_version": 0},
+        ))
+        assert body["from_version"] == 0
+        assert body["to_version"] == 2
+        # Both writes carried the MCP fallback agent actor; the add +
+        # update collapse to one added entry with the final label.
+        group = next(
+            g for g in body["groups"]
+            if g["actor"] and g["actor"]["label"] == "mcp-agent"
+        )
+        assert [e["id"] for e in group["nodes_added"]] == ["a"]
+        assert group["nodes_added"][0]["label"] == "A2"
+        assert body["touched"]["a"]["label"] == "mcp-agent"
+
+    asyncio.run(run())
+
+
+def test_canvas_changes_caught_up_window_is_empty():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await handlers_canvas.call_tool(s.workspace, "canvas_add_node", {
+            "workspace_slug": "w1", "id": "a",
+        })
+        body = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_changes",
+            {"workspace_slug": "w1", "since_version": 1},
+        ))
+        assert body["groups"] == []
+        assert "touched" not in body
+
+    asyncio.run(run())
+
+
+def test_canvas_changes_rejects_both_boundaries():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        body = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_changes",
+            {"workspace_slug": "w1", "since_version": 0, "since_ts": 0.0},
+        ))
+        assert "error" in body
+
+    asyncio.run(run())
