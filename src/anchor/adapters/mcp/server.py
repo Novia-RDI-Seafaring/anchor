@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import copy
 import json as _json
+from pathlib import Path
 from typing import Any
 
 from mcp.server import Server
@@ -501,7 +502,7 @@ def build_mcp_server(
 
                 text = await handlers_canvas.call_tool(
                     b.workspace, name, args, enrich_node_fields=enrich_fields,
-                    actor=_client_actor(),
+                    actor=_client_actor(), data_dir=Path(b.config.data_dir),
                 )
             elif name in intent_names:
                 b = get_bundle(args.pop("project", None))

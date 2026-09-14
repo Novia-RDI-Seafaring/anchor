@@ -1,6 +1,11 @@
 import { create } from "zustand";
 
-import type { CanvasEvent, EventActor } from "@/realtime/sseClient";
+import type {
+  CanvasEvent,
+  EventActor,
+  PresenceEntry,
+  PresencePayload,
+} from "@/realtime/sseClient";
 
 type Node = {
   id: string;
@@ -280,8 +285,18 @@ type State = {
    * this session; persisted per-node attribution is the fuller #325 slice.
    */
   lastEditors: Record<string, EventActor>;
+  /**
+   * Live presence roster (who is on this canvas right now), replaced
+   * wholesale by every `presence` SSE event — the server always sends the
+   * full roster, so no client-side reconciliation is needed. Per-serve,
+   * in-memory server state: empty until the first presence event lands.
+   */
+  presence: PresenceEntry[];
+  /** This connection's own roster entry (`you` on the initial event). */
+  presenceSelfId: string | null;
   setSnapshot: (snap: Snapshot) => void;
   applyEvent: (evt: CanvasEvent) => void;
+  applyPresence: (payload: PresencePayload) => void;
   reset: () => void;
 };
 
@@ -292,6 +307,8 @@ export const useCanvasStore = create<State>((set) => ({
   edges: {},
   activity: [],
   lastEditors: {},
+  presence: [],
+  presenceSelfId: null,
   setSnapshot: (snap) => set({
     slug: snap.slug,
     version: snap.version,
@@ -559,7 +576,14 @@ export const useCanvasStore = create<State>((set) => ({
       ].slice(0, 8),
     };
   }),
+  applyPresence: (payload) => set((state) => ({
+    presence: Array.isArray(payload.present) ? payload.present : [],
+    // `you` only rides the initial roster after (re)connect; keep the
+    // known self id on later broadcasts.
+    presenceSelfId: payload.you ?? state.presenceSelfId,
+  })),
   reset: () => set({
     slug: null, version: 0, nodes: {}, edges: {}, activity: [], lastEditors: {},
+    presence: [], presenceSelfId: null,
   }),
 }));

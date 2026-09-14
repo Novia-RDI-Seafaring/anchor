@@ -8,7 +8,7 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 
-import type { CanvasEvent } from "@/realtime/sseClient";
+import type { CanvasEvent, PresencePayload } from "@/realtime/sseClient";
 import { useCanvasStore } from "./canvasStore";
 
 function evt(overrides: Partial<CanvasEvent>): CanvasEvent {
@@ -326,5 +326,59 @@ describe("actor attribution (#322)", () => {
     }));
     apply(evt({ type: "CanvasCleared", version: 2, payload: {} }));
     expect(useCanvasStore.getState().lastEditors).toEqual({});
+  });
+});
+
+describe("presence roster", () => {
+  const sse = (client_id: string, label: string) => ({
+    client_id,
+    kind: "human" as const,
+    label,
+    connected_at: 1000,
+    via: "sse" as const,
+  });
+  const writer = (label: string) => ({
+    kind: "agent" as const,
+    label,
+    connected_at: 1010,
+    last_write_at: 1020,
+    via: "writes" as const,
+  });
+  const payload = (p: Partial<PresencePayload>): PresencePayload => ({
+    workspace: "w1",
+    present: [],
+    ...p,
+  });
+
+  it("replaces the roster wholesale on every event", () => {
+    const apply = useCanvasStore.getState().applyPresence;
+    apply(payload({ present: [sse("c1", "browser"), writer("claude-code")] }));
+    expect(useCanvasStore.getState().presence).toHaveLength(2);
+    // The server always sends the full roster, so a shrunken one replaces
+    // rather than merges — no client-side reconciliation.
+    apply(payload({ present: [sse("c1", "browser")] }));
+    const { presence } = useCanvasStore.getState();
+    expect(presence.map((e) => e.label)).toEqual(["browser"]);
+  });
+
+  it("keeps the self id from the initial roster on later broadcasts", () => {
+    const apply = useCanvasStore.getState().applyPresence;
+    apply(payload({ present: [sse("c1", "browser")], you: "c1" }));
+    expect(useCanvasStore.getState().presenceSelfId).toBe("c1");
+    // `you` rides only the first event after (re)connect.
+    apply(payload({ present: [sse("c1", "browser"), sse("c2", "monitor")] }));
+    expect(useCanvasStore.getState().presenceSelfId).toBe("c1");
+  });
+
+  it("tolerates a malformed roster and clears on reset", () => {
+    const apply = useCanvasStore.getState().applyPresence;
+    apply({ workspace: "w1", present: undefined as never, you: "c1" });
+    expect(useCanvasStore.getState().presence).toEqual([]);
+
+    apply(payload({ present: [sse("c1", "browser")], you: "c1" }));
+    useCanvasStore.getState().reset();
+    const s = useCanvasStore.getState();
+    expect(s.presence).toEqual([]);
+    expect(s.presenceSelfId).toBeNull();
   });
 });

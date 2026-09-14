@@ -35,12 +35,14 @@ class FsWorkspaceStore:
         # Defence-in-depth: even if a caller skipped boundary validation,
         # we refuse to construct a path outside the canvases root.
         validate_workspace_slug(slug)
-        target = self.root / slug
-        # ``resolve(strict=False)`` follows existing symlinks but does not
-        # error on missing trailing segments — exactly what we want for a
-        # workspace that hasn't been created yet.
-        assert_within(target, self.root)
-        return target
+        # Inline normalise-then-prefix-check (not delegated): every canvas
+        # path in this store is built from the directory returned here, and
+        # the analyzer only recognises the barrier in the building function.
+        base = os.path.realpath(os.fspath(self.root))
+        candidate = os.path.normpath(os.path.join(base, slug))
+        if not candidate.startswith(base + os.sep):
+            raise UnsafeUploadError(f"workspace slug {slug!r} escapes {self.root!s}")
+        return Path(candidate)
 
     async def list_workspaces(self) -> list[WorkspaceMeta]:
         out: list[WorkspaceMeta] = []

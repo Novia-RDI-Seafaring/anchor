@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { CanvasGraph } from "@/canvas/CanvasGraph";
+import { PresenceStrip } from "@/canvas/PresenceStrip";
 import { breadcrumb } from "@/canvas/breadcrumb";
 import { PageWithBboxViewer } from "@/canvas/primitives/viewers/PageWithBboxViewer";
 import { CanvasShell } from "@/shell/CanvasShell";
@@ -108,6 +109,7 @@ export function CanvasPage() {
         </nav>
         <div className="text-sm font-semibold">{id}</div>
         <div className="flex items-center gap-3 text-xs text-neutral-500">
+          <PresenceStrip />
           <span>drag from the palette · drop a PDF · click a file to open it</span>
           <a
             href={`/m/${id}`}
