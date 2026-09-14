@@ -200,7 +200,8 @@ async def raw_pdf(slug: str, store: DocStore = Depends(get_doc_store)):
     # `format=base64` instead.
     if str(path).startswith("memory://"):
         raise HTTPException(501, "in-memory store cannot serve raw PDF over HTTP; use MCP get_pdf with format=base64")
-    filename = path.name
+    index = await store.get_index(slug)
+    filename = ((index or {}).get("document") or {}).get("filename") or f"{slug}.pdf"
     return FileResponse(path, media_type="application/pdf", filename=filename)
 
 

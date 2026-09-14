@@ -33,6 +33,7 @@ from anchor.core.clock import Clock, SystemClock
 from anchor.core.events.envelope import DomainEvent
 from anchor.core.ids import new_event_id, slugify
 from anchor.core.ports.event_bus import EventBus
+from anchor.core.upload_safety import safe_upload_name
 from anchor.extensions.anchor_pdfs.core.events import (
     DocBronzed,
     DocGoldExtracted,
@@ -59,6 +60,7 @@ from anchor.extensions.anchor_pdfs.core.silver import (
     region_search_text,
     render_pages_md,
 )
+from anchor.extensions.anchor_pdfs.core.source_identity import original_source
 
 PROTOCOL_VERSION = 2
 
@@ -208,6 +210,8 @@ class IngestSessionService:
         """Mechanical front half + open (or resume) a session for `slug`."""
         dpi = self.default_dpi if dpi is None else dpi
         slug = slug or slugify(Path(filename).stem)
+        filename = safe_upload_name(filename, allowed_extensions={".pdf"})
+        source = original_source(pdf_bytes, slug)
 
         # Same idempotency contract as the keyed pipeline: published gold
         # short-circuits unless forced.
@@ -225,14 +229,16 @@ class IngestSessionService:
         if existing is not None:
             if not force:
                 return self._work_order(existing, resumed=True)
-            await self.ingest_abort(existing["session_id"])
 
-        bronze_path = await self.doc_store.stash_bronze(pdf_bytes, filename)
+        bronze_path = await self.doc_store.stash_bronze(pdf_bytes, filename, slug=slug)
+        if existing is not None:
+            await self.ingest_abort(existing["session_id"])
         await self._publish(DocBronzed(slug=slug, bronze_path=str(bronze_path)))
 
         # Boundary normaliser (#281): top-left PDF points regardless of extractor.
         docling = normalize_items(await self.extractor.extract(bronze_path))
         index = build_index(docling, filename=filename)
+        index["document"]["source"] = source
         pages_md = render_pages_md(docling)
         pages_meta = build_pages_meta(docling)
         page_candidates = build_page_candidates(docling)

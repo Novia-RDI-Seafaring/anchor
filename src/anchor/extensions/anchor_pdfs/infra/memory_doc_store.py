@@ -8,7 +8,9 @@ from datetime import UTC
 from pathlib import Path
 from typing import Any
 
+from anchor.core.upload_safety import safe_upload_name
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
+from anchor.extensions.anchor_pdfs.core.source_identity import SourceIdentityError, original_source
 from anchor.extensions.anchor_pdfs.infra._region_normalize import _normalise_regions
 
 
@@ -32,7 +34,8 @@ class MemoryDocStore:
         self._regions: dict[tuple[str, int], list[dict[str, Any]]] = {}
         self._gold_maps: dict[str, dict[str, Any]] = {}
         self._crops: dict[tuple[str, str], bytes] = {}
-        self._bronze: dict[str, bytes] = {}
+        self._bronze: dict[tuple[str, str], bytes] = {}
+        self._original_sources: dict[str, dict[str, str]] = {}
         self._embeddings: dict[str, dict[str, Any]] = {}
         self._candidates: dict[tuple[str, int], list[dict[str, Any]]] = {}
         # Gold completeness markers: slug -> marker dict ({"complete": bool, ...}).
@@ -230,19 +233,25 @@ class MemoryDocStore:
         return None
 
     async def get_raw_pdf_path(self, slug: str) -> Path | None:
-        idx = self._indexes.get(slug)
-        filename = ((idx or {}).get("document") or {}).get("filename")
-        if filename and filename in self._bronze:
-            # Memory store has no real filesystem path; surface a `memory://`
-            # URI so callers can detect this case and fall back to a
-            # base64 transport.
-            return Path(f"memory://bronze/{filename}")
+        index = self._indexes.get(slug)
+        source = (index or {}).get("document", {}).get("source")
+        if index is None:
+            source = self._original_sources.get(slug)
+        if source is not None:
+            if not isinstance(source, dict) or source.get("slug") != slug:
+                raise SourceIdentityError("original source ownership does not match document identity")
+            digest = source.get("sha256")
+            if isinstance(digest, str) and (slug, digest) in self._bronze:
+                return Path(f"memory://bronze/{slug}/{digest}.pdf")
         return None
 
-    async def stash_bronze(self, pdf_bytes: bytes, filename: str) -> Path:
+    async def stash_bronze(self, pdf_bytes: bytes, filename: str, *, slug: str) -> Path:
+        safe_upload_name(filename, allowed_extensions={".pdf"})
+        source = original_source(pdf_bytes, slug)
         async with self._lock:
-            self._bronze[filename] = pdf_bytes
-        return Path(f"memory://bronze/{filename}")
+            self._bronze[slug, source["sha256"]] = pdf_bytes
+            self._original_sources[slug] = source
+        return Path(f"memory://bronze/{slug}/{source['sha256']}.pdf")
 
     async def write_silver_artifact(self, slug: str, name: str, payload: bytes | str) -> Path:
         # In-memory store dispatches to specific keys based on filename convention.

@@ -9,6 +9,7 @@ from anchor.core.clock import Clock, SystemClock
 from anchor.core.events.envelope import DomainEvent
 from anchor.core.ids import new_event_id, slugify
 from anchor.core.ports.event_bus import EventBus
+from anchor.core.upload_safety import safe_upload_name
 from anchor.extensions.anchor_pdfs.core.document_retrieval import DocumentRetrieval
 from anchor.extensions.anchor_pdfs.core.events import (
     DocBronzed,
@@ -45,6 +46,7 @@ from anchor.extensions.anchor_pdfs.core.silver import (
     normalize_items,
     render_pages_md,
 )
+from anchor.extensions.anchor_pdfs.core.source_identity import original_source
 from anchor.extensions.anchor_pdfs.core.synopsis_service import (
     SynopsisService as _SynopsisService,
 )
@@ -114,6 +116,8 @@ class IngestService:
         region_model = region_model or self.default_region_model
         dpi = self.default_dpi if dpi is None else dpi
         slug = slug or slugify(Path(filename).stem)
+        filename = safe_upload_name(filename, allowed_extensions={".pdf"})
+        source = original_source(pdf_bytes, slug)
 
         # Idempotent by contract: if this slug is already gold-extracted, skip the
         # whole (billed, overwriting) pipeline unless the caller forces a fresh
@@ -131,6 +135,8 @@ class IngestService:
             }
         publish_workspace_id = workspace_id or self._gid
         ingest_started_at = self.clock.now()
+        # Reject identity conflicts before publishing even an activity record.
+        bronze_path = await self.store.stash_bronze(pdf_bytes, filename, slug=slug)
         # Live activity record (issue #51): updated through the store as each
         # stage advances so the project-level "what is ingesting" surface sees
         # this run cross-process and after a restart. Bookkeeping only; a
@@ -178,10 +184,8 @@ class IngestService:
                 **fields,
             })
 
-        bronze_path: Path | None = None
         try:
-            stage_started_at = self.clock.now()
-            bronze_path = await self.store.stash_bronze(pdf_bytes, filename)
+            stage_started_at = ingest_started_at
             finish_stage("bronze", stage_started_at, output_path=str(bronze_path))
             await self._publish(DocBronzed(slug=slug, bronze_path=str(bronze_path)), publish_workspace_id)
 
@@ -224,6 +228,7 @@ class IngestService:
             current_stage = "silver_index"
             stage_started_at = self.clock.now()
             index = build_index(docling, filename=filename)
+            index["document"]["source"] = source
             pages_md = render_pages_md(docling)
             pages_meta = build_pages_meta(docling)
             page_candidates = build_page_candidates(docling)

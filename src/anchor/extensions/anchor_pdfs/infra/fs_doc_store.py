@@ -1,10 +1,11 @@
 """Filesystem-backed DocStore.
 
-Mirrors the on-disk layout the v1 packages already use, so v1 and v2 can
-read/write the same data dir during migration:
+Owns document-addressed originals and slug-addressed extraction artifacts.
+Flat legacy originals remain readable only with unambiguous ownership:
 
     data_dir/
-        bronze/<filename>.pdf
+        bronze/<slug>/<sha256>.pdf
+        bronze/<slug>/original.json
         silver/<slug>/
             index.json
             pages.meta.json
@@ -16,18 +17,22 @@ read/write the same data dir during migration:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
+from uuid import uuid4
 
 import aiofiles
 
+from anchor.core.ids import validate_workspace_slug
 from anchor.core.upload_safety import UnsafeUploadError, assert_within, safe_upload_name
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
+from anchor.extensions.anchor_pdfs.core.source_identity import SourceIdentityError, original_source
 from anchor.extensions.anchor_pdfs.infra._region_normalize import _normalise_regions
 
 #: How long a stale ingest lock file may sit before another writer reclaims it.
@@ -417,29 +422,174 @@ class FsDocStore:
         return resolved if resolved.exists() else None
 
     async def get_raw_pdf_path(self, slug: str) -> Path | None:
-        # bronze/ uses the original filename, not the slug — recover from
-        # the silver index which carries `document.filename`.
-        index = await self.get_index(slug)
-        if not index:
+        base = self._original_dir(slug)
+        try:
+            index = await self.get_index(slug)
+            if index is None and (self.silver / slug / "index.json").exists():
+                raise ValueError
+            if index is not None and (not isinstance(index, dict) or not isinstance(index.get("document"), dict)):
+                raise ValueError
+            document = index["document"] if index is not None else {}
+        except (OSError, ValueError, AttributeError) as exc:
+            raise SourceIdentityError("document source metadata is inconsistent") from exc
+        if "source" in document:
+            return self._verified_original(base, slug, document["source"])
+        if index is None and (base / "original.json").exists():
+            return self._verified_original(base, slug, self._original_record(base))
+        if index is None:
             return None
-        filename = (index.get("document") or {}).get("filename")
-        if not filename:
-            return None
-        p = self.bronze / filename
-        return p if p.is_file() else None
+        return self._legacy_original(slug, document)
 
-    async def stash_bronze(self, pdf_bytes: bytes, filename: str) -> Path:
-        # Defence-in-depth: re-validate the filename here so direct
-        # callers (CLI ``anchor ingest``, tests, future agents) get the
-        # same protection the HTTP upload route applies. ``safe_upload_name``
-        # rejects path components and a non-pdf extension; ``assert_within``
-        # rejects any residual escape via the resolved path.
+    def _legacy_original(self, slug: str, document: dict[str, Any]) -> Path | None:
+        """Read only: filename lookup requires a proven legacy ownership set."""
+        try:
+            filename = safe_upload_name(document.get("filename"), allowed_extensions={".pdf"})
+            path = assert_within(self.bronze / filename, self.bronze)
+            if not path.is_file():
+                return None
+            owners = []
+            for directory in self.silver.iterdir():
+                index_path = directory / "index.json"
+                if not index_path.is_file():
+                    continue
+                assert_within(index_path, self.silver)
+                candidate = json.loads(index_path.read_text(encoding="utf-8"))["document"]
+                # Keep competing filename claims even after re-ingestion.
+                # Dropping a modernized owner would make an old conflict look
+                # unambiguous without establishing whose bytes survived.
+                name = safe_upload_name(candidate.get("filename"), allowed_extensions={".pdf"})
+                other = assert_within(self.bronze / name, self.bronze)
+                if os.path.normcase(str(other)) == os.path.normcase(str(path)):
+                    owners.append((directory.name, candidate.get("source_sha256")))
+            # A renamed/re-ingested document still claimed its old original.
+            # Retain that evidence so modernization cannot erase a conflict.
+            for directory in self.bronze.iterdir():
+                if not directory.is_dir() or not (directory / "original.json").exists():
+                    continue
+                record = self._original_record(directory)
+                if record.get("slug") != directory.name:
+                    raise SourceIdentityError("legacy original ownership metadata is inconsistent")
+                for claim in record.get("legacy_sources", []):
+                    name = safe_upload_name(claim["filename"], allowed_extensions={".pdf"})
+                    other = assert_within(self.bronze / name, self.bronze)
+                    if os.path.normcase(str(other)) == os.path.normcase(str(path)):
+                        owners.append((directory.name, claim.get("source_sha256")))
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            if not any(owner == slug for owner, _ in owners):
+                raise SourceIdentityError("legacy original ownership is inconsistent")
+            if len({owner for owner, _ in owners}) > 1 and not all(fingerprint == digest for _, fingerprint in owners):
+                raise SourceIdentityError(
+                    "legacy original has ambiguous ownership; recover each document's original and re-ingest"
+                )
+            if any(fingerprint is not None and fingerprint != digest for _, fingerprint in owners):
+                raise SourceIdentityError("legacy original fingerprint mismatch; recover the original")
+            return path
+        except SourceIdentityError:
+            raise
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise SourceIdentityError("legacy source metadata is unsafe or inconsistent") from exc
+
+    def _original_dir(self, slug: str) -> Path:
+        validate_workspace_slug(slug)
+        if slug.endswith(".") or PureWindowsPath(slug).is_reserved():
+            raise SourceIdentityError("document slug aliases a reserved filesystem name")
+        try:
+            for root in (self.bronze, self.silver):
+                if any(p.name != slug and p.name.casefold() == slug.casefold() for p in root.iterdir()):
+                    raise SourceIdentityError("document slug conflicts with an existing filesystem identity")
+            base = assert_within(self.bronze / slug, self.bronze)
+            if (self.bronze / slug).is_symlink() or (self.silver / slug).is_symlink():
+                raise SourceIdentityError("original storage has conflicting ownership")
+            assert_within(self.silver / slug / "index.json", self.silver)
+            return base
+        except (UnsafeUploadError, OSError) as exc:
+            raise SourceIdentityError("original storage path is unsafe or conflicting") from exc
+
+    @staticmethod
+    def _original_record(base: Path) -> dict[str, Any]:
+        try:
+            path = assert_within(base / "original.json", base)
+            record = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(record, dict):
+                raise ValueError
+            return record
+        except (OSError, ValueError) as exc:
+            raise SourceIdentityError("original source metadata is invalid; recover the original") from exc
+
+    @staticmethod
+    def _verified_original(base: Path, slug: str, source: Any) -> Path | None:
+        if not isinstance(source, dict) or source.get("slug") != slug:
+            raise SourceIdentityError("original source ownership does not match document identity")
+        digest = source.get("sha256")
+        if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+            raise SourceIdentityError("original source fingerprint is invalid")
+        try:
+            path = assert_within(base / f"{digest}.pdf", base)
+            if not path.is_file():
+                return None
+            if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+                raise SourceIdentityError("original source fingerprint mismatch; recover the original")
+            return path
+        except OSError as exc:
+            raise SourceIdentityError("original source cannot be read") from exc
+        except UnsafeUploadError as exc:
+            raise SourceIdentityError("original source is unsafe or its fingerprint does not match") from exc
+
+    async def stash_bronze(self, pdf_bytes: bytes, filename: str, *, slug: str) -> Path:
         clean = safe_upload_name(filename, allowed_extensions={".pdf"})
-        async with self._lock:
-            target = self.bronze / clean
-            assert_within(target, self.bronze)
-            async with aiofiles.open(target, "wb") as f:
-                await f.write(pdf_bytes)
+        source = original_source(pdf_bytes, slug)
+        base = self._original_dir(slug)
+        if base.exists() and not base.is_dir():
+            raise SourceIdentityError("original storage conflicts with an existing legacy file")
+        # Serializes even filesystem aliases of a slug. The exact recorded
+        # owner must also agree (Windows treats case variants as one path).
+        async with self.ingest_lock(slug):
+            record_path = base / "original.json"
+            previous = self._original_record(base) if record_path.exists() else {}
+            if record_path.exists() and previous.get("slug") != slug:
+                raise SourceIdentityError("original storage belongs to a different document slug")
+            try:
+                legacy_sources = previous.get("legacy_sources", [])
+                if not isinstance(legacy_sources, list):
+                    raise SourceIdentityError("original ownership history is invalid")
+                for claim in legacy_sources:
+                    if not isinstance(claim, dict):
+                        raise SourceIdentityError("original ownership history is invalid")
+                    safe_upload_name(claim.get("filename"), allowed_extensions={".pdf"})
+                index = await self.get_index(slug)
+                if index is None and (self.silver / slug / "index.json").exists():
+                    raise SourceIdentityError("document source metadata is inconsistent")
+                if index is not None:
+                    if not isinstance(index, dict) or not isinstance(index.get("document"), dict):
+                        raise SourceIdentityError("document source metadata is inconsistent")
+                    document = index["document"]
+                    if "source" not in document:
+                        claim = {"filename": safe_upload_name(document.get("filename"), allowed_extensions={".pdf"})}
+                        if "source_sha256" in document:
+                            claim["source_sha256"] = document["source_sha256"]
+                        if claim not in legacy_sources:
+                            legacy_sources = [*legacy_sources, claim]
+                target = assert_within(base / f"{source['sha256']}.pdf", base)
+                record_path = assert_within(record_path, base)
+                if target.exists():
+                    if self._verified_original(base, slug, source) is None:
+                        raise SourceIdentityError("original source target is not a file")
+                else:
+                    base.mkdir(parents=True, exist_ok=True)
+                    tmp = base / f"{uuid4().hex}.tmp"
+                    try:
+                        tmp.write_bytes(pdf_bytes)
+                        os.replace(tmp, target)
+                    finally:
+                        tmp.unlink(missing_ok=True)
+                tmp = base / f"{uuid4().hex}.tmp"
+                try:
+                    tmp.write_text(json.dumps({**source, "filename": clean, "legacy_sources": legacy_sources}), encoding="utf-8")
+                    os.replace(tmp, record_path)
+                finally:
+                    tmp.unlink(missing_ok=True)
+            except (OSError, ValueError) as exc:
+                raise SourceIdentityError("original source could not be stored safely") from exc
             return target
 
     async def write_silver_artifact(self, slug: str, name: str, payload: bytes | str) -> Path:

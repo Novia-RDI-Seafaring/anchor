@@ -96,8 +96,12 @@ class DocStore(Protocol):
         store internals."""
         raise NotImplementedError
 
-    async def stash_bronze(self, pdf_bytes: bytes, filename: str) -> Path:
-        """Write a raw PDF into bronze/. Returns path."""
+    async def stash_bronze(self, pdf_bytes: bytes, filename: str, *, slug: str) -> Path:
+        """Store document-owned original bytes; filename is display metadata.
+
+        Returns an immutable source path for extraction. Ownership conflicts
+        raise SourceIdentityError before any source or derived publication.
+        """
         raise NotImplementedError
 
     async def write_silver_artifact(self, slug: str, name: str, payload: bytes | str) -> Path:

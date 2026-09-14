@@ -105,7 +105,7 @@ Each project is a folder with a hidden `.anchor_data/` holding its corpus.
 A project you create here is managed under the environment:
 
 ~/.anchor/envs/<env>/projects/<project>/.anchor_data/
-  bronze/<filename>.pdf
+  bronze/<slug>/<sha256>.pdf
   silver/<slug>/{index.json, pages/}
   gold/<slug>/{pages/<n>.regions.json, pages/<n>/<region-id>.png}
   canvases/<slug>/{meta.json, state.json, events.jsonl}

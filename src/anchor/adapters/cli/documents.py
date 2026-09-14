@@ -544,7 +544,11 @@ def pdf(
 ) -> None:
     """The original bronze-layer PDF for a document."""
     _, _, _, _, doc_store = _build_real_services(data_dir)
-    path = asyncio.run(doc_store.get_raw_pdf_path(slug))
+    try:
+        path = asyncio.run(doc_store.get_raw_pdf_path(slug))
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2) from None
     _emit_bytes(path, copy_to=copy_to, out=out, label=f"{slug} pdf")
 
 
