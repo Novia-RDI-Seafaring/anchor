@@ -174,6 +174,10 @@ class FsDocStore:
             if not d.is_dir():
                 continue
             slug = d.name
+            try:
+                self._doc_dir(self.silver, slug)
+            except UnsafeUploadError:
+                continue
             idx_path = d / "index.json"
             page_count = 0
             title = slug
@@ -237,7 +241,7 @@ class FsDocStore:
     # the gold loop finished.
 
     def _read_ingest_report(self, slug: str) -> dict[str, Any] | None:
-        p = self.silver / slug / "ingest-report.json"
+        p = self._doc_dir(self.silver, slug) / "ingest-report.json"
         if not p.is_file():
             return None
         try:
@@ -247,7 +251,7 @@ class FsDocStore:
         return data if isinstance(data, dict) else None
 
     def _read_gold_marker(self, slug: str) -> dict[str, Any] | None:
-        p = self.gold / slug / GOLD_COMPLETE_MARKER
+        p = self._doc_dir(self.gold, slug) / GOLD_COMPLETE_MARKER
         if not p.is_file():
             return None
         try:
@@ -259,7 +263,7 @@ class FsDocStore:
     def _count_gold_regions(self, slug: str) -> int:
         """Count regions actually present on disk in gold/<slug>/pages/."""
         total = 0
-        for rf in (self.gold / slug / "pages").glob("*.regions.json"):
+        for rf in (self._doc_dir(self.gold, slug) / "pages").glob("*.regions.json"):
             try:
                 rdata = json.loads(rf.read_text(encoding="utf-8"))
             except (ValueError, OSError):
@@ -318,7 +322,7 @@ class FsDocStore:
         return self._gold_complete(slug)
 
     async def mark_gold_complete(self, slug: str, meta: dict[str, Any]) -> Path:
-        target = self.gold / slug / GOLD_COMPLETE_MARKER
+        target = self._doc_dir(self.gold, slug) / GOLD_COMPLETE_MARKER
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps({"complete": True, **meta}, indent=2)
         # Atomic commit: write a sibling temp file, then rename over the
@@ -330,7 +334,7 @@ class FsDocStore:
         return target
 
     async def clear_gold_complete(self, slug: str) -> None:
-        target = self.gold / slug / GOLD_COMPLETE_MARKER
+        target = self._doc_dir(self.gold, slug) / GOLD_COMPLETE_MARKER
         if not target.parent.is_dir():
             return
         payload = json.dumps({"complete": False})
@@ -351,7 +355,7 @@ class FsDocStore:
         return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
     async def get_pages_meta(self, slug: str) -> dict[str, Any] | None:
-        p = self.silver / slug / "pages.meta.json"
+        p = self._doc_dir(self.silver, slug) / "pages.meta.json"
         return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
     async def get_page_text(self, slug: str, page: int) -> str | None:
