@@ -429,14 +429,15 @@ def test_legacy_inconsistent_corpus_is_retained_but_not_merged_on_replacement(tm
     asyncio.run(run())
 
 
-def test_g4_removes_polished_members_without_changing_g5_same_page_precedence(tmp_path):
+def test_replacement_does_not_inherit_polished_text_from_any_old_page(tmp_path):
     async def run():
         store = FsDocStore(tmp_path)
         await pipeline(store, [["A"], ["REMOVE ME"]]).ingest_pdf(b"A", "doc.pdf")
         await store.write_silver_artifact("doc", "pages/1.md", "OLD POLISHED")
         await store.write_silver_artifact("doc", "pages/2.md", "REMOVED POLISHED")
         await pipeline(store, [["B"]]).ingest_pdf(b"B", "doc.pdf", force=True, polish=False)
-        assert await store.get_page_text("doc", 1) == "OLD POLISHED"
+        assert "B" in await store.get_page_text("doc", 1)
+        assert "POLISHED" not in await store.get_page_text("doc", 1)
         assert await store.get_page_text("doc", 2) is None
         assert all("POLISHED" not in v["text"] for v in (await store.get_embeddings("doc"))["vectors"])
     asyncio.run(run())

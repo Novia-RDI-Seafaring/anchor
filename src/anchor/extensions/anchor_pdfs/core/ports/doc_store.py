@@ -21,10 +21,10 @@ class DocStore(Protocol):
         raise NotImplementedError
 
     async def begin_replacement(self, slug: str, pages: list[int]) -> str:
-        """Create an isolated replacement. Retain only same-page polished text.
+        """Create an isolated replacement without inherited page artifacts.
 
-        Gold, crops, raw extraction and embeddings start empty. Retaining
-        polished text preserves the separate, existing same-page policy.
+        Raw and polished text, gold, crops and embeddings start empty.
+        Optional polished output must be produced for this candidate.
         """
         raise NotImplementedError
 
@@ -67,6 +67,11 @@ class DocStore(Protocol):
         raise NotImplementedError
 
     async def get_page_text(self, slug: str, page: int) -> str | None:
+        """Prefer proven current-generation polish, otherwise current raw.
+
+        Published polish membership comes from the selected generation's
+        successful producer report, never from inherited file presence.
+        """
         raise NotImplementedError
 
     async def get_page_image_path(self, slug: str, page: int) -> Path | None:

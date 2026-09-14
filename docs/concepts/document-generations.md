@@ -29,6 +29,12 @@ successful report, matching metadata, complete raw/image/candidate artifacts,
 gold inside that page set, and embeddings that refer only to candidate gold.
 Skipping regions intentionally publishes no old gold or embeddings.
 
+Raw and optional polished page text are produced inside the same candidate.
+The successful ingest report lists the pages actually polished by that run.
+Publication validates this `polished_pages` inventory against page membership
+and existing polished files, then records it in the current generation pointer.
+A file found on disk cannot add itself to that inventory.
+
 `publish_replacement` adds the generation id and page set to the index and
 atomically replaces `.current.json`. The pointer binds that id, source hash,
 page set, initial gold inventory and embedding presence. One pointer selects
@@ -47,7 +53,7 @@ each other's trees. Old trees remain readable for already-pinned operations.
 | --- | --- |
 | Index and source metadata | Candidate-owned, switched by the pointer |
 | Page metadata, raw text, candidates, images | Complete new rendered page set |
-| Polished text | Only matching page numbers carry forward; see G5 below |
+| Polished text | Empty candidate; only polish produced by this run is published |
 | Gold and table slices | Empty candidate, populated only by this run |
 | Crops | Empty candidate, no inherited old-region images |
 | Embeddings | Empty candidate; rebuilt from candidate gold if configured |
@@ -87,7 +93,7 @@ does not delete abandoned candidates, old trees or original hashes. Garbage
 collection is outside this contract. Initial ingestion retains its existing
 publication behavior; staging applies when a prior index exists.
 
-## Legacy corpora and deferred G5
+## Legacy corpora
 
 Without a pointer, existing corpora retain their legacy read behavior. A
 coherent completed corpus remains usable. Stale extra pages, missing pages,
@@ -96,8 +102,27 @@ A successful explicit replacement creates an authoritative new set without
 deleting or guessing ownership of historical files. Re-embedding alone does
 not repair a legacy mixed corpus; re-extraction/replacement is required.
 
-G4 removes obsolete members. G5 concerns stale polished text on a retained
-page. To keep those changes separate, the candidate carries forward polished
-text only for retained page numbers and does not alter polished/raw precedence.
-G5 can use this candidate seam later to change that policy. G6 source
-enrichment parity is unchanged.
+## Page-text freshness (G5)
+
+`get_page_text` pins the selected generation. It prefers a page's polished
+file only when that page is in the pinned publication's `polished_pages`.
+Otherwise it returns that generation's raw text, or unavailable if raw is
+missing. A missing approved polished file also falls back to raw. Candidate
+readers use the successful producer report; before that report they read raw.
+Later report changes cannot change the published inventory. New polishing of
+a published document requires a fresh ingest generation.
+
+`--skip-polish` and a harness submission without `polished_md` can publish
+raw-only. A built-in polisher exception still prevents publication, retaining
+the previous complete generation. Optional/mandatory policy is unchanged.
+Same-page source replacement never copies old polish. Old generation trees
+and pinned readers remain intact; no file deletion is needed for correctness.
+
+Pre-G5 G4 pointers lack the polished inventory and may contain inherited
+polish. They conservatively select current raw, even if the old polished file
+is present. No timestamp, filename, page number or polish count proves
+freshness. Invalid inventory also falls back to raw. Flat legacy corpora
+without generation pointers keep their existing compatibility behavior;
+explicit replacement establishes the generation contract. There is no
+automatic repair of historical claims or files. G6 source enrichment parity
+is unchanged.

@@ -572,6 +572,7 @@ class IngestSessionService:
             "finalize_duration_seconds": round(max(0.0, finished_at - started_at), 3),
             "page_count": session.get("page_count", 0),
             "polished_page_count": len(polished_pages),
+            "polished_pages": polished_pages,
             "region_count": region_count,
             "coverage_fallback_count": coverage_fallback_count,
             "embedded_count": embedded_count,

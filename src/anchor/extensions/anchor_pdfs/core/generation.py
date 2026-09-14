@@ -1,5 +1,14 @@
-"""Complete replacement page membership, including pages without text items."""
+"""Complete replacement page and polished-artifact membership."""
 from typing import Any
+
+
+def polished_membership(metadata: dict[str, Any]) -> list[int]:
+    """Missing producer evidence means no proven polished pages (pre-G5)."""
+    pages = metadata.get("polished_pages", [])
+    if (not isinstance(pages, list) or any(type(p) is not int or p < 1 for p in pages)
+            or len(pages) != len(set(pages))):
+        raise ValueError("invalid polished page membership")
+    return pages
 
 
 def complete_pages(

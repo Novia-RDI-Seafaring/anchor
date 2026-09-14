@@ -32,6 +32,7 @@ import aiofiles
 
 from anchor.core.ids import validate_workspace_slug
 from anchor.core.upload_safety import UnsafeUploadError, assert_within, safe_upload_name
+from anchor.extensions.anchor_pdfs.core.generation import polished_membership
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
 from anchor.extensions.anchor_pdfs.core.source_identity import SourceIdentityError, original_source
 from anchor.extensions.anchor_pdfs.infra._generation import document_view
@@ -137,11 +138,6 @@ class FsDocStore:
         (base / ".replacement.json").write_text(json.dumps({
             "parent": old._pinned[slug],
         }), encoding="utf-8")
-        # G4 removes members. Same-page polished precedence belongs to G5.
-        for page in pages:
-            previous = old._doc_dir(self.silver, slug) / "pages" / f"{int(page)}.md"
-            if previous.is_file():
-                await view.write_silver_artifact(slug, f"pages/{int(page)}.md", previous.read_text(encoding="utf-8"))
         return token
 
     async def publish_replacement(self, slug: str, generation: str, pages: list[int]) -> None:
@@ -162,6 +158,11 @@ class FsDocStore:
             base = view._doc_dir(self.silver, slug) / "pages"
             if any(not (base / f"{page}{suffix}").is_file() for suffix in (".raw.md", ".png", ".candidates.json")):
                 raise SourceIdentityError("replacement silver page is incomplete")
+        polished = polished_membership(report)
+        if not set(polished).issubset(membership) or any(
+            not (view._doc_dir(self.silver, slug) / "pages" / f"{page}.md").is_file() for page in polished
+        ):
+            raise SourceIdentityError("replacement polished page is incomplete or outside current membership")
         gold = (await view.get_regions(slug))["pages"]
         if not set(gold).issubset(membership):
             raise SourceIdentityError("replacement gold is outside current page membership")
@@ -173,7 +174,7 @@ class FsDocStore:
         parent = json.loads((base / ".replacement.json").read_text(encoding="utf-8"))["parent"]
         manifest = {"version": 1, "generation": generation, "source": index["document"]["source"],
                     "pages": membership, "gold": {str(p): [r["id"] for r in rs] for p, rs in gold.items()},
-                    "embedded": embeddings is not None}
+                    "embedded": embeddings is not None, "polished_pages": polished}
         index["document"]["generation"] = {"id": generation, "pages": membership}
         await view.write_silver_artifact(slug, "index.json", json.dumps(index))
         # The only publication point switches both derived trees and source.
@@ -487,7 +488,19 @@ class FsDocStore:
     @document_view
     async def get_page_text(self, slug: str, page: int) -> str | None:
         pages = self._doc_dir(self.silver, slug) / "pages"
-        for name in (f"{int(page)}.md", f"{int(page)}.raw.md"):
+        names = (f"{int(page)}.md", f"{int(page)}.raw.md")
+        if self._pinned.get(slug) is not None:
+            proof = self._published.get(slug)
+            if proof is None:
+                report = self._read_ingest_report(slug) or {}
+                proof = report if report.get("status") == "success" else {}
+            try:
+                polished = polished_membership(proof)
+            except ValueError:
+                polished = []
+            if page not in polished:
+                names = (f"{int(page)}.raw.md",)
+        for name in names:
             p = pages / name
             if p.exists():
                 return p.read_text(encoding="utf-8")

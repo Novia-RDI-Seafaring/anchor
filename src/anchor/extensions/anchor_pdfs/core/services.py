@@ -391,6 +391,7 @@ class IngestService:
                 "duration_seconds": round(max(0.0, ingest_finished_at - ingest_started_at), 3),
                 "page_count": page_count,
                 "polished_page_count": len(polished_pages),
+                "polished_pages": polished_pages,
                 "region_count": region_count,
                 "invalid_region_count": invalid_region_count,
                 "coverage_fallback_count": coverage_fallback_count,

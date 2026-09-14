@@ -11,6 +11,7 @@ from typing import Any
 from uuid import uuid4
 
 from anchor.core.upload_safety import safe_upload_name
+from anchor.extensions.anchor_pdfs.core.generation import polished_membership
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
 from anchor.extensions.anchor_pdfs.core.source_identity import SourceIdentityError, original_source
 from anchor.extensions.anchor_pdfs.infra._generation import document_view
@@ -33,6 +34,8 @@ class MemoryDocStore:
         self._indexes: dict[str, dict[str, Any]] = {}
         self._pages_meta: dict[str, dict[str, Any]] = {}
         self._page_text: dict[tuple[str, int], str] = {}
+        self._raw_page_text: dict[tuple[str, int], str] = {}
+        self._published_polished: frozenset[int] | None = None
         self._page_images: dict[tuple[str, int], bytes] = {}
         self._regions: dict[tuple[str, int], list[dict[str, Any]]] = {}
         self._gold_maps: dict[str, dict[str, Any]] = {}
@@ -90,9 +93,6 @@ class MemoryDocStore:
         candidate._parent = old._generation
         candidate._bronze = self._root._bronze
         candidate._original_sources = self._root._original_sources
-        for page in pages:
-            if (slug, page) in old._polished:
-                await candidate.write_silver_artifact(slug, f"pages/{page}.md", old._page_text[slug, page])
         self._root._generations[slug, candidate._generation] = candidate
         return candidate._generation
 
@@ -106,6 +106,9 @@ class MemoryDocStore:
                 or any((slug, page) not in candidate._raw_pages or (slug, page) not in candidate._page_images
                        or (slug, page) not in candidate._candidates for page in pages)):
             raise SourceIdentityError("replacement is incomplete or has inconsistent page membership")
+        polished = polished_membership(candidate._reports[slug])
+        if not set(polished).issubset(pages) or any((slug, p) not in candidate._polished for p in polished):
+            raise SourceIdentityError("replacement polished page is incomplete or outside current membership")
         gold = (await candidate.get_regions(slug))["pages"]
         if not set(gold).issubset(pages):
             raise SourceIdentityError("replacement gold is outside current page membership")
@@ -120,6 +123,7 @@ class MemoryDocStore:
                 return
             if current != candidate._parent:
                 raise SourceIdentityError("replacement was superseded; begin a fresh ingest")
+            candidate._published_polished = frozenset(polished)
             self._root._current[slug] = candidate
 
     @asynccontextmanager
@@ -213,6 +217,16 @@ class MemoryDocStore:
 
     @document_view
     async def get_page_text(self, slug: str, page: int) -> str | None:
+        if self._generation is not None:
+            polished = self._published_polished
+            if polished is None:
+                report = self._reports.get(slug, {})
+                try:
+                    polished = frozenset(polished_membership(report)) if report.get("status") == "success" else frozenset()
+                except ValueError:
+                    polished = frozenset()
+            if page not in polished:
+                return self._raw_page_text.get((slug, page))
         return self._page_text.get((slug, page))
 
     @document_view
@@ -376,6 +390,7 @@ class MemoryDocStore:
             self._page_text[(slug, int(m.group(1)))] = payload
             self._polished.add((slug, int(m.group(1))))
         elif (m := re.fullmatch(r"pages/(\d+)\.raw\.md", name)) and isinstance(payload, str):
+            self._raw_page_text[(slug, int(m.group(1)))] = payload
             self._page_text.setdefault((slug, int(m.group(1))), payload)
             self._raw_pages.add((slug, int(m.group(1))))
         elif (m := re.fullmatch(r"pages/(\d+)\.png", name)) and isinstance(payload, bytes):
