@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -124,8 +124,7 @@ def build_app(
             yield
         finally:
             task.cancel()
-            with suppress(asyncio.CancelledError):
-                await task
+            await asyncio.gather(task, return_exceptions=True)
             presence_tracker.close()
 
     app = FastAPI(title="Anchor v2", version="0.2.0", lifespan=_lifespan)
