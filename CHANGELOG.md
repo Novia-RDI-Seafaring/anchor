@@ -11,6 +11,21 @@ next version section on tag.
 
 ### Added
 
+- The intents queue is visible in the web UI (closes #323, part 2 of
+  #321): a new Intents tab in the left files explorer lists the project's
+  open intents live (SSE `intent_pending` signal plus an 8s polling
+  fallback that catches agents resolving over stdio MCP / CLI from other
+  processes) with a collapsed "recently resolved" section that shows each
+  record's resolution text. The panel authors free-text intents via the
+  new additive `user_request` kind — its payload carries the text plus,
+  when the user attaches the selected canvas node as the target, the same
+  `{workspace_id, node_id}` node-ref shape `drop_to_ingest` uses — and can
+  dismiss an open intent (resolve with `{dismissed: true}`). An unread
+  badge on the tab counts open intents from any tab, so a canvas file-drop
+  in a harness project surfaces immediately. The kind is recognized across
+  HTTP / MCP / CLI unchanged (adapter parity via the existing enqueue /
+  list / resolve surfaces). (#332)
+
 - Live canvas presence (deferred half of #322, part of #321): the canvas
   header now shows who is on this canvas right now. Every SSE subscriber
   to `GET /api/workspaces/{slug}/events` registers itself with an actor
@@ -67,8 +82,28 @@ next version section on tag.
   a new additive `WorkspaceMetadataUpdated` event (deep-merge patch
   semantics, `None` deletes), which older readers skip on replay.
 
+### Changed
+
+- The local embedder runs on onnxruntime instead of sentence-transformers:
+  the same `BAAI/bge-small-en-v1.5` weights (384-d, unit-norm) the web
+  client already uses, so documents embedded before the switch record the
+  same `embed_model` and stay searchable without re-embedding. The
+  `sentence-transformers` dependency and the unused `local-embed` extra are
+  gone, one embedder is shared per project instead of one per ingest
+  service, and `anchor models prefetch` now fetches the ONNX graph and
+  tokenizer. (#337)
+
 ### Fixed
 
+- `search_documents` no longer times out over MCP on Windows. The
+  embedder's first `import numpy` ran on a worker thread, where loading
+  numpy's bundled OpenBLAS DLL deadlocked under the Windows loader lock; the
+  stdio server now preloads numpy on the main thread, and a search returns
+  in about a second instead of hitting the 30 s timeout. (#334, #337)
+- Environments that forbid server egress now pin Hugging Face offline for
+  every such provider, not only `local_only` / `local`. A `harness`
+  environment previously contacted huggingface.co on every model load.
+  `HF_HUB_OFFLINE=0` and `anchor models prefetch` still work. (#335, #337)
 - Cold-boot replay now applies `ReferenceRemoved` and `ReferenceUpdated`
   events: both were missing from the replay type map, so a bibliography
   deletion or caption edit newer than the snapshot was silently dropped
@@ -77,21 +112,6 @@ next version section on tag.
 ## [0.4.0] - 2026-09-09
 
 ### Added
-
-- The intents queue is visible in the web UI (closes #323, part 2 of
-  #321): a new Intents tab in the left files explorer lists the project's
-  open intents live (SSE `intent_pending` signal plus an 8s polling
-  fallback that catches agents resolving over stdio MCP / CLI from other
-  processes) with a collapsed "recently resolved" section that shows each
-  record's resolution text. The panel authors free-text intents via the
-  new additive `user_request` kind — its payload carries the text plus,
-  when the user attaches the selected canvas node as the target, the same
-  `{workspace_id, node_id}` node-ref shape `drop_to_ingest` uses — and can
-  dismiss an open intent (resolve with `{dismissed: true}`). An unread
-  badge on the tab counts open intents from any tab, so a canvas file-drop
-  in a harness project surfaces immediately. The kind is recognized across
-  HTTP / MCP / CLI unchanged (adapter parity via the existing enqueue /
-  list / resolve surfaces).
 
 - Every canvas event now records who caused it (closes #322, part 1 of
   #321): the `DomainEvent` envelope gains an additive optional
