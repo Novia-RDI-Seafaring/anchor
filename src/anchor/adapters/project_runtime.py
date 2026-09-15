@@ -246,7 +246,9 @@ def build_project_runtime(
         from anchor.core.services.intent_service import IntentService
         from anchor.infra.stores.fs_intent_store import FsIntentStore
 
-        intents = IntentService(FsIntentStore(data_dir), bus, now=SystemClock().now)
+        intents = IntentService(
+            FsIntentStore(data_dir), bus, now=SystemClock().now, workspace=workspace,
+        )
 
     # One embedder per project, shared by both ingest services: they embed into
     # the same vector space with the same model id, so a second instance only

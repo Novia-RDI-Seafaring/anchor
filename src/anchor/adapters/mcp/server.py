@@ -508,7 +508,9 @@ def build_mcp_server(
                 b = get_bundle(args.pop("project", None))
                 if b.intents is None:
                     raise RuntimeError("intent queue is not available")
-                text = await handlers_intents.call_tool(b.intents, name, args)
+                text = await handlers_intents.call_tool(
+                    b.intents, name, args, actor=_client_actor(),
+                )
             elif name in fmu_names:
                 b = get_bundle(args.pop("project", None))
                 if b.fmu is None:
