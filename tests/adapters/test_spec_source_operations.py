@@ -21,6 +21,14 @@ from tests.extensions.anchor_pdfs.test_replacement_generations import pipeline
 from tests.fixtures.tables import canonical_regions
 
 
+def without_evidence(data):
+    """Compare the G2/G6 locator contract independently of G7 verdicts."""
+    result = deepcopy(data)
+    for row in result.get("rows", []):
+        row.pop("evidence", None)
+    return result
+
+
 class CanvasOperations:
     """Exercise transport entry points and read back persisted state."""
 
@@ -130,12 +138,16 @@ def test_create_update_strict_evidence_matrix(transport, reverse, case, tmp_path
             bbox=[60, 50, 90, 60], region_id="pressure", coord_origin="top-left",
         )
     node_id = ops.call("add", data)
-    assert ops.read(node_id) == expected
+    created = ops.read(node_id)
+    assert without_evidence(created) == expected
+    assert (created["rows"][0].get("evidence", {}).get("status") == "verified") == (
+        case in {"precise", "inferred", "new_origin"}
+    )
     ops.call("update", data, node_id)
-    assert ops.read(node_id) == expected
+    assert ops.read(node_id) == created
     # Sending the persisted, resolved data back is idempotent too.
     ops.call("update", expected, node_id)
-    assert ops.read(node_id) == expected
+    assert ops.read(node_id) == created
 
 
 @pytest.mark.parametrize("transport", ["http", "mcp", "cli"])
@@ -178,6 +190,6 @@ def test_create_and_update_use_current_generation_gold(transport, tmp_path):
         if value == "43":
             expected["rows"][0]["source_ref"]["bbox"] = [60, 70, 90, 80]
         node_id = ops.call("add", data)
-        assert ops.read(node_id) == expected
+        assert without_evidence(ops.read(node_id)) == expected
         ops.call("update", data, node_id)
-        assert ops.read(node_id) == expected
+        assert without_evidence(ops.read(node_id)) == expected

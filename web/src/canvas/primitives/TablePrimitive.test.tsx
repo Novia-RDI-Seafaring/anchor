@@ -12,8 +12,9 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { canvases } from "@/api/canvases";
 import { useUiStore } from "@/stores/uiStore";
 
 import { TablePrimitive } from "./TablePrimitive";
@@ -26,7 +27,7 @@ afterEach(() => {
   useUiStore.setState({ hoveredSourceRef: null, pdfViewer: null });
 });
 
-async function renderTable(data: Record<string, unknown>) {
+async function renderTable(data: Record<string, unknown>, selected = false) {
   let result!: ReturnType<typeof render>;
   await act(async () => {
     result = render(
@@ -40,7 +41,7 @@ async function renderTable(data: Record<string, unknown>) {
                   {...({
                     id: "spec1",
                     data,
-                    selected: false,
+                    selected,
                     dragging: false,
                     isConnectable: true,
                     positionAbsoluteX: 0,
@@ -61,6 +62,12 @@ async function renderTable(data: Record<string, unknown>) {
 }
 
 describe("TablePrimitive row handles", () => {
+  it("labels a historical source as unverified, not grounded", async () => {
+    await renderTable({ rows: [{ key: "Pressure", value: "42", source_ref: { page: 1 } }] });
+    expect(screen.queryByTestId("spec-value-marker")).toBeNull();
+    expect(screen.getByText("Unverified")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open source page 1" })).toBeTruthy();
+  });
   it("renders a row-handle carrier on every row, ids encoding the row key", async () => {
     await renderTable({
       label: "Operating limits (LKH-5)",
@@ -223,7 +230,10 @@ describe("TablePrimitive row handles", () => {
       label: "Mixed grounding",
       source_doc_slug: "lkh",
       rows: [
-        { key: "Grounded", value: "600 kPa", source_ref: { page: 2, region_id: "r4" } },
+        { key: "Grounded", value: "600 kPa", source_ref: { page: 2, region_id: "r4" }, evidence: {
+          status: "verified", claim: { key: "grounded", value: "600 kPa" },
+          source_ref: { page: 2, region_id: "r4" }, validation: { producer: "anchor_pdfs" },
+        } },
         { key: "Plain", value: "no source" },
       ],
     });
@@ -234,5 +244,42 @@ describe("TablePrimitive row handles", () => {
     expect(markers[0]!.textContent).toBe("600 kPa");
     expect(markers[0]!.className).toContain("group-hover/tr:bg-yellow-200");
     expect(screen.getByText("no source").getAttribute("data-testid")).toBeNull();
+  });
+
+  it("shows all evidence states with text and keeps stale citations clickable", async () => {
+    const source_ref = { slug: "doc", page: 1, region_id: "pressure" };
+    const evidence = { status: "verified", claim: { key: "pressure", value: "42" },
+      source_ref, validation: { producer: "anchor_pdfs" } };
+    await renderTable({ rows: [
+      { key: "Pressure", value: "42", source_ref, evidence },
+      { key: "Pressure", value: "999999", source_ref, evidence },
+      { key: "Historical", value: "21", source_ref },
+      { key: "Unfilled", value: "" },
+    ] });
+    for (const label of ["Verified", "Stale", "Unverified", "No evidence"]) {
+      expect(screen.getByLabelText(`Evidence: ${label}`)).toBeTruthy();
+    }
+    expect(screen.getAllByTestId("spec-value-marker")).toHaveLength(1);
+    fireEvent.click(screen.getAllByRole("button", { name: "Open source page 1" })[1]!);
+    expect(useUiStore.getState().pdfViewer).toMatchObject({ slug: "doc", page: 1 });
+  });
+
+  it("removes verified presentation immediately on edit and requests deliberate revalidation", async () => {
+    const patch = vi.spyOn(canvases, "patchNode").mockResolvedValue({} as never);
+    const source_ref = { slug: "doc", page: 1 };
+    await renderTable({ rows: [{ key: "Pressure", value: "42", source_ref,
+      evidence: { status: "verified", claim: { key: "pressure", value: "42" },
+        source_ref, validation: { producer: "anchor_pdfs" } },
+    }] }, true);
+    fireEvent.click(screen.getByText("42"));
+    fireEvent.change(screen.getByPlaceholderText("value"), { target: { value: "999999" } });
+    fireEvent.blur(screen.getByPlaceholderText("value"));
+    expect(screen.getByText("Stale")).toBeTruthy();
+    expect(screen.queryByTestId("spec-value-marker")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Revalidate evidence for Pressure" }));
+    expect(patch.mock.lastCall?.[2].data).toMatchObject({ rows: [{
+      key: "Pressure", value: "999999", source_ref, revalidate_evidence: true,
+    }] });
+    patch.mockRestore();
   });
 });

@@ -155,5 +155,8 @@ def test_existing_update_operations_share_strict_resolution(adapter, mixed_paren
     reopened = build_project_runtime(config, profile=RuntimeProfile.CANVAS)
     state = asyncio.run(reopened.workspace.get_state("g2"))
     spec = next(node for node in state["nodes"] if node["id"] == "spec")
-    assert spec["data"] == expected
+    actual = deepcopy(spec["data"])
+    evidence = actual["rows"][0].pop("evidence", {})
+    assert actual == expected
+    assert (evidence.get("status") == "verified") == (case in {"exact", "inferred"})
     assert spec.get("parent") == ("area" if mixed_parent else None)

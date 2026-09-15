@@ -9,22 +9,35 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from anchor.core.workspace.evidence import normalize_claim_text
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.table_topology import validated_pairs
 
 
 async def enrich_spec_row_source_refs(data: Any, store: DocStore) -> Any:
+    resolved, _ = await resolve_spec_row_sources(data, store)
+    return resolved
+
+
+async def resolve_spec_row_sources(data: Any, store: DocStore) -> tuple[Any, dict[int, dict]]:
+    """Return explicit successful validations, including already precise refs.
+
+    The compatibility enrichment interface still returns just the data. Only
+    this producer verdict can establish a new claim binding at the write seam.
+    """
+    validations: dict[int, dict] = {}
     if not isinstance(data, dict):
-        return data
+        return data, validations
     rows = data.get("rows")
     if not isinstance(rows, list):
-        return data
+        return data, validations
 
     cache: dict[tuple[str, int], list[dict[str, Any]]] = {}
     snapshots: dict[str, DocStore] = {}
+    documents: dict[str, dict] = {}
     next_rows: list[Any] = []
     changed = False
-    for row in rows:
+    for index, row in enumerate(rows):
         if not isinstance(row, dict):
             next_rows.append(row)
             continue
@@ -78,9 +91,20 @@ async def enrich_spec_row_source_refs(data: Any, store: DocStore) -> Any:
                     new_ref[key] = None
         new_ref["region_id"] = region["id"]
         next_rows.append({**row, "source_ref": new_ref})
+        if slug not in documents:
+            metadata = await snapshots[slug].get_index(slug)
+            documents[slug] = (metadata or {}).get("document", {})
+        document = documents[slug]
+        validations[index] = {
+            "producer": "anchor_pdfs", "slug": slug,
+            "generation_id": document.get("generation", {}).get("id"),
+            "source_sha256": document.get("source", {}).get("sha256"),
+            "table_digest": region["table_topology"]["digest"],
+            "key_cell_id": key_cell["cell_id"], "value_cell_id": value_cell["cell_id"],
+        }
         changed = True
 
-    return {**data, "rows": next_rows} if changed else data
+    return ({**data, "rows": next_rows} if changed else data), validations
 
 
 async def _regions_for_page(
@@ -139,7 +163,7 @@ def _norm(value: Any) -> str:
     if not isinstance(value, str):
         return ""
     # Value case is significant for engineering units (mm != Mm).
-    return " ".join(value.strip().split())
+    return normalize_claim_text(value)
 
 
 def _clean_bbox(bbox: Any) -> list[float]:

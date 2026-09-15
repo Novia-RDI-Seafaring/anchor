@@ -36,6 +36,7 @@ from anchor.core.services.workspace_geometry import WorkspaceGeometryOperations
 from anchor.core.services.workspace_references import WorkspaceReferenceOperations
 from anchor.core.workspace.align import Anchor, Axis
 from anchor.core.workspace.builtin_node_types import builtin_node_type_registry
+from anchor.core.workspace.evidence import consume_evidence_requests, prepare_evidence_patch
 from anchor.core.workspace.layout import NodeLike, find_free_position
 from anchor.core.workspace.node_types import NodeTypeRegistry
 from anchor.core.workspace.reducer import apply, cascade_events_for_remove
@@ -540,14 +541,13 @@ class WorkspaceService:
             entity = (state.nodes if isinstance(cmd, NodeUpdated) else state.edges).get(cmd.id)
             previous = entity.model_dump() if entity is not None else None
             cmd = cmd.model_copy(update={"fields": stamp_authored_source_refs(cmd.fields, previous)})
-        if self._node_data_preparer is not None:
-            if isinstance(cmd, NodeAdded):
-                data = await self._node_data_preparer(cmd.data, None)
-                cmd = cmd.model_copy(update={"data": data})
-            elif isinstance(cmd, NodeUpdated) and isinstance(cmd.fields.get("data"), dict):
-                node = state.nodes.get(cmd.id)
-                data = await self._node_data_preparer(cmd.fields["data"], node.data if node else None)
-                cmd = cmd.model_copy(update={"fields": {**cmd.fields, "data": data}})
+        if isinstance(cmd, NodeAdded):
+            data = await self._prepare_node_data(cmd.data, None)
+            cmd = cmd.model_copy(update={"data": data})
+        elif isinstance(cmd, NodeUpdated) and isinstance(cmd.fields.get("data"), dict):
+            node = state.nodes.get(cmd.id)
+            data = await self._prepare_node_data(cmd.fields["data"], node.data if node else None)
+            cmd = cmd.model_copy(update={"fields": {**cmd.fields, "data": data}})
         validate_command(state, cmd, node_types=self.node_types)
         env = self._envelope(slug, cmd)
         version = await self.store.append_event(slug, env)
@@ -558,6 +558,12 @@ class WorkspaceService:
         await self.store.snapshot(slug, new_state)
         await self.bus.publish(env)
         return new_state, env
+
+    async def _prepare_node_data(self, data: dict, previous: dict | None) -> dict:
+        data = prepare_evidence_patch(data, previous)
+        if self._node_data_preparer is not None:
+            data = await self._node_data_preparer(data, previous)
+        return consume_evidence_requests(data)
 
     def _envelope(self, slug: str, evt: BaseModel, *, causation_id: str | None = None) -> DomainEvent:
         return DomainEvent(

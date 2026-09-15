@@ -5,6 +5,7 @@ import { useParams } from "react-router-dom";
 
 import { canvases } from "@/api/canvases";
 import { documents } from "@/api/documents";
+import { evidenceLabels, evidenceState, type EvidenceRow } from "@/canvas/evidence";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
 import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
 import { useInlineField } from "@/canvas/useInlineField";
@@ -12,7 +13,7 @@ import { useLiveResize } from "@/canvas/useLiveResize";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
-type Row = {
+type Row = EvidenceRow & {
   key: string;
   value: string;
   // Per-row provenance back to the source document. `region_id` is the link
@@ -331,10 +332,12 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       ) : null}
 
       {rows.length > 0 || !d.description ? (
-        <table className="w-full">
+        <table className="w-full table-fixed">
           <tbody>
             {rows.map((r, i) => {
               const hid = rowHandleId(i, r);
+              const status = evidenceState(r);
+              const evidenceLabel = evidenceLabels[status];
               return (
                 <tr
                   key={`row-${i}`}
@@ -359,7 +362,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                       onAppendRow={() => appendRow("key")}
                     />
                   </td>
-                  <td className={`px-3 py-1 text-neutral-900 ${r.source_ref ? "bg-emerald-50/80" : ""}`}>
+                  <td className={`px-3 py-1 text-neutral-900 ${status === "verified" ? "bg-emerald-50/80" : ""}`}>
                     <RowCell
                       rowIndex={i}
                       col="value"
@@ -369,14 +372,21 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                       // Grounded values get a yellow "marker pen" highlight on
                       // row hover, so the eye lands on the exact value while the
                       // source node highlights where it came from (issue #145).
-                      marker={!!r.source_ref}
+                      marker={status === "verified"}
                       pendingFocus={pendingFocus}
                       setPendingFocus={setPendingFocus}
                       onCommit={(v) => commitRow(i, "value", v)}
                       onAppendRow={() => appendRow("key")}
                     />
                   </td>
-                  <td className="relative px-2 text-xs text-neutral-400">
+                  <td className="relative w-20 px-2 text-xs text-neutral-400">
+                    <span
+                      aria-label={`Evidence: ${evidenceLabel}`}
+                      title={status === "verified" ? "Validated for this claim at the recorded source generation" :
+                        status === "stale" ? "Claim or evidence changed. Revalidate before relying on this citation." :
+                          status === "unverified" ? "Source link exists; this claim has not been verified." : "No source evidence"}
+                      className={`block text-[10px] ${status === "verified" ? "text-emerald-700" : status === "stale" ? "text-amber-800" : "text-neutral-500"}`}
+                    >{evidenceLabel}</span>
                     {r.source_ref?.page ? (
                       <button
                         type="button"
@@ -387,11 +397,20 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                         onDoubleClick={(e) => e.stopPropagation()}
                         onClick={(e) => {
                           e.stopPropagation();
-                          openSourceRef(r.source_ref, r.value || undefined);
+                          openSourceRef(r.source_ref, status === "verified" ? r.value || undefined : undefined);
                         }}
                       >
                         <AnchorIcon size={11} strokeWidth={2.2} aria-hidden="true" />
                       </button>
+                    ) : null}
+                    {canEdit && r.source_ref && status !== "verified" ? (
+                      <button type="button" className="nodrag nopan text-[10px] underline text-neutral-700"
+                        aria-label={`Revalidate evidence for ${r.key}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          persistRows(rows.map((row, j) => j === i ? { ...row, revalidate_evidence: true } : row));
+                        }}
+                      >Check</button>
                     ) : null}
                     {/* Per-row source handle. Default state is a 2px grey
                         dot tucked against the row's right edge — visible
