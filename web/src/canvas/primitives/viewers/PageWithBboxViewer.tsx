@@ -4,6 +4,7 @@ import { canvases } from "@/api/canvases";
 import { documents, type Region } from "@/api/documents";
 import { useDocumentIndex } from "@/api/useDocumentIndex";
 import { bboxToImageRect, sameBbox } from "@/lib/bbox";
+import { parseDocumentPageGeometry, type DocumentPageGeometry } from "@/lib/documentPageGeometry";
 import { useUiStore } from "@/stores/uiStore";
 
 /**
@@ -18,11 +19,6 @@ import { useUiStore } from "@/stores/uiStore";
  * using the page's width/height in points from pages.meta.json.
  */
 
-type PageMeta = { width: number; height: number };
-
-const RENDER_DPI = 150;
-const POINTS_PER_INCH = 72;
-
 export function PageWithBboxViewer() {
   const viewer = useUiStore((s) => s.pdfViewer);
   const close = useUiStore((s) => s.closePdf);
@@ -32,7 +28,7 @@ export function PageWithBboxViewer() {
   const index = useDocumentIndex(viewer?.slug, viewer?.mode === "modal");
   const generation = index?.document.generation?.id;
   const [regions, setRegions] = useState<Region[]>([]);
-  const [pageMeta, setPageMeta] = useState<Record<number, PageMeta>>({});
+  const [pageMeta, setPageMeta] = useState<Record<number, DocumentPageGeometry>>({});
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [activeRegion, setActiveRegion] = useState<string | null>(null);
   const [sending, setSending] = useState<string | null>(null);
@@ -103,12 +99,7 @@ export function PageWithBboxViewer() {
       .then((r) => r.ok ? r.json() : null)
       .then((map) => {
         if (cancel || !map) return;
-        const meta = map.pages_meta as Record<string, PageMeta> | undefined;
-        if (meta) {
-          const numeric: Record<number, PageMeta> = {};
-          for (const k of Object.keys(meta)) numeric[Number(k)] = meta[k]!;
-          setPageMeta(numeric);
-        }
+        setPageMeta(parseDocumentPageGeometry(map.pages_meta));
       })
       .catch(() => {});
     return () => {
@@ -186,12 +177,8 @@ export function PageWithBboxViewer() {
   // by SourceDock for "dock" mode.
   if (!viewer || viewer.mode !== "modal") return null;
 
-  const explicitW = pageMeta[viewer.page]?.width ?? 0;
-  const explicitH = pageMeta[viewer.page]?.height ?? 0;
-  const derivedW = imgSize ? imgSize.w * POINTS_PER_INCH / RENDER_DPI : 0;
-  const derivedH = imgSize ? imgSize.h * POINTS_PER_INCH / RENDER_DPI : 0;
-  const pageW = explicitW > 0 ? explicitW : derivedW;
-  const pageH = explicitH > 0 ? explicitH : derivedH;
+  const pageW = pageMeta[viewer.page]?.width ?? 0;
+  const pageH = pageMeta[viewer.page]?.height ?? 0;
   const canScale = imgSize && pageW > 0 && pageH > 0;
   const highlightAppliesToPage = viewer.highlightPage === viewer.page;
 
@@ -242,6 +229,11 @@ export function PageWithBboxViewer() {
           </button>
         </div>
       </header>
+      {imgSize && !canScale ? (
+        <div role="status" className="px-4 py-1 text-sm text-white">
+          Source overlays unavailable: page dimensions unknown.
+        </div>
+      ) : null}
       <div className="flex flex-1 overflow-hidden">
         <main className="relative flex flex-1 items-center justify-center overflow-auto p-6">
           <div className="relative">

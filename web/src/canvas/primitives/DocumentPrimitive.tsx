@@ -6,6 +6,7 @@ import { BACKEND_URL } from "@/api/client";
 import { documents, type Region } from "@/api/documents";
 import { useDocumentIndex } from "@/api/useDocumentIndex";
 import { bboxToImageRect, sameBbox } from "@/lib/bbox";
+import { parseDocumentPageGeometry, type DocumentPageGeometry } from "@/lib/documentPageGeometry";
 import { useUiStore } from "@/stores/uiStore";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -46,14 +47,7 @@ function numericSeconds(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-type PageMeta = { width: number; height: number };
 type RegionHighlight = { regionId?: string; bbox?: number[] };
-
-// Default DPI used by anchor_pdfs when rendering page PNGs. Matches
-// AnchorConfig.dpi. If the producer is reconfigured to a different DPI,
-// gold-map should expose it explicitly; for now we assume the default.
-const RENDER_DPI = 150;
-const POINTS_PER_INCH = 72;
 
 function matchesExternalHighlight(
   highlight: RegionHighlight | null,
@@ -122,7 +116,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   const index = useDocumentIndex(slug, isReady);
   const generation = index?.document.generation?.id;
   const [regions, setRegions] = useState<Region[]>([]);
-  const [pageMeta, setPageMeta] = useState<Record<number, PageMeta>>({});
+  const [pageMeta, setPageMeta] = useState<Record<number, DocumentPageGeometry>>({});
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [hoveredLocal, setHoveredLocal] = useState<string | null>(null);
   const [valueQuads, setValueQuads] = useState<number[][]>([]);
@@ -146,12 +140,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
       .then((r) => (r.ok ? r.json() : null))
       .then((map) => {
         if (cancelled || !map) return;
-        const meta = map.pages_meta as Record<string, PageMeta> | undefined;
-        if (meta) {
-          const numeric: Record<number, PageMeta> = {};
-          for (const k of Object.keys(meta)) numeric[Number(k)] = meta[k]!;
-          setPageMeta(numeric);
-        }
+        setPageMeta(parseDocumentPageGeometry(map.pages_meta));
       })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -201,15 +190,9 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
       setPage(total);
     }
   }, [page, total]);
-  // Prefer explicit page dimensions when the producer exposes them; otherwise
-  // derive from the PNG's natural size and the known render DPI (the producer
-  // defaults to 150 DPI, so 1 PDF point = 150/72 image pixels).
-  const explicitW = pageMeta[page]?.width ?? 0;
-  const explicitH = pageMeta[page]?.height ?? 0;
-  const derivedW = imgSize ? imgSize.w * POINTS_PER_INCH / RENDER_DPI : 0;
-  const derivedH = imgSize ? imgSize.h * POINTS_PER_INCH / RENDER_DPI : 0;
-  const pageW = explicitW > 0 ? explicitW : derivedW;
-  const pageH = explicitH > 0 ? explicitH : derivedH;
+  // Source dimensions are declared in PDF points; image DPI is irrelevant.
+  const pageW = pageMeta[page]?.width ?? 0;
+  const pageH = pageMeta[page]?.height ?? 0;
   const canScale = imgSize && pageW > 0 && pageH > 0;
   const coverUrl = isReady && slug ? documents.pageImageUrl(slug, page, generation) : null;
   const ingestProgress = typeof d.ingest_progress === "number"
@@ -308,12 +291,10 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                 // Order-independent bbox → image rect (see lib/bbox). The
                 // gold extractor's 4-tuple ordering is not guaranteed, so we
                 // never assume bbox[1] is the top edge.
-                const rect = bboxToImageRect(r.bbox, pageW, pageH, imgSize.w, imgSize.h);
+                // A 100-by-100 target expresses the shared scale as percentages.
+                const rect = bboxToImageRect(r.bbox, pageW, pageH, 100, 100);
                 if (!rect) return null;
-                const xpc = (rect.x / imgSize.w) * 100;
-                const ypc = (rect.y / imgSize.h) * 100;
-                const wpc = (rect.w / imgSize.w) * 100;
-                const hpc = (rect.h / imgSize.h) * 100;
+                const { x: xpc, y: ypc, w: wpc, h: hpc } = rect;
                 // rect is non-null only when bbox has ≥4 valid numbers.
                 const bbox = r.bbox as number[];
                 const rid = (r as { id?: string }).id ?? `r${idx}`;
@@ -434,12 +415,9 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                   ? regions.find((r, idx) => ((r as { id?: string }).id ?? `r${idx}`) === externalHighlight.regionId)
                   : undefined;
                 if (parent?.bbox && sameBbox(externalHighlight.bbox, parent.bbox)) return null;
-                const rect = bboxToImageRect(externalHighlight.bbox, pageW, pageH, imgSize.w, imgSize.h);
+                const rect = bboxToImageRect(externalHighlight.bbox, pageW, pageH, 100, 100);
                 if (!rect) return null;
-                const xpc = (rect.x / imgSize.w) * 100;
-                const ypc = (rect.y / imgSize.h) * 100;
-                const wpc = (rect.w / imgSize.w) * 100;
-                const hpc = (rect.h / imgSize.h) * 100;
+                const { x: xpc, y: ypc, w: wpc, h: hpc } = rect;
                 return (
                   <div
                     className="pointer-events-none absolute"
@@ -461,12 +439,9 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
               value came from. Empty -> region-level highlight is the fallback. */}
           {canScale && imgSize && valueQuads.length > 0
             ? valueQuads.map((quad, qi) => {
-                const rect = bboxToImageRect(quad, pageW, pageH, imgSize.w, imgSize.h);
+                const rect = bboxToImageRect(quad, pageW, pageH, 100, 100);
                 if (!rect) return null;
-                const xpc = (rect.x / imgSize.w) * 100;
-                const ypc = (rect.y / imgSize.h) * 100;
-                const wpc = (rect.w / imgSize.w) * 100;
-                const hpc = (rect.h / imgSize.h) * 100;
+                const { x: xpc, y: ypc, w: wpc, h: hpc } = rect;
                 return (
                   <div
                     key={`value-quad-${qi}`}
@@ -543,6 +518,11 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
 
       {/* Body label + status + open viewer */}
       <div className="space-y-1 px-3 py-2">
+        {imgSize && !canScale ? (
+          <div role="status" className="text-[10px] text-neutral-600">
+            Source overlays unavailable: page dimensions unknown.
+          </div>
+        ) : null}
         <div className="text-[10px] uppercase tracking-wide text-neutral-500">
           document
         </div>
