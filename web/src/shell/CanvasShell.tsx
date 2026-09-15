@@ -27,6 +27,7 @@ import { CatchUpPanel } from "./CatchUpPanel";
 import { IngestActivityPill } from "./IngestActivityPill";
 import { LeftToolRail } from "./LeftToolRail";
 import { PropertiesPanel } from "./PropertiesPanel";
+import { ThreadPanel } from "./ThreadPanel";
 
 type Props = {
   workspaceSlug: string;
@@ -54,6 +55,10 @@ export function CanvasShell({ workspaceSlug, children }: Props) {
               last-seen version. Mounted inside the provider so entry
               clicks can center via useReactFlow. */}
           <CatchUpPanel workspaceSlug={workspaceSlug} />
+          {/* Scoped-ask thread panel (#344): docked at the right edge of
+              the canvas while a thread is open (pin click, Intents tab, or
+              a fresh ask). Talks to the intents HTTP API only. */}
+          <ThreadPanel workspaceSlug={workspaceSlug} />
           <ActivityToast />
         </div>
         <PropertiesPanel />

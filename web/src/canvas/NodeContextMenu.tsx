@@ -30,6 +30,7 @@ import {
   AlignStartHorizontal,
   AlignStartVertical,
   ChevronRight,
+  MessageSquarePlus,
   Palette,
   PaintBucket,
   Sparkles,
@@ -42,6 +43,7 @@ import { canvases } from "@/api/canvases";
 import { cn } from "@/lib/cn";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
+import { useThreadsStore } from "@/threads/threadsStore";
 
 import { FillPicker } from "./FillPicker";
 import { StrokePicker } from "./StrokePicker";
@@ -144,6 +146,11 @@ export function NodeContextMenu({ workspaceSlug, target, onClose }: Props) {
   const openProperties = () => {
     useUiStore.getState().setSelectedNodeId(target.nodeId);
     useUiStore.getState().setPropertiesOpen(true);
+    onClose();
+  };
+  // Scoped ask (#344): open the composer anchored to the selection.
+  const askAgent = () => {
+    useThreadsStore.getState().openComposer(ids);
     onClose();
   };
 
@@ -296,6 +303,13 @@ export function NodeContextMenu({ workspaceSlug, target, onClose }: Props) {
       />
       <Separator />
       <MenuItem
+        icon={<MessageSquarePlus className="size-3.5" />}
+        onClick={askAgent}
+        data-testid="context-ask-agent"
+      >
+        Ask agent…
+      </MenuItem>
+      <MenuItem
         icon={<Sparkles className="size-3.5" />}
         onClick={() => void togglePlaceholder()}
       >
@@ -358,7 +372,7 @@ function SubmenuRow({
 }
 
 function MenuItem({
-  children, icon, disabled, onClick, rightAdornment, className,
+  children, icon, disabled, onClick, rightAdornment, className, "data-testid": testId,
 }: {
   children: React.ReactNode;
   icon?: React.ReactNode;
@@ -366,6 +380,7 @@ function MenuItem({
   onClick?: () => void;
   rightAdornment?: React.ReactNode;
   className?: string;
+  "data-testid"?: string;
 }) {
   return (
     <button
@@ -373,6 +388,7 @@ function MenuItem({
       role="menuitem"
       disabled={disabled}
       onClick={onClick}
+      data-testid={testId}
       className={cn(
         "flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[12px] outline-none transition",
         "hover:bg-neutral-100 focus:bg-neutral-100 focus:text-neutral-900",

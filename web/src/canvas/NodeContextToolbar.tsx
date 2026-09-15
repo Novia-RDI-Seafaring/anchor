@@ -38,6 +38,7 @@ import {
   ChevronDown,
   Eye,
   Lock,
+  MessageSquarePlus,
   MoreVertical,
   Move3d,
   StretchHorizontal,
@@ -63,6 +64,7 @@ import {
 } from "@/components/ui/popover";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
+import { useThreadsStore } from "@/threads/threadsStore";
 
 import { DEFAULT_BG, resolveColors } from "./colors";
 import { FillPicker } from "./FillPicker";
@@ -321,6 +323,22 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
           nodeIds={selectedNodeIds}
           getNodeData={getNodeData}
         />
+
+        {/* Ask agent… (#344) — open the scoped-ask composer anchored to
+            this selection. The thread it creates carries the selection as
+            `targets`; the agent answers with staged suggestions. */}
+        <Button
+          variant="ghost"
+          size="sm"
+          data-testid="ask-agent"
+          title="Ask the agent about this selection"
+          aria-label="Ask agent about selection"
+          className="text-amber-700 hover:bg-amber-50"
+          onClick={() => useThreadsStore.getState().openComposer(selectedNodeIds)}
+        >
+          <MessageSquarePlus className="size-3.5" />
+          <span className="text-[11px]">Ask agent…</span>
+        </Button>
 
         {/* ────── Style chips ────── */}
         {/* Fill chip — square swatch tinted with current bg, falls back to

@@ -11,6 +11,34 @@ next version section on tag.
 
 ### Added
 
+- Scoped-ask threads in the web UI (closes #344, web half of #345;
+  built against the thread contract the backend implements in #343).
+  Select one or more canvas elements and choose "Ask agent…" in the
+  selection toolbar or the context menu: a composer anchored under the
+  selection offers chips derived from the selected node types (spec →
+  fill / verify, document → extract, chart → digitize, two or more →
+  compare / consistency, plus the defaults) and Enter creates a thread,
+  a `user_request` intent carrying the selection as `targets[]`. Every
+  open thread anchored to the current canvas shows an overlay pin at the
+  top-right of its targets' bounding box (threads sharing an anchor
+  collapse into one pin with a count and a picker); a pin, the Intents
+  tab, or a fresh ask opens the docked thread panel. The panel lists the
+  thread's items in order: messages, open questions with an inline answer
+  box, suggestions with rationale, op count and state chip, and results
+  with "show what changed", the catch-up diff since the ask's
+  `base_version`. Clicking a suggestion draws a read-only ghost preview of
+  its staged ops in place (added nodes dashed, removed nodes dimmed and
+  struck, updated nodes with an old → new label badge, added edges
+  dashed, removed edges dimmed); Approve applies the batch, Decline
+  records an optional comment, Comment and the bottom composer add a
+  message item. A pending suggestion whose ops reference elements that
+  are no longer on the canvas is marked stale and cannot be approved. The
+  intents feed is now one shared, ref-counted subscription (one SSE
+  connection per window) that the explorer tab, the pins and the thread
+  panel all read; the ghost preview never writes to the workspace store
+  or any API. New typed client routes: `intents.ask`, `get`, `addItem`,
+  `answer`, `apply`, `decline`.
+
 - The intents queue is visible in the web UI (closes #323, part 2 of
   #321): a new Intents tab in the left files explorer lists the project's
   open intents live (SSE `intent_pending` signal plus an 8s polling

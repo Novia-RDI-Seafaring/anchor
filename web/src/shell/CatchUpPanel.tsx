@@ -25,6 +25,7 @@ import {
   canvases,
   type CanvasChanges,
   type ChangeActor,
+  type ChangeGroup,
   type EdgeChangeEntry,
   type NodeChangeEntry,
 } from "@/api/canvases";
@@ -98,44 +99,58 @@ export function CatchUpPanel({ workspaceSlug }: { workspaceSlug: string }) {
         <div className="px-1 text-[9px] italic text-neutral-400">
           v{summary.from_version} → v{summary.to_version}
         </div>
-        {summary.groups.map((group, i) => (
-          <div
-            key={i}
-            className="rounded border border-neutral-200 bg-white"
-            data-testid="catch-up-group"
-          >
-            <div className="border-b border-neutral-100 px-2 py-1 text-[10px] font-medium text-neutral-600">
-              {actorName(group.actor)}
-            </div>
-            <div className="px-1 py-1">
-              {group.canvas_cleared ? (
-                <div className="px-1 py-0.5 text-[11px] text-neutral-600">
-                  cleared the canvas
-                </div>
-              ) : null}
-              {group.nodes_added.map((e) => (
-                <NodeRow key={`na-${e.id}`} sign="+" tone="text-green-700" entry={e} />
-              ))}
-              {group.nodes_updated.map((e) => (
-                <NodeRow key={`nu-${e.id}`} sign="~" tone="text-amber-700" entry={e} />
-              ))}
-              {group.nodes_removed.map((e) => (
-                <NodeRow key={`nr-${e.id}`} sign="−" tone="text-red-700" entry={e} />
-              ))}
-              {group.edges_added.map((e) => (
-                <EdgeRow key={`ea-${e.id}`} sign="+" tone="text-green-700" entry={e} />
-              ))}
-              {group.edges_updated.map((e) => (
-                <EdgeRow key={`eu-${e.id}`} sign="~" tone="text-amber-700" entry={e} />
-              ))}
-              {group.edges_removed.map((e) => (
-                <EdgeRow key={`er-${e.id}`} sign="−" tone="text-red-700" entry={e} />
-              ))}
-            </div>
-          </div>
-        ))}
+        <ChangeGroups groups={summary.groups} />
       </div>
     </div>
+  );
+}
+
+/**
+ * The per-actor change list. Shared with the thread panel's "show what
+ * changed" (#344), which renders the same fold since a thread's
+ * `base_version`. Must be mounted inside a ReactFlowProvider (rows center
+ * the node on click).
+ */
+export function ChangeGroups({ groups }: { groups: ChangeGroup[] }) {
+  return (
+    <>
+      {groups.map((group, i) => (
+        <div
+          key={i}
+          className="rounded border border-neutral-200 bg-white"
+          data-testid="catch-up-group"
+        >
+          <div className="border-b border-neutral-100 px-2 py-1 text-[10px] font-medium text-neutral-600">
+            {actorName(group.actor)}
+          </div>
+          <div className="px-1 py-1">
+            {group.canvas_cleared ? (
+              <div className="px-1 py-0.5 text-[11px] text-neutral-600">
+                cleared the canvas
+              </div>
+            ) : null}
+            {group.nodes_added.map((e) => (
+              <NodeRow key={`na-${e.id}`} sign="+" tone="text-green-700" entry={e} />
+            ))}
+            {group.nodes_updated.map((e) => (
+              <NodeRow key={`nu-${e.id}`} sign="~" tone="text-amber-700" entry={e} />
+            ))}
+            {group.nodes_removed.map((e) => (
+              <NodeRow key={`nr-${e.id}`} sign="−" tone="text-red-700" entry={e} />
+            ))}
+            {group.edges_added.map((e) => (
+              <EdgeRow key={`ea-${e.id}`} sign="+" tone="text-green-700" entry={e} />
+            ))}
+            {group.edges_updated.map((e) => (
+              <EdgeRow key={`eu-${e.id}`} sign="~" tone="text-amber-700" entry={e} />
+            ))}
+            {group.edges_removed.map((e) => (
+              <EdgeRow key={`er-${e.id}`} sign="−" tone="text-red-700" entry={e} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
   );
 }
 

@@ -19,6 +19,7 @@ import { intents, type Intent } from "@/api/intents";
 import { cn } from "@/lib/cn";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
+import { useThreadsStore } from "@/threads/threadsStore";
 
 import {
   intentTitle,
@@ -227,6 +228,10 @@ function IntentRow({
   const when = isOpen
     ? timeAgo(intent.created_at)
     : timeAgo(intent.resolved_at ?? intent.created_at);
+  // A scoped ask (#344) is a thread: it carries `targets` and opens in the
+  // docked thread panel instead of being acted on here.
+  const targetCount = intent.targets?.length ?? 0;
+  const isThread = targetCount > 0;
 
   return (
     <div
@@ -261,8 +266,19 @@ function IntentRow({
             {kindLabel(intent.kind)}
             {intent.origin_canvas_id ? ` · ${intent.origin_canvas_id}` : ""}
             {nodeId ? ` · node ${nodeId}` : ""}
+            {isThread ? ` · ${targetCount} ${targetCount === 1 ? "target" : "targets"}` : ""}
             {when ? ` · ${when}` : ""}
           </div>
+          {isThread ? (
+            <button
+              type="button"
+              onClick={() => useThreadsStore.getState().openThread(intent.id)}
+              className="mt-0.5 text-[10px] text-amber-700 underline-offset-2 hover:underline"
+              data-testid="intent-open-thread"
+            >
+              Open thread
+            </button>
+          ) : null}
           {resolution ? (
             <div
               className="mt-0.5 break-words text-[10px] italic text-neutral-400"

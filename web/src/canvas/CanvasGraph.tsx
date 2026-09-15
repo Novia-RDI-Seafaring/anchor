@@ -18,6 +18,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { canvases } from "@/api/canvases";
+import { AskComposer } from "@/canvas/AskComposer";
 import { breadcrumb } from "@/canvas/breadcrumb";
 import { AnchoredEdge } from "@/canvas/edges/AnchoredEdge";
 import { EdgeMarkerDefs } from "@/canvas/edges/EdgeMarkerDefs";
@@ -27,8 +28,10 @@ import { pickEdgeMode } from "@/canvas/edges/edge-mode";
 import { provenancePathEdgeIds } from "@/canvas/edges/provenance-path";
 import { EdgeContextMenu, type EdgeContextMenuTarget } from "@/canvas/EdgeContextMenu";
 import { EdgeContextToolbar } from "@/canvas/EdgeContextToolbar";
+import { GhostPreview } from "@/canvas/GhostPreview";
 import { NodeContextMenu, type ContextMenuTarget } from "@/canvas/NodeContextMenu";
 import { NodeContextToolbar } from "@/canvas/NodeContextToolbar";
+import { ThreadPins } from "@/canvas/ThreadPins";
 import { WaypointEditor } from "@/canvas/WaypointEditor";
 import {
   PAINT_DRAG_THRESHOLD_PX,
@@ -1374,6 +1377,14 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
               actively drag-sizing an armed shape; `pointer-events-none`
               so the gesture's pointer-up still reaches our wrapper. */}
           <PaintGhost rect={paintRect} nodeType={armedTool} />
+          {/* Scoped-ask threads (#344): pins for open threads anchored to
+              this canvas, the ask composer for the current selection, and
+              the read-only ghost preview of a selected suggestion's ops.
+              All three are screen-space overlays derived from the intents
+              feed + the workspace store; none writes to either. */}
+          <ThreadPins workspaceSlug={slug} />
+          <AskComposer workspaceSlug={slug} />
+          <GhostPreview />
         </>
       )}
     </div>
