@@ -48,6 +48,16 @@ verdict. `accepted` means the human signed off. Evidence edges and
 `source_ref` remain how a value is checked; `review` only records the
 outcome of that check.
 
+### Elements under a scoped ask are read-only to you
+
+When an intent in your inbox carries `targets`, those elements belong to
+a thread. Do not call `canvas_update_node` / `canvas_remove_node` /
+`canvas_add_edge` on them. Stage the change as a `suggestion` item on
+the thread instead (`intent_add_item`); the ops use the same payload
+shapes as these tools. On approval the batch is applied with you as the
+actor, and every element it creates lands with `data.review = {state:
+"accepted", by: <the approver>}`.
+
 ### Spec nodes carry structured rows, not prose
 
 When an extraction yields several values — say every pump ID and its

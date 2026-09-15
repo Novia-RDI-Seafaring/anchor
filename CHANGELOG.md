@@ -11,6 +11,35 @@ next version section on tag.
 
 ### Added
 
+- Scoped-ask threads, backend half (closes #343, part of #345): an
+  intent can now be anchored to a canvas selection and carry a
+  conversation. `Intent` gains three additive fields, `targets`
+  (`[{workspace_id, node_id}]`), `base_version` (the origin canvas's
+  version when the ask was made, recorded server-side) and `items`, an
+  append-only list of typed thread items: `message`, `question`
+  (`open` -> `answered`), `suggestion` (`pending` -> `applied` /
+  `declined` / `superseded`) and `result`. Item `author` is the request's
+  actor, never client-supplied. A suggestion is a staged batch of canvas
+  ops in the event vocabulary (`NodeAdded` ... `EdgeRemoved`); approving
+  it applies the batch all-or-nothing under the workspace lock through the
+  normal write path (SSE, attribution, event log), with the suggestion's
+  author as actor, the item id as `causation_id`, client ids on
+  `NodeAdded` / `EdgeAdded` mapped to real ids for later ops, and every
+  created element stamped `data.review = {state: "accepted", by:
+  <approver>}`. A batch with one bad op applies nothing and reports the
+  failing index and reason; ops naming an element that no longer exists
+  fail as `stale`. Declining records the comment as a message item. New
+  operations reach HTTP (`POST /api/intents` accepts `targets`, `GET
+  /api/intents/{id}`, `POST /api/intents/{id}/items`, `.../items/{item}/
+  answer|apply|decline`), MCP (`intent_add_item` in the core set;
+  `get_intent`, `intent_ask`, `intent_answer`, `intent_apply`,
+  `intent_decline` under the new `intent_threads` capability) and the CLI
+  (`anchor intent ask|show|add-item|answer|apply|decline`), enforced by
+  operation descriptors. Old intent records load unchanged. The skill and
+  tool descriptions tell agents to drain the inbox first, never edit
+  targeted elements directly, stage suggestions, ask when ambiguous, and
+  post a result before resolving.
+
 - The intents queue is visible in the web UI (closes #323, part 2 of
   #321): a new Intents tab in the left files explorer lists the project's
   open intents live (SSE `intent_pending` signal plus an 8s polling

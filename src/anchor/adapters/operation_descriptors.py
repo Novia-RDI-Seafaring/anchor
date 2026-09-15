@@ -123,6 +123,56 @@ CANVAS_OPERATION_DESCRIPTORS: tuple[OperationDescriptor, ...] = (
 )
 
 
+# Scoped-ask threads (#343). `service_method` resolves against IntentService.
+# CLI commands hang off `anchor intent <cmd>`; the inbox verbs (`anchor
+# intents`, `anchor intent next/resolve`) predate the descriptor table and
+# are covered by the intents surface tests.
+INTENT_OPERATION_DESCRIPTORS: tuple[OperationDescriptor, ...] = (
+    OperationDescriptor(
+        id="intent.ask",
+        service_method="enqueue",
+        http=HttpSurface("POST", "/api/intents"),
+        mcp_tool="intent_ask",
+        cli_command=("intent", "ask"),
+    ),
+    OperationDescriptor(
+        id="intent.get",
+        service_method="get",
+        http=HttpSurface("GET", "/api/intents/{intent_id}"),
+        mcp_tool="get_intent",
+        cli_command=("intent", "show"),
+    ),
+    OperationDescriptor(
+        id="intent.add_item",
+        service_method="add_item",
+        http=HttpSurface("POST", "/api/intents/{intent_id}/items"),
+        mcp_tool="intent_add_item",
+        cli_command=("intent", "add-item"),
+    ),
+    OperationDescriptor(
+        id="intent.answer",
+        service_method="answer_question",
+        http=HttpSurface("POST", "/api/intents/{intent_id}/items/{item_id}/answer"),
+        mcp_tool="intent_answer",
+        cli_command=("intent", "answer"),
+    ),
+    OperationDescriptor(
+        id="intent.apply",
+        service_method="apply_suggestion",
+        http=HttpSurface("POST", "/api/intents/{intent_id}/items/{item_id}/apply"),
+        mcp_tool="intent_apply",
+        cli_command=("intent", "apply"),
+    ),
+    OperationDescriptor(
+        id="intent.decline",
+        service_method="decline_suggestion",
+        http=HttpSurface("POST", "/api/intents/{intent_id}/items/{item_id}/decline"),
+        mcp_tool="intent_decline",
+        cli_command=("intent", "decline"),
+    ),
+)
+
+
 # Document (anchor_pdfs) read ops. `service_method` resolves against DocStore or
 # IngestService; CLI commands are root-level (`anchor <cmd>`), so the tuple is a
 # single element. inspect_region / get_region_content are #242 P1 additions

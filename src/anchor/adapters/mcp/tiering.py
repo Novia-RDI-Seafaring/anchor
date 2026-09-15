@@ -69,11 +69,13 @@ CORE_PDF_NAMES: set[str] = {
 # The agent intent queue (#148): the agent's inbox of user canvas actions
 # (drop-to-ingest, ...) waiting to be handled. A primary agent workflow, so it
 # is advertised on every connection rather than gated behind capability
-# discovery.
+# discovery. `intent_add_item` (#343) is the agent's reply channel into a
+# scoped-ask thread, so it rides along; the human-side thread verbs are gated.
 CORE_INTENT_NAMES: set[str] = {
     "list_pending_intents",
     "next_intent",
     "resolve_intent",
+    "intent_add_item",
 }
 
 # The canvas verbs an agent reaches for first.
@@ -183,6 +185,22 @@ _CAPABILITY_GROUPS: list[dict[str, Any]] = [
             "canvas_remove_reference",
             "canvas_update_reference",
             "canvas_attach_reference",
+        ],
+    },
+    {
+        "capability": "intent_threads",
+        "when_to_use": (
+            "Scoped-ask threads beyond the core inbox + reply: read one "
+            "thread in full, open a thread on someone's behalf, and the "
+            "human-side verbs (answer a question, approve or decline a "
+            "staged suggestion) for adapter parity."
+        ),
+        "names": [
+            "get_intent",
+            "intent_ask",
+            "intent_answer",
+            "intent_apply",
+            "intent_decline",
         ],
     },
     {

@@ -141,7 +141,8 @@ def build_app(
         data_dir = canvases_dir.parent if canvases_dir is not None else None
         if data_dir is not None:
             intent_service = IntentService(
-                FsIntentStore(data_dir), bus, now=SystemClock().now
+                FsIntentStore(data_dir), bus, now=SystemClock().now,
+                workspace=workspace_service,
             )
     app.state.intent_service = intent_service
     app.state.cad_service = cad_service
