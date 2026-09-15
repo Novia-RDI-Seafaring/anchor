@@ -31,6 +31,7 @@ from anchor.core.ports.event_bus import EventBus
 from anchor.core.ports.snapshot import SnapshotPort, SnapshotResult
 from anchor.core.ports.workspace_locks import WorkspaceLocks
 from anchor.core.ports.workspace_store import WorkspaceStore
+from anchor.core.services.workspace_batch import WorkspaceBatchOperations
 from anchor.core.services.workspace_geometry import WorkspaceGeometryOperations
 from anchor.core.services.workspace_references import WorkspaceReferenceOperations
 from anchor.core.workspace.align import Anchor, Axis
@@ -89,6 +90,14 @@ class WorkspaceService:
             self.bus,
             self.locks,
             self.clock,
+        )
+        self._batch = WorkspaceBatchOperations(
+            self.store,
+            self.bus,
+            self.locks,
+            self.clock,
+            self.node_types,
+            self._envelope,
         )
 
     async def list_workspaces(self) -> list[dict[str, Any]]:
@@ -179,6 +188,40 @@ class WorkspaceService:
     async def get_state(self, slug: str) -> dict[str, Any]:
         ws = await self.store.load(slug)
         return ws.get_state()
+
+    async def version_of(self, slug: str) -> int | None:
+        """The current version of an existing workspace, or ``None`` when no
+        workspace has that slug. A read that never auto-creates: a thread
+        recording its ``base_version`` (#343) must not conjure a canvas."""
+        known = await self.store.list_workspaces()
+        if not any(m.slug == slug for m in known):
+            return None
+        return (await self.store.load(slug)).version
+
+    async def apply_batch(
+        self,
+        slug: str,
+        ops: list[dict[str, Any]],
+        *,
+        actor: Actor,
+        causation_id: str,
+        approver: Actor,
+    ) -> tuple[Workspace, list[DomainEvent], dict[str, str]]:
+        """Apply a staged suggestion's ops all-or-nothing (#343).
+
+        Every op is validated on a copy of the state through the reducer
+        first; on any failure a :class:`BatchApplyError` names the failing
+        op index and reason and nothing is written. Otherwise the commands
+        are emitted through the normal write path under the workspace lock,
+        attributed to ``actor`` (the suggestion's author) with
+        ``causation_id`` (the item id). Elements the batch creates carry
+        ``data.review = {state: "accepted", by: <approver>, at}``. Returns
+        the new state, the emitted envelopes, and the client-id -> real-id
+        map for ``NodeAdded`` / ``EdgeAdded`` ops that carried one.
+        """
+        return await self._batch.apply(
+            slug, ops, actor=actor, causation_id=causation_id, approver=approver,
+        )
 
     async def list_placeholders(self, slug: str) -> list[dict[str, Any]]:
         """Return every node on ``slug`` flagged ``data.placeholder == true``.

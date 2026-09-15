@@ -20,6 +20,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from anchor.core.events.actor import Actor
 from anchor.core.ids import new_event_id
 
 #: The kinds of request the queue understands.
@@ -53,8 +54,123 @@ RESOLVED = "resolved"
 
 #: Event type emitted on the bus when the pending set changes. Payload is just
 #: ``{"count": <n>}`` — the count, never the intent payload — so a subscriber
-#: learns *that* work is waiting without paying for it on every turn.
+#: learns *that* work is waiting without paying for it on every turn. The
+#: same signal fires when a thread gains an item or an item changes state, so
+#: a UI that refetches on it stays current (#343).
 INTENT_PENDING_EVENT = "IntentPending"
+
+# -- Scoped-ask threads (#343) ---------------------------------------------- #
+#
+# A thread is an intent anchored to a canvas selection (``targets``) whose
+# conversation lives in ``items``: an append-only list of typed entries. A
+# ``suggestion`` is a staged batch of canvas ops the human approves or
+# declines; nothing on the canvas moves until approval.
+
+ThreadItemType = Literal["message", "question", "suggestion", "result"]
+
+THREAD_ITEM_TYPES: frozenset[str] = frozenset(
+    {"message", "question", "suggestion", "result"}
+)
+
+#: ``question`` states.
+QUESTION_OPEN = "open"
+QUESTION_ANSWERED = "answered"
+
+#: ``suggestion`` states. ``message`` and ``result`` carry ``state: None``.
+SUGGESTION_PENDING = "pending"
+SUGGESTION_APPLIED = "applied"
+SUGGESTION_DECLINED = "declined"
+SUGGESTION_SUPERSEDED = "superseded"
+
+#: The canvas event vocabulary a suggestion's ops may use. Apply reuses the
+#: workspace reducer, so no new mutation code exists for suggestions.
+SUGGESTION_OP_TYPES: tuple[str, ...] = (
+    "NodeAdded",
+    "NodeUpdated",
+    "NodeRemoved",
+    "EdgeAdded",
+    "EdgeUpdated",
+    "EdgeRemoved",
+)
+
+
+def initial_item_state(item_type: str) -> str | None:
+    """The state a freshly appended item of ``item_type`` starts in."""
+    if item_type == "question":
+        return QUESTION_OPEN
+    if item_type == "suggestion":
+        return SUGGESTION_PENDING
+    return None
+
+
+class ThreadItem(BaseModel):
+    """One entry in a thread.
+
+    ``author`` is the request's actor (the #322 ContextVar), stamped by the
+    service; it is never client-supplied. ``ops`` / ``supersedes`` /
+    ``applied_versions`` are suggestion-only; ``answer`` is question-only.
+    """
+
+    id: str = Field(default_factory=new_event_id)
+    type: ThreadItemType
+    author: Actor
+    text: str = ""
+    created_at: float = 0.0
+    state: str | None = None
+    answer: str | None = None
+    ops: list[dict[str, Any]] | None = None
+    supersedes: str | None = None
+    applied_versions: list[int] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
+            "id": self.id,
+            "type": self.type,
+            "author": self.author.model_dump(),
+            "text": self.text,
+            "created_at": self.created_at,
+            "state": self.state,
+        }
+        if self.answer is not None:
+            d["answer"] = self.answer
+        if self.ops is not None:
+            d["ops"] = [dict(op) for op in self.ops]
+        if self.supersedes is not None:
+            d["supersedes"] = self.supersedes
+        if self.applied_versions is not None:
+            d["applied_versions"] = list(self.applied_versions)
+        return d
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> ThreadItem:
+        author_raw = raw.get("author")
+        author = (
+            Actor(**author_raw)
+            if isinstance(author_raw, dict) and author_raw.get("kind")
+            else Actor(kind="system")
+        )
+        ops_raw = raw.get("ops")
+        versions_raw = raw.get("applied_versions")
+        return cls(
+            id=str(raw.get("id") or new_event_id()),
+            type=raw.get("type", "message"),
+            author=author,
+            text=str(raw.get("text") or ""),
+            created_at=float(raw.get("created_at", 0.0) or 0.0),
+            state=(str(raw["state"]) if raw.get("state") is not None else None),
+            answer=(str(raw["answer"]) if raw.get("answer") is not None else None),
+            ops=(
+                [dict(op) for op in ops_raw if isinstance(op, dict)]
+                if isinstance(ops_raw, list)
+                else None
+            ),
+            supersedes=(
+                str(raw["supersedes"]) if raw.get("supersedes") is not None else None
+            ),
+            applied_versions=(
+                [int(v) for v in versions_raw] if isinstance(versions_raw, list) else None
+            ),
+        )
 
 
 class Intent(BaseModel):
@@ -64,6 +180,11 @@ class Intent(BaseModel):
     is kind-specific free-form data: for ``drop_to_ingest`` it carries the
     dropped document's slug/filename and the placeholder node it should fill.
     ``result`` is set when the intent is resolved.
+
+    Thread fields (#343, additive; records written before them load with the
+    defaults): ``targets`` is the canvas selection the ask is anchored to
+    (``[{workspace_id, node_id}]``), ``base_version`` the origin canvas's
+    version when the ask was made, ``items`` the append-only conversation.
     """
 
     id: str = Field(default_factory=new_event_id)
@@ -75,6 +196,12 @@ class Intent(BaseModel):
     created_at: float = 0.0
     resolved_at: float | None = None
     result: dict[str, Any] | None = None
+    targets: list[dict[str, Any]] = Field(default_factory=list)
+    base_version: int | None = None
+    items: list[ThreadItem] = Field(default_factory=list)
+
+    def find_item(self, item_id: str) -> ThreadItem | None:
+        return next((i for i in self.items if i.id == item_id), None)
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -85,6 +212,9 @@ class Intent(BaseModel):
             "payload": dict(self.payload),
             "status": self.status,
             "created_at": self.created_at,
+            "targets": [dict(t) for t in self.targets],
+            "base_version": self.base_version,
+            "items": [i.to_dict() for i in self.items],
         }
         if self.resolved_at is not None:
             d["resolved_at"] = self.resolved_at
@@ -110,4 +240,15 @@ class Intent(BaseModel):
                 float(raw["resolved_at"]) if raw.get("resolved_at") is not None else None
             ),
             result=(dict(raw["result"]) if isinstance(raw.get("result"), dict) else None),
+            targets=[
+                dict(t) for t in (raw.get("targets") or []) if isinstance(t, dict)
+            ],
+            base_version=(
+                int(raw["base_version"]) if raw.get("base_version") is not None else None
+            ),
+            items=[
+                ThreadItem.from_dict(i)
+                for i in (raw.get("items") or [])
+                if isinstance(i, dict)
+            ],
         )
