@@ -47,6 +47,7 @@ from anchor.extensions.anchor_pdfs.core.ingest.region_resolution import (
     PAGE_INSTRUCTIONS,
     resolve_regions,
 )
+from anchor.extensions.anchor_pdfs.core.ingest.validation import region_id_errors
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.ports.embedder import Embedder
 from anchor.extensions.anchor_pdfs.core.ports.pdf_extractor import PdfExtractor
@@ -497,12 +498,6 @@ class IngestSessionService:
         slug = session["slug"]
         store = await self._session_documents(session)
         started_at = self.clock.now()
-        session["state"] = "finalizing"
-        await self._save_session(session)
-        await self._journal(session_id, "finalize_start", declared_model=declared_model)
-
-        # Replacement writes stay in their private generation until publish.
-        await store.clear_gold_complete(slug)
 
         submitted_pages = sorted(
             int(p) for p, info in (session.get("pages") or {}).items()
@@ -512,6 +507,7 @@ class IngestSessionService:
         coverage_fallback_count = 0
         polished_pages: list[int] = []
         staged_regions: dict[int, list[dict[str, Any]]] = {}
+        identity_errors: list[dict[str, Any]] = []
         for page in submitted_pages:
             raw = await self.sessions.read_text(session_id, f"gold/pages/{page}.regions.json")
             if raw is None:
@@ -527,8 +523,23 @@ class IngestSessionService:
                 regions = [*regions, *extra]
                 coverage_fallback_count += len(extra)
             staged_regions[page] = regions
-            await store.write_gold_region_file(slug, page, regions)
+            identity_errors.extend(region_id_errors(regions, page=page))
             region_count += len(regions)
+
+        if identity_errors:
+            return {
+                "finalized": False,
+                "error": "; ".join(error["message"] for error in identity_errors),
+                "errors": identity_errors,
+            }
+        session["state"] = "finalizing"
+        await self._save_session(session)
+        await self._journal(session_id, "finalize_start", declared_model=declared_model)
+        # Validate all pages before writing gold or starting embeddings.
+        # Replacement writes still stay private until G4 publication.
+        await store.clear_gold_complete(slug)
+        for page, regions in staged_regions.items():
+            await store.write_gold_region_file(slug, page, regions)
             md = await self.sessions.read_text(session_id, f"silver/pages/{page}.md")
             if md is not None:
                 await store.write_silver_artifact(slug, f"pages/{page}.md", md)

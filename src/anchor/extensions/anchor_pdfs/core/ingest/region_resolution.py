@@ -12,6 +12,7 @@ from typing import Any
 from anchor.extensions.anchor_pdfs.core.ingest.validation import (
     REGION_KINDS,
     bbox_error,
+    region_id_errors,
     validate_region,
 )
 from anchor.extensions.anchor_pdfs.core.silver import (
@@ -154,7 +155,7 @@ def resolve_regions(
             continue
         resolved.append(region)
 
-    _reject_duplicate_ids(resolved, errors, page=page)
+    errors.extend(region_id_errors(resolved, page=page))
     if errors:
         return [], errors
     return resolved, []
@@ -418,24 +419,6 @@ def _failed_geometry(
     error: dict[str, Any],
 ) -> tuple[str, list[float], dict[str, Any], str, Any, list[dict[str, Any]]]:
     return "", [], {}, "", None, [error]
-
-
-def _reject_duplicate_ids(
-    regions: list[dict[str, Any]],
-    errors: list[dict[str, Any]],
-    *,
-    page: int,
-) -> None:
-    seen: set[str] = set()
-    for index, region in enumerate(regions):
-        region_id = region["id"]
-        if region_id in seen:
-            errors.append(_err(
-                index,
-                "id",
-                f"duplicate region id {region_id!r} on page {page}",
-            ))
-        seen.add(region_id)
 
 
 def _err(index: int, field: str, message: str) -> dict[str, Any]:

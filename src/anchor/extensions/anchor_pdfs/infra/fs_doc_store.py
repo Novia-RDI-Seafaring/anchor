@@ -33,6 +33,7 @@ import aiofiles
 from anchor.core.ids import validate_workspace_slug
 from anchor.core.upload_safety import UnsafeUploadError, assert_within, safe_upload_name
 from anchor.extensions.anchor_pdfs.core.generation import polished_membership
+from anchor.extensions.anchor_pdfs.core.ingest.validation import require_unique_region_ids
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
 from anchor.extensions.anchor_pdfs.core.source_identity import SourceIdentityError, original_source
 from anchor.extensions.anchor_pdfs.infra._generation import document_view
@@ -166,6 +167,8 @@ class FsDocStore:
         gold = (await view.get_regions(slug))["pages"]
         if not set(gold).issubset(membership):
             raise SourceIdentityError("replacement gold is outside current page membership")
+        for page, regions in gold.items():
+            require_unique_region_ids(regions, page=page)
         identities = {(page, r["id"]) for page, regions in gold.items() for r in regions}
         embeddings = await view.get_embeddings(slug)
         if embeddings and any((v["page"], v["region_id"]) not in identities for v in embeddings.get("vectors", [])):

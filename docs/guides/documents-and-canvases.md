@@ -46,6 +46,26 @@ the configured backend extractor. Harness-driven ingest lets the agent review
 each page before publishing gold, so it can be slower but more deliberate on
 difficult tables.
 
+### Region identity validation
+
+Region IDs must be unique within each page of a document generation. Both
+ingest modes reject duplicate IDs before writing gold or building embeddings.
+For example, two `r1` records on page 2 fail with
+`duplicate region id 'r1' on page 2`. ANCHOR does not rename either record or
+keep only the first. Correct the producer output and retry; a harness can
+repair and resubmit the rejected page before finalizing.
+
+The same ID on different pages is valid. Use qualified locators such as
+`p1/r1` and `p2/r1` for inspect, source navigation and derivation. A bare `r1`
+is unresolved when multiple records match. Search hits carry the page and ID
+needed to inspect the exact record.
+
+An invalid replacement leaves the previous complete generation, including
+its embeddings, selected after restart. Historical duplicate gold is not
+rewritten or renumbered: inspect and region-content lookup abstain on an
+ambiguous locator. Re-ingest that document explicitly to replace ambiguous
+legacy data; old search indexes are not automatically repaired.
+
 ## 3. Create a canvas
 
 ```bash
