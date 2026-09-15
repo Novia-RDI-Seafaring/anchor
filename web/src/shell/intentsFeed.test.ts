@@ -218,4 +218,20 @@ describe("useIntentsFeed", () => {
     await waitFor(() => expect(result.current.error).toContain("boom"));
     unmount();
   });
+
+  it("shares one SSE connection across mounts and closes it with the last one (#344)", async () => {
+    const listAll = vi.spyOn(intentsApi.intents, "listAll").mockResolvedValue([makeIntent()]);
+    const a = renderHook(() => useIntentsFeed());
+    const b = renderHook(() => useIntentsFeed());
+    await waitFor(() => expect(a.result.current.items).toHaveLength(1));
+    expect(b.result.current.items).toHaveLength(1);
+    expect(FakeEventSource.instances).toHaveLength(1);
+    // One fetch served both mounts.
+    expect(listAll).toHaveBeenCalledTimes(1);
+
+    a.unmount();
+    expect(FakeEventSource.instances[0]!.closed).toBe(false);
+    b.unmount();
+    expect(FakeEventSource.instances[0]!.closed).toBe(true);
+  });
 });

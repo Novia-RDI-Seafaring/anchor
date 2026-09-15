@@ -1,22 +1,28 @@
 /**
- * intentsFeed — data layer for the Intents panel (#323).
+ * intentsFeed — data layer for the Intents panel (#323) and, since #344,
+ * the thread pins and thread panel on the canvas.
  *
  * Pure helpers (split / titles / resolution text) plus the `useIntentsFeed`
- * hook that keeps the project's intent list live. The hook is mounted once by
- * FilesExplorer so the tab badge and the panel body share one feed.
+ * hook that keeps the project's intent list live. The list lives in one
+ * module-level store shared by every mount (FilesExplorer's tab badge, the
+ * canvas pins, the thread panel), and the liveness machinery is ref-counted:
+ * the first mount opens it, the last unmount closes it, so the browser
+ * never holds more than one intents SSE connection.
  *
  * Liveness has three legs, matching the queue's push-notify / pull-payload
  * design and the other panels' habits:
  *   1. SSE — `GET /api/intents/events` fires an `intent_pending {count}`
- *      signal on every change made through the serving process; the hook
+ *      signal on every change made through the serving process; the feed
  *      refetches on each signal.
  *   2. Poll — a light 8s interval (the FilesExplorer cadence) reconciles
  *      changes the SSE cannot see: an agent resolving over stdio MCP or the
  *      CLI mutates the durable store from a different process.
  *   3. Local nudge — the `anchor:intents-changed` browser event fired by this
- *      window's own mutations (create / dismiss) refetches immediately.
+ *      window's own mutations (create / dismiss / thread actions) refetches
+ *      immediately.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
+import { create } from "zustand";
 
 import { INTENTS_CHANGED_EVENT, intents, type Intent } from "@/api/intents";
 import { IntentsSse } from "@/realtime/intentsSse";
@@ -107,6 +113,74 @@ export function timeAgo(ts: number, nowMs: number = Date.now()): string {
   return `${Math.floor(secs / 86400)}d ago`;
 }
 
+// ---------------------------------------------------------------------------
+// Shared feed store + ref-counted liveness.
+// ---------------------------------------------------------------------------
+
+type FeedStore = {
+  /** Every intent (pending + resolved), newest first, as the server returns. */
+  items: Intent[];
+  error: string | null;
+  /** Bumped on every completed refresh (success or failure) so dependents
+   *  (the open thread's sync) can piggyback on the feed's three legs. */
+  tick: number;
+};
+
+export const useIntentsFeedStore = create<FeedStore>(() => ({
+  items: [],
+  error: null,
+  tick: 0,
+}));
+
+/** Refetch the whole list into the shared store. Safe to call any time. */
+export async function refreshIntentsFeed(): Promise<void> {
+  try {
+    const items = await intents.listAll();
+    useIntentsFeedStore.setState((s) => ({ items, error: null, tick: s.tick + 1 }));
+  } catch (e) {
+    useIntentsFeedStore.setState((s) => ({ error: String(e), tick: s.tick + 1 }));
+  }
+}
+
+let holders = 0;
+let teardown: (() => void) | null = null;
+
+function startFeed(): void {
+  void refreshIntentsFeed();
+
+  // Push: the SSE count signal (fires an immediate snapshot on connect).
+  const sse = new IntentsSse({ onPending: () => void refreshIntentsFeed() });
+  sse.connect();
+
+  // Pull fallback: reconcile cross-process mutations (MCP stdio / CLI).
+  const pollId = window.setInterval(() => void refreshIntentsFeed(), INTENTS_POLL_MS);
+
+  // Same-window nudge after our own create / dismiss / thread actions.
+  const onChanged = () => void refreshIntentsFeed();
+  window.addEventListener(INTENTS_CHANGED_EVENT, onChanged);
+
+  teardown = () => {
+    sse.disconnect();
+    window.clearInterval(pollId);
+    window.removeEventListener(INTENTS_CHANGED_EVENT, onChanged);
+  };
+}
+
+function acquireFeed(): () => void {
+  holders += 1;
+  if (holders === 1) startFeed();
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    holders -= 1;
+    if (holders === 0) {
+      teardown?.();
+      teardown = null;
+    }
+  };
+}
+
 export type IntentsFeed = {
   /** Every intent (pending + resolved), newest first, as the server returns. */
   items: Intent[];
@@ -114,43 +188,26 @@ export type IntentsFeed = {
   resolved: Intent[];
   openCount: number;
   error: string | null;
+  /** Refresh counter — changes whenever any leg refetched. */
+  tick: number;
   refresh: () => Promise<void>;
 };
 
 export function useIntentsFeed(): IntentsFeed {
-  const [items, setItems] = useState<Intent[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const items = useIntentsFeedStore((s) => s.items);
+  const error = useIntentsFeedStore((s) => s.error);
+  const tick = useIntentsFeedStore((s) => s.tick);
 
-  const refresh = useCallback(async () => {
-    try {
-      setItems(await intents.listAll());
-      setError(null);
-    } catch (e) {
-      setError(String(e));
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-
-    // Push: the SSE count signal (fires an immediate snapshot on connect).
-    const sse = new IntentsSse({ onPending: () => void refresh() });
-    sse.connect();
-
-    // Pull fallback: reconcile cross-process mutations (MCP stdio / CLI).
-    const pollId = window.setInterval(() => void refresh(), INTENTS_POLL_MS);
-
-    // Same-window nudge after our own create / dismiss.
-    const onChanged = () => void refresh();
-    window.addEventListener(INTENTS_CHANGED_EVENT, onChanged);
-
-    return () => {
-      sse.disconnect();
-      window.clearInterval(pollId);
-      window.removeEventListener(INTENTS_CHANGED_EVENT, onChanged);
-    };
-  }, [refresh]);
+  useEffect(() => acquireFeed(), []);
 
   const { open, resolved } = useMemo(() => splitIntents(items), [items]);
-  return { items, open, resolved, openCount: open.length, error, refresh };
+  return {
+    items,
+    open,
+    resolved,
+    openCount: open.length,
+    error,
+    tick,
+    refresh: refreshIntentsFeed,
+  };
 }
