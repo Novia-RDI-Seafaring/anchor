@@ -158,3 +158,72 @@ export function scrollTopForPageRect(
   const maxTop = Math.max(0, contentH - containerH);
   return Math.min(Math.max(0, target), maxTop);
 }
+
+/**
+ * Zoom after one wheel event with Cmd/Ctrl held, or one trackpad pinch step
+ * (browsers deliver pinch as a wheel event with `ctrlKey` set). Exponential so
+ * zooming in then out by the same amount returns to the start, and continuous
+ * so a trackpad feels smooth. Wheel up (negative deltaY) zooms in.
+ *
+ * Scaling follows the common d3-zoom convention: line-mode deltas (Firefox
+ * mouse wheels) are ~20x pixel deltas, page mode is one page per unit, and
+ * pinch deltas are small, so they are boosted 10x. One mouse-wheel notch
+ * (deltaY 100 px) changes zoom by about 15%.
+ */
+export function wheelZoom(
+  zoom: number,
+  deltaY: number,
+  deltaMode: number,
+  pinch: boolean,
+  min: number,
+  max: number,
+): number {
+  const unit = deltaMode === 1 ? 0.05 : deltaMode === 2 ? 1 : 0.002;
+  const next = zoom * Math.pow(2, -deltaY * unit * (pinch ? 10 : 1));
+  return Math.min(max, Math.max(min, +next.toFixed(3)));
+}
+
+/**
+ * A zoom-invariant point in the stacked document: which page, and where on it
+ * as a fraction of the page's size. `fx` is relative to the content width.
+ */
+export type ZoomAnchor = { page: number; fy: number; fx: number };
+
+/**
+ * The anchor under a content-space point (CSS px from the top-left of the
+ * stacked content). Points in the gap below a page belong to that page with
+ * `fy > 1`, so the math stays continuous between pages.
+ */
+export function anchorAt(
+  items: PageLayoutItem[],
+  contentWidth: number,
+  x: number,
+  y: number,
+): ZoomAnchor | null {
+  if (items.length === 0) return null;
+  let item = items[0]!;
+  for (const it of items) {
+    if (it.top <= y) item = it;
+    else break;
+  }
+  return {
+    page: item.page,
+    fy: (y - item.top) / item.height,
+    fx: contentWidth > 0 ? x / contentWidth : 0,
+  };
+}
+
+/**
+ * The content-space point for an anchor in a (re-zoomed) layout. The viewer
+ * subtracts the pointer's offset inside the scroller to get the scroll
+ * position that keeps the anchored spot under the pointer.
+ */
+export function pointForAnchor(
+  items: PageLayoutItem[],
+  contentWidth: number,
+  anchor: ZoomAnchor,
+): { x: number; y: number } | null {
+  const item = items.find((it) => it.page === anchor.page);
+  if (!item) return null;
+  return { x: anchor.fx * contentWidth, y: item.top + anchor.fy * item.height };
+}
