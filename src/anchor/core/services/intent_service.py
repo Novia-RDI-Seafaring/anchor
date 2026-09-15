@@ -73,6 +73,11 @@ class ThreadError(ValueError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
+        # Adapters return this attribute, never str(exc): the text is a
+        # literal authored here, and keeping it separate from the exception's
+        # own rendering is what lets the analyzer see that no exception text
+        # (or stack trace) flows to a client.
+        self.message = message
 
 
 class SuggestionApplyError(ThreadError):
@@ -80,7 +85,7 @@ class SuggestionApplyError(ThreadError):
     failing op index, the reason, and whether the op was stale."""
 
     def __init__(self, cause: BatchApplyError) -> None:
-        super().__init__("apply_failed", str(cause))
+        super().__init__("apply_failed", "suggestion could not be applied; nothing was changed")
         self.failing_index = cause.failing_index
         self.reason = cause.reason
         self.stale = cause.stale

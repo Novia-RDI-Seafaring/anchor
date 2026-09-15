@@ -25,6 +25,7 @@ by: <approver>, at}``: approval *is* the review.
 """
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -49,6 +50,8 @@ from anchor.core.workspace.node_types import NodeTypeRegistry
 from anchor.core.workspace.reducer import apply, cascade_events_for_remove
 from anchor.core.workspace.review import accepted_review
 from anchor.core.workspace.workspace import CommandError, Workspace, validate_command
+
+logger = logging.getLogger(__name__)
 
 _OP_CLASSES: dict[str, type[BaseModel]] = {
     "NodeAdded": NodeAdded,
@@ -157,7 +160,14 @@ class WorkspaceBatchOperations:
             try:
                 validate_command(sim, cmd, node_types=self._node_types)
             except CommandError as exc:
-                raise BatchApplyError(index, str(exc)) from exc
+                # The reason returned to clients is templated from the op
+                # itself, not from the exception text, so no exception-derived
+                # string reaches a response; the precise reducer message goes
+                # to the server log for debugging.
+                logger.info("suggestion op %d (%s) rejected: %s", index, type(cmd).__name__, exc)
+                raise BatchApplyError(
+                    index, f"op {index} ({type(cmd).__name__}) was rejected by the canvas"
+                ) from exc
             if isinstance(cmd, NodeRemoved):
                 for cascade in cascade_events_for_remove(sim, cmd.id):
                     planned.append((cascade, SYSTEM_ACTOR))

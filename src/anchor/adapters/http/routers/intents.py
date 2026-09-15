@@ -66,12 +66,14 @@ def _not_found(intent_id: str, item_id: str | None = None) -> JSONResponse:
 
 
 def _thread_error(exc: ThreadError) -> JSONResponse:
+    # `exc.message` is the literal authored at the raise site; never str(exc),
+    # so no exception rendering flows to the client.
     if isinstance(exc, SuggestionApplyError):
-        return JSONResponse(status_code=409, content={**exc.to_dict(), "message": str(exc)})
+        return JSONResponse(status_code=409, content={**exc.to_dict(), "message": exc.message})
     status = 404 if exc.code == "item_not_found" else (
         409 if exc.code in {"not_pending", "not_a_question", "not_a_suggestion"} else 400
     )
-    return JSONResponse(status_code=status, content={"error": exc.code, "message": str(exc)})
+    return JSONResponse(status_code=status, content={"error": exc.code, "message": exc.message})
 
 
 @router.get("")
