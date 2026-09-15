@@ -351,12 +351,12 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": (
                 "Persist a region derived from an existing gold region - the "
                 "consumer side of an OIP region producer. Give the parent "
-                "region id and the new region; it inherits the parent's "
-                "source_ref (so provenance points at the same page and bbox) "
+                "qualified region id (p2/r1) and the new region; it inherits "
+                "the source resolved by inspect in the current generation "
                 "and records derived_from, then stores it durably. Example: a "
                 "chart digitizer returns a chart_series; derive_region files it "
                 "beside the chart region it came from. Re-run `embed` to make "
-                "it searchable."
+                "it searchable. Bare ids must be unique; conflicting source overrides are rejected."
             ),
             "inputSchema": {
                 "type": "object",

@@ -38,6 +38,7 @@ from anchor.extensions.anchor_pdfs.core.ports.md_polisher import PageMdPolisher
 from anchor.extensions.anchor_pdfs.core.ports.pdf_extractor import PdfExtractor
 from anchor.extensions.anchor_pdfs.core.ports.pdf_renderer import PdfRenderer
 from anchor.extensions.anchor_pdfs.core.ports.region_extractor import RegionExtractor
+from anchor.extensions.anchor_pdfs.core.region_inspect import inspect_region
 from anchor.extensions.anchor_pdfs.core.silver import (
     build_index,
     build_page_candidates,
@@ -493,43 +494,50 @@ class IngestService:
 
         The generic consumer side of an OIP region producer: a producer
         (e.g. the chart digitizer) hands back a new region derived from one
-        it consumed; this links it to its parent and stores it durably. The
-        derived region keeps the parent's ``source_ref`` (so provenance
-        points at the same page and bbox) and records ``derived_from``.
+        it consumed; this links it to its parent and stores it durably.
+        Inspect resolves the parent's current page, geometry and source
+        identity. The child inherits that source and records a qualified
+        ``derived_from`` locator. Explicit source conflicts are rejected.
         Producer-agnostic: the only chart-specific knowledge lives in the
         producer, not here.
 
         Visible immediately via ``get_regions`` / ``get_gold_map``;
         searchable after the next ``embed`` pass. Raises ``ValueError`` if
-        the parent region does not exist.
+        the parent locator is missing/ambiguous or source metadata conflicts.
         """
         store = self.store.snapshot(slug)
-        regions = await store.get_regions(slug)
-        parent: dict[str, Any] | None = None
-        for _page, regs in (regions.get("pages") or {}).items():
-            for r in regs:
-                if isinstance(r, dict) and r.get("id") == parent_region_id:
-                    parent = r
-                    break
-            if parent is not None:
-                break
+        parent = await inspect_region(store, slug, parent_region_id)
         if parent is None:
             raise ValueError(
-                f"derive_region: parent region {parent_region_id!r} not found in {slug!r}"
+                f"derive_region: parent region {parent_region_id!r} not found or ambiguous in {slug!r}"
             )
 
+        source = parent["source_ref"]
+        supplied = region.get("source_ref")
+        if supplied is not None and not isinstance(supplied, dict):
+            raise ValueError("derive_region: source_ref must be an object")
+        supplied = supplied or {}
+        # Source fields are constraints, never replacements for resolved identity.
+        for key in (*source, "source_sha256", "generation_id"):
+            if key in supplied and supplied[key] != source.get(key):
+                raise ValueError(f"derive_region: source_ref.{key} conflicts with parent source")
+        for key in ("slug", "page", "source_sha256", "generation_id", "coord_origin"):
+            if key in region and region[key] != source.get(key):
+                raise ValueError(f"derive_region: source {key} conflicts with parent source")
         derived = dict(region)
-        derived["derived_from"] = parent_region_id
-        # Inherit the parent's provenance unless the producer set its own.
-        if not derived.get("source_ref") and parent.get("source_ref"):
-            derived["source_ref"] = parent["source_ref"]
+        derived["derived_from"] = f"p{parent['page']}/{parent['region_id']}"
+        derived["source_ref"] = {**supplied, **source}
+        derived["page"] = parent["page"]
+        derived["coord_origin"] = source["coord_origin"]
+        derived.setdefault("bbox", parent["bbox"])
+        derived.setdefault("geometry", parent["geometry"])
 
         path = await store.add_derived_region(slug, derived)
         return {
             "slug": slug,
             "region_id": derived.get("id"),
             "kind": derived.get("kind"),
-            "derived_from": parent_region_id,
+            "derived_from": derived["derived_from"],
             "path": str(path),
         }
 

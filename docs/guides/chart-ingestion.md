@@ -118,6 +118,10 @@ To store the series durably (so `search_documents` finds "LKH-85 max head"),
 after tracing call `derive_region(slug, <chart region id>, <chart_series
 region>)` instead of only placing a canvas node, then re-embed.
 
+Use qualified parent locators such as `p2/r1`; bare IDs must be unique.
+See [Derived region provenance](../concepts/derived-regions.md) for source
+inheritance, explicit override validation and generation behavior.
+
 Next:
 
 - Canvas point-collection for the human-click path.

@@ -150,7 +150,7 @@ def search(
 
 def derive_region(
     slug: str = typer.Argument(..., help="Document slug."),
-    parent_region_id: str = typer.Argument(..., help="Region id the new region derives from."),
+    parent_region_id: str = typer.Argument(..., help="Parent locator, e.g. p2/r1. Bare ids must be unique."),
     region: str = typer.Option(
         ..., "--region", help="The derived region as a JSON string, or @path to a JSON file."
     ),
