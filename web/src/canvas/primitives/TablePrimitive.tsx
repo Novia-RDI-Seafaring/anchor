@@ -352,8 +352,18 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         </div>
       ) : null}
 
+      {/* Fixed layout: with `auto`, a long key or value sets the table's
+          min-content width and the rows spill past the card's right edge
+          (the wrapper has a fixed width). Fixed layout keeps the table at
+          the card width and lets the cells' `truncate` do the clipping;
+          the last column is pinned to the anchor button + row socket. */}
       {rows.length > 0 || !d.description ? (
-        <table className="w-full">
+        <table className="w-full table-fixed">
+          <colgroup>
+            <col style={{ width: "45%" }} />
+            <col />
+            <col style={{ width: "2.25rem" }} />
+          </colgroup>
           <tbody>
             {rows.map((r, i) => {
               const hid = rowHandleId(i, r);
@@ -368,7 +378,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                   // would flicker when sliding between adjacent rows.
                   onMouseEnter={() => broadcastRowHover(r)}
                 >
-                  <td className="px-3 py-1 text-neutral-600">
+                  <td className="min-w-0 px-3 py-1 text-neutral-600">
                     <RowCell
                       rowIndex={i}
                       col="key"
@@ -381,7 +391,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                       onAppendRow={() => appendRow("key")}
                     />
                   </td>
-                  <td className={`px-3 py-1 text-neutral-900 ${r.source_ref ? "bg-emerald-50/80" : ""}`}>
+                  <td className={`min-w-0 px-3 py-1 text-neutral-900 ${r.source_ref ? "bg-emerald-50/80" : ""}`}>
                     <RowCell
                       rowIndex={i}
                       col="value"

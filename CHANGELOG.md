@@ -124,6 +124,15 @@ next version section on tag.
 
 ### Fixed
 
+- Spec table rows no longer spill past the card's right edge. The rows
+  table used automatic layout, so one long key or value set the whole
+  table's width wider than the fixed-width card and the value column,
+  anchor buttons and row sockets rendered outside the border. The table
+  is now fixed-layout at the card width (key column 45%, value column
+  the rest, a pinned 2.25rem column for the anchor button and socket) and
+  long cells truncate with an ellipsis; resizing the card still controls
+  the column widths.
+
 - `search_documents` no longer times out over MCP on Windows. The
   embedder's first `import numpy` ran on a worker thread, where loading
   numpy's bundled OpenBLAS DLL deadlocked under the Windows loader lock; the
