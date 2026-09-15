@@ -132,6 +132,19 @@ next version section on tag.
 
 ### Fixed
 
+- Canvas elements no longer show connection dots. Every element (shapes,
+  cards, spec tables and their rows, document regions) drew small
+  sockets at fixed points, which read as the only places a connector
+  could attach and invited per-row, per-point wiring that did not match
+  how edges work: connections attach to the whole element. The handles
+  stay in the DOM so edges still register, but they are invisible and
+  never take the pointer; new connections come from the quick-connect
+  overlay on a selected element, dropped onto another element. SysML
+  block ports are modelled ports and stay visible.
+- A spec table's header anchor now appears only when some row lacks its
+  own reference. When every row is grounded, each row's anchor opens its
+  source, and the card-level anchor was a redundant second way in.
+
 - Spec table rows no longer spill past the card's right edge. The rows
   table used automatic layout, so one long key or value set the whole
   table's width wider than the fixed-width card and the value column,

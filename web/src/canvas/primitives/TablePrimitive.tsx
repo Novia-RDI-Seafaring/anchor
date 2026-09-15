@@ -307,7 +307,10 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
             )}
           </div>
         </div>
-        {d.source_ref?.page ? (
+        {/* The header anchor is the fallback for rows without their own
+            reference. When every row is grounded, each row's anchor already
+            opens its source, so a card-level anchor would be redundant. */}
+        {d.source_ref?.page && !(rows.length > 0 && rows.every((r) => r.source_ref?.page)) ? (
           <button
             type="button"
             className="nodrag nopan grid h-6 w-6 shrink-0 place-items-center rounded border border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100"
@@ -425,13 +428,10 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                         <AnchorIcon size={11} strokeWidth={2.2} aria-hidden="true" />
                       </button>
                     ) : null}
-                    {/* Per-row source handle. Default state is a 2px grey
-                        dot tucked against the row's right edge — visible
-                        on hover, hit-target stays clickable for drag-to-
-                        connect via ReactFlow's onConnect.
-                        We pin the handle inside the row's last <td> so the
-                        top offset comes from layout flow (no absolute Y
-                        math) and the X is right at the table's right edge. */}
+                    {/* Per-row source handle. Never visible or grabbable
+                        (see the handle rule in index.css): it only gives an
+                        anchored evidence edge a slot to pin to while its row
+                        is hovered. */}
                     <Handle
                       type="source"
                       position={Position.Right}
