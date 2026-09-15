@@ -340,3 +340,34 @@ describe("TablePrimitive row handles", () => {
     });
   });
 });
+
+describe("TablePrimitive header anchor", () => {
+  const nodeRef = { slug: "doc", page: 3, region_id: "r2" };
+
+  it("is hidden when every row carries its own source_ref", async () => {
+    await renderTable({
+      label: "LKH-5",
+      source_ref: nodeRef,
+      rows: [
+        { key: "A", value: "158 mm", source_ref: { slug: "doc", page: 3, region_id: "r2" } },
+        { key: "B", value: "70 mm", source_ref: { slug: "doc", page: 3, region_id: "r2" } },
+      ],
+    });
+    // Only the two row anchors remain; no card-level "Open source page" button.
+    expect(screen.getAllByRole("button", { name: /Open source page 3/ })).toHaveLength(2);
+  });
+
+  it("stays as the fallback when some row has no reference", async () => {
+    await renderTable({
+      label: "LKH-5",
+      source_ref: nodeRef,
+      rows: [
+        { key: "A", value: "158 mm", source_ref: { slug: "doc", page: 3, region_id: "r2" } },
+        { key: "B", value: "70 mm" },
+      ],
+    });
+    // One row anchor plus the header anchor.
+    expect(screen.getAllByRole("button", { name: /Open source page 3/ })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: /Open source page/ })[0]?.className).toContain("h-6");
+  });
+});
