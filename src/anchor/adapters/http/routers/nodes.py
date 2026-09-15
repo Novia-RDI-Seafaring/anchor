@@ -3,12 +3,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from anchor.adapters.http.deps import get_doc_store, get_workspace_service
+from anchor.adapters.http.deps import get_workspace_service
 from anchor.adapters.http.schemas import AddNodeRequest, UpdateNodeRequest
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.core.workspace.workspace import CommandError
-from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
-from anchor.extensions.anchor_pdfs.core.value_provenance import enrich_spec_row_source_refs
 
 router = APIRouter(prefix="/api/workspaces", tags=["nodes"])
 node_types_router = APIRouter(prefix="/api/node-types", tags=["nodes"])
@@ -75,7 +73,6 @@ async def update_node(
     node_id: str,
     req: UpdateNodeRequest,
     svc: WorkspaceService = Depends(get_workspace_service),
-    doc_store: DocStore = Depends(get_doc_store),
 ):
     # `model_dump(exclude_unset=True)` lets us distinguish "parent omitted"
     # from "parent explicitly set to null" — the latter is how the
@@ -103,8 +100,6 @@ async def update_node(
             if "parent" in raw:
                 parent_val = raw.pop("parent")
                 fields = {k: v for k, v in raw.items() if v is not None}
-                if "data" in fields:
-                    fields["data"] = await enrich_spec_row_source_refs(fields["data"], doc_store)
                 if fields:
                     await svc.update_node(slug, node_id, fields)
                 state, env = await svc.reparent_node(slug, node_id, parent_val)
@@ -112,8 +107,6 @@ async def update_node(
                 fields = {k: v for k, v in raw.items() if v is not None}
                 if not fields:
                     raise HTTPException(400, "nothing to update")
-                if "data" in fields:
-                    fields["data"] = await enrich_spec_row_source_refs(fields["data"], doc_store)
                 state, env = await svc.update_node(slug, node_id, fields)
     except CommandError as exc:
         raise HTTPException(400, str(exc)) from exc

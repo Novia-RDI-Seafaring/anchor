@@ -42,6 +42,8 @@ from anchor.core.workspace.reducer import apply, cascade_events_for_remove
 from anchor.core.workspace.references import stamp_authored_source_refs
 from anchor.core.workspace.workspace import CommandError, Workspace, validate_command
 
+NodeDataPreparer = Callable[[dict[str, Any], dict[str, Any] | None], Awaitable[dict[str, Any]]]
+
 
 @asynccontextmanager
 async def _no_lock():
@@ -64,6 +66,7 @@ class WorkspaceService:
         locks: WorkspaceLocks | None = None,
         node_types: NodeTypeRegistry | None = None,
         snapshotter: SnapshotPort | None = None,
+        node_data_preparer: NodeDataPreparer | None = None,
     ) -> None:
         self.store = store
         self.bus = bus
@@ -78,6 +81,7 @@ class WorkspaceService:
             node_types if node_types is not None else builtin_node_type_registry()
         )
         self.snapshotter = snapshotter
+        self._node_data_preparer = node_data_preparer
         self._references = WorkspaceReferenceOperations(
             self.store,
             self.locks,
@@ -90,6 +94,12 @@ class WorkspaceService:
             self.locks,
             self.clock,
         )
+
+    def bind_node_data_preparer(self, preparer: NodeDataPreparer) -> None:
+        """Bind producer preparation once during composition, never retarget it."""
+        if self._node_data_preparer is not None and self._node_data_preparer != preparer:
+            raise ValueError("workspace node data preparation is already bound")
+        self._node_data_preparer = preparer
 
     async def list_workspaces(self) -> list[dict[str, Any]]:
         """Return the meta of every workspace plus per-canvas counts + ref graph.
@@ -530,6 +540,14 @@ class WorkspaceService:
             entity = (state.nodes if isinstance(cmd, NodeUpdated) else state.edges).get(cmd.id)
             previous = entity.model_dump() if entity is not None else None
             cmd = cmd.model_copy(update={"fields": stamp_authored_source_refs(cmd.fields, previous)})
+        if self._node_data_preparer is not None:
+            if isinstance(cmd, NodeAdded):
+                data = await self._node_data_preparer(cmd.data, None)
+                cmd = cmd.model_copy(update={"data": data})
+            elif isinstance(cmd, NodeUpdated) and isinstance(cmd.fields.get("data"), dict):
+                node = state.nodes.get(cmd.id)
+                data = await self._node_data_preparer(cmd.fields["data"], node.data if node else None)
+                cmd = cmd.model_copy(update={"fields": {**cmd.fields, "data": data}})
         validate_command(state, cmd, node_types=self.node_types)
         env = self._envelope(slug, cmd)
         version = await self.store.append_event(slug, env)

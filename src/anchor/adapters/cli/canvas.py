@@ -14,7 +14,6 @@ from anchor.adapters.cli.canvas_references import reference_app
 from anchor.adapters.cli.canvas_snapshot import register_snapshot_command
 from anchor.adapters.cli.common import DEFAULT_DATA_DIR
 from anchor.adapters.cli.services import _build_canvas_runtime
-from anchor.extensions.anchor_pdfs.core.value_provenance import enrich_spec_row_source_refs
 
 canvas_app = typer.Typer(help="Manage workspaces (canvases).")
 
@@ -374,7 +373,6 @@ def canvas_update_node(
         raise typer.Exit(code=2)
     runtime = _build_canvas_runtime(data_dir)
     ws = runtime.workspace
-    doc_store = runtime.doc_store
     fields: dict = {}
     if label is not None:
         fields["label"] = label
@@ -418,8 +416,6 @@ def canvas_update_node(
             state, env = await ws.reparent_node(slug, node_id, parent_val)
         else:
             if fields:
-                if "data" in fields:
-                    fields["data"] = await enrich_spec_row_source_refs(fields["data"], doc_store)
                 state, env = await ws.update_node(slug, node_id, fields)
             if parent_op:
                 state, env = await ws.reparent_node(slug, node_id, parent_val)

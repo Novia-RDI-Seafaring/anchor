@@ -21,6 +21,7 @@ async def enrich_spec_row_source_refs(data: Any, store: DocStore) -> Any:
         return data
 
     cache: dict[tuple[str, int], list[dict[str, Any]]] = {}
+    snapshots: dict[str, DocStore] = {}
     next_rows: list[Any] = []
     changed = False
     for row in rows:
@@ -42,7 +43,9 @@ async def enrich_spec_row_source_refs(data: Any, store: DocStore) -> Any:
             continue
         slug, page = scope["slug"], scope["page"]
         region_id = scope.get("region_id")
-        regions = await _regions_for_page(store, cache, slug, page)
+        if slug not in snapshots:
+            snapshots[slug] = store.snapshot(slug)
+        regions = await _regions_for_page(snapshots[slug], cache, slug, page)
         candidates = [
             (region, key_cell, value_cell)
             for region in _candidate_regions(regions, region_id, page)

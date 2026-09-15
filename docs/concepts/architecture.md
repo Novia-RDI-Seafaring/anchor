@@ -47,6 +47,9 @@ Docling or an embedding model. Commands that require an omitted service
 fail with an error that names the active profile.
 
 Each runtime gives `WorkspaceService` an
+optional producer node-data preparer so create and data-update operations
+share [source resolution](spec-source-resolution.md) without extension imports
+in the canvas core. It also gives `WorkspaceService` an
 `InProcessWorkspaceLocks` adapter. Mutations to one workspace are
 serialized across concurrent requests for the complete load, validate,
 append, snapshot, and publish sequence. Different workspaces can still

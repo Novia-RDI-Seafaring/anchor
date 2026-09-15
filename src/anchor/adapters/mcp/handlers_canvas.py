@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -113,15 +112,10 @@ def _spec_rows_hint(node_type: str | None, data: dict[str, Any] | None) -> str |
     return None
 
 
-NodeFieldsEnricher = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
-
-
 async def call_tool(
     svc: WorkspaceService,
     name: str,
     args: dict[str, Any],
-    *,
-    enrich_node_fields: NodeFieldsEnricher | None = None,
 ) -> str:
     try:
         if name == "canvas_get_state":
@@ -167,15 +161,11 @@ async def call_tool(
                 state, env = await svc.reparent_node(slug, node_id, parent_val)
             else:
                 if parent_present:
-                    if enrich_node_fields:
-                        fields = await enrich_node_fields(fields)
                     await svc.update_node(slug, node_id, fields)
                     state, env = await svc.reparent_node(slug, node_id, parent_val)
                 else:
                     if not fields:
                         return json.dumps({"error": "nothing to update"})
-                    if enrich_node_fields:
-                        fields = await enrich_node_fields(fields)
                     state, env = await svc.update_node(slug, node_id, fields)
             result = {"event": env.model_dump(), "state": state.get_state()}
             if data_patch is not None:

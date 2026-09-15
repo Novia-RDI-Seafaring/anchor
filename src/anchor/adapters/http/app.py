@@ -19,7 +19,7 @@ from anchor.adapters.http.routers import (
     whoami,
     workspaces,
 )
-from anchor.adapters.project_runtime import ProjectRuntime
+from anchor.adapters.project_runtime import ProjectRuntime, bind_workspace_sources
 from anchor.core.clock import SystemClock
 from anchor.core.ids import InvalidWorkspaceSlugError
 from anchor.core.ports.event_bus import EventBus
@@ -80,6 +80,7 @@ def build_app(
         raise ValueError("build_app requires a ProjectRuntime or explicit core services")
 
     app = FastAPI(title="Anchor v2", version="0.2.0")
+    bind_workspace_sources(workspace_service, doc_store)
     app.state.workspace_service = workspace_service
     app.state.ingest_service = ingest_service
     app.state.doc_store = doc_store
