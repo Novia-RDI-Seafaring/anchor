@@ -11,6 +11,14 @@ next version section on tag.
 
 ### Added
 
+- PDF viewer zooms with Cmd/Ctrl+scroll and trackpad pinch (closes #354).
+  The zoom centres on the pointer, so the spot under the cursor stays put,
+  and the gesture no longer zooms the whole browser page. Plain scrolling
+  still moves through pages. Pages re-render at the new scale once the
+  gesture settles, and the last render is scaled in the meantime, so a
+  fast pinch stays smooth on long documents. With focus in the viewer,
+  Cmd/Ctrl + `=` / `-` / `0` zoom in, zoom out and reset.
+
 - Scoped-ask threads, backend half (closes #343, part of #345): an
   intent can now be anchored to a canvas selection and carry a
   conversation. `Intent` gains three additive fields, `targets`

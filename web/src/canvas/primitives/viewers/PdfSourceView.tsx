@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import "pdfjs-dist/web/pdf_viewer.css";
 
@@ -6,12 +6,16 @@ import { documents, type Region } from "@/api/documents";
 import { REFERENCES_CHANGED_EVENT, references } from "@/api/references";
 import { bboxToViewportRect } from "@/lib/pdfHighlight";
 import {
+  anchorAt,
   buildPageLayout,
   pageInView,
+  pointForAnchor,
   scrollTopForPage,
   scrollTopForPageRect,
   visiblePageRange,
+  wheelZoom,
   type PageLayoutItem,
+  type ZoomAnchor,
 } from "@/lib/pdfContinuous";
 import type { SourceRef } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -47,6 +51,10 @@ import { loadPdf, pageSizes as readPageSizes, type PdfDoc } from "./pdfjs";
 const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.2;
+/** How long zoom must settle before pages re-rasterize at the new scale. While
+ *  a wheel or pinch gesture is running the last raster is CSS-scaled instead,
+ *  so PDF.js is not asked to re-render every page on every wheel event. */
+const RENDER_ZOOM_SETTLE_MS = 120;
 const OVERSCAN = 1;
 const THUMB_WIDTH = 96; // CSS px of the thumbnail image
 // Sensible page-size fallback (US Letter, points) before any size is known.
@@ -100,6 +108,14 @@ export function PdfSourceView({
   const destroyRef = useRef<(() => Promise<void>) | null>(null);
 
   const [zoom, setZoom] = useState(1);
+  // The zoom pages are rasterized at; trails `zoom` by RENDER_ZOOM_SETTLE_MS.
+  const [renderZoom, setRenderZoom] = useState(1);
+  // The stacked content box (for the pointer-anchored wheel zoom).
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  // Pending pointer anchor for a wheel zoom: the spot under the pointer, and
+  // the pointer's offset inside the scroller. Applied after the re-zoomed
+  // layout commits, so the same spot stays under the pointer.
+  const wheelAnchorRef = useRef<{ anchor: ZoomAnchor; px: number; py: number } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pageCount, setPageCount] = useState(total);
   // PDF document instance, exposed via state so render re-fires once loaded.
@@ -324,6 +340,12 @@ export function PdfSourceView({
       : null;
     const key = `${highlightNonce ?? 0}:${highlightPage}:${highlightBbox?.join(",") ?? ""}:${rect ? "b" : "p"}:${zoom}`;
     if (lastHighlightRef.current === key) return;
+    // A pointer-anchored wheel zoom owns the scroll position; only record the
+    // new key so the highlight is not re-centred on every wheel step.
+    if (wheelAnchorRef.current) {
+      lastHighlightRef.current = key;
+      return;
+    }
     const top = rect
       ? scrollTopForPageRect(items, highlightPage, rect.top, rect.height, el.clientHeight, totalHeight)
       : scrollTopForPage(items, highlightPage, el.clientHeight, totalHeight);
@@ -339,11 +361,13 @@ export function PdfSourceView({
       const r = rendered[p];
       const size = pdfPageSizes[p];
       if (!size) return null;
-      const vw = r?.w ?? size.w * zoom;
-      const vh = r?.h ?? size.h * zoom;
+      // Scale the rendered viewport to the current zoom: during a wheel gesture
+      // the raster trails `zoom`, but overlays must track the page box.
+      const vw = r ? r.w * (zoom / renderZoom) : size.w * zoom;
+      const vh = r ? r.h * (zoom / renderZoom) : size.h * zoom;
       return bboxToViewportRect(bbox, size.w, size.h, { width: vw, height: vh });
     },
-    [rendered, pdfPageSizes, zoom],
+    [rendered, pdfPageSizes, zoom, renderZoom],
   );
 
   const onPageRendered = useCallback((p: number, size: { w: number; h: number }) => {
@@ -470,6 +494,75 @@ export function PdfSourceView({
     return () => window.clearTimeout(id);
   }, [toast]);
 
+  // Re-rasterize once zoom settles.
+  useEffect(() => {
+    if (renderZoom === zoom) return;
+    const id = window.setTimeout(() => setRenderZoom(zoom), RENDER_ZOOM_SETTLE_MS);
+    return () => window.clearTimeout(id);
+  }, [zoom, renderZoom]);
+
+  // Keep the anchored spot under the pointer once the re-zoomed layout is in
+  // the DOM (layout effect: before paint, so there is no visible jump).
+  useLayoutEffect(() => {
+    const pending = wheelAnchorRef.current;
+    const el = scrollRef.current;
+    const content = contentRef.current;
+    if (!pending || !el || !content) return;
+    wheelAnchorRef.current = null;
+    const pt = pointForAnchor(items, contentWidth, pending.anchor);
+    if (!pt) return;
+    el.scrollTop = content.offsetTop + pt.y - pending.py;
+    el.scrollLeft = content.offsetLeft + pt.x - pending.px;
+    setScrollTop(el.scrollTop);
+  }, [items, contentWidth]);
+
+  // Cmd/Ctrl + wheel and trackpad pinch zoom the document around the pointer.
+  // A native non-passive listener, because React's onWheel is passive and
+  // cannot stop the browser from zooming the whole page.
+  const layoutRef = useRef({ items, contentWidth });
+  layoutRef.current = { items, contentWidth };
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const content = contentRef.current;
+      const box = el.getBoundingClientRect();
+      const px = e.clientX - box.left;
+      const py = e.clientY - box.top;
+      const { items: its, contentWidth: cw } = layoutRef.current;
+      const anchor = content
+        ? anchorAt(its, cw, el.scrollLeft + px - content.offsetLeft, el.scrollTop + py - content.offsetTop)
+        : null;
+      // Trackpad pinch arrives as ctrlKey without a physical Ctrl press; a
+      // Cmd+wheel on macOS arrives as metaKey. Only pinch gets the small-delta boost.
+      const pinch = e.ctrlKey && !e.metaKey && Math.abs(e.deltaY) < 50;
+      setZoom((z) => {
+        const next = wheelZoom(z, e.deltaY, e.deltaMode, pinch, MIN_ZOOM, MAX_ZOOM);
+        if (next !== z && anchor) wheelAnchorRef.current = { anchor, px, py };
+        return next;
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [doc]);
+
+  // Cmd/Ctrl + = / - / 0 while the viewer has focus.
+  const onViewerKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+    if (e.key === "=" || e.key === "+") {
+      e.preventDefault();
+      zoomIn();
+    } else if (e.key === "-") {
+      e.preventDefault();
+      zoomOut();
+    } else if (e.key === "0") {
+      e.preventDefault();
+      resetZoom();
+    }
+  };
+
   const zoomIn = () => setZoom((z) => Math.min(MAX_ZOOM, +(z + ZOOM_STEP).toFixed(2)));
   const zoomOut = () => setZoom((z) => Math.max(MIN_ZOOM, +(z - ZOOM_STEP).toFixed(2)));
   const resetZoom = () => setZoom(1);
@@ -593,19 +686,22 @@ export function PdfSourceView({
         <div
           ref={scrollRef}
           onScroll={onScroll}
-          className="relative flex-1 overflow-auto p-4"
+          onKeyDown={onViewerKeyDown}
+          tabIndex={-1}
+          className="relative flex-1 overflow-auto p-4 outline-none"
           data-testid="pdf-scroller"
         >
           {loadError ? (
             <div className="p-6 text-sm text-red-600">Could not load PDF: {loadError}</div>
           ) : (
-            <div className="relative mx-auto" style={{ height: totalHeight, width: contentWidth || undefined }}>
+            <div ref={contentRef} className="relative mx-auto" style={{ height: totalHeight, width: contentWidth || undefined }}>
               {items.map((it) => (
                 <PageSlot
                   key={it.page}
                   item={it}
                   doc={doc}
                   zoom={zoom}
+                  renderZoom={renderZoom}
                   rendered={rendered[it.page]}
                   shouldRender={shouldRenderPage(it.page)}
                   regions={canvasSlug ? regionsByPage[it.page] ?? [] : []}
@@ -650,6 +746,8 @@ type SlotProps = {
   item: PageLayoutItem;
   doc: PdfDoc | null;
   zoom: number;
+  /** The zoom the page raster was drawn at; trails `zoom` during a gesture. */
+  renderZoom: number;
   rendered?: { w: number; h: number };
   shouldRender: boolean;
   regions: Region[];
@@ -677,13 +775,15 @@ type SlotProps = {
  */
 function PageSlot(props: SlotProps) {
   const {
-    item, doc, zoom, rendered, shouldRender, regions, referenceMarks,
+    item, doc, zoom, renderZoom, rendered, shouldRender, regions, referenceMarks,
     activeReferenceId, onSelectReference, canvasSlug, highlightBbox, confirmBbox,
     pending, bboxToRect, onMouseUp, onCaptureRegion, onRendered,
     onConfirmReference, onCancelPending, saving, registerRef,
   } = props;
 
-  const viewportSize = rendered ?? null;
+  // Overlays size to the page box at the current zoom, even while the raster
+  // underneath is still the CSS-scaled one from the previous zoom.
+  const viewportSize = rendered ? { w: item.width, h: item.height } : null;
   const highlightRect = bboxToRect(highlightBbox);
   const confirmRect = bboxToRect(confirmBbox);
 
@@ -726,7 +826,12 @@ function PageSlot(props: SlotProps) {
       onContextMenu={handleContextMenu}
     >
       {shouldRender && doc ? (
-        <PdfPageCanvas doc={doc} page={item.page} zoom={zoom} onRendered={onRendered} />
+        <div
+          className="absolute left-0 top-0 origin-top-left"
+          style={renderZoom === zoom ? undefined : { transform: `scale(${zoom / renderZoom})` }}
+        >
+          <PdfPageCanvas doc={doc} page={item.page} zoom={renderZoom} onRendered={onRendered} />
+        </div>
       ) : null}
 
       {canvasSlug && viewportSize ? (
