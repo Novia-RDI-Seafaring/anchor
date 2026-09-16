@@ -260,6 +260,37 @@ looks right and loses every link back to the page it came from.
 
 Raw HTML in the source is escaped, never rendered.
 
+### Point prose at its source with an `anchor:` link
+
+A value quoted in a sentence can carry its provenance the same way a spec
+row does. Write an ordinary Markdown link whose target is `anchor:`:
+
+```markdown
+Rated head is [24 m](anchor:lkh-5?page=3&region=r2) at 8 m3/h.
+```
+
+The card renders the words with an anchor glyph after them; clicking
+opens that document at that page with the region highlighted. The query
+maps onto `source_ref` field for field, including the selectors that
+point below a region:
+
+| Written | Points at |
+| --- | --- |
+| `anchor:<slug>?page=3` | the page |
+| `anchor:<slug>?page=3&region=r2` | one gold region |
+| `anchor:<slug>?page=3&item=p3-i0` | one silver item |
+| `anchor:<slug>?page=3&cell=4,1` | one table cell |
+
+A ref naming no document or no page renders struck through, so a pointer
+you got wrong is visible rather than silently reading as sourced.
+
+An inline ref is a pointer for whoever reads the card. It is **not** an
+evidence edge. The edge is the reviewable claim that a value came from a
+region, and rows of values still belong in a `spec` node where each row
+carries its own `source_ref`. Use the link for prose that mentions a
+source in passing; use an edge, or a spec row, when the relation itself
+is the point. Doing both is fine.
+
 ### Review states
 
 Some workspaces run in review mode (`metadata.review_mode == true`). In

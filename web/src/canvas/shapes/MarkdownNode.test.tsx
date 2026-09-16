@@ -92,6 +92,36 @@ describe("MarkdownNode", () => {
     expect(container.querySelector("a")?.getAttribute("href")).not.toContain("javascript:");
   });
 
+  it("renders an anchor: link as a source ref, not as a web link", () => {
+    const { container } = renderMarkdown({
+      text: "Rated head is [24 m](anchor:lkh-5?page=3&region=r2).",
+    });
+    const ref = container.querySelector("[data-testid='source-ref-link']");
+    expect(ref).toBeTruthy();
+    expect(ref?.textContent).toContain("24 m");
+    // It opens a document in the viewer; it is not a navigable href.
+    expect(container.querySelector("a")).toBeNull();
+    expect(ref?.getAttribute("title")).toContain("page 3");
+    expect(ref?.getAttribute("title")).toContain("region r2");
+  });
+
+  it("shows a source ref that points nowhere as broken", () => {
+    const { container } = renderMarkdown({ text: "Head is [24 m](anchor:lkh-5) here." });
+    const broken = container.querySelector("[data-testid='source-ref-broken']");
+    expect(broken).toBeTruthy();
+    expect(broken?.className).toContain("line-through");
+    expect(container.querySelector("[data-testid='source-ref-link']")).toBeNull();
+  });
+
+  it("still blocks a javascript: link while allowing anchor:", () => {
+    // Widening the URL allowlist by one scheme must not widen it by two.
+    const { container } = renderMarkdown({
+      text: "[a](javascript:alert(1)) and [b](anchor:d?page=1)",
+    });
+    expect(container.querySelector("a")?.getAttribute("href")).not.toContain("javascript:");
+    expect(container.querySelector("[data-testid='source-ref-link']")).toBeTruthy();
+  });
+
   it("hides the title strip until the card is named or selected", () => {
     const { container: plain } = renderMarkdown({ text: "body" });
     expect(plain.textContent).not.toContain("untitled");
