@@ -65,6 +65,11 @@ type Options = {
    * are created with a heading to type. A text element has no label: its
    * body IS the element, so it claims the stamp instead. Without this,
    * placing a text element left nothing focused and typing went nowhere.
+   *
+   * Setting it explicitly wins over that default in both directions. A
+   * card with both a title and a body — a Markdown card, whose title is
+   * optional — passes `false` on the title so the body gets the caret
+   * instead of the two racing for it.
    */
   claimsPendingFocus?: boolean;
   /**
@@ -122,7 +127,7 @@ export function useInlineField<M extends boolean = false>({
   field = "label",
   multiline,
   canEdit = true,
-  claimsPendingFocus = false,
+  claimsPendingFocus,
   enterKey = "commit",
 }: Options & { multiline?: M }): Result<M> {
   const [editing, setEditing] = useState(false);
@@ -221,11 +226,13 @@ export function useInlineField<M extends boolean = false>({
   // `useUiStore.pendingInlineRenameNodeId`. We're the natural consumer
   // because every shape primitive that owns a label mounts a
   // `useInlineField({ field: "label" })` — centralising the auto-focus
-  // here avoids editing each shape file. Gated on `field === "label"` so
-  // body-editor hooks on the same node don't race for focus.
+  // here avoids editing each shape file. Gated so body-editor hooks on
+  // the same node don't race for focus: the label editor claims the stamp
+  // unless the caller says otherwise (see `claimsPendingFocus`).
   const pendingRenameId = useUiStore((s) => s.pendingInlineRenameNodeId);
   useEffect(() => {
-    if (field !== "label" && !claimsPendingFocus) return;
+    // Explicit wins; otherwise the label editor is the default claimant.
+    if (!(claimsPendingFocus ?? field === "label")) return;
     if (!canEdit) return;
     if (pendingRenameId !== nodeId) return;
     const consumed = useUiStore.getState().consumeInlineRename(nodeId);

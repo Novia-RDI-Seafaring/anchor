@@ -62,6 +62,9 @@ export function MarkdownNode({ id, data, selected }: NodeProps) {
     value: label,
     field: "label",
     canEdit: selected ?? false,
+    // The title is optional; a freshly placed card puts the caret in the
+    // body instead, so it does not claim the pending-focus stamp.
+    claimsPendingFocus: false,
   });
   const body = useInlineField({
     workspaceSlug: workspaceSlug ?? "",

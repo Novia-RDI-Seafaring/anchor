@@ -1,11 +1,13 @@
 /**
  * MarkdownNode — a card whose body renders as rich text.
  */
-import { render } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReactFlowProvider } from "@xyflow/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
+
+import { useUiStore } from "@/stores/uiStore";
 
 import { MarkdownNode } from "./MarkdownNode";
 
@@ -102,6 +104,16 @@ describe("MarkdownNode", () => {
   it("invites the first Markdown when the body is empty and the card is selected", () => {
     const { getByText } = renderMarkdown({}, true);
     expect(getByText("double-click to write Markdown")).toBeTruthy();
+  });
+
+  it("puts the caret in the body of a freshly placed card, not in its title", async () => {
+    // Both editors live on this card. The title is optional, so the body
+    // claims the pending-focus stamp — place one and type Markdown.
+    useUiStore.setState({ pendingInlineRenameNodeId: "m1" });
+    const { container } = renderMarkdown({}, true);
+    await act(async () => {});
+    expect(container.querySelector("textarea")).toBeTruthy();
+    expect(container.querySelector("input")).toBeNull();
   });
 
   it("edits the Markdown source in a textarea, where Enter breaks the line", async () => {
