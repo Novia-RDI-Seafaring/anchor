@@ -246,6 +246,12 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   // Connector tool: the element a connector starts from, once picked.
   const connectSourceId = useUiStore((s) => s.connectSourceId);
   const setConnectSourceId = useUiStore((s) => s.setConnectSourceId);
+  // In-flight connector drag: where the pointer went down, and where it is
+  // now, both in screen space. Drawn as a preview line. The ref holds the
+  // element the drag started on so a drag that ends on another element can
+  // join the two without waiting for a second click.
+  const connectDownRef = useRef<{ id: string; x: number; y: number } | null>(null);
+  const [connectLine, setConnectLine] = useState<{ ax: number; ay: number; bx: number; by: number } | null>(null);
   const navigate = useNavigate();
   const rootRef = useRef<HTMLDivElement | null>(null);
   // Pointer-down origin for armed-tool drag-to-size. Lives in a ref so
@@ -908,6 +914,14 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     area: true,
   };
 
+  /** The canvas element under a screen point, if any. Connections attach to
+   *  whole elements, so this is all the aiming there is. */
+  const elementIdAt = (clientX: number, clientY: number): string | null => {
+    const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+    const node = el?.closest(".react-flow__node") as HTMLElement | null;
+    return node?.dataset.id ?? null;
+  };
+
   const placeArmedNode = async (
     flowX: number,
     flowY: number,
@@ -968,10 +982,21 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
 
   const onPointerDown = (event: React.PointerEvent) => {
     if (!armedTool) return;
+    const target = event.target as HTMLElement;
+    // Connector tool: a press on an element starts a connector. Dragging to
+    // another element joins them on release; a press and release on the same
+    // element is a click, and the next click picks the other end. Node
+    // dragging is off while this tool is armed, so the box stays put.
+    if (armedTool === CONNECT_TOOL) {
+      const id = (target.closest(".react-flow__node") as HTMLElement | null)?.dataset.id;
+      if (!id) return;
+      connectDownRef.current = { id, x: event.clientX, y: event.clientY };
+      setConnectLine({ ax: event.clientX, ay: event.clientY, bx: event.clientX, by: event.clientY });
+      return;
+    }
     // Ignore clicks on existing nodes — the user might be trying to select
     // a node mid-arm. ReactFlow tags nodes with `.react-flow__node` so we
     // can sniff the event target.
-    const target = event.target as HTMLElement;
     if (target.closest(".react-flow__node")) return;
     // Record screen-space origin only. Flow-space conversion happens at
     // pointer-up using the SAME endpoints the ghost rect uses, so the
@@ -984,6 +1009,16 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   };
 
   const onPointerMove = (event: React.PointerEvent) => {
+    const connectDown = connectDownRef.current;
+    if (connectDown) {
+      setConnectLine({
+        ax: connectDown.x,
+        ay: connectDown.y,
+        bx: event.clientX,
+        by: event.clientY,
+      });
+      return;
+    }
     const down = armDownRef.current;
     if (!down || !armedTool) return;
     // Only sizeable shapes render the ghost — cards drop at default size
@@ -1002,6 +1037,48 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   };
 
   const onPointerUp = (event: React.PointerEvent) => {
+    const connectDown = connectDownRef.current;
+    if (connectDown) {
+      connectDownRef.current = null;
+      setConnectLine(null);
+      const overId = elementIdAt(event.clientX, event.clientY);
+      if (overId && overId !== connectDown.id) {
+        // Dragged onto another element: join them and clear any pending
+        // click-started connector.
+        setConnectSourceId(null);
+        void canvases
+          .addEdge(slug, {
+            source: connectDown.id,
+            target: overId,
+            edge_type: "floating",
+            data: {},
+          })
+          .catch(() => {
+            // A refused edge leaves the tool armed; the canvas does not change.
+          });
+        return;
+      }
+      // Released on the element it started from: treat it as a click, so
+      // click-then-click still works for people who prefer it.
+      const action = connectClick(connectSourceId, connectDown.id);
+      if (action.type === "start") {
+        setConnectSourceId(action.source);
+        setSelectedNodeId(action.source);
+      } else if (action.type === "cancel") {
+        setConnectSourceId(null);
+      } else {
+        setConnectSourceId(null);
+        void canvases
+          .addEdge(slug, {
+            source: action.source,
+            target: action.target,
+            edge_type: "floating",
+            data: {},
+          })
+          .catch(() => {});
+      }
+      return;
+    }
     if (!armedTool) return;
     const down = armDownRef.current;
     armDownRef.current = null;
@@ -1083,7 +1160,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         fitView
-        nodesDraggable={!readOnly}
+        nodesDraggable={!readOnly && armedTool !== CONNECT_TOOL}
         nodesConnectable={!readOnly}
         elementsSelectable={!readOnly}
         zoomOnScroll
@@ -1126,35 +1203,10 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
               // (Miro-style mini-toolbar is the default affordance; the
               // panel is reachable via the toolbar's ⋮ More or the
               // context menu's "Edit properties…").
+              // The connector tool owns clicks on elements while it is armed
+              // (see onPointerUp), so selection stays out of its way.
               onNodeClick: (_event, node) => {
-                // Connector tool: the first click picks where the connector
-                // starts, the second picks what it ends at. Clicking the same
-                // element twice cancels, and the tool stays armed afterwards
-                // so several connectors can be drawn in a row.
-                if (armedTool === CONNECT_TOOL) {
-                  const action = connectClick(connectSourceId, node.id);
-                  if (action.type === "start") {
-                    setConnectSourceId(action.source);
-                    setSelectedNodeId(action.source);
-                  } else if (action.type === "cancel") {
-                    setConnectSourceId(null);
-                  } else {
-                    setConnectSourceId(null);
-                    void canvases
-                      .addEdge(slug, {
-                        source: action.source,
-                        target: action.target,
-                        edge_type: "floating",
-                        data: {},
-                      })
-                      .catch(() => {
-                        // A refused edge (an element that went away, a rule
-                        // the server enforces) leaves the tool armed; the
-                        // canvas simply does not change.
-                      });
-                  }
-                  return;
-                }
+                if (armedTool === CONNECT_TOOL) return;
                 setSelectedNodeId(node.id);
               },
               // Hover state is no longer consumed by DirectionalConnectors
@@ -1413,6 +1465,47 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
           <PaintGhost rect={paintRect} nodeType={armedTool} />
         </>
       )}
+      {/* Connector preview. A line from where the press landed to the
+          pointer, drawn over the viewport and transparent to pointer events
+          so the drag keeps receiving moves. */}
+      {connectLine ? (
+        <svg
+          data-testid="connector-drag-line"
+          aria-hidden
+          style={{
+            position: "fixed",
+            inset: 0,
+            width: "100vw",
+            height: "100vh",
+            pointerEvents: "none",
+            zIndex: 27,
+          }}
+        >
+          <defs>
+            <marker
+              id="connector-arrowhead"
+              viewBox="0 0 10 10"
+              refX="8"
+              refY="5"
+              markerWidth="8"
+              markerHeight="8"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,0 L10,5 L0,10 z" fill="#0ea5e9" />
+            </marker>
+          </defs>
+          <line
+            x1={connectLine.ax}
+            y1={connectLine.ay}
+            x2={connectLine.bx}
+            y2={connectLine.by}
+            stroke="#0ea5e9"
+            strokeWidth={2}
+            strokeDasharray="6 4"
+            markerEnd="url(#connector-arrowhead)"
+          />
+        </svg>
+      ) : null}
     </div>
   );
 }
