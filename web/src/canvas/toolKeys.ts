@@ -15,6 +15,7 @@ export const TOOL_KEYS: Record<string, string> = {
   f: "area",
   t: "text",
   n: "note",
+  m: "markdown",
   a: CONNECT_TOOL,
   c: CONNECT_TOOL,
 };

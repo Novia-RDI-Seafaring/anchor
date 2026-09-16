@@ -53,7 +53,8 @@ baked in here.
 | `document`  | tall card with cover | an ingested source (PDF, audio, video, ...) |
 | `spec`      | wide table     | a structured table of named values             |
 | `area`      | dashed outline | a region that contains other nodes             |
-| `note`      | sticky-note    | freeform markdown                              |
+| `note`      | sticky-note    | a short freeform remark                        |
+| `markdown`  | card           | prose with structure: headings, lists, tables, code |
 
 Each renderer is a separate `.tsx` file under `nodes/`; each registers
 itself into a `registerCardType(name, component)` map at module load
@@ -79,6 +80,7 @@ shown. The body key differs per type:
 | `fact`    | `text`         | `label`, `pictogram`                        |
 | `concept` | `subtitle`     | `label`, `pictogram`                        |
 | `note`    | `text`         | `label`                                     |
+| `markdown`| `text`         | `label` (optional title); body renders as Markdown |
 | `entity`  | (none)         | `label`, `pictogram`                        |
 | `funnel`  | (none)         | `label`, `pictogram`                        |
 | `area`    | `subtitle`     | `label`, `tone`                             |

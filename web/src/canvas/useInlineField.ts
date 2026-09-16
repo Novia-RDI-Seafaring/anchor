@@ -67,6 +67,16 @@ type Options = {
    * placing a text element left nothing focused and typing went nowhere.
    */
   claimsPendingFocus?: boolean;
+  /**
+   * What a plain Enter does in a multi-line editor.
+   *
+   * `"commit"` (the default) is the sticky-note behaviour: Enter saves,
+   * Shift+Enter breaks the line. `"newline"` swaps them, because in a
+   * body where newlines are part of the syntax — Markdown lists, a
+   * paragraph break — reaching for Shift on every line is wrong. There,
+   * Cmd/Ctrl+Enter commits, and so does clicking away.
+   */
+  enterKey?: "commit" | "newline";
 };
 
 type SingleLineInputProps = {
@@ -113,6 +123,7 @@ export function useInlineField<M extends boolean = false>({
   multiline,
   canEdit = true,
   claimsPendingFocus = false,
+  enterKey = "commit",
 }: Options & { multiline?: M }): Result<M> {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(canonicalValue);
@@ -253,7 +264,13 @@ export function useInlineField<M extends boolean = false>({
     if (event.key === "Enter") {
       // Multi-line: Shift+Enter inserts a newline, plain Enter commits.
       // Single-line: any Enter commits.
-      if (multiline && event.shiftKey) {
+      // With `enterKey: "newline"` the two swap, and Cmd/Ctrl+Enter is the
+      // deliberate save.
+      const newlineFirst = multiline && enterKey === "newline";
+      const wantsNewline = newlineFirst
+        ? !(event.metaKey || event.ctrlKey)
+        : multiline && event.shiftKey;
+      if (wantsNewline) {
         // Fall through to default — let the textarea insert the newline.
         event.stopPropagation();
         return;
