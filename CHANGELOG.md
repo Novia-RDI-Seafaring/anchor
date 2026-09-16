@@ -11,6 +11,14 @@ next version section on tag.
 
 ### Added
 
+- A connector tool in the canvas toolbar. Connections attach to whole
+  elements, and since the connection dots came off there was no way to
+  draw one from the toolbar: you had to select an element and use its
+  quick-connect overlay. Arm the connector, click the element the
+  connector starts from, then the one it ends at. It stays armed so
+  several can be drawn in a row, clicking the same element twice cancels,
+  and Escape puts the tool away.
+
 - Canvas text scale runs to poster size. `data.text_size` was `sm`, `md`,
   `lg`, capping the body at 16px, and an element's heading was pinned at
   11px whatever the body did, so a canvas read on a shared screen forced

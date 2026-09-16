@@ -105,6 +105,9 @@ type UiState = {
    *     `+` menu opens a Dialog instead. Arming is for shapes/cards only.
    */
   armedTool: string | null;
+  /** While the connector tool is armed, the element a connector will start
+   *  from once the user has clicked it. Null between connectors. */
+  connectSourceId: string | null;
   openPdf: (
     slug: string,
     options?: {
@@ -133,6 +136,7 @@ type UiState = {
   clearHoveredSourceRef: () => void;
   /** Arm `type` (or toggle off if already armed for the same type). */
   armTool: (type: string) => void;
+  setConnectSourceId: (id: string | null) => void;
   /** Force-disarm whatever tool is currently armed. */
   disarmTool: () => void;
   // --- Properties panel (added by node-content-editing agent) -----------
@@ -306,6 +310,7 @@ export const useUiStore = create<UiState>((set) => ({
   sourceClusterCollapsed: readPersistedCollapsed(),
   hoveredSourceRef: null,
   armedTool: null,
+  connectSourceId: null,
   selectedNodeId: null,
   propertiesOpen: false,
   dropTargetAreaId: null,
@@ -376,12 +381,15 @@ export const useUiStore = create<UiState>((set) => ({
     }),
   setHoveredSourceRef: (ref) => set({ hoveredSourceRef: ref }),
   clearHoveredSourceRef: () => set({ hoveredSourceRef: null }),
+  setConnectSourceId: (id) => set({ connectSourceId: id }),
   armTool: (type) =>
     set((state) => ({
       // Clicking the same icon a second time toggles the tool off.
       armedTool: state.armedTool === type ? null : type,
+      // Switching tools abandons a half-drawn connector.
+      connectSourceId: null,
     })),
-  disarmTool: () => set({ armedTool: null }),
+  disarmTool: () => set({ armedTool: null, connectSourceId: null }),
   // --- Properties panel actions (appended) ------------------------------
   // Mutual exclusion with selectedEdgeId — selecting a node deselects any
   // currently-selected edge so the EdgeContextToolbar never shows up at

@@ -36,7 +36,7 @@ import { useEffect, useRef, useState } from "react";
 import { cad } from "@/api/cad";
 import { canvases } from "@/api/canvases";
 import { fmu } from "@/api/fmu";
-import { canDragFromToolbar, paletteEntries, type PaletteMeta } from "@/canvas/registry";
+import { canDragFromToolbar, CONNECT_TOOL, paletteEntries, type PaletteMeta } from "@/canvas/registry";
 import {
   Tooltip,
   TooltipContent,
@@ -164,6 +164,36 @@ export function LeftToolRail({ workspaceSlug }: Props) {
               dropPayload={dropPayload}
             />
           ))}
+        </RailGroup>
+
+        <RailDivider />
+
+        {/* Connector. Not a shape: arming it lets the user click one element
+            then another to join them. Connections attach to whole elements,
+            so there is nothing to aim at but the element itself. */}
+        <RailGroup label="Connector">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                data-testid="rail-connector"
+                aria-label="Connector"
+                aria-pressed={armedTool === CONNECT_TOOL}
+                onClick={() => armTool(CONNECT_TOOL)}
+                className={`grid h-8 w-8 place-items-center rounded-lg border text-neutral-600 transition ${
+                  armedTool === CONNECT_TOOL
+                    ? "border-sky-400 bg-sky-50 text-sky-700"
+                    : "border-transparent hover:border-neutral-300 hover:bg-neutral-50"
+                }`}
+              >
+                <ConnectorIcon />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <div className="font-medium">Connector</div>
+              <div className="text-neutral-300">click one element, then another</div>
+            </TooltipContent>
+          </Tooltip>
         </RailGroup>
 
         <RailDivider />
@@ -572,5 +602,16 @@ function ProducerUploadDialog({
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
+  );
+}
+
+/** Two dots joined by a line: the connector tool's face in the rail. */
+function ConnectorIcon() {
+  return (
+    <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+      <line x1="6.5" y1="13.5" x2="13.5" y2="6.5" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="5" cy="15" r="2.4" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="15" cy="5" r="2.4" fill="none" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
   );
 }
