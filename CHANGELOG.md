@@ -163,6 +163,12 @@ next version section on tag.
 
 ### Fixed
 
+- A region's title and subtitle ignored `text_size` and stayed at 10px.
+  A canvas composed of labelled regions, which is how you explain
+  something without drawing a tree, had headings nobody could read zoomed
+  out. Both now follow the region's text size, as every other element
+  does.
+
 - A canvas element set wide but not tall kept its default width. Width and
   height only applied together, so prose at a large text size could not be
   given room without also pinning a height. They are independent now.
