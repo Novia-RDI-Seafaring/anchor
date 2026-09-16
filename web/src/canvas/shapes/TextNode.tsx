@@ -39,6 +39,9 @@ export function TextNode({ id, data, selected }: NodeProps) {
     field: "text",
     multiline: true,
     canEdit: selected ?? false,
+    // A text element has no label, so its body claims the focus stamp a
+    // freshly placed element carries: place it and type.
+    claimsPendingFocus: true,
   });
   const { width: liveW, height: liveH, handlers: resizeHandlers } = useLiveResize(
     d.width,
@@ -74,15 +77,23 @@ export function TextNode({ id, data, selected }: NodeProps) {
       {edit.editing ? (
         <textarea
           {...edit.inputProps}
-          className={`${edit.inputProps.className} w-full resize-none rounded border border-sky-300 bg-white/90 px-1 py-0 outline-none`}
+          // Edited in place: no box, no background, no outline. The words
+          // stay where they were, at the same size and colour, with only a
+          // caret to say you are typing. A bordered input over the canvas
+          // reads as a form, which is not what writing on a canvas is.
+          className={`${edit.inputProps.className} w-full resize-none border-0 bg-transparent p-0 outline-none focus:outline-none`}
           style={{
             fontSize: t.fontSize,
             fontFamily: t.fontFamily,
             fontWeight: t.fontWeight,
             textAlign: t.textAlign,
+            color: t.color,
             lineHeight: 1.25,
+            // Grow with the text rather than scrolling inside a fixed box.
+            overflow: "hidden",
+            minHeight: "1.25em",
           }}
-          placeholder="text"
+          placeholder="type"
         />
       ) : (
         <div

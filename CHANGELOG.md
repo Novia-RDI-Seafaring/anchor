@@ -183,6 +183,14 @@ next version section on tag.
 
 ### Fixed
 
+- Placing a text element and typing now works, and the words are edited
+  where they sit. Nothing was focused after placing, so what you typed went
+  nowhere: a text element has no label, and only label editors claimed the
+  focus a new element carries, while ReactFlow focused the node wrapper a
+  frame later and took the caret back. The editor also drew a bordered
+  input box over the canvas instead of letting you write in place; it is
+  now transparent, borderless, and the same size and colour as the words.
+
 - Regions behave like containers again. Selecting one used to raise it
   above its contents and hide them, because ReactFlow lifts a selected
   node; layer order is the canvas's decision, not selection's. Elements

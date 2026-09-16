@@ -1,14 +1,16 @@
 /**
  * TextNode — words on the canvas with no card around them.
  */
-import { render } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 
+import { useUiStore } from "@/stores/uiStore";
+
 import { TextNode } from "./TextNode";
 
-function renderText(data: Record<string, unknown>) {
+function renderText(data: Record<string, unknown>, selected = false) {
   return render(
     <MemoryRouter initialEntries={["/canvas/w1"]}>
       <Routes>
@@ -20,7 +22,7 @@ function renderText(data: Record<string, unknown>) {
                 {...({
                   id: "t1",
                   data,
-                  selected: false,
+                  selected,
                   dragging: false,
                   isConnectable: false,
                   positionAbsoluteX: 0,
@@ -60,5 +62,27 @@ describe("TextNode", () => {
   it("takes a width on its own", () => {
     const { getByTestId } = renderText({ text: "Wrapped", width: 420 });
     expect(getByTestId("text-node").style.width).toBe("420px");
+  });
+});
+
+describe("TextNode editing", () => {
+  it("opens its editor when a freshly placed element asks for focus", async () => {
+    // Placing a text element stamps its id for focus. A text element has no
+    // label, so its body claims that stamp: place it and type.
+    useUiStore.setState({ pendingInlineRenameNodeId: "t1" });
+    const { container } = renderText({ text: "" }, true);
+    await act(async () => {});
+    expect(container.querySelector("textarea")).toBeTruthy();
+  });
+
+  it("edits in place: no box around the words", async () => {
+    useUiStore.setState({ pendingInlineRenameNodeId: "t1" });
+    const { container } = renderText({ text: "hi", text_size: "xl" }, true);
+    await act(async () => {});
+    const ta = container.querySelector("textarea") as HTMLTextAreaElement;
+    expect(ta.className).toContain("border-0");
+    expect(ta.className).toContain("bg-transparent");
+    // Same size as the rendered words, so nothing jumps when editing starts.
+    expect(ta.style.fontSize).toBe("1.25rem");
   });
 });

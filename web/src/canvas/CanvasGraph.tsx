@@ -247,6 +247,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   const selectedEdgeId = useUiStore((s) => s.selectedEdgeId);
   const setPropertiesOpen = useUiStore((s) => s.setPropertiesOpen);
   const armedTool = useUiStore((s) => s.armedTool);
+  const pendingRenameId = useUiStore((s) => s.pendingInlineRenameNodeId);
   const disarmTool = useUiStore((s) => s.disarmTool);
   // Connector tool: the element a connector starts from, once picked.
   const connectSourceId = useUiStore((s) => s.connectSourceId);
@@ -334,7 +335,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       // with the pending id alone when one is set. The pending id is
       // cleared the moment `useInlineField` consumes it, so subsequent
       // SSE patches don't keep re-asserting selection.
-      const pendingId = useUiStore.getState().pendingInlineRenameNodeId;
+      const pendingId = pendingRenameId ?? useUiStore.getState().pendingInlineRenameNodeId;
       const selectedSet = pendingId ? new Set([pendingId]) : wasSelected;
       // Pass the full node map so `toRfNode` can resolve `parent` → `parentId`
       // only when the parent actually exists in this snapshot.
@@ -343,7 +344,11 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         selected: selectedSet.has(n.id),
       }));
     });
-  }, [nodes]);
+    // Depends on the pending id as well as the node map: a freshly placed
+    // element often lands in the store (via SSE) BEFORE the code that asks
+    // for it to be focused runs, and then this effect never re-ran, so the
+    // element sat there unselected and typing went nowhere.
+  }, [nodes, pendingRenameId]);
 
   useEffect(() => {
     // pickEdgeMode resolves every edge to its ReactFlow renderer type. For
@@ -1029,6 +1034,13 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       // A region is not placed into another region: dropping one on top of
       // another is how people draw side-by-side groups, not nesting.
       const placedId = placed?.event?.payload?.id;
+      if (placedId) {
+        // Place it and type: select the new element and ask its inline
+        // editor to open. Without this a placed text element sat there with
+        // nothing focused, so typing went nowhere.
+        setSelectedNodeId(placedId);
+        useUiStore.getState().requestInlineRename(placedId);
+      }
       if (placedId && armedTool !== "area") {
         await adoptIntoRegion(placedId, {
           x: flowX + (width ?? 160) / 2,
