@@ -171,6 +171,11 @@ next version section on tag.
 
 ### Fixed
 
+- Dragging from one element to another with the connector tool armed moved
+  the element instead of drawing a connector. Elements stay put while the
+  connector is armed, a dashed preview follows the pointer, and releasing
+  over another element joins the two. Click then click still works.
+
 - A region's title and subtitle ignored `text_size` and stayed at 10px.
   A canvas composed of labelled regions, which is how you explain
   something without drawing a tree, had headings nobody could read zoomed
