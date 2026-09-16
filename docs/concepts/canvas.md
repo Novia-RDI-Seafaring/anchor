@@ -131,6 +131,28 @@ dimmed with their badge — never hidden, because a rejection is feedback.
 A malformed `review` object surfaces the same non-blocking `warning` as
 an unrenderable data key; the write always succeeds.
 
+### Proposal sets
+
+Review states are per element, which stops scaling the moment an agent
+adds a batch: thirty-five grounded nodes built from one document are
+thirty-five verdicts, with nothing recording which of them belong
+together or why they were added. A proposal set is the handle for that
+batch outside a thread (a thread suggestion is already one).
+
+An agent draws, then groups what it added:
+`anchor canvas propose-set <slug> --reason "..." -m <id> -m edge:<id>`,
+`POST /api/workspaces/{slug}/proposal-sets`, or the `canvas_propose_set`
+MCP tool. The record lives in `metadata.proposal_sets` next to the
+bibliography and names its members, so grouping costs one event and an
+element's `data` stays about the element.
+
+A human then rules on the batch: `anchor canvas review-set <slug> <id>
+accepted` stamps `data.review` on every member in one write, with
+`--except <id>` for "accept all but this one". A rejection marks the
+members `rejected`, which is feedback the agent reads; `--discard` on a
+rejection removes them instead, and removing a node takes its edges with
+it. That is the clean undo for a batch nobody wants.
+
 ## Edge types
 
 Two:

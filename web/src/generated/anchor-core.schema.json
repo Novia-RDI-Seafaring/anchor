@@ -92,6 +92,9 @@
     "ReferenceAttached",
     "ReferenceRemoved",
     "ReferenceUpdated",
-    "WorkspaceMetadataUpdated"
+    "WorkspaceMetadataUpdated",
+    "ProposalSetOpened",
+    "ProposalSetMembersAdded",
+    "ProposalSetReviewed"
   ]
 }

@@ -33,6 +33,7 @@ from anchor.core.ports.workspace_locks import WorkspaceLocks
 from anchor.core.ports.workspace_store import WorkspaceStore
 from anchor.core.services.workspace_batch import WorkspaceBatchOperations
 from anchor.core.services.workspace_geometry import WorkspaceGeometryOperations
+from anchor.core.services.workspace_proposals import WorkspaceProposalOperations
 from anchor.core.services.workspace_references import WorkspaceReferenceOperations
 from anchor.core.workspace.align import Anchor, Axis
 from anchor.core.workspace.builtin_node_types import builtin_node_type_registry
@@ -83,6 +84,14 @@ class WorkspaceService:
             self.store,
             self.locks,
             self.clock,
+            self._dispatch_locked,
+        )
+        self._proposals = WorkspaceProposalOperations(
+            self.store,
+            self.bus,
+            self.locks,
+            self.clock,
+            self._envelope,
             self._dispatch_locked,
         )
         self._geometry = WorkspaceGeometryOperations(
@@ -391,6 +400,54 @@ class WorkspaceService:
         """
         patch: dict[str, Any] = {REVIEW_MODE_KEY: True if enabled else None}
         return await self._dispatch(slug, WorkspaceMetadataUpdated(patch=patch))
+
+    # -- proposal sets (#359) ---------------------------------------------- #
+    #
+    # Delegated to WorkspaceProposalOperations; these thin wrappers keep the
+    # service the single entry point every adapter talks to.
+
+    async def open_proposal_set(
+        self, slug: str, *, reason: str, members: Any = None,
+    ) -> dict[str, Any]:
+        """Group elements an agent added into one reviewable set."""
+        return await self._proposals.open(
+            slug, reason=reason, members=members, actor=current_actor(),
+        )
+
+    async def add_proposal_set_members(
+        self, slug: str, set_id: str, *, members: Any,
+    ) -> dict[str, Any]:
+        """Add elements to an open set."""
+        return await self._proposals.add_members(slug, set_id, members=members)
+
+    async def list_proposal_sets(
+        self, slug: str, *, state: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Every proposal set on this canvas, oldest first."""
+        return await self._proposals.list(slug, state_filter=state)
+
+    async def get_proposal_set(self, slug: str, set_id: str) -> dict[str, Any]:
+        """One proposal set."""
+        return await self._proposals.get(slug, set_id)
+
+    async def review_proposal_set(
+        self,
+        slug: str,
+        set_id: str,
+        *,
+        verdict: str,
+        discard: bool = False,
+        except_ids: list[str] | None = None,
+    ) -> tuple[Workspace, list[DomainEvent], dict[str, Any]]:
+        """Accept or reject a whole set in one write."""
+        return await self._proposals.review(
+            slug,
+            set_id,
+            verdict=verdict,
+            discard=discard,
+            except_ids=except_ids,
+            actor=current_actor(),
+        )
 
     def node_types_schema(self, name: str | None = None) -> list[dict[str, Any]]:
         """Return the per-node-type data-field contract (#191).

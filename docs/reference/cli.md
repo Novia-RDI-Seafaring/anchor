@@ -56,6 +56,10 @@ anchor canvas --help
 | `canvas state SLUG` | Print current nodes, edges and metadata. |
 | `canvas placeholders SLUG` | List nodes waiting for an agent-populated value. |
 | `canvas review-mode SLUG [--on/--off]` | Show or toggle the review opt-in; when on, agent-created nodes land as `proposed`. |
+| `canvas propose-set SLUG --reason R -m ID` | Group elements an agent added into one reviewable set. |
+| `canvas proposal-sets SLUG [--state open]` | List proposal sets with their reason, author and state. |
+| `canvas add-to-set SLUG SET_ID -m ID` | Add elements to an open set. |
+| `canvas review-set SLUG SET_ID accepted\|rejected` | Rule on a whole set. `--except ID` skips a member; `--discard` (rejections) removes them. |
 | `canvas add-node`, `update-node`, `remove-node` | Mutate canvas nodes. `add-node` auto-places when `--x`/`--y` are omitted; `update-node --data` deep-merges. |
 | `canvas node-types [TYPE]` | Print which `data` fields each node type renders (and its body field). |
 | `canvas add-edge`, `update-edge`, `remove-edge` | Mutate edges. |

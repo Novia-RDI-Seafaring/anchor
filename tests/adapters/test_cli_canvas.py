@@ -499,3 +499,83 @@ def test_cli_canvas_changes_rejects_both_boundaries(tmp_path):
         "--since-ts", "0", "--data-dir", str(data_dir),
     ])
     assert r.exit_code == 2
+
+
+# ── Proposal sets (#359) ────────────────────────────────────────────────────
+
+def _canvas_with_agent_nodes(runner, data_dir):
+    """A review-mode canvas with two agent nodes and an edge; ids come back
+    from the CLI (node ids are server-assigned)."""
+    d = ["--data-dir", str(data_dir)]
+    runner.invoke(app, ["canvas", "create", "w1", *d])
+    runner.invoke(app, ["canvas", "review-mode", "w1", "--on", *d])
+    agent = ["--actor", "agent:claude-code"]
+    ids = []
+    for label in ("A", "B"):
+        out = runner.invoke(
+            app, ["canvas", *agent, "add-node", "w1", "concept", "--label", label, *d],
+        )
+        assert out.exit_code == 0, out.output
+        ids.append(json.loads(out.output)["event"]["payload"]["id"])
+    edge = runner.invoke(
+        app, ["canvas", *agent, "add-edge", "w1", ids[0], ids[1], *d],
+    )
+    assert edge.exit_code == 0, edge.output
+    edge_id = json.loads(edge.output)["event"]["payload"]["id"]
+    return d, ids, edge_id
+
+
+def test_cli_propose_and_review_a_set(tmp_path):
+    runner = CliRunner()
+    d, (a, b), edge_id = _canvas_with_agent_nodes(runner, tmp_path / "anchor-data")
+
+    opened = runner.invoke(
+        app,
+        ["canvas", "propose-set", "w1", "--reason", "mindmap",
+         "-m", a, "-m", b, "-m", f"edge:{edge_id}", *d],
+    )
+    assert opened.exit_code == 0, opened.output
+    record = json.loads(opened.output)
+    assert [m["kind"] for m in record["members"]] == ["node", "node", "edge"]
+
+    listed = json.loads(
+        runner.invoke(app, ["canvas", "proposal-sets", "w1", "--state", "open", *d]).output,
+    )
+    assert [r["id"] for r in listed["proposal_sets"]] == [record["id"]]
+
+    reviewed = runner.invoke(
+        app, ["canvas", "review-set", "w1", record["id"], "accepted", *d],
+    )
+    assert reviewed.exit_code == 0, reviewed.output
+    assert json.loads(reviewed.output)["proposal_set"]["state"] == "accepted"
+
+    state = json.loads(runner.invoke(app, ["canvas", "state", "w1", *d]).output)
+    node_a = next(n for n in state["nodes"] if n["id"] == a)
+    assert node_a["data"]["review"]["state"] == "accepted"
+
+
+def test_cli_discard_removes_the_elements(tmp_path):
+    runner = CliRunner()
+    d, (a, b), _edge_id = _canvas_with_agent_nodes(runner, tmp_path / "anchor-data")
+    record = json.loads(
+        runner.invoke(
+            app, ["canvas", "propose-set", "w1", "--reason", "no", "-m", a, "-m", b, *d],
+        ).output,
+    )
+    out = runner.invoke(
+        app, ["canvas", "review-set", "w1", record["id"], "rejected", "--discard", *d],
+    )
+    assert out.exit_code == 0, out.output
+    state = json.loads(runner.invoke(app, ["canvas", "state", "w1", *d]).output)
+    assert state["nodes"] == []
+    assert state["edges"] == []
+
+
+def test_cli_propose_set_reports_a_bad_member(tmp_path):
+    runner = CliRunner()
+    d, _ids, _edge_id = _canvas_with_agent_nodes(runner, tmp_path / "anchor-data")
+    out = runner.invoke(
+        app, ["canvas", "propose-set", "w1", "--reason", "r", "-m", "ghost", *d],
+    )
+    assert out.exit_code == 1
+    assert "ghost" in out.output
