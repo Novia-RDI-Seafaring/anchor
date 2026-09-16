@@ -163,6 +163,11 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
   useEffect(() => { setConfirmingDelete(false); }, [selectedNodeIds.join(",")]);
 
   if (!screenBox || selectedNodeIds.length === 0) return null;
+  // With one element selected the SelectionPanel carries the same controls,
+  // open on the left. Two sets of colour chips for one element is clutter,
+  // so the floating toolbar steps aside and stays for multi-select, where
+  // the panel does not apply.
+  if (selectedNodeIds.length === 1) return null;
 
   const isMulti = selectedNodeIds.length > 1;
   const isTriPlus = selectedNodeIds.length >= 3;

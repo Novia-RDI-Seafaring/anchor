@@ -11,6 +11,18 @@ next version section on tag.
 
 ### Added
 
+- Canvas editing moves toward the Excalidraw model, asked for by name.
+  The toolbar is one horizontal row centred at the top, each tool prints
+  its shortcut letter, and pressing that letter arms it (`R` rectangle,
+  `O` circle, `D` diamond, `F` container, `T` text, `N` note, `A`
+  connector). A `text` element renders words alone, no border and no
+  background, so a title, a caption or a paragraph is not one more card;
+  it honours the full text scale, so a heading is a text element at `2xl`.
+  Selecting an element opens a properties panel on the left with fill,
+  stroke and text controls always visible rather than hidden behind chips;
+  a text element shows only the text controls, since it has no box to
+  colour. The floating selection toolbar stays for multi-select.
+
 - A connector tool in the canvas toolbar. Connections attach to whole
   elements, and since the connection dots came off there was no way to
   draw one from the toolbar: you had to select an element and use its

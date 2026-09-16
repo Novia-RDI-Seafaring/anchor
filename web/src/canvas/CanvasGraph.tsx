@@ -29,6 +29,7 @@ import { EdgeContextMenu, type EdgeContextMenuTarget } from "@/canvas/EdgeContex
 import { EdgeContextToolbar } from "@/canvas/EdgeContextToolbar";
 import { NodeContextMenu, type ContextMenuTarget } from "@/canvas/NodeContextMenu";
 import { NodeContextToolbar } from "@/canvas/NodeContextToolbar";
+import { SelectionPanel } from "@/canvas/SelectionPanel";
 import { WaypointEditor } from "@/canvas/WaypointEditor";
 import {
   PAINT_DRAG_THRESHOLD_PX,
@@ -1389,6 +1390,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       {readOnly ? null : (
         <>
           <NodeContextToolbar workspaceSlug={slug} />
+          <SelectionPanel />
           <NodeContextMenu
             workspaceSlug={slug}
             target={contextMenuTarget}

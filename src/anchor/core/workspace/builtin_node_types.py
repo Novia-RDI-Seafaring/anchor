@@ -92,6 +92,16 @@ BUILTIN_NODE_TYPES: list[NodeType] = [
         body_field="subtitle",
     ),
     _shape(
+        "text",
+        "Words on the canvas with no box around them. Renders data.text "
+        "alone at the element's text_size, no border and no background. "
+        "Use it for a title, a caption, or a paragraph of explanation: a "
+        "heading is a text element at text_size '2xl', a caption one at "
+        "'sm'. data.label is accepted as a fallback body.",
+        "text",
+        body_field="text",
+    ),
+    _shape(
         "note",
         "Free-form sticky note. Renders data.label (heading) and data.text "
         "(multi-line body).",

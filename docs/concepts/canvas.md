@@ -82,6 +82,7 @@ shown. The body key differs per type:
 | `entity`  | (none)         | `label`, `pictogram`                        |
 | `funnel`  | (none)         | `label`, `pictogram`                        |
 | `area`    | `subtitle`     | `label`, `tone`                             |
+| `text`    | `text`         | words with no box: title, caption, paragraph |
 
 There is **no generic `data.body`**. Every type also honours the shared
 styling keys (`bg_color`, `stroke_color`, `text_color`, `text_bold`,
