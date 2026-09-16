@@ -1,7 +1,10 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
+import type { OnResize, OnResizeEnd, OnResizeStart } from "@xyflow/react";
+import { useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
-import { resolveText } from "@/canvas/colors";
+import { canvases } from "@/api/canvases";
+import { resolveText, SIZE_PX, type TextSize } from "@/canvas/colors";
 import { ReviewBadge } from "@/canvas/ReviewBadge";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
@@ -48,6 +51,45 @@ export function TextNode({ id, data, selected }: NodeProps) {
     d.height,
   );
 
+  // Resizing text scales the words, as in Excalidraw: drag a corner and the
+  // font grows with the box rather than the same words re-wrapping inside a
+  // bigger frame. The scale is live during the drag and written once on
+  // release, as `font_px` (a size between the buckets).
+  const basePx =
+    typeof (d as { font_px?: number }).font_px === "number"
+      ? (d as { font_px: number }).font_px
+      : SIZE_PX[((d as { text_size?: TextSize }).text_size ?? "md")];
+  const [liveScale, setLiveScale] = useState(1);
+  const startRef = useRef<{ height: number; px: number } | null>(null);
+
+  const onResizeStart: OnResizeStart = (event, params) => {
+    startRef.current = { height: params.height || 1, px: basePx };
+    setLiveScale(1);
+    resizeHandlers.onResizeStart(event, params);
+  };
+  const onResize: OnResize = (event, params) => {
+    const start = startRef.current;
+    if (start) setLiveScale(Math.max(0.2, params.height / start.height));
+    resizeHandlers.onResize(event, params);
+  };
+  const onResizeEnd: OnResizeEnd = (event, params) => {
+    const start = startRef.current;
+    startRef.current = null;
+    resizeHandlers.onResizeEnd(event, params);
+    setLiveScale(1);
+    if (!start || !workspaceSlug) return;
+    const next = Math.round(Math.min(200, Math.max(6, start.px * (params.height / start.height))));
+    // One patch for the whole gesture: the box and the size of the words.
+    void canvases
+      .patchNode(workspaceSlug, id, {
+        data: { width: params.width, height: params.height, font_px: next },
+      })
+      .catch(() => {
+        // SSE reconciles.
+      });
+  };
+  const fontSize = liveScale === 1 ? t.fontSize : `${Math.round(basePx * liveScale)}px`;
+
   return (
     <div
       className={`relative ${selected ? "cursor-move" : "cursor-pointer"}`}
@@ -60,7 +102,7 @@ export function TextNode({ id, data, selected }: NodeProps) {
         fontWeight: t.fontWeight,
         textAlign: t.textAlign,
         fontFamily: t.fontFamily,
-        fontSize: t.fontSize,
+        fontSize,
         lineHeight: 1.25,
       }}
       data-testid="text-node"
@@ -70,7 +112,11 @@ export function TextNode({ id, data, selected }: NodeProps) {
         minWidth={60}
         minHeight={24}
         color="#0ea5e9"
-        {...resizeHandlers}
+        // Corner-only, proportional: dragging a side would stretch the words.
+        keepAspectRatio
+        onResizeStart={onResizeStart}
+        onResize={onResize}
+        onResizeEnd={onResizeEnd}
       />
       <ReviewBadge data={data as Record<string, unknown>} nodeId={id} />
       <Handle type="target" position={Position.Left} />
@@ -83,7 +129,7 @@ export function TextNode({ id, data, selected }: NodeProps) {
           // reads as a form, which is not what writing on a canvas is.
           className={`${edit.inputProps.className} w-full resize-none border-0 bg-transparent p-0 outline-none focus:outline-none`}
           style={{
-            fontSize: t.fontSize,
+            fontSize,
             fontFamily: t.fontFamily,
             fontWeight: t.fontWeight,
             textAlign: t.textAlign,

@@ -48,6 +48,7 @@ _COMMON_FIELDS: tuple[str, ...] = (
     "text_align",
     "text_family",
     "text_size",
+    "font_px",
     "placeholder",
     "placeholder_hint",
     # Review-state convention (#324): rendered by the shared review badge /
@@ -97,7 +98,8 @@ BUILTIN_NODE_TYPES: list[NodeType] = [
         "alone at the element's text_size, no border and no background. "
         "Use it for a title, a caption, or a paragraph of explanation: a "
         "heading is a text element at text_size '2xl', a caption one at "
-        "'sm'. data.label is accepted as a fallback body.",
+        "'sm'. data.label is accepted as a fallback body. Resizing one on "
+        "the canvas scales the words and writes data.font_px.",
         "text",
         body_field="text",
     ),

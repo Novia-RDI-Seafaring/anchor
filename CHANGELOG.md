@@ -11,6 +11,12 @@ next version section on tag.
 
 ### Added
 
+- Resizing a text element scales the words, as in Excalidraw: drag a
+  corner and the font grows with the box instead of the same words
+  re-wrapping in a bigger frame. The size is live during the drag and
+  written once on release as `data.font_px`, a size between the buckets
+  that wins over `text_size`.
+
 - Canvas editing moves toward the Excalidraw model, asked for by name.
   The toolbar is one horizontal row centred at the top, each tool prints
   its shortcut letter, and pressing that letter arms it (`R` rectangle,

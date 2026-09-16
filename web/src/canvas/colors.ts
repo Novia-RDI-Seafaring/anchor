@@ -158,6 +158,17 @@ function asFamily(value: unknown, fallback: TextFamily): TextFamily {
  *
  * Callers spread the returned object into the label element's inline style.
  */
+/** Pixel size per bucket, for callers that need a number (resizing text). */
+export const SIZE_PX: Record<TextSize, number> = {
+  xs: 10,
+  sm: 12,
+  md: 14,
+  lg: 16,
+  xl: 20,
+  "2xl": 28,
+  "3xl": 40,
+};
+
 export function resolveText(data: MaybeData): ResolvedText {
   const d = (data ?? {}) as Record<string, unknown>;
   const explicit = asColor(d.text_color, "");
@@ -167,13 +178,21 @@ export function resolveText(data: MaybeData): ResolvedText {
   const textAlign = asAlign(d.text_align, "left");
   const family = asFamily(d.text_family, "default");
   const size = asSize(d.text_size, "md");
+  // `font_px` is what dragging a text element's corner writes: a size
+  // between the buckets. It wins over the bucket when present, the way a
+  // custom colour wins over a swatch.
+  const explicitPx = typeof d.font_px === "number" && d.font_px > 0 ? d.font_px : null;
+  const bodyPx = explicitPx ?? SIZE_PX[size];
+  const headingPx = explicitPx
+    ? Math.max(11, Math.round(explicitPx * 0.75))
+    : null;
   return {
     color,
     fontWeight,
     textAlign,
     fontFamily: FONT_STACKS[family],
-    fontSize: SIZE_REMS[size],
-    headingFontSize: HEADING_REMS[size],
+    fontSize: explicitPx ? `${bodyPx}px` : SIZE_REMS[size],
+    headingFontSize: headingPx ? `${headingPx}px` : HEADING_REMS[size],
   };
 }
 

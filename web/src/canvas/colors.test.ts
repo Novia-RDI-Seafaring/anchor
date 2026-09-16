@@ -141,3 +141,18 @@ describe("resolveText size scale", () => {
     expect(resolveText({ text_size: "enormous" }).fontSize).toBe("0.875rem");
   });
 });
+
+describe("an explicit pixel size", () => {
+  it("wins over the bucket, so a resized text keeps the size it was dragged to", () => {
+    expect(resolveText({ text_size: "md", font_px: 49 }).fontSize).toBe("49px");
+  });
+
+  it("takes the heading with it", () => {
+    expect(resolveText({ font_px: 40 }).headingFontSize).toBe("30px");
+  });
+
+  it("is ignored when it is not a positive number", () => {
+    expect(resolveText({ font_px: 0 }).fontSize).toBe("0.875rem");
+    expect(resolveText({ font_px: "big" }).fontSize).toBe("0.875rem");
+  });
+});

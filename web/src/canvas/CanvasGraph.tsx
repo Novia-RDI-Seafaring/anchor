@@ -481,6 +481,11 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       // slipped through and any SSE reconciliation re-firing).
       const existing = useCanvasStore.getState().nodes[change.id];
       if (!existing) continue;
+      // A text element owns its own resize write: resizing it scales the
+      // font, so width, height and the new font size have to land in ONE
+      // patch. Two writes raced here and the one without the font size won
+      // locally, so the words snapped back to their old size until reload.
+      if (existing.node_type === "text") continue;
       const prevW = (existing.data?.width as number | undefined) ?? null;
       const prevH = (existing.data?.height as number | undefined) ?? null;
       if (prevW === dim.width && prevH === dim.height) continue;
