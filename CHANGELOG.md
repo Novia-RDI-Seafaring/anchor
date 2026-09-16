@@ -11,6 +11,16 @@ next version section on tag.
 
 ### Added
 
+- Prose on the canvas can point at its source. A Markdown card writes an
+  ordinary link whose target is `anchor:<slug>?page=3&region=r2` and it
+  renders as the words plus an anchor glyph; clicking opens that document
+  at that page with the region highlighted, the same landing a spec row
+  gives. `item`, `cell` and `bbox` work too, matching `source_ref` field
+  for field. A ref that names no document or no page renders struck
+  through, so a pointer an agent got wrong is visible instead of reading
+  as sourced prose. The inline ref is a reader's pointer, not an evidence
+  edge — the edge remains the reviewable claim.
+
 - A `markdown` node: a card whose body is Markdown, rendered as rich
   text. Headings, lists, tables, code blocks, links and blockquotes all
   render, GitHub-flavoured, from `data.text` — the same body key the

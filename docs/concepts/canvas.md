@@ -81,6 +81,15 @@ shown. The body key differs per type:
 | `concept` | `subtitle`     | `label`, `pictogram`                        |
 | `note`    | `text`         | `label`                                     |
 | `markdown`| `text`         | `label` (optional title); body renders as Markdown |
+
+A Markdown body can point at a source inline, by writing a link whose
+target is `anchor:<slug>?page=3&region=r2` (`item`, `cell` and `bbox`
+also work, matching `source_ref`). It renders as the linked words plus an
+anchor glyph, and clicking opens the document at that page with the
+region highlighted — the same landing a spec row gives. A ref naming no
+document or no page renders struck through rather than as plain prose.
+The inline ref is a reader's pointer, not an evidence edge: the edge
+remains the reviewable claim that a value came from a region.
 | `entity`  | (none)         | `label`, `pictogram`                        |
 | `funnel`  | (none)         | `label`, `pictogram`                        |
 | `area`    | `subtitle`     | `label`, `tone`                             |

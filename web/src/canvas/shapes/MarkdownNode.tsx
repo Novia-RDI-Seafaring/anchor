@@ -1,8 +1,12 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
+import { useMemo } from "react";
 import type { Components } from "react-markdown";
-import Markdown from "react-markdown";
+import Markdown, { defaultUrlTransform } from "react-markdown";
 import { useParams } from "react-router-dom";
 import remarkGfm from "remark-gfm";
+
+import { isAnchorHref, parseAnchorHref } from "@/canvas/anchorHref";
+import { SourceRefLink } from "@/canvas/SourceRefLink";
 
 import { DEFAULT_BG, DEFAULT_STROKE, resolveColors, resolveText } from "@/canvas/colors";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
@@ -83,6 +87,7 @@ export function MarkdownNode({ id, data, selected }: NodeProps) {
   );
   const { bg, stroke } = resolveColors(d);
   const t = resolveText(d);
+  const components = useMemo(() => markdownComponents(workspaceSlug), [workspaceSlug]);
 
   const wrapStyle: React.CSSProperties = { fontSize: t.fontSize };
   if (liveW) {
@@ -172,7 +177,7 @@ export function MarkdownNode({ id, data, selected }: NodeProps) {
           }}
           title={selected ? "double-click to edit the Markdown" : undefined}
         >
-          <Markdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+          <Markdown remarkPlugins={[remarkGfm]} components={components} urlTransform={urlTransform}>
             {text}
           </Markdown>
         </div>
@@ -200,7 +205,7 @@ export function MarkdownNode({ id, data, selected }: NodeProps) {
  * control scales the whole card; spacing is tight because this is a card
  * on a canvas, not a document page.
  */
-const MARKDOWN_COMPONENTS: Components = {
+const BASE_COMPONENTS: Components = {
   h1: (props) => <h1 className="mt-2 mb-1 text-[1.5em] font-semibold first:mt-0" {...props} />,
   h2: (props) => <h2 className="mt-2 mb-1 text-[1.25em] font-semibold first:mt-0" {...props} />,
   h3: (props) => <h3 className="mt-2 mb-0.5 text-[1.1em] font-semibold first:mt-0" {...props} />,
@@ -217,6 +222,8 @@ const MARKDOWN_COMPONENTS: Components = {
       {...props}
     />
   ),
+  // `anchor:` links are replaced per-card in `markdownComponents`, which
+  // has the workspace slug the viewer needs.
   blockquote: (props) => (
     <blockquote className="my-1 border-l-2 border-neutral-300 pl-2 italic text-neutral-600" {...props} />
   ),
@@ -241,3 +248,48 @@ const MARKDOWN_COMPONENTS: Components = {
   td: (props) => <td className="border border-neutral-300 px-1 py-0.5 align-top" {...props} />,
   img: (props) => <img className="my-1 max-w-full rounded" {...props} />,
 };
+
+/**
+ * The element map for one card: the shared styling, plus a link handler
+ * that turns `anchor:` targets into source refs. A ref needs the canvas
+ * slug to open the document beside the right card, which is why this is
+ * built per card rather than once at module load.
+ */
+function markdownComponents(workspaceSlug: string | undefined): Components {
+  return {
+    ...BASE_COMPONENTS,
+    a: (props) => {
+      const { href, children, ...rest } = props;
+      if (isAnchorHref(href)) {
+        return (
+          <SourceRefLink workspaceSlug={workspaceSlug} refValue={parseAnchorHref(href)}>
+            {children}
+          </SourceRefLink>
+        );
+      }
+      return (
+        <a
+          className="text-sky-700 underline underline-offset-2"
+          target="_blank"
+          rel="noreferrer noopener"
+          href={href}
+          {...rest}
+        >
+          {children}
+        </a>
+      );
+    },
+  };
+}
+
+/**
+ * Which link targets survive into the rendered card.
+ *
+ * react-markdown drops unknown protocols, which is what neutralises a
+ * `javascript:` link. `anchor:` is the one scheme we widen that by, and
+ * deliberately: it never navigates, it opens a document in the viewer.
+ */
+function urlTransform(url: string): string {
+  if (isAnchorHref(url)) return url;
+  return defaultUrlTransform(url);
+}
