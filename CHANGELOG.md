@@ -183,6 +183,16 @@ next version section on tag.
 
 ### Fixed
 
+- Regions behave like containers again. Selecting one used to raise it
+  above its contents and hide them, because ReactFlow lifts a selected
+  node; layer order is the canvas's decision, not selection's. Elements
+  were also clamped inside whichever region owned them, so dragging one to
+  a neighbouring region snapped it back and looked like it had jumped into
+  the wrong region; a child now moves with its region but can leave it.
+  An element placed or dropped inside a region joins that region, and with
+  a tool armed a click inside a region places there instead of being
+  swallowed as a click on the region.
+
 - Dragging from one element to another with the connector tool armed moved
   the element instead of drawing a connector. Elements stay put while the
   connector is armed, a dashed preview follows the pointer, and releasing

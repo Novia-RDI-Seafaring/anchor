@@ -153,6 +153,10 @@ function ancestorOffset(nodeId: string, allNodes: Record<string, StoreNode>): { 
   return acc;
 }
 
+/** Default size of a region, matching the palette entry that places one.
+ *  The drop hit-test falls back to this when nothing better is known. */
+const AREA_DEFAULT = { width: 360, height: 220 };
+
 function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
   // Areas render behind other nodes (zIndex: -1) so the empty interior
   // doesn't trap clicks meant for whatever sits on top. `selectable: true`
@@ -161,17 +165,18 @@ function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
   // interior fall through to the nodes inside.
   const isArea = n.node_type === "area";
   // Parent/child wiring — when this node has a `parent` AND that parent
-  // node currently exists, hand ReactFlow the standard `parentId` +
-  // `extent: "parent"` pair. ReactFlow then:
+  // node currently exists, hand ReactFlow `parentId`. ReactFlow then:
   //   - moves the child along when the parent (Area) is dragged,
-  //   - clamps the child's position inside the parent's bounds,
   //   - converts the position to parent-relative coordinates internally.
   // Defensive: a `parent` that points at a missing node is silently
   // ignored (otherwise ReactFlow logs a warning every render).
   const parentExists = n.parent != null && allNodes[n.parent] != null;
-  const parentProps = parentExists
-    ? ({ parentId: n.parent as string, extent: "parent" as const })
-    : {};
+  // `parentId` alone: the child moves with its region, but is NOT clamped
+  // to it. `extent: "parent"` trapped elements inside whichever region owned
+  // them, so dragging one to a neighbouring region snapped it back and it
+  // looked like the element had jumped into the wrong region. Leaving a
+  // region is a drag out of it, and the drop decides the new owner.
+  const parentProps = parentExists ? ({ parentId: n.parent as string }) : {};
   // Convention: the store stores positions in ABSOLUTE flow coords (no
   // notion of nesting). ReactFlow, however, interprets `position` as
   // PARENT-RELATIVE when `parentId` is set. Subtract the parent chain's
@@ -271,6 +276,9 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   // (snapshot, SSE patch, etc.). `onNodesChange` lets ReactFlow update its
   // own state during drag/select/etc.
   const [rfNodes, setRfNodes] = useState<RfNode[]>([]);
+  // Mirror of the above for callbacks that must not re-create on every
+  // frame (the region hit-test reads measured sizes during a drag).
+  const rfNodesRef = useRef<RfNode[]>([]);
   const [rfEdges, setRfEdges] = useState<RfEdge[]>([]);
   // Right-click menu target. Null when no context menu is open. Set by
   // `onNodeContextMenu` and cleared by selection / outside-click / Esc.
@@ -645,8 +653,15 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         if (n.node_type !== "area") continue;
         if (n.id === draggedId) continue;
         if (descendants.has(n.id)) continue;
-        const w = (n.data?.width as number | undefined) ?? 320;
-        const h = (n.data?.height as number | undefined) ?? 200;
+        // Prefer the size ReactFlow measured (what the user sees) over the
+        // stored one, and fall back to the palette default for a region
+        // rather than an unrelated 320x200, which made a freshly placed
+        // region miss drops near its edges.
+        const rf = rfNodesRef.current.find((r) => r.id === n.id) as
+          | { measured?: { width?: number; height?: number } }
+          | undefined;
+        const w = rf?.measured?.width ?? (n.data?.width as number | undefined) ?? AREA_DEFAULT.width;
+        const h = rf?.measured?.height ?? (n.data?.height as number | undefined) ?? AREA_DEFAULT.height;
         // Area position in flow coords is its own (x, y) when it has no
         // parent; when nested, ReactFlow stores parent-relative — but the
         // canvas store mirrors the wire `x`, `y` which the backend keeps
@@ -679,18 +694,25 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
    * Areas themselves don't trigger highlights when dragged — we don't
    * want a moved Area to highlight the Area it happens to pass over.
    */
+  rfNodesRef.current = rfNodes;
+
   const onNodeDrag = useCallback(
     (_event: React.MouseEvent, draggedNode: RfNode) => {
       if (readOnly) return;
       if (draggedNode.type === "area") return;
-      // Use the node's own bounding box centre. ReactFlow gives us
-      // `position` (top-left in flow coords) and the measured `width` /
-      // `height` once the node has been rendered.
-      const w = draggedNode.width ?? 0;
-      const h = draggedNode.height ?? 0;
+      // The node's bounding-box centre, in ABSOLUTE flow coordinates.
+      // ReactFlow reports `position` relative to the parent once a node is
+      // nested, while regions are hit-tested against the store's absolute
+      // coordinates: without the ancestor offset, dragging an element that
+      // already sits in a region tested a point somewhere else entirely and
+      // dropped it into a different region.
+      const measured = (draggedNode as { measured?: { width?: number; height?: number } }).measured;
+      const w = measured?.width ?? draggedNode.width ?? 0;
+      const h = measured?.height ?? draggedNode.height ?? 0;
+      const off = ancestorOffset(draggedNode.id, useCanvasStore.getState().nodes);
       const centre = {
-        x: draggedNode.position.x + w / 2,
-        y: draggedNode.position.y + h / 2,
+        x: draggedNode.position.x + off.x + w / 2,
+        y: draggedNode.position.y + off.y + h / 2,
       };
       const target = findAreaAtPoint(centre, draggedNode.id);
       const current = useUiStore.getState().dropTargetAreaId;
@@ -709,6 +731,32 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
   }, []);
+
+  /**
+   * Join a freshly created element to the region it was placed in.
+   *
+   * Placing or dropping an element inside a region used to leave it
+   * unowned: it looked like it was in the region, but it did not travel
+   * with it and the region did not consider it a member. The region under
+   * the element's centre becomes its parent.
+   */
+  const adoptIntoRegion = useCallback(
+    async (nodeId: string, centre: { x: number; y: number }) => {
+      const target = findAreaAtPoint(centre, nodeId);
+      if (!target) return;
+      useCanvasStore.setState((state) => {
+        const cur = state.nodes[nodeId];
+        if (!cur) return state;
+        return { ...state, nodes: { ...state.nodes, [nodeId]: { ...cur, parent: target } } };
+      });
+      try {
+        await canvases.patchNode(slug, nodeId, { parent: target });
+      } catch {
+        // SSE reconciles.
+      }
+    },
+    [findAreaAtPoint, slug],
+  );
 
   const onDrop = useCallback(async (event: React.DragEvent) => {
     const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
@@ -780,6 +828,14 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
           y: flowPos.y,
         })) as { event?: { payload?: { id?: string } } } | null;
         const newId = res?.event?.payload?.id;
+        // Dropped inside a region: the region adopts it, so it travels
+        // with the region afterwards. A region dropped on a region does not
+        // nest (side-by-side groups are the common case).
+        if (newId && spec.node_type !== "area") {
+          const w = (spec.data?.width as number | undefined) ?? 200;
+          const h = (spec.data?.height as number | undefined) ?? 80;
+          await adoptIntoRegion(newId, { x: flowPos.x + w / 2, y: flowPos.y + h / 2 });
+        }
 
         // Evidence edge: if the dropped payload carries a source_doc_node_id
         // (e.g. dragging a region out of a document node), connect the new
@@ -894,7 +950,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         }
       }));
     }
-  }, [slug, screenToFlowPosition]);
+  }, [slug, screenToFlowPosition, adoptIntoRegion]);
 
   // Armed-tool placement gesture. When `armedTool` is set, a click on the
   // pane places the shape at default size; a click-and-drag places it with
@@ -961,7 +1017,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     const width = sizeOverride?.width ?? meta?.width;
     const height = sizeOverride?.height ?? meta?.height;
     try {
-      await canvases.addNode(slug, {
+      const placed = (await canvases.addNode(slug, {
         node_type: armedTool,
         label,
         x: flowX,
@@ -969,7 +1025,16 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         ...(width !== undefined ? { width } : {}),
         ...(height !== undefined ? { height } : {}),
         data: { ...(meta?.data ?? {}), ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) },
-      });
+      })) as { event?: { payload?: { id?: string } } } | null;
+      // A region is not placed into another region: dropping one on top of
+      // another is how people draw side-by-side groups, not nesting.
+      const placedId = placed?.event?.payload?.id;
+      if (placedId && armedTool !== "area") {
+        await adoptIntoRegion(placedId, {
+          x: flowX + (width ?? 160) / 2,
+          y: flowY + (height ?? 60) / 2,
+        });
+      }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error("armed-tool placement failed", err);
@@ -994,10 +1059,15 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       setConnectLine({ ax: event.clientX, ay: event.clientY, bx: event.clientX, by: event.clientY });
       return;
     }
-    // Ignore clicks on existing nodes — the user might be trying to select
-    // a node mid-arm. ReactFlow tags nodes with `.react-flow__node` so we
-    // can sniff the event target.
-    if (target.closest(".react-flow__node")) return;
+    // Ignore presses on existing elements — the user might be trying to
+    // select one mid-arm. A region is the exception: its body is the space
+    // you draw into, so placing inside one has to work, and the new element
+    // joins that region.
+    const overId = (target.closest(".react-flow__node") as HTMLElement | null)?.dataset.id;
+    if (overId) {
+      const over = useCanvasStore.getState().nodes[overId];
+      if (over?.node_type !== "area") return;
+    }
     // Record screen-space origin only. Flow-space conversion happens at
     // pointer-up using the SAME endpoints the ghost rect uses, so the
     // WYSIWYG contract (ghost rect == dropped node rect) holds.
@@ -1161,6 +1231,11 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         onConnect={onConnect}
         fitView
         nodesDraggable={!readOnly && armedTool !== CONNECT_TOOL}
+        // ReactFlow lifts a selected node above every other by default. A
+        // region is a container drawn behind its contents (zIndex -1), so
+        // selecting one used to raise it over the elements inside and hide
+        // them. Layer order is ours to decide, not selection's.
+        elevateNodesOnSelect={false}
         nodesConnectable={!readOnly}
         elementsSelectable={!readOnly}
         zoomOnScroll
