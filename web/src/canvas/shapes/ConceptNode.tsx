@@ -60,7 +60,11 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
     <div
       className={`relative rounded-lg border ${borderStyle} px-3 py-2 text-sm shadow-sm ${opacityClass} ${wrapCursor}`}
       style={{
-        ...(liveW && liveH ? { width: liveW, height: liveH } : {}),
+        // Width and height are independent: an element set wide but not
+        // tall (the usual case for prose at a large text size) used to be
+        // ignored, because the style only applied when BOTH were present.
+        ...(liveW ? { width: liveW } : {}),
+        ...(liveH ? { height: liveH } : {}),
         background: bg,
         borderColor: stroke,
         color: stroke,
@@ -109,7 +113,10 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
             </div>
           )}
           {d.subtitle ? (
-            <div className="truncate text-[11px] italic text-neutral-500 leading-tight">
+            <div
+              className="truncate italic text-neutral-500 leading-tight"
+              style={{ fontSize: t.headingFontSize, textAlign: t.textAlign, fontFamily: t.fontFamily }}
+            >
               {d.subtitle}
             </div>
           ) : null}

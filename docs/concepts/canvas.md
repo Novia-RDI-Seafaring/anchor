@@ -89,6 +89,12 @@ styling keys (`bg_color`, `stroke_color`, `text_color`, `text_bold`,
 the placeholder keys (`placeholder`, `placeholder_hint`), and the review
 key (`review`).
 
+`text_size` runs `xs`, `sm`, `md` (the default, ~14px), `lg`, `xl`,
+`2xl`, `3xl` (~40px). It sets the body; the element's heading grows with
+it from `lg` up, so a card scales as one piece. Use the large end when a
+canvas is read on a shared screen rather than up close, and widen the
+element with `width` to match.
+
 This contract is queryable so an agent never has to read the `.tsx`
 source: `anchor canvas node-types [TYPE]`, `GET /api/node-types[/TYPE]`,
 and the `canvas_node_types` MCP tool all return

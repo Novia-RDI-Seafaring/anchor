@@ -11,6 +11,16 @@ next version section on tag.
 
 ### Added
 
+- Canvas text scale runs to poster size. `data.text_size` was `sm`, `md`,
+  `lg`, capping the body at 16px, and an element's heading was pinned at
+  11px whatever the body did, so a canvas read on a shared screen forced
+  everyone to zoom in and lose the overview. The scale is now `xs`, `sm`,
+  `md`, `lg`, `xl`, `2xl`, `3xl` (~40px), the heading grows with the body
+  from `lg` up so an element scales as one piece, spec tables honour the
+  same setting, and the text picker offers all seven with each button drawn
+  at its own size. The skill tells agents to pick the size for the zoom the
+  canvas will be read at.
+
 - Proposal sets: review what an agent added in one go as one thing
   (closes #359). Review states are per element, so a batch of thirty-five
   grounded nodes was thirty-five verdicts with nothing recording which of
@@ -152,6 +162,10 @@ next version section on tag.
   tokenizer. (#337)
 
 ### Fixed
+
+- A canvas element set wide but not tall kept its default width. Width and
+  height only applied together, so prose at a large text size could not be
+  given room without also pinning a height. They are independent now.
 
 - Clicking a row anchor, a document region, or a file no longer looks dead
   when the left source panel is collapsed. Opening a document set the
