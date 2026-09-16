@@ -59,7 +59,14 @@ describe("TextNode", () => {
     expect(getByText("From label")).toBeTruthy();
   });
 
-  it("takes a width on its own", () => {
+  it("hugs its words when no width is set", () => {
+    // The selection box is the element's box. A stored default width left a
+    // short word sitting inside a very wide frame.
+    const { getByTestId } = renderText({ text: "sdfsdf" });
+    expect(getByTestId("text-node").style.width).toBe("max-content");
+  });
+
+  it("takes a width when one is set, to wrap a paragraph at a measure", () => {
     const { getByTestId } = renderText({ text: "Wrapped", width: 420 });
     expect(getByTestId("text-node").style.width).toBe("420px");
   });

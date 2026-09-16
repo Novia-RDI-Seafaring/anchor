@@ -79,11 +79,12 @@ export function TextNode({ id, data, selected }: NodeProps) {
     setLiveScale(1);
     if (!start || !workspaceSlug) return;
     const next = Math.round(Math.min(200, Math.max(6, start.px * (params.height / start.height))));
-    // One patch for the whole gesture: the box and the size of the words.
+    // Only the size of the words is written. Pinning the box would stop it
+    // hugging the text: the selection outline would stay at whatever the
+    // drag happened to end at, which is what made a short word sit in a
+    // very wide frame.
     void canvases
-      .patchNode(workspaceSlug, id, {
-        data: { width: params.width, height: params.height, font_px: next },
-      })
+      .patchNode(workspaceSlug, id, { data: { font_px: next } })
       .catch(() => {
         // SSE reconciles.
       });
@@ -94,9 +95,11 @@ export function TextNode({ id, data, selected }: NodeProps) {
     <div
       className={`relative ${selected ? "cursor-move" : "cursor-pointer"}`}
       style={{
-        // No border and no background: the words are the element. A width
-        // wraps the text; without one it sizes to its content.
-        ...(liveW ? { width: liveW } : { maxWidth: "40rem" }),
+        // No border and no background: the words are the element, and the
+        // box hugs them. A width is only set when someone wants a paragraph
+        // to wrap at a chosen measure; otherwise the element is as wide as
+        // what is written, so the selection box matches the text.
+        ...(liveW ? { width: liveW } : { width: "max-content", maxWidth: "40rem" }),
         ...(liveH ? { minHeight: liveH } : {}),
         color: t.color,
         fontWeight: t.fontWeight,

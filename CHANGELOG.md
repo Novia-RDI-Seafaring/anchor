@@ -189,6 +189,12 @@ next version section on tag.
 
 ### Fixed
 
+- A text element's selection box hugs its words. It carried a default
+  width and kept whatever width a resize ended at, so a short word sat in
+  a frame several times its size. A width is now set only deliberately, to
+  wrap a paragraph at a chosen measure, and resizing writes the font size
+  alone.
+
 - Placing a text element and typing now works, and the words are edited
   where they sit. Nothing was focused after placing, so what you typed went
   nowhere: a text element has no label, and only label editors claimed the

@@ -197,7 +197,8 @@ registerNodeRenderer("text", TextNode, {
   hint: "words, no box",
   glyph: "text",
   noDefaultLabel: true,
-  width: 320,
+  // No default width: a text element hugs its words. A width is only ever
+  // set deliberately, to wrap a paragraph at a chosen measure.
   order: 5,
 });
 
