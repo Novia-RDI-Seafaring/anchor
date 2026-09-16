@@ -66,7 +66,7 @@ export function FactNode({ id, data, selected }: NodeProps) {
         {...resizeHandlers}
       />
       {ph.active ? <PlaceholderChip hint={ph.hint} /> : null}
-      <ReviewBadge data={d} />
+      <ReviewBadge data={d} nodeId={id} />
       <Handle type="target" position={Position.Left} />
       {/* Display label / body / pictogram inherit `color` from the wrapper
           (resolveColors → stroke). The edit-mode <input> keeps the

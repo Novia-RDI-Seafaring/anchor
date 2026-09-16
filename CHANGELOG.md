@@ -26,7 +26,11 @@ next version section on tag.
   `.../{id}/members|review`, the `canvas_propose_set`,
   `canvas_add_to_proposal_set`, `canvas_list_proposal_sets` and
   `canvas_review_proposal_set` MCP tools, and `anchor canvas
-  propose-set|add-to-set|proposal-sets|review-set`.
+  propose-set|add-to-set|proposal-sets|review-set`. In the web UI a
+  Proposals tab in the left explorer lists the sets with why each was
+  proposed and by whom, gives one Accept all / Reject all per batch, asks
+  before discarding, and rings a set's elements on the canvas while you
+  hover its row.
 
 - PDF viewer zooms with Cmd/Ctrl+scroll and trackpad pinch (closes #354).
   The zoom centres on the pointer, so the spot under the cursor stays put,

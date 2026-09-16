@@ -87,7 +87,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
       style={wrapStyle}
     >
       {ph.active ? <PlaceholderChip hint={ph.hint} /> : null}
-      <ReviewBadge data={data as Record<string, unknown>} />
+      <ReviewBadge data={data as Record<string, unknown>} nodeId={id} />
       <NodeResizer
         isVisible={selected ?? false}
         minWidth={120}

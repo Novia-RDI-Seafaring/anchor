@@ -216,6 +216,27 @@ type UiState = {
    */
   activeReferenceId: string | null;
   setActiveReferenceId: (id: string | null) => void;
+
+  // --- Proposal sets (#359) ---------------------------------------------
+  /**
+   * Ids of every element belonging to an OPEN proposal set on this canvas.
+   *
+   * A set records its members; the members do not record the set. So a node
+   * has no way to know it is part of a batch waiting for review, and the
+   * marker on it has to come from here. Written by `useProposalSetsFeed`
+   * (mounted by FilesExplorer, so it survives a tab switch), read by
+   * `ReviewBadge`.
+   */
+  proposalMemberIds: string[];
+  setProposalMemberIds: (ids: string[]) => void;
+  /**
+   * Ids of the one proposal set the pointer is over in the Proposals panel,
+   * or empty when nothing is hovered. Same broadcast idea as
+   * `hoveredSourceRef`: a transient pointer signal that must never touch
+   * canonical canvas state or echo through SSE.
+   */
+  proposalHighlightIds: string[];
+  setProposalHighlightIds: (ids: string[]) => void;
 };
 
 /** Default split: source pane takes a touch under half the width. */
@@ -292,6 +313,8 @@ export const useUiStore = create<UiState>((set) => ({
   hoveredNodeId: null,
   pendingInlineRenameNodeId: null,
   selectedEdgeId: null,
+  proposalMemberIds: [],
+  proposalHighlightIds: [],
   openPdf: (slug, options) =>
     set((state) => ({
       pdfViewer: {
@@ -377,4 +400,9 @@ export const useUiStore = create<UiState>((set) => ({
     }
     return false;
   },
+  // Both proposal slots are plain replacements. Subscribers select a boolean
+  // ("is my id in there?"), so a fresh array with the same contents costs a
+  // selector run and no re-render.
+  setProposalMemberIds: (ids) => set({ proposalMemberIds: ids }),
+  setProposalHighlightIds: (ids) => set({ proposalHighlightIds: ids }),
 }));
