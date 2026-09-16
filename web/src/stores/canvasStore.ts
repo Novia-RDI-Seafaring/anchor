@@ -223,6 +223,33 @@ const NODE_TOUCHING_EVENTS = new Set([
   "NodeReparented",
 ]);
 
+/**
+ * Merge a `data` patch the way the backend does (#192): nested objects
+ * merge recursively and a `null` value deletes its key. The canvas store
+ * has to agree with the server, or a patch that touches one field looks
+ * locally like it erased the rest.
+ */
+function mergeData(
+  base: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null) {
+      delete out[k];
+      continue;
+    }
+    const prev = out[k];
+    const bothObjects =
+      v && typeof v === "object" && !Array.isArray(v)
+      && prev && typeof prev === "object" && !Array.isArray(prev);
+    out[k] = bothObjects
+      ? mergeData(prev as Record<string, unknown>, v as Record<string, unknown>)
+      : v;
+  }
+  return out;
+}
+
 function describeEvent(
   evt: CanvasEvent,
   prevNodes: Record<string, Node>,
@@ -491,7 +518,14 @@ export const useCanvasStore = create<State>((set) => ({
           const data: Record<string, unknown> = { ...(cur.data ?? {}) };
           for (const [k, v] of Object.entries(fields)) {
             if (k === "data" && v && typeof v === "object") {
-              Object.assign(next, { data: { ...(v as Record<string, unknown>) } });
+              // Merge, do not replace. The backend merges a `data` patch
+              // into the stored data (null deletes a key); replacing it
+              // here meant any partial write, for example one that only
+              // sets a font size, wiped every other field locally until the
+              // page was reloaded.
+              Object.assign(next, {
+                data: mergeData(cur.data ?? {}, v as Record<string, unknown>),
+              });
             } else if (known.has(k)) {
               Object.assign(next, { [k]: v });
             } else {

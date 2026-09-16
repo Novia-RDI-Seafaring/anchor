@@ -236,6 +236,7 @@ real time on every connected client via SSE.
 | `spec` | A table of rows with values. Each row carries a `source_ref`. |
 | `fact` | A free-form note tied to a source. |
 | `image` | A region crop or screenshot. |
+| `text` | Words with no box: a title, a caption, a paragraph. |
 | `concept` / `entity` | Generic shapes for grouping or schematics. |
 | `canvas` | A tile that links to a child canvas. |
 
@@ -284,6 +285,10 @@ actor, and every element it creates lands with `data.review = {state:
 "accepted", by: <the approver>}`.
 
 ### Make it readable at the zoom it will be read at
+
+A `text` element is the one to reach for when the thing you are adding is
+prose, a heading or a caption: it renders `data.text` alone, with no border
+and no background, so an explanation does not arrive as one more card.
 
 Every element honours `data.text_size`: `xs`, `sm`, `md` (default), `lg`,
 `xl`, `2xl`, `3xl`. The heading grows with the body from `lg` up. A canvas

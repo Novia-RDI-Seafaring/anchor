@@ -82,6 +82,7 @@ shown. The body key differs per type:
 | `entity`  | (none)         | `label`, `pictogram`                        |
 | `funnel`  | (none)         | `label`, `pictogram`                        |
 | `area`    | `subtitle`     | `label`, `tone`                             |
+| `text`    | `text`         | words with no box: title, caption, paragraph |
 
 There is **no generic `data.body`**. Every type also honours the shared
 styling keys (`bg_color`, `stroke_color`, `text_color`, `text_bold`,
@@ -90,7 +91,9 @@ the placeholder keys (`placeholder`, `placeholder_hint`), and the review
 key (`review`).
 
 `text_size` runs `xs`, `sm`, `md` (the default, ~14px), `lg`, `xl`,
-`2xl`, `3xl` (~40px). It sets the body; the element's heading grows with
+`2xl`, `3xl` (~40px). `data.font_px` sets a size between the buckets and
+wins over `text_size`; dragging a text element's corner writes it, the way
+resizing text works in a drawing tool. It sets the body; the element's heading grows with
 it from `lg` up, so a card scales as one piece. Use the large end when a
 canvas is read on a shared screen rather than up close, and widen the
 element with `width` to match.

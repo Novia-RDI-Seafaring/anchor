@@ -37,6 +37,8 @@ import { cad } from "@/api/cad";
 import { canvases } from "@/api/canvases";
 import { fmu } from "@/api/fmu";
 import { canDragFromToolbar, CONNECT_TOOL, paletteEntries, type PaletteMeta } from "@/canvas/registry";
+
+import { KEY_FOR_TOOL, TOOL_KEYS } from "@/canvas/toolKeys";
 import {
   Tooltip,
   TooltipContent,
@@ -94,7 +96,17 @@ export function LeftToolRail({ workspaceSlug }: Props) {
         if (typing) return;
         event.preventDefault();
         toggleSourceCluster();
-      } else if (event.key === "Escape") {
+      } else if (!typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        // Single-key tool shortcuts, the way every drawing tool does it.
+        // Only when the user is not typing and holds no modifier.
+        const tool = TOOL_KEYS[event.key.toLowerCase()];
+        if (tool) {
+          event.preventDefault();
+          armTool(tool);
+          return;
+        }
+      }
+      if (event.key === "Escape") {
         // Disarming on Esc is the most "draw.io expected" behaviour. Don't
         // preventDefault — other components may also want a chance at Esc.
         // Also deselect the active node so the selection ring + in-flight
@@ -107,7 +119,7 @@ export function LeftToolRail({ workspaceSlug }: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleSourceCluster, armedTool, disarmTool, setSelectedNodeId, setPropertiesOpen]);
+  }, [toggleSourceCluster, armedTool, armTool, disarmTool, setSelectedNodeId, setPropertiesOpen]);
 
   const shapes = paletteEntries("shapes");
   const cards = paletteEntries("cards");
@@ -145,12 +157,13 @@ export function LeftToolRail({ workspaceSlug }: Props) {
   return (
     <TooltipProvider delayDuration={250}>
       <div
-        // Vertical rail along the left edge. Sits at ~52px wide; floats on
-        // top of the canvas (the canvas itself fills the full viewport).
-        // Background is white with a subtle shadow so it reads as a card.
-        className="pointer-events-auto absolute left-3 top-3 z-20 flex w-[44px] flex-col items-center gap-1 rounded-xl border border-neutral-200 bg-white/95 px-1 py-2 shadow-md backdrop-blur"
+        // One horizontal row, centred at the top, the way Excalidraw and
+        // Figma place it: tools sit where the eye starts, and the left edge
+        // stays free for the source panel and the properties of whatever is
+        // selected.
+        className="pointer-events-auto absolute left-1/2 top-3 z-20 flex -translate-x-1/2 flex-row items-center gap-1 rounded-xl border border-neutral-200 bg-white/95 px-1.5 py-1 shadow-md backdrop-blur"
         role="toolbar"
-        aria-orientation="vertical"
+        aria-orientation="horizontal"
         aria-label="Canvas tools"
       >
         <RailGroup label="Shapes">
@@ -180,16 +193,22 @@ export function LeftToolRail({ workspaceSlug }: Props) {
                 aria-label="Connector"
                 aria-pressed={armedTool === CONNECT_TOOL}
                 onClick={() => armTool(CONNECT_TOOL)}
-                className={`grid h-8 w-8 place-items-center rounded-lg border text-neutral-600 transition ${
+                className={`relative grid h-9 w-9 place-items-center rounded-lg border text-neutral-600 transition ${
                   armedTool === CONNECT_TOOL
                     ? "border-sky-400 bg-sky-50 text-sky-700"
                     : "border-transparent hover:border-neutral-300 hover:bg-neutral-50"
                 }`}
               >
                 <ConnectorIcon />
+                <span
+                  className="pointer-events-none absolute bottom-0 right-0.5 text-[8px] leading-none text-neutral-400"
+                  aria-hidden
+                >
+                  A
+                </span>
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">
+            <TooltipContent side="bottom">
               <div className="font-medium">Connector</div>
               <div className="text-neutral-300">click one element, then another</div>
             </TooltipContent>
@@ -252,7 +271,7 @@ export function LeftToolRail({ workspaceSlug }: Props) {
                 </button>
               </PopoverPrimitive.Trigger>
             </TooltipTrigger>
-            <TooltipContent side="right">Add from producer</TooltipContent>
+            <TooltipContent side="bottom">Add from producer</TooltipContent>
           </Tooltip>
           <PopoverPrimitive.Portal>
             <PopoverPrimitive.Content
@@ -276,9 +295,11 @@ export function LeftToolRail({ workspaceSlug }: Props) {
         </PopoverPrimitive.Root>
       </div>
 
-      {/* Top-of-canvas hint strip when a tool is armed. */}
+      {/* Hint line under the toolbar while a tool is armed, where
+          Excalidraw puts it. It used to sit at the same height as the bar
+          and covered the tiles once the bar moved to the top. */}
       {armedTool ? (
-        <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
+        <div className="pointer-events-none absolute inset-x-0 top-[3.6rem] z-20 flex justify-center">
           <div className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white/95 px-3 py-1 text-[11px] text-neutral-600 shadow-sm backdrop-blur">
             <span className="font-medium text-neutral-800">{labelFor(armedTool)}</span>
             <span>· Click to place, drag to size · </span>
@@ -316,12 +337,12 @@ function labelFor(nodeType: string): string {
 }
 
 function RailDivider() {
-  return <div className="my-0.5 h-px w-6 bg-neutral-200" aria-hidden />;
+  return <div className="mx-0.5 h-6 w-px bg-neutral-200" aria-hidden />;
 }
 
 function RailGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col items-center gap-1" role="group" aria-label={label}>
+    <div className="flex flex-row items-center gap-1" role="group" aria-label={label}>
       {children}
     </div>
   );
@@ -362,15 +383,23 @@ function RailTile({
           aria-label={meta.label}
           aria-pressed={armed}
           className={cn(
-            "flex h-9 w-9 items-center justify-center rounded-md text-neutral-700 transition hover:bg-neutral-100",
+            "relative flex h-9 w-9 items-center justify-center rounded-md text-neutral-700 transition hover:bg-neutral-100",
             armed && "bg-sky-100 text-sky-800 ring-1 ring-sky-300",
             draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
           )}
         >
           <Glyph glyph={meta.glyph} />
+          {KEY_FOR_TOOL[name] ? (
+            <span
+              className="pointer-events-none absolute bottom-0 right-0.5 text-[8px] leading-none text-neutral-400"
+              aria-hidden
+            >
+              {KEY_FOR_TOOL[name]}
+            </span>
+          ) : null}
         </button>
       </TooltipTrigger>
-      <TooltipContent side="right">
+      <TooltipContent side="bottom">
         <div className="font-medium">{meta.label}</div>
         {meta.hint ? (
           <div className="text-[10px] text-neutral-500">{meta.hint}</div>
@@ -408,6 +437,12 @@ function Glyph({ glyph }: { glyph: PaletteMeta["glyph"] }) {
       return (
         <svg viewBox="0 0 24 24" className={cls} fill="none" strokeWidth={1.5} strokeDasharray="3 2">
           <rect x="3" y="5" width="18" height="14" rx="2" />
+        </svg>
+      );
+    case "text":
+      return (
+        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+          <path d="M4 5h12M10 5v11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
         </svg>
       );
     case "note":

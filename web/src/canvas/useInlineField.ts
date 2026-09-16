@@ -58,6 +58,15 @@ type Options = {
    * compatibility — older callers pre-selection-gating still work.
    */
   canEdit?: boolean;
+  /**
+   * Claim the pending-focus stamp a freshly created element carries.
+   *
+   * By default only a `label` editor auto-focuses, because most elements
+   * are created with a heading to type. A text element has no label: its
+   * body IS the element, so it claims the stamp instead. Without this,
+   * placing a text element left nothing focused and typing went nowhere.
+   */
+  claimsPendingFocus?: boolean;
 };
 
 type SingleLineInputProps = {
@@ -103,6 +112,7 @@ export function useInlineField<M extends boolean = false>({
   field = "label",
   multiline,
   canEdit = true,
+  claimsPendingFocus = false,
 }: Options & { multiline?: M }): Result<M> {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(canonicalValue);
@@ -153,23 +163,37 @@ export function useInlineField<M extends boolean = false>({
   // select-all (selecting whole bodies is unexpected).
   useEffect(() => {
     if (!editing) return;
-    if (multiline) {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      // Place caret at end — feels closer to "click to edit" than overwrite.
-      const end = el.value.length;
-      try {
-        el.setSelectionRange(end, end);
-      } catch {
-        // Some browsers throw on hidden elements; ignore.
+    // Focus on the next frame, and once more the frame after.
+    // ReactFlow focuses the node wrapper itself when a node becomes
+    // selected, which lands just after this effect and stole the caret
+    // back: an element placed and put straight into edit mode looked
+    // ready to type into, and swallowed everything typed.
+    let frame = 0;
+    const focus = () => {
+      if (multiline) {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        // Place caret at end — closer to "click to edit" than overwrite.
+        const end = el.value.length;
+        try {
+          el.setSelectionRange(end, end);
+        } catch {
+          // Some browsers throw on hidden elements; ignore.
+        }
+      } else {
+        const el = inputRef.current;
+        if (!el) return;
+        el.focus();
+        el.select();
       }
-    } else {
-      const el = inputRef.current;
-      if (!el) return;
-      el.focus();
-      el.select();
-    }
+    };
+    focus();
+    frame = requestAnimationFrame(() => {
+      focus();
+      frame = requestAnimationFrame(focus);
+    });
+    return () => cancelAnimationFrame(frame);
   }, [editing, multiline]);
 
   const beginEdit = useCallback(() => {
@@ -190,14 +214,14 @@ export function useInlineField<M extends boolean = false>({
   // body-editor hooks on the same node don't race for focus.
   const pendingRenameId = useUiStore((s) => s.pendingInlineRenameNodeId);
   useEffect(() => {
-    if (field !== "label") return;
+    if (field !== "label" && !claimsPendingFocus) return;
     if (!canEdit) return;
     if (pendingRenameId !== nodeId) return;
     const consumed = useUiStore.getState().consumeInlineRename(nodeId);
     if (!consumed) return;
     setValue(canonicalValue);
     setEditing(true);
-  }, [pendingRenameId, nodeId, field, canEdit, canonicalValue]);
+  }, [pendingRenameId, nodeId, field, canEdit, canonicalValue, claimsPendingFocus]);
 
   const cancel = useCallback(() => {
     setValue(canonicalValue);

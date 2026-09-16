@@ -54,6 +54,7 @@ import { EntityNode } from "./shapes/EntityNode";
 import { FactNode } from "./shapes/FactNode";
 import { FunnelNode } from "./shapes/FunnelNode";
 import { NoteNode } from "./shapes/NoteNode";
+import { TextNode } from "@/canvas/shapes/TextNode";
 
 /** Optional toolbar/palette metadata for a registered node type. */
 export type PaletteMeta = {
@@ -75,7 +76,7 @@ export type PaletteMeta = {
    */
   noDefaultLabel?: boolean;
   /** Glyph identifier for the toolbar icon (matches the tile's SVG). */
-  glyph: "rect" | "circle" | "diamond" | "dashed-rect" | "note" | "fact" | "page" | "table" | "cube" | "block" | "requirement" | "package" | "fmu" | "sub-canvas";
+  glyph: "rect" | "circle" | "diamond" | "dashed-rect" | "text" | "note" | "fact" | "page" | "table" | "cube" | "block" | "requirement" | "package" | "fmu" | "sub-canvas";
   /** Ordering hint within a section (lower first). */
   order?: number;
   /**
@@ -188,6 +189,17 @@ registerNodeRenderer("area", AreaNode, {
   width: 360,
   height: 220,
   order: 40,
+});
+
+registerNodeRenderer("text", TextNode, {
+  group: "shapes",
+  label: "Text",
+  hint: "words, no box",
+  glyph: "text",
+  noDefaultLabel: true,
+  // No default width: a text element hugs its words. A width is only ever
+  // set deliberately, to wrap a paragraph at a chosen measure.
+  order: 5,
 });
 
 registerNodeRenderer("fact", FactNode, {
