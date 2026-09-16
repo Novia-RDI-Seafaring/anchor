@@ -111,6 +111,18 @@ BUILTIN_NODE_TYPES: list[NodeType] = [
         body_field="text",
     ),
     _shape(
+        "markdown",
+        "Card whose body is Markdown, rendered as rich text: headings, "
+        "lists, tables, code blocks, links, blockquotes (GitHub-flavoured). "
+        "Renders data.label (optional card title) and data.text (the "
+        "Markdown source). Use it when what you are saying has structure — "
+        "a short list of findings, a comparison table, a snippet — instead "
+        "of packing that into a note's plain body. Raw HTML in the source "
+        "is escaped, not rendered.",
+        "text",
+        body_field="text",
+    ),
+    _shape(
         "entity",
         "Circular shape. Renders data.label and an optional data.pictogram.",
         "pictogram",

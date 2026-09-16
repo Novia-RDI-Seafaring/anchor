@@ -31,11 +31,28 @@ real time on every connected client via SSE.
 | `fact` | A free-form note tied to a source. |
 | `image` | A region crop or screenshot. |
 | `text` | Words with no box: a title, a caption, a paragraph. |
+| `markdown` | Prose with structure — headings, lists, tables, code. `data.text` holds the Markdown source. |
 | `concept` / `entity` | Generic shapes for grouping or schematics. |
 | `canvas` | A tile that links to a child canvas. |
 
 The full list and the data shapes live in the on-disk substrate docs;
 this is the shortlist of the ones agents touch most.
+
+### Say it in Markdown when it has structure
+
+Most of what an agent writes onto a canvas is not one sentence. It is a
+short list of findings, two options side by side, a snippet of a config,
+a link back to where a number came from. That is a `markdown` node:
+`data.text` holds the Markdown source and the card renders it as rich
+text, with GitHub-flavoured tables and task lists.
+
+Reach for it over a `note` as soon as the content has more than one
+part. A `note` is a remark; a `markdown` card is an explanation. Values
+that are really rows of a table still belong in a `spec` node, where
+each row carries its own `source_ref` — a Markdown table of numbers
+looks right and loses every link back to the page it came from.
+
+Raw HTML in the source is escaped, never rendered.
 
 ### Review states
 

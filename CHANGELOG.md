@@ -11,6 +11,18 @@ next version section on tag.
 
 ### Added
 
+- A `markdown` node: a card whose body is Markdown, rendered as rich
+  text. Headings, lists, tables, code blocks, links and blockquotes all
+  render, GitHub-flavoured, from `data.text` — the same body key the
+  other cards use. It fills the gap between a `note`, which holds one
+  remark as plain prose, and a `spec` table, which holds rows of
+  source-linked values: an explanation with parts. Press `M` or take it
+  from the toolbar; double-click the body to edit the source in place,
+  where Enter breaks the line and Cmd/Ctrl+Enter saves. Every size in
+  the rendered body is relative, so the card's text size scales its
+  headings, code and tables together. Raw HTML in the source is escaped
+  rather than rendered.
+
 - Resizing a text element scales the words, as in Excalidraw: drag a
   corner and the font grows with the box instead of the same words
   re-wrapping in a bigger frame. The size is live during the drag and

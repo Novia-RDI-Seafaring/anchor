@@ -452,6 +452,15 @@ function Glyph({ glyph }: { glyph: PaletteMeta["glyph"] }) {
           <path d="M15 19v-4h4" />
         </svg>
       );
+    case "markdown":
+      // The Markdown mark: a rounded frame around the familiar M + caret.
+      return (
+        <svg viewBox="0 0 24 24" className={cls} fill="none" strokeWidth={1.5}>
+          <rect x="3" y="6" width="18" height="12" rx="2" />
+          <path d="M6.5 15V9l2.5 3 2.5-3v6" />
+          <path d="M16 9v4.5M14 12.5l2 2 2-2" />
+        </svg>
+      );
     case "fact":
       return (
         <svg viewBox="0 0 24 24" className={cls} fill="none" strokeWidth={1.5}>
