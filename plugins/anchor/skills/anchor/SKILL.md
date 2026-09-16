@@ -283,6 +283,15 @@ shapes as these tools. On approval the batch is applied with you as the
 actor, and every element it creates lands with `data.review = {state:
 "accepted", by: <the approver>}`.
 
+### Make it readable at the zoom it will be read at
+
+Every element honours `data.text_size`: `xs`, `sm`, `md` (default), `lg`,
+`xl`, `2xl`, `3xl`. The heading grows with the body from `lg` up. A canvas
+someone reads on a shared screen, or a headline you want legible zoomed
+out, wants `xl` or larger with a wider `width`; a dense reference table
+stays at the default. Pick the size when you create the element rather
+than leaving everything at the default and making the human zoom.
+
 ### Spec nodes carry structured rows, not prose
 
 When an extraction yields several values — say every pump ID and its

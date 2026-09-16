@@ -64,9 +64,15 @@ export function NoteNode({ id, data, selected }: NodeProps) {
   // the default so existing sticky notes keep their colour until the user
   // picks a text override. The body text inherits the wrapper's color.
   const t = resolveText(d);
-  const wrapStyle: React.CSSProperties = liveW && liveH
-    ? { width: liveW, height: liveH, maxWidth: "none" }
-    : {};
+  // Width and height are independent: a note set wide but not tall (prose
+  // at a large text size) used to keep its default max width, because the
+  // style only applied when BOTH were present.
+  const wrapStyle: React.CSSProperties = {};
+  if (liveW) {
+    wrapStyle.width = liveW;
+    wrapStyle.maxWidth = "none";
+  }
+  if (liveH) wrapStyle.height = liveH;
   if (bg !== DEFAULT_BG) wrapStyle.background = bg;
   if (stroke !== DEFAULT_STROKE) {
     wrapStyle.borderColor = stroke;
@@ -104,8 +110,9 @@ export function NoteNode({ id, data, selected }: NodeProps) {
         />
       ) : (
         <div
-          className={`text-[11px] uppercase tracking-wide text-amber-700 ${selected ? "cursor-text" : "cursor-pointer"}`}
+          className={`uppercase tracking-wide text-amber-700 ${selected ? "cursor-text" : "cursor-pointer"}`}
           style={{
+            fontSize: t.headingFontSize,
             // Only apply text overrides when the user has set them — keep
             // the amber-700 cascade when no `text_color` was picked.
             ...((d as { text_color?: string }).text_color

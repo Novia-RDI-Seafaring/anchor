@@ -5,6 +5,7 @@ import { useParams } from "react-router-dom";
 
 import { canvases } from "@/api/canvases";
 import { documents, refHasSelector } from "@/api/documents";
+import { resolveText } from "@/canvas/colors";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
 import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
 import { ReviewBadge } from "@/canvas/ReviewBadge";
@@ -250,6 +251,10 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
     d.height,
   );
   const sized = liveW !== undefined || liveH !== undefined;
+  // A spec table is read as much as any card, so it honours the same text
+  // scale the shapes do: `data.text_size` drives the rows, and the heading
+  // tracks it rather than staying pinned at 10px.
+  const text = resolveText(d as Record<string, unknown>);
   // Spec content is row-driven: an explicit `height` from a previous
   // resize forces empty space below the last row and visually disconnects
   // the resize box from the visible card. Use `minHeight` instead so the
@@ -266,8 +271,8 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   }
   return (
     <div
-      className={`relative rounded-lg border ${borderStyle} ${ph.active ? "" : "border-neutral-400 bg-white"} text-sm shadow-sm ${sized ? "" : "w-72"} ${selected ? "cursor-move" : "cursor-pointer"}`}
-      style={wrapperStyle}
+      className={`relative rounded-lg border ${borderStyle} ${ph.active ? "" : "border-neutral-400 bg-white"} shadow-sm ${sized ? "" : "w-72"} ${selected ? "cursor-move" : "cursor-pointer"}`}
+      style={{ ...wrapperStyle, fontSize: text.fontSize, fontFamily: text.fontFamily }}
       onMouseEnter={broadcastHover}
       onMouseLeave={clearHoveredSourceRef}
     >
@@ -285,8 +290,16 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         className="flex items-center justify-between border-b border-neutral-200 px-3 py-2 gap-2"
       >
         <div className="min-w-0">
-          <div className="text-[10px] uppercase tracking-wide text-neutral-500">spec</div>
-          <div className="truncate font-medium text-neutral-900">
+          <div
+            className="uppercase tracking-wide text-neutral-500"
+            style={{ fontSize: `calc(${text.headingFontSize} * 0.85)` }}
+          >
+            spec
+          </div>
+          <div
+            className="truncate font-medium text-neutral-900"
+            style={{ fontSize: text.fontSize, fontFamily: text.fontFamily }}
+          >
             {titleEdit.editing ? (
               <input
                 {...titleEdit.inputProps}
@@ -446,7 +459,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
           </tbody>
         </table>
       ) : (
-        <div className="px-3 py-2 text-[12px] text-neutral-700 leading-snug">
+        <div className="px-3 py-2 text-neutral-700 leading-snug">
           {d.description}
         </div>
       )}
