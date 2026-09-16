@@ -189,6 +189,13 @@ next version section on tag.
 
 ### Fixed
 
+- The canvas no longer drops a node's other fields when one of them
+  changes. The browser replaced a node's `data` with whatever a patch
+  carried, while the server merges it, so a write that set one key (a font
+  size, a review verdict) wiped the rest locally until the page was
+  reloaded. It now merges the way the backend does, nested objects
+  included, with `null` deleting a key.
+
 - A text element's selection box hugs its words. It carried a default
   width and kept whatever width a resize ended at, so a short word sat in
   a frame several times its size. A width is now set only deliberately, to
