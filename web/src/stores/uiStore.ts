@@ -293,24 +293,37 @@ export const useUiStore = create<UiState>((set) => ({
   pendingInlineRenameNodeId: null,
   selectedEdgeId: null,
   openPdf: (slug, options) =>
-    set((state) => ({
-      pdfViewer: {
-        slug,
-        page: options?.page ?? 1,
-        // One shared pane: reuse the surface the viewer is already on unless
-        // the caller pins a specific mode. Defaults to the docked split-screen.
-        mode: options?.mode ?? state.pdfViewer?.mode ?? "dock",
-        workspaceSlug: options?.workspaceSlug,
-        documentNodeId: options?.documentNodeId,
-        highlightRegionId: options?.highlightRegionId,
-        highlightBbox: options?.highlightBbox,
-        highlightQuery: options?.highlightQuery,
-        highlightPage: options?.highlightRegionId || options?.highlightBbox
-          ? options?.page ?? 1
-          : undefined,
-        nonce: (state.pdfViewer?.nonce ?? 0) + 1,
-      },
-    })),
+    set((state) => {
+      const mode = options?.mode ?? state.pdfViewer?.mode ?? "dock";
+      // Opening a document in the dock must reveal it: with the source
+      // cluster collapsed the dock is not rendered at all, so setting
+      // `pdfViewer` alone did nothing visible and a click on a row anchor
+      // or a region looked dead (it only highlighted when the viewer
+      // happened to be open already).
+      if (mode === "dock" && state.sourceClusterCollapsed) {
+        persist(SOURCE_CLUSTER_COLLAPSED_KEY, "0");
+      }
+      return {
+        sourceClusterCollapsed:
+          mode === "dock" ? false : state.sourceClusterCollapsed,
+        pdfViewer: {
+          slug,
+          page: options?.page ?? 1,
+          // One shared pane: reuse the surface the viewer is already on unless
+          // the caller pins a specific mode. Defaults to the docked split-screen.
+          mode,
+          workspaceSlug: options?.workspaceSlug,
+          documentNodeId: options?.documentNodeId,
+          highlightRegionId: options?.highlightRegionId,
+          highlightBbox: options?.highlightBbox,
+          highlightQuery: options?.highlightQuery,
+          highlightPage: options?.highlightRegionId || options?.highlightBbox
+            ? options?.page ?? 1
+            : undefined,
+          nonce: (state.pdfViewer?.nonce ?? 0) + 1,
+        },
+      };
+    }),
   closePdf: () => set({ pdfViewer: null }),
   activeReferenceId: null,
   setActiveReferenceId: (id) => set({ activeReferenceId: id }),

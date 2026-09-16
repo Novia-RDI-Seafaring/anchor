@@ -132,6 +132,13 @@ next version section on tag.
 
 ### Fixed
 
+- Clicking a row anchor, a document region, or a file no longer looks dead
+  when the left source panel is collapsed. Opening a document set the
+  viewer state, but the collapsed cluster does not render the viewer at
+  all, so nothing appeared; the section was only highlighted when the
+  viewer happened to be open already. Opening a document in the dock now
+  reveals the panel. The modal quick-look path is unchanged.
+
 - Canvas elements no longer show connection dots. Every element (shapes,
   cards, spec tables and their rows, document regions) drew small
   sockets at fixed points, which read as the only places a connector
