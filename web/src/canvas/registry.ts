@@ -418,3 +418,11 @@ export const nodeTypes: NodeTypes = new Proxy({} as NodeTypes, {
     return undefined;
   },
 });
+
+/** The connector tool's id in `uiStore.armedTool`.
+ *
+ * Not a node type: arming it puts the canvas in connect mode, where a click
+ * picks the element a connector starts from and the next click picks what it
+ * ends at. Kept out of the palette registry so nothing tries to place it as a
+ * node. */
+export const CONNECT_TOOL = "__connect__";

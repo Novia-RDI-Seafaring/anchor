@@ -38,7 +38,8 @@ import {
   maybeSquareRect,
   paintRectFrom,
 } from "@/canvas/PaintGhost";
-import { nodeTypes, paletteEntries } from "@/canvas/registry";
+import { connectClick } from "@/canvas/connect";
+import { CONNECT_TOOL, nodeTypes, paletteEntries } from "@/canvas/registry";
 import { REVIEW_REJECTED_OPACITY, reviewState } from "@/canvas/review";
 import { refreshWorkspaces } from "@/canvas/useWorkspacesList";
 import { CanvasSse, type CanvasEvent } from "@/realtime/sseClient";
@@ -241,6 +242,9 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   const setPropertiesOpen = useUiStore((s) => s.setPropertiesOpen);
   const armedTool = useUiStore((s) => s.armedTool);
   const disarmTool = useUiStore((s) => s.disarmTool);
+  // Connector tool: the element a connector starts from, once picked.
+  const connectSourceId = useUiStore((s) => s.connectSourceId);
+  const setConnectSourceId = useUiStore((s) => s.setConnectSourceId);
   const navigate = useNavigate();
   const rootRef = useRef<HTMLDivElement | null>(null);
   // Pointer-down origin for armed-tool drag-to-size. Lives in a ref so
@@ -908,7 +912,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     flowY: number,
     sizeOverride?: { width: number; height: number },
   ) => {
-    if (!armedTool) return;
+    if (!armedTool || armedTool === CONNECT_TOOL) return;
     // Special path: sub-canvas placement goes through the composite
     // `createSubCanvas` endpoint so the child workspace + linking node
     // land atomically. The slug is generated client-side; the backend
@@ -1121,7 +1125,37 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
               // (Miro-style mini-toolbar is the default affordance; the
               // panel is reachable via the toolbar's ⋮ More or the
               // context menu's "Edit properties…").
-              onNodeClick: (_event, node) => { setSelectedNodeId(node.id); },
+              onNodeClick: (_event, node) => {
+                // Connector tool: the first click picks where the connector
+                // starts, the second picks what it ends at. Clicking the same
+                // element twice cancels, and the tool stays armed afterwards
+                // so several connectors can be drawn in a row.
+                if (armedTool === CONNECT_TOOL) {
+                  const action = connectClick(connectSourceId, node.id);
+                  if (action.type === "start") {
+                    setConnectSourceId(action.source);
+                    setSelectedNodeId(action.source);
+                  } else if (action.type === "cancel") {
+                    setConnectSourceId(null);
+                  } else {
+                    setConnectSourceId(null);
+                    void canvases
+                      .addEdge(slug, {
+                        source: action.source,
+                        target: action.target,
+                        edge_type: "floating",
+                        data: {},
+                      })
+                      .catch(() => {
+                        // A refused edge (an element that went away, a rule
+                        // the server enforces) leaves the tool armed; the
+                        // canvas simply does not change.
+                      });
+                  }
+                  return;
+                }
+                setSelectedNodeId(node.id);
+              },
               // Hover state is no longer consumed by DirectionalConnectors
               // (the dots are selection-only now), but other UI may still
               // want to know which node the cursor is over. Plain
@@ -1158,6 +1192,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
                 setEdgeContextTarget({ x: event.clientX, y: event.clientY, edgeId: edge.id });
               },
               onPaneClick: () => {
+                setConnectSourceId(null);
                 setSelectedNodeId(null);
                 setSelectedEdgeId(null);
                 setPropertiesOpen(false);
