@@ -110,6 +110,34 @@ CANVAS_OPERATION_DESCRIPTORS: tuple[OperationDescriptor, ...] = (
         mcp_tool="canvas_clear",
         cli_command=("canvas", "clear"),
     ),
+    OperationDescriptor(
+        id="canvas.propose_set",
+        service_method="open_proposal_set",
+        http=HttpSurface("POST", "/api/workspaces/{slug}/proposal-sets"),
+        mcp_tool="canvas_propose_set",
+        cli_command=("canvas", "propose-set"),
+    ),
+    OperationDescriptor(
+        id="canvas.add_proposal_set_members",
+        service_method="add_proposal_set_members",
+        http=HttpSurface("POST", "/api/workspaces/{slug}/proposal-sets/{set_id}/members"),
+        mcp_tool="canvas_add_to_proposal_set",
+        cli_command=("canvas", "add-to-set"),
+    ),
+    OperationDescriptor(
+        id="canvas.list_proposal_sets",
+        service_method="list_proposal_sets",
+        http=HttpSurface("GET", "/api/workspaces/{slug}/proposal-sets"),
+        mcp_tool="canvas_list_proposal_sets",
+        cli_command=("canvas", "proposal-sets"),
+    ),
+    OperationDescriptor(
+        id="canvas.review_proposal_set",
+        service_method="review_proposal_set",
+        http=HttpSurface("POST", "/api/workspaces/{slug}/proposal-sets/{set_id}/review"),
+        mcp_tool="canvas_review_proposal_set",
+        cli_command=("canvas", "review-set"),
+    ),
     # Presence is served by the in-memory PresenceTracker (per serve
     # process), not WorkspaceService; the parity test resolves
     # `service_method` against either.

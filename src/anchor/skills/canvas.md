@@ -46,7 +46,26 @@ node with `review.state == "rejected"` is feedback: the human turned it
 down, so revise or replace it rather than ignoring or deleting the
 verdict. `accepted` means the human signed off. Evidence edges and
 `source_ref` remain how a value is checked; `review` only records the
-outcome of that check.
+outcome of that check. A whole proposal set carries one verdict for every
+element in it (see below).
+
+### Group what you add, so a human reviews it as one thing
+
+When you add more than a couple of elements in one go, draw them, then
+call `canvas_propose_set(workspace_slug, reason, members)` to group them.
+`reason` is shown to the reviewer: say what you added and why, in your own
+words. Without a set, a human rules on thirty-five nodes one at a time and
+nothing records which of them belong together.
+
+Add more with `canvas_add_to_proposal_set`; re-adding a member is a no-op.
+Check back with `canvas_list_proposal_sets(workspace_slug, state="open")`
+to see what is still waiting, and read the verdict on a set you proposed
+earlier: `rejected` is feedback, so revise rather than re-propose the same
+thing. `canvas_review_proposal_set` is the human's verdict. Only call it
+when the user asks you to.
+
+A thread suggestion (`intent_add_item`) already is a batch and needs no
+set: use a set for what you add outside a thread.
 
 ### Elements under a scoped ask are read-only to you
 

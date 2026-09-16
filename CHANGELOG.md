@@ -11,6 +11,27 @@ next version section on tag.
 
 ### Added
 
+- Proposal sets: review what an agent added in one go as one thing
+  (closes #359). Review states are per element, so a batch of thirty-five
+  grounded nodes was thirty-five verdicts with nothing recording which of
+  them belonged together or why. An agent now draws, then groups what it
+  added with a required `reason`; the set lives in the canvas's
+  `metadata.proposal_sets` and names its members, so grouping costs one
+  event and an element's `data` stays about the element. A human rules on
+  the batch in one write: accepting or rejecting stamps `data.review` on
+  every member (with `except_ids` for "accept all but these"), and
+  rejecting with `discard` removes the members instead, cascading their
+  edges, which is the clean undo for a batch nobody wants. Reaches all
+  three adapters: `POST|GET /api/workspaces/{slug}/proposal-sets` and
+  `.../{id}/members|review`, the `canvas_propose_set`,
+  `canvas_add_to_proposal_set`, `canvas_list_proposal_sets` and
+  `canvas_review_proposal_set` MCP tools, and `anchor canvas
+  propose-set|add-to-set|proposal-sets|review-set`. In the web UI a
+  Proposals tab in the left explorer lists the sets with why each was
+  proposed and by whom, gives one Accept all / Reject all per batch, asks
+  before discarding, and rings a set's elements on the canvas while you
+  hover its row.
+
 - PDF viewer zooms with Cmd/Ctrl+scroll and trackpad pinch (closes #354).
   The zoom centres on the pointer, so the spot under the cursor stays put,
   and the gesture no longer zooms the whole browser page. Plain scrolling

@@ -279,7 +279,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         {...resizeHandlers}
       />
       {ph.active ? <PlaceholderChip hint={ph.hint} /> : null}
-      <ReviewBadge data={data as Record<string, unknown>} />
+      <ReviewBadge data={data as Record<string, unknown>} nodeId={id} />
       <Handle type="target" position={Position.Left} className="canvas-node-socket" />
       <div
         className="flex items-center justify-between border-b border-neutral-200 px-3 py-2 gap-2"

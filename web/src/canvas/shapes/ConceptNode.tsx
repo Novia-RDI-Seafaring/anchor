@@ -74,7 +74,7 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
         {...resizeHandlers}
       />
       {ph.active ? <PlaceholderChip hint={ph.hint} /> : null}
-      <ReviewBadge data={d} />
+      <ReviewBadge data={d} nodeId={id} />
 
       <Handle type="target" position={Position.Left} />
       {/* Label / pictogram inherit `color` from the wrapper above (resolveColors
