@@ -1,0 +1,167 @@
+/**
+ * proposalSetsFeed — data layer for the Proposals panel (#359).
+ *
+ * Pure helpers (ordering, labels, member ids) plus the `useProposalSetsFeed`
+ * hook that keeps a canvas's proposal sets live. The hook is mounted once by
+ * FilesExplorer, the same way `useIntentsFeed` is, so the tab badge stays
+ * accurate while another tab is showing and the member marker on the canvas
+ * does not wink out when the user leaves the Proposals tab.
+ *
+ * Liveness has three legs:
+ *   1. The canvas version. Every SSE event this window receives bumps
+ *      `canvasStore.version`, and a verdict stamps or removes elements, so a
+ *      moving version is the signal that the sets may have moved with it.
+ *      Sets live in canvas metadata, which the SSE graph stream does not
+ *      carry, hence the refetch rather than a local apply.
+ *   2. Local nudge — the `anchor:proposal-sets-changed` browser event this
+ *      window's own mutations fire, so a verdict shows immediately.
+ *   3. Window focus — reconciles changes made by an agent in another process
+ *      (MCP over stdio, the CLI) while the tab sat in the background.
+ *
+ * The hook also publishes the open sets' member ids into `uiStore` so a member
+ * element can carry a quiet marker. Membership is not stamped on the element,
+ * so a node has no other way to know it is part of a set.
+ */
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import {
+  PROPOSAL_SETS_CHANGED_EVENT,
+  errorDetail,
+  proposalSets,
+  type ProposalActor,
+  type ProposalSet,
+} from "@/api/proposalSets";
+import { useCanvasStore } from "@/stores/canvasStore";
+import { useUiStore } from "@/stores/uiStore";
+
+/** How long a burst of canvas events must settle before the list refetches. */
+export const CANVAS_SETTLE_MS = 300;
+
+/**
+ * Panel order: open sets first, newest first within each group.
+ *
+ * Open sets are work waiting on the human, so they go to the top. Newest first
+ * inside a group is the opposite of the intents queue, which an agent drains
+ * oldest first. Here the human reads the list, and the batch that just landed
+ * is the one they are looking for.
+ */
+export function sortProposalSets(all: ProposalSet[]): ProposalSet[] {
+  const rank = (s: ProposalSet) => (s.state === "open" ? 0 : 1);
+  return [...all].sort(
+    (a, b) => rank(a) - rank(b) || b.at - a.at || a.id.localeCompare(b.id),
+  );
+}
+
+/** Element ids across the given sets, de-duplicated, order preserved. */
+export function memberIds(sets: ProposalSet[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const set of sets) {
+    for (const member of set.members) {
+      if (seen.has(member.id)) continue;
+      seen.add(member.id);
+      out.push(member.id);
+    }
+  }
+  return out;
+}
+
+/** Display name for whoever opened or reviewed a set. */
+export function actorName(actor: ProposalActor | undefined | null): string {
+  if (!actor) return "unknown";
+  return actor.label || actor.kind || "unknown";
+}
+
+/** "1 element" / "4 elements" — the count line under a set's reason. */
+export function elementCount(n: number): string {
+  return `${n} element${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * The one-line resolution shown on a reviewed set. A discarded rejection says
+ * so, because the elements are gone from the canvas and the row is the only
+ * remaining trace of them.
+ */
+export function verdictLine(set: ProposalSet): string {
+  if (set.state === "open") return "";
+  const who = actorName(set.reviewed_by);
+  if (set.state === "rejected" && set.discarded) {
+    return `rejected and discarded by ${who}`;
+  }
+  return `${set.state} by ${who}`;
+}
+
+export type ProposalSetsFeed = {
+  /** Every set, ordered for the panel. */
+  sets: ProposalSet[];
+  /** How many are still waiting for a verdict. Drives the tab badge. */
+  openCount: number;
+  error: string | null;
+  refresh: () => Promise<void>;
+};
+
+export function useProposalSetsFeed(workspaceSlug: string): ProposalSetsFeed {
+  const [items, setItems] = useState<ProposalSet[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const canvasSlug = useCanvasStore((s) => s.slug);
+  const version = useCanvasStore((s) => s.version);
+
+  const refresh = useCallback(async () => {
+    if (!workspaceSlug) return;
+    try {
+      setItems(await proposalSets.list(workspaceSlug));
+      setError(null);
+    } catch (e) {
+      setError(errorDetail(e));
+    }
+  }, [workspaceSlug]);
+
+  // First load, and again whenever the canvas this window watches moves.
+  // Debounced, because an agent adding a batch bumps the version once per
+  // element: thirty-five nodes would otherwise be thirty-five refetches of a
+  // list that only changes at the end of the burst. The first load is not
+  // delayed, so the tab badge is right as soon as the panel mounts.
+  useEffect(() => {
+    if (canvasSlug !== null && canvasSlug !== workspaceSlug) return;
+    const delay = version > 0 ? CANVAS_SETTLE_MS : 0;
+    const id = window.setTimeout(() => void refresh(), delay);
+    return () => window.clearTimeout(id);
+  }, [canvasSlug, refresh, version, workspaceSlug]);
+
+  useEffect(() => {
+    const onChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ slug?: string }>).detail;
+      if (detail?.slug && detail.slug !== workspaceSlug) return;
+      void refresh();
+    };
+    window.addEventListener(PROPOSAL_SETS_CHANGED_EVENT, onChanged);
+    window.addEventListener("focus", onChanged);
+    return () => {
+      window.removeEventListener(PROPOSAL_SETS_CHANGED_EVENT, onChanged);
+      window.removeEventListener("focus", onChanged);
+    };
+  }, [refresh, workspaceSlug]);
+
+  const sets = useMemo(() => sortProposalSets(items), [items]);
+  const open = useMemo(() => items.filter((s) => s.state === "open"), [items]);
+
+  // Publish open membership for the canvas marker. Keyed on the joined ids so
+  // an identical list after a refetch does not re-render every member node.
+  const openIdsKey = memberIds(open).join("\u0000");
+  const setProposalMemberIds = useUiStore((s) => s.setProposalMemberIds);
+  useEffect(() => {
+    setProposalMemberIds(openIdsKey ? openIdsKey.split("\u0000") : []);
+  }, [openIdsKey, setProposalMemberIds]);
+
+  // Leaving the canvas must not leave a ring behind on the next one.
+  useEffect(
+    () => () => {
+      useUiStore.getState().setProposalMemberIds([]);
+      useUiStore.getState().setProposalHighlightIds([]);
+    },
+    [],
+  );
+
+  return { sets, openCount: open.length, error, refresh };
+}

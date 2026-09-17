@@ -4,13 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { canvases } from "@/api/canvases";
-import { documents, refHasSelector } from "@/api/documents";
+import { documents } from "@/api/documents";
+import { resolveText } from "@/canvas/colors";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
 import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
 import { ReviewBadge } from "@/canvas/ReviewBadge";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
-import { useCanvasStore } from "@/stores/canvasStore";
+import { useOpenSourceRef } from "@/canvas/useOpenSourceRef";
 import { useUiStore } from "@/stores/uiStore";
 
 type Row = {
@@ -90,7 +91,6 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   const borderStyle = ph.active || d.dashed ? "border-dashed" : "border-solid";
   const setHoveredSourceRef = useUiStore((s) => s.setHoveredSourceRef);
   const clearHoveredSourceRef = useUiStore((s) => s.clearHoveredSourceRef);
-  const openPdf = useUiStore((s) => s.openPdf);
   const { id: workspaceSlug } = useParams<{ id: string }>();
 
   // Local working copy of rows so cell edits feel snappy. Replaced when
@@ -176,48 +176,21 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   // Click → open the PDF viewer at this spec's source page with the bbox
   // highlighted. The viewer also wants a documentNodeId so its "send region
   // to canvas" sidebar can wire evidence edges back to the same source
-  // document; resolve it either from the spec's stored source_doc_node_id
-  // or, as a fallback for older nodes that don't carry it, by looking up
-  // the matching document node in the canvas store by slug.
+  // document; the hook resolves it from the spec's stored
+  // source_doc_node_id, or by looking the document node up by slug for
+  // older nodes that don't carry one.
+  const openRef = useOpenSourceRef(workspaceSlug, { documentNodeId: d.source_doc_node_id });
   const openSourceRef = (ref?: SourceRef, query?: string) => {
     const slug = ref?.slug ?? d.source_doc_slug;
     if (!slug || !ref?.page) return;
-    let docNodeId = d.source_doc_node_id;
-    if (!docNodeId) {
-      const nodes = useCanvasStore.getState().nodes;
-      for (const n of Object.values(nodes)) {
-        const nd = n.data as { slug?: string } | undefined;
-        if (n.node_type === "document" && nd?.slug === slug) {
-          docNodeId = n.id;
-          break;
-        }
-      }
-    }
-    const open = (page: number, bbox?: number[]) =>
-      openPdf(slug, {
-        page,
-        workspaceSlug,
-        documentNodeId: docNodeId,
-        highlightRegionId: ref.region_id ?? d.source_region_id ?? ref.source_region_id,
-        highlightBbox: bbox,
-        // Value-precise highlight in the PDF viewer modal (#197): the viewer
-        // locates this text inside the region and highlights it over the
-        // region rectangle, falling back to the region when not found.
-        highlightQuery: query,
-      });
-    if (refHasSelector(ref)) {
-      // Selector-bearing ref (#242 P2c, closes #274): ask the backend
-      // resolver for the tightest stored bbox (cell > item > region) and
-      // highlight that instead of the whole table region. The ref's own
-      // page/bbox is the fallback when the resolver cannot answer.
-      const fallbackPage = ref.page;
-      void documents
-        .resolveRef(slug, ref)
-        .then((resolved) => open(resolved?.page ?? fallbackPage, resolved?.bbox ?? ref.bbox));
-    } else {
-      // No selector: the region-level path, unchanged.
-      open(ref.page, ref.bbox);
-    }
+    openRef(
+      {
+        ...ref,
+        slug,
+        region_id: ref.region_id ?? d.source_region_id ?? ref.source_region_id,
+      },
+      query,
+    );
   };
   const openSource = () => openSourceRef(d.source_ref);
 
@@ -250,6 +223,10 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
     d.height,
   );
   const sized = liveW !== undefined || liveH !== undefined;
+  // A spec table is read as much as any card, so it honours the same text
+  // scale the shapes do: `data.text_size` drives the rows, and the heading
+  // tracks it rather than staying pinned at 10px.
+  const text = resolveText(d as Record<string, unknown>);
   // Spec content is row-driven: an explicit `height` from a previous
   // resize forces empty space below the last row and visually disconnects
   // the resize box from the visible card. Use `minHeight` instead so the
@@ -266,8 +243,8 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   }
   return (
     <div
-      className={`relative rounded-lg border ${borderStyle} ${ph.active ? "" : "border-neutral-400 bg-white"} text-sm shadow-sm ${sized ? "" : "w-72"} ${selected ? "cursor-move" : "cursor-pointer"}`}
-      style={wrapperStyle}
+      className={`relative rounded-lg border ${borderStyle} ${ph.active ? "" : "border-neutral-400 bg-white"} shadow-sm ${sized ? "" : "w-72"} ${selected ? "cursor-move" : "cursor-pointer"}`}
+      style={{ ...wrapperStyle, fontSize: text.fontSize, fontFamily: text.fontFamily }}
       onMouseEnter={broadcastHover}
       onMouseLeave={clearHoveredSourceRef}
     >
@@ -279,14 +256,22 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         {...resizeHandlers}
       />
       {ph.active ? <PlaceholderChip hint={ph.hint} /> : null}
-      <ReviewBadge data={data as Record<string, unknown>} />
+      <ReviewBadge data={data as Record<string, unknown>} nodeId={id} />
       <Handle type="target" position={Position.Left} className="canvas-node-socket" />
       <div
         className="flex items-center justify-between border-b border-neutral-200 px-3 py-2 gap-2"
       >
         <div className="min-w-0">
-          <div className="text-[10px] uppercase tracking-wide text-neutral-500">spec</div>
-          <div className="truncate font-medium text-neutral-900">
+          <div
+            className="uppercase tracking-wide text-neutral-500"
+            style={{ fontSize: `calc(${text.headingFontSize} * 0.85)` }}
+          >
+            spec
+          </div>
+          <div
+            className="truncate font-medium text-neutral-900"
+            style={{ fontSize: text.fontSize, fontFamily: text.fontFamily }}
+          >
             {titleEdit.editing ? (
               <input
                 {...titleEdit.inputProps}
@@ -446,7 +431,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
           </tbody>
         </table>
       ) : (
-        <div className="px-3 py-2 text-[12px] text-neutral-700 leading-snug">
+        <div className="px-3 py-2 text-neutral-700 leading-snug">
           {d.description}
         </div>
       )}

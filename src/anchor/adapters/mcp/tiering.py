@@ -162,7 +162,9 @@ _CAPABILITY_GROUPS: list[dict[str, Any]] = [
         "when_to_use": (
             "Less common canvas operations: remove/clear, edge edits, layout "
             "(organize/align/distribute), sub-canvases, workspace management, "
-            "placeholder enumeration, and the since-version catch-up diff."
+            "placeholder enumeration, the since-version catch-up diff, and "
+            "proposal sets (group what you added so a human reviews the batch "
+            "instead of each element)."
         ),
         "names": [
             "canvas_remove_node",
@@ -172,6 +174,10 @@ _CAPABILITY_GROUPS: list[dict[str, Any]] = [
             "canvas_delete_workspace",
             "canvas_list_workspaces",
             "canvas_set_review_mode",
+            "canvas_propose_set",
+            "canvas_add_to_proposal_set",
+            "canvas_list_proposal_sets",
+            "canvas_review_proposal_set",
             "canvas_organize_subtree",
             "canvas_align",
             "canvas_distribute",

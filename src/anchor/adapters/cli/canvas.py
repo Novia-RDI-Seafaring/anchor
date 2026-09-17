@@ -48,6 +48,21 @@ def canvas_main(
     set_current_actor(resolve_cli_actor(actor))
 
 
+def _members(values: list[str]) -> list[dict[str, str]]:
+    """CLI member shorthand -> the service's {kind, id} shape.
+
+    ``n1`` is a node (the common case); ``edge:e1`` (or ``node:n1``) names
+    the kind explicitly.
+    """
+    out: list[dict[str, str]] = []
+    for raw in values:
+        kind, _, ident = raw.partition(":")
+        if not ident:
+            kind, ident = "node", raw
+        out.append({"kind": kind, "id": ident})
+    return out
+
+
 def _run(coro: Coroutine[Any, Any, Any]) -> Any:
     """Run a canvas command body, turning domain errors into the one-line
     stderr message + exit 1 other anchor commands print (#305).
@@ -207,6 +222,98 @@ def canvas_review_mode(
             "slug": slug,
             "review_mode": state.metadata.get("review_mode", False) is True,
         }
+
+    typer.echo(json.dumps(_run(run()), indent=2))
+
+
+@canvas_app.command("propose-set")
+def canvas_propose_set(
+    slug: str,
+    reason: str = typer.Option(..., "--reason", help="Why these elements were proposed."),
+    member: list[str] = typer.Option(
+        [],
+        "--member",
+        "-m",
+        help="Element id to include. Repeatable. Prefix an edge with 'edge:'.",
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Group elements into one reviewable proposal set (#359).
+
+    A human then accepts or rejects the batch with `anchor canvas
+    review-set` instead of ruling on each element. Mirrors
+    `POST /api/workspaces/{slug}/proposal-sets` and the
+    `canvas_propose_set` MCP tool (adapter parity).
+    """
+    ws = _build_canvas_runtime(data_dir).workspace
+    record = _run(
+        ws.open_proposal_set(slug, reason=reason, members=_members(member)),
+    )
+    typer.echo(json.dumps(record, indent=2))
+
+
+@canvas_app.command("add-to-set")
+def canvas_add_to_proposal_set(
+    slug: str,
+    set_id: str,
+    member: list[str] = typer.Option(
+        ..., "--member", "-m", help="Element id to add. Repeatable.",
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Add elements to an open proposal set (#359). Re-adding is a no-op."""
+    ws = _build_canvas_runtime(data_dir).workspace
+    record = _run(ws.add_proposal_set_members(slug, set_id, members=_members(member)))
+    typer.echo(json.dumps(record, indent=2))
+
+
+@canvas_app.command("proposal-sets")
+def canvas_proposal_sets(
+    slug: str,
+    state: str | None = typer.Option(
+        None, "--state", help="Filter: open, accepted, or rejected.",
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """List this canvas's proposal sets, oldest first (#359)."""
+    ws = _build_canvas_runtime(data_dir).workspace
+    sets = _run(ws.list_proposal_sets(slug, state=state))
+    typer.echo(json.dumps({"proposal_sets": sets}, indent=2))
+
+
+@canvas_app.command("review-set")
+def canvas_review_proposal_set(
+    slug: str,
+    set_id: str,
+    verdict: str = typer.Argument(..., help="accepted or rejected."),
+    discard: bool = typer.Option(
+        False,
+        "--discard",
+        help="Rejections only: remove the members instead of marking them.",
+    ),
+    except_id: list[str] = typer.Option(
+        [], "--except", help="Leave this member untouched. Repeatable.",
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Accept or reject a whole proposal set in one write (#359).
+
+    `--discard` is the clean undo for a batch nobody wants: the members are
+    removed and their edges go with them. Mirrors
+    `POST /api/workspaces/{slug}/proposal-sets/{id}/review` and the
+    `canvas_review_proposal_set` MCP tool.
+    """
+    ws = _build_canvas_runtime(data_dir).workspace
+
+    async def run():
+        _state, envelopes, record = await ws.review_proposal_set(
+            slug,
+            set_id,
+            verdict=verdict,
+            discard=discard,
+            except_ids=list(except_id) or None,
+        )
+        return {"proposal_set": record, "events": len(envelopes)}
 
     typer.echo(json.dumps(_run(run()), indent=2))
 

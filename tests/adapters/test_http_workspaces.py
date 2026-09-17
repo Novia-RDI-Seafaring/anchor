@@ -657,3 +657,83 @@ def test_http_canvas_changes_unknown_workspace_is_404():
     rsp = client.get("/api/workspaces/ghost/changes", params={"since_version": 0})
     assert rsp.status_code == 404
     assert client.get("/api/workspaces").json() == []
+
+
+# ── Proposal sets (#359) ────────────────────────────────────────────────────
+
+def _canvas_with_agent_nodes(client):
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.patch("/api/workspaces/w1", json={"review_mode": True})
+    agent = {"kind": "agent", "label": "claude-code"}
+    for node_id in ("a", "b"):
+        client.post("/api/workspaces/w1/nodes", json={"id": node_id, "actor": agent})
+    client.post(
+        "/api/workspaces/w1/edges",
+        json={"id": "e1", "source": "a", "target": "b", "actor": agent},
+    )
+
+
+def test_http_proposal_set_round_trip():
+    client, _ = _client()
+    _canvas_with_agent_nodes(client)
+    opened = client.post(
+        "/api/workspaces/w1/proposal-sets",
+        json={
+            "reason": "mindmap of the guide",
+            "members": ["a", "b", {"kind": "edge", "id": "e1"}],
+            "actor": {"kind": "agent", "label": "claude-code"},
+        },
+    )
+    assert opened.status_code == 201, opened.text
+    record = opened.json()
+    assert record["by"] == {"kind": "agent", "label": "claude-code"}
+    assert record["state"] == "open"
+
+    listed = client.get("/api/workspaces/w1/proposal-sets?state=open").json()
+    assert [s["id"] for s in listed["proposal_sets"]] == [record["id"]]
+    assert client.get(f"/api/workspaces/w1/proposal-sets/{record['id']}").json()["reason"] == (
+        "mindmap of the guide"
+    )
+
+    reviewed = client.post(
+        f"/api/workspaces/w1/proposal-sets/{record['id']}/review",
+        json={"verdict": "accepted"},
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["proposal_set"]["state"] == "accepted"
+    state = client.get("/api/workspaces/w1/state").json()
+    node_a = next(n for n in state["nodes"] if n["id"] == "a")
+    assert node_a["data"]["review"]["state"] == "accepted"
+    # The browser's default actor is the reviewer.
+    assert node_a["data"]["review"]["by"]["kind"] == "human"
+
+
+def test_http_discarding_a_set_removes_its_elements():
+    client, _ = _client()
+    _canvas_with_agent_nodes(client)
+    record = client.post(
+        "/api/workspaces/w1/proposal-sets",
+        json={"reason": "wrong shape", "members": ["a", "b"]},
+    ).json()
+    rsp = client.post(
+        f"/api/workspaces/w1/proposal-sets/{record['id']}/review",
+        json={"verdict": "rejected", "discard": True},
+    )
+    assert rsp.status_code == 200, rsp.text
+    state = client.get("/api/workspaces/w1/state").json()
+    assert state["nodes"] == []
+    assert state["edges"] == []  # the edge went with the nodes
+
+
+def test_http_proposal_set_errors_are_authored_messages():
+    client, _ = _client()
+    _canvas_with_agent_nodes(client)
+    missing = client.post(
+        "/api/workspaces/w1/proposal-sets",
+        json={"reason": "r", "members": ["ghost"]},
+    )
+    assert missing.status_code == 400
+    assert "ghost" in missing.json()["detail"]
+    unknown = client.get("/api/workspaces/w1/proposal-sets/nope")
+    assert unknown.status_code == 404
+    assert "nope" in unknown.json()["detail"]

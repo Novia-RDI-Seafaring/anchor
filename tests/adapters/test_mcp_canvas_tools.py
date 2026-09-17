@@ -5,6 +5,7 @@ import asyncio
 import json
 
 from anchor.adapters.mcp import handlers_canvas
+from anchor.core.events.actor import Actor, actor_scope
 from anchor.adapters.mcp.server import _error_result
 from tests.fixtures.services import make_in_memory_services
 
@@ -806,5 +807,75 @@ def test_canvas_changes_rejects_both_boundaries():
             {"workspace_slug": "w1", "since_version": 0, "since_ts": 0.0},
         ))
         assert "error" in body
+
+    asyncio.run(run())
+
+
+# ── Proposal sets (#359) ────────────────────────────────────────────────────
+
+async def _canvas_with_agent_nodes(s):
+    await s.workspace.create_workspace("w1")
+    await s.workspace.set_review_mode("w1", enabled=True)
+    with actor_scope(Actor(kind="agent", label="claude-code")):
+        await s.workspace.add_node("w1", id="a", x=0, y=0)
+        await s.workspace.add_node("w1", id="b", x=200, y=0)
+    return s
+
+
+def test_canvas_propose_set_groups_and_reviews():
+    async def run():
+        s = await _canvas_with_agent_nodes(make_in_memory_services())
+        opened = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_propose_set",
+            {"workspace_slug": "w1", "reason": "mindmap", "members": ["a", "b"]},
+        ))
+        set_id = opened["proposal_set"]["id"]
+        assert opened["proposal_set"]["state"] == "open"
+
+        listed = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_list_proposal_sets",
+            {"workspace_slug": "w1", "state": "open"},
+        ))
+        assert [r["id"] for r in listed["proposal_sets"]] == [set_id]
+
+        reviewed = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_review_proposal_set",
+            {"workspace_slug": "w1", "set_id": set_id, "verdict": "accepted",
+             "except_ids": ["b"]},
+        ))
+        assert reviewed["proposal_set"]["state"] == "accepted"
+        state = await s.workspace.store.load("w1")
+        assert state.nodes["a"].data["review"]["state"] == "accepted"
+        assert state.nodes["b"].data["review"]["state"] == "proposed"
+
+    asyncio.run(run())
+
+
+def test_canvas_propose_set_reports_errors_as_text():
+    async def run():
+        s = await _canvas_with_agent_nodes(make_in_memory_services())
+        out = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_propose_set",
+            {"workspace_slug": "w1", "reason": "r", "members": ["ghost"]},
+        ))
+        assert "ghost" in out["error"]
+
+    asyncio.run(run())
+
+
+def test_canvas_add_to_proposal_set_is_idempotent():
+    async def run():
+        s = await _canvas_with_agent_nodes(make_in_memory_services())
+        opened = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_propose_set",
+            {"workspace_slug": "w1", "reason": "r", "members": ["a"]},
+        ))
+        set_id = opened["proposal_set"]["id"]
+        for _ in range(2):
+            out = json.loads(await handlers_canvas.call_tool(
+                s.workspace, "canvas_add_to_proposal_set",
+                {"workspace_slug": "w1", "set_id": set_id, "members": ["b"]},
+            ))
+        assert [m["id"] for m in out["proposal_set"]["members"]] == ["a", "b"]
 
     asyncio.run(run())

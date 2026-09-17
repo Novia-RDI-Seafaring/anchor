@@ -382,3 +382,70 @@ describe("presence roster", () => {
     expect(s.presenceSelfId).toBeNull();
   });
 });
+
+describe("NodeUpdated merges data like the backend", () => {
+  function seedNode() {
+    useCanvasStore.getState().applyEvent(
+      evt({
+        type: "NodeAdded",
+        version: 1,
+        payload: {
+          id: "n1",
+          node_type: "text",
+          label: "",
+          x: 0,
+          y: 0,
+          data: { text: "sfsdfsdf", width: 900, font_px: 40 },
+        },
+      }),
+    );
+  }
+
+  it("keeps the fields a patch did not mention", () => {
+    // A partial write used to replace the whole data object here, while the
+    // server merged it. Setting a font size wiped the text until reload.
+    seedNode();
+    useCanvasStore.getState().applyEvent(
+      evt({ type: "NodeUpdated", version: 2, payload: { id: "n1", fields: { data: { font_px: 73 } } } }),
+    );
+    const data = useCanvasStore.getState().nodes.n1?.data as Record<string, unknown>;
+    expect(data.text).toBe("sfsdfsdf");
+    expect(data.font_px).toBe(73);
+    expect(data.width).toBe(900);
+  });
+
+  it("deletes a key the patch sets to null", () => {
+    seedNode();
+    useCanvasStore.getState().applyEvent(
+      evt({
+        type: "NodeUpdated",
+        version: 2,
+        payload: { id: "n1", fields: { data: { font_px: 73, width: null } } },
+      }),
+    );
+    const data = useCanvasStore.getState().nodes.n1?.data as Record<string, unknown>;
+    expect("width" in data).toBe(false);
+    expect(data.text).toBe("sfsdfsdf");
+  });
+
+  it("merges nested objects rather than swapping them", () => {
+    seedNode();
+    useCanvasStore.getState().applyEvent(
+      evt({
+        type: "NodeUpdated",
+        version: 2,
+        payload: { id: "n1", fields: { data: { review: { state: "proposed", by: { kind: "agent" } } } } },
+      }),
+    );
+    useCanvasStore.getState().applyEvent(
+      evt({
+        type: "NodeUpdated",
+        version: 3,
+        payload: { id: "n1", fields: { data: { review: { state: "accepted" } } } },
+      }),
+    );
+    const review = (useCanvasStore.getState().nodes.n1?.data as { review: Record<string, unknown> }).review;
+    expect(review.state).toBe("accepted");
+    expect(review.by).toEqual({ kind: "agent" });
+  });
+});

@@ -25,7 +25,7 @@ import type { EditorProps } from "./editors/_types";
 type EditorComponent = ComponentType<EditorProps>;
 
 const SHAPE_TYPES = new Set<string>(["concept", "entity", "funnel", "area"]);
-const CARD_TYPES = new Set<string>(["fact", "note"]);
+const CARD_TYPES = new Set<string>(["fact", "note", "markdown"]);
 
 export function dispatchEditor(nodeType: string | undefined): EditorComponent {
   if (!nodeType) return JsonEscapeHatch;

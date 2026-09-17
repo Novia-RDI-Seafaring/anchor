@@ -24,6 +24,9 @@ from anchor.core.events.canvas import (
     NodeReparented,
     NodeResized,
     NodeUpdated,
+    ProposalSetMembersAdded,
+    ProposalSetOpened,
+    ProposalSetReviewed,
     ReferenceAttached,
     ReferenceCreated,
     ReferenceRemoved,
@@ -33,6 +36,7 @@ from anchor.core.events.canvas import (
 from anchor.core.workspace.edges import Edge
 from anchor.core.workspace.merge import deep_merge
 from anchor.core.workspace.nodes import Node
+from anchor.core.workspace.proposals import PROPOSAL_SETS_KEY
 from anchor.core.workspace.workspace import Workspace
 
 
@@ -104,6 +108,43 @@ def apply(state: Workspace, evt: BaseModel) -> Workspace:
                     setattr(e, k, v)
                 else:
                     e.data[k] = v
+    elif isinstance(evt, ProposalSetOpened):
+        # Append the set record to the canvas's proposal sets (#359). A canvas
+        # that has none gets the list lazily, like the bibliography above.
+        sets = new.metadata.get(PROPOSAL_SETS_KEY)
+        if not isinstance(sets, list):
+            sets = []
+        sets.append(dict(evt.proposal_set))
+        new.metadata[PROPOSAL_SETS_KEY] = sets
+    elif isinstance(evt, ProposalSetMembersAdded):
+        sets = new.metadata.get(PROPOSAL_SETS_KEY)
+        if isinstance(sets, list):
+            for entry in sets:
+                if not (isinstance(entry, dict) and entry.get("id") == evt.set_id):
+                    continue
+                members = entry.get("members")
+                members = list(members) if isinstance(members, list) else []
+                seen = {
+                    (m.get("kind"), m.get("id"))
+                    for m in members
+                    if isinstance(m, dict)
+                }
+                for member in evt.members:
+                    key = (member.get("kind"), member.get("id"))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    members.append(dict(member))
+                entry["members"] = members
+    elif isinstance(evt, ProposalSetReviewed):
+        sets = new.metadata.get(PROPOSAL_SETS_KEY)
+        if isinstance(sets, list):
+            for entry in sets:
+                if isinstance(entry, dict) and entry.get("id") == evt.set_id:
+                    entry["state"] = evt.state
+                    entry["reviewed_by"] = dict(evt.by)
+                    entry["reviewed_at"] = evt.at
+                    entry["discarded"] = evt.discarded
     elif isinstance(evt, ReferenceCreated):
         # Append to the canvas bibliography in metadata. Backward compatible:
         # a canvas with no `references` key gets one lazily here.

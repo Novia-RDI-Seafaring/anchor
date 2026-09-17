@@ -53,7 +53,8 @@ baked in here.
 | `document`  | tall card with cover | an ingested source (PDF, audio, video, ...) |
 | `spec`      | wide table     | a structured table of named values             |
 | `area`      | dashed outline | a region that contains other nodes             |
-| `note`      | sticky-note    | freeform markdown                              |
+| `note`      | sticky-note    | a short freeform remark                        |
+| `markdown`  | card           | prose with structure: headings, lists, tables, code |
 
 Each renderer is a separate `.tsx` file under `nodes/`; each registers
 itself into a `registerCardType(name, component)` map at module load
@@ -79,15 +80,34 @@ shown. The body key differs per type:
 | `fact`    | `text`         | `label`, `pictogram`                        |
 | `concept` | `subtitle`     | `label`, `pictogram`                        |
 | `note`    | `text`         | `label`                                     |
+| `markdown`| `text`         | `label` (optional title); body renders as Markdown |
+
+A Markdown body can point at a source inline, by writing a link whose
+target is `anchor:<slug>?page=3&region=r2` (`item`, `cell` and `bbox`
+also work, matching `source_ref`). It renders as the linked words plus an
+anchor glyph, and clicking opens the document at that page with the
+region highlighted — the same landing a spec row gives. A ref naming no
+document or no page renders struck through rather than as plain prose.
+The inline ref is a reader's pointer, not an evidence edge: the edge
+remains the reviewable claim that a value came from a region.
 | `entity`  | (none)         | `label`, `pictogram`                        |
 | `funnel`  | (none)         | `label`, `pictogram`                        |
 | `area`    | `subtitle`     | `label`, `tone`                             |
+| `text`    | `text`         | words with no box: title, caption, paragraph |
 
 There is **no generic `data.body`**. Every type also honours the shared
 styling keys (`bg_color`, `stroke_color`, `text_color`, `text_bold`,
 `text_align`, `text_family`, `text_size`, `dashed`, `width`, `height`),
 the placeholder keys (`placeholder`, `placeholder_hint`), and the review
 key (`review`).
+
+`text_size` runs `xs`, `sm`, `md` (the default, ~14px), `lg`, `xl`,
+`2xl`, `3xl` (~40px). `data.font_px` sets a size between the buckets and
+wins over `text_size`; dragging a text element's corner writes it, the way
+resizing text works in a drawing tool. It sets the body; the element's heading grows with
+it from `lg` up, so a card scales as one piece. Use the large end when a
+canvas is read on a shared screen rather than up close, and widen the
+element with `width` to match.
 
 This contract is queryable so an agent never has to read the `.tsx`
 source: `anchor canvas node-types [TYPE]`, `GET /api/node-types[/TYPE]`,
@@ -130,6 +150,28 @@ agents read it from state like any other key. Rejected nodes render
 dimmed with their badge — never hidden, because a rejection is feedback.
 A malformed `review` object surfaces the same non-blocking `warning` as
 an unrenderable data key; the write always succeeds.
+
+### Proposal sets
+
+Review states are per element, which stops scaling the moment an agent
+adds a batch: thirty-five grounded nodes built from one document are
+thirty-five verdicts, with nothing recording which of them belong
+together or why they were added. A proposal set is the handle for that
+batch outside a thread (a thread suggestion is already one).
+
+An agent draws, then groups what it added:
+`anchor canvas propose-set <slug> --reason "..." -m <id> -m edge:<id>`,
+`POST /api/workspaces/{slug}/proposal-sets`, or the `canvas_propose_set`
+MCP tool. The record lives in `metadata.proposal_sets` next to the
+bibliography and names its members, so grouping costs one event and an
+element's `data` stays about the element.
+
+A human then rules on the batch: `anchor canvas review-set <slug> <id>
+accepted` stamps `data.review` on every member in one write, with
+`--except <id>` for "accept all but this one". A rejection marks the
+members `rejected`, which is feedback the agent reads; `--discard` on a
+rejection removes them instead, and removing a node takes its edges with
+it. That is the clean undo for a batch nobody wants.
 
 ## Edge types
 

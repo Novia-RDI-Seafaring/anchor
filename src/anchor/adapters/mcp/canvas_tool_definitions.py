@@ -255,6 +255,83 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "canvas_propose_set",
+            "description": (
+                "Group elements you just added into ONE reviewable set (#359), "
+                "so a human accepts or rejects the batch instead of node by "
+                "node. Use it whenever you add more than a couple of elements "
+                "in one go: draw first, then group them here. `reason` is "
+                "required and is shown to the reviewer -- say what you added "
+                "and why, in your own words. `members` are node ids (a bare "
+                "string means a node) or {kind: 'node'|'edge', id} objects; "
+                "more can be added later with canvas_add_to_proposal_set."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "members": {"type": "array", "items": {}},
+                },
+                "required": ["workspace_slug", "reason"],
+            },
+        },
+        {
+            "name": "canvas_add_to_proposal_set",
+            "description": (
+                "Add more elements to an open proposal set (#359). Re-adding a "
+                "member is a no-op, so this is safe to retry."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "set_id": {"type": "string"},
+                    "members": {"type": "array", "items": {}},
+                },
+                "required": ["workspace_slug", "set_id", "members"],
+            },
+        },
+        {
+            "name": "canvas_list_proposal_sets",
+            "description": (
+                "List this canvas's proposal sets (#359) with their reason, "
+                "author, members and state. Pass state='open' for the ones "
+                "still waiting for a human verdict -- call it to see whether "
+                "your earlier proposals were accepted or rejected."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "state": {"type": "string", "enum": ["open", "accepted", "rejected"]},
+                },
+                "required": ["workspace_slug"],
+            },
+        },
+        {
+            "name": "canvas_review_proposal_set",
+            "description": (
+                "Accept or reject a whole proposal set (#359) in one write. "
+                "This is the HUMAN's verdict -- only call it when the user "
+                "asks you to. `verdict` is 'accepted' or 'rejected'; "
+                "`except_ids` leaves those members untouched ('accept all but "
+                "these'); `discard` (rejections only) removes the members "
+                "instead of marking them, cascading their edges."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "set_id": {"type": "string"},
+                    "verdict": {"type": "string", "enum": ["accepted", "rejected"]},
+                    "discard": {"type": "boolean", "default": False},
+                    "except_ids": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["workspace_slug", "set_id", "verdict"],
+            },
+        },
+        {
             "name": "canvas_list_workspaces",
             "description": (
                 "List all workspaces with node/edge counts and the canvas "

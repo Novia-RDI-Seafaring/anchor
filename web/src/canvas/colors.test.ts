@@ -119,3 +119,40 @@ describe("resolveText", () => {
     expect(resolveText({ text_family: "mono" }).fontFamily).toMatch(/monospace/);
   });
 });
+
+describe("resolveText size scale", () => {
+  it("runs from extra small to poster size", () => {
+    expect(resolveText({ text_size: "xs" }).fontSize).toBe("0.625rem");
+    expect(resolveText({ text_size: "xl" }).fontSize).toBe("1.25rem");
+    expect(resolveText({ text_size: "2xl" }).fontSize).toBe("1.75rem");
+    expect(resolveText({ text_size: "3xl" }).fontSize).toBe("2.5rem");
+  });
+
+  it("grows the heading with the body past medium, so a card scales as one piece", () => {
+    // Small bodies keep the historical 11px heading.
+    expect(resolveText({ text_size: "sm" }).headingFontSize).toBe("0.6875rem");
+    expect(resolveText({}).headingFontSize).toBe("0.6875rem");
+    // Large bodies take the heading with them.
+    expect(resolveText({ text_size: "xl" }).headingFontSize).toBe("1rem");
+    expect(resolveText({ text_size: "3xl" }).headingFontSize).toBe("1.875rem");
+  });
+
+  it("falls back to medium for a size it does not know", () => {
+    expect(resolveText({ text_size: "enormous" }).fontSize).toBe("0.875rem");
+  });
+});
+
+describe("an explicit pixel size", () => {
+  it("wins over the bucket, so a resized text keeps the size it was dragged to", () => {
+    expect(resolveText({ text_size: "md", font_px: 49 }).fontSize).toBe("49px");
+  });
+
+  it("takes the heading with it", () => {
+    expect(resolveText({ font_px: 40 }).headingFontSize).toBe("30px");
+  });
+
+  it("is ignored when it is not a positive number", () => {
+    expect(resolveText({ font_px: 0 }).fontSize).toBe("0.875rem");
+    expect(resolveText({ font_px: "big" }).fontSize).toBe("0.875rem");
+  });
+});

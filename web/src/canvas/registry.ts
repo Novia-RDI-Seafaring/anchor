@@ -21,9 +21,9 @@
  * The Python core uses an open `NodeTypeRegistry` (see
  * `core/workspace/node_types.py`); this is its UI-side counterpart.
  *
- * Built-in shapes (`concept`, `entity`, `fact`, `area`, `note`, `funnel`)
- * are structural, not OIP primitives — they're canvas-internal node types
- * registered by name and rendered by their own component.
+ * Built-in shapes (`concept`, `entity`, `fact`, `area`, `note`, `markdown`,
+ * `funnel`) are structural, not OIP primitives — they're canvas-internal
+ * node types registered by name and rendered by their own component.
  *
  * Each registered renderer can carry optional palette metadata describing
  * how the floating top toolbar should advertise the node type (group,
@@ -53,7 +53,9 @@ import { ConceptNode } from "./shapes/ConceptNode";
 import { EntityNode } from "./shapes/EntityNode";
 import { FactNode } from "./shapes/FactNode";
 import { FunnelNode } from "./shapes/FunnelNode";
+import { MarkdownNode } from "./shapes/MarkdownNode";
 import { NoteNode } from "./shapes/NoteNode";
+import { TextNode } from "@/canvas/shapes/TextNode";
 
 /** Optional toolbar/palette metadata for a registered node type. */
 export type PaletteMeta = {
@@ -75,7 +77,7 @@ export type PaletteMeta = {
    */
   noDefaultLabel?: boolean;
   /** Glyph identifier for the toolbar icon (matches the tile's SVG). */
-  glyph: "rect" | "circle" | "diamond" | "dashed-rect" | "note" | "fact" | "page" | "table" | "cube" | "block" | "requirement" | "package" | "fmu" | "sub-canvas";
+  glyph: "rect" | "circle" | "diamond" | "dashed-rect" | "text" | "note" | "markdown" | "fact" | "page" | "table" | "cube" | "block" | "requirement" | "package" | "fmu" | "sub-canvas";
   /** Ordering hint within a section (lower first). */
   order?: number;
   /**
@@ -190,6 +192,17 @@ registerNodeRenderer("area", AreaNode, {
   order: 40,
 });
 
+registerNodeRenderer("text", TextNode, {
+  group: "shapes",
+  label: "Text",
+  hint: "words, no box",
+  glyph: "text",
+  noDefaultLabel: true,
+  // No default width: a text element hugs its words. A width is only ever
+  // set deliberately, to wrap a paragraph at a chosen measure.
+  order: 5,
+});
+
 registerNodeRenderer("fact", FactNode, {
   group: "cards",
   label: "Fact",
@@ -203,6 +216,16 @@ registerNodeRenderer("note", NoteNode, {
   hint: "free-form sticky note",
   glyph: "note",
   order: 20,
+});
+registerNodeRenderer("markdown", MarkdownNode, {
+  group: "cards",
+  label: "Markdown",
+  hint: "headings, lists, tables, code",
+  glyph: "markdown",
+  noDefaultLabel: true,
+  width: 320,
+  height: 200,
+  order: 25,
 });
 
 // Primitives — OIP-aware. Producers register against canonical node_type
@@ -418,3 +441,11 @@ export const nodeTypes: NodeTypes = new Proxy({} as NodeTypes, {
     return undefined;
   },
 });
+
+/** The connector tool's id in `uiStore.armedTool`.
+ *
+ * Not a node type: arming it puts the canvas in connect mode, where a click
+ * picks the element a connector starts from and the next click picks what it
+ * ends at. Kept out of the palette registry so nothing tries to place it as a
+ * node. */
+export const CONNECT_TOOL = "__connect__";

@@ -15,6 +15,7 @@ from typing import Any
 from anchor.adapters.mcp import canvas_tool_definitions
 from anchor.core.events.actor import Actor, actor_scope
 from anchor.core.services.workspace_service import WorkspaceService
+from anchor.core.workspace.proposals import ProposalSetError
 from anchor.core.workspace.review import review_warning
 from anchor.core.workspace.workspace import CommandError
 
@@ -198,6 +199,42 @@ async def _dispatch_tool(
                 "review_mode": state.metadata.get("review_mode", False) is True,
                 "event": env.model_dump(),
             })
+        if name == "canvas_propose_set":
+            try:
+                record = await svc.open_proposal_set(
+                    args["workspace_slug"],
+                    reason=args["reason"],
+                    members=args.get("members"),
+                )
+            except ProposalSetError as exc:
+                return json.dumps({"error": exc.message})
+            return json.dumps({"proposal_set": record})
+        if name == "canvas_add_to_proposal_set":
+            try:
+                record = await svc.add_proposal_set_members(
+                    args["workspace_slug"], args["set_id"], members=args["members"],
+                )
+            except ProposalSetError as exc:
+                return json.dumps({"error": exc.message})
+            return json.dumps({"proposal_set": record})
+        if name == "canvas_list_proposal_sets":
+            return json.dumps({
+                "proposal_sets": await svc.list_proposal_sets(
+                    args["workspace_slug"], state=args.get("state"),
+                ),
+            })
+        if name == "canvas_review_proposal_set":
+            try:
+                _state, envelopes, record = await svc.review_proposal_set(
+                    args["workspace_slug"],
+                    args["set_id"],
+                    verdict=args["verdict"],
+                    discard=bool(args.get("discard", False)),
+                    except_ids=args.get("except_ids"),
+                )
+            except ProposalSetError as exc:
+                return json.dumps({"error": exc.message})
+            return json.dumps({"proposal_set": record, "events": len(envelopes)})
         if name == "canvas_add_node":
             slug = args.pop("workspace_slug")
             _alias_type(args, "node_type")
