@@ -11,6 +11,18 @@ next version section on tag.
 
 ### Fixed
 
+- A document card previews the exact thing a ref points at. A spec row whose
+  `source_ref` carries a `cell` selector opened the source dock on that one
+  cell, while the document card on the canvas drew a box around the whole
+  section -- two surfaces disagreeing about the same reference. The click path
+  resolved selectors through `resolve_source_ref` (precedence cell > item >
+  region > bbox); the hover broadcast dropped them, so the card only ever knew
+  the region. `hoveredSourceRef` now carries `item_id` and `cell`, every
+  broadcaster passes them, and the card resolves a selector-bearing ref to the
+  tight bbox. The region rectangle stays the fallback when resolution fails,
+  so the preview never shows nothing.
+
+
 - The source highlight stays up instead of fading after four seconds. Clicking
   a source ref means "check this value against the page it came from", and
   checking means reading the card, reading the page and looking back. The

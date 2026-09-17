@@ -48,6 +48,18 @@ type HoveredSourceRef = {
   region_id?: string;    // when known (regions resolved by id)
   bbox?: number[];       // raw bbox in PDF user-space
   /**
+   * Selectors that point BELOW the region: one silver item, or one table
+   * cell. The click path already resolves these to the tightest stored bbox
+   * (`resolve_source_ref`, precedence cell > item > region > bbox), so the
+   * source dock lands on the cell. Hover used to drop them, which is why a
+   * document card previewing the same ref drew a box around the whole
+   * section while the dock highlighted one value. Carry them so both
+   * surfaces can agree.
+   */
+  item_id?: string;
+  /** Shape mirrors ResolvableRef: both indices are optional there. */
+  cell?: { row?: number; col?: number } | null;
+  /**
    * Marks a deliberate, pinned reference (e.g. broadcast by a *selected*
    * referencing node) as opposed to a transient on-hover signal. A document
    * node treats a transient ref as a temporary page flip that reverts to its
