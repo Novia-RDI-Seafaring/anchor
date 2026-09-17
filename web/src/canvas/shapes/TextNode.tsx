@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { canvases } from "@/api/canvases";
+import { AnchoredText } from "@/canvas/AnchoredText";
 import { resolveText, SIZE_PX, type TextSize } from "@/canvas/colors";
 import { ReviewBadge } from "@/canvas/ReviewBadge";
 import { useInlineField } from "@/canvas/useInlineField";
@@ -171,7 +172,9 @@ export function TextNode({ id, data, selected }: NodeProps) {
           }}
           title={selected ? "double-click to edit" : undefined}
         >
-          {text || (
+          {text ? (
+            <AnchoredText text={text} />
+          ) : (
             <span className="italic opacity-40">
               {selected ? "double-click to write" : "text"}
             </span>

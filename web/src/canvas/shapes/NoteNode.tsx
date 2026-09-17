@@ -1,6 +1,7 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
+import { AnchoredText } from "@/canvas/AnchoredText";
 import { DEFAULT_BG, DEFAULT_STROKE, resolveColors, resolveText } from "@/canvas/colors";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
 import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
@@ -155,7 +156,7 @@ export function NoteNode({ id, data, selected }: NodeProps) {
           }}
           title={selected ? "double-click to edit" : undefined}
         >
-          {text}
+          <AnchoredText text={text} />
         </div>
       ) : (
         <div
