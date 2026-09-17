@@ -62,6 +62,8 @@ export function SourceRefLink({
           page: refValue.page ?? 1,
           region_id: refValue.region_id,
           bbox: refValue.bbox,
+          item_id: refValue.item_id,
+          cell: refValue.cell,
         })
       }
       onMouseLeave={() => clearHovered()}

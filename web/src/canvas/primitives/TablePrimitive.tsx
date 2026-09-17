@@ -144,6 +144,8 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         page: d.source_ref.page,
         region_id: d.source_ref.region_id ?? d.source_region_id ?? d.source_ref.source_region_id,
         bbox: d.source_ref.bbox,
+        item_id: d.source_ref.item_id,
+        cell: d.source_ref.cell,
       });
     }
   };
@@ -161,6 +163,8 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       page: ref.page,
       region_id: ref.region_id ?? row.source_region_id ?? ref.source_region_id ?? d.source_region_id,
       bbox: ref.bbox,
+      item_id: ref.item_id,
+      cell: ref.cell,
       // Carry the cell value so the document node can draw the value-precise
       // highlight inside the region, not just the region rectangle (#197).
       query: row.value || undefined,
