@@ -53,6 +53,21 @@ def test_read_paths_still_resolve_a_normal_slug(tmp_path):
     asyncio.run(run())
 
 
+def test_gold_document_link_cannot_read_outside_storage(tmp_path):
+    store = FsDocStore(tmp_path / "store")
+    outside = tmp_path / "outside"
+    (outside / "pages").mkdir(parents=True)
+    payload = json.dumps({"page": 1, "regions": [{"id": "r1", "content": "outside"}]})
+    (outside / "pages" / "1.regions.json").write_text(payload, encoding="utf-8")
+    try:
+        (store.gold / "doc").symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlinks are unavailable")
+
+    with pytest.raises(UnsafeUploadError):
+        asyncio.run(store.get_regions("doc"))
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows cannot create a directory with a literal backslash")
 def test_list_documents_skips_a_directory_that_is_not_a_valid_slug(tmp_path):
     # list_documents feeds each silver directory name through the slug guard.

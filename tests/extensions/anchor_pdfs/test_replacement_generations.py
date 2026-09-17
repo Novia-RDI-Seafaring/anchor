@@ -182,7 +182,8 @@ def test_readers_during_replacement_see_old_complete_then_new_complete(tmp_path)
             assert any("REMOVE ME" in h["text"] for h in hits)
         finally:
             pause.release.set()
-        await work
+        result = await work
+        assert result["slug"] == "doc"
         assert await store.get_page_text("doc", 2) is None
     asyncio.run(run())
 
@@ -198,7 +199,8 @@ def test_late_embedding_result_cannot_write_old_members_into_new_generation(tmp_
             await pipeline(store, [["NEW"]]).ingest_pdf(b"B", "doc.pdf", force=True)
         finally:
             pause.release.set()
-        await work
+        count = await work
+        assert count == 2
         assert {v["page"] for v in (await store.get_embeddings("doc"))["vectors"]} == {1}
     asyncio.run(run())
 

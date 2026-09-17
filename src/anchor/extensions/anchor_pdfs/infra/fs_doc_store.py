@@ -234,8 +234,14 @@ class FsDocStore:
         base = self._base_dir(root, slug)
         token = self._pinned[slug] if slug in self._pinned else self._current_generation(slug)
         if token is not None:
-            return assert_within(base / "generations" / token, base)
-        return base
+            base = assert_within(base / "generations" / token, base)
+        # A document directory can itself be a link. Check the final selected
+        # path against the storage layer, not only against that document link.
+        layer = os.path.realpath(os.fspath(root))
+        candidate = os.path.realpath(os.fspath(base))
+        if not candidate.startswith(layer + os.sep):
+            raise UnsafeUploadError("document directory escapes its storage layer")
+        return Path(candidate)
 
     def _try_create_lock(self, path: Path) -> bool:
         """Atomically create the lock file. True on success, False if held.
@@ -683,9 +689,11 @@ class FsDocStore:
             for root in (self.bronze, self.silver):
                 if any(p.name != slug and p.name.casefold() == slug.casefold() for p in root.iterdir()):
                     raise SourceIdentityError("document slug conflicts with an existing filesystem identity")
-            base = assert_within(self.bronze / slug, self.bronze)
-            if (self.bronze / slug).is_symlink() or (self.silver / slug).is_symlink():
+            base = self._base_dir(self.bronze, slug)
+            silver = self._base_dir(self.silver, slug)
+            if base.is_symlink() or silver.is_symlink():
                 raise SourceIdentityError("original storage has conflicting ownership")
+            base = assert_within(base, self.bronze)
             assert_within(self._doc_dir(self.silver, slug) / "index.json", self.silver)
             return base
         except (UnsafeUploadError, OSError) as exc:
@@ -694,7 +702,11 @@ class FsDocStore:
     @staticmethod
     def _original_record(base: Path) -> dict[str, Any]:
         try:
-            path = assert_within(base / "original.json", base)
+            root = os.path.realpath(os.fspath(base))
+            candidate = os.path.realpath(os.path.join(root, "original.json"))
+            if not candidate.startswith(root + os.sep):
+                raise SourceIdentityError("original source metadata escapes its document")
+            path = Path(candidate)
             record = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(record, dict):
                 raise ValueError
@@ -710,7 +722,11 @@ class FsDocStore:
         if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
             raise SourceIdentityError("original source fingerprint is invalid")
         try:
-            path = assert_within(base / f"{digest}.pdf", base)
+            root = os.path.realpath(os.fspath(base))
+            candidate = os.path.realpath(os.path.join(root, f"{digest}.pdf"))
+            if not candidate.startswith(root + os.sep):
+                raise SourceIdentityError("original source escapes its document")
+            path = Path(candidate)
             if not path.is_file():
                 return None
             if hashlib.sha256(path.read_bytes()).hexdigest() != digest:

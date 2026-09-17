@@ -40,7 +40,7 @@ from anchor.extensions.anchor_pdfs.core.ports.pdf_extractor import PdfExtractor
 from anchor.extensions.anchor_pdfs.core.ports.pdf_renderer import PdfRenderer
 from anchor.extensions.anchor_pdfs.core.ports.region_extractor import RegionExtractor
 from anchor.extensions.anchor_pdfs.core.region_inspect import (
-    AmbiguousRegionError as AmbiguousRegionError,
+    AmbiguousRegionError as _AmbiguousRegionError,
 )
 from anchor.extensions.anchor_pdfs.core.region_inspect import (
     inspect_region,
@@ -62,6 +62,7 @@ from anchor.extensions.anchor_pdfs.core.synopsis_service import (
 GOLD_EMPTY_MAX_ATTEMPTS = _GOLD_EMPTY_MAX_ATTEMPTS
 INGEST_LOCK_WAIT_SECONDS = _INGEST_LOCK_WAIT_SECONDS
 SynopsisService = _SynopsisService
+AmbiguousRegionError = _AmbiguousRegionError
 
 #: Matches the trailing r-number of a gold region id: plain ``r4`` as well as
 #: producer-prefixed forms like ``lkh:p4-r1``. Used to mint the next free id.
