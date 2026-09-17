@@ -9,6 +9,23 @@ next version section on tag.
 
 ## [Unreleased]
 
+### Fixed
+
+- The source highlight stays up instead of fading after four seconds. Clicking
+  a source ref means "check this value against the page it came from", and
+  checking means reading the card, reading the page and looking back. The
+  highlight was built as a "you landed here" flash, so it left exactly when it
+  was needed. It now persists until another ref replaces it or Escape
+  dismisses it.
+
+- The PDF viewer no longer outlines every region at once. A dashed sky-blue
+  rect was painted over each gold region whenever a canvas was open, which
+  turned a four-page leaflet into a page of dashed boxes and competed with the
+  source highlight for the reader's attention -- the one mark they opened the
+  viewer to see. The outline is now drawn only for the region under the
+  cursor. The rects stay in the DOM, so click-to-make-a-reference and the
+  right-click hit-test are unchanged; only the stroke is conditional.
+
 ### Added
 
 - `list_entities(slug)` says what a document is ABOUT: every entity its gold
