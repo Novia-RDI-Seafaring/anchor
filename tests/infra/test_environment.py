@@ -271,6 +271,17 @@ def test_remove_counts_canvases_as_content(tmp_path):
         remove_project(env, "pumps")
 
 
+def test_remove_counts_document_owned_originals_as_content(tmp_path):
+    env = create_env("local")
+    create_project(env, "pumps")
+    original_dir = env.project_dir("pumps") / "bronze" / "doc-a"
+    original_dir.mkdir()
+    (original_dir / "original.json").write_text("{}", encoding="utf-8")
+    assert project_contents(env, "pumps") == {"documents": 1, "canvases": 0}
+    with pytest.raises(ProjectNotEmptyError):
+        remove_project(env, "pumps")
+
+
 def test_remove_unknown_project_raises(tmp_path):
     env = create_env("local")
     with pytest.raises(NoProjectError):

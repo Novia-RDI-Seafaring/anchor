@@ -560,8 +560,8 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       const regionId = targetHandle!.slice("region:".length);
       const rowData = sourceNode.data as {
         source_doc_slug?: string;
-        source_ref?: { page?: number; bbox?: number[] };
-        rows?: Array<{ key?: string; source_ref?: { page?: number; bbox?: number[] } }>;
+        source_ref?: { page?: number; bbox?: number[]; coord_origin?: string | null };
+        rows?: Array<{ key?: string; source_ref?: { page?: number; bbox?: number[]; coord_origin?: string | null } }>;
       } | undefined;
       // Parse "row:<i>:<key>"  — index is authoritative since keys can repeat.
       const parts = sourceHandle!.split(":");
@@ -569,6 +569,10 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       const row = rowData?.rows?.[rowIndex];
       const page = row?.source_ref?.page ?? rowData?.source_ref?.page;
       const bbox = row?.source_ref?.bbox ?? rowData?.source_ref?.bbox;
+      // This copies existing geometry. Preserve unknown historical origins
+      // explicitly so the write boundary does not treat the copy as new.
+      const bboxRef = row?.source_ref?.bbox ? row.source_ref : rowData?.source_ref;
+      const coordOrigin = bboxRef?.coord_origin ?? null;
       const targetData = targetNode.data as { slug?: string } | undefined;
       void canvases
         .addEdge(slug, {
@@ -582,7 +586,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
             ...(targetData?.slug ? { source_doc_slug: targetData.slug } : {}),
             source_region_id: regionId,
             ...(page !== undefined ? {
-              source_ref: { kind: "pdf-page-bbox", page, region_id: regionId, bbox },
+              source_ref: { kind: "pdf-page-bbox", page, region_id: regionId, bbox, coord_origin: coordOrigin },
             } : {}),
           },
         })
@@ -598,7 +602,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
           if (i !== rowIndex) return r;
           return {
             ...r,
-            source_ref: { page, region_id: regionId, bbox },
+            source_ref: { page, region_id: regionId, bbox, coord_origin: coordOrigin },
           };
         });
         void canvases

@@ -69,8 +69,7 @@ def test_harness_project_enqueues_intent_and_awaits_agent():
     assert node["data"]["status"] == "awaiting_agent"
 
     # And the raw PDF was stashed to bronze so the agent can fetch it later.
-    # (The memory store keys bronze by filename; the fs store exposes a path.)
-    assert "pump.pdf" in s.doc_store._bronze
+    assert asyncio.run(s.doc_store.get_raw_pdf_path("pump")) is not None
 
 
 def test_keyed_project_does_not_enqueue_intent():
@@ -80,3 +79,21 @@ def test_keyed_project_does_not_enqueue_intent():
     assert resp["status"] == "started"
     assert resp.get("intent_id") is None
     assert asyncio.run(s.intents.list_pending()) == []
+
+
+def test_harness_identity_rejection_publishes_no_placeholder_or_intent(tmp_path):
+    import json
+
+    from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
+
+    client, s = _client(provider="harness")
+    store = FsDocStore(tmp_path)
+    s.ingest.store = store
+    owner = store.bronze / "pump"
+    owner.mkdir()
+    (owner / "original.json").write_text(json.dumps({"slug": "other"}), encoding="utf-8")
+    response = _upload(client)
+    assert response.status_code == 400
+    assert asyncio.run(s.workspace.get_state("cv"))["nodes"] == []
+    assert asyncio.run(s.intents.list_pending()) == []
+    assert asyncio.run(store.list_documents()) == []

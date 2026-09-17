@@ -20,6 +20,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { documents } from "@/api/documents";
+import geometryFixture from "@/lib/fixtures/documentPageGeometry.json";
 import { useUiStore } from "@/stores/uiStore";
 
 import { DocumentPrimitive } from "./DocumentPrimitive";
@@ -40,6 +41,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   useUiStore.setState({ hoveredSourceRef: null, pdfViewer: null });
   vi.restoreAllMocks();
 });
@@ -96,6 +98,105 @@ const READY_DOC = {
 };
 
 describe("DocumentPrimitive click isolation", () => {
+  it.each(["72", "150", "300"] as const)("maps the actual backend page_size payload at %s DPI", async (dpi) => {
+    vi.mocked(documents.regions).mockResolvedValue(geometryFixture.gold_map.pages["1"]);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => geometryFixture.gold_map }));
+    const { container } = await renderDoc(READY_DOC);
+    const image = screen.getByRole("img") as HTMLImageElement;
+    Object.defineProperties(image, {
+      naturalWidth: { value: geometryFixture.rasters[dpi]["1"].width },
+      naturalHeight: { value: geometryFixture.rasters[dpi]["1"].height },
+    });
+    await act(async () => { fireEvent.load(image); });
+    const overlay = container.querySelector<HTMLElement>('[data-region-handle-id="region:review"]');
+    expect(overlay).not.toBeNull();
+    expect(parseFloat(overlay!.style.left)).toBeCloseTo(10);
+    expect(parseFloat(overlay!.style.top)).toBeCloseTo(12.5);
+    expect(parseFloat(overlay!.style.width)).toBeCloseTo(30);
+    expect(parseFloat(overlay!.style.height)).toBeCloseTo(6.25);
+    for (const [id, bbox] of Object.entries(geometryFixture.boxes["1"])) {
+      const box = container.querySelector<HTMLElement>(`[data-region-handle-id="region:${id}"]`)!;
+      expect(parseFloat(box.style.left)).toBeCloseTo(bbox[0]! / 600 * 100, 10);
+      expect(parseFloat(box.style.top)).toBeCloseTo(bbox[1]! / 800 * 100, 10);
+      expect(parseFloat(box.style.width)).toBeCloseTo((bbox[2]! - bbox[0]!) / 600 * 100, 10);
+      expect(parseFloat(box.style.height)).toBeCloseTo((bbox[3]! - bbox[1]!) / 800 * 100, 10);
+    }
+  });
+
+  it("uses each unequal page's geometry, including unrotated landscape", async () => {
+    vi.mocked(documents.regions).mockImplementation(async (_, page) =>
+      geometryFixture.gold_map.pages[String(page) as "1" | "2" | "3"]);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => geometryFixture.gold_map }));
+    const { container } = await renderDoc(READY_DOC);
+    for (const page of ["1", "2", "3"] as const) {
+      if (page !== "1") await act(async () => { fireEvent.click(screen.getByRole("button", { name: "\u203a" })); });
+      const image = screen.getByRole("img") as HTMLImageElement;
+      Object.defineProperties(image, {
+        naturalWidth: { value: geometryFixture.rasters["300"][page].width },
+        naturalHeight: { value: geometryFixture.rasters["300"][page].height },
+      });
+      await act(async () => { fireEvent.load(image); });
+      const [width, height] = geometryFixture.gold_map.pages_meta.pages[page].page_size;
+      const overlay = container.querySelector<HTMLElement>('[data-region-handle-id="region:review"]')!;
+      expect(parseFloat(overlay.style.left)).toBeCloseTo(60 / width! * 100, 10);
+      expect(parseFloat(overlay.style.top)).toBeCloseTo(100 / height! * 100, 10);
+      expect(parseFloat(overlay.style.width)).toBeCloseTo(180 / width! * 100, 10);
+      expect(parseFloat(overlay.style.height)).toBeCloseTo(50 / height! * 100, 10);
+    }
+  });
+
+  it.each([null, { pages: { "1": { page_size: [0, 800] } } }])(
+    "keeps the image but omits precise overlays when dimensions are unknown: %j", async (pages_meta) => {
+      vi.mocked(documents.regions).mockResolvedValue(geometryFixture.gold_map.pages["1"]);
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ pages_meta }) }));
+      const { container } = await renderDoc(READY_DOC);
+      const image = screen.getByRole("img") as HTMLImageElement;
+      Object.defineProperties(image, { naturalWidth: { value: 600 }, naturalHeight: { value: 800 } });
+      await act(async () => { fireEvent.load(image); });
+      expect(container.querySelector("[data-region-handle-id]")).toBeNull();
+      expect(screen.getByRole("status").textContent).toContain("page dimensions unknown");
+      expect(image.style.display).toBe("block");
+    },
+  );
+
+  it("uses the same page scale for caller bboxes and precise located value quads", async () => {
+    const bbox = [72, 108, 96, 120];
+    vi.mocked(documents.regions).mockResolvedValue(geometryFixture.gold_map.pages["1"]);
+    vi.mocked(documents.locate).mockResolvedValue([bbox]);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => geometryFixture.gold_map }));
+    const { container } = await renderDoc(READY_DOC);
+    const image = screen.getByRole("img") as HTMLImageElement;
+    Object.defineProperties(image, { naturalWidth: { value: 600 }, naturalHeight: { value: 800 } });
+    await act(async () => {
+      fireEvent.load(image);
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 1, bbox, region_id: "review", query: "value" });
+    });
+    const quad = screen.getByTestId("value-quad");
+    expect(quad.style.left).toBe("12%");
+    expect(parseFloat(quad.style.top)).toBeCloseTo(13.5);
+    expect(quad.style.width).toBe("4%");
+    expect(parseFloat(quad.style.height)).toBeCloseTo(1.5);
+    const caller = container.querySelector<HTMLElement>('div[style*="0.22"]')!;
+    expect(caller.style.left).toBe(quad.style.left);
+    expect(caller.style.top).toBe(quad.style.top);
+    expect(useUiStore.getState().hoveredSourceRef?.bbox).toEqual(bbox);
+  });
+
+  it("drops the removed LKH page and region when replacement publishes", async () => {
+    vi.useFakeTimers();
+    vi.mocked(documents.regions).mockResolvedValue([{ id: "removed", title: "Water pressure inlet", bbox: [10, 10, 30, 30] }]);
+    await renderDoc(READY_DOC);
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "›" })); });
+    expect(screen.getByText(/page 2 \/ 3/)).toBeTruthy();
+    vi.mocked(documents.regions).mockResolvedValue([]);
+    vi.mocked(documents.index).mockResolvedValue({ document: { page_count: 1, title: "Alfa Laval LKH", filename: "Alfa Laval LKH.pdf",
+      generation: { id: "replacement-b", pages: [1] } }, outline: [] } as Awaited<ReturnType<typeof documents.index>>);
+    await act(async () => { await vi.advanceTimersByTimeAsync(8000); });
+    expect(screen.getByText("1 page")).toBeTruthy();
+    expect(screen.queryByText("Water pressure inlet")).toBeNull();
+    expect(screen.getByRole("button", { name: "Open viewer at page 1" })).toBeTruthy();
+  });
+
   it("paging via the next arrow changes the page and never opens the viewer", async () => {
     await renderDoc(READY_DOC);
     expect(screen.getByText(/page 1 \/ 3/)).toBeTruthy();

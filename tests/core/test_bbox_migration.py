@@ -3,7 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+from types import SimpleNamespace
 
+import pytest
+
+from anchor.adapters.cli.serve import _migrate_bbox_origin
+from anchor.core.services.workspace_service import WorkspaceService
+from anchor.core.workspace.workspace import Workspace
 from anchor.extensions.anchor_pdfs.core.bbox_migration import (
     flip_index,
     flip_pages_meta,
@@ -12,6 +18,8 @@ from anchor.extensions.anchor_pdfs.core.bbox_migration import (
     migrate_document,
     needs_migration,
 )
+from anchor.infra.bus.replay import replay_from_events
+from anchor.infra.stores.fs_workspace_store import FsWorkspaceStore
 from tests.fixtures.services import make_in_memory_services
 
 # Legacy bottom-left fixture: a 792pt-tall page; the title is near the top
@@ -57,6 +65,33 @@ def test_needs_migration_keys_on_the_stamp():
     assert needs_migration({"bbox_origin": "top-left"}) is False
 
 
+def test_startup_preserves_ambiguous_unstamped_canvas_geometry():
+    """An already canonical document does not establish an old ref's origin."""
+    s = make_in_memory_services(page_count=1)
+    bbox = [304.72444, 389.03597, 350.90344, 397.30297]
+
+    async def run():
+        await s.doc_store.write_silver_artifact("doc", "pages.meta.json", json.dumps({
+            "bbox_origin": "top-left",
+            "pages": {"1": {"page_size": [595.2756, 841.8897705078125]}},
+        }))
+        await s.workspace.create_workspace("w1")
+        await s.workspace.add_node("w1", id="spec", node_type="spec", data={
+            "rows": [{"value": "600 kPa (6 bar)",
+                      "source_ref": {"slug": "doc", "page": 1, "bbox": bbox}}],
+        })
+        # Seed a historical snapshot, independently of current authoring defaults.
+        stored = await s.workspace_store.load("w1")
+        stored.nodes["spec"].data["rows"][0]["source_ref"].pop("coord_origin", None)
+        await s.workspace_store.snapshot("w1", stored)
+        before = await s.workspace.get_state("w1")
+        for _ in range(2):
+            await migrate_all(s.doc_store, None, s.workspace)
+            assert await s.workspace.get_state("w1") == before
+
+    asyncio.run(run())
+
+
 def test_flip_index_and_pages_meta():
     idx = flip_index({"outline": [{"page": 1, "bbox": [0, 720, 200, 700]}]}, {1: 792.0})
     assert idx["outline"][0]["bbox"] == [0.0, 72.0, 200.0, 92.0]
@@ -67,7 +102,7 @@ def test_flip_index_and_pages_meta():
 
 
 def test_flip_source_ref_stamps_and_is_idempotent():
-    ref = {"slug": "doc", "page": 1, "bbox": [0, 720, 200, 700],
+    ref = {"slug": "doc", "page": 1, "bbox": [0, 720, 200, 700], "coord_origin": "bottom-left",
            "detail": {"quote": "q", "cell_bbox": [10, 590, 80, 560]}}
     once = flip_source_ref(ref, 792.0)
     assert once["bbox"] == [0.0, 72.0, 200.0, 92.0]
@@ -161,15 +196,21 @@ def test_migrate_all_flips_canvas_source_refs_into_migrated_docs():
                                    data={"slug": "doc"})
         await s.workspace.add_node("w1", id="spec", node_type="spec", label="S", x=0, y=0, data={
             "source_doc_slug": "doc",
-            "source_ref": {"page": 1, "bbox": [0, 600, 500, 400]},
+            "source_ref": {"page": 1, "bbox": [0, 600, 500, 400], "coord_origin": "bottom-left"},
             "rows": [{"key": "x", "value": "1",
-                      "source_ref": {"slug": "doc", "page": 1, "bbox": [10, 590, 80, 560]}}],
+                      "source_ref": {"slug": "doc", "page": 1, "bbox": [10, 590, 80, 560], "coord_origin": "bottom-left"}}],
         })
         await s.workspace.add_edge("w1", source="spec", target="d", edge_type="anchored",
-                                   data={"kind": "evidence", "source_ref": {"page": 1, "bbox": [0, 600, 500, 400]}})
+                                   data={"kind": "evidence", "source_ref": {"page": 1, "bbox": [0, 600, 500, 400], "coord_origin": "bottom-left"}})
+        reference = await s.workspace.create_reference("w1", source_ref={
+            "slug": "doc", "page": 1, "bbox": [10, 590, 80, 560],
+            "coord_origin": "bottom-left", "detail": {"cell_bbox": [10, 590, 80, 560]},
+        }, label="Keep this identity")
         report = await migrate_all(s.doc_store, None, s.workspace)
         assert report["migrated"] == ["doc"]
-        assert report["canvases"] == {"nodes_updated": 1, "edges_updated": 1}
+        assert report["canvases"]["nodes_updated"] == 1
+        assert report["canvases"]["edges_updated"] == 1
+        assert report["canvases"]["references_updated"] == 1
         state = await s.workspace.get_state("w1")
         spec = next(n for n in state["nodes"] if n["id"] == "spec")
         assert spec["data"]["source_ref"]["bbox"] == [0.0, 192.0, 500.0, 392.0]
@@ -177,8 +218,120 @@ def test_migrate_all_flips_canvas_source_refs_into_migrated_docs():
         assert spec["data"]["rows"][0]["source_ref"]["bbox"] == [10.0, 202.0, 80.0, 232.0]
         edge = state["edges"][0]
         assert edge["data"]["source_ref"]["bbox"] == [0.0, 192.0, 500.0, 392.0]
+        bib = state["metadata"]["references"][0]
+        assert bib["id"] == reference["id"]
+        assert bib["created_at"] == reference["created_at"]
+        assert bib["label"] == "Keep this identity"
+        assert bib["source_ref"]["bbox"] == [10.0, 202.0, 80.0, 232.0]
+        assert bib["source_ref"]["detail"]["cell_bbox"] == [10.0, 202.0, 80.0, 232.0]
         # Second pass touches nothing.
         again = await migrate_all(s.doc_store, None, s.workspace)
-        assert again["canvases"] == {"nodes_updated": 0, "edges_updated": 0}
+        assert again["canvases"]["nodes_updated"] == 0
+        assert again["canvases"]["edges_updated"] == 0
+        assert again["canvases"]["references_updated"] == 0
+        assert await s.workspace.get_state("w1") == state
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("history", ["current", "legacy", "ambiguous", "stamped", "corrupted"])
+def test_persisted_references_survive_two_normal_startup_migrations(tmp_path, capsys, history):
+    """Exercise the actual serve hook against disk, with fresh stores per boot."""
+    s = make_in_memory_services()
+    canonical = [304.72444, 389.03597, 350.90344, 397.30297]
+    corrupted = [304.72444, 444.5868005078125, 350.90344, 452.8538005078125]
+    height = 841.8897705078125
+    bbox = corrupted if history == "corrupted" else canonical
+    if history == "legacy":
+        bbox = [canonical[0], height - canonical[1], canonical[2], height - canonical[3]]
+    ref = {"slug": "doc", "page": 2, "bbox": bbox, "detail": {"cell_bbox": bbox, "quote": "600 kPa"}}
+    if history == "legacy":
+        ref["coord_origin"] = "bottom-left"
+    elif history in ("stamped", "corrupted"):
+        ref["coord_origin"] = "top-left"
+
+    def workspace():
+        return WorkspaceService(FsWorkspaceStore(tmp_path / "canvases"), s.bus, clock=s.clock)
+
+    async def seed():
+        await s.doc_store.write_silver_artifact("doc", "pages.meta.json", json.dumps({
+            "bbox_origin": "top-left", "pages": {"2": {"page_size": [595.2756, height]}},
+        }))
+        ws = workspace()
+        await ws.create_workspace("w")
+        await ws.add_node("w", id="doc", node_type="document", data={"slug": "doc"})
+        await ws.add_node("w", id="spec", node_type="spec", data={
+            "source_ref": ref, "rows": [{"value": "600 kPa", "source_ref": ref}],
+        })
+        await ws.add_edge("w", id="e", source="spec", target="doc", data={"source_ref": ref})
+        await ws.create_reference("w", label="600 kPa", source_ref=ref)
+        if history == "ambiguous":
+            # Historical storage, not a current authoring command.
+            state = await ws.store.load("w")
+            for stored in [state.nodes["spec"].data["source_ref"],
+                           state.nodes["spec"].data["rows"][0]["source_ref"],
+                           state.edges["e"].data["source_ref"],
+                           state.metadata["references"][0]["source_ref"]]:
+                stored.pop("coord_origin", None)
+            await ws.store.snapshot("w", state)
+        return await ws.get_state("w")
+
+    before = asyncio.run(seed())
+    snapshot_path = tmp_path / "canvases/w/state.json"
+    before_bytes = snapshot_path.read_bytes()
+    for boot in range(2):
+        ws = workspace()
+        _migrate_bbox_origin(SimpleNamespace(doc_store=s.doc_store, ingest=None, workspace=ws))
+        after = asyncio.run(ws.get_state("w"))
+        spec = next(n for n in after["nodes"] if n["id"] == "spec")
+        refs = [spec["data"]["source_ref"], spec["data"]["rows"][0]["source_ref"],
+                after["edges"][0]["data"]["source_ref"], after["metadata"]["references"][0]["source_ref"]]
+        for stored in refs:
+            expected = canonical if history == "legacy" else bbox
+            assert stored["bbox"] == pytest.approx(expected)
+            assert stored["detail"]["cell_bbox"] == pytest.approx(expected)
+            assert stored.get("coord_origin") == (None if history == "ambiguous" else "top-left")
+        if history != "legacy" or boot == 1:
+            assert after == before
+            assert snapshot_path.read_bytes() == before_bytes
+        before, before_bytes = after, snapshot_path.read_bytes()
+
+    output = capsys.readouterr().err
+    events_path = tmp_path / "canvases/w/events.jsonl"
+    events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
+    migrations = [e for e in events if e["type"] == "CanvasSnapshot"]
+    assert len(migrations) == (1 if history == "legacy" else 0)
+    if history == "legacy":
+        # Canvas-only conversion must be visible even when no document changed.
+        assert "nodes=1 edges=1 references=1" in output
+        replayed = replay_from_events(Workspace(slug="w", title="w"), events_path)
+        assert replayed.get_state() == after
+    elif history == "ambiguous":
+        assert "ambiguous coordinate origin" in output
+    elif history == "corrupted":
+        assert "not revalidated or repaired" in output
+
+
+@pytest.mark.parametrize(("kind", "height", "bbox", "reason"), [
+    ("cad-face", 792, [10, 700, 30, 680], "unsupported source kind"),
+    ("pdf-page-bbox", -792, [10, 700, 30, 680], "canonical page dimensions unavailable"),
+    ("pdf-page-bbox", float("nan"), [10, 700, 30, 680], "canonical page dimensions unavailable"),
+    ("pdf-page-bbox", 792, [10, 700, 30], "invalid geometry"),
+])
+def test_migration_preserves_unusable_legacy_evidence(kind, height, bbox, reason):
+    s = make_in_memory_services()
+
+    async def run():
+        await s.doc_store.write_silver_artifact("doc", "pages.meta.json", json.dumps({
+            "bbox_origin": "top-left", "pages": {"1": {"page_size": [612, height]}},
+        }))
+        await s.workspace.create_workspace("w")
+        await s.workspace.add_node("w", id="n", data={"source_ref": {
+            "kind": kind, "slug": "doc", "page": 1, "bbox": bbox, "coord_origin": "bottom-left",
+        }})
+        before = await s.workspace.get_state("w")
+        report = await migrate_all(s.doc_store, None, s.workspace)
+        assert await s.workspace.get_state("w") == before
+        assert report["canvases"]["skipped_refs"] == [{"location": "w/nodes/n", "reason": reason}]
 
     asyncio.run(run())

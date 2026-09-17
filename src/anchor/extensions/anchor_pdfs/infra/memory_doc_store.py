@@ -4,12 +4,19 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from contextlib import asynccontextmanager
+from copy import copy
 from datetime import UTC
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
+from anchor.core.upload_safety import safe_upload_name
+from anchor.extensions.anchor_pdfs.core.generation import polished_membership
+from anchor.extensions.anchor_pdfs.core.ingest.validation import require_unique_region_ids
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
 from anchor.extensions.anchor_pdfs.core.silver import project_index
+from anchor.extensions.anchor_pdfs.core.source_identity import SourceIdentityError, original_source
+from anchor.extensions.anchor_pdfs.infra._generation import document_view
 from anchor.extensions.anchor_pdfs.infra._region_normalize import _normalise_regions
 
 
@@ -29,11 +36,14 @@ class MemoryDocStore:
         self._indexes: dict[str, dict[str, Any]] = {}
         self._pages_meta: dict[str, dict[str, Any]] = {}
         self._page_text: dict[tuple[str, int], str] = {}
+        self._raw_page_text: dict[tuple[str, int], str] = {}
+        self._published_polished: frozenset[int] | None = None
         self._page_images: dict[tuple[str, int], bytes] = {}
         self._regions: dict[tuple[str, int], list[dict[str, Any]]] = {}
         self._gold_maps: dict[str, dict[str, Any]] = {}
         self._crops: dict[tuple[str, str], bytes] = {}
-        self._bronze: dict[str, bytes] = {}
+        self._bronze: dict[tuple[str, str], bytes] = {}
+        self._original_sources: dict[str, dict[str, str]] = {}
         self._embeddings: dict[str, dict[str, Any]] = {}
         self._candidates: dict[tuple[str, int], list[dict[str, Any]]] = {}
         # Gold completeness markers: slug -> marker dict ({"complete": bool, ...}).
@@ -52,6 +62,73 @@ class MemoryDocStore:
         # Per-slug ingest locks (issue #175). In-process single-writer guard so
         # two concurrent ingests on one slug serialize their gold pass.
         self._ingest_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._root = self
+        self._pinned_slug: str | None = None
+        self._generation: str | None = None
+        self._parent: str | None = None
+        self._current: dict[str, MemoryDocStore] = {}
+        self._generations: dict[tuple[str, str], MemoryDocStore] = {}
+        self._polished: set[tuple[str, int]] = set()
+        self._raw_pages: set[tuple[str, int]] = set()
+
+    def snapshot(self, slug: str) -> MemoryDocStore:
+        if self._pinned_slug == slug:
+            return self
+        if slug in self._root._current:
+            return self._root._current[slug]
+        view = copy(self._root)
+        view._pinned_slug = slug
+        return view
+
+    def replacement(self, slug: str, generation: str) -> MemoryDocStore:
+        try:
+            return self._root._generations[slug, generation]
+        except KeyError as exc:
+            raise SourceIdentityError("replacement generation is unavailable") from exc
+
+    async def begin_replacement(self, slug: str, pages: list[int]) -> str:
+        old = self.snapshot(slug)
+        candidate = MemoryDocStore()
+        candidate._root = self._root
+        candidate._pinned_slug = slug
+        candidate._generation = uuid4().hex
+        candidate._parent = old._generation
+        candidate._bronze = self._root._bronze
+        candidate._original_sources = self._root._original_sources
+        self._root._generations[slug, candidate._generation] = candidate
+        return candidate._generation
+
+    async def publish_replacement(self, slug: str, generation: str, pages: list[int]) -> None:
+        candidate = self.replacement(slug, generation)
+        if await candidate.get_index(slug) is None or await candidate.get_raw_pdf_path(slug) is None:
+            raise SourceIdentityError("replacement is missing its source index or original")
+        if (candidate._reports.get(slug, {}).get("status") != "success"
+                or candidate._indexes[slug]["document"].get("page_count") != len(set(pages))
+                or set(candidate._pages_meta.get(slug, {}).get("pages", {})) != {str(p) for p in pages}
+                or any((slug, page) not in candidate._raw_pages or (slug, page) not in candidate._page_images
+                       or (slug, page) not in candidate._candidates for page in pages)):
+            raise SourceIdentityError("replacement is incomplete or has inconsistent page membership")
+        polished = polished_membership(candidate._reports[slug])
+        if not set(polished).issubset(pages) or any((slug, p) not in candidate._polished for p in polished):
+            raise SourceIdentityError("replacement polished page is incomplete or outside current membership")
+        gold = (await candidate.get_regions(slug))["pages"]
+        if not set(gold).issubset(pages):
+            raise SourceIdentityError("replacement gold is outside current page membership")
+        for page, regions in gold.items():
+            require_unique_region_ids(regions, page=page)
+        identities = {(page, r["id"]) for page, regions in gold.items() for r in regions}
+        embeddings = await candidate.get_embeddings(slug)
+        if embeddings and any((v["page"], v["region_id"]) not in identities for v in embeddings.get("vectors", [])):
+            raise SourceIdentityError("replacement embeddings contain obsolete regions")
+        candidate._indexes[slug]["document"]["generation"] = {"id": generation, "pages": sorted(set(pages))}
+        async with self._root.ingest_lock(slug):
+            current = self._root.snapshot(slug)._generation
+            if current == generation:
+                return
+            if current != candidate._parent:
+                raise SourceIdentityError("replacement was superseded; begin a fresh ingest")
+            candidate._published_polished = frozenset(polished)
+            self._root._current[slug] = candidate
 
     @asynccontextmanager
     async def ingest_lock(
@@ -86,17 +163,18 @@ class MemoryDocStore:
     async def list_documents(self) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         seen: set[str] = set()
-        for slug, doc in self._docs.items():
+        for slug in self._docs.keys() | self._current.keys():
+            reader = self.snapshot(slug)
             seen.add(slug)
-            entry = dict(doc)
+            entry = dict(reader._docs[slug])
             # Derive has_gold/region_count from the real gold state (markers +
             # cross-check), not the stale seed on the doc row, so a marker
             # desynced by a concurrent ingest (issue #175) still reports gold.
-            has_gold = await self.has_gold(slug)
+            has_gold = await reader.has_gold(slug)
             entry["has_gold"] = has_gold
-            entry["region_count"] = self._count_gold_regions(slug) if has_gold else 0
-            failure = self._failures.get(slug)
-            report = self._reports.get(slug)
+            entry["region_count"] = reader._count_gold_regions(slug) if has_gold else 0
+            failure = reader._failures.get(slug)
+            report = reader._reports.get(slug)
             if failure:
                 entry["status"] = "failed"
                 entry["stage"] = failure.get("stage", "unknown")
@@ -131,20 +209,37 @@ class MemoryDocStore:
             out.append(entry)
         return out
 
+    @document_view
     async def get_index(self, slug: str, *, include_content: bool = False) -> dict[str, Any] | None:
+        if self._generation is not None and slug not in self._indexes:
+            raise SourceIdentityError("document generation index is unavailable")
         return project_index(self._indexes.get(slug), include_content=include_content)
 
+    @document_view
     async def get_pages_meta(self, slug: str) -> dict[str, Any] | None:
         return self._pages_meta.get(slug)
 
+    @document_view
     async def get_page_text(self, slug: str, page: int) -> str | None:
+        if self._generation is not None:
+            polished = self._published_polished
+            if polished is None:
+                report = self._reports.get(slug, {})
+                try:
+                    polished = frozenset(polished_membership(report)) if report.get("status") == "success" else frozenset()
+                except ValueError:
+                    polished = frozenset()
+            if page not in polished:
+                return self._raw_page_text.get((slug, page))
         return self._page_text.get((slug, page))
 
+    @document_view
     async def get_page_image_path(
         self, slug: str, page: int, dpi: int | None = None
     ) -> Path | None:
         return None  # in-memory has no path
 
+    @document_view
     async def get_regions(self, slug: str, page: int | None = None) -> dict[str, Any]:
         pages: dict[int, list[dict[str, Any]]] = {}
         for (s, p), regions in self._regions.items():
@@ -155,6 +250,7 @@ class MemoryDocStore:
             pages[p] = _normalise_regions(regions)
         return {"slug": slug, "pages": pages}
 
+    @document_view
     async def get_gold_map(self, slug: str) -> dict[str, Any] | None:
         explicit = self._gold_maps.get(slug)
         if explicit is not None:
@@ -206,6 +302,7 @@ class MemoryDocStore:
             return False
         return self._count_gold_regions(slug) >= reported
 
+    @document_view
     async def has_gold(self, slug: str) -> bool:
         if slug in self._gold_maps:
             # Explicitly seeded gold maps count as complete (test helper).
@@ -216,42 +313,58 @@ class MemoryDocStore:
         # Marker missing/stub: cross-check the durable gold artifacts (#175).
         return self._gold_artifacts_consistent(slug)
 
+    @document_view
     async def mark_gold_complete(self, slug: str, meta: dict[str, Any]) -> Path:
         async with self._lock:
             self._gold_markers[slug] = {"complete": True, **meta}
         return Path(f"memory://gold/{slug}/.complete.json")
 
+    @document_view
     async def clear_gold_complete(self, slug: str) -> None:
         async with self._lock:
             self._gold_markers[slug] = {"complete": False}
 
+    @document_view
     async def get_page_candidates(self, slug: str, page: int) -> list[dict[str, Any]] | None:
         candidates = self._candidates.get((slug, page))
         return [dict(c) for c in candidates] if candidates is not None else None
 
+    @document_view
     async def get_crop_path(self, slug: str, rel_path: str) -> Path | None:
         return None
 
+    @document_view
     async def write_crop(self, slug: str, rel_path: str, data: bytes) -> Path:
         async with self._lock:
             self._crops[(slug, rel_path)] = data
         return Path(f"memory://gold/{slug}/pages/{rel_path}")
 
-    async def get_raw_pdf_path(self, slug: str) -> Path | None:
-        idx = self._indexes.get(slug)
-        filename = ((idx or {}).get("document") or {}).get("filename")
-        if filename and filename in self._bronze:
-            # Memory store has no real filesystem path; surface a `memory://`
-            # URI so callers can detect this case and fall back to a
-            # base64 transport.
-            return Path(f"memory://bronze/{filename}")
+    @document_view
+    async def get_raw_pdf_path(self, slug: str, *, page: int | None = None) -> Path | None:
+        index = await self.get_index(slug)
+        membership = (index or {}).get("document", {}).get("generation", {}).get("pages")
+        if page is not None and membership is not None and page not in membership:
+            return None
+        source = (index or {}).get("document", {}).get("source")
+        if index is None:
+            source = self._original_sources.get(slug)
+        if source is not None:
+            if not isinstance(source, dict) or source.get("slug") != slug:
+                raise SourceIdentityError("original source ownership does not match document identity")
+            digest = source.get("sha256")
+            if isinstance(digest, str) and (slug, digest) in self._bronze:
+                return Path(f"memory://bronze/{slug}/{digest}.pdf")
         return None
 
-    async def stash_bronze(self, pdf_bytes: bytes, filename: str) -> Path:
+    async def stash_bronze(self, pdf_bytes: bytes, filename: str, *, slug: str) -> Path:
+        safe_upload_name(filename, allowed_extensions={".pdf"})
+        source = original_source(pdf_bytes, slug)
         async with self._lock:
-            self._bronze[filename] = pdf_bytes
-        return Path(f"memory://bronze/{filename}")
+            self._bronze[slug, source["sha256"]] = pdf_bytes
+            self._original_sources[slug] = source
+        return Path(f"memory://bronze/{slug}/{source['sha256']}.pdf")
 
+    @document_view
     async def write_silver_artifact(self, slug: str, name: str, payload: bytes | str) -> Path:
         # In-memory store dispatches to specific keys based on filename convention.
         import json
@@ -287,10 +400,16 @@ class MemoryDocStore:
             self._candidates[(slug, int(m.group(1)))] = data
         elif (m := re.fullmatch(r"pages/(\d+)\.md", name)) and isinstance(payload, str):
             self._page_text[(slug, int(m.group(1)))] = payload
+            self._polished.add((slug, int(m.group(1))))
         elif (m := re.fullmatch(r"pages/(\d+)\.raw\.md", name)) and isinstance(payload, str):
+            self._raw_page_text[(slug, int(m.group(1)))] = payload
             self._page_text.setdefault((slug, int(m.group(1))), payload)
+            self._raw_pages.add((slug, int(m.group(1))))
+        elif (m := re.fullmatch(r"pages/(\d+)\.png", name)) and isinstance(payload, bytes):
+            self._page_images[slug, int(m.group(1))] = payload
         return Path(f"memory://silver/{slug}/{name}")
 
+    @document_view
     async def write_ingest_failure(
         self,
         slug: str,
@@ -328,11 +447,13 @@ class MemoryDocStore:
     async def list_ingest_activity(self) -> list[dict[str, Any]]:
         return [dict(r) for r in self._activity.values()]
 
+    @document_view
     async def write_gold_region_file(self, slug: str, page: int, regions: list[dict[str, Any]]) -> Path:
         async with self._lock:
             self._regions[(slug, page)] = _normalise_regions(regions)
         return Path(f"memory://gold/{slug}/{page}.regions.json")
 
+    @document_view
     async def add_derived_region(self, slug: str, region: dict[str, Any]) -> Path:
         page = _derived_page(region)
         if page is None:
@@ -348,25 +469,25 @@ class MemoryDocStore:
             self._regions[(slug, page)] = _normalise_regions(kept)
         return Path(f"memory://gold/{slug}/{page}.regions.json")
 
+    @document_view
     async def write_embeddings(self, slug: str, payload: dict[str, Any]) -> Path:
         async with self._lock:
             self._embeddings[slug] = dict(payload)
         return Path(f"memory://gold/{slug}/embeddings.json")
 
+    @document_view
     async def get_embeddings(self, slug: str) -> dict[str, Any] | None:
         payload = self._embeddings.get(slug)
         return dict(payload) if payload is not None else None
 
     async def list_embeddings(self) -> list[dict[str, Any]]:
-        return [
-            {
-                "slug": slug,
-                "embed_model": payload.get("embed_model", ""),
-                "dim": int(payload.get("dim", 0)),
-                "vector_count": len(payload.get("vectors", [])),
-            }
-            for slug, payload in sorted(self._embeddings.items())
-        ]
+        out = []
+        for slug in sorted(self._embeddings.keys() | self._current.keys()):
+            payload = await self.snapshot(slug).get_embeddings(slug)
+            if payload is not None:
+                out.append({"slug": slug, "embed_model": payload.get("embed_model", ""),
+                            "dim": int(payload.get("dim", 0)), "vector_count": len(payload.get("vectors", []))})
+        return out
 
     # Test helpers
     def seed_document(self, slug: str, *, filename: str = "", title: str = "", page_count: int = 0) -> None:
@@ -379,3 +500,4 @@ class MemoryDocStore:
 
     def seed_page_text(self, slug: str, page: int, text: str) -> None:
         self._page_text[(slug, page)] = text
+        self._polished.add((slug, page))

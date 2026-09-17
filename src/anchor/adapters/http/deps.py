@@ -20,7 +20,9 @@ def get_ingest_service(request: Request) -> IngestService:
 
 
 def get_doc_store(request: Request) -> DocStore:
-    return request.app.state.doc_store
+    store = request.app.state.doc_store
+    slug = request.path_params.get("slug")
+    return store.snapshot(slug) if slug else store
 
 
 def get_event_bus(request: Request) -> EventBus:

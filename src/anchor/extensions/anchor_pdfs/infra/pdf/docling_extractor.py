@@ -276,20 +276,30 @@ def _flatten(doc: Any) -> dict[str, Any]:
                 cell_data = {
                     "row": getattr(cell, "start_row_offset_idx", None),
                     "col": getattr(cell, "start_col_offset_idx", None),
+                    "row_end": getattr(cell, "end_row_offset_idx", None),
+                    "col_end": getattr(cell, "end_col_offset_idx", None),
+                    "row_span": getattr(cell, "row_span", 1),
+                    "col_span": getattr(cell, "col_span", 1),
+                    "column_header": getattr(cell, "column_header", False),
+                    "row_header": getattr(cell, "row_header", False),
+                    "row_section": getattr(cell, "row_section", False),
                     "text": getattr(cell, "text", ""),
                 }
                 cell_bbox = _bbox_from_cell(cell, page_heights.get(page))
                 if cell_bbox:
                     cell_data["bbox"] = cell_bbox
                 cells.append(cell_data)
+        table_data = {
+            "page": page, "bbox": bbox, "cells": cells,
+            "num_rows": getattr(getattr(tbl, "data", None), "num_rows", None),
+            "num_cols": getattr(getattr(tbl, "data", None), "num_cols", None),
+        }
         items.append({
             "label": "table",
             "text": "",
-            "page": page,
-            "bbox": bbox,
-            "cells": cells,
+            **table_data,
         })
-        tables.append({"page": page, "bbox": bbox, "cells": cells})
+        tables.append(table_data)
 
     for pic in getattr(doc, "pictures", []) or []:
         prov = (pic.prov or [None])[0] if hasattr(pic, "prov") else None

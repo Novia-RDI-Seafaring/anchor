@@ -427,7 +427,7 @@ def test_http_update_node_data_merges():
     assert rsp.status_code == 200, rsp.text
     node = next(n for n in rsp.json()["state"]["nodes"] if n["id"] == "a")
     assert node["data"]["text"] == "y"
-    assert node["data"]["source_ref"] == {"page": 1}
+    assert node["data"]["source_ref"] == {"page": 1, "coord_origin": "top-left"}
 
 
 def test_http_node_types_route():
@@ -473,6 +473,7 @@ def test_http_reference_create_list_attach_roundtrip():
     assert created.status_code == 201, created.text
     ref = created.json()
     assert ref["id"]
+    assert ref["source_ref"]["coord_origin"] == "top-left"
     assert ref["label"] == "Max inlet pressure"
     # list
     listed = client.get("/api/workspaces/w1/references")

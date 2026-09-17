@@ -224,7 +224,7 @@ diff it in git.
 your-project/
 ├── anchor.toml             # binds this folder to an environment (provider + data zone)
 └── .anchor_data/
-    ├── bronze/<original>.pdf   # raw PDFs, flat (original filename)
+    ├── bronze/<slug>/          # original PDFs by SHA-256, plus original.json metadata
     ├── silver/<slug>/          # Docling extraction + per-page markdown + page PNGs
     ├── gold/<slug>/            # structured regions with page + bbox provenance
     └── canvases/<slug>/        # meta.json, state.json, events.jsonl (append-only log)

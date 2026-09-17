@@ -26,7 +26,7 @@ by: <approver>, at}``: approval *is* the review.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
@@ -97,6 +97,7 @@ class WorkspaceBatchOperations:
         clock: Clock,
         node_types: NodeTypeRegistry | None,
         envelope: EnvelopeBuilder,
+        prepare_command: Callable[[Workspace, BaseModel], Awaitable[BaseModel]],
     ) -> None:
         self._store = store
         self._bus = bus
@@ -104,6 +105,7 @@ class WorkspaceBatchOperations:
         self._clock = clock
         self._node_types = node_types
         self._envelope = envelope
+        self._prepare_command = prepare_command
 
     async def apply(
         self,
@@ -122,7 +124,7 @@ class WorkspaceBatchOperations:
             raise CommandError("suggestion has no ops")
         async with self._locks.lock(slug):
             state = await self._store.load(slug)
-            planned, id_map = self._plan(state, ops, approver=approver)
+            planned, id_map = await self._plan(state, ops, approver=approver)
             envelopes: list[DomainEvent] = []
             new_state = state
             for cmd, override in planned:
@@ -142,7 +144,7 @@ class WorkspaceBatchOperations:
             return new_state, envelopes, id_map
 
     # -- planning ---------------------------------------------------------- #
-    def _plan(
+    async def _plan(
         self,
         state: Workspace,
         ops: list[dict[str, Any]],
@@ -158,6 +160,7 @@ class WorkspaceBatchOperations:
         for index, op in enumerate(ops):
             cmd = self._build(index, op, sim, id_map, stamp)
             try:
+                cmd = await self._prepare_command(sim, cmd)
                 validate_command(sim, cmd, node_types=self._node_types)
             except CommandError as exc:
                 # The reason returned to clients is templated from the op

@@ -421,8 +421,8 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": (
                 "Persist a region derived from an existing gold region - the "
                 "consumer side of an OIP region producer. Give the parent "
-                "region id and the new region; it inherits the parent's "
-                "source_ref (so provenance points at the same page and bbox) "
+                "qualified region id (p2/r1) and the new region; it inherits "
+                "the source resolved by inspect in the current generation "
                 "and records derived_from, then stores it durably. Example: a "
                 "chart digitizer returns a chart_series; derive_region files it "
                 "beside the chart region it came from. Re-run `embed` to make "
@@ -430,6 +430,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "bare 'r1'; region ids are only unique per page, so a bare id "
                 "matching regions on multiple pages fails with the candidate "
                 "pages instead of silently picking the first."
+                " Conflicting source overrides are rejected."
             ),
             "inputSchema": {
                 "type": "object",

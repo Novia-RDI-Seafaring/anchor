@@ -17,6 +17,11 @@ from anchor.extensions.anchor_pdfs.core.silver_quality import (
 from anchor.extensions.anchor_pdfs.core.silver_quality import (
     low_text_pages_warning as _low_text_pages_warning,
 )
+from anchor.extensions.anchor_pdfs.core.table_topology import (
+    normalize_table,
+    select_table_cells,
+    topology_status,
+)
 
 LOW_TEXT_CHAR_THRESHOLD = _LOW_TEXT_CHAR_THRESHOLD
 find_low_text_pages = _find_low_text_pages
@@ -32,7 +37,7 @@ BBOX_ORIGIN = "top-left"
 
 
 def normalize_items(docling: dict[str, Any]) -> dict[str, Any]:
-    """Enforce the bbox contract at the extractor boundary (#281).
+    """Enforce coordinates and validate table topology at the extractor boundary.
 
     Every ``PdfExtractor`` must deliver ``BBOX_ORIGIN`` boxes in PDF points.
     This normaliser is the one place that guarantees it, so a second
@@ -44,7 +49,9 @@ def normalize_items(docling: dict[str, Any]) -> dict[str, Any]:
     - boxes that are not four finite numbers are dropped (``[]``), and boxes
       outside the page are clamped to it when the page size is known.
 
-    Returns a new dict stamped ``coord_origin: BBOX_ORIGIN``.
+    Tables also receive a content-bound topology verdict and explicit cell
+    associations. Ambiguous tables remain inspectable but cannot supply
+    deterministic grounded pairs. Returns a new dict; never edits the input.
     """
     items = docling.get("items")
     if not isinstance(items, list):
@@ -94,7 +101,7 @@ def normalize_items(docling: dict[str, Any]) -> dict[str, Any]:
                 {**c, "bbox": fix(c.get("bbox"), size)} if isinstance(c, dict) and c.get("bbox") else c
                 for c in cells
             ]
-        out_items.append(fixed)
+        out_items.append(normalize_table(fixed) if it.get("label") == "table" else fixed)
     tables = docling.get("tables")
     out_tables = None
     if isinstance(tables, list):
@@ -109,7 +116,7 @@ def normalize_items(docling: dict[str, Any]) -> dict[str, Any]:
                     {**c, "bbox": fix(c.get("bbox"), size)} if isinstance(c, dict) and c.get("bbox") else c
                     for c in t["cells"]
                 ]
-            out_tables.append(fixed_t)
+            out_tables.append(normalize_table(fixed_t))
     out = {**docling, "items": out_items, "coord_origin": BBOX_ORIGIN}
     if out_tables is not None:
         out["tables"] = out_tables
@@ -163,6 +170,7 @@ def build_index(docling: dict[str, Any], *, filename: str = "", title: str = "")
                 "header_row": header_row,
                 "first_column_values": first_col,
                 "cells": _clean_table_cells(it.get("cells")),
+                "table_topology": topology_status(it),
             })
 
         elif label == "picture":
@@ -238,11 +246,13 @@ def _summarize_table_cells(cells: Any) -> tuple[list[str], list[str], dict[str, 
             continue
         r = cell.get("row")
         c = cell.get("col")
-        text = (cell.get("text") or "").strip()
+        text = cell.get("text")
+        text = text.strip() if isinstance(text, str) else ""
         if not isinstance(r, int) or not isinstance(c, int):
             continue
-        rows = max(rows, r + 1)
-        cols = max(cols, c + 1)
+        row_end, col_end = cell.get("row_end"), cell.get("col_end")
+        rows = max(rows, row_end if isinstance(row_end, int) else r + 1)
+        cols = max(cols, col_end if isinstance(col_end, int) else c + 1)
         if r == 0 and text and c not in row_0:
             row_0[c] = text
         if c == 0 and r > 0 and text and r not in col_0:
@@ -265,6 +275,7 @@ def _clean_table_cells(cells: Any) -> list[dict[str, Any]]:
         if not isinstance(row, int) or not isinstance(col, int):
             continue
         clean: dict[str, Any] = {
+            **cell,
             "row": row,
             "col": col,
             "text": cell.get("text") if isinstance(cell.get("text"), str) else "",
@@ -285,6 +296,18 @@ def table_cells_from_items(
     if not table:
         return []
     return _clean_table_cells(table.get("cells"))
+
+
+def table_data_from_items(
+    items: Any,
+    indexes: list[int] | None = None,
+    region_bbox: list[float] | None = None,
+) -> dict[str, Any]:
+    """Carry cells and their normalization verdict together into gold."""
+    table = table_item_from_items(items, indexes, region_bbox=region_bbox)
+    if not table:
+        return {}
+    return select_table_cells(table, _clean_table_cells(table.get("cells")))
 
 
 def table_bbox_from_items(
@@ -411,7 +434,7 @@ def _render_page_md(items: list[dict[str, Any]]) -> str:
             lines.append(f"_[figure: {cap}]_")
             lines.append("")
         elif label == "table":
-            md = render_table_cells_md(it.get("cells"))
+            md = render_table_cells_md(it.get("cells"), it.get("table_topology"))
             if md:
                 lines.append(md)
                 lines.append("")
@@ -421,10 +444,16 @@ def _render_page_md(items: list[dict[str, Any]]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def render_table_cells_md(cells: Any) -> str:
+def render_table_cells_md(cells: Any, topology: Any = None) -> str:
     """Render table cells as compact markdown while preserving cell order."""
     if not isinstance(cells, list) or not cells:
         return ""
+    if isinstance(topology, dict) and topology.get("status") not in {"valid", "reconciled"}:
+        # Preserve searchable text without presenting rejected logical rows as
+        # key/value statements to a model or a harness.
+        texts = [c["text"].strip().replace("\n", " ") for c in cells
+                 if isinstance(c, dict) and isinstance(c.get("text"), str)]
+        return "Table topology unverified; cells are unassociated:\n" + "\n".join(f"- {t}" for t in texts if t)
     grid: dict[tuple[int, int], str] = {}
     row_indexes: set[int] = set()
     column_indexes: set[int] = set()
@@ -572,7 +601,7 @@ def region_search_text(region: dict[str, Any]) -> str:
 
     description = region.get("description")
     if not (isinstance(description, str) and description.strip()):
-        add(render_table_cells_md(region.get("cells")))
+        add(render_table_cells_md(region.get("cells"), region.get("table_topology")))
 
     return "\n\n".join(parts)
 
@@ -615,6 +644,7 @@ def build_page_candidates(docling: dict[str, Any]) -> dict[int, list[dict[str, A
                 cells = _clean_table_cells(it.get("cells"))
                 if cells:
                     candidate["cells"] = cells
+                    candidate["table_topology"] = topology_status(it)
             candidates.append(candidate)
         out[page] = candidates
     return out

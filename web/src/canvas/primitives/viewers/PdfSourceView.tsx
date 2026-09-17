@@ -62,6 +62,7 @@ const FALLBACK_PAGE = { w: 612, h: 792 };
 
 type Props = {
   slug: string;
+  generation?: string;
   page: number;
   total: number;
   /** Region bbox to highlight (PDF points), applies only on `highlightPage`. */
@@ -93,6 +94,7 @@ type PendingAction = {
 
 export function PdfSourceView({
   slug,
+  generation,
   page,
   total,
   highlightBbox,
@@ -218,7 +220,7 @@ export function PdfSourceView({
     setPending(null);
     setConfirm(null);
     lastHighlightRef.current = null;
-    loadPdf(documents.pdfUrl(slug))
+    loadPdf(documents.pdfUrl(slug, generation))
       .then(async ({ doc: loaded, destroy }) => {
         if (cancelled) {
           void destroy();
@@ -244,7 +246,7 @@ export function PdfSourceView({
       destroyRef.current = null;
       if (destroy) void destroy();
     };
-  }, [slug]);
+  }, [slug, generation]);
 
   const effectiveTotal = pageCount || total;
 
@@ -682,7 +684,7 @@ export function PdfSourceView({
                       }`}
                     >
                       <img
-                        src={documents.pageImageUrl(slug, it.page)}
+                        src={documents.pageImageUrl(slug, it.page, generation)}
                         alt={`Page ${it.page}`}
                         loading="lazy"
                         width={THUMB_WIDTH}

@@ -1,77 +1,111 @@
-"""Attach value-cell bboxes + `cell` selectors to spec-row source refs.
+"""Refine spec refs only within their source scope and a certified key/value pair.
 
-When a spec row's value matches exactly one gold table cell, the row's
-`source_ref` gets that cell's bbox (the cached resolution) and a
-`cell: {row, col}` selector (#242 P2c) so `resolve_source_ref` can
-re-answer from stored geometry later.
+Unresolved or contradictory evidence leaves caller data unchanged. A no-op
+is not a verified-grounding verdict and never repairs historical references.
 """
+
 from __future__ import annotations
 
+import math
 from typing import Any
 
+from anchor.core.workspace.evidence import normalize_claim_text
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
+from anchor.extensions.anchor_pdfs.core.table_topology import validated_pairs
 
 
 async def enrich_spec_row_source_refs(data: Any, store: DocStore) -> Any:
+    resolved, _ = await resolve_spec_row_sources(data, store)
+    return resolved
+
+
+async def resolve_spec_row_sources(data: Any, store: DocStore) -> tuple[Any, dict[int, dict]]:
+    """Return explicit successful validations, including already precise refs.
+
+    The compatibility enrichment interface still returns just the data. Only
+    this producer verdict can establish a new claim binding at the write seam.
+    """
+    validations: dict[int, dict] = {}
     if not isinstance(data, dict):
-        return data
+        return data, validations
     rows = data.get("rows")
     if not isinstance(rows, list):
-        return data
+        return data, validations
 
     cache: dict[tuple[str, int], list[dict[str, Any]]] = {}
+    snapshots: dict[str, DocStore] = {}
+    documents: dict[str, dict] = {}
     next_rows: list[Any] = []
     changed = False
-    node_ref = data.get("source_ref") if isinstance(data.get("source_ref"), dict) else {}
-    node_slug = data.get("source_doc_slug") if isinstance(data.get("source_doc_slug"), str) else None
-    node_region_id = data.get("source_region_id") if isinstance(data.get("source_region_id"), str) else None
-
-    for row in rows:
+    for index, row in enumerate(rows):
         if not isinstance(row, dict):
             next_rows.append(row)
             continue
-        source_ref = row.get("source_ref") if isinstance(row.get("source_ref"), dict) else {}
+        source_ref = row.get("source_ref", {})
+        if not isinstance(source_ref, dict):
+            next_rows.append(row)
+            continue
         value = row.get("value")
         if not isinstance(value, str) or not value.strip():
             next_rows.append(row)
             continue
 
-        slug = _first_str(source_ref.get("slug"), node_slug, node_ref.get("slug"))
-        page = _first_int(source_ref.get("page"), node_ref.get("page"))
-        if not slug or page is None:
+        scope = _source_scope(data, row, source_ref)
+        if scope is None:
+            next_rows.append(row)
+            continue
+        slug, page = scope["slug"], scope["page"]
+        region_id = scope.get("region_id")
+        if slug not in snapshots:
+            snapshots[slug] = store.snapshot(slug)
+        regions = await _regions_for_page(snapshots[slug], cache, slug, page)
+        candidates = [
+            (region, key_cell, value_cell)
+            for region in _candidate_regions(regions, region_id, page)
+            for key_cell, value_cell in _matching_pairs(region, row.get("key"), value)
+        ]
+        if len(candidates) != 1:
+            next_rows.append(row)
+            continue
+        region, key_cell, value_cell = candidates[0]
+        cell_bbox = _clean_bbox(value_cell.get("bbox"))
+        if not cell_bbox or not _locator_agrees(scope, region, key_cell, value_cell):
             next_rows.append(row)
             continue
 
-        regions = await _regions_for_page(store, cache, slug, page)
-        region_id = _first_str(
-            source_ref.get("region_id"),
-            row.get("source_region_id"),
-            node_region_id,
-            node_ref.get("region_id"),
-        )
-        region = _find_region(regions, region_id)
-        if region is None:
-            next_rows.append(row)
-            continue
-
-        cell = _match_value_cell(region.get("cells"), row.get("key"), value)
-        if cell is None:
-            next_rows.append(row)
-            continue
-
-        new_ref = {**source_ref, "slug": slug, "page": page, "bbox": _clean_bbox(cell.get("bbox"))}
-        if region_id:
-            new_ref["region_id"] = region_id
-        # Record WHICH cell matched (#242 P2c): the bbox above is the cached
-        # resolution, the selector lets `resolve_source_ref` re-answer from
-        # stored geometry (precedence cell > item > region > bbox).
-        row_no, col_no = cell.get("row"), cell.get("col")
-        if isinstance(row_no, int) and isinstance(col_no, int):
-            new_ref["cell"] = {"row": row_no, "col": col_no}
+        new_ref = {
+            **source_ref,
+            "slug": slug,
+            "page": page,
+            "bbox": cell_bbox,
+            "coord_origin": "top-left",
+        }
+        # Both boxes describe this matched cell. Do not retain an inherited
+        # cell locator from another coordinate space under the new stamp.
+        detail = source_ref.get("detail")
+        if isinstance(detail, dict) and "cell_bbox" in detail:
+            new_ref["detail"] = {**detail, "cell_bbox": cell_bbox}
+        if source_ref.get("coord_origin") != "top-left":
+            for key in ("approx_bbox", "approximate_bbox"):
+                if key in new_ref:
+                    new_ref[key] = None
+        new_ref["region_id"] = region["id"]
+        new_ref["cell"] = {"row": value_cell["row"], "col": value_cell["col"]}
         next_rows.append({**row, "source_ref": new_ref})
+        if slug not in documents:
+            metadata = await snapshots[slug].get_index(slug)
+            documents[slug] = (metadata or {}).get("document", {})
+        document = documents[slug]
+        validations[index] = {
+            "producer": "anchor_pdfs", "slug": slug,
+            "generation_id": document.get("generation", {}).get("id"),
+            "source_sha256": document.get("source", {}).get("sha256"),
+            "table_digest": region["table_topology"]["digest"],
+            "key_cell_id": key_cell["cell_id"], "value_cell_id": value_cell["cell_id"],
+        }
         changed = True
 
-    return {**data, "rows": next_rows} if changed else data
+    return ({**data, "rows": next_rows} if changed else data), validations
 
 
 async def _regions_for_page(
@@ -83,100 +117,174 @@ async def _regions_for_page(
     key = (slug, page)
     if key not in cache:
         payload = await store.get_regions(slug, page=page)
-        pages = payload.get("pages", {}) if isinstance(payload, dict) else {}
-        cache[key] = pages.get(page) or pages.get(str(page)) or []
+        pages = (
+            payload.get("pages", {})
+            if isinstance(payload, dict) and payload.get("slug", slug) == slug
+            else {}
+        )
+        regions = pages.get(page, pages.get(str(page), [])) if isinstance(pages, dict) else []
+        cache[key] = regions if isinstance(regions, list) else []
     return cache[key]
 
 
-def _find_region(regions: list[dict[str, Any]], region_id: str | None) -> dict[str, Any] | None:
-    if region_id:
-        for region in regions:
-            if isinstance(region, dict) and region.get("id") == region_id:
-                return region
-    for region in regions:
-        if isinstance(region, dict) and isinstance(region.get("cells"), list):
-            return region
-    return None
-
-
-def _match_value_cell(cells: Any, key: Any, value: str) -> dict[str, Any] | None:
-    """The gold table cell holding `value` (key-disambiguated), or None.
-
-    Same matching rules as ever — only the return grew from the bbox to the
-    whole cell so the caller can also record the `{row, col}` selector.
-    """
-    if not isinstance(cells, list):
-        return None
-    value_norm = _norm(value)
-    if not value_norm:
-        return None
-    value_cells = _matching_value_cells(cells, value_norm)
-    if not value_cells:
-        return None
-
-    key_norm = _norm(key)
-    if key_norm:
-        keyed = []
-        for cell in value_cells:
-            row_no = cell.get("row")
-            if not isinstance(row_no, int):
-                continue
-            row_cells = [c for c in cells if isinstance(c, dict) and c.get("row") == row_no]
-            if any(_norm(c.get("text")) == key_norm for c in row_cells):
-                keyed.append(cell)
-        if len(keyed) == 1:
-            return keyed[0]
-
-    if len(value_cells) == 1:
-        return value_cells[0]
-    return None
-
-
-def _matching_value_cells(cells: list[Any], value_norm: str) -> list[dict[str, Any]]:
-    exact = [
-        cell for cell in cells
-        if isinstance(cell, dict)
-        and _norm(cell.get("text")) == value_norm
-        and _clean_bbox(cell.get("bbox"))
-    ]
-    if exact:
-        return exact
+def _candidate_regions(
+    regions: list[dict[str, Any]], region_id: str | None, page: int
+) -> list[dict[str, Any]]:
+    candidates = [region for region in regions if isinstance(region, dict)]
+    if region_id is not None:
+        candidates = [region for region in candidates if region.get("id") == region_id]
+        if len(candidates) != 1:
+            return []
+    ids = [region.get("id") for region in candidates]
+    if any(not isinstance(identity, str) or not identity.strip() for identity in ids):
+        return []
+    if len(set(ids)) != len(ids):
+        return []
     return [
-        cell for cell in cells
-        if isinstance(cell, dict)
-        and _cell_text_is_whole_value_token(cell.get("text"), value_norm)
-        and _clean_bbox(cell.get("bbox"))
+        region
+        for region in candidates
+        if type(region.get("page", page)) is int and region.get("page", page) == page
     ]
 
 
-def _cell_text_is_whole_value_token(cell_text: Any, value_norm: str) -> bool:
-    cell_norm = _norm(cell_text)
-    return bool(cell_norm and f" {cell_norm} " in f" {value_norm} ")
+def _matching_pairs(region: dict[str, Any], key: Any, value: str) -> list[tuple[dict, dict]]:
+    """Keep G1's directional association intact; never match a value alone."""
+    key_norm, value_norm = _norm(key).lower(), _norm(value)
+    if not key_norm or not value_norm:
+        return []
+    return [
+        (key_cell, value_cell)
+        for key_cell, value_cell in validated_pairs(region)
+        if _norm(key_cell.get("text")).lower() == key_norm
+        and _norm(value_cell.get("text")) == value_norm
+    ]
 
 
 def _norm(value: Any) -> str:
     if not isinstance(value, str):
         return ""
-    return " ".join(value.strip().lower().split())
+    # Value case is significant for engineering units (mm != Mm).
+    return normalize_claim_text(value)
 
 
 def _clean_bbox(bbox: Any) -> list[float]:
-    if isinstance(bbox, list) and len(bbox) == 4 and all(isinstance(v, (int, float)) for v in bbox):
+    if (
+        isinstance(bbox, list)
+        and len(bbox) == 4
+        and all(
+            isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+            for v in bbox
+        )
+        and bbox[0] < bbox[2]
+        and bbox[1] < bbox[3]
+    ):
         return [float(v) for v in bbox]
     return []
 
 
-def _first_str(*values: Any) -> str | None:
-    for value in values:
-        if isinstance(value, str) and value:
-            return value
-    return None
+def _locator_agrees(scope: dict, region: dict, key_cell: dict, value_cell: dict) -> bool:
+    if "cell" in scope:
+        selector = scope["cell"]
+        if not isinstance(selector, dict) or any(
+            type(selector.get(field)) is not int or selector[field] != value_cell[field]
+            for field in ("row", "col")
+        ):
+            return False
+    detail = scope.get("detail")
+    if detail is not None and not isinstance(detail, dict):
+        return False
+    detail = detail or {}
+    if "table_topology" in detail:
+        proof = detail["table_topology"]
+        verdict = region["table_topology"]
+        expected = {
+            "digest": verdict["digest"],
+            "key_cell_id": key_cell["cell_id"],
+            "value_cell_id": value_cell["cell_id"],
+        }
+        if not isinstance(proof, dict) or any(proof.get(k) != v for k, v in expected.items()):
+            return False
+        pair = next(
+            p
+            for p in verdict["pairs"]
+            if p["key"] == key_cell["cell_id"] and p["value"] == value_cell["cell_id"]
+        )
+        expected.update(
+            version=verdict["version"],
+            status=verdict["status"],
+            key_text=key_cell["text"],
+            key_bbox=key_cell["bbox"],
+            row=key_cell["row"],
+            association_basis=pair.get("basis", "validated_row"),
+        )
+        if any(proof[k] != v for k, v in expected.items() if k in proof):
+            return False
+    boxes = [box for box in (scope.get("bbox"), detail.get("cell_bbox")) if box is not None]
+    origin = scope.get("coord_origin")
+    if origin not in (None, "top-left", "bottom-left"):
+        return False
+    if not boxes:
+        return True
+    if origin == "bottom-left":
+        # R1 compatibility: select new canonical evidence from an explicit
+        # source and exact pair, never transform or infer the old geometry.
+        return scope.get("region_id") is not None
+    if origin != "top-left":
+        return False
+    cell = value_cell["bbox"]
+    for box in boxes:
+        if not _clean_bbox(box) or not (
+            box[0] - 1e-6 <= cell[0]
+            and box[1] - 1e-6 <= cell[1]
+            and cell[2] <= box[2] + 1e-6
+            and cell[3] <= box[3] + 1e-6
+        ):
+            return False
+    return True
 
 
-def _first_int(*values: Any) -> int | None:
-    for value in values:
-        if isinstance(value, bool):
-            continue
-        if isinstance(value, int):
-            return value
-    return None
+def _inherit_scope(child: dict[str, Any], parent: dict[str, Any]) -> dict[str, Any]:
+    # A more specific document/page/region may override defaults, but cannot
+    # borrow the old source's remaining locator or fine-grained geometry.
+    inherited = parent
+    for field, retained in (("slug", ()), ("page", ("slug",)), ("region_id", ("slug", "page"))):
+        if field in child and field in parent and child[field] != parent[field]:
+            inherited = {key: parent[key] for key in retained if key in parent}
+            break
+    return {**inherited, **child}
+
+
+def _source_scope(data: dict, row: dict, source_ref: dict) -> dict[str, Any] | None:
+    node_ref = data.get("source_ref", {})
+    if not isinstance(node_ref, dict):
+        node_ref = {}
+    node_aliases = {
+        target: data[key]
+        for key, target in (("source_doc_slug", "slug"), ("source_region_id", "region_id"))
+        if key in data
+    }
+    node = _inherit_scope(node_aliases, node_ref)
+    row_scope = dict(source_ref)
+    if "source_region_id" in row:
+        if "region_id" in row_scope and row_scope["region_id"] != row["source_region_id"]:
+            return None
+        row_scope["region_id"] = row["source_region_id"]
+    scope = _inherit_scope(row_scope, node)
+    detail = row_scope.get("detail")
+    if row_scope.get("bbox") is not None or (
+        isinstance(detail, dict) and detail.get("cell_bbox") is not None
+    ):
+        # The parent's marker says nothing about independently supplied boxes.
+        scope["coord_origin"] = row_scope.get("coord_origin")
+    if not isinstance(scope.get("slug"), str) or not scope["slug"].strip():
+        return None
+    page = scope.get("page")
+    if not isinstance(page, int) or isinstance(page, bool) or page < 1:
+        return None
+    if "region_id" in scope and (
+        not isinstance(scope["region_id"], str) or not scope["region_id"].strip()
+    ):
+        return None
+    if scope.get("kind") not in (None, "pdf-page-bbox"):
+        return None
+    return scope

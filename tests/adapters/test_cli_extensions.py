@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
@@ -72,8 +74,8 @@ def test_status_lists_discovered_producers_with_path_check(tmp_path, monkeypatch
     monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    tool = bin_dir / "graph-tracer-mcp"
-    tool.write_text("#!/bin/sh\n")
+    tool = bin_dir / ("graph-tracer-mcp.cmd" if sys.platform == "win32" else "graph-tracer-mcp")
+    tool.write_text("@echo off\n" if sys.platform == "win32" else "#!/bin/sh\n", encoding="utf-8")
     tool.chmod(0o755)
     monkeypatch.setenv("PATH", str(bin_dir))
     (system_dir / "graph-tracer.json").write_text(
@@ -97,7 +99,7 @@ def test_status_lists_discovered_producers_with_path_check(tmp_path, monkeypatch
     assert tracer["source"] == "system"
     assert tracer["command_found"] is True
     assert tracer["check"] == "command found on PATH"
-    assert tracer["command_path"] == str(tool)
+    assert Path(tracer["command_path"]) == tool
     assert tracer["started"] is False
     ghost = by_name["ghost"]
     assert ghost["source"] == "project"

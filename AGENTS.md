@@ -85,7 +85,7 @@ Three-layer medallion architecture under `~/anchor-data/`:
 
 | Layer | Path | Contents |
 | --- | --- | --- |
-| **Bronze** | `bronze/<filename>.pdf` | Raw PDF files |
+| **Bronze** | `bronze/<slug>/<sha256>.pdf` | Document-owned original PDFs; flat filename files are legacy |
 | **Silver** | `silver/<slug>/` | Docling extraction: items, pages, bboxes |
 | **Gold** | `gold/<slug>/` | Structured product knowledge JSON, region crops |
 

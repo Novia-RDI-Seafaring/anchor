@@ -150,6 +150,7 @@ async def get_region_crop(
     """
     # Whatever the reference style, an existing file wins when no explicit
     # dpi asks for a re-render.
+    store = store.snapshot(slug)
     if dpi is None:
         existing = await store.get_crop_path(slug, rel_path)
         if existing is not None:
@@ -204,6 +205,7 @@ async def get_page_image(
     bronze PDF at that resolution (capped to ``MAX_RENDER_DPI``) and caches
     the variant beside the silver image, so repeated reads are free.
     """
+    store = store.snapshot(slug)
     if dpi is None:
         return await store.get_page_image_path(slug, page)
     dpi = clamp_dpi(dpi)

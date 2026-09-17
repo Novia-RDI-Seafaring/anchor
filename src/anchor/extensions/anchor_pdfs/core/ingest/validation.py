@@ -129,10 +129,14 @@ def validate_regions(regions: Any) -> tuple[list[dict[str, Any]], list[dict[str,
 
     Tolerant entry point for the keyed pipeline: invalid regions are
     dropped (reported via the returned errors), valid ones pass through
-    untouched.
+    untouched. Duplicate IDs reject the entire page rather than selecting
+    or renaming one record.
     """
     if not isinstance(regions, list):
         return [], [_err(0, "", "regions must be a list")]
+    identity_errors = region_id_errors(regions)
+    if identity_errors:
+        return [], identity_errors
     valid: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     for i, region in enumerate(regions):
@@ -142,3 +146,31 @@ def validate_regions(regions: Any) -> tuple[list[dict[str, Any]], list[dict[str,
         else:
             valid.append(region)
     return valid, errors
+
+
+def region_id_errors(regions: Any, *, page: int | None = None) -> list[dict[str, Any]]:
+    """One owner for same-page uniqueness; absent/malformed IDs stay a schema concern."""
+    if not isinstance(regions, list):
+        return []
+    seen: set[str] = set()
+    errors = []
+    for index, region in enumerate(regions):
+        region_id = region.get("id") if isinstance(region, dict) else None
+        if not isinstance(region_id, str) or not region_id.strip():
+            continue
+        if region_id in seen:
+            location = f" on page {page}" if page is not None else " within a page"
+            errors.append({
+                **_err(index, "id", f"duplicate region id {region_id!r}{location}"),
+                "code": "duplicate_region_id", "region_id": region_id,
+                **({"page": page} if page is not None else {}),
+            })
+        seen.add(region_id)
+    return errors
+
+
+def require_unique_region_ids(regions: Any, *, page: int) -> None:
+    """Abort publication before any gold write or embedding on an identity error."""
+    errors = region_id_errors(regions, page=page)
+    if errors:
+        raise ValueError("; ".join(error["message"] for error in errors))

@@ -539,7 +539,7 @@ def locate_text(
     _, _, _, ingest_svc, doc_store = _build_real_services(data_dir)
 
     async def run() -> dict:
-        path = await doc_store.get_raw_pdf_path(slug)
+        path = await doc_store.get_raw_pdf_path(slug, page=page)
         if path is None or str(path).startswith("memory://"):
             raise FileNotFoundError(f"raw PDF not available for slug: {slug}")
         quads = await ingest_svc.renderer.locate_text(path, page, query, within_bbox)
@@ -670,7 +670,11 @@ def pdf(
 ) -> None:
     """The original bronze-layer PDF for a document."""
     _, _, _, _, doc_store = _build_real_services(data_dir)
-    path = asyncio.run(doc_store.get_raw_pdf_path(slug))
+    try:
+        path = asyncio.run(doc_store.get_raw_pdf_path(slug))
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2) from None
     _emit_bytes(path, copy_to=copy_to, out=out, label=f"{slug} pdf")
 
 

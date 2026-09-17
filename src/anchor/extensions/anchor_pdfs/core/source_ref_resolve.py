@@ -39,6 +39,7 @@ async def resolve_source_ref(
     ref, parsed from ``item_id``, or found via the region id.
     """
     slug = ref.get("slug") or slug
+    store = store.snapshot(slug)
     page = ref.get("page") if isinstance(ref.get("page"), int) else None
     region_id = ref.get("region_id") if isinstance(ref.get("region_id"), str) else None
     item_id = ref.get("item_id") if isinstance(ref.get("item_id"), str) else None

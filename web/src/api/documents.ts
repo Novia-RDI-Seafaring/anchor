@@ -10,7 +10,8 @@ export type DocumentSummary = {
 };
 
 export type DocumentIndex = {
-  document: { filename: string; title: string; page_count: number };
+  document: { filename: string; title: string; page_count: number;
+    generation?: { id: string; pages: number[] } };
   outline: Array<{ level: number; title: string; page: number; bbox: number[] }>;
   tables?: Array<Record<string, unknown>>;
   figures?: Array<Record<string, unknown>>;
@@ -144,9 +145,10 @@ export const documents = {
    * (PDF.js) so the user gets a selectable text layer instead of a page
    * screenshot. Served by `GET /api/documents/{slug}/pdf`.
    */
-  pdfUrl: (slug: string) => `${BACKEND_URL}/api/documents/${slug}/pdf`,
-  pageImageUrl: (slug: string, page: number) =>
-    `${BACKEND_URL}/api/documents/${slug}/pages/${page}/image`,
+  pdfUrl: (slug: string, generation?: string) =>
+    `${BACKEND_URL}/api/documents/${slug}/pdf${generation ? `?generation=${encodeURIComponent(generation)}` : ""}`,
+  pageImageUrl: (slug: string, page: number, generation?: string) =>
+    `${BACKEND_URL}/api/documents/${slug}/pages/${page}/image${generation ? `?generation=${encodeURIComponent(generation)}` : ""}`,
   pageCropUrl: (slug: string, page: number, bbox: number[], dpi = 300) =>
     `${BACKEND_URL}/api/documents/${slug}/pages/${page}/crop?${new URLSearchParams({
       bbox: bbox.join(","),
