@@ -36,7 +36,13 @@ class DocStore(Protocol):
     async def list_documents(self) -> list[dict[str, Any]]:
         raise NotImplementedError
 
-    async def get_index(self, slug: str) -> dict[str, Any] | None:
+    async def get_index(self, slug: str, *, include_content: bool = False) -> dict[str, Any] | None:
+        """Silver index for one document: outline plus table and figure entries.
+
+        Table entries carry their full ``cells`` content only when
+        ``include_content`` is true. The default is the map form: identifying
+        fields (caption, shape, header_row, first_column_values) and the
+        address (page, bbox) without the content."""
         raise NotImplementedError
 
     async def get_pages_meta(self, slug: str) -> dict[str, Any] | None:

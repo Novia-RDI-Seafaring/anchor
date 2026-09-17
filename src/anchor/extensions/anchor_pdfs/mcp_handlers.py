@@ -205,7 +205,9 @@ async def call_tool(
             return json.dumps({"slug": args["slug"], "found": False})
         return json.dumps({"found": True, **activity.to_dict()})
     if name == "get_document_index":
-        out = await store.get_index(args["slug"])
+        out = await store.get_index(
+            args["slug"], include_content=bool(args.get("include_content", False))
+        )
         return json.dumps(out) if out else json.dumps({"error": "not found"})
     if name == "get_gold_regions":
         return json.dumps(await store.get_regions(args["slug"], page=args.get("page")))

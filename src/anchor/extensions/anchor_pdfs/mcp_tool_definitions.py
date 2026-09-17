@@ -173,10 +173,29 @@ def tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "get_document_index",
-            "description": "Silver index for a document (outline, tables, figures).",
+            "description": (
+                "Silver index for a document (outline, tables, figures): a map "
+                "of what the document contains. Each table entry carries its "
+                "caption, shape, header row and first-column values to identify "
+                "it, plus page + bbox to address it. Table cell content is left "
+                "out by default because it dominates the payload; read a table "
+                "with get_page_text(slug, page) or, for gold documents, "
+                "inspect_region. Pass include_content=true only when you need "
+                "every cell of every table in one result."
+            ),
             "inputSchema": {
                 "type": "object",
-                "properties": {"slug": {"type": "string"}},
+                "properties": {
+                    "slug": {"type": "string"},
+                    "include_content": {
+                        "type": "boolean",
+                        "description": (
+                            "Include full table cell content. Default false. "
+                            "The full form can be very large: on a four-page "
+                            "datasheet it is roughly eight times the map form."
+                        ),
+                    },
+                },
                 "required": ["slug"],
             },
         },

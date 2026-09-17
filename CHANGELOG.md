@@ -9,6 +9,28 @@ next version section on tag.
 
 ## [Unreleased]
 
+### Changed
+
+- `get_document_index` returns a map of the document, not the document.
+  Table cell content is now omitted by default: on a four-page datasheet
+  the index was 56,991 characters, of which 87% was cell text, which
+  overflowed an MCP host's result budget and pushed the agent into reading
+  the spilled JSON off disk instead of using the API. The map form of that
+  same document is 7,333 characters and keeps every field that identifies a
+  table (`caption`, `shape`, `header_row`, `first_column_values`) as well as
+  its address (`page`, `bbox`), so tables that share a caption -- eight of
+  the twelve on that datasheet are captioned "OPERATING DATA" -- are still
+  told apart. Read a table's content with `get_page_text(slug, page)` or,
+  on a gold document, `inspect_region`. The previous payload is available
+  with the new `include_content` switch, which reaches all three adapters:
+  MCP `get_document_index(slug, include_content=true)`, HTTP
+  `GET /api/documents/{slug}/index?include_content=true`, and CLI
+  `anchor index <slug> --include-content`. Callers that read the index only
+  for `document` or `outline` (`get_gold_map`, `get_raw_pdf_path`) now move
+  less data; `migrate bbox-origin`, which rewrites `index.json`, reads the
+  unabridged form so a migration cannot drop cells. Related: #240 tracks the
+  caption inference that makes captions repeat in the first place.
+
 ### Added
 
 - Prose on the canvas can point at its source. A Markdown card writes an

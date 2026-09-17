@@ -53,8 +53,12 @@ async def list_documents(store: DocStore = Depends(get_doc_store)):
 
 
 @router.get("/{slug}/index")
-async def get_index(slug: str, store: DocStore = Depends(get_doc_store)):
-    out = await store.get_index(slug)
+async def get_index(
+    slug: str,
+    include_content: bool = False,
+    store: DocStore = Depends(get_doc_store),
+):
+    out = await store.get_index(slug, include_content=include_content)
     if out is None:
         raise HTTPException(404)
     return out

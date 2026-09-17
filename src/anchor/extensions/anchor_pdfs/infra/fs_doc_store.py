@@ -28,6 +28,7 @@ import aiofiles
 
 from anchor.core.upload_safety import UnsafeUploadError, assert_within, safe_upload_name
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
+from anchor.extensions.anchor_pdfs.core.silver import project_index
 from anchor.extensions.anchor_pdfs.infra._region_normalize import _normalise_regions
 
 #: How long a stale ingest lock file may sit before another writer reclaims it.
@@ -343,7 +344,7 @@ class FsDocStore:
             await f.write(payload)
         os.replace(tmp, target)
 
-    async def get_index(self, slug: str) -> dict[str, Any] | None:
+    async def get_index(self, slug: str, *, include_content: bool = False) -> dict[str, Any] | None:
         # The slug arrives from HTTP/MCP/CLI arguments. Inline
         # normalise-then-prefix-check (not delegated) so the containment
         # barrier sits in the same function that builds the path.
@@ -352,7 +353,9 @@ class FsDocStore:
         if not candidate.startswith(base + os.sep):
             return None
         p = Path(candidate)
-        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+        if not p.exists():
+            return None
+        return project_index(json.loads(p.read_text(encoding="utf-8")), include_content=include_content)
 
     async def get_pages_meta(self, slug: str) -> dict[str, Any] | None:
         p = self._doc_dir(self.silver, slug) / "pages.meta.json"

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
+from anchor.extensions.anchor_pdfs.core.silver import project_index
 from anchor.extensions.anchor_pdfs.infra._region_normalize import _normalise_regions
 
 
@@ -130,8 +131,8 @@ class MemoryDocStore:
             out.append(entry)
         return out
 
-    async def get_index(self, slug: str) -> dict[str, Any] | None:
-        return self._indexes.get(slug)
+    async def get_index(self, slug: str, *, include_content: bool = False) -> dict[str, Any] | None:
+        return project_index(self._indexes.get(slug), include_content=include_content)
 
     async def get_pages_meta(self, slug: str) -> dict[str, Any] | None:
         return self._pages_meta.get(slug)
