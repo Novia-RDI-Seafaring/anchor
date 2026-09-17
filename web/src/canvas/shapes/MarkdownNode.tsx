@@ -12,6 +12,7 @@ import { DEFAULT_BG, DEFAULT_STROKE, resolveColors, resolveText } from "@/canvas
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
 import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
 import { ReviewBadge } from "@/canvas/ReviewBadge";
+import { RoleBadge } from "@/canvas/RoleBadge";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
 
@@ -117,6 +118,7 @@ export function MarkdownNode({ id, data, selected }: NodeProps) {
     >
       {ph.active ? <PlaceholderChip hint={ph.hint} /> : null}
       <ReviewBadge data={data as Record<string, unknown>} nodeId={id} />
+      <RoleBadge data={data as Record<string, unknown>} />
       <NodeResizer
         isVisible={selected ?? false}
         minWidth={160}

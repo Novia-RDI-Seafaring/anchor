@@ -55,6 +55,11 @@ _COMMON_FIELDS: tuple[str, ...] = (
     # dimming helpers (web/src/canvas/review.ts), same cross-cutting status
     # as the placeholder pair above.
     "review",
+    # The part this card plays in an argument: question / criterion / option
+    # / evidence / assumption / decision / rejected / open. See
+    # anchor.core.workspace.roles. Same cross-cutting shape as `review`: a
+    # small closed vocabulary on any element, rendered as a badge.
+    "role",
 )
 
 
