@@ -79,6 +79,13 @@ point below a region:
 A ref naming no document or no page renders struck through, so a pointer
 you got wrong is visible rather than silently reading as sourced.
 
+The link works in every text-bearing element, not only in `markdown`:
+`text`, `fact` and `note` render `anchor:` links the same way. They do
+not render the rest of Markdown -- `**bold**` stays asterisks in a
+`fact` -- so pick `markdown` when the content needs formatting and any
+card you like when it just needs to point at its source. There is no
+element where a claim has to go unanchored.
+
 An inline ref is a pointer for whoever reads the card. It is **not** an
 evidence edge. The edge is the reviewable claim that a value came from a
 region, and rows of values still belong in a `spec` node where each row

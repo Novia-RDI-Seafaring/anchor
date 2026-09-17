@@ -9,7 +9,31 @@ next version section on tag.
 
 ## [Unreleased]
 
+### Fixed
+
+- `anchor:` source links now resolve in every text-bearing card, not only
+  in `markdown`. `SourceRefLink` was imported by `MarkdownNode` alone, so a
+  link written in a `text`, `fact` or `note` element arrived on the canvas
+  as literal square brackets. The only way to write one sentence with
+  provenance was to reach for a `markdown` card, which quietly made the
+  simple cards the tier where claims go unanchored -- backwards for an
+  application whose whole point is that a claim points at its evidence. A
+  new `AnchoredText` renderer resolves `anchor:` links and leaves
+  everything else exactly as typed: `**bold**` still stays asterisks in a
+  `fact`, because formatting is what distinguishes a `markdown` card and
+  collapsing that would reformat every card already on a canvas. Non-anchor
+  links stay literal too, since an http link in a plain card is not a
+  provenance claim.
+
 ### Changed
+
+- `canvas_create_workspace` says what a canvas is for. Its description was
+  "Create a new workspace folder", which told an agent nothing at the one
+  moment it is about to compose something. It now names the two jobs a
+  canvas does and, when the user asked a question rather than asked for
+  data, points at `area` containers, a titled `text` element, colour for
+  state and a dominant conclusion.
+
 
 - The canvas skill teaches composition, not just extraction. Asked a
   question ("compare these pumps so I can pick one"), an agent would answer

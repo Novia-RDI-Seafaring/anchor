@@ -213,7 +213,18 @@ def tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "canvas_create_workspace",
-            "description": "Create a new workspace folder.",
+            "description": (
+                "Create a new canvas. A canvas does one of two jobs and they do "
+                "not look alike: it either keeps what a document says (document "
+                "card, spec tables, crops, evidence edges) or it lays out a case "
+                "someone has to act on (what was asked, the options, what you "
+                "picked, what is still open). When the user asked a question "
+                "rather than asked you to pull data, compose the answer: put each "
+                "step inside an `area`, title it with a `text` element at "
+                "text_size 'xl' or larger, keep colour for state, and make the "
+                "conclusion the biggest thing on the board. Call canvas_node_types "
+                "for what each type renders."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {

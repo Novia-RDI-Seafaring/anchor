@@ -1,6 +1,7 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
+import { AnchoredText } from "@/canvas/AnchoredText";
 import { resolveColors, resolveText } from "@/canvas/colors";
 import { Pictogram } from "@/canvas/icons";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
@@ -117,7 +118,7 @@ export function FactNode({ id, data, selected }: NodeProps) {
                 fontSize: t.fontSize,
               }}
             >
-              {d.text}
+              <AnchoredText text={d.text} />
             </div>
           ) : null}
         </div>
