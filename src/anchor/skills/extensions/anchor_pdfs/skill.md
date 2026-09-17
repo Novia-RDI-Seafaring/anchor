@@ -35,6 +35,12 @@ regions tagged with the page number and bounding box they came from.
   the whole document at once.
 - `get_gold_regions(slug, page?)` — structured regions with `page + bbox`.
 - `get_page_text(slug, page)` — polished or raw page markdown.
+- `get_crop(slug, "<page>/<region_id>.png")` - LOOK at one region: the crop
+  comes back as an image the harness displays, so you can read a chart,
+  diagram or scanned table by eye. `get_page_image(slug, page)` does the
+  same for a whole page. Use these rather than opening files under
+  `.anchor_data/` yourself; reading the store directly bypasses the tool
+  surface and may not even be permitted.
 
 ### Finding content — search first, then retrieve
 

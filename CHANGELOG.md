@@ -11,6 +11,28 @@ next version section on tag.
 
 ### Changed
 
+- `get_crop` and `get_page_image` hand back an image an agent can actually
+  look at. Both defaulted to `format="path"`, so a request to see a chart
+  returned a filesystem path; the only way to turn that into pixels was for
+  the agent to open the file itself, which leaves the adapter surface and, in
+  a sandboxed harness, raises a read-permission prompt mid-task. `base64` was
+  no better: the bytes came back inside a JSON text blob the harness renders
+  as text, so the model still could not see the image and paid for it in
+  tokens. The MCP server already promotes a result carrying `_mcp_image_b64`
+  to an `ImageContent` block, which `canvas_snapshot` used but no document
+  tool did. `_byte_envelope` now understands `format="inline"` and emits that
+  marker for image content types, and both viewing tools default to it, so
+  the harness displays the crop. `path` and `base64` remain for callers that
+  want the file or the raw bytes, and non-image content (`get_pdf`, SVG)
+  keeps its previous behaviour. `ingest_get_page` nests its envelope under
+  `image`, where the top-level marker cannot be promoted, so it downgrades
+  `inline` to `base64` rather than return an unviewable blob. The PDF skill
+  now tells agents to look at a region with `get_crop` instead of reading
+  files under `.anchor_data/`. HTTP already served crop bytes directly and
+  the CLI already prints a path a shell user can open, so MCP was the only
+  adapter whose native form was wrong.
+
+
 - `get_document_index` returns a map of the document, not the document.
   Table cell content is now omitted by default: on a four-page datasheet
   the index was 56,991 characters, of which 87% was cell text, which
