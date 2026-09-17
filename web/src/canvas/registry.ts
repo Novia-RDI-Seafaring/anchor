@@ -21,9 +21,9 @@
  * The Python core uses an open `NodeTypeRegistry` (see
  * `core/workspace/node_types.py`); this is its UI-side counterpart.
  *
- * Built-in shapes (`concept`, `entity`, `fact`, `area`, `note`, `funnel`)
- * are structural, not OIP primitives — they're canvas-internal node types
- * registered by name and rendered by their own component.
+ * Built-in shapes (`concept`, `entity`, `fact`, `area`, `note`, `markdown`,
+ * `funnel`) are structural, not OIP primitives — they're canvas-internal
+ * node types registered by name and rendered by their own component.
  *
  * Each registered renderer can carry optional palette metadata describing
  * how the floating top toolbar should advertise the node type (group,
@@ -34,6 +34,8 @@
  */
 import type { ComponentType } from "react";
 import type { NodeProps, NodeTypes } from "@xyflow/react";
+
+import { api } from "@/api/client";
 
 // Primitives — generic OIP-aware renderers
 import { DocumentPrimitive } from "./primitives/DocumentPrimitive";
@@ -51,7 +53,9 @@ import { ConceptNode } from "./shapes/ConceptNode";
 import { EntityNode } from "./shapes/EntityNode";
 import { FactNode } from "./shapes/FactNode";
 import { FunnelNode } from "./shapes/FunnelNode";
+import { MarkdownNode } from "./shapes/MarkdownNode";
 import { NoteNode } from "./shapes/NoteNode";
+import { TextNode } from "@/canvas/shapes/TextNode";
 
 /** Optional toolbar/palette metadata for a registered node type. */
 export type PaletteMeta = {
@@ -73,7 +77,7 @@ export type PaletteMeta = {
    */
   noDefaultLabel?: boolean;
   /** Glyph identifier for the toolbar icon (matches the tile's SVG). */
-  glyph: "rect" | "circle" | "diamond" | "dashed-rect" | "note" | "fact" | "page" | "table" | "cube" | "block" | "requirement" | "package" | "fmu" | "sub-canvas";
+  glyph: "rect" | "circle" | "diamond" | "dashed-rect" | "text" | "note" | "markdown" | "fact" | "page" | "table" | "cube" | "block" | "requirement" | "package" | "fmu" | "sub-canvas";
   /** Ordering hint within a section (lower first). */
   order?: number;
   /**
@@ -188,6 +192,17 @@ registerNodeRenderer("area", AreaNode, {
   order: 40,
 });
 
+registerNodeRenderer("text", TextNode, {
+  group: "shapes",
+  label: "Text",
+  hint: "words, no box",
+  glyph: "text",
+  noDefaultLabel: true,
+  // No default width: a text element hugs its words. A width is only ever
+  // set deliberately, to wrap a paragraph at a chosen measure.
+  order: 5,
+});
+
 registerNodeRenderer("fact", FactNode, {
   group: "cards",
   label: "Fact",
@@ -201,6 +216,16 @@ registerNodeRenderer("note", NoteNode, {
   hint: "free-form sticky note",
   glyph: "note",
   order: 20,
+});
+registerNodeRenderer("markdown", MarkdownNode, {
+  group: "cards",
+  label: "Markdown",
+  hint: "headings, lists, tables, code",
+  glyph: "markdown",
+  noDefaultLabel: true,
+  width: 320,
+  height: 200,
+  order: 25,
 });
 
 // Primitives — OIP-aware. Producers register against canonical node_type
@@ -320,23 +345,107 @@ export function renderA2UIFragment(_a2uiMessage: unknown): null {
 }
 
 /**
+ * OIP `renders`-token fallback (issue #309, OIP#6).
+ *
+ * Producers declare namespaced node types in their manifest's
+ * `ui_hints.node_types`, each carrying a `renders` token (e.g.
+ * `graphtracer:chart_series` renders `chart`). The server folds those
+ * declarations into `GET /api/node-types`; this map remembers
+ * `node_type -> renders` so an unknown node_type can resolve to the
+ * renderer registered under its token. Resolution order (OIP#6):
+ *
+ *   1. exact node_type registration
+ *   2. the type's declared `renders` token
+ *   3. default (undefined here; ReactFlow falls back to its default node)
+ *
+ * Unrecognised tokens fall through to default, never error. No map (fetch
+ * failed, never primed) means exact-key-only resolution, today's behavior.
+ */
+let rendersTokens: ReadonlyMap<string, string> | null = null;
+let primeStarted = false;
+
+/** Directly install (or clear) the node_type -> renders map. Tests use this. */
+export function setRendersTokenMap(map: ReadonlyMap<string, string> | null): void {
+  rendersTokens = map;
+}
+
+/** Reset the prime guard + map so tests can exercise `primeRendersTokenMap`. */
+export function resetRendersTokenMapForTests(): void {
+  rendersTokens = null;
+  primeStarted = false;
+}
+
+/**
+ * Fetch `/api/node-types` once at app start and cache the renders-token
+ * map. Failure-tolerant: on any error the map stays unset and resolution
+ * keeps today's exact-key behavior.
+ */
+export async function primeRendersTokenMap(): Promise<void> {
+  if (primeStarted) return;
+  primeStarted = true;
+  try {
+    const entries = await api.get<Array<{ name?: unknown; renders?: unknown }>>(
+      "/api/node-types",
+    );
+    const map = new Map<string, string>();
+    for (const entry of entries) {
+      if (
+        entry &&
+        typeof entry.name === "string" &&
+        entry.name &&
+        typeof entry.renders === "string" &&
+        entry.renders
+      ) {
+        map.set(entry.name, entry.renders);
+      }
+    }
+    rendersTokens = map;
+  } catch {
+    // No server data: keep exact-key-only resolution.
+  }
+}
+
+/** Resolve per OIP#6: exact registration, then renders token, then default. */
+export function resolveNodeRenderer(name: string): ComponentType<NodeProps> | undefined {
+  const exact = registry.get(name);
+  if (exact) return exact;
+  const token = rendersTokens?.get(name);
+  if (token) return registry.get(token);
+  return undefined;
+}
+
+/**
  * The proxy ReactFlow consumes. ReactFlow asks for `nodeTypes[name]`;
- * we serve from the registry without recompilation.
+ * we serve from the registry without recompilation, resolving unknown
+ * node types through their OIP `renders` token (#309).
  */
 export const nodeTypes: NodeTypes = new Proxy({} as NodeTypes, {
   get(_target, prop: string) {
-    return registry.get(prop);
+    return resolveNodeRenderer(prop);
   },
   has(_target, prop: string) {
-    return registry.has(prop);
+    return resolveNodeRenderer(prop) !== undefined;
   },
   ownKeys() {
-    return [...registry.keys()];
+    const keys = new Set(registry.keys());
+    for (const [name] of rendersTokens ?? []) {
+      if (resolveNodeRenderer(name)) keys.add(name);
+    }
+    return [...keys];
   },
   getOwnPropertyDescriptor(_target, prop: string) {
-    if (registry.has(prop)) {
-      return { enumerable: true, configurable: true, value: registry.get(prop) };
+    const value = resolveNodeRenderer(prop);
+    if (value) {
+      return { enumerable: true, configurable: true, value };
     }
     return undefined;
   },
 });
+
+/** The connector tool's id in `uiStore.armedTool`.
+ *
+ * Not a node type: arming it puts the canvas in connect mode, where a click
+ * picks the element a connector starts from and the next click picks what it
+ * ends at. Kept out of the palette registry so nothing tries to place it as a
+ * node. */
+export const CONNECT_TOOL = "__connect__";

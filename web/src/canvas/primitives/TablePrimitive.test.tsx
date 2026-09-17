@@ -25,6 +25,7 @@ beforeEach(() => {
 
 afterEach(() => {
   useUiStore.setState({ hoveredSourceRef: null, pdfViewer: null });
+  vi.unstubAllGlobals();
 });
 
 async function renderTable(data: Record<string, unknown>, selected = false) {
@@ -281,5 +282,139 @@ describe("TablePrimitive row handles", () => {
       key: "Pressure", value: "999999", source_ref, revalidate_evidence: true,
     }] });
     patch.mockRestore();
+  });
+
+  // --- #242 P2c: highlight through the resolver (closes #274) -------------
+
+  it("opens a selector-less ref with its own bbox and never calls the resolver", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await renderTable({
+      label: "Spec-Config",
+      rows: [
+        {
+          key: "min temp",
+          value: "-10 C",
+          source_ref: { slug: "alfa-laval-lkh", page: 2, region_id: "r9", bbox: [50, 40, 550, 200] },
+        },
+      ],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Open source page 2" }));
+    // Synchronous, region-level path — unchanged by P2c.
+    expect(useUiStore.getState().pdfViewer).toMatchObject({
+      slug: "alfa-laval-lkh",
+      page: 2,
+      highlightRegionId: "r9",
+      highlightBbox: [50, 40, 550, 200],
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("resolves a cell-selector ref via resolve-ref and highlights the cell bbox", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        slug: "alfa-laval-lkh",
+        page: 2,
+        bbox: [280, 120, 340, 132],
+        precision: "cell",
+        region_id: "r4",
+        cell: { row: 0, col: 1 },
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    await renderTable({
+      label: "Spec-Config",
+      rows: [
+        {
+          key: "Flow",
+          value: "35 m3/h",
+          source_ref: {
+            slug: "alfa-laval-lkh",
+            page: 2,
+            region_id: "r4",
+            bbox: [50, 40, 550, 200],
+            cell: { row: 0, col: 1 },
+          },
+        },
+      ],
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open source page 2" }));
+    });
+    const url = (fetchMock.mock.calls[0] as unknown[] | undefined)?.[0] as string ?? "";
+    expect(url).toContain("/api/documents/alfa-laval-lkh/resolve-ref");
+    expect(url).toContain("row=0");
+    expect(url).toContain("col=1");
+    expect(useUiStore.getState().pdfViewer).toMatchObject({
+      slug: "alfa-laval-lkh",
+      page: 2,
+      highlightRegionId: "r4",
+      highlightBbox: [280, 120, 340, 132],
+    });
+  });
+
+  it("falls back to the ref's own bbox when the resolver answers 404", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      text: async () => "unresolvable ref",
+    })));
+    await renderTable({
+      label: "Spec-Config",
+      rows: [
+        {
+          key: "Flow",
+          value: "35 m3/h",
+          source_ref: {
+            slug: "alfa-laval-lkh",
+            page: 2,
+            region_id: "r4",
+            bbox: [50, 40, 550, 200],
+            cell: { row: 0, col: 1 },
+          },
+        },
+      ],
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Open source page 2" }));
+    });
+    expect(useUiStore.getState().pdfViewer).toMatchObject({
+      slug: "alfa-laval-lkh",
+      page: 2,
+      highlightBbox: [50, 40, 550, 200],
+    });
+  });
+});
+
+describe("TablePrimitive header anchor", () => {
+  const nodeRef = { slug: "doc", page: 3, region_id: "r2" };
+
+  it("is hidden when every row carries its own source_ref", async () => {
+    await renderTable({
+      label: "LKH-5",
+      source_ref: nodeRef,
+      rows: [
+        { key: "A", value: "158 mm", source_ref: { slug: "doc", page: 3, region_id: "r2" } },
+        { key: "B", value: "70 mm", source_ref: { slug: "doc", page: 3, region_id: "r2" } },
+      ],
+    });
+    // Only the two row anchors remain; no card-level "Open source page" button.
+    expect(screen.getAllByRole("button", { name: /Open source page 3/ })).toHaveLength(2);
+  });
+
+  it("stays as the fallback when some row has no reference", async () => {
+    await renderTable({
+      label: "LKH-5",
+      source_ref: nodeRef,
+      rows: [
+        { key: "A", value: "158 mm", source_ref: { slug: "doc", page: 3, region_id: "r2" } },
+        { key: "B", value: "70 mm" },
+      ],
+    });
+    // One row anchor plus the header anchor.
+    expect(screen.getAllByRole("button", { name: /Open source page 3/ })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: /Open source page/ })[0]?.className).toContain("h-6");
   });
 });

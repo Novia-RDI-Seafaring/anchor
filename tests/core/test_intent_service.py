@@ -156,3 +156,30 @@ async def test_resolve_unknown_id_raises():
     svc, _bus, _clock = _svc()
     with pytest.raises(KeyError):
         await svc.resolve("nope")
+
+
+async def test_enqueue_user_request_carries_text_and_node_ref():
+    """The panel-authored free-text kind (#323): payload carries the request
+    text plus the optional target node ref in the same {workspace_id, node_id}
+    shape drop_to_ingest uses."""
+    svc, _bus, _clock = _svc()
+    intent = await svc.enqueue(
+        "user_request",
+        origin_canvas_id="cv",
+        payload={
+            "text": "extract the pump curves",
+            "workspace_id": "cv",
+            "node_id": "n1",
+        },
+    )
+    assert intent.kind == "user_request"
+    assert intent.status == PENDING
+    assert intent.payload["text"] == "extract the pump curves"
+    assert intent.payload["node_id"] == "n1"
+
+    # Visible from the origin canvas's filtered view and resolvable like any
+    # other kind (the agent records free-form resolution text).
+    assert [i.id for i in await svc.list_pending(canvas="cv")] == [intent.id]
+    resolved = await svc.resolve(intent.id, {"note": "done: curves on canvas"})
+    assert resolved.status == RESOLVED
+    assert resolved.result == {"note": "done: curves on canvas"}

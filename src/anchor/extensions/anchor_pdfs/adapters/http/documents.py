@@ -1,6 +1,7 @@
 """Documents — shared substrate, not per-workspace."""
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -9,11 +10,21 @@ from pydantic import BaseModel
 
 from anchor.adapters.http.deps import get_doc_store, get_ingest_service
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
+from anchor.extensions.anchor_pdfs.core.region_crops import (
+    CropUnavailable,
+    get_page_image,
+    get_region_crop,
+)
 from anchor.extensions.anchor_pdfs.core.region_inspect import (
     get_region_content,
     inspect_region,
 )
-from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
+from anchor.extensions.anchor_pdfs.core.services import (
+    IngestService,
+    RegionNotRemovableError,
+    SynopsisService,
+)
+from anchor.extensions.anchor_pdfs.core.source_ref_resolve import resolve_source_ref
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -42,11 +53,22 @@ async def list_documents(store: DocStore = Depends(get_doc_store)):
 
 
 @router.get("/{slug}/index")
-async def get_index(slug: str, store: DocStore = Depends(get_doc_store)):
-    out = await store.get_index(slug)
+async def get_index(
+    slug: str,
+    include_content: bool = False,
+    store: DocStore = Depends(get_doc_store),
+):
+    out = await store.get_index(slug, include_content=include_content)
     if out is None:
         raise HTTPException(404)
     return out
+
+
+@router.get("/{slug}/entities")
+async def entities(slug: str, store: DocStore = Depends(get_doc_store)):
+    from anchor.extensions.anchor_pdfs.core.entities import list_entities
+
+    return await list_entities(store, slug)
 
 
 @router.get("/{slug}/regions")
@@ -65,6 +87,26 @@ async def inspect_region_route(
     return out
 
 
+@router.delete("/{slug}/regions/{region_id:path}")
+async def remove_region_route(
+    slug: str,
+    region_id: str,
+    ingest: IngestService = Depends(get_ingest_service),
+):
+    """Remove one OIP-derived gold region (#304).
+
+    Only regions carrying ``derived_from`` are deletable — model-extracted
+    gold is the ground truth of an ingest pass and stays (409). The region's
+    embedding vector is dropped alongside so search stays consistent.
+    """
+    try:
+        return await ingest.remove_region(slug, region_id)
+    except RegionNotRemovableError as exc:
+        raise HTTPException(409, str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(404, str(exc)) from None
+
+
 @router.get("/{slug}/region-content/{region_id:path}")
 async def region_content_route(
     slug: str, region_id: str, store: DocStore = Depends(get_doc_store)
@@ -72,6 +114,37 @@ async def region_content_route(
     out = await get_region_content(store, slug, region_id)
     if out is None:
         raise HTTPException(404)
+    return out
+
+
+@router.get("/{slug}/resolve-ref")
+async def resolve_ref_route(
+    slug: str,
+    page: int | None = None,
+    region_id: str | None = None,
+    item_id: str | None = None,
+    row: int | None = None,
+    col: int | None = None,
+    store: DocStore = Depends(get_doc_store),
+):
+    """Resolve a source_ref to the most precise stored evidence bbox.
+
+    Precedence: cell (row+col) > item_id > region_id > nothing (404).
+    The viewer's highlight calls this instead of re-implementing the
+    precedence rules client-side.
+    """
+    ref: dict[str, Any] = {}
+    if page is not None:
+        ref["page"] = page
+    if region_id:
+        ref["region_id"] = region_id
+    if item_id:
+        ref["item_id"] = item_id
+    if row is not None and col is not None:
+        ref["cell"] = {"row": row, "col": col}
+    out = await resolve_source_ref(store, slug, ref)
+    if out is None:
+        raise HTTPException(404, "unresolvable ref")
     return out
 
 
@@ -92,9 +165,22 @@ async def page_text(slug: str, page: int, store: DocStore = Depends(get_doc_stor
 
 
 @router.get("/{slug}/pages/{page}/image")
-async def page_image(slug: str, page: int, store: DocStore = Depends(get_doc_store)):
-    p = await store.get_page_image_path(slug, page)
-    if p is None:
+async def page_image(
+    slug: str,
+    page: int,
+    dpi: int | None = Query(
+        None,
+        description="Re-render the page from the bronze PDF at this DPI "
+        "(clamped to 72-600) instead of the ~150 dpi silver image.",
+    ),
+    store: DocStore = Depends(get_doc_store),
+    ingest: IngestService = Depends(get_ingest_service),
+):
+    try:
+        p = await get_page_image(store, ingest.renderer, slug, page, dpi=dpi)
+    except CropUnavailable as e:
+        raise HTTPException(404, str(e)) from e
+    if p is None or str(p).startswith("memory://"):
         raise HTTPException(404)
     return FileResponse(p, media_type="image/png")
 
@@ -175,11 +261,37 @@ async def locate_text(
 
 
 @router.get("/{slug}/crops/{rel_path:path}")
-async def crop(slug: str, rel_path: str, store: DocStore = Depends(get_doc_store)):
-    p = await store.get_crop_path(slug, rel_path)
-    if p is None:
-        raise HTTPException(404)
-    return FileResponse(p)
+async def crop(
+    slug: str,
+    rel_path: str,
+    dpi: int | None = Query(
+        None,
+        description="Render DPI (clamped to 72-600, default 300). An explicit "
+        "value re-renders and overwrites the cached crop.",
+    ),
+    store: DocStore = Depends(get_doc_store),
+    ingest: IngestService = Depends(get_ingest_service),
+):
+    """One gold region's crop, rendered lazily from the bronze PDF on first
+    request and cached at gold/<slug>/pages/<page>/<region_id>.png."""
+    try:
+        p = await get_region_crop(store, ingest.renderer, slug, rel_path, dpi=dpi)
+    except CropUnavailable as e:
+        raise HTTPException(404, str(e)) from e
+    if str(p).startswith("memory://"):
+        raise HTTPException(501, "in-memory store cannot serve crops over HTTP")
+    # Inline normalise-then-prefix-check at the response sink: the path the
+    # store hands back derives from request input, and the barrier must sit
+    # in the function that serves it (the store port has non-fs impls). The
+    # store's own gold root is server-constructed, hence trusted.
+    gold_root = getattr(store, "gold", None)
+    if gold_root is None:
+        raise HTTPException(501, "this store cannot serve crops over HTTP")
+    base = os.path.realpath(os.fspath(gold_root))
+    candidate = os.path.normpath(os.fspath(p))
+    if not candidate.startswith(base + os.sep):
+        raise HTTPException(404, "crop path escapes the document store")
+    return FileResponse(candidate)
 
 
 @router.get("/{slug}/pdf")
@@ -276,7 +388,7 @@ async def embed_document(
     backfills already-ingested docs without re-running the full pipeline.
     """
     if ingest.embedder is None:
-        raise HTTPException(503, "no embedder wired — install sentence-transformers")
+        raise HTTPException(503, "no embedder wired — the local onnxruntime embedder failed to build")
     existing = await store.get_embeddings(slug)
     if existing and not overwrite:
         return {"slug": slug, "skipped": True, "reason": "already embedded", "embed_model": existing.get("embed_model")}
@@ -294,10 +406,18 @@ async def derive_region(
 
     The consumer side of an OIP region producer: inherits the parent's
     source_ref (provenance) and records derived_from, then stores it durably.
+    `parent_region_id` accepts 'p4/r1' or a bare 'r1'; a bare id matching
+    regions on multiple pages is a 409 listing the candidate pages (#287).
     Re-run `POST /{slug}/embed` to make the new region searchable.
     """
+    from anchor.extensions.anchor_pdfs.core.services import AmbiguousRegionError
+
     try:
         return await ingest.derive_region(slug, body.parent_region_id, body.region)
+    except AmbiguousRegionError as exc:
+        raise HTTPException(
+            409, {"error": str(exc), "candidate_pages": exc.pages}
+        ) from None
     except ValueError as exc:
         raise HTTPException(404, str(exc)) from None
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -55,8 +56,15 @@ class ExtensionRuntimeStatus:
 
 def extension_runtime_status_payload(
     statuses: Mapping[str, ExtensionRuntimeStatus],
+    *,
+    producers: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
-    """Return the adapter-neutral extension runtime diagnostic payload."""
+    """Return the adapter-neutral extension runtime diagnostic payload.
+
+    ``producers`` (from :func:`discovered_producer_statuses`) adds a section
+    for discovered system/project OIP producers; ``None`` keeps the
+    bundled-runtimes-only payload.
+    """
     extensions = [
         {
             "name": status.name,
@@ -68,13 +76,92 @@ def extension_runtime_status_payload(
         for _name, status in sorted(statuses.items())
     ]
     available = sum(1 for item in extensions if item["available"])
-    return {
+    payload: dict[str, object] = {
         "extensions": extensions,
         "summary": {
             "available": available,
             "unavailable": len(extensions) - available,
         },
     }
+    if producers is not None:
+        payload["producers"] = {
+            "note": (
+                "Discovered OIP producers are never started by Anchor; the "
+                "harness spawns them. The check here is static: does each "
+                "manifest's invocation.command resolve on PATH?"
+            ),
+            "items": producers,
+            "summary": {
+                "discovered": len(producers),
+                "command_found": sum(
+                    1 for item in producers if item.get("command_found")
+                ),
+            },
+        }
+    return payload
+
+
+def discovered_producer_statuses(
+    data_dir: Path | None = None,
+    *,
+    on_error: Callable[[str], None] | None = None,
+) -> list[dict[str, object]]:
+    """Static availability of discovered system/project OIP producers (#308).
+
+    Anchor never spawns discovered producers — the harness does — so the one
+    check that makes sense here is whether each manifest's
+    ``invocation.command`` resolves on PATH (``shutil.which`` on its first
+    token). Every entry carries ``started: False`` so the not-started state
+    is explicit next to the bundled runtimes' ``available`` flags.
+    """
+    discovered = discover_manifests(data_dir, on_error=on_error)
+    producers: list[dict[str, object]] = []
+    for source in ("system", "project"):
+        for manifest in discovered.get(source, []):
+            producer = manifest.get("producer")
+            producer = producer if isinstance(producer, dict) else {}
+            invocation = manifest.get("invocation")
+            invocation = invocation if isinstance(invocation, dict) else {}
+            command = invocation.get("command")
+            command = command if isinstance(command, str) else None
+            first_token = command.split()[0] if command and command.split() else None
+            resolved = shutil.which(first_token) if first_token else None
+            if first_token is None:
+                check = "manifest has no invocation.command"
+            elif resolved is not None:
+                check = "command found on PATH"
+            else:
+                check = "command not found on PATH"
+            producers.append(
+                {
+                    "name": producer.get("name"),
+                    "version": producer.get("version"),
+                    "source": source,
+                    "manifest_path": manifest.get("_manifest_path"),
+                    "command": command,
+                    "command_found": resolved is not None,
+                    "command_path": resolved,
+                    "check": check,
+                    "started": False,
+                }
+            )
+    return producers
+
+
+def extension_status_payload(
+    statuses: Mapping[str, ExtensionRuntimeStatus],
+    data_dir: Path | None = None,
+) -> dict[str, object]:
+    """The complete extensions-status payload every adapter serves (#308).
+
+    Bundled runtime availability plus discovered system/project OIP
+    producers with a PATH resolvability check. Shared by CLI
+    ``anchor extensions status``, MCP ``anchor_extension_status``, and HTTP
+    ``GET /api/extensions/status`` so the three surfaces stay in lockstep.
+    """
+    return extension_runtime_status_payload(
+        statuses, producers=discovered_producer_statuses(data_dir)
+    )
 
 
 @dataclass(frozen=True, slots=True)

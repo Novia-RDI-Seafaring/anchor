@@ -67,7 +67,8 @@
         "workspace_id",
         "type",
         "payload",
-        "causation_id"
+        "causation_id",
+        "actor"
       ],
       "required": [
         "workspace_id",
@@ -88,6 +89,12 @@
     "CanvasCleared",
     "CanvasSnapshot",
     "ReferenceCreated",
-    "ReferenceAttached"
+    "ReferenceAttached",
+    "ReferenceRemoved",
+    "ReferenceUpdated",
+    "WorkspaceMetadataUpdated",
+    "ProposalSetOpened",
+    "ProposalSetMembersAdded",
+    "ProposalSetReviewed"
   ]
 }

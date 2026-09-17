@@ -189,6 +189,36 @@ def build_index(docling: dict[str, Any], *, filename: str = "", title: str = "")
     }
 
 
+INDEX_CONTENT_FIELDS: tuple[str, ...] = ("cells",)
+
+
+def project_index(index: dict[str, Any] | None, *, include_content: bool = False) -> dict[str, Any] | None:
+    """Return the index with per-entry content included or stripped.
+
+    The silver index is a map of the document: an outline plus one entry per
+    table and figure. Every table entry already carries both identifying
+    fields (``caption``, ``shape``, ``header_row``, ``first_column_values``)
+    and the full ``cells`` content. Cell content dominates the payload -- on a
+    four-page datasheet it is ~87% of it -- so a caller asking "what does this
+    document contain" is handed the document instead of a map.
+
+    The default therefore drops the content fields and keeps everything a
+    caller needs to identify an entry and address it (``id``, ``page``,
+    ``bbox``). Pass ``include_content=True`` for the unabridged record.
+    ``None`` passes through so callers can keep reporting "not found".
+    """
+    if index is None or include_content:
+        return index
+    out = dict(index)
+    tables = out.get("tables")
+    if isinstance(tables, list):
+        out["tables"] = [
+            {k: v for k, v in t.items() if k not in INDEX_CONTENT_FIELDS} if isinstance(t, dict) else t
+            for t in tables
+        ]
+    return out
+
+
 def _clean_bbox(bbox: Any) -> list[float]:
     if isinstance(bbox, list) and len(bbox) == 4 and all(isinstance(v, (int, float)) for v in bbox):
         return [float(v) for v in bbox]

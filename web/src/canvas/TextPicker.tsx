@@ -5,7 +5,7 @@
  *   - `text_bold`   — Normal / Bold toggle.
  *   - `text_align`  — Left / Center / Right buttons.
  *   - `text_family` — dropdown: Default / Sans / Serif / Mono.
- *   - `text_size`   — S / M / L buttons.
+ *   - `text_size`   — XS through 3XL buttons.
  *
  * Each control fires a PATCH per selected node, spreading the existing
  * `data` so the rest of the payload survives. The picker is intentionally
@@ -18,7 +18,20 @@ import { AlignCenter, AlignLeft, AlignRight, Bold } from "lucide-react";
 import { canvases } from "@/api/canvases";
 import { cn } from "@/lib/cn";
 
-import { TEXT_SWATCHES, type TextAlign, type TextFamily, type TextSize } from "./colors";
+import { TEXT_SIZES, TEXT_SWATCHES, type TextAlign, type TextFamily, type TextSize } from "./colors";
+
+/** Button face per size: the letter, the size it is drawn at in the picker,
+ *  and the accessible name. Drawing each at its own size makes the row a
+ *  preview rather than a list of codes. */
+const SIZE_LABELS: Record<TextSize, { short: string; px: string; aria: string }> = {
+  xs: { short: "XS", px: "9px", aria: "extra small" },
+  sm: { short: "S", px: "10px", aria: "small" },
+  md: { short: "M", px: "11px", aria: "medium" },
+  lg: { short: "L", px: "12px", aria: "large" },
+  xl: { short: "XL", px: "13px", aria: "extra large" },
+  "2xl": { short: "2XL", px: "14px", aria: "2 extra large" },
+  "3xl": { short: "3XL", px: "15px", aria: "3 extra large" },
+};
 import { Swatches } from "./Swatches";
 
 type Props = {
@@ -139,16 +152,20 @@ export function TextPicker({ workspaceSlug, nodeIds, getNodeData, onClose }: Pro
         </select>
       </Section>
       <Section label="Size">
-        <div className="flex items-center gap-1" role="group" aria-label="text size">
-          <ToggleButton active={currentSize === "sm"} onClick={() => setSize("sm")} ariaLabel="text size small">
-            <span className="text-[10px]">S</span>
-          </ToggleButton>
-          <ToggleButton active={currentSize === "md"} onClick={() => setSize("md")} ariaLabel="text size medium">
-            <span className="text-[11px]">M</span>
-          </ToggleButton>
-          <ToggleButton active={currentSize === "lg"} onClick={() => setSize("lg")} ariaLabel="text size large">
-            <span className="text-[12px]">L</span>
-          </ToggleButton>
+        {/* Seven buckets, not three. A canvas is also read on a shared
+            screen, so the scale runs up to poster size; the label under
+            each button is drawn at its own size so the row previews it. */}
+        <div className="flex flex-wrap items-center gap-1" role="group" aria-label="text size">
+          {TEXT_SIZES.map((size) => (
+            <ToggleButton
+              key={size}
+              active={currentSize === size}
+              onClick={() => setSize(size)}
+              ariaLabel={`text size ${SIZE_LABELS[size].aria}`}
+            >
+              <span style={{ fontSize: SIZE_LABELS[size].px }}>{SIZE_LABELS[size].short}</span>
+            </ToggleButton>
+          ))}
         </div>
       </Section>
     </div>

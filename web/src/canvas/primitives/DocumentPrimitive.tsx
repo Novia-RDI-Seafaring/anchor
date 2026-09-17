@@ -3,7 +3,7 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
 import { BACKEND_URL } from "@/api/client";
-import { documents, type Region } from "@/api/documents";
+import { documents, refHasSelector, type Region } from "@/api/documents";
 import { useDocumentIndex } from "@/api/useDocumentIndex";
 import { bboxToImageRect, sameBbox } from "@/lib/bbox";
 import { parseDocumentPageGeometry, type DocumentPageGeometry } from "@/lib/documentPageGeometry";
@@ -216,12 +216,49 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     ? status === "pending" ? "waiting" : "running"
     : `elapsed ${formatElapsed(elapsedSeconds)}`;
 
+  // A ref that points below the region (one silver item, one table cell)
+  // resolves to a tighter bbox than the region rectangle. The click path
+  // already does this, which is why the source dock lands on the cell while
+  // this preview drew a box around the whole section. Resolve it here too so
+  // the two surfaces agree about what the ref points at.
+  const [resolvedBbox, setResolvedBbox] = useState<number[] | null>(null);
+  const hoverSelectorKey = hoveredSourceRef && hoveredSourceRef.slug === slug
+    ? JSON.stringify([
+        hoveredSourceRef.page,
+        hoveredSourceRef.region_id ?? null,
+        hoveredSourceRef.item_id ?? null,
+        hoveredSourceRef.cell ?? null,
+      ])
+    : null;
+  useEffect(() => {
+    if (!slug || !hoveredSourceRef || hoveredSourceRef.slug !== slug) {
+      setResolvedBbox(null);
+      return;
+    }
+    if (!refHasSelector(hoveredSourceRef)) {
+      setResolvedBbox(null);
+      return;
+    }
+    let cancelled = false;
+    documents
+      .resolveRef(slug, hoveredSourceRef)
+      .then((r) => { if (!cancelled) setResolvedBbox(r?.bbox ?? null); })
+      // Region rectangle stays the graceful fallback: never show nothing.
+      .catch(() => { if (!cancelled) setResolvedBbox(null); });
+    return () => { cancelled = true; };
+    // hoverSelectorKey collapses the ref to the parts that change the answer,
+    // so a re-render with an equal-but-new object does not refetch.
+  }, [slug, hoverSelectorKey]);  // eslint-disable-line react-hooks/exhaustive-deps
+
   const externalHighlight = useMemo<RegionHighlight | null>(() => {
     if (!hoveredSourceRef || !slug) return null;
     if (hoveredSourceRef.slug !== slug) return null;
     if (hoveredSourceRef.page !== page) return null;
-    return { regionId: hoveredSourceRef.region_id, bbox: hoveredSourceRef.bbox };
-  }, [hoveredSourceRef, slug, page]);
+    return {
+      regionId: resolvedBbox ? undefined : hoveredSourceRef.region_id,
+      bbox: resolvedBbox ?? hoveredSourceRef.bbox,
+    };
+  }, [hoveredSourceRef, slug, page, resolvedBbox]);
 
   // Value-precise highlight (#197): when the hovered ref carries the cell value
   // (`query`), locate that text inside the region and draw a finer yellow quad

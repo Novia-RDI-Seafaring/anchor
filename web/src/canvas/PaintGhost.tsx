@@ -90,6 +90,7 @@ export function ghostOutlineKind(nodeType: string | null): "rect" | "circle" | "
     case "concept":
     case "spec":
     case "note":
+    case "markdown":
     case "fact":
       return "rect";
     case "entity":

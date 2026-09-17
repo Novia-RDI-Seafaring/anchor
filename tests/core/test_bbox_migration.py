@@ -118,7 +118,7 @@ def test_migrate_document_flips_silver_and_gold_then_stamps():
     async def run():
         first = await migrate_document(s.doc_store, None, "doc")
         assert first["status"] == "migrated"
-        index = await s.doc_store.get_index("doc")
+        index = await s.doc_store.get_index("doc", include_content=True)
         assert index["outline"][0]["bbox"] == [0.0, 72.0, 200.0, 92.0]
         assert index["tables"][0]["cells"][0]["bbox"] == [10.0, 202.0, 80.0, 232.0]
         cands = await s.doc_store.get_page_candidates("doc", 1)

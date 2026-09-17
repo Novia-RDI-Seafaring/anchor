@@ -50,9 +50,12 @@ pipx install anchor-kb
 `anchor install <harness>` registers an installed ANCHOR tool with an AI
 harness. It does not install the tool itself.
 
-Bronze and silver extraction run locally. Gold extraction requires
-`ANCHOR_OPENAI_API_KEY`; set the other `ANCHOR_OPENAI_*` variables for your
-provider as needed.
+Bronze and silver extraction run locally. Gold extraction needs an API key
+for keyed providers: set `ANCHOR_OPENAI_API_KEY` (the endpoint's own key —
+required for `azure` and `custom`). With the `openai` provider a plain
+`OPENAI_API_KEY` is also accepted. The `local`, `ollama`, and `harness`
+providers need no key. Set the other `ANCHOR_OPENAI_*` variables for your
+provider as needed; `anchor check` reports what the resolved config accepts.
 
 ## When to use
 
@@ -79,6 +82,37 @@ provider as needed.
   with `status: "empty_gold"` is the exception: gold extraction yielded 0
   regions on a non-empty document (usually a transient failure), so `has_gold`
   is false and you should re-ingest that slug to recover its regions.
+
+## Scoped asks: your inbox
+
+A user can select elements on a canvas and ask something about them. That
+creates a **thread**: an intent with `targets` (`[{workspace_id, node_id}]`),
+the canvas `base_version` at ask time, and `items` (the conversation).
+
+- At the start of any Anchor task, and whenever you are idle, call
+  `list_pending_intents` (`anchor intents` on the CLI). Take one.
+- Read the targets' subgraph with `canvas_get_state` (filter by the target
+  ids). `canvas_snapshot` gives you the picture.
+- Reply in the thread with `intent_add_item(id, type, text, ops?)`:
+  - `question` when the ask is ambiguous. Then wait; poll `get_intent` for
+    the answer.
+  - `suggestion` for any change to the targeted elements. It is a staged
+    batch of canvas ops (`NodeAdded`, `NodeUpdated`, `NodeRemoved`,
+    `EdgeAdded`, `EdgeUpdated`, `EdgeRemoved`, each `{type, payload}`) plus
+    `text` as the rationale. The human previews it and approves or declines.
+    Nothing moves on the canvas until approval. Never edit targeted elements
+    directly.
+  - Group ops that depend on each other into one suggestion. Keep independent
+    changes as separate suggestions so partial approval is safe. A `NodeAdded`
+    may carry a client `id` that later ops in the same batch reference.
+  - A revision after feedback is a new suggestion with `supersedes` naming the
+    earlier one.
+  - `message` for a comment or a progress note.
+- Additive work outside the targets (new grounded facts) may still be
+  written directly; review mode stamps it `proposed` as usual.
+- `intent_apply`, `intent_answer`, and `intent_decline` are the human's
+  verbs. Do not call them on your own asks.
+- Post a `result` item when done, then `resolve_intent`.
 
 ## Live state
 
@@ -156,7 +190,8 @@ Storage is structural (no `data_dir` key). The default environment is in
 
 - `bronze/` — raw PDFs
 - `silver/<slug>/` — per-page markdown + page PNGs
-- `gold/<slug>/` — structured regions with crops
+- `gold/<slug>/` — structured regions with crops (crop PNGs render lazily on
+  first `get_crop` / `anchor crop`, addressed `<page>/<region_id>.png`)
 - `canvases/<slug>/` — per-canvas durable state + events log
 
 ## Extensions

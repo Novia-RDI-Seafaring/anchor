@@ -57,7 +57,7 @@ def test_two_sse_clients_receive_atomic_claim_and_status_and_snapshot_replay():
         async def connected():
             return False
         request.is_disconnected = connected
-        streams = [(await events("g7", request, bus, ws)).body_iterator for _ in range(2)]
+        streams = [(await events("g7", request, actor_kind="human", actor_label="test", bus=bus, svc=ws)).body_iterator for _ in range(2)]
         for stream in streams:
             snapshot = await anext(stream)
             assert json.loads(snapshot["data"])["nodes"][0]["data"]["rows"][0]["evidence"]["status"] == "verified"

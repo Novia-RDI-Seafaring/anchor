@@ -60,7 +60,13 @@ class DocStore(Protocol):
     async def list_documents(self) -> list[dict[str, Any]]:
         raise NotImplementedError
 
-    async def get_index(self, slug: str) -> dict[str, Any] | None:
+    async def get_index(self, slug: str, *, include_content: bool = False) -> dict[str, Any] | None:
+        """Silver index for one document: outline plus table and figure entries.
+
+        Table entries carry their full ``cells`` content only when
+        ``include_content`` is true. The default is the map form: identifying
+        fields (caption, shape, header_row, first_column_values) and the
+        address (page, bbox) without the content."""
         raise NotImplementedError
 
     async def get_pages_meta(self, slug: str) -> dict[str, Any] | None:
@@ -74,7 +80,12 @@ class DocStore(Protocol):
         """
         raise NotImplementedError
 
-    async def get_page_image_path(self, slug: str, page: int) -> Path | None:
+    async def get_page_image_path(
+        self, slug: str, page: int, dpi: int | None = None
+    ) -> Path | None:
+        """The stored page PNG. ``dpi=None`` is the silver default (~150 dpi);
+        an explicit ``dpi`` addresses the cached re-render variant written by
+        ``region_crops.get_page_image`` (None when not cached yet)."""
         raise NotImplementedError
 
     async def get_regions(self, slug: str, page: int | None = None) -> dict[str, Any]:
@@ -115,6 +126,16 @@ class DocStore(Protocol):
         raise NotImplementedError
 
     async def get_crop_path(self, slug: str, rel_path: str) -> Path | None:
+        raise NotImplementedError
+
+    async def write_crop(self, slug: str, rel_path: str, data: bytes) -> Path:
+        """Persist one region crop at ``gold/<slug>/pages/<rel_path>``.
+
+        The write half of the lazy crop contract: ``region_crops.
+        get_region_crop`` renders a missing crop from the bronze PDF and
+        stores it here so the next read is served from disk. ``rel_path`` is
+        the canonical ``<page>/<region_id>.png`` and must stay inside the
+        document's gold pages directory."""
         raise NotImplementedError
 
     async def get_raw_pdf_path(self, slug: str, *, page: int | None = None) -> Path | None:

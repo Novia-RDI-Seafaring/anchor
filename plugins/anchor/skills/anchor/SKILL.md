@@ -53,9 +53,12 @@ pipx install anchor-kb
 `anchor install <harness>` registers an installed ANCHOR tool with an AI
 harness. It does not install the tool itself.
 
-Bronze and silver extraction run locally. Gold extraction requires
-`ANCHOR_OPENAI_API_KEY`; set the other `ANCHOR_OPENAI_*` variables for your
-provider as needed.
+Bronze and silver extraction run locally. Gold extraction needs an API key
+for keyed providers: set `ANCHOR_OPENAI_API_KEY` (the endpoint's own key —
+required for `azure` and `custom`). With the `openai` provider a plain
+`OPENAI_API_KEY` is also accepted. The `local`, `ollama`, and `harness`
+providers need no key. Set the other `ANCHOR_OPENAI_*` variables for your
+provider as needed; `anchor check` reports what the resolved config accepts.
 
 ## When to use
 
@@ -78,7 +81,41 @@ provider as needed.
 - **Slug naming.** Document slugs are filename-derived (lowercase,
   hyphenated). Canvas slugs are user-chosen, e.g. `pump-analysis`.
 - **Don't re-ingest.** `list_documents()` first; if the slug exists with
-  `has_gold: true`, skip ingest unless the user asks for a fresh pass.
+  `has_gold: true`, skip ingest unless the user asks for a fresh pass. A row
+  with `status: "empty_gold"` is the exception: gold extraction yielded 0
+  regions on a non-empty document (usually a transient failure), so `has_gold`
+  is false and you should re-ingest that slug to recover its regions.
+
+## Scoped asks: your inbox
+
+A user can select elements on a canvas and ask something about them. That
+creates a **thread**: an intent with `targets` (`[{workspace_id, node_id}]`),
+the canvas `base_version` at ask time, and `items` (the conversation).
+
+- At the start of any Anchor task, and whenever you are idle, call
+  `list_pending_intents` (`anchor intents` on the CLI). Take one.
+- Read the targets' subgraph with `canvas_get_state` (filter by the target
+  ids). `canvas_snapshot` gives you the picture.
+- Reply in the thread with `intent_add_item(id, type, text, ops?)`:
+  - `question` when the ask is ambiguous. Then wait; poll `get_intent` for
+    the answer.
+  - `suggestion` for any change to the targeted elements. It is a staged
+    batch of canvas ops (`NodeAdded`, `NodeUpdated`, `NodeRemoved`,
+    `EdgeAdded`, `EdgeUpdated`, `EdgeRemoved`, each `{type, payload}`) plus
+    `text` as the rationale. The human previews it and approves or declines.
+    Nothing moves on the canvas until approval. Never edit targeted elements
+    directly.
+  - Group ops that depend on each other into one suggestion. Keep independent
+    changes as separate suggestions so partial approval is safe. A `NodeAdded`
+    may carry a client `id` that later ops in the same batch reference.
+  - A revision after feedback is a new suggestion with `supersedes` naming the
+    earlier one.
+  - `message` for a comment or a progress note.
+- Additive work outside the targets (new grounded facts) may still be
+  written directly; review mode stamps it `proposed` as usual.
+- `intent_apply`, `intent_answer`, and `intent_decline` are the human's
+  verbs. Do not call them on your own asks.
+- Post a `result` item when done, then `resolve_intent`.
 
 ## Live state
 
@@ -86,58 +123,78 @@ The canvas has SSE. If a browser tab is open at the same time, the user
 sees your changes appear live. The server is authoritative and serialises
 commands per workspace, so you don't need to coordinate with the browser.
 
-## Projects: a folder is the unit
+## Environments and projects
 
-A folder containing an `anchor.toml` (created by `anchor init`) is an ANCHOR
-project. It declares the data dir, the AI provider/data-zone, and the models.
-**Run ANCHOR from inside that folder** and every adapter resolves the project
-automatically. The CLI and `anchor serve` walk up from the working directory to
-find `anchor.toml`; `anchor-mcp` does the same, or name it explicitly with
-`anchor-mcp --project <folder>`. So a single MCP registration
-(`anchor install claude-code`, no `--data-dir`) works for *every* project: open
-the agent in the project folder and it targets that project, with no reinstall.
+An **environment** is a named config profile (provider, models, data zone) and
+the trust/egress boundary. It holds **projects**, each a corpus (documents) plus
+its canvases. Environments live under `~/.anchor/envs/<name>/`. A project is a
+folder with an `anchor.toml` marker and a hidden `.anchor_data/` holding its
+corpus; the environment's `projects.toml` maps each project name to its folder.
+A project inherits its environment's config. A human creates one in any working
+folder with `anchor init`; an agent creates a *managed* one (folder under
+`~/.anchor/envs/<name>/projects/<project>/`) with `create_project`.
 
-If you are unsure which project is active, run `anchor` from the folder you mean
-(or pass `--project`/`ANCHOR_CONFIG`). Don't pass `--data-dir ~/anchor-data`
-unless you specifically want the global default rather than the current project.
+Provider, endpoint, and local-only mode are environment-owned security
+settings. A project cannot redirect or weaken them. The `local` and `harness`
+providers construct no Anchor-side remote model client, and remote embeddings
+are rejected in both. However, harness-driven ingest gives page content to the
+connected agent. Its model provider is outside Anchor's egress boundary. Never
+use a cloud-backed harness for content that is restricted to the local host.
 
-### Set up a project (agent-drivable, like `npm init` / `uv init`)
+Over MCP, this server serves one environment. Project-scoped tools take an
+optional `project` argument; omit it for the default project. Use
+`list_projects` to see the options and `create_project` to make one. A
+missing/unknown project returns a self-correcting error. You cannot cross to
+another environment from here; that is a separate named server.
 
-You can scaffold ANCHOR in any folder non-interactively. `anchor init` accepts
-every choice as a flag, so no prompt blocks you:
+On the CLI, select with `--env` / `--project`, or set a session default with
+`anchor use <env> <project>`. `ANCHOR_ENV` / `ANCHOR_PROJECT` also work.
+
+### Set up an environment (agent-drivable, like `nvm install`)
+
+`anchor env create <name>` creates an environment (the trust boundary) and its
+default project. Every choice is a flag, so no prompt blocks you:
 
 ```bash
-# local-only (no document egress): no key, no endpoint
-anchor init . --yes --provider local
+# local-only (no document egress): no key, no endpoint. Ingest + embed make
+# NO external network calls; model loading is pinned offline. Run
+# `anchor models prefetch` once (with network) so a later offline run works.
+anchor env create local --yes --provider local
 
 # a named endpoint (Azure shown): the deployment name is the model
-anchor init . --yes --provider azure \
+anchor env create work --yes --provider azure \
   --base-url https://<resource>.openai.azure.com/openai/v1/ \
   --vision-model <deployment> --embed-model text-embedding-3-small
 ```
 
-`init` self-corrects an Azure URL that is missing `/openai/v1/`. The API key is
-never written to `anchor.toml`. Set `ANCHOR_OPENAI_API_KEY` in the environment
-or a gitignored `.env` in the folder. Then **verify before ingesting**:
+Then `anchor init` in a working folder starts a project bound to an environment
+(`--env <name>`, default the default env), dropping an `anchor.toml` + a hidden
+`.anchor_data/` there. `anchor env create` self-corrects an Azure URL missing
+`/openai/v1/`. The API key is never
+written to the profile. Set `ANCHOR_OPENAI_API_KEY` in the environment or a
+gitignored `.env` next to the profile. Then **verify before ingesting**:
 
 ```bash
-anchor check            # offline: prints the data zone, repairs a bad endpoint
-anchor check --probe    # also makes one tiny call to confirm deployment + key
+anchor check --env <name>          # offline: data zone, repairs a bad endpoint
+anchor check --env <name> --probe  # also one tiny call to confirm deployment + key
 ```
 
 `anchor check` exits non-zero when something would break a real ingest, so you
-can gate on it. Register the MCP once with `anchor install claude-code`.
+can gate on it. Register the MCP with `anchor install claude-desktop --env <name>`.
 
 ## Where things live
 
-Each project's data lives in its own `data_dir` (default `<project>/anchor-data/`
-from `anchor init`, or the global `~/anchor-data/` when no project is found).
-`ANCHOR_DATA_DIR` or an explicit `--data-dir <path>` override it; the HTTP
-adapter uses the path passed to `anchor serve`.
+A project's data lives in a hidden `.anchor_data/` inside the project folder —
+`<your-folder>/.anchor_data/` for a folder you ran `anchor init` in, or
+`~/.anchor/envs/<env>/projects/<project>/.anchor_data/` for a managed one.
+Storage is structural (no `data_dir` key). The default environment is in
+`~/.anchor/default`; a pre-existing `~/anchor-data/` keeps working until
+`anchor migrate` folds it in.
 
 - `bronze/` — raw PDFs
 - `silver/<slug>/` — per-page markdown + page PNGs
-- `gold/<slug>/` — structured regions with crops
+- `gold/<slug>/` — structured regions with crops (crop PNGs render lazily on
+  first `get_crop` / `anchor crop`, addressed `<page>/<region_id>.png`)
 - `canvases/<slug>/` — per-canvas durable state + events log
 
 ## Extensions
@@ -157,23 +214,16 @@ real time on every connected client via SSE.
 
 - `canvas_create_workspace(slug, title?)` and `canvas_list_workspaces()`.
 - `canvas_get_state(workspace_slug)` — full state for the workspace.
+- `canvas_changes(workspace_slug, since_version?)` — what changed after a
+  version you last saw, one net entry per element grouped by actor. Call
+  it to catch up on a canvas you worked on before instead of diffing two
+  full states.
 - `canvas_list_placeholders(workspace_slug)` — every node flagged
   `data.placeholder == true` with its `placeholder_hint`. The entry
   point when the user says "fill in the specs I marked".
-- `canvas_add_node(workspace_slug, node_type, label, x?, y?, data?)`.
-  Omit `x`/`y` (or pass `place="auto"`) and the server picks a
-  non-overlapping spot and returns it under `position` — prefer this when
-  scaffolding many nodes so they don't pile up. `type` is accepted as an
-  alias for `node_type`.
-- `canvas_node_types(node_type?)` — which `data` keys each node type
-  renders and which is its body field. Call this BEFORE add/update so you
-  put the body in the right key (e.g. `fact` -> `data.text`, `concept` ->
-  `data.subtitle`; there is no generic `data.body`). add/update return a
-  `warning` when you pass a key the type ignores.
+- `canvas_add_node(workspace_slug, node_type, label, x, y, data?)`.
 - `canvas_update_node(workspace_slug, id, ...)` and
-  `canvas_remove_node(workspace_slug, id)`. The `data` field DEEP-MERGES
-  into the node's existing data (unmentioned keys like `source_ref`
-  survive; a key set to `null` is deleted) — no read-modify-write needed.
+  `canvas_remove_node(workspace_slug, id)`.
 - `canvas_add_edge(workspace_slug, source, target, edge_type?, data?)`
   and `canvas_remove_edge(workspace_slug, id)`.
 - `canvas_clear(workspace_slug)` — destructive; ask first.
@@ -186,14 +236,314 @@ real time on every connected client via SSE.
 | `spec` | A table of rows with values. Each row carries a `source_ref`. |
 | `fact` | A free-form note tied to a source. |
 | `image` | A region crop or screenshot. |
-| `concept` / `entity` | Generic shapes for grouping or schematics. |
+| `text` | Words with no box: a title, a caption, a paragraph. |
+| `markdown` | Prose with structure — headings, lists, tables, code. `data.text` holds the Markdown source. |
+| `area` | A dashed container that encloses other nodes. The grouping primitive: name a step or a theme and put its cards inside. |
+| `concept` / `entity` | Small labelled shapes for schematics. NOT containers. |
 | `canvas` | A tile that links to a child canvas. |
 
-This is the shortlist of the types agents touch most. For the exact
-`data` keys each type renders — and which key holds the visible body —
-call `canvas_node_types` (or `anchor canvas node-types`) instead of
-guessing; the body key differs per type (`fact` -> `text`, `concept` ->
-`subtitle`, `note` -> `text`, `area` -> `subtitle`).
+The full list and the data shapes live in the on-disk substrate docs;
+this is the shortlist of the ones agents touch most.
+
+### Say it in Markdown when it has structure
+
+Most of what an agent writes onto a canvas is not one sentence. It is a
+short list of findings, two options side by side, a snippet of a config,
+a link back to where a number came from. That is a `markdown` node:
+`data.text` holds the Markdown source and the card renders it as rich
+text, with GitHub-flavoured tables and task lists.
+
+Reach for it over a `note` as soon as the content has more than one
+part. A `note` is a remark; a `markdown` card is an explanation. Values
+that are really rows of a table still belong in a `spec` node, where
+each row carries its own `source_ref` — a Markdown table of numbers
+looks right and loses every link back to the page it came from.
+
+Raw HTML in the source is escaped, never rendered.
+
+### Point prose at its source with an `anchor:` link
+
+A value quoted in a sentence can carry its provenance the same way a spec
+row does. Write an ordinary Markdown link whose target is `anchor:`:
+
+```markdown
+Rated head is [24 m](anchor:lkh-5?page=3&region=r2) at 8 m3/h.
+```
+
+The card renders the words with an anchor glyph after them; clicking
+opens that document at that page with the region highlighted. The query
+maps onto `source_ref` field for field, including the selectors that
+point below a region:
+
+| Written | Points at |
+| --- | --- |
+| `anchor:<slug>?page=3` | the page |
+| `anchor:<slug>?page=3&region=r2` | one gold region |
+| `anchor:<slug>?page=3&item=p3-i0` | one silver item |
+| `anchor:<slug>?page=3&cell=4,1` | one table cell |
+
+A ref naming no document or no page renders struck through, so a pointer
+you got wrong is visible rather than silently reading as sourced.
+
+The link works in every text-bearing element, not only in `markdown`:
+`text`, `fact` and `note` render `anchor:` links the same way. They do
+not render the rest of Markdown -- `**bold**` stays asterisks in a
+`fact` -- so pick `markdown` when the content needs formatting and any
+card you like when it just needs to point at its source. There is no
+element where a claim has to go unanchored.
+
+An inline ref is a pointer for whoever reads the card. It is **not** an
+evidence edge. The edge is the reviewable claim that a value came from a
+region, and rows of values still belong in a `spec` node where each row
+carries its own `source_ref`. Use the link for prose that mentions a
+source in passing; use an edge, or a spec row, when the relation itself
+is the point. Doing both is fine.
+
+### Review states
+
+Some workspaces run in review mode (`metadata.review_mode == true`). In
+those, every node you create is stamped `data.review = {state:
+"proposed", by, at}` automatically — you do not set it yourself. Do not
+set or change a node's `review` state unless the user asks you to. A
+node with `review.state == "rejected"` is feedback: the human turned it
+down, so revise or replace it rather than ignoring or deleting the
+verdict. `accepted` means the human signed off. Evidence edges and
+`source_ref` remain how a value is checked; `review` only records the
+outcome of that check. A whole proposal set carries one verdict for every
+element in it (see below).
+
+### Group what you add, so a human reviews it as one thing
+
+When you add more than a couple of elements in one go, draw them, then
+call `canvas_propose_set(workspace_slug, reason, members)` to group them.
+`reason` is shown to the reviewer: say what you added and why, in your own
+words. Without a set, a human rules on thirty-five nodes one at a time and
+nothing records which of them belong together.
+
+The verdict comes back on the elements, not through a separate call: a
+human accepting a set stamps `data.review = {state: "accepted", ...}` on
+every member, rejecting stamps `"rejected"`, and `canvas_get_state`
+already returns both. So to see what happened to a set you proposed
+earlier, read the canvas. `rejected` is feedback: revise rather than
+re-propose the same thing.
+
+`canvas_add_to_proposal_set` (adding to a set after the fact),
+`canvas_list_proposal_sets` (listing sets as records) and
+`canvas_review_proposal_set` (the human's verdict, which you do not call
+unasked) live under the `canvas_advanced` capability and are not
+advertised by default.
+
+A thread suggestion (`intent_add_item`) already is a batch and needs no
+set: use a set for what you add outside a thread.
+
+### Elements under a scoped ask are read-only to you
+
+When an intent in your inbox carries `targets`, those elements belong to
+a thread. Do not call `canvas_update_node` / `canvas_remove_node` /
+`canvas_add_edge` on them. Stage the change as a `suggestion` item on
+the thread instead (`intent_add_item`); the ops use the same payload
+shapes as these tools. On approval the batch is applied with you as the
+actor, and every element it creates lands with `data.review = {state:
+"accepted", by: <the approver>}`.
+
+### Make it readable at the zoom it will be read at
+
+A `text` element is the one to reach for when the thing you are adding is
+prose, a heading or a caption: it renders `data.text` alone, with no border
+and no background, so an explanation does not arrive as one more card.
+
+Every element honours `data.text_size`: `xs`, `sm`, `md` (default), `lg`,
+`xl`, `2xl`, `3xl`. The heading grows with the body from `lg` up. A canvas
+someone reads on a shared screen, or a headline you want legible zoomed
+out, wants `xl` or larger with a wider `width`; a dense reference table
+stays at the default. Pick the size when you create the element rather
+than leaving everything at the default and making the human zoom.
+
+### Two different jobs, two different canvases
+
+A canvas is used for two things, and they do not look alike.
+
+One is a **place to keep what a document says**: a document card, spec
+tables, crops, evidence edges. The layout barely matters because the
+value is in the grounding.
+
+The other is **a case somebody has to act on**: which pump, which
+material, is this design within limits. Here the layout IS the answer.
+The reader wants to know what was asked, what the options were, what you
+picked and what is still unresolved, in that order. Extracted values are
+the supporting evidence, not the point.
+
+The failure mode is answering the second with the first: every table you
+extracted, dropped on an empty board. Everything is present and nothing
+is legible. If the user asked a question rather than asked you to pull
+data, compose the answer.
+
+### Compose it so it can be read
+
+**Enclose, do not merely place.** Proximity is a weak grouping cue and a
+freeform board has no reading order of its own. Put each step of the
+argument in an `area` with a `label` and a one-line `subtitle`, and place
+its cards inside. A reader then sees the shape of the answer before
+reading a single card.
+
+**Say the reading order out loud.** A `text` element at `text_size` `xl`
+or `2xl` across the top, with a `sm` line under it naming the order and
+any colour convention you used ("read left to right: what we need, what
+fits, what we chose, what is still open"). A canvas that has to be
+deciphered costs more than the prose it replaced.
+
+**Let colour carry state, not decoration.** Colour and size register
+before any text is read, so spend them on the one distinction that
+matters. Pick a convention, state it in the subtitle line, and hold it
+for the whole canvas. `data.bg_color` and `data.stroke_color` take CSS
+colours and every node type accepts them. A convention that works:
+given facts in one colour, assumptions you made in another, the decision
+in a third, rejected options greyed. What matters is that it is
+consistent and declared, not which hues you choose.
+
+**Make the answer the biggest thing.** One card should be visibly the
+conclusion: larger `text_size`, a wider `width`, its own colour. If a
+reader zooms out and cannot tell what you concluded, the canvas failed
+regardless of how good the evidence under it is.
+
+**Say what you rejected.** An option considered and dropped, with the
+reason, is worth a card. It stops the reader re-asking the question you
+already answered, and it is the part a reviewer most needs in order to
+disagree with you.
+
+**Label the edges that carry reasoning.** An evidence edge says where a
+value came from. An edge between steps of an argument should say why it
+leads there ("fails at 5 m", "passes with margin"). An unlabelled edge
+between two claims is a line, not an argument.
+
+**Mark what you assumed.** Anything you filled in yourself, rather than
+read out of a document, is the first thing the human must check. Give
+assumptions their own colour and put them where they will be seen, not
+in a footnote.
+
+### Say what each card is: `data.role`
+
+A decision canvas is made of cards playing known parts. `data.role` names
+the part, from a closed list, and the card renders a small chip saying so:
+
+| Role | The card is |
+| --- | --- |
+| `question` | what is being decided |
+| `criterion` | a requirement the answer has to satisfy |
+| `option` | a candidate answer |
+| `evidence` | a value or quote supporting or ruling out an option |
+| `assumption` | something you filled in rather than read from a source |
+| `decision` | the answer; at most one per question |
+| `rejected` | an option turned down, with the reason |
+| `open` | still unresolved, someone has to confirm it |
+
+Any element can carry one, the same way any element can carry
+`data.review`. Two reasons to bother. A reader learns one visual language
+instead of decoding whatever colours you picked, and the canvas becomes
+answerable: what did we decide, what did we assume, what is still open.
+Mark assumptions especially -- they are the first thing the human has to
+check, and they are invisible otherwise.
+
+A word outside the list is stored, warned about, and renders no chip.
+
+### Push the detail down into a sub-canvas
+
+An answer that needs its evidence on screen and its reasoning legible is
+usually two canvases, not one crowded board. `canvas_create_sub_canvas`
+makes a child canvas and drops a linking tile onto the parent in one call.
+
+Keep the argument on the parent: the question, the options, the decision,
+what is still open. Put the bulk behind a tile: the five extracted spec
+tables, the full dimension sheet, the page crops. The tile is labelled and
+double-clicks through, so nothing is hidden, it is one level down.
+
+The test is whether the parent still reads at the zoom a person opens it
+at. If they have to pan to find the conclusion, move detail down.
+
+### A decision canvas, worked
+
+Four areas, a title, and the conclusion standing out. Positions are the
+top-left corner of each element; children sit inside their area's box.
+
+```json
+[
+  {"node_type": "text", "label": "", "x": 40, "y": 0,
+   "data": {"text": "Pump selection - 5 m lift, continuous, indoor", "text_size": "2xl", "width": 900}},
+  {"node_type": "text", "label": "", "x": 40, "y": 60,
+   "data": {"text": "Read left to right. Cards say their own role.", "text_size": "sm", "width": 900}},
+
+  {"node_type": "area", "label": "1. Requirements", "x": 40, "y": 120,
+   "data": {"subtitle": "Duty point and site constraints", "width": 320, "height": 480}},
+  {"node_type": "fact", "label": "R1 - Static lift 5 m", "x": 70, "y": 180,
+   "data": {"text": "Basin to top of waterfall.", "role": "criterion"}},
+  {"node_type": "fact", "label": "R4 - Flow 15-30 m3/h", "x": 70, "y": 280,
+   "data": {"text": "For a 1 m wide sheet. Confirm.", "role": "assumption"}},
+
+  {"node_type": "area", "label": "2. Screening", "x": 400, "y": 120,
+   "data": {"subtitle": "Which sizes can do it", "width": 380, "height": 480}},
+  {"node_type": "spec", "label": "Screening at 5 m head", "x": 430, "y": 180,
+   "data": {"rows": [
+     {"key": "LKH-10", "value": "PASS - 17 m3/h", "source_ref": {"slug": "lkh", "page": 4, "region_id": "r1"}},
+     {"key": "LKH-5", "value": "FAIL - shut-off too low", "source_ref": {"slug": "lkh", "page": 4, "region_id": "r1"}}
+   ]}},
+
+  {"node_type": "area", "label": "3. Decision", "x": 820, "y": 120,
+   "data": {"subtitle": "Selected pump", "width": 380, "height": 480}},
+  {"node_type": "fact", "label": "LKH-10, 4-pole", "x": 850, "y": 180,
+   "data": {"text": "17 m3/h at 5 m. Shut-off 9 m: margin over duty.",
+            "role": "decision", "text_size": "lg", "width": 320}},
+  {"node_type": "fact", "label": "LKH-5", "x": 850, "y": 330,
+   "data": {"text": "Only reaches 5 m at run-out.", "role": "rejected"}},
+
+  {"node_type": "area", "label": "4. Open before ordering", "x": 1240, "y": 120,
+   "data": {"subtitle": "Confirm these, then order", "width": 340, "height": 480}},
+  {"node_type": "fact", "label": "1 - Confirm the flow", "x": 1270, "y": 180,
+   "data": {"text": "Waterfall width decides LKH-10 vs LKH-20.", "role": "open"}}
+]
+```
+
+Then edges: evidence edges from each `spec` back to the document card,
+and labelled edges between the areas' key cards carrying the reasoning
+("fails at 5 m", "passes with margin"). Finish with
+`canvas_propose_set` so the human rules on the answer as one thing.
+
+### Spec nodes carry structured rows, not prose
+
+When an extraction yields several values — say every pump ID and its
+diameter — put them in `data.rows`, one row per fact. Each row is
+`{key, value, source_ref}`, where `source_ref` is `{slug, page, bbox?,
+region_id?, item_id?, cell?}` grounding that value to its source page.
+The optional selectors point below the region: `item_id` names one
+silver item (`p<page>-i<n>`, listed by `inspect_region` under
+`members`), and `cell` is `{row, col}` of a table. Resolution
+precedence is cell > item > region > bbox — `resolve_source_ref`
+answers with the tightest stored bbox and names the layer that
+resolved. Enriched spec rows record the matched cell automatically:
+when a row's value matches one gold table cell, the row's ref gains
+`cell: {row, col}` alongside the cached cell bbox. Rows render as a
+clean table on the canvas, and every row stays clickable back to the
+page it came from.
+
+Do NOT pack those values into `data.description`. The description is a
+short prose caption only; a multi-value answer dumped there shows up as
+one blob of text with no per-value provenance and no table view.
+
+```json
+{
+  "node_type": "spec",
+  "label": "Pump diameters",
+  "data": {
+    "rows": [
+      {"key": "P-101", "value": "150 mm", "source_ref": {"slug": "datasheet", "page": 3}},
+      {"key": "P-102", "value": "200 mm", "source_ref": {"slug": "datasheet", "page": 3}}
+    ]
+  }
+}
+```
+
+`canvas_add_node` returns a non-fatal `hint` when a `spec` node is
+created with a `description` but no `rows` — a reminder to move tabular
+facts into rows. The write still succeeds; prose-only specs are allowed.
 
 ## `anchor_pdfs` — ingest engineering PDFs
 
@@ -223,9 +573,26 @@ regions tagged with the page number and bounding box they came from.
   `GET /api/search?q=…`. Embeddings are created during `ingest_pdf`; if a
   doc was ingested without them, run `embed` first (`anchor embed`).
 - `list_documents()` — every document and its current status.
-- `get_document_index(slug)` — silver outline (sections, tables, figures).
+- `list_entities(slug)` - what a document is ABOUT: every entity its gold
+  regions name, with counts and pages. A title and a page count do not tell
+  you that a four-page leaflet covers thirteen product models. Call this
+  before concluding what a document contains, and before telling a user the
+  corpus holds only one of something.
+- `get_document_index(slug)` - a map of the document: outline, plus one
+  entry per table and figure with its caption, shape, header row,
+  first-column values, page and bbox. Table cell content is left out;
+  read a table with `get_page_text(slug, page)` or, on a gold document,
+  `inspect_region`. `include_content=true` returns every cell in one
+  result and is much larger, so reach for it only when you truly need
+  the whole document at once.
 - `get_gold_regions(slug, page?)` — structured regions with `page + bbox`.
 - `get_page_text(slug, page)` — polished or raw page markdown.
+- `get_crop(slug, "<page>/<region_id>.png")` - LOOK at one region: the crop
+  comes back as an image the harness displays, so you can read a chart,
+  diagram or scanned table by eye. `get_page_image(slug, page)` does the
+  same for a whole page. Use these rather than opening files under
+  `.anchor_data/` yourself; reading the store directly bypasses the tool
+  surface and may not even be permitted.
 
 ### Finding content — search first, then retrieve
 
@@ -279,6 +646,11 @@ session protocol:
    - Name region geometry with `member_item_ids: ["p3-i0", "p3-i1"]`;
      the server computes the bbox. Use `approx_bbox` only when no
      candidate covers a visual.
+   - For one logical part of a table, use `table_slice` with the table
+     candidate id and exact `rows` plus optional `columns`, for example
+     `{"candidate_id": "p3-i2", "rows": [0, 4, 5], "columns": [0, 1]}`.
+     Candidate cells provide the indexes. The server keeps only those cells
+     and computes cell-level content and bbox provenance.
    - A rejection returns `errors` naming the bad fields; fix and
      resubmit (resubmitting a page replaces it).
 3. For documents over ~4 pages, fan out: spawn subagents, each given

@@ -1,6 +1,11 @@
 import { create } from "zustand";
 
-import type { CanvasEvent } from "@/realtime/sseClient";
+import type {
+  CanvasEvent,
+  EventActor,
+  PresenceEntry,
+  PresencePayload,
+} from "@/realtime/sseClient";
 
 type Node = {
   id: string;
@@ -201,7 +206,50 @@ export type Activity = {
   type: string;
   text: string;
   at: number;
+  /** Display name of who caused the event (#322): actor label, or kind. */
+  by?: string;
 };
+
+/** Human-readable name for an event's actor ("browser", "claude-code", ...). */
+export function actorLabel(actor?: EventActor | null): string | undefined {
+  if (!actor) return undefined;
+  return actor.label || actor.kind;
+}
+
+const NODE_TOUCHING_EVENTS = new Set([
+  "NodeAdded",
+  "NodeMoved",
+  "NodeResized",
+  "NodeUpdated",
+  "NodeReparented",
+]);
+
+/**
+ * Merge a `data` patch the way the backend does (#192): nested objects
+ * merge recursively and a `null` value deletes its key. The canvas store
+ * has to agree with the server, or a patch that touches one field looks
+ * locally like it erased the rest.
+ */
+function mergeData(
+  base: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null) {
+      delete out[k];
+      continue;
+    }
+    const prev = out[k];
+    const bothObjects =
+      v && typeof v === "object" && !Array.isArray(v)
+      && prev && typeof prev === "object" && !Array.isArray(prev);
+    out[k] = bothObjects
+      ? mergeData(prev as Record<string, unknown>, v as Record<string, unknown>)
+      : v;
+  }
+  return out;
+}
 
 function describeEvent(
   evt: CanvasEvent,
@@ -259,8 +307,24 @@ type State = {
   nodes: Record<string, Node>;
   edges: Record<string, Edge>;
   activity: Activity[];
+  /**
+   * Latest actor to touch each node, from live SSE events only (#322).
+   * The snapshot carries no attribution, so this covers edits seen during
+   * this session; persisted per-node attribution is the fuller #325 slice.
+   */
+  lastEditors: Record<string, EventActor>;
+  /**
+   * Live presence roster (who is on this canvas right now), replaced
+   * wholesale by every `presence` SSE event — the server always sends the
+   * full roster, so no client-side reconciliation is needed. Per-serve,
+   * in-memory server state: empty until the first presence event lands.
+   */
+  presence: PresenceEntry[];
+  /** This connection's own roster entry (`you` on the initial event). */
+  presenceSelfId: string | null;
   setSnapshot: (snap: Snapshot) => void;
   applyEvent: (evt: CanvasEvent) => void;
+  applyPresence: (payload: PresencePayload) => void;
   reset: () => void;
 };
 
@@ -270,6 +334,9 @@ export const useCanvasStore = create<State>((set) => ({
   nodes: {},
   edges: {},
   activity: [],
+  lastEditors: {},
+  presence: [],
+  presenceSelfId: null,
   setSnapshot: (snap) => set({
     slug: snap.slug,
     version: snap.version,
@@ -282,6 +349,7 @@ export const useCanvasStore = create<State>((set) => ({
       return [e.id, e];
     })),
     activity: [],
+    lastEditors: {},
   }),
   applyEvent: (evt) => set((state) => {
     if (evt.type === "IngestProgress") {
@@ -376,9 +444,19 @@ export const useCanvasStore = create<State>((set) => ({
     }
     if (state.version >= evt.version) return state;
     const text = describeEvent(evt, state.nodes, state.edges);
+    const by = actorLabel(evt.actor);
     const nodes = { ...state.nodes };
     const edges = { ...state.edges };
     const p = evt.payload as Record<string, unknown>;
+    // Track the latest actor per node from the live stream (#322).
+    const lastEditors = { ...state.lastEditors };
+    const touchedNodeId = p.id as string | undefined;
+    if (touchedNodeId && evt.actor && NODE_TOUCHING_EVENTS.has(evt.type)) {
+      lastEditors[touchedNodeId] = evt.actor;
+    }
+    if (evt.type === "NodeRemoved" && touchedNodeId) {
+      delete lastEditors[touchedNodeId];
+    }
     switch (evt.type) {
       case "NodeAdded":
         nodes[p.id as string] = {
@@ -441,7 +519,14 @@ export const useCanvasStore = create<State>((set) => ({
           const data: Record<string, unknown> = { ...(cur.data ?? {}) };
           for (const [k, v] of Object.entries(fields)) {
             if (k === "data" && v && typeof v === "object") {
-              Object.assign(next, { data: { ...(v as Record<string, unknown>) } });
+              // Merge, do not replace. The backend merges a `data` patch
+              // into the stored data (null deletes a key); replacing it
+              // here meant any partial write, for example one that only
+              // sets a font size, wiped every other field locally until the
+              // page was reloaded.
+              Object.assign(next, {
+                data: mergeData(cur.data ?? {}, v as Record<string, unknown>),
+              });
             } else if (known.has(k)) {
               Object.assign(next, { [k]: v });
             } else {
@@ -507,8 +592,9 @@ export const useCanvasStore = create<State>((set) => ({
           nodes: {},
           edges: {},
           version: evt.version,
+          lastEditors: {},
           activity: [
-            { id: evt.id, type: evt.type, text, at: Date.now() },
+            { id: evt.id, type: evt.type, text, at: Date.now(), by },
             ...state.activity,
           ].slice(0, 8),
         };
@@ -518,11 +604,21 @@ export const useCanvasStore = create<State>((set) => ({
       nodes,
       edges,
       version: evt.version,
+      lastEditors,
       activity: [
-        { id: evt.id, type: evt.type, text, at: Date.now() },
+        { id: evt.id, type: evt.type, text, at: Date.now(), by },
         ...state.activity,
       ].slice(0, 8),
     };
   }),
-  reset: () => set({ slug: null, version: 0, nodes: {}, edges: {}, activity: [] }),
+  applyPresence: (payload) => set((state) => ({
+    presence: Array.isArray(payload.present) ? payload.present : [],
+    // `you` only rides the initial roster after (re)connect; keep the
+    // known self id on later broadcasts.
+    presenceSelfId: payload.you ?? state.presenceSelfId,
+  })),
+  reset: () => set({
+    slug: null, version: 0, nodes: {}, edges: {}, activity: [], lastEditors: {},
+    presence: [], presenceSelfId: null,
+  }),
 }));

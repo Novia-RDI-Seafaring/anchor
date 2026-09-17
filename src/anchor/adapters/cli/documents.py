@@ -8,7 +8,7 @@ from pathlib import Path
 
 import typer
 
-from anchor.adapters.cli.common import DEFAULT_DATA_DIR, _emit_bytes
+from anchor.adapters.cli.common import DEFAULT_DATA_DIR, _emit_bytes, read_json_arg
 from anchor.adapters.cli.document_synopsis import synopsis
 from anchor.adapters.cli.services import _build_real_services
 from anchor.extensions.anchor_pdfs.core.region_inspect import (
@@ -140,7 +140,7 @@ def search(
     _, _, _, ingest_svc, _ = _build_real_services(data_dir)
     if ingest_svc.embedder is None:
         typer.echo(
-            "no embedder wired - install sentence-transformers (uv add sentence-transformers)",
+            "no embedder wired - the local onnxruntime embedder failed to build",
             err=True,
         )
         raise typer.Exit(code=1)
@@ -150,7 +150,14 @@ def search(
 
 def derive_region(
     slug: str = typer.Argument(..., help="Document slug."),
-    parent_region_id: str = typer.Argument(..., help="Parent locator, e.g. p2/r1. Bare ids must be unique."),
+    parent_region_id: str = typer.Argument(
+        ...,
+        help=(
+            "Region id the new region derives from: 'p4/r1' (page-qualified) "
+            "or a bare 'r1'. A bare id matching regions on multiple pages is "
+            "an error listing the candidate pages."
+        ),
+    ),
     region: str = typer.Option(
         ..., "--region", help="The derived region as a JSON string, or @path to a JSON file."
     ),
@@ -160,9 +167,11 @@ def derive_region(
 
     The consumer side of an OIP region producer: inherits the parent's
     source_ref (provenance) and records derived_from, then stores it durably.
-    Re-run `anchor embed <slug>` to make the new region searchable.
+    Region ids are only unique per page, so qualify the parent with its page
+    ('p4/r1') when the bare id is ambiguous. Re-run `anchor embed <slug>` to
+    make the new region searchable.
     """
-    raw = Path(region[1:]).read_text(encoding="utf-8") if region.startswith("@") else region
+    raw = read_json_arg(region)
     try:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -174,6 +183,55 @@ def derive_region(
     except ValueError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from None
+    typer.echo(json.dumps(out, indent=2))
+
+
+def remove_region(
+    slug: str = typer.Argument(..., help="Document slug."),
+    region_id: str = typer.Argument(
+        ..., help="Region id to remove, e.g. 'p4/r2' or a bare 'r2'."
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Remove one OIP-derived gold region (the cleanup half of derive-region).
+
+    Only regions carrying `derived_from` are deletable; model-extracted gold
+    is the ground truth of an ingest pass and stays. Drops the region's
+    vector from embeddings.json when one exists so search stays consistent.
+    """
+    _, _, _, ingest_svc, _ = _build_real_services(data_dir)
+    try:
+        out = asyncio.run(ingest_svc.remove_region(slug, region_id))
+    except ValueError as exc:  # includes RegionNotRemovableError
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(json.dumps(out, indent=2))
+
+
+def resolve_ref(
+    slug: str = typer.Argument(..., help="Document slug."),
+    ref: str = typer.Option(
+        ..., "--ref", help="The source_ref as a JSON string, or @path to a JSON file."
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Resolve a source_ref to the most precise stored evidence bbox.
+
+    Precedence: cell {row, col} > item_id (silver item 'p<page>-i<n>') >
+    region_id > the ref's own bbox. The answer carries `precision` naming
+    the layer that resolved.
+    """
+    raw = read_json_arg(ref)
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        typer.echo(f"--ref is not valid JSON: {exc}", err=True)
+        raise typer.Exit(code=1) from None
+    _, _, _, ingest_svc, _ = _build_real_services(data_dir)
+    out = asyncio.run(ingest_svc.resolve_source_ref(slug, payload))
+    if out is None:
+        typer.echo("unresolvable ref (no page, and no region/item/bbox to answer from)", err=True)
+        raise typer.Exit(code=1)
     typer.echo(json.dumps(out, indent=2))
 
 
@@ -254,14 +312,18 @@ def embed(
 ) -> None:
     """Embed gold regions of a document and persist to embeddings.json.
 
-    Uses the local sentence-transformer embedder (BAAI/bge-small-en-v1.5
-    by default). Auto-runs at the end of `anchor ingest`; this command
+    Uses the environment's configured `embed_model`: the local
+    sentence-transformer BAAI/bge-small-en-v1.5 is the local-provider
+    default, but a configured remote model (e.g. text-embedding-3-small)
+    is used instead when the environment names one. Note that `anchor
+    search` skips documents whose stored embed_model does not match the
+    active one. Auto-runs at the end of `anchor ingest`; this command
     backfills already-ingested docs without re-running the full pipeline.
     """
     _, _, _, ingest_svc, doc_store = _build_real_services(data_dir)
     if ingest_svc.embedder is None:
         typer.echo(
-            "no embedder wired - install sentence-transformers (uv add sentence-transformers)",
+            "no embedder wired - the local onnxruntime embedder failed to build",
             err=True,
         )
         raise typer.Exit(code=1)
@@ -295,15 +357,37 @@ def embed(
 
 def index(
     slug: str,
+    include_content: bool = typer.Option(
+        False,
+        "--include-content",
+        help="Include full table cell content (much larger output).",
+    ),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
-    """Print the silver index for a document."""
+    """Print the silver index for a document.
+
+    Table cell content is left out unless --include-content is given; read a
+    table with `anchor page-text <slug> <page>` instead."""
     _, _, _, _, doc_store = _build_real_services(data_dir)
-    out = asyncio.run(doc_store.get_index(slug))
+    out = asyncio.run(doc_store.get_index(slug, include_content=include_content))
     if out is None:
         typer.echo(f"no index for {slug!r}", err=True)
         raise typer.Exit(code=1)
     typer.echo(json.dumps(out, indent=2))
+
+
+def entities(
+    slug: str,
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Print what a document is about: entities named in its gold regions.
+
+    A title and a page count do not say that a four-page leaflet covers
+    thirteen product models. This does."""
+    from anchor.extensions.anchor_pdfs.core.entities import list_entities
+
+    _, _, _, _, doc_store = _build_real_services(data_dir)
+    typer.echo(json.dumps(asyncio.run(list_entities(doc_store, slug)), indent=2))
 
 
 def regions(
@@ -501,6 +585,12 @@ def page_image(
         show_default=False,
     ),
     page: int | None = typer.Option(None, "--page", "-p", help="Page number (option form)."),
+    dpi: int | None = typer.Option(
+        None,
+        "--dpi",
+        help="Re-render the page from the bronze PDF at this DPI (72-600) "
+        "instead of serving the ~150 dpi silver image. The variant is cached.",
+    ),
     copy_to: Path | None = typer.Option(None, "--copy-to"),
     out: str | None = typer.Option(None, "--out", help="Pass '-' to stream the bytes to stdout."),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
@@ -511,6 +601,11 @@ def page_image(
     Both forms are equivalent: ``anchor page-image SLUG PAGE`` and
     ``anchor page-image SLUG --page PAGE`` do the same thing.
     """
+    from anchor.extensions.anchor_pdfs.core.region_crops import (
+        CropUnavailable,
+        get_page_image,
+    )
+
     if page_pos is not None and page is not None:
         typer.echo("error: supply page as a positional argument or --page, not both", err=True)
         raise typer.Exit(code=2)
@@ -518,21 +613,52 @@ def page_image(
     if effective_page is None:
         typer.echo("error: page is required (positional or --page/-p)", err=True)
         raise typer.Exit(code=2)
-    _, _, _, _, doc_store = _build_real_services(data_dir)
-    path = asyncio.run(doc_store.get_page_image_path(slug, effective_page))
+    _, _, _, ingest_svc, doc_store = _build_real_services(data_dir)
+    try:
+        path = asyncio.run(
+            get_page_image(doc_store, ingest_svc.renderer, slug, effective_page, dpi=dpi)
+        )
+    except CropUnavailable as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from None
     _emit_bytes(path, copy_to=copy_to, out=out, label=f"{slug} page {effective_page}")
 
 
 def crop(
     slug: str,
-    rel_path: str,
+    rel_path: str = typer.Argument(
+        ..., help="Region address '<page>/<region_id>.png', e.g. '4/r1.png' "
+        "('p4/r1' is also accepted).",
+    ),
+    dpi: int | None = typer.Option(
+        None,
+        "--dpi",
+        help="Render DPI (72-600, default 300). An explicit value re-renders "
+        "and overwrites the cached crop.",
+    ),
     copy_to: Path | None = typer.Option(None, "--copy-to"),
     out: str | None = typer.Option(None, "--out"),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
-    """Gold-extracted region crop (e.g. '4/r1.png') by its rel_path."""
-    _, _, _, _, doc_store = _build_real_services(data_dir)
-    path = asyncio.run(doc_store.get_crop_path(slug, rel_path))
+    """One gold region's crop PNG, e.g. 'anchor crop my-doc 4/r1.png'.
+
+    Rendered lazily from the bronze PDF on first request (region bbox plus a
+    small margin, 300 dpi) and cached at gold/<slug>/pages/<page>/<id>.png,
+    so already-ingested documents work without re-ingesting.
+    """
+    from anchor.extensions.anchor_pdfs.core.region_crops import (
+        CropUnavailable,
+        get_region_crop,
+    )
+
+    _, _, _, ingest_svc, doc_store = _build_real_services(data_dir)
+    try:
+        path = asyncio.run(
+            get_region_crop(doc_store, ingest_svc.renderer, slug, rel_path, dpi=dpi)
+        )
+    except CropUnavailable as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from None
     _emit_bytes(path, copy_to=copy_to, out=out, label=f"{slug} crop {rel_path}")
 
 
@@ -560,9 +686,12 @@ def register_document_commands(app: typer.Typer) -> None:
     app.command("ingest-status")(ingest_status)
     app.command()(search)
     app.command("derive-region")(derive_region)
+    app.command("remove-region")(remove_region)
+    app.command("resolve-ref")(resolve_ref)
     app.command()(extract)
     app.command()(embed)
     app.command()(index)
+    app.command()(entities)
     app.command()(regions)
     app.command("inspect-region")(inspect_region_cmd)
     app.command("region-content")(region_content_cmd)

@@ -24,6 +24,12 @@ class WorkspaceStore(Protocol):
         """Persist event; return its assigned version. Idempotent on event.id."""
         raise NotImplementedError
 
+    async def read_events(self, slug: str, *, after_version: int = 0) -> list[DomainEvent]:
+        """Return the stored events with ``version > after_version``, in
+        ascending version order. Read-only — powers the ``canvas_changes``
+        fold (#325); no storage change."""
+        raise NotImplementedError
+
     async def snapshot(self, slug: str, state: Workspace) -> None:
         """Write the current state as a replay checkpoint."""
         raise NotImplementedError

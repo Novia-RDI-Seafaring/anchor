@@ -173,7 +173,44 @@ def tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "get_document_index",
-            "description": "Silver index for a document (outline, tables, figures).",
+            "description": (
+                "Silver index for a document (outline, tables, figures): a map "
+                "of what the document contains. Each table entry carries its "
+                "caption, shape, header row and first-column values to identify "
+                "it, plus page + bbox to address it. Table cell content is left "
+                "out by default because it dominates the payload; read a table "
+                "with get_page_text(slug, page) or, for gold documents, "
+                "inspect_region. Pass include_content=true only when you need "
+                "every cell of every table in one result."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {"type": "string"},
+                    "include_content": {
+                        "type": "boolean",
+                        "description": (
+                            "Include full table cell content. Default false. "
+                            "The full form can be very large: on a four-page "
+                            "datasheet it is roughly eight times the map form."
+                        ),
+                    },
+                },
+                "required": ["slug"],
+            },
+        },
+        {
+            "name": "list_entities",
+            "description": (
+                "What a document is ABOUT: every entity named in its gold "
+                "regions, with how often each appears and on which pages. "
+                "list_documents gives you a title and a page count, which does "
+                "not tell you that a four-page leaflet covers thirteen product "
+                "models. Call this before concluding what a document does or "
+                "does not contain, and before saying a corpus holds only one of "
+                "something. Sorted by frequency; use an entity name with "
+                "compose_synopsis or search_documents to go deeper."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {"slug": {"type": "string"}},
@@ -275,26 +312,59 @@ def tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "get_page_image",
-            "description": "Page screenshot as a path (default) or base64. Use format='base64' from off-machine agents.",
+            "description": (
+                "Look at a whole page: its screenshot, returned inline by default so you can read it "
+                "by eye rather than opening the file from disk yourself. 'path' and 'base64' are "
+                "available for callers that want the file or the raw bytes. Pass dpi to re-render "
+                "from the bronze PDF at higher resolution (clamped to 72-600; the stored default is "
+                "~150 dpi, too coarse for e.g. chart tracing)."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "slug": {"type": "string"},
                     "page": {"type": "integer"},
-                    "format": {"type": "string", "enum": ["path", "base64"], "default": "path"},
+                    "dpi": {"type": "integer", "description": "Optional re-render DPI (72-600); cached per DPI."},
+                    "format": {
+                        "type": "string",
+                        "enum": ["inline", "path", "base64"],
+                        "default": "inline",
+                        "description": (
+                            "'inline' (default) returns an MCP image the harness displays. 'path' "
+                            "returns the file path on this machine; 'base64' returns the bytes in "
+                            "the JSON envelope for off-machine callers."
+                        ),
+                    },
                 },
                 "required": ["slug", "page"],
             },
         },
         {
             "name": "get_crop",
-            "description": "A gold-extracted region crop (PNG/SVG/PDF) by its rel_path (returned by get_gold_regions). Path or base64.",
+            "description": (
+                "Look at one gold region: its crop PNG, addressed as '<page>/<region_id>.png' "
+                "(e.g. '4/r1.png'; 'p4/r1' also accepted). Returns the image inline by default, so "
+                "you can read a chart, diagram or table by eye -- use this instead of opening the "
+                "file from disk yourself. Rendered lazily from the bronze PDF on first request "
+                "(region bbox + margin, 300 dpi) and cached; pass dpi to re-render at another "
+                "resolution."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "slug": {"type": "string"},
-                    "rel_path": {"type": "string", "description": "Like '4/r1.png' - comes from region.crops.{png,svg,pdf}."},
-                    "format": {"type": "string", "enum": ["path", "base64"], "default": "path"},
+                    "rel_path": {"type": "string", "description": "'<page>/<region_id>.png' like '4/r1.png' ('p4/r1' also accepted)."},
+                    "dpi": {"type": "integer", "description": "Optional render DPI (72-600, default 300); an explicit value re-renders the cached crop."},
+                    "format": {
+                        "type": "string",
+                        "enum": ["inline", "path", "base64"],
+                        "default": "inline",
+                        "description": (
+                            "'inline' (default) returns an MCP image the harness displays, so you can "
+                            "see the region. 'path' returns the file path on this machine; 'base64' "
+                            "returns the bytes in the JSON envelope for off-machine callers."
+                        ),
+                    },
                 },
                 "required": ["slug", "rel_path"],
             },
@@ -356,19 +426,75 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "and records derived_from, then stores it durably. Example: a "
                 "chart digitizer returns a chart_series; derive_region files it "
                 "beside the chart region it came from. Re-run `embed` to make "
-                "it searchable. Bare ids must be unique; conflicting source overrides are rejected."
+                "it searchable. parent_region_id accepts 'p4/r1', '4/r1', or a "
+                "bare 'r1'; region ids are only unique per page, so a bare id "
+                "matching regions on multiple pages fails with the candidate "
+                "pages instead of silently picking the first."
+                " Conflicting source overrides are rejected."
             ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "slug": {"type": "string"},
-                    "parent_region_id": {"type": "string"},
+                    "parent_region_id": {
+                        "type": "string",
+                        "description": (
+                            "'p4/r1' (page-qualified) or a bare 'r1'; bare ids "
+                            "matching multiple pages are rejected as ambiguous."
+                        ),
+                    },
                     "region": {
                         "type": "object",
                         "description": "The derived region: id, kind, title, content.data, ...",
                     },
                 },
                 "required": ["slug", "parent_region_id", "region"],
+            },
+        },
+        {
+            "name": "remove_region",
+            "description": (
+                "Remove one OIP-derived gold region - the cleanup half of "
+                "derive_region. Only regions carrying derived_from are "
+                "deletable; model-extracted gold is the ground truth of an "
+                "ingest pass and is refused. The region id accepts 'p4/r2', "
+                "'4/r2', or a bare 'r2' (first match across pages). Also "
+                "drops the region's vector from the embedding index so "
+                "search stays consistent."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {"type": "string"},
+                    "region_id": {"type": "string"},
+                },
+                "required": ["slug", "region_id"],
+            },
+        },
+        {
+            "name": "resolve_source_ref",
+            "description": (
+                "Resolve a source_ref to the most precise stored evidence "
+                "bbox. Precedence: cell {row, col} > item_id (silver item, "
+                "'p<page>-i<n>') > region_id > the ref's own bbox. Returns "
+                "{slug, page, bbox, precision} where precision names the "
+                "layer that answered, so a viewer or citation can trust the "
+                "geometry. A selector without stored geometry falls through "
+                "to the next layer; a legacy ref resolves exactly as before."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {"type": "string"},
+                    "ref": {
+                        "type": "object",
+                        "description": (
+                            "The source_ref: {page?, region_id?, item_id?, "
+                            "cell?: {row, col}, bbox?}"
+                        ),
+                    },
+                },
+                "required": ["slug", "ref"],
             },
         },
         {

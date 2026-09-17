@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import copy
 import json as _json
+from pathlib import Path
 from typing import Any
 
 from mcp.server import Server
@@ -26,6 +27,7 @@ from anchor.adapters.mcp.server_instructions import HELP_RESOURCE_TEXT, INSTRUCT
 from anchor.adapters.mcp.services import active_extensions_for_bundle, fmu_tools_available
 from anchor.adapters.project_runtime import ProjectRuntime
 from anchor.adapters.status import build_status_summary
+from anchor.core.events.actor import Actor
 from anchor.extensions.anchor_cad import mcp_handlers as cad_handlers
 from anchor.extensions.anchor_fmus import mcp_handlers as fmu_handlers
 from anchor.extensions.anchor_pdfs import mcp_handlers as pdf_handlers
@@ -342,6 +344,21 @@ def build_mcp_server(
         assert bundle is not None
         return bundle
 
+    def _client_actor() -> Actor:
+        """Actor for canvas writes over MCP (#322): always an agent, labeled
+        with the connected client's self-declared name (``clientInfo.name``
+        from the initialize handshake) when the session exposes it."""
+        label = "mcp-agent"
+        try:
+            params = app.request_context.session.client_params
+            client_info = getattr(params, "clientInfo", None)
+            client_name = getattr(client_info, "name", None)
+            if client_name:
+                label = str(client_name)
+        except Exception:  # noqa: BLE001 -- attribution must never break a call
+            pass
+        return Actor(kind="agent", label=label)
+
     @app.list_resources()
     async def list_resources() -> list[Resource]:
         return [
@@ -458,7 +475,9 @@ def build_mcp_server(
                 text = _json.dumps(_build_server_info(b.config.data_dir))
             elif name == handlers_extensions.TOOL_NAME:
                 b = get_bundle(args.pop("project", None))
-                text = handlers_extensions.call_tool(b.extension_status)
+                text = handlers_extensions.call_tool(
+                    b.extension_status, b.config.data_dir
+                )
             elif name in status_names:
                 b = get_bundle(args.pop("project", None))
                 summary = await build_status_summary(
@@ -468,12 +487,17 @@ def build_mcp_server(
             elif name in canvas_names:
                 b = get_bundle(args.pop("project", None))
 
-                text = await handlers_canvas.call_tool(b.workspace, name, args)
+                text = await handlers_canvas.call_tool(
+                    b.workspace, name, args,
+                    actor=_client_actor(), data_dir=Path(b.config.data_dir),
+                )
             elif name in intent_names:
                 b = get_bundle(args.pop("project", None))
                 if b.intents is None:
                     raise RuntimeError("intent queue is not available")
-                text = await handlers_intents.call_tool(b.intents, name, args)
+                text = await handlers_intents.call_tool(
+                    b.intents, name, args, actor=_client_actor(),
+                )
             elif name in fmu_names:
                 b = get_bundle(args.pop("project", None))
                 if b.fmu is None:

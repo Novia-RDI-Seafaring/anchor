@@ -14,7 +14,7 @@
  *   2. The node BODY still bubbles a double-click to the node-level handler
  *      so #27's "double-click the node to open the viewer" keeps working.
  */
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -300,6 +300,61 @@ describe("DocumentPrimitive click isolation", () => {
  * on the last referenced page. Deliberate page navigation (arrows) and a
  * pinned/sticky reference (a selected referencing node) survive that revert.
  */
+describe("DocumentPrimitive selector precision", () => {
+  it("resolves a cell ref so the preview boxes the cell, not the whole section", async () => {
+    // The dock already lands on the cell; hover used to drop the selector, so
+    // this preview drew a box around the whole Temperature section while the
+    // dock highlighted one value. The two surfaces must agree.
+    const resolveRef = vi
+      .spyOn(documents, "resolveRef")
+      .mockResolvedValue({ page: 2, bbox: [10, 20, 30, 40], precision: "cell" } as never);
+    await renderDoc(READY_DOC);
+
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({
+        slug: "pump",
+        page: 2,
+        region_id: "r9",
+        bbox: [0, 0, 500, 200],
+        cell: { row: 1, col: 1 },
+      });
+    });
+
+    await waitFor(() => expect(resolveRef).toHaveBeenCalled());
+    const [slugArg, refArg] = resolveRef.mock.calls[0]!;
+    expect(slugArg).toBe("pump");
+    expect((refArg as { cell?: unknown }).cell).toEqual({ row: 1, col: 1 });
+  });
+
+  it("does not resolve a ref that carries no selector", async () => {
+    const resolveRef = vi.spyOn(documents, "resolveRef").mockResolvedValue(null as never);
+    await renderDoc(READY_DOC);
+
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({
+        slug: "pump", page: 2, region_id: "r9", bbox: [0, 0, 500, 200],
+      });
+    });
+
+    expect(resolveRef).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the region when resolving fails, so it never shows nothing", async () => {
+    vi.spyOn(documents, "resolveRef").mockRejectedValue(new Error("boom"));
+    await renderDoc(READY_DOC);
+
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({
+        slug: "pump", page: 2, region_id: "r9", bbox: [0, 0, 500, 200], cell: { row: 1, col: 1 },
+      });
+    });
+
+    // Still flipped to the page and still rendering; the region-level
+    // highlight remains the graceful fallback.
+    expect(screen.getByText(/page 2 \/ 3/)).toBeTruthy();
+  });
+});
+
 describe("DocumentPrimitive hover-driven page revert (#187)", () => {
   it("hovering a node citing page N flips the preview to N", async () => {
     await renderDoc(READY_DOC);

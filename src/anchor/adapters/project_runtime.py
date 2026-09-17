@@ -19,10 +19,12 @@ if TYPE_CHECKING:
     from anchor.core.ports.event_bus import EventBus
     from anchor.core.services.intent_service import IntentService
     from anchor.core.services.workspace_service import WorkspaceService
+    from anchor.core.workspace.node_types import NodeTypeRegistry
     from anchor.extensions.anchor_cad.core.services import CadService
     from anchor.extensions.anchor_fmus.core.services import FmuService
     from anchor.extensions.anchor_pdfs.core.ingest.session import IngestSessionService
     from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
+    from anchor.extensions.anchor_pdfs.core.ports.embedder import Embedder
     from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
     from anchor.extensions.anchor_sysml.core.services import SysmlService
     from anchor.infra.config import AnchorConfig
@@ -105,8 +107,14 @@ def build_ingest_service(
     doc_store: DocStore,
     *,
     egress: EgressPolicy | None = None,
+    embedder: Embedder | None = None,
 ) -> IngestService:
-    """Build the keyed PDF ingest module for one project."""
+    """Build the keyed PDF ingest module for one project.
+
+    ``embedder`` lets a caller that builds several ingest services for one
+    project share a single embedder, so one project holds one model rather
+    than one per service.
+    """
     from anchor.extensions.anchor_pdfs.core.services import IngestService
     from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
     from anchor.extensions.anchor_pdfs.infra.llm.openai_md_polisher import OpenAIPageMdPolisher
@@ -118,11 +126,12 @@ def build_ingest_service(
     from anchor.infra.egress_policy import resolve_egress_policy
 
     policy = egress or resolve_egress_policy(config)
-    embedder = build_embedder(
-        model=config.embed_model,
-        api_key=policy.api_key,
-        base_url=policy.base_url,
-    )
+    if embedder is None:
+        embedder = build_embedder(
+            model=config.embed_model,
+            api_key=policy.api_key,
+            base_url=policy.base_url,
+        )
     return IngestService(
         doc_store,
         bus,
@@ -148,8 +157,13 @@ def build_ingest_session_service(
     doc_store: DocStore,
     *,
     egress: EgressPolicy | None = None,
+    embedder: Embedder | None = None,
 ) -> IngestSessionService:
-    """Build harness ingestion against an existing project document store."""
+    """Build harness ingestion against an existing project document store.
+
+    ``embedder`` shares one model with the keyed ingest service — see
+    :func:`build_ingest_service`.
+    """
     from anchor.extensions.anchor_pdfs.core.ingest.session import IngestSessionService
     from anchor.extensions.anchor_pdfs.infra.fs_session_store import FsIngestSessionStore
     from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
@@ -158,11 +172,12 @@ def build_ingest_session_service(
     from anchor.infra.egress_policy import resolve_egress_policy
 
     policy = egress or resolve_egress_policy(config)
-    embedder = build_embedder(
-        model=config.embed_model,
-        api_key=policy.api_key,
-        base_url=policy.base_url,
-    )
+    if embedder is None:
+        embedder = build_embedder(
+            model=config.embed_model,
+            api_key=policy.api_key,
+            base_url=policy.base_url,
+        )
     return IngestSessionService(
         doc_store,
         FsIngestSessionStore(config.data_dir),
@@ -173,6 +188,29 @@ def build_ingest_session_service(
         embed_model_id=getattr(embedder, "model_id", None),
         default_dpi=config.dpi,
     )
+
+
+def _node_type_registry(data_dir: Path) -> NodeTypeRegistry:
+    """Built-in node types plus producer types declared by OIP manifests.
+
+    Discovered manifests' ui_hints.node_types entries (bundled, system, and
+    project scopes) register additively with their declared `renders` token
+    (#309), so every adapter's node-types surface (HTTP GET /api/node-types,
+    MCP canvas_node_types, CLI `anchor canvas node-types`) describes them
+    without per-adapter wiring. Exact registrations win: a name already in
+    the built-in registry, or declared by an earlier scope, is kept as-is.
+    Discovery is failure-tolerant; a broken manifest is skipped in
+    `load_manifest` and never blocks the runtime."""
+    from anchor.adapters.extension_host import SOURCE_ORDER, discover_manifests
+    from anchor.core.workspace.builtin_node_types import builtin_node_type_registry
+    from anchor.core.workspace.node_types import node_types_from_ui_hints
+
+    registry = builtin_node_type_registry()
+    groups = discover_manifests(data_dir)
+    manifests = [m for source in SOURCE_ORDER for m in groups.get(source, [])]
+    for node_type in node_types_from_ui_hints(manifests):
+        registry.register_if_absent(node_type)
+    return registry
 
 
 def build_project_runtime(
@@ -191,7 +229,7 @@ def build_project_runtime(
         HeadlessChromiumSnapshotter,
     )
     from anchor.infra.stores.fs_workspace_store import FsWorkspaceStore
-    from anchor.infra.workspace_locks import InProcessWorkspaceLocks
+    from anchor.infra.workspace_locks import process_workspace_locks
 
     profile = RuntimeProfile(profile)
     features = _PROFILE_FEATURES[profile]
@@ -202,7 +240,11 @@ def build_project_runtime(
     workspace = WorkspaceService(
         FsWorkspaceStore(config.canvases_dir),
         bus,
-        locks=InProcessWorkspaceLocks(),
+        node_types=_node_type_registry(data_dir),
+        # Process-level, keyed by data dir: locks must survive runtime-bundle
+        # eviction (MCP LRU) so concurrent writers to one workspace always
+        # serialize on the same lock object (#272).
+        locks=process_workspace_locks(data_dir),
         snapshotter=HeadlessChromiumSnapshotter(
             base_url=base_url,
             output_dir=data_dir / "snapshots",
@@ -215,15 +257,32 @@ def build_project_runtime(
         from anchor.core.services.intent_service import IntentService
         from anchor.infra.stores.fs_intent_store import FsIntentStore
 
-        intents = IntentService(FsIntentStore(data_dir), bus, now=SystemClock().now)
+        intents = IntentService(
+            FsIntentStore(data_dir), bus, now=SystemClock().now, workspace=workspace,
+        )
+
+    # One embedder per project, shared by both ingest services: they embed into
+    # the same vector space with the same model id, so a second instance only
+    # duplicated the model in memory.
+    shared_embedder = None
+    if features.ingest or features.ingest_session:
+        from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
+
+        shared_embedder = build_embedder(
+            model=config.embed_model,
+            api_key=egress.api_key,
+            base_url=egress.base_url,
+        )
 
     ingest = (
-        build_ingest_service(config, bus, doc_store, egress=egress)
+        build_ingest_service(config, bus, doc_store, egress=egress, embedder=shared_embedder)
         if features.ingest
         else None
     )
     ingest_session = (
-        build_ingest_session_service(config, bus, doc_store, egress=egress)
+        build_ingest_session_service(
+            config, bus, doc_store, egress=egress, embedder=shared_embedder
+        )
         if features.ingest_session
         else None
     )

@@ -32,3 +32,43 @@ async def test_concurrent_mutations_preserve_both_updates() -> None:
     state = await service.get_state("shared")
     assert {node["id"] for node in state["nodes"]} == {"first", "second"}
     assert state["version"] == 2
+
+
+def test_process_locks_survive_bundle_rebuild_for_same_data_dir(tmp_path):
+    # #272: the registry is process-level and keyed by (data_dir, slug), so a
+    # re-resolved project (e.g. after MCP LRU eviction) gets the same lock.
+    from anchor.infra.workspace_locks import process_workspace_locks
+
+    before = process_workspace_locks(tmp_path / "proj")
+    after = process_workspace_locks(tmp_path / "proj")
+
+    assert before is after
+    assert before.lock("ws") is after.lock("ws")
+    assert before.lock("ws") is not before.lock("other-ws")
+    assert process_workspace_locks(tmp_path / "elsewhere") is not before
+
+
+async def test_writers_serialize_across_evicted_and_rebuilt_runtimes(tmp_path):
+    # Two WorkspaceService instances over one store stand in for a bundle
+    # evicted mid-write and rebuilt: each resolves its locks independently,
+    # and both writers must still serialize on the same per-slug lock.
+    from anchor.infra.workspace_locks import process_workspace_locks
+
+    store = _YieldBeforeAppendStore()
+    data_dir = tmp_path / "proj"
+    first = WorkspaceService(
+        store, MemoryEventBus(), locks=process_workspace_locks(data_dir)
+    )
+    rebuilt = WorkspaceService(
+        store, MemoryEventBus(), locks=process_workspace_locks(data_dir)
+    )
+    await first.create_workspace("shared")
+
+    await asyncio.gather(
+        first.add_node("shared", id="first", place="exact", x=0, y=0),
+        rebuilt.add_node("shared", id="second", place="exact", x=100, y=100),
+    )
+
+    state = await first.get_state("shared")
+    assert {node["id"] for node in state["nodes"]} == {"first", "second"}
+    assert state["version"] == 2

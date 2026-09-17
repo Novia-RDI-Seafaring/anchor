@@ -29,6 +29,21 @@ When the user asks you to populate placeholders:
 If you're producing a snapshot of the canvas, use `canvas_snapshot(...,
 format: "inline")` so the host renders the image inline.
 
+Scoped asks (your inbox, load-bearing):
+- At the start of any Anchor task and whenever idle, call
+  `list_pending_intents`. Take one. Its `targets` name the canvas
+  elements the ask is about; read them with `canvas_get_state` (filter by
+  id) and `canvas_snapshot` if you want the picture.
+- Reply in the thread with `intent_add_item`. Ask a `question` when the
+  ask is ambiguous and wait (poll `get_intent` for the answer). Never edit
+  the targeted elements directly: propose a `suggestion` (staged ops plus
+  a rationale). Group dependent ops into one suggestion; keep independent
+  changes separate so partial approval is safe. A revision after feedback
+  is a new suggestion with `supersedes`.
+- `intent_apply` / `intent_answer` / `intent_decline` are the human's
+  verbs. Do not call them on your own asks.
+- Post a `result` item when done, then `resolve_intent`.
+
 Tool surface (load-bearing):
 - A small core is advertised by default (ingest/list/read/search docs,
   the common canvas verbs, project list/create). The long tail (FMU, CAD,
@@ -64,18 +79,33 @@ Canvas tools:
 
 Agent intent queue (your inbox, issue #148):
 - list_pending_intents / next_intent - user canvas actions waiting for you
-  (e.g. a doc dropped onto the canvas in a harness-ingest project). Pull on the
-  IntentPending signal or your own cadence.
+  (e.g. a doc dropped onto the canvas in a harness-ingest project, or an ask
+  about a canvas selection). Pull on the IntentPending signal or your own
+  cadence. Each record carries `targets`, `base_version`, and `items`.
 - resolve_intent(id, result) - mark one done after you handle it.
+
+Scoped-ask threads (#343):
+- intent_add_item(id, type, text, ops?, supersedes?) - reply in a thread:
+  message / question / suggestion (staged canvas ops the human approves) /
+  result. Ops: {type: NodeAdded|NodeUpdated|NodeRemoved|EdgeAdded|
+  EdgeUpdated|EdgeRemoved, payload}. A NodeAdded/EdgeAdded `id` is a client
+  id later ops in the batch may reference.
+- get_intent(id) - read one thread in full (states, answers).
+- intent_answer / intent_apply / intent_decline - the human's verbs
+  (gated under `intent_threads`); intent_ask opens a thread on a selection.
 
 Status tools:
 - anchor_status: show cwd, config path, data dir, and document/canvas counts
-- anchor_extension_status: show bundled runtime availability and failure reasons
+- anchor_extension_status: show bundled runtime availability and failure reasons,
+  plus discovered OIP producers with a PATH check on their invocation.command
+  (never started by Anchor; the harness spawns them)
 
 PDF tools (extension anchor_pdfs):
 - ingest_pdf / list_documents / get_document_index
 - search_documents - semantic search across embedded gold regions
 - get_gold_regions / get_page_text / get_page_image / get_crop / get_pdf
+  (get_crop takes rel_path '<page>/<region_id>.png' and renders the crop
+  lazily from the bronze PDF; both image tools take an optional dpi, 72-600)
 - locate_text - where a value appears on a page (page-space quads), for value-precise highlights
 
 Harness ingestion (provider = harness, no API key):
@@ -95,7 +125,8 @@ A placeholder node carries `data.placeholder == true` and optionally
 `data.placeholder_hint == "<what we want here>"`. Visual: dashed
 sky-blue outline + hint chip. Agent: enumerate via
 `canvas_list_placeholders`, fill via `canvas_update_node({id, data: {
-placeholder: false, source_ref: {slug, page, bbox, region_id?}, rows: [
+placeholder: false, source_ref: {slug, page, bbox, region_id?, item_id?,
+cell?}, rows: [
 {key, value, source_ref}, ... ]}})`. Keep `placeholder_hint` in `data`
 even after filling. It is useful audit history.
 

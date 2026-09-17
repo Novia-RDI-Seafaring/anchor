@@ -40,6 +40,9 @@ class FakePdfExtractor:
 class FakePdfRenderer:
     def __init__(self, page_count: int = 1) -> None:
         self.page_count = page_count
+        # Recorded crop_region calls so plumbing tests can assert the bbox /
+        # dpi that actually reached the renderer.
+        self.crop_calls: list[dict[str, Any]] = []
 
     async def render_pages(self, pdf_path: Path, dpi: int = 150) -> dict[int, bytes]:
         return {p: f"PNG-bytes-page-{p}".encode() for p in range(1, self.page_count + 1)}
@@ -51,6 +54,9 @@ class FakePdfRenderer:
     async def crop_region(
         self, pdf_path: Path, page: int, bbox: list[float], fmt: CropFormat = "png", dpi: int = 200,
     ) -> bytes:
+        self.crop_calls.append({
+            "pdf_path": pdf_path, "page": page, "bbox": list(bbox), "fmt": fmt, "dpi": dpi,
+        })
         return f"CROP-{page}-{bbox}-{fmt}".encode()
 
 
@@ -116,11 +122,13 @@ class FakeSnapshotter:
         format: str = "png",
         viewport: tuple[int, int] | None = None,
         full_page: bool = True,
+        expect_nodes: int | None = None,
     ):
         from anchor.core.ports.snapshot import SnapshotResult
 
         self.calls.append({
-            "slug": slug, "format": format, "viewport": viewport, "full_page": full_page,
+            "slug": slug, "format": format, "viewport": viewport,
+            "full_page": full_page, "expect_nodes": expect_nodes,
         })
         ctype = "image/svg+xml" if format == "svg" else "image/png"
         if self.mode == "path":

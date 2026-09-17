@@ -8,7 +8,7 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 
-import type { CanvasEvent } from "@/realtime/sseClient";
+import type { CanvasEvent, PresencePayload } from "@/realtime/sseClient";
 import { useCanvasStore } from "./canvasStore";
 
 function evt(overrides: Partial<CanvasEvent>): CanvasEvent {
@@ -271,5 +271,181 @@ describe("canvasStore.applyEvent", () => {
     // That's intentional. We don't want a stale version that blocks future
     // legitimate events. Pinned here so future refactors are explicit.
     expect(useCanvasStore.getState().version).toBe(99);
+  });
+});
+
+describe("actor attribution (#322)", () => {
+  it("records the latest actor per node from live events", () => {
+    const apply = useCanvasStore.getState().applyEvent;
+    apply(evt({
+      type: "NodeAdded",
+      version: 1,
+      payload: { id: "a" },
+      actor: { kind: "agent", label: "claude-code" },
+    }));
+    apply(evt({
+      type: "NodeMoved",
+      version: 2,
+      payload: { id: "a", x: 1, y: 2 },
+      actor: { kind: "human", label: "browser" },
+    }));
+    const s = useCanvasStore.getState();
+    expect(s.lastEditors["a"]).toEqual({ kind: "human", label: "browser" });
+    expect(s.activity[0]!.by).toBe("browser");
+    expect(s.activity[1]!.by).toBe("claude-code");
+  });
+
+  it("tolerates actor-less events (pre-#322 logs) and clears on remove", () => {
+    const apply = useCanvasStore.getState().applyEvent;
+    apply(evt({ type: "NodeAdded", version: 1, payload: { id: "a" } }));
+    let s = useCanvasStore.getState();
+    expect(s.lastEditors["a"]).toBeUndefined();
+    expect(s.activity[0]!.by).toBeUndefined();
+    apply(evt({
+      type: "NodeUpdated",
+      version: 2,
+      payload: { id: "a", fields: { label: "A" } },
+      actor: { kind: "system" },
+    }));
+    expect(useCanvasStore.getState().lastEditors["a"])
+      .toEqual({ kind: "system" });
+    // Label falls back to the kind when the actor has no label.
+    expect(useCanvasStore.getState().activity[0]!.by).toBe("system");
+    apply(evt({ type: "NodeRemoved", version: 3, payload: { id: "a" } }));
+    s = useCanvasStore.getState();
+    expect(s.lastEditors["a"]).toBeUndefined();
+  });
+
+  it("CanvasCleared wipes the lastEditors map", () => {
+    const apply = useCanvasStore.getState().applyEvent;
+    apply(evt({
+      type: "NodeAdded",
+      version: 1,
+      payload: { id: "a" },
+      actor: { kind: "agent", label: "claude-code" },
+    }));
+    apply(evt({ type: "CanvasCleared", version: 2, payload: {} }));
+    expect(useCanvasStore.getState().lastEditors).toEqual({});
+  });
+});
+
+describe("presence roster", () => {
+  const sse = (client_id: string, label: string) => ({
+    client_id,
+    kind: "human" as const,
+    label,
+    connected_at: 1000,
+    via: "sse" as const,
+  });
+  const writer = (label: string) => ({
+    kind: "agent" as const,
+    label,
+    connected_at: 1010,
+    last_write_at: 1020,
+    via: "writes" as const,
+  });
+  const payload = (p: Partial<PresencePayload>): PresencePayload => ({
+    workspace: "w1",
+    present: [],
+    ...p,
+  });
+
+  it("replaces the roster wholesale on every event", () => {
+    const apply = useCanvasStore.getState().applyPresence;
+    apply(payload({ present: [sse("c1", "browser"), writer("claude-code")] }));
+    expect(useCanvasStore.getState().presence).toHaveLength(2);
+    // The server always sends the full roster, so a shrunken one replaces
+    // rather than merges — no client-side reconciliation.
+    apply(payload({ present: [sse("c1", "browser")] }));
+    const { presence } = useCanvasStore.getState();
+    expect(presence.map((e) => e.label)).toEqual(["browser"]);
+  });
+
+  it("keeps the self id from the initial roster on later broadcasts", () => {
+    const apply = useCanvasStore.getState().applyPresence;
+    apply(payload({ present: [sse("c1", "browser")], you: "c1" }));
+    expect(useCanvasStore.getState().presenceSelfId).toBe("c1");
+    // `you` rides only the first event after (re)connect.
+    apply(payload({ present: [sse("c1", "browser"), sse("c2", "monitor")] }));
+    expect(useCanvasStore.getState().presenceSelfId).toBe("c1");
+  });
+
+  it("tolerates a malformed roster and clears on reset", () => {
+    const apply = useCanvasStore.getState().applyPresence;
+    apply({ workspace: "w1", present: undefined as never, you: "c1" });
+    expect(useCanvasStore.getState().presence).toEqual([]);
+
+    apply(payload({ present: [sse("c1", "browser")], you: "c1" }));
+    useCanvasStore.getState().reset();
+    const s = useCanvasStore.getState();
+    expect(s.presence).toEqual([]);
+    expect(s.presenceSelfId).toBeNull();
+  });
+});
+
+describe("NodeUpdated merges data like the backend", () => {
+  function seedNode() {
+    useCanvasStore.getState().applyEvent(
+      evt({
+        type: "NodeAdded",
+        version: 1,
+        payload: {
+          id: "n1",
+          node_type: "text",
+          label: "",
+          x: 0,
+          y: 0,
+          data: { text: "sfsdfsdf", width: 900, font_px: 40 },
+        },
+      }),
+    );
+  }
+
+  it("keeps the fields a patch did not mention", () => {
+    // A partial write used to replace the whole data object here, while the
+    // server merged it. Setting a font size wiped the text until reload.
+    seedNode();
+    useCanvasStore.getState().applyEvent(
+      evt({ type: "NodeUpdated", version: 2, payload: { id: "n1", fields: { data: { font_px: 73 } } } }),
+    );
+    const data = useCanvasStore.getState().nodes.n1?.data as Record<string, unknown>;
+    expect(data.text).toBe("sfsdfsdf");
+    expect(data.font_px).toBe(73);
+    expect(data.width).toBe(900);
+  });
+
+  it("deletes a key the patch sets to null", () => {
+    seedNode();
+    useCanvasStore.getState().applyEvent(
+      evt({
+        type: "NodeUpdated",
+        version: 2,
+        payload: { id: "n1", fields: { data: { font_px: 73, width: null } } },
+      }),
+    );
+    const data = useCanvasStore.getState().nodes.n1?.data as Record<string, unknown>;
+    expect("width" in data).toBe(false);
+    expect(data.text).toBe("sfsdfsdf");
+  });
+
+  it("merges nested objects rather than swapping them", () => {
+    seedNode();
+    useCanvasStore.getState().applyEvent(
+      evt({
+        type: "NodeUpdated",
+        version: 2,
+        payload: { id: "n1", fields: { data: { review: { state: "proposed", by: { kind: "agent" } } } } },
+      }),
+    );
+    useCanvasStore.getState().applyEvent(
+      evt({
+        type: "NodeUpdated",
+        version: 3,
+        payload: { id: "n1", fields: { data: { review: { state: "accepted" } } } },
+      }),
+    );
+    const review = (useCanvasStore.getState().nodes.n1?.data as { review: Record<string, unknown> }).review;
+    expect(review.state).toBe("accepted");
+    expect(review.by).toEqual({ kind: "agent" });
   });
 });

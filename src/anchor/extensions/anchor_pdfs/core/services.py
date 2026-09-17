@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +39,12 @@ from anchor.extensions.anchor_pdfs.core.ports.md_polisher import PageMdPolisher
 from anchor.extensions.anchor_pdfs.core.ports.pdf_extractor import PdfExtractor
 from anchor.extensions.anchor_pdfs.core.ports.pdf_renderer import PdfRenderer
 from anchor.extensions.anchor_pdfs.core.ports.region_extractor import RegionExtractor
-from anchor.extensions.anchor_pdfs.core.region_inspect import inspect_region
+from anchor.extensions.anchor_pdfs.core.region_inspect import (
+    AmbiguousRegionError as AmbiguousRegionError,
+)
+from anchor.extensions.anchor_pdfs.core.region_inspect import (
+    inspect_region,
+)
 from anchor.extensions.anchor_pdfs.core.silver import (
     build_index,
     build_page_candidates,
@@ -56,6 +62,31 @@ from anchor.extensions.anchor_pdfs.core.synopsis_service import (
 GOLD_EMPTY_MAX_ATTEMPTS = _GOLD_EMPTY_MAX_ATTEMPTS
 INGEST_LOCK_WAIT_SECONDS = _INGEST_LOCK_WAIT_SECONDS
 SynopsisService = _SynopsisService
+
+#: Matches the trailing r-number of a gold region id: plain ``r4`` as well as
+#: producer-prefixed forms like ``lkh:p4-r1``. Used to mint the next free id.
+_REGION_ID_SUFFIX = re.compile(r"r(\d+)$")
+
+
+class RegionNotRemovableError(ValueError):
+    """Raised when a removal targets a region without ``derived_from``.
+
+    Model-extracted gold is the ground truth of an ingest pass and is never
+    deletable through the region API; only OIP-derived records may be removed.
+    """
+
+
+def _next_region_id(page_regions: list[dict[str, Any]]) -> str:
+    """Mint the next free ``r<n>`` id on a page (#304)."""
+    highest = 0
+    for region in page_regions:
+        rid = region.get("id")
+        if not isinstance(rid, str):
+            continue
+        match = _REGION_ID_SUFFIX.search(rid)
+        if match:
+            highest = max(highest, int(match.group(1)))
+    return f"r{highest + 1}"
 
 
 class IngestService:
@@ -487,6 +518,17 @@ class IngestService:
         """Search document embeddings through the retrieval collaborator."""
         return await self._retrieval.search(query, k=k)
 
+    async def resolve_source_ref(
+        self, slug: str, ref: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Resolve a source_ref to the most precise stored evidence bbox
+        (cell > item > region > bbox); see core.source_ref_resolve."""
+        from anchor.extensions.anchor_pdfs.core.source_ref_resolve import (
+            resolve_source_ref,
+        )
+
+        return await resolve_source_ref(self.store, slug, ref)
+
     async def derive_region(
         self, slug: str, parent_region_id: str, region: dict[str, Any]
     ) -> dict[str, Any]:
@@ -506,12 +548,11 @@ class IngestService:
         the parent locator is missing/ambiguous or source metadata conflicts.
         """
         store = self.store.snapshot(slug)
-        parent = await inspect_region(store, slug, parent_region_id)
+        parent = await inspect_region(store, slug, parent_region_id, raise_ambiguous=True)
         if parent is None:
             raise ValueError(
                 f"derive_region: parent region {parent_region_id!r} not found or ambiguous in {slug!r}"
             )
-
         source = parent["source_ref"]
         supplied = region.get("source_ref")
         if supplied is not None and not isinstance(supplied, dict):
@@ -532,6 +573,10 @@ class IngestService:
         derived.setdefault("bbox", parent["bbox"])
         derived.setdefault("geometry", parent["geometry"])
 
+        if not derived.get("id"):
+            regions = await store.get_regions(slug, parent["page"])
+            derived["id"] = _next_region_id(regions["pages"].get(parent["page"], []))
+
         path = await store.add_derived_region(slug, derived)
         return {
             "slug": slug,
@@ -539,6 +584,75 @@ class IngestService:
             "kind": derived.get("kind"),
             "derived_from": derived["derived_from"],
             "path": str(path),
+        }
+
+    async def remove_region(self, slug: str, region_id: str) -> dict[str, Any]:
+        """Remove one OIP-derived gold region (#304).
+
+        The cleanup half of ``derive_region``: only regions carrying
+        ``derived_from`` may be removed — model-extracted gold is the ground
+        truth of an ingest pass and stays. The region id accepts the same
+        tokens ``inspect_region`` does (``p4/r2``, ``4/r2``, or a bare
+        ``r2`` that uniquely identifies a region).
+
+        Rewrites the region's page file without the record and drops its
+        vector from ``embeddings.json`` when one exists, so search never
+        returns a region that no longer resolves. Raises ``ValueError`` when
+        the region does not exist and ``RegionNotRemovableError`` when it is
+        not a derived region.
+        """
+        from anchor.extensions.anchor_pdfs.core.region_inspect import find_region
+
+        store = self.store.snapshot(slug)
+        found = await find_region(store, slug, region_id)
+        if found is None:
+            raise ValueError(
+                f"remove_region: region {region_id!r} not found in {slug!r}"
+            )
+        page, region = found
+        rid = region.get("id")
+        if not region.get("derived_from"):
+            raise RegionNotRemovableError(
+                f"remove_region: region {rid!r} in {slug!r} is model-extracted "
+                "gold (no derived_from) and cannot be removed; only regions "
+                "created by derive_region are deletable"
+            )
+        regions = await store.get_regions(slug, page)
+        page_regions: list[dict[str, Any]] = []
+        for _page, regs in (regions.get("pages") or {}).items():
+            if int(_page) == page:
+                page_regions = [r for r in regs if isinstance(r, dict)]
+                break
+        kept = [r for r in page_regions if r.get("id") != rid]
+        await store.write_gold_region_file(slug, page, kept)
+
+        # Keep the embedding index consistent: drop the removed region's
+        # vector so a search hit can never point at a record that is gone.
+        embeddings_removed = 0
+        payload = await store.get_embeddings(slug)
+        if payload is not None:
+            vectors = payload.get("vectors", [])
+            kept_vectors = [
+                v
+                for v in vectors
+                if not (
+                    isinstance(v, dict)
+                    and v.get("region_id") == rid
+                    and v.get("page") == page
+                )
+            ]
+            embeddings_removed = len(vectors) - len(kept_vectors)
+            if embeddings_removed:
+                payload["vectors"] = kept_vectors
+                await store.write_embeddings(slug, payload)
+
+        return {
+            "slug": slug,
+            "page": page,
+            "region_id": rid,
+            "removed": True,
+            "derived_from": region.get("derived_from"),
+            "embeddings_removed": embeddings_removed,
         }
 
     async def extract_pointed(

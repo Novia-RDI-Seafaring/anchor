@@ -48,6 +48,18 @@ type HoveredSourceRef = {
   region_id?: string;    // when known (regions resolved by id)
   bbox?: number[];       // raw bbox in PDF user-space
   /**
+   * Selectors that point BELOW the region: one silver item, or one table
+   * cell. The click path already resolves these to the tightest stored bbox
+   * (`resolve_source_ref`, precedence cell > item > region > bbox), so the
+   * source dock lands on the cell. Hover used to drop them, which is why a
+   * document card previewing the same ref drew a box around the whole
+   * section while the dock highlighted one value. Carry them so both
+   * surfaces can agree.
+   */
+  item_id?: string;
+  /** Shape mirrors ResolvableRef: both indices are optional there. */
+  cell?: { row?: number; col?: number } | null;
+  /**
    * Marks a deliberate, pinned reference (e.g. broadcast by a *selected*
    * referencing node) as opposed to a transient on-hover signal. A document
    * node treats a transient ref as a temporary page flip that reverts to its
@@ -105,6 +117,9 @@ type UiState = {
    *     `+` menu opens a Dialog instead. Arming is for shapes/cards only.
    */
   armedTool: string | null;
+  /** While the connector tool is armed, the element a connector will start
+   *  from once the user has clicked it. Null between connectors. */
+  connectSourceId: string | null;
   openPdf: (
     slug: string,
     options?: {
@@ -133,6 +148,7 @@ type UiState = {
   clearHoveredSourceRef: () => void;
   /** Arm `type` (or toggle off if already armed for the same type). */
   armTool: (type: string) => void;
+  setConnectSourceId: (id: string | null) => void;
   /** Force-disarm whatever tool is currently armed. */
   disarmTool: () => void;
   // --- Properties panel (added by node-content-editing agent) -----------
@@ -216,6 +232,27 @@ type UiState = {
    */
   activeReferenceId: string | null;
   setActiveReferenceId: (id: string | null) => void;
+
+  // --- Proposal sets (#359) ---------------------------------------------
+  /**
+   * Ids of every element belonging to an OPEN proposal set on this canvas.
+   *
+   * A set records its members; the members do not record the set. So a node
+   * has no way to know it is part of a batch waiting for review, and the
+   * marker on it has to come from here. Written by `useProposalSetsFeed`
+   * (mounted by FilesExplorer, so it survives a tab switch), read by
+   * `ReviewBadge`.
+   */
+  proposalMemberIds: string[];
+  setProposalMemberIds: (ids: string[]) => void;
+  /**
+   * Ids of the one proposal set the pointer is over in the Proposals panel,
+   * or empty when nothing is hovered. Same broadcast idea as
+   * `hoveredSourceRef`: a transient pointer signal that must never touch
+   * canonical canvas state or echo through SSE.
+   */
+  proposalHighlightIds: string[];
+  setProposalHighlightIds: (ids: string[]) => void;
 };
 
 /** Default split: source pane takes a touch under half the width. */
@@ -285,6 +322,7 @@ export const useUiStore = create<UiState>((set) => ({
   sourceClusterCollapsed: readPersistedCollapsed(),
   hoveredSourceRef: null,
   armedTool: null,
+  connectSourceId: null,
   selectedNodeId: null,
   propertiesOpen: false,
   dropTargetAreaId: null,
@@ -292,25 +330,40 @@ export const useUiStore = create<UiState>((set) => ({
   hoveredNodeId: null,
   pendingInlineRenameNodeId: null,
   selectedEdgeId: null,
+  proposalMemberIds: [],
+  proposalHighlightIds: [],
   openPdf: (slug, options) =>
-    set((state) => ({
-      pdfViewer: {
-        slug,
-        page: options?.page ?? 1,
-        // One shared pane: reuse the surface the viewer is already on unless
-        // the caller pins a specific mode. Defaults to the docked split-screen.
-        mode: options?.mode ?? state.pdfViewer?.mode ?? "dock",
-        workspaceSlug: options?.workspaceSlug,
-        documentNodeId: options?.documentNodeId,
-        highlightRegionId: options?.highlightRegionId,
-        highlightBbox: options?.highlightBbox,
-        highlightQuery: options?.highlightQuery,
-        highlightPage: options?.highlightRegionId || options?.highlightBbox
-          ? options?.page ?? 1
-          : undefined,
-        nonce: (state.pdfViewer?.nonce ?? 0) + 1,
-      },
-    })),
+    set((state) => {
+      const mode = options?.mode ?? state.pdfViewer?.mode ?? "dock";
+      // Opening a document in the dock must reveal it: with the source
+      // cluster collapsed the dock is not rendered at all, so setting
+      // `pdfViewer` alone did nothing visible and a click on a row anchor
+      // or a region looked dead (it only highlighted when the viewer
+      // happened to be open already).
+      if (mode === "dock" && state.sourceClusterCollapsed) {
+        persist(SOURCE_CLUSTER_COLLAPSED_KEY, "0");
+      }
+      return {
+        sourceClusterCollapsed:
+          mode === "dock" ? false : state.sourceClusterCollapsed,
+        pdfViewer: {
+          slug,
+          page: options?.page ?? 1,
+          // One shared pane: reuse the surface the viewer is already on unless
+          // the caller pins a specific mode. Defaults to the docked split-screen.
+          mode,
+          workspaceSlug: options?.workspaceSlug,
+          documentNodeId: options?.documentNodeId,
+          highlightRegionId: options?.highlightRegionId,
+          highlightBbox: options?.highlightBbox,
+          highlightQuery: options?.highlightQuery,
+          highlightPage: options?.highlightRegionId || options?.highlightBbox
+            ? options?.page ?? 1
+            : undefined,
+          nonce: (state.pdfViewer?.nonce ?? 0) + 1,
+        },
+      };
+    }),
   closePdf: () => set({ pdfViewer: null }),
   activeReferenceId: null,
   setActiveReferenceId: (id) => set({ activeReferenceId: id }),
@@ -340,12 +393,15 @@ export const useUiStore = create<UiState>((set) => ({
     }),
   setHoveredSourceRef: (ref) => set({ hoveredSourceRef: ref }),
   clearHoveredSourceRef: () => set({ hoveredSourceRef: null }),
+  setConnectSourceId: (id) => set({ connectSourceId: id }),
   armTool: (type) =>
     set((state) => ({
       // Clicking the same icon a second time toggles the tool off.
       armedTool: state.armedTool === type ? null : type,
+      // Switching tools abandons a half-drawn connector.
+      connectSourceId: null,
     })),
-  disarmTool: () => set({ armedTool: null }),
+  disarmTool: () => set({ armedTool: null, connectSourceId: null }),
   // --- Properties panel actions (appended) ------------------------------
   // Mutual exclusion with selectedEdgeId — selecting a node deselects any
   // currently-selected edge so the EdgeContextToolbar never shows up at
@@ -377,4 +433,9 @@ export const useUiStore = create<UiState>((set) => ({
     }
     return false;
   },
+  // Both proposal slots are plain replacements. Subscribers select a boolean
+  // ("is my id in there?"), so a fresh array with the same contents costs a
+  // selector run and no re-render.
+  setProposalMemberIds: (ids) => set({ proposalMemberIds: ids }),
+  setProposalHighlightIds: (ids) => set({ proposalHighlightIds: ids }),
 }));

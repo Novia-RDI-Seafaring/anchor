@@ -13,6 +13,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from anchor.core.clock import Clock, SystemClock
+from anchor.core.events.actor import SYSTEM_ACTOR, Actor, current_actor
 from anchor.core.events.canvas import (
     CanvasCleared,
     CanvasSnapshot,
@@ -25,6 +26,7 @@ from anchor.core.events.canvas import (
     NodeReparented,
     NodeResized,
     NodeUpdated,
+    WorkspaceMetadataUpdated,
 )
 from anchor.core.events.envelope import DomainEvent
 from anchor.core.ids import new_event_id, new_id
@@ -32,15 +34,19 @@ from anchor.core.ports.event_bus import EventBus
 from anchor.core.ports.snapshot import SnapshotPort, SnapshotResult
 from anchor.core.ports.workspace_locks import WorkspaceLocks
 from anchor.core.ports.workspace_store import WorkspaceStore
+from anchor.core.services.workspace_batch import WorkspaceBatchOperations
 from anchor.core.services.workspace_geometry import WorkspaceGeometryOperations
+from anchor.core.services.workspace_proposals import WorkspaceProposalOperations
 from anchor.core.services.workspace_references import WorkspaceReferenceOperations
 from anchor.core.workspace.align import Anchor, Axis
 from anchor.core.workspace.builtin_node_types import builtin_node_type_registry
+from anchor.core.workspace.changes import fold_changes, last_touched_by
 from anchor.core.workspace.evidence import consume_evidence_requests, prepare_evidence_patch
 from anchor.core.workspace.layout import NodeLike, find_free_position
 from anchor.core.workspace.node_types import NodeTypeRegistry
 from anchor.core.workspace.reducer import apply, cascade_events_for_remove
 from anchor.core.workspace.references import stamp_authored_source_refs
+from anchor.core.workspace.review import REVIEW_MODE_KEY, proposed_review
 from anchor.core.workspace.workspace import CommandError, Workspace, validate_command
 
 NodeDataPreparer = Callable[[dict[str, Any], dict[str, Any] | None], Awaitable[dict[str, Any]]]
@@ -89,11 +95,28 @@ class WorkspaceService:
             self.clock,
             self._dispatch_locked,
         )
+        self._proposals = WorkspaceProposalOperations(
+            self.store,
+            self.bus,
+            self.locks,
+            self.clock,
+            self._envelope,
+            self._dispatch_locked,
+        )
         self._geometry = WorkspaceGeometryOperations(
             self.store,
             self.bus,
             self.locks,
             self.clock,
+        )
+        self._batch = WorkspaceBatchOperations(
+            self.store,
+            self.bus,
+            self.locks,
+            self.clock,
+            self.node_types,
+            self._envelope,
+            self._prepare_command,
         )
 
     def bind_node_data_preparer(self, preparer: NodeDataPreparer) -> None:
@@ -191,6 +214,40 @@ class WorkspaceService:
         ws = await self.store.load(slug)
         return ws.get_state()
 
+    async def version_of(self, slug: str) -> int | None:
+        """The current version of an existing workspace, or ``None`` when no
+        workspace has that slug. A read that never auto-creates: a thread
+        recording its ``base_version`` (#343) must not conjure a canvas."""
+        known = await self.store.list_workspaces()
+        if not any(m.slug == slug for m in known):
+            return None
+        return (await self.store.load(slug)).version
+
+    async def apply_batch(
+        self,
+        slug: str,
+        ops: list[dict[str, Any]],
+        *,
+        actor: Actor,
+        causation_id: str,
+        approver: Actor,
+    ) -> tuple[Workspace, list[DomainEvent], dict[str, str]]:
+        """Apply a staged suggestion's ops all-or-nothing (#343).
+
+        Every op is validated on a copy of the state through the reducer
+        first; on any failure a :class:`BatchApplyError` names the failing
+        op index and reason and nothing is written. Otherwise the commands
+        are emitted through the normal write path under the workspace lock,
+        attributed to ``actor`` (the suggestion's author) with
+        ``causation_id`` (the item id). Elements the batch creates carry
+        ``data.review = {state: "accepted", by: <approver>, at}``. Returns
+        the new state, the emitted envelopes, and the client-id -> real-id
+        map for ``NodeAdded`` / ``EdgeAdded`` ops that carried one.
+        """
+        return await self._batch.apply(
+            slug, ops, actor=actor, causation_id=causation_id, approver=approver,
+        )
+
     async def list_placeholders(self, slug: str) -> list[dict[str, Any]]:
         """Return every node on ``slug`` flagged ``data.placeholder == true``.
 
@@ -222,6 +279,76 @@ class WorkspaceService:
             })
         return out
 
+    async def canvas_changes(
+        self,
+        slug: str,
+        *,
+        since_version: int | None = None,
+        since_ts: float | None = None,
+    ) -> dict[str, Any]:
+        """What changed on ``slug`` after a point in its history (#325).
+
+        A server-side fold over the event log — no storage change. Returns
+        ``{from_version, to_version, groups: [{actor, nodes_added,
+        nodes_updated, nodes_removed, edges_added, edges_updated,
+        edges_removed}]}`` where repeated events per element collapse to one
+        net entry, grouped by the responsible actor (``actor: null`` groups
+        events recorded before attribution existed, #322). Labels resolve
+        from the final state where the element still exists, else from the
+        freshest event payload.
+
+        Pass ``since_version`` (the usual path: a client's last-seen
+        version) or ``since_ts`` (a unix timestamp), not both; with neither
+        the fold covers the whole log. A whole-log fold additionally
+        carries ``touched``: per surviving node, the last actor to touch it
+        (``null`` = last touch predates attribution) — the persisted
+        "edited by" answer the web inspector falls back to.
+
+        Same envelope via HTTP ``GET /api/workspaces/{slug}/changes``, the
+        ``canvas_changes`` MCP tool, and ``anchor canvas changes <slug>``
+        (adapter parity).
+
+        Raises :class:`FileNotFoundError` for a slug with no workspace
+        behind it — a read-only summary should report an unknown canvas,
+        not bring one into being.
+        """
+        if since_version is not None and since_ts is not None:
+            raise CommandError(
+                "pass since_version or since_ts, not both",
+            )
+        # Resolve the caller's slug against the workspaces that actually
+        # exist and carry on with the store's own copy of the name. A
+        # read-only catch-up must not conjure a canvas the way `load`'s
+        # auto-create would, and working from a server-known string keeps
+        # a caller-supplied one from reaching the filesystem layer at all.
+        known = await self.store.list_workspaces()
+        trusted_slug = next((m.slug for m in known if m.slug == slug), None)
+        if trusted_slug is None:
+            raise FileNotFoundError(f"workspace {slug!r} does not exist")
+        state = await self.store.load(trusted_slug)
+        if since_version is not None:
+            if since_version < 0:
+                raise CommandError("since_version must be >= 0")
+            from_version = since_version
+            window = await self.store.read_events(
+                trusted_slug, after_version=since_version,
+            )
+        else:
+            events = await self.store.read_events(trusted_slug)
+            if since_ts is not None:
+                window = [e for e in events if e.ts > since_ts]
+                before = [e.version for e in events if e.ts <= since_ts]
+                from_version = max(before, default=0)
+            else:
+                window = events
+                from_version = 0
+        out = fold_changes(window, state, from_version=from_version)
+        if from_version == 0 and since_ts is None:
+            # `window` is the whole log here, so the same read powers the
+            # persisted per-node attribution map without a second pass.
+            out["touched"] = last_touched_by(window, state)
+        return out
+
     async def add_node(
         self, slug: str, *, place: str | None = None, **kwargs: Any,
     ) -> tuple[Workspace, DomainEvent]:
@@ -232,7 +359,13 @@ class WorkspaceService:
         Auto-place triggers when ``place == "auto"`` OR neither ``x`` nor ``y``
         was given. When explicit coordinates ARE given (and ``place`` is not
         "auto") the node lands exactly there, as before. The resolved
-        position is always readable from ``event.payload["x"/"y"]``."""
+        position is always readable from ``event.payload["x"/"y"]``.
+
+        Review-mode writer default (#324): when the workspace opted in via
+        ``metadata.review_mode == True``, a node created by an actor of
+        kind ``agent`` gets ``data.review = {state: "proposed", by, at}``
+        stamped server-side — unless the caller supplied its own ``review``
+        object. With the flag off (the default) nothing changes."""
         if place not in (None, "auto", "exact"):
             raise CommandError(
                 f"unknown place mode: {place!r} (use 'auto' or 'exact')",
@@ -241,8 +374,8 @@ class WorkspaceService:
         gave_coords = ("x" in kwargs) or ("y" in kwargs)
         auto = place == "auto" or (place is None and not gave_coords)
         async with self.locks.lock(slug):
+            state = await self.store.load(slug)
             if auto:
-                state = await self.store.load(slug)
                 existing = [
                     NodeLike(id=n.id, x=n.x, y=n.y, width=n.width, height=n.height)
                     for n in state.nodes.values()
@@ -254,8 +387,83 @@ class WorkspaceService:
                 )
                 kwargs["x"] = x
                 kwargs["y"] = y
+            if state.metadata.get(REVIEW_MODE_KEY) is True:
+                actor = current_actor()
+                data = kwargs.get("data")
+                if (
+                    actor is not None
+                    and actor.kind == "agent"
+                    and (not isinstance(data, dict) or "review" not in data)
+                ):
+                    kwargs["data"] = {
+                        **(data if isinstance(data, dict) else {}),
+                        "review": proposed_review(actor, self.clock.now()),
+                    }
             cmd = NodeAdded(id=node_id, **kwargs)
-            return await self._dispatch_locked(slug, cmd)
+            return await self._dispatch_locked(slug, cmd, state=state)
+
+    async def set_review_mode(
+        self, slug: str, *, enabled: bool,
+    ) -> tuple[Workspace, DomainEvent]:
+        """Toggle the workspace's review-mode opt-in flag (#324).
+
+        Emits a ``WorkspaceMetadataUpdated`` event so SSE clients and the
+        event log see the change. Turning it ON stores
+        ``metadata.review_mode = True``; turning it OFF deletes the key
+        (merge semantics: a ``None`` patch value removes it), so a
+        workspace that never opted in — or opted back out — carries no
+        residue and behaves byte-identically to before #324.
+        """
+        patch: dict[str, Any] = {REVIEW_MODE_KEY: True if enabled else None}
+        return await self._dispatch(slug, WorkspaceMetadataUpdated(patch=patch))
+
+    # -- proposal sets (#359) ---------------------------------------------- #
+    #
+    # Delegated to WorkspaceProposalOperations; these thin wrappers keep the
+    # service the single entry point every adapter talks to.
+
+    async def open_proposal_set(
+        self, slug: str, *, reason: str, members: Any = None,
+    ) -> dict[str, Any]:
+        """Group elements an agent added into one reviewable set."""
+        return await self._proposals.open(
+            slug, reason=reason, members=members, actor=current_actor(),
+        )
+
+    async def add_proposal_set_members(
+        self, slug: str, set_id: str, *, members: Any,
+    ) -> dict[str, Any]:
+        """Add elements to an open set."""
+        return await self._proposals.add_members(slug, set_id, members=members)
+
+    async def list_proposal_sets(
+        self, slug: str, *, state: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Every proposal set on this canvas, oldest first."""
+        return await self._proposals.list(slug, state_filter=state)
+
+    async def get_proposal_set(self, slug: str, set_id: str) -> dict[str, Any]:
+        """One proposal set."""
+        return await self._proposals.get(slug, set_id)
+
+    async def review_proposal_set(
+        self,
+        slug: str,
+        set_id: str,
+        *,
+        verdict: str,
+        discard: bool = False,
+        except_ids: list[str] | None = None,
+    ) -> tuple[Workspace, list[DomainEvent], dict[str, Any]]:
+        """Accept or reject a whole set in one write."""
+        return await self._proposals.review(
+            slug,
+            set_id,
+            verdict=verdict,
+            discard=discard,
+            except_ids=except_ids,
+            actor=current_actor(),
+        )
 
     def node_types_schema(self, name: str | None = None) -> list[dict[str, Any]]:
         """Return the per-node-type data-field contract (#191).
@@ -348,7 +556,12 @@ class WorkspaceService:
             new_state = state
             cause = new_event_id()
             for ev in [*cascade, cmd]:
-                env = self._envelope(slug, ev, causation_id=cause)
+                # Cascade events are the system reacting to the command, not
+                # the caller's own edit — attribute them to `system` (#322).
+                # The command itself keeps the adapter-scoped actor. Causation
+                # still groups the whole batch.
+                actor = None if ev is cmd else SYSTEM_ACTOR
+                env = self._envelope(slug, ev, causation_id=cause, actor=actor)
                 version = await self.store.append_event(slug, env)
                 env.version = version
                 new_state = apply(new_state, ev)
@@ -497,12 +710,19 @@ class WorkspaceService:
                 "anchor.infra.snapshot.headless_chromium_snapshotter).",
             )
         # Touch the store to surface 404s as the same error type other
-        # ops raise. This is cheap (snapshot read).
-        await self.store.load(slug)
+        # ops raise. This is cheap (snapshot read). The loaded state also
+        # tells the snapshotter how many nodes to expect, so a browser-based
+        # implementation can wait for them instead of capturing an empty
+        # grid while the state fetch is still in flight (#306).
+        state = await self.store.load(slug)
         if format not in {"png", "svg"}:
             raise ValueError(f"unsupported snapshot format: {format!r} (use 'png' or 'svg')")
         return await self.snapshotter.snapshot(
-            slug, format=format, viewport=viewport, full_page=full_page,
+            slug,
+            format=format,
+            viewport=viewport,
+            full_page=full_page,
+            expect_nodes=len(state.nodes),
         )
 
     async def _dispatch(self, slug: str, cmd: BaseModel) -> tuple[Workspace, DomainEvent]:
@@ -528,13 +748,31 @@ class WorkspaceService:
             ))
             return True
 
-    async def _dispatch_locked(self, slug: str, cmd: BaseModel) -> tuple[Workspace, DomainEvent]:
+    async def _dispatch_locked(
+        self, slug: str, cmd: BaseModel, *, state: Workspace | None = None,
+    ) -> tuple[Workspace, DomainEvent]:
         """Dispatch body assuming the caller already holds the workspace lock.
 
-        Split out so ``add_node`` can read state (for auto-placement) and
-        write the resulting command inside one lock acquisition. The
-        re-entrant lock impls don't all support nesting."""
-        state = await self.store.load(slug)
+        Split out so ``add_node`` can read state (for auto-placement and the
+        review-mode flag) and write the resulting command inside one lock
+        acquisition. The re-entrant lock impls don't all support nesting.
+        A caller that already loaded the state under this lock may pass it
+        via ``state`` to skip the second load."""
+        if state is None:
+            state = await self.store.load(slug)
+        cmd = await self._prepare_command(state, cmd)
+        validate_command(state, cmd, node_types=self.node_types)
+        env = self._envelope(slug, cmd)
+        version = await self.store.append_event(slug, env)
+        env.version = version
+        new_state = apply(state, cmd)
+        new_state.version = version
+        new_state.last_event_id = env.id
+        await self.store.snapshot(slug, new_state)
+        await self.bus.publish(env)
+        return new_state, env
+
+    async def _prepare_command(self, state: Workspace, cmd: BaseModel) -> BaseModel:
         if isinstance(cmd, (NodeAdded, EdgeAdded)):
             cmd = cmd.model_copy(update={"data": stamp_authored_source_refs(cmd.data)})
         elif isinstance(cmd, (NodeUpdated, EdgeUpdated)):
@@ -548,16 +786,7 @@ class WorkspaceService:
             node = state.nodes.get(cmd.id)
             data = await self._prepare_node_data(cmd.fields["data"], node.data if node else None)
             cmd = cmd.model_copy(update={"fields": {**cmd.fields, "data": data}})
-        validate_command(state, cmd, node_types=self.node_types)
-        env = self._envelope(slug, cmd)
-        version = await self.store.append_event(slug, env)
-        env.version = version
-        new_state = apply(state, cmd)
-        new_state.version = version
-        new_state.last_event_id = env.id
-        await self.store.snapshot(slug, new_state)
-        await self.bus.publish(env)
-        return new_state, env
+        return cmd
 
     async def _prepare_node_data(self, data: dict, previous: dict | None) -> dict:
         data = prepare_evidence_patch(data, previous)
@@ -565,7 +794,18 @@ class WorkspaceService:
             data = await self._node_data_preparer(data, previous)
         return consume_evidence_requests(data)
 
-    def _envelope(self, slug: str, evt: BaseModel, *, causation_id: str | None = None) -> DomainEvent:
+    def _envelope(
+        self,
+        slug: str,
+        evt: BaseModel,
+        *,
+        causation_id: str | None = None,
+        actor: Actor | None = None,
+    ) -> DomainEvent:
+        # Actor precedence (#322): an explicit override (system cascades)
+        # wins; otherwise whatever actor the calling adapter scoped via
+        # `actor_scope` / `set_current_actor`; otherwise None (legacy /
+        # direct service calls — old logs replay identically).
         return DomainEvent(
             id=new_event_id(),
             ts=self.clock.now(),
@@ -573,4 +813,5 @@ class WorkspaceService:
             type=getattr(evt, "type", evt.__class__.__name__),
             payload=evt.model_dump(),
             causation_id=causation_id,
+            actor=actor if actor is not None else current_actor(),
         )

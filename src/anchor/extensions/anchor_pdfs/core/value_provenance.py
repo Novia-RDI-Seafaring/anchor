@@ -90,6 +90,7 @@ async def resolve_spec_row_sources(data: Any, store: DocStore) -> tuple[Any, dic
                 if key in new_ref:
                     new_ref[key] = None
         new_ref["region_id"] = region["id"]
+        new_ref["cell"] = {"row": value_cell["row"], "col": value_cell["col"]}
         next_rows.append({**row, "source_ref": new_ref})
         if slug not in documents:
             metadata = await snapshots[slug].get_index(slug)
@@ -182,6 +183,13 @@ def _clean_bbox(bbox: Any) -> list[float]:
 
 
 def _locator_agrees(scope: dict, region: dict, key_cell: dict, value_cell: dict) -> bool:
+    if "cell" in scope:
+        selector = scope["cell"]
+        if not isinstance(selector, dict) or any(
+            type(selector.get(field)) is not int or selector[field] != value_cell[field]
+            for field in ("row", "col")
+        ):
+            return False
     detail = scope.get("detail")
     if detail is not None and not isinstance(detail, dict):
         return False

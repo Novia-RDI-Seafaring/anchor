@@ -22,6 +22,10 @@ metadata may be retained. Conflicting source overrides fail before writing.
 
 Inspecting a child returns its own region locator and `derived_from`, so the
 same operation can derive another child without a special provenance parser.
+`stored_source_ref` exposes the stored parent citation separately for audit;
+it does not replace the canonical locator or supply missing geometry. Producer
+payload fields remain available under `data`. An ambiguous derivation returns
+the candidate pages, and an omitted child ID receives the next free page ID.
 A valid region source is not a verified canvas claim (G7 still applies).
 
 Derived regions persist beside their parents and survive restart. Run `embed`

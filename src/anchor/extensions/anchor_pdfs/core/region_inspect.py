@@ -24,8 +24,24 @@ from anchor.extensions.anchor_pdfs.core.silver import region_content_from_items
 from anchor.extensions.anchor_pdfs.core.table_topology import topology_status
 
 
-async def _find_region(
-    store: DocStore, slug: str, region_id: str
+class AmbiguousRegionError(ValueError):
+    """A bare region id matched regions on more than one page (#287).
+
+    Region ids are only unique per page (``r1`` exists on page 1 *and*
+    page 4), so silently picking the first match binds provenance to the
+    wrong region. Carries the colliding ``region_id`` and the sorted
+    candidate ``pages`` so adapters can render a structured error; the
+    message tells the caller to qualify the page (``p<page>/<id>``).
+    """
+
+    def __init__(self, message: str, *, region_id: str, pages: list[int]) -> None:
+        super().__init__(message)
+        self.region_id = region_id
+        self.pages = pages
+
+
+async def find_region(
+    store: DocStore, slug: str, region_id: str, *, raise_ambiguous: bool = False
 ) -> tuple[int, dict[str, Any]] | None:
     """Resolve exactly one stored region, using the store's page membership."""
     page_hint, rid = _parse_region_token(region_id)
@@ -38,6 +54,13 @@ async def _find_region(
         for region in regions or []:
             if isinstance(region, dict) and region.get("id") == rid:
                 matches.append((int(pg), region))
+    if len(matches) > 1 and raise_ambiguous:
+        pages = sorted({page for page, _ in matches})
+        raise AmbiguousRegionError(
+            f"region id {rid!r} is ambiguous on pages {pages} of {slug!r}; "
+            f"qualify the page, e.g. 'p{pages[0]}/{rid}'",
+            region_id=rid, pages=pages,
+        )
     return matches[0] if len(matches) == 1 else None
 
 
@@ -66,12 +89,55 @@ async def _source_ref(
     return source
 
 
+_STANDARD_REGION_KEYS = frozenset(
+    {
+        "id", "kind", "title", "description", "page", "bbox", "approx_bbox",
+        "tags", "entities", "geometry", "member_item_ids", "table_slice",
+        "cells", "content", "source_ref", "derived_from",
+    }
+)
+
+
+def _producer_payload(region: dict[str, Any]) -> dict[str, Any] | None:
+    """Keys outside the standard region schema (an OIP producer's payload,
+    e.g. a chart digitizer's ``series``/``axes``) — returned verbatim so the
+    read view never hides stored data."""
+    extra = {k: v for k, v in region.items() if k not in _STANDARD_REGION_KEYS}
+    return extra or None
+
+
+async def _members(
+    store: DocStore, slug: str, page: int, region: dict[str, Any]
+) -> list[dict[str, Any]] | None:
+    """Expand ``member_item_ids`` into the silver items they name, so a
+    caller can cite the precise evidence without a second round trip."""
+    member_ids = region.get("member_item_ids")
+    if not member_ids:
+        return None
+    candidates = await store.get_page_candidates(slug, page) or []
+    by_id = {c.get("id"): c for c in candidates if isinstance(c, dict)}
+    out: list[dict[str, Any]] = []
+    for m in member_ids:
+        item = by_id.get(m)
+        if item is None:
+            continue
+        out.append(
+            {
+                "item_id": m,
+                "kind": item.get("label") or item.get("kind"),
+                "bbox": item.get("bbox"),
+                "text": (item.get("text") or "")[:120],
+            }
+        )
+    return out or None
+
+
 async def inspect_region(
-    store: DocStore, slug: str, region_id: str
+    store: DocStore, slug: str, region_id: str, *, raise_ambiguous: bool = False
 ) -> dict[str, Any] | None:
     """Return one gold region's full record + a grounding `source_ref`."""
     store = store.snapshot(slug)
-    found = await _find_region(store, slug, region_id)
+    found = await find_region(store, slug, region_id, raise_ambiguous=raise_ambiguous)
     if found is None:
         return None
     page, region = found
@@ -87,17 +153,20 @@ async def inspect_region(
         "entities": region.get("entities", []),
         "geometry": region.get("geometry"),
         "member_item_ids": region.get("member_item_ids"),
+        "members": await _members(store, slug, page, region),
         "table_slice": region.get("table_slice"),
         "cells": region.get("cells"),
         "table_topology": topology_status(region) if region.get("cells") else None,
         "content": region.get("content"),
         "derived_from": region.get("derived_from"),
+        "stored_source_ref": region.get("source_ref"),
+        "data": _producer_payload(region),
         "source_ref": await _source_ref(store, slug, page, region),
     }
 
 
 async def get_region_content(
-    store: DocStore, slug: str, region_id: str
+    store: DocStore, slug: str, region_id: str, *, raise_ambiguous: bool = False
 ) -> dict[str, Any] | None:
     """Return one gold region's reconstructed content (markdown + cells).
 
@@ -105,7 +174,7 @@ async def get_region_content(
     bbox snapped to nothing), rebuilds it from the page's silver candidates via
     `member_item_ids`."""
     store = store.snapshot(slug)
-    found = await _find_region(store, slug, region_id)
+    found = await find_region(store, slug, region_id, raise_ambiguous=raise_ambiguous)
     if found is None:
         return None
     page, region = found
@@ -127,6 +196,9 @@ async def get_region_content(
         "kind": region.get("kind"),
         "content": content or "",
         "cells": region.get("cells"),
+        "derived_from": region.get("derived_from"),
+        "stored_source_ref": region.get("source_ref"),
+        "data": _producer_payload(region),
         "table_topology": topology_status(region) if region.get("cells") else None,
         "source_ref": await _source_ref(store, slug, page, region),
     }

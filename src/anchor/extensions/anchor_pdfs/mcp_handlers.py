@@ -15,6 +15,9 @@ from anchor.extensions.anchor_pdfs.core.region_inspect import (
     inspect_region,
 )
 from anchor.extensions.anchor_pdfs.core.services import IngestService, SynopsisService
+from anchor.extensions.anchor_pdfs.core.source_ref_resolve import (
+    resolve_source_ref,
+)
 
 
 def tool_definitions() -> list[dict[str, Any]]:
@@ -37,7 +40,7 @@ def _byte_envelope(path: Path | None, *, fmt: str, fallback_ext: str = "") -> st
         if is_memory:
             return json.dumps({"error": "in-memory store has no real path; request format=base64"})
         return json.dumps({"format": "path", "value": str(path), "content_type": _ctype(path, fallback_ext)})
-    if fmt == "base64":
+    if fmt in ("base64", "inline"):
         if is_memory:
             # Memory store can't read by path; the caller has nothing to
             # decode. Surface a clear error so the agent doesn't burn
@@ -47,13 +50,24 @@ def _byte_envelope(path: Path | None, *, fmt: str, fallback_ext: str = "") -> st
             raw = path.read_bytes()
         except OSError as e:
             return json.dumps({"error": f"read failed: {e}"})
+        content_type = _ctype(path, fallback_ext)
+        if fmt == "inline" and content_type.startswith("image/") and content_type != "image/svg+xml":
+            # Hand the bytes back under the _mcp_image_b64 marker so the MCP
+            # server promotes the result to an ImageContent block and the host
+            # harness renders it. Without this an agent that wants to LOOK at a
+            # crop has to read the file off disk itself, which leaves the
+            # adapter surface (and trips read-permission prompts).
+            return json.dumps({
+                "_mcp_image_b64": base64.b64encode(raw).decode("ascii"),
+                "_mcp_mime": content_type,
+            })
         return json.dumps({
             "format": "base64",
             "value": base64.b64encode(raw).decode("ascii"),
-            "content_type": _ctype(path, fallback_ext),
+            "content_type": content_type,
             "size_bytes": len(raw),
         })
-    return json.dumps({"error": f"unknown format: {fmt!r} (use 'path' or 'base64')"})
+    return json.dumps({"error": f"unknown format: {fmt!r} (use 'path', 'base64', or 'inline')"})
 
 
 def _ctype(path: Path, fallback_ext: str) -> str:
@@ -117,9 +131,13 @@ async def _call_session_tool(
         if "error" in item:
             return json.dumps(item)
         image_path = item.pop("image_path", None)
+        # This envelope is nested under "image", where the server's top-level
+        # _mcp_image_b64 promotion cannot see it, so "inline" would yield an
+        # unviewable blob. Serve base64 instead of a broken promise.
+        page_fmt = args.get("format", "path")
         item["image"] = json.loads(_byte_envelope(
             Path(image_path) if image_path else None,
-            fmt=args.get("format", "path"),
+            fmt="base64" if page_fmt == "inline" else page_fmt,
             fallback_ext=".png",
         ))
         return json.dumps(item)
@@ -202,8 +220,13 @@ async def call_tool(
             return json.dumps({"slug": args["slug"], "found": False})
         return json.dumps({"found": True, **activity.to_dict()})
     if name == "get_document_index":
-        out = await store.get_index(args["slug"])
+        out = await store.get_index(
+            args["slug"], include_content=bool(args.get("include_content", False))
+        )
         return json.dumps(out) if out else json.dumps({"error": "not found"})
+    if name == "list_entities":
+        from anchor.extensions.anchor_pdfs.core.entities import list_entities
+        return json.dumps(await list_entities(store, args["slug"]))
     if name == "get_gold_regions":
         return json.dumps(await store.get_regions(args["slug"], page=args.get("page")))
     if name == "inspect_region":
@@ -212,6 +235,12 @@ async def call_tool(
     if name == "get_region_content":
         out = await get_region_content(store, args["slug"], args["region_id"])
         return json.dumps(out) if out else json.dumps({"error": "region not found"})
+    if name == "resolve_source_ref":
+        ref = args.get("ref")
+        if not isinstance(ref, dict):
+            return json.dumps({"error": "ref must be an object"})
+        out = await resolve_source_ref(store, args["slug"], ref)
+        return json.dumps(out) if out else json.dumps({"error": "unresolvable ref"})
     if name == "get_page_text":
         text = await store.get_page_text(args["slug"], int(args["page"]))
         return text if text is not None else json.dumps({"error": "not found"})
@@ -233,14 +262,36 @@ async def call_tool(
         out = await store.get_gold_map(args["slug"])
         return json.dumps(out) if out is not None else json.dumps({"error": "not found"})
     if name == "get_page_image":
-        path = await store.get_page_image_path(args["slug"], int(args["page"]))
-        return _byte_envelope(path, fmt=args.get("format", "path"), fallback_ext=".png")
+        from anchor.extensions.anchor_pdfs.core.region_crops import (
+            CropUnavailable,
+            get_page_image,
+        )
+        dpi = args.get("dpi")
+        try:
+            path = await get_page_image(
+                store, ingest.renderer, args["slug"], int(args["page"]),
+                dpi=int(dpi) if dpi is not None else None,
+            )
+        except CropUnavailable as e:
+            return json.dumps({"error": str(e)})
+        return _byte_envelope(path, fmt=args.get("format", "inline"), fallback_ext=".png")
     if name == "get_crop":
-        path = await store.get_crop_path(args["slug"], args["rel_path"])
+        from anchor.extensions.anchor_pdfs.core.region_crops import (
+            CropUnavailable,
+            get_region_crop,
+        )
+        dpi = args.get("dpi")
+        try:
+            path = await get_region_crop(
+                store, ingest.renderer, args["slug"], args["rel_path"],
+                dpi=int(dpi) if dpi is not None else None,
+            )
+        except CropUnavailable as e:
+            return json.dumps({"error": str(e)})
         # Content-type inference falls back to the extension of rel_path
         # for memory-backed stores that return None.
         ext = "." + args["rel_path"].rsplit(".", 1)[-1] if "." in args["rel_path"] else ""
-        return _byte_envelope(path, fmt=args.get("format", "path"), fallback_ext=ext)
+        return _byte_envelope(path, fmt=args.get("format", "inline"), fallback_ext=ext)
     if name == "get_pdf":
         path = await store.get_raw_pdf_path(args["slug"])
         return _byte_envelope(path, fmt=args.get("format", "path"), fallback_ext=".pdf")
@@ -269,6 +320,19 @@ async def call_tool(
                 )
             )
         except (ValueError, RuntimeError) as e:
+            # AmbiguousRegionError (#287) carries the colliding pages; keep
+            # the error structured so an agent can retry page-qualified.
+            err: dict[str, Any] = {"error": str(e)}
+            pages = getattr(e, "pages", None)
+            if pages:
+                err["candidate_pages"] = pages
+            return json.dumps(err)
+    if name == "remove_region":
+        try:
+            return json.dumps(
+                await ingest.remove_region(args["slug"], args["region_id"])
+            )
+        except ValueError as e:  # includes RegionNotRemovableError
             return json.dumps({"error": str(e)})
     if name == "get_embeddings_meta":
         slug = args["slug"]

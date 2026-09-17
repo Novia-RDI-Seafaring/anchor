@@ -23,6 +23,9 @@ matcher and still returns only enriched data:
   No value-only search, first-table fallback or fuzzy matching is permitted.
 - A valid coarse ref can refine to that pair's value cell. Existing precise
   refs and caller detail are preserved when already equivalent.
+- Successful resolution records the value cell's `cell: {row, col}` selector
+  for source navigation. A supplied selector must agree with the certified
+  cell; conflicting selectors are not silently retargeted.
 - Rows without source scope remain unrefined. Compatible node-level source
   defaults can supply scope under the existing G2 rules.
 - Certified-pair metadata is consumed and checked when supplied. A successful
@@ -38,6 +41,9 @@ On update, the preparer resolves the intended post-merge data, including
 existing node defaults. It returns the caller's original patch with only
 resolved rows overlaid, preserving null deletion markers and omitted fields.
 Rows remain whole-list replacements; no partial-row endpoint is introduced.
+Approved suggestion batches run the same preparation against their simulated
+state before any event is emitted. Batch review approval does not itself
+verify evidence; invalid batches still leave the workspace unchanged.
 Move, reparent, label-only, edge and bibliography operations remain unchanged.
 
 Each resolution pins one selected document generation per slug. Multiple page

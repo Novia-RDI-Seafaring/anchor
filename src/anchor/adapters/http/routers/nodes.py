@@ -3,27 +3,41 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from anchor.adapters.http.deps import get_workspace_service
+from anchor.adapters.http.deps import (
+    apply_actor_override,
+    get_workspace_service,
+)
 from anchor.adapters.http.schemas import AddNodeRequest, UpdateNodeRequest
 from anchor.core.services.workspace_service import WorkspaceService
+from anchor.core.workspace.review import review_warning
 from anchor.core.workspace.workspace import CommandError
 
 router = APIRouter(prefix="/api/workspaces", tags=["nodes"])
 node_types_router = APIRouter(prefix="/api/node-types", tags=["nodes"])
 
 
-def _data_warning(svc: WorkspaceService, node_type: str | None, data: dict | None) -> str | None:
-    """List data keys ``node_type``'s renderer ignores, as a soft warning (#191)."""
-    if not node_type:
-        return None
-    unknown = svc.unknown_data_keys(node_type, data)
-    if not unknown:
-        return None
-    return (
-        f"node_type {node_type!r} does not render these data keys: "
-        f"{', '.join(unknown)}. They are stored but never shown. "
-        f"GET /api/node-types/{node_type} for the renderable fields."
-    )
+def _data_warning(
+    svc: WorkspaceService,
+    node_type: str | None,
+    data: dict | None,
+    *,
+    partial: bool = False,
+) -> str | None:
+    """Soft warnings on a data payload: keys the renderer ignores (#191)
+    plus a malformed ``data.review`` object (#324). Never blocks the write."""
+    parts: list[str] = []
+    if node_type:
+        unknown = svc.unknown_data_keys(node_type, data)
+        if unknown:
+            parts.append(
+                f"node_type {node_type!r} does not render these data keys: "
+                f"{', '.join(unknown)}. They are stored but never shown. "
+                f"GET /api/node-types/{node_type} for the renderable fields."
+            )
+    rw = review_warning(data, partial=partial)
+    if rw is not None:
+        parts.append(rw)
+    return " ".join(parts) or None
 
 
 @node_types_router.get("")
@@ -46,7 +60,9 @@ async def add_node(slug: str, req: AddNodeRequest, svc: WorkspaceService = Depen
     # `exclude_none` drops omitted x/y so the service auto-places (#189) and
     # drops the unused `type`/`node_type` alias. We resolve the alias and the
     # node_type default ourselves so both shapes are accepted (#186).
+    apply_actor_override(req.actor)
     kwargs = req.model_dump(exclude_none=True)
+    kwargs.pop("actor", None)  # attribution metadata, not a node field (#322)
     place = kwargs.pop("place", None)
     node_type = kwargs.pop("node_type", None) or kwargs.pop("type", None) or "concept"
     kwargs.pop("type", None)
@@ -56,6 +72,9 @@ async def add_node(slug: str, req: AddNodeRequest, svc: WorkspaceService = Depen
     except CommandError as exc:
         raise HTTPException(400, str(exc)) from exc
     resp = {
+        # The created node's id at top level (#307) - additive; the
+        # event/state envelope stays as-is for existing consumers.
+        "node_id": env.payload.get("id"),
         "event": env.model_dump(),
         "state": state.get_state(),
         # Echo the resolved position so the client can track layout (#189).
@@ -78,7 +97,9 @@ async def update_node(
     # from "parent explicitly set to null" — the latter is how the
     # frontend unparents a node (drop outside any Area). `exclude_none` is
     # WRONG for parent because null IS a meaningful value.
+    apply_actor_override(req.actor)
     raw = req.model_dump(exclude_unset=True)
+    raw.pop("actor", None)  # attribution metadata, not a node field (#322)
     data_patch = raw.get("data") if isinstance(raw.get("data"), dict) else None
     # Defensive: a node can't be its own parent.
     if raw.get("parent") == node_id:
@@ -113,7 +134,7 @@ async def update_node(
     resp = {"event": env.model_dump(), "state": state.get_state()}
     if data_patch is not None:
         node = state.nodes.get(node_id)
-        warning = _data_warning(svc, node.node_type if node else None, data_patch)
+        warning = _data_warning(svc, node.node_type if node else None, data_patch, partial=True)
         if warning is not None:
             resp["warning"] = warning
     return resp

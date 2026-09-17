@@ -10,11 +10,13 @@ Layout:
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 
 import aiofiles
 
 from anchor.core.ids import slugify
+from anchor.core.upload_safety import UnsafeUploadError
 from anchor.extensions.anchor_cad.core.schemas import CadModel
 
 
@@ -28,7 +30,16 @@ class FsCadStore:
         self._lock = asyncio.Lock()
 
     def _model_path(self, slug: str) -> Path:
-        return self.artefacts / slug / "model.json"
+        # Slugs reach here from HTTP/MCP/CLI arguments. Inline normalise-then-
+        # prefix-check (not delegated): the analyzer only recognises the barrier
+        # in the function that builds the path.
+        if not slug or "/" in slug or "\\" in slug or slug in {".", ".."}:
+            raise UnsafeUploadError(f"unsafe CAD slug: {slug!r}")
+        base = os.path.realpath(os.fspath(self.artefacts))
+        candidate = os.path.normpath(os.path.join(base, slug, "model.json"))
+        if not candidate.startswith(base + os.sep):
+            raise UnsafeUploadError(f"CAD slug {slug!r} escapes {self.artefacts!s}")
+        return Path(candidate)
 
     async def stash_cad(self, cad_bytes: bytes, filename: str) -> Path:
         # Preserve extension; slugify the stem for the on-disk name.
@@ -70,7 +81,10 @@ class FsCadStore:
         return out
 
     async def get_model(self, slug: str) -> CadModel | None:
-        mp = self._model_path(slug)
+        try:
+            mp = self._model_path(slug)
+        except UnsafeUploadError:
+            return None  # a malformed slug can never name a stored model
         if not mp.is_file():
             return None
         try:

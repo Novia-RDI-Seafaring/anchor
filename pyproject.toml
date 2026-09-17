@@ -10,7 +10,7 @@ build-backend = "hatchling.build"
 # + ``anchor-canvas-fmus`` etc. ``anchor-kb`` then becomes a thin
 # meta-package depending on those, the same pattern ``langchain`` uses.
 name = "anchor-kb"
-version = "0.2.8"
+version = "0.4.0"
 description = "ANCHOR, Agent-Native Canvas to Help Organize Resources with PDF ingest, FMU simulation, and source-grounded provenance"
 requires-python = ">=3.12"
 authors = [
@@ -36,9 +36,11 @@ dependencies = [
     "sse-starlette>=2.1.0",
     "trimesh>=4.0",
     "playwright>=1.59.0",
-    "sentence-transformers>=5.4.1",
     "questionary>=2.1.1",
     "onnxruntime>=1.27.0",
+    "tokenizers>=0.20",
+    "huggingface-hub>=0.26",
+    "numpy>=1.26",
 ]
 
 [project.optional-dependencies]
@@ -48,9 +50,6 @@ dev = [
     "import-linter>=2.0",
     "ruff>=0.6.0",
     "Pillow>=10.0",
-]
-local-embed = [
-    "sentence-transformers>=3.0",
 ]
 fmus = [
     "fmpy>=0.3",

@@ -23,6 +23,7 @@ import { ReactFlowProvider } from "@xyflow/react";
 import { ActivityToast } from "@/canvas/ActivityToast";
 import { DirectionalConnectors } from "@/canvas/DirectionalConnectors";
 
+import { CatchUpPanel } from "./CatchUpPanel";
 import { IngestActivityPill } from "./IngestActivityPill";
 import { LeftToolRail } from "./LeftToolRail";
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -48,6 +49,11 @@ export function CanvasShell({ workspaceSlug, children }: Props) {
           {/* Project-level ingestion-activity pill (issue #51): bottom-left,
               live for every in-flight ingest regardless of trigger. */}
           <IngestActivityPill />
+          {/* "While you were away" catch-up summary (#325): top-right,
+              shown only when this canvas moved past the viewer's stored
+              last-seen version. Mounted inside the provider so entry
+              clicks can center via useReactFlow. */}
+          <CatchUpPanel workspaceSlug={workspaceSlug} />
           <ActivityToast />
         </div>
         <PropertiesPanel />

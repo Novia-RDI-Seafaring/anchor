@@ -14,6 +14,7 @@ from anchor.core.upload_safety import safe_upload_name
 from anchor.extensions.anchor_pdfs.core.generation import polished_membership
 from anchor.extensions.anchor_pdfs.core.ingest.validation import require_unique_region_ids
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
+from anchor.extensions.anchor_pdfs.core.silver import project_index
 from anchor.extensions.anchor_pdfs.core.source_identity import SourceIdentityError, original_source
 from anchor.extensions.anchor_pdfs.infra._generation import document_view
 from anchor.extensions.anchor_pdfs.infra._region_normalize import _normalise_regions
@@ -209,10 +210,10 @@ class MemoryDocStore:
         return out
 
     @document_view
-    async def get_index(self, slug: str) -> dict[str, Any] | None:
+    async def get_index(self, slug: str, *, include_content: bool = False) -> dict[str, Any] | None:
         if self._generation is not None and slug not in self._indexes:
             raise SourceIdentityError("document generation index is unavailable")
-        return self._indexes.get(slug)
+        return project_index(self._indexes.get(slug), include_content=include_content)
 
     @document_view
     async def get_pages_meta(self, slug: str) -> dict[str, Any] | None:
@@ -233,7 +234,9 @@ class MemoryDocStore:
         return self._page_text.get((slug, page))
 
     @document_view
-    async def get_page_image_path(self, slug: str, page: int) -> Path | None:
+    async def get_page_image_path(
+        self, slug: str, page: int, dpi: int | None = None
+    ) -> Path | None:
         return None  # in-memory has no path
 
     @document_view
@@ -329,6 +332,12 @@ class MemoryDocStore:
     @document_view
     async def get_crop_path(self, slug: str, rel_path: str) -> Path | None:
         return None
+
+    @document_view
+    async def write_crop(self, slug: str, rel_path: str, data: bytes) -> Path:
+        async with self._lock:
+            self._crops[(slug, rel_path)] = data
+        return Path(f"memory://gold/{slug}/pages/{rel_path}")
 
     @document_view
     async def get_raw_pdf_path(self, slug: str, *, page: int | None = None) -> Path | None:

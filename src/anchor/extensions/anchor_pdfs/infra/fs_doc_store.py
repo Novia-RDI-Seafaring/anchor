@@ -35,6 +35,7 @@ from anchor.core.upload_safety import UnsafeUploadError, assert_within, safe_upl
 from anchor.extensions.anchor_pdfs.core.generation import polished_membership
 from anchor.extensions.anchor_pdfs.core.ingest.validation import require_unique_region_ids
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
+from anchor.extensions.anchor_pdfs.core.silver import project_index
 from anchor.extensions.anchor_pdfs.core.source_identity import SourceIdentityError, original_source
 from anchor.extensions.anchor_pdfs.infra._generation import document_view
 from anchor.extensions.anchor_pdfs.infra._region_normalize import _normalise_regions
@@ -143,7 +144,7 @@ class FsDocStore:
 
     async def publish_replacement(self, slug: str, generation: str, pages: list[int]) -> None:
         view = self.replacement(slug, generation)
-        index = await view.get_index(slug)
+        index = await view.get_index(slug, include_content=True)
         if index is None or await view.get_raw_pdf_path(slug) is None:
             raise SourceIdentityError("replacement is missing its source index or original")
         membership = sorted(set(pages))
@@ -304,8 +305,11 @@ class FsDocStore:
             if not d.is_dir():
                 continue
             slug = d.name
-            reader = self.snapshot(slug)
-            idx = await reader.get_index(slug)
+            try:
+                reader = self.snapshot(slug)
+                idx = await reader.get_index(slug)
+            except UnsafeUploadError:
+                continue
             page_count = 0
             title = slug
             filename = ""
@@ -471,7 +475,7 @@ class FsDocStore:
         os.replace(tmp, target)
 
     @document_view
-    async def get_index(self, slug: str) -> dict[str, Any] | None:
+    async def get_index(self, slug: str, *, include_content: bool = False) -> dict[str, Any] | None:
         p = self._doc_dir(self.silver, slug) / "index.json"
         if self._pinned.get(slug) is not None and not p.is_file():
             raise SourceIdentityError("document generation index is unavailable")
@@ -481,7 +485,7 @@ class FsDocStore:
             document = index.get("document", {}) if isinstance(index, dict) else {}
             if document.get("source") != manifest["source"] or document.get("generation") != {"id": manifest["generation"], "pages": manifest["pages"]}:
                 raise SourceIdentityError("document generation and source metadata disagree")
-        return index
+        return project_index(index, include_content=include_content)
 
     @document_view
     async def get_pages_meta(self, slug: str) -> dict[str, Any] | None:
@@ -510,8 +514,11 @@ class FsDocStore:
         return None
 
     @document_view
-    async def get_page_image_path(self, slug: str, page: int) -> Path | None:
-        p = self._doc_dir(self.silver, slug) / "pages" / f"{int(page)}.png"
+    async def get_page_image_path(
+        self, slug: str, page: int, dpi: int | None = None
+    ) -> Path | None:
+        name = f"{int(page)}.png" if dpi is None else f"{int(page)}@{int(dpi)}dpi.png"
+        p = self._doc_dir(self.silver, slug) / "pages" / name
         return p if p.exists() else None
 
     @document_view
@@ -574,6 +581,27 @@ class FsDocStore:
         except UnsafeUploadError:
             return None
         return resolved if resolved.exists() else None
+
+    @document_view
+    async def write_crop(self, slug: str, rel_path: str, data: bytes) -> Path:
+        # Both components arrive from CLI/MCP/HTTP arguments, so the write
+        # path is a path-injection sink. Inline normalise-then-prefix-check
+        # (not delegated) so the containment barrier sits in the same function
+        # that builds the path - the same guard `_doc_dir` applies on reads.
+        if not slug or "/" in slug or "\\" in slug or slug in {".", ".."}:
+            raise UnsafeUploadError(f"unsafe document slug: {slug!r}")
+        base = os.path.realpath(os.fspath(self.gold))
+        doc_base = os.path.realpath(os.path.join(os.fspath(self._doc_dir(self.gold, slug)), "pages"))
+        candidate = os.path.realpath(os.path.join(os.fspath(self._doc_dir(self.gold, slug)), "pages", rel_path))
+        if not candidate.startswith(base + os.sep):
+            raise UnsafeUploadError(f"crop rel_path {rel_path!r} escapes the gold dir")
+        if not candidate.startswith(doc_base + os.sep):
+            raise UnsafeUploadError(f"crop rel_path {rel_path!r} escapes the gold pages dir")
+        target = Path(candidate)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        async with aiofiles.open(target, "wb") as f:
+            await f.write(data)
+        return target
 
     @document_view
     async def get_raw_pdf_path(self, slug: str, *, page: int | None = None) -> Path | None:
@@ -751,7 +779,17 @@ class FsDocStore:
             return target
 
     async def write_silver_artifact(self, slug: str, name: str, payload: bytes | str) -> Path:
-        target = self._doc_dir(self.silver, slug) / name
+        # Callers pass pipeline-internal names, but the slug can arrive from
+        # HTTP/MCP/CLI arguments (e.g. the DPI page-image variants). Inline
+        # normalise-then-prefix-check (not delegated) so the containment
+        # barrier sits in the same function that builds the path.
+        base = os.path.realpath(os.fspath(self.silver))
+        candidate = os.path.normpath(os.path.join(os.fspath(self._doc_dir(self.silver, slug)), name))
+        if not candidate.startswith(base + os.sep):
+            raise UnsafeUploadError(
+                f"silver artifact path escapes the silver dir: {slug!r}/{name!r}"
+            )
+        target = Path(candidate)
         target.parent.mkdir(parents=True, exist_ok=True)
         if isinstance(payload, str):
             async with aiofiles.open(target, "w", encoding="utf-8") as f:
@@ -845,7 +883,20 @@ class FsDocStore:
         return out
 
     async def write_gold_region_file(self, slug: str, page: int, regions: list[dict[str, Any]]) -> Path:
-        target = self._doc_dir(self.gold, slug) / "pages" / f"{page}.regions.json"
+        # The slug reaches this write from CLI/MCP/HTTP arguments (derive /
+        # remove region), so the path is a path-injection sink. Inline
+        # normalise-then-prefix-check (not delegated) so the containment
+        # barrier sits in the same function that builds the path — the same
+        # guard `write_crop` applies.
+        if not slug or "/" in slug or "\\" in slug or slug in {".", ".."}:
+            raise UnsafeUploadError(f"unsafe document slug: {slug!r}")
+        base = os.path.realpath(os.fspath(self.gold))
+        candidate = os.path.normpath(
+            os.path.join(os.fspath(self._doc_dir(self.gold, slug)), "pages", f"{int(page)}.regions.json")
+        )
+        if not candidate.startswith(base + os.sep):
+            raise UnsafeUploadError(f"document slug {slug!r} escapes the gold dir")
+        target = Path(candidate)
         target.parent.mkdir(parents=True, exist_ok=True)
         normalised = _normalise_regions(regions)
         async with aiofiles.open(target, "w", encoding="utf-8") as f:
@@ -861,7 +912,18 @@ class FsDocStore:
                 "or region.page"
             )
         async with self._lock:
-            target = self._doc_dir(self.gold, slug) / "pages" / f"{page}.regions.json"
+            # Same inline barrier as `write_gold_region_file`: the slug is
+            # caller-supplied, so check containment right where the read path
+            # is built.
+            if not slug or "/" in slug or "\\" in slug or slug in {".", ".."}:
+                raise UnsafeUploadError(f"unsafe document slug: {slug!r}")
+            base = os.path.realpath(os.fspath(self.gold))
+            candidate = os.path.normpath(
+                os.path.join(os.fspath(self._doc_dir(self.gold, slug)), "pages", f"{page}.regions.json")
+            )
+            if not candidate.startswith(base + os.sep):
+                raise UnsafeUploadError(f"document slug {slug!r} escapes the gold dir")
+            target = Path(candidate)
             existing: list[dict[str, Any]] = []
             if target.is_file():
                 data = json.loads(target.read_text())
@@ -874,7 +936,13 @@ class FsDocStore:
             return await self.write_gold_region_file(slug, page, kept)
 
     async def write_embeddings(self, slug: str, payload: dict[str, Any]) -> Path:
-        target = self._doc_dir(self.gold, slug) / "embeddings.json"
+        # Inline normalise-then-prefix-check (not delegated): the slug can
+        # arrive from a request (remove_region's cleanup writes here).
+        base = os.path.realpath(os.fspath(self.gold))
+        candidate = os.path.normpath(os.path.join(os.fspath(self._doc_dir(self.gold, slug)), "embeddings.json"))
+        if not candidate.startswith(base + os.sep):
+            raise UnsafeUploadError(f"document slug {slug!r} escapes the gold dir")
+        target = Path(candidate)
         target.parent.mkdir(parents=True, exist_ok=True)
         tmp = target.with_name(f"{uuid4().hex}.tmp")
         try:
@@ -887,7 +955,11 @@ class FsDocStore:
 
     @document_view
     async def get_embeddings(self, slug: str) -> dict[str, Any] | None:
-        target = self._doc_dir(self.gold, slug) / "embeddings.json"
+        base = os.path.realpath(os.fspath(self.gold))
+        candidate = os.path.normpath(os.path.join(os.fspath(self._doc_dir(self.gold, slug)), "embeddings.json"))
+        if not candidate.startswith(base + os.sep):
+            return None
+        target = Path(candidate)
         if not target.is_file():
             return None
         async with aiofiles.open(target, encoding="utf-8") as f:

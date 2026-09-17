@@ -20,8 +20,14 @@ from anchor.core.events.canvas import (
     NodeReparented,
     NodeResized,
     NodeUpdated,
+    ProposalSetMembersAdded,
+    ProposalSetOpened,
+    ProposalSetReviewed,
     ReferenceAttached,
     ReferenceCreated,
+    ReferenceRemoved,
+    ReferenceUpdated,
+    WorkspaceMetadataUpdated,
 )
 from anchor.core.workspace.reducer import apply
 from anchor.core.workspace.workspace import Workspace
@@ -40,6 +46,12 @@ _EVENT_TYPES = {
     "CanvasSnapshot": CanvasSnapshot,
     "ReferenceCreated": ReferenceCreated,
     "ReferenceAttached": ReferenceAttached,
+    "ReferenceRemoved": ReferenceRemoved,
+    "ReferenceUpdated": ReferenceUpdated,
+    "WorkspaceMetadataUpdated": WorkspaceMetadataUpdated,
+    "ProposalSetOpened": ProposalSetOpened,
+    "ProposalSetMembersAdded": ProposalSetMembersAdded,
+    "ProposalSetReviewed": ProposalSetReviewed,
 }
 
 

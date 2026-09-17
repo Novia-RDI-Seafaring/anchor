@@ -12,6 +12,7 @@ explicit.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -41,6 +42,12 @@ class NodeType:
     render" warning and the queryable ``node-types`` schema surface
     (issue #191). When `data_fields` is ``None`` the type is treated as
     open — no unknown-key warning is emitted (the v1 behaviour).
+
+    `renders` is the OIP ``ui_hints.node_types[].renders`` token (#309):
+    the render-dispatch hint a consumer UI consults when the node type has
+    no exact renderer registration (e.g. ``graphtracer:chart_series``
+    declares ``renders: "chart"``). ``None`` means no hint; unrecognised
+    tokens fall through to the consumer's default renderer, never error.
     """
 
     name: str
@@ -49,6 +56,7 @@ class NodeType:
     extra_validate: _DataValidator | None = None
     data_fields: tuple[str, ...] | None = None
     body_field: str | None = None
+    renders: str | None = None
 
     def validate(self, data: dict[str, Any]) -> None:
         if self.data_schema is not None:
@@ -82,6 +90,17 @@ class NodeTypeRegistry:
             raise ValueError(f"node type {node_type.name!r} already registered")
         self._types[node_type.name] = node_type
 
+    def register_if_absent(self, node_type: NodeType) -> bool:
+        """Register ``node_type`` unless its name is taken; report the outcome.
+
+        Manifest-declared producer types are additive (#309): an exact
+        registration (built-in or earlier manifest) always wins, so this
+        never raises on a duplicate the way :meth:`register` does."""
+        if node_type.name in self._types:
+            return False
+        self._types[node_type.name] = node_type
+        return True
+
     def unregister(self, name: str) -> None:
         self._types.pop(name, None)
 
@@ -112,8 +131,9 @@ class NodeTypeRegistry:
 
         With ``name`` given, returns a one-element list for that type (empty
         if unregistered). Without it, returns every registered type. Each
-        entry: ``{name, description, data_fields, body_field}``. This is the
-        queryable per-node-type data contract agents were missing (#191)."""
+        entry: ``{name, description, data_fields, body_field, renders}``.
+        This is the queryable per-node-type data contract agents were
+        missing (#191); ``renders`` is the OIP render-dispatch token (#309)."""
         if name is not None:
             nt = self._types.get(name)
             return [_describe(nt)] if nt is not None else []
@@ -126,7 +146,58 @@ def _describe(nt: NodeType) -> dict[str, Any]:
         "description": nt.description,
         "data_fields": list(nt.data_fields) if nt.data_fields is not None else None,
         "body_field": nt.body_field,
+        "renders": nt.renders,
     }
+
+
+def node_types_from_ui_hints(
+    manifests: Iterable[Mapping[str, Any]],
+) -> list[NodeType]:
+    """Build open :class:`NodeType` records from OIP manifests (#309).
+
+    Reads each manifest's ``ui_hints.node_types`` entries (plain data, no
+    code) and returns one open node type per well-formed entry, carrying
+    the producer's declared ``renders`` token so consumer UIs can resolve
+    a renderer for a namespaced type they have no exact registration for
+    (OIP#6 fallback chain: exact registration, then ``renders`` token,
+    then default). Malformed or incomplete entries are skipped, never an
+    error: ``ui_hints`` is advisory."""
+    found: list[NodeType] = []
+    for manifest in manifests:
+        producer = manifest.get("producer")
+        producer_name = (
+            producer.get("name") if isinstance(producer, Mapping) else None
+        )
+        ui_hints = manifest.get("ui_hints")
+        if not isinstance(ui_hints, Mapping):
+            continue
+        entries = ui_hints.get("node_types")
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                continue
+            name = entry.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            renders = entry.get("renders")
+            if not isinstance(renders, str) or not renders:
+                renders = None
+            by = f" by OIP producer {producer_name!r}" if producer_name else ""
+            description = (
+                f"Producer node type declared{by} via ui_hints (open shape). "
+                + (
+                    f"Renders through the {renders!r} token when the canvas "
+                    "recognises it; otherwise falls back to the default "
+                    "renderer."
+                    if renders is not None
+                    else "No renders token declared; uses the default renderer."
+                )
+            )
+            found.append(
+                NodeType(name=name, description=description, renders=renders)
+            )
+    return found
 
 
 EMPTY_REGISTRY = NodeTypeRegistry()

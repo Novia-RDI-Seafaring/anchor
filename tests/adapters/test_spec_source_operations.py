@@ -137,6 +137,8 @@ def test_create_update_strict_evidence_matrix(transport, reverse, case, tmp_path
         expected["rows"][0]["source_ref"].update(
             bbox=[60, 50, 90, 60], region_id="pressure", coord_origin="top-left",
         )
+    if case in {"precise", "inferred", "new_origin"}:
+        expected["rows"][0]["source_ref"]["cell"] = {"row": 0, "col": 1}
     node_id = ops.call("add", data)
     created = ops.read(node_id)
     assert without_evidence(created) == expected
@@ -188,7 +190,7 @@ def test_create_and_update_use_current_generation_gold(transport, tmp_path):
         data["rows"][0]["value"] = value
         expected = deepcopy(data)
         if value == "43":
-            expected["rows"][0]["source_ref"]["bbox"] = [60, 70, 90, 80]
+            expected["rows"][0]["source_ref"].update(bbox=[60, 70, 90, 80], cell={"row": 0, "col": 1})
         node_id = ops.call("add", data)
         assert without_evidence(ops.read(node_id)) == expected
         ops.call("update", data, node_id)

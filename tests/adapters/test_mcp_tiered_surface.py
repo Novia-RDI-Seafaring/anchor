@@ -71,8 +71,14 @@ async def test_base_single_project_advertises_core_not_full_surface(tmp_path):
     # The full dispatchable surface is ~45+; the tiered default stays a small
     # curated slice (~20, the 90% path + extract_pointed from #132 +
     # server_info from #177/#179 + inspect_region / get_region_content, the
-    # search -> inspect -> answer pair from #242).
-    assert len(names) <= 25
+    # search -> inspect -> answer pair from #242 + canvas_propose_set, which
+    # the skill mandates on every multi-element write and so cannot be gated,
+    # + list_entities, which is how an agent learns what a document covers
+    # instead of inferring it from the title).
+    #
+    # Raise this only for a tool the agent cannot do without: the point of the
+    # cap is that the default list stays a curated slice of a ~45-tool surface.
+    assert len(names) <= 27
     assert set(names) == set(tiering.CORE_NAMES) - tiering.CORE_LIFECYCLE_NAMES
     # No lifecycle tools in single-project mode.
     assert "create_environment" not in names
@@ -84,8 +90,9 @@ async def test_base_multiproject_advertises_core_plus_lifecycle(tmp_path):
     names = await _advertised(server)
     # Multiproject advertises the full core including the two lifecycle tools
     # (create_project, list_projects), so the cap is one higher than the
-    # single-project slice: 23 curated + 2 lifecycle = 25 with server_info.
-    assert len(names) <= 26
+    # single-project slice: 24 curated (intent_add_item joined in #343) +
+    # 2 lifecycle = 26 with server_info.
+    assert len(names) <= 29
     assert tiering.CORE_NAMES.issubset(set(names))
     # The long tail is gated out by default.
     for gated in ("fmu_inspect", "inspect", "sysml_render", "create_environment",
@@ -114,6 +121,30 @@ async def test_extension_status_dispatches_shared_payload(tmp_path):
     )
     summary = payload["summary"]
     assert summary["available"] + summary["unavailable"] == 3
+
+
+async def test_extension_status_lists_discovered_producers(tmp_path, monkeypatch):
+    """#308 parity: MCP serves the same discovered-producers section as CLI/HTTP."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "home" / ".config"))
+    data_dir = tmp_path / "data"
+    project_dir = data_dir / ".oip" / "producers.d"
+    project_dir.mkdir(parents=True)
+    (project_dir / "tracer.json").write_text(json.dumps({
+        "oip_version": "0.1",
+        "producer": {"name": "tracer", "version": "1.0.0"},
+        "invocation": {"kind": "mcp-stdio", "command": "no-such-binary-xyz"},
+    }))
+    server, _bundle = _single_project_server(tmp_path)
+
+    payload = json.loads(await _call(server, "anchor_extension_status"))
+
+    producers = payload["producers"]
+    assert "never started by Anchor" in producers["note"]
+    items = {item["name"]: item for item in producers["items"]}
+    assert items["tracer"]["command_found"] is False
+    assert items["tracer"]["check"] == "command not found on PATH"
+    assert items["tracer"]["started"] is False
 
 
 # -- gated reachability ------------------------------------------------------ #

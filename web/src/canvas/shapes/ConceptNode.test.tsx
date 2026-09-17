@@ -18,11 +18,11 @@ import { describe, expect, it } from "vitest";
 import { ConceptNode } from "./ConceptNode";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const Mount = ({ selected }: { selected: boolean }) => (
+const Mount = ({ selected, data }: { selected: boolean; data?: Record<string, unknown> }) => (
   <ConceptNode
     {...({
       id: "n1",
-      data: { label: "hello" },
+      data: data ?? { label: "hello" },
       selected,
       dragging: false,
       isConnectable: false,
@@ -35,7 +35,7 @@ const Mount = ({ selected }: { selected: boolean }) => (
   />
 );
 
-function renderNode({ selected }: { selected: boolean }) {
+function renderNode({ selected, data }: { selected: boolean; data?: Record<string, unknown> }) {
   return render(
     <MemoryRouter initialEntries={["/canvas/w1"]}>
       <Routes>
@@ -43,7 +43,7 @@ function renderNode({ selected }: { selected: boolean }) {
           path="/canvas/:id"
           element={
             <ReactFlowProvider>
-              <Mount selected={selected} />
+              <Mount selected={selected} data={data} />
             </ReactFlowProvider>
           }
         />
@@ -247,5 +247,98 @@ describe("ConceptNode placeholder", () => {
   it("does NOT render the chip when placeholder is missing or false", () => {
     const { queryByTestId } = renderWith({ label: "filled" });
     expect(queryByTestId("placeholder-chip")).toBeNull();
+  });
+});
+
+/**
+ * Review badge smoke (#324) — a `data.review` in state "proposed" or
+ * "rejected" renders the quiet corner badge; "accepted" (and no review at
+ * all) is the clean, unmarked state. The badge is deliberately distinct
+ * from the sky-blue placeholder chip: violet for proposed, rose for
+ * rejected (graph-level dimming of rejected nodes lives in CanvasGraph).
+ */
+describe("ConceptNode review badge", () => {
+  function renderWith(data: Record<string, unknown>) {
+    return render(
+      <MemoryRouter initialEntries={["/canvas/w1"]}>
+        <Routes>
+          <Route
+            path="/canvas/:id"
+            element={
+              <ReactFlowProvider>
+                <ConceptNode
+                  {...({
+                    id: "n1",
+                    data,
+                    selected: false,
+                    dragging: false,
+                    isConnectable: false,
+                    positionAbsoluteX: 0,
+                    positionAbsoluteY: 0,
+                    type: "concept",
+                    zIndex: 0,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  } as any)}
+                />
+              </ReactFlowProvider>
+            }
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it("renders the proposed badge with the proposing agent's label", () => {
+    const { queryByTestId } = renderWith({
+      label: "Guess",
+      review: { state: "proposed", by: { kind: "agent", label: "claude" } },
+    });
+    const badge = queryByTestId("review-badge");
+    expect(badge).not.toBeNull();
+    expect(badge?.getAttribute("data-review-state")).toBe("proposed");
+    expect(badge?.textContent).toContain("proposed");
+    expect(badge?.textContent).toContain("claude");
+  });
+
+  it("renders the rejected badge", () => {
+    const { queryByTestId } = renderWith({
+      label: "No",
+      review: { state: "rejected" },
+    });
+    const badge = queryByTestId("review-badge");
+    expect(badge).not.toBeNull();
+    expect(badge?.getAttribute("data-review-state")).toBe("rejected");
+  });
+
+  it("renders no badge for accepted or review-less nodes", () => {
+    expect(
+      renderWith({ label: "ok", review: { state: "accepted" } })
+        .queryByTestId("review-badge"),
+    ).toBeNull();
+    expect(renderWith({ label: "plain" }).queryByTestId("review-badge")).toBeNull();
+  });
+});
+
+describe("ConceptNode sizing", () => {
+  it("applies a width the caller set on its own", () => {
+    // Prose at a large text size is set wide and left to grow tall. The
+    // style used to apply only when BOTH dimensions were present, so a
+    // width-only element silently kept its default size.
+    const { container } = renderNode({
+      selected: false,
+      data: { label: "Wide", width: 520, text_size: "xl" },
+    });
+    const wrapper = container.querySelector(".rounded-lg") as HTMLElement;
+    expect(wrapper.style.width).toBe("520px");
+    expect(wrapper.style.height).toBe("");
+  });
+
+  it("renders the subtitle at the heading size for the chosen scale", () => {
+    const { container } = renderNode({
+      selected: false,
+      data: { label: "Big", subtitle: "reads across the room", text_size: "3xl" },
+    });
+    const subtitle = container.querySelector(".italic") as HTMLElement;
+    expect(subtitle.style.fontSize).toBe("1.875rem");
   });
 });

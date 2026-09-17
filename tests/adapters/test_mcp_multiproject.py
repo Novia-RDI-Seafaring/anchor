@@ -165,6 +165,25 @@ async def test_two_projects_are_isolated(tmp_path):
     assert not (env.project_dir("alpha") / "canvases" / "boardb").exists()
 
 
+def test_workspace_locks_survive_bundle_lru_eviction(tmp_path):
+    # #272: evicting a project's runtime bundle from the router LRU and
+    # re-resolving it must hand back the SAME per-workspace lock objects, so
+    # a writer holding the pre-eviction lock still serializes new writers.
+    env = create_env("local")
+    create_project(env, "alpha")
+    create_project(env, "beta")
+    router = ProjectRouter(env_arg="local", cache_size=1)
+
+    before = router.bundle_for("alpha")
+    lock_before = before.workspace.locks.lock("board")
+
+    router.bundle_for("beta")  # size-1 cache: evicts alpha's bundle
+    after = router.bundle_for("alpha")  # re-resolved, freshly built bundle
+
+    assert after is not before
+    assert after.workspace.locks.lock("board") is lock_before
+
+
 # -- server wiring helpers --------------------------------------------------- #
 def test_with_project_arg_adds_optional_project():
     defs = [{"name": "x", "inputSchema": {"type": "object",

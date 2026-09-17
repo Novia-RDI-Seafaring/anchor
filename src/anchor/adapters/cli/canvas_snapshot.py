@@ -28,16 +28,24 @@ def canvas_snapshot(
         "--full-page/--viewport-only",
         help="Capture the whole document (default) or just the viewport.",
     ),
-    base_url: str = typer.Option(
-        "http://localhost:8002", "--base-url", help="URL of a running `anchor serve`."
+    base_url: str | None = typer.Option(
+        None,
+        "--base-url",
+        help=(
+            "URL of a running `anchor serve`. Default: the serve actually "
+            "bound to this project's data dir (falling back to the "
+            "configured host/port when none is running)."
+        ),
     ),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Render the named workspace canvas to an image.
 
-    Requires a running `anchor serve` reachable at --base-url. The headless
-    chromium navigates to {base_url}/c/{slug} so the same React Flow code
-    the user sees in the browser does the rendering.
+    Requires a running `anchor serve` hosting this project. By default the
+    serve registry resolves which server that is (the same lookup `anchor
+    canvas url` uses), so a serve on a bumped port is found; --base-url
+    overrides. The headless chromium navigates to {base_url}/c/{slug} so the
+    same React Flow code the user sees in the browser does the rendering.
     """
     vp: tuple[int, int] | None = None
     if viewport is not None:
@@ -47,6 +55,18 @@ def canvas_snapshot(
         except (ValueError, IndexError) as e:
             typer.echo(f"--viewport: expected WxH (e.g. 1920x1080), got {viewport!r}", err=True)
             raise typer.Exit(code=2) from e
+
+    if base_url is None:
+        from anchor.adapters.cli.common import resolve_serve_base_url
+
+        base_url, found = resolve_serve_base_url(data_dir)
+        if not found:
+            typer.echo(
+                "Warning: no `anchor serve` is bound to this project's data "
+                f"dir ({data_dir}); trying {base_url}. Start one with "
+                "`anchor serve`, or pass --base-url http://localhost:<p>.",
+                err=True,
+            )
 
     ws = _build_canvas_runtime(data_dir, base_url=base_url).workspace
 

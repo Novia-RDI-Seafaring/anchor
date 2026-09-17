@@ -213,7 +213,18 @@ def tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "canvas_create_workspace",
-            "description": "Create a new workspace folder.",
+            "description": (
+                "Create a new canvas. A canvas does one of two jobs and they do "
+                "not look alike: it either keeps what a document says (document "
+                "card, spec tables, crops, evidence edges) or it lays out a case "
+                "someone has to act on (what was asked, the options, what you "
+                "picked, what is still open). When the user asked a question "
+                "rather than asked you to pull data, compose the answer: put each "
+                "step inside an `area`, title it with a `text` element at "
+                "text_size 'xl' or larger, keep colour for state, and make the "
+                "conclusion the biggest thing on the board. Call canvas_node_types "
+                "for what each type renders."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -233,6 +244,102 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "type": "object",
                 "properties": {"workspace_slug": {"type": "string"}},
                 "required": ["workspace_slug"],
+            },
+        },
+        {
+            "name": "canvas_set_review_mode",
+            "description": (
+                "Toggle a workspace's review-mode opt-in (#324). When enabled, "
+                "every node an agent creates is stamped with data.review = "
+                "{state: 'proposed', by, at} so a human can accept or reject "
+                "it. Verdicts are plain canvas_update_node data patches; "
+                "rejected nodes stay on the canvas as feedback. Only flip "
+                "this when the user asks for review mode."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "enabled": {"type": "boolean"},
+                },
+                "required": ["workspace_slug", "enabled"],
+            },
+        },
+        {
+            "name": "canvas_propose_set",
+            "description": (
+                "Group elements you just added into ONE reviewable set (#359), "
+                "so a human accepts or rejects the batch instead of node by "
+                "node. Use it whenever you add more than a couple of elements "
+                "in one go: draw first, then group them here. `reason` is "
+                "required and is shown to the reviewer -- say what you added "
+                "and why, in your own words. `members` are node ids (a bare "
+                "string means a node) or {kind: 'node'|'edge', id} objects; "
+                "more can be added later with canvas_add_to_proposal_set."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "reason": {"type": "string"},
+                    "members": {"type": "array", "items": {}},
+                },
+                "required": ["workspace_slug", "reason"],
+            },
+        },
+        {
+            "name": "canvas_add_to_proposal_set",
+            "description": (
+                "Add more elements to an open proposal set (#359). Re-adding a "
+                "member is a no-op, so this is safe to retry."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "set_id": {"type": "string"},
+                    "members": {"type": "array", "items": {}},
+                },
+                "required": ["workspace_slug", "set_id", "members"],
+            },
+        },
+        {
+            "name": "canvas_list_proposal_sets",
+            "description": (
+                "List this canvas's proposal sets (#359) with their reason, "
+                "author, members and state. Pass state='open' for the ones "
+                "still waiting for a human verdict -- call it to see whether "
+                "your earlier proposals were accepted or rejected."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "state": {"type": "string", "enum": ["open", "accepted", "rejected"]},
+                },
+                "required": ["workspace_slug"],
+            },
+        },
+        {
+            "name": "canvas_review_proposal_set",
+            "description": (
+                "Accept or reject a whole proposal set (#359) in one write. "
+                "This is the HUMAN's verdict -- only call it when the user "
+                "asks you to. `verdict` is 'accepted' or 'rejected'; "
+                "`except_ids` leaves those members untouched ('accept all but "
+                "these'); `discard` (rejections only) removes the members "
+                "instead of marking them, cascading their edges."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "set_id": {"type": "string"},
+                    "verdict": {"type": "string", "enum": ["accepted", "rejected"]},
+                    "discard": {"type": "boolean", "default": False},
+                    "except_ids": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["workspace_slug", "set_id", "verdict"],
             },
         },
         {
@@ -353,6 +460,58 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "y": {"type": "number", "default": 0},
                 },
                 "required": ["parent_slug", "slug"],
+            },
+        },
+        {
+            "name": "canvas_presence",
+            "description": (
+                "Who is on this canvas right now. Returns {workspace, "
+                "present: [{kind, label, connected_at, via, ...}]}: every "
+                "live viewer of the web UI / monitor (via: 'sse') plus any "
+                "agent whose writes landed in the last ~90s (via: "
+                "'writes'). Your own recent edits list you here too - that "
+                "is how humans watching the canvas know an agent is "
+                "active. Presence lives in the running `anchor serve` "
+                "process for this project (in-memory, per process); with "
+                "no serve up the roster is empty and `note` says why."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {"workspace_slug": {"type": "string"}},
+                "required": ["workspace_slug"],
+            },
+        },
+        {
+            "name": "canvas_changes",
+            "description": (
+                "What changed on the workspace after a point in its "
+                "history — your catch-up diff when returning to a canvas. "
+                "Pass since_version (a previously seen state/event "
+                "version) or since_ts (unix timestamp), not both; with "
+                "neither, the whole log is folded and the response also "
+                "carries `touched` (per surviving node, the last actor to "
+                "touch it). Returns {from_version, to_version, groups} "
+                "where each group is one actor's net effect: "
+                "{actor: {kind, label} | null, nodes_added, nodes_updated, "
+                "nodes_removed, edges_added, edges_updated, edges_removed} "
+                "with one entry per element (repeated updates collapse). "
+                "actor null groups events recorded before attribution "
+                "existed. Cheaper than diffing two canvas_get_state dumps."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "workspace_slug": {"type": "string"},
+                    "since_version": {
+                        "type": "integer",
+                        "description": "Fold events with version > this.",
+                    },
+                    "since_ts": {
+                        "type": "number",
+                        "description": "Fold events with ts > this (unix seconds).",
+                    },
+                },
+                "required": ["workspace_slug"],
             },
         },
         {

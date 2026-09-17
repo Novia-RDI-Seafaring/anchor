@@ -55,6 +55,10 @@ CORE_PDF_NAMES: set[str] = {
     "ingest_pdf",
     "list_documents",
     "get_document_index",
+    # What a document is about. Core because the alternative is an agent
+    # inferring a corpus's contents from titles, which is how a leaflet
+    # covering thirteen pump models got reported as one pump.
+    "list_entities",
     "get_gold_regions",
     # search -> inspect -> answer (#242 P1): read one hit without paging.
     "inspect_region",
@@ -69,14 +73,29 @@ CORE_PDF_NAMES: set[str] = {
 # The agent intent queue (#148): the agent's inbox of user canvas actions
 # (drop-to-ingest, ...) waiting to be handled. A primary agent workflow, so it
 # is advertised on every connection rather than gated behind capability
-# discovery.
+# discovery. `intent_add_item` (#343) is the agent's reply channel into a
+# scoped-ask thread, so it rides along; the human-side thread verbs are gated.
 CORE_INTENT_NAMES: set[str] = {
     "list_pending_intents",
     "next_intent",
     "resolve_intent",
+    "intent_add_item",
 }
 
 # The canvas verbs an agent reaches for first.
+#
+# canvas_propose_set is here because the skill *mandates* it: an agent is told
+# to finish every multi-element write with it. A gated tool cannot satisfy a
+# mandate -- MCP hosts dispatch only what appears in tools/list, and this
+# server sends no tools/list_changed notification, so a tool outside the
+# default list is not reachable in a session at all.
+#
+# Only that one is promoted, to keep the advertised list near its ~20 target.
+# The rest of the batch surface stays gated and is not needed to follow the
+# skill: a verdict is stamped onto each member as data.review, which
+# canvas_get_state already returns, and add_to / list are for adding after the
+# fact and polling. canvas_review_proposal_set is the human's verdict, which
+# the skill tells agents not to call unasked.
 CORE_CANVAS_NAMES: set[str] = {
     "canvas_create_workspace",
     "canvas_get_state",
@@ -84,6 +103,7 @@ CORE_CANVAS_NAMES: set[str] = {
     "canvas_update_node",
     "canvas_add_edge",
     "canvas_snapshot",
+    "canvas_propose_set",
 }
 
 # The capability-discovery meta-tool is itself core.
@@ -106,8 +126,9 @@ CAPABILITIES_TOOL_DEFINITION: dict[str, Any] = {
         "grouped by capability (harness ingestion, FMU simulation, CAD models, "
         "SysML diagrams, advanced canvas, extra document ops), with a one-line "
         "'when to use' for each. Call this when the small default tool set does "
-        "not cover what you need; every listed tool is callable by name right "
-        "away."
+        "not cover what you need, then ask the user to enable the capability "
+        "you need; a listed tool is dispatchable by the server but most hosts "
+        "can only call what is in the advertised tool list."
     ),
     "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
 }
@@ -149,6 +170,8 @@ _CAPABILITY_GROUPS: list[dict[str, Any]] = [
             "get_pdf",
             "embed_document",
             "derive_region",
+            "remove_region",
+            "resolve_source_ref",
             "get_embeddings_meta",
             "compose_synopsis",
         ],
@@ -158,7 +181,10 @@ _CAPABILITY_GROUPS: list[dict[str, Any]] = [
         "when_to_use": (
             "Less common canvas operations: remove/clear, edge edits, layout "
             "(organize/align/distribute), sub-canvases, workspace management, "
-            "and placeholder enumeration."
+            "placeholder enumeration, the since-version catch-up diff, and "
+            "and the rest of the proposal-set surface (adding to a set, "
+            "listing sets, the human's verdict; canvas_propose_set itself is "
+            "advertised by default)."
         ),
         "names": [
             "canvas_remove_node",
@@ -167,17 +193,41 @@ _CAPABILITY_GROUPS: list[dict[str, Any]] = [
             "canvas_clear",
             "canvas_delete_workspace",
             "canvas_list_workspaces",
+            "canvas_set_review_mode",
+            # canvas_propose_set is advertised by default; these are the rest
+            # of the batch surface.
+            "canvas_add_to_proposal_set",
+            "canvas_list_proposal_sets",
+            "canvas_review_proposal_set",
             "canvas_organize_subtree",
             "canvas_align",
             "canvas_distribute",
             "canvas_create_sub_canvas",
+            "canvas_changes",
             "canvas_list_placeholders",
+            "canvas_presence",
             "canvas_node_types",
             "canvas_create_reference",
             "canvas_list_references",
             "canvas_remove_reference",
             "canvas_update_reference",
             "canvas_attach_reference",
+        ],
+    },
+    {
+        "capability": "intent_threads",
+        "when_to_use": (
+            "Scoped-ask threads beyond the core inbox + reply: read one "
+            "thread in full, open a thread on someone's behalf, and the "
+            "human-side verbs (answer a question, approve or decline a "
+            "staged suggestion) for adapter parity."
+        ),
+        "names": [
+            "get_intent",
+            "intent_ask",
+            "intent_answer",
+            "intent_apply",
+            "intent_decline",
         ],
     },
     {
@@ -266,9 +316,14 @@ def build_capabilities_payload(
         groups.append(entry)
     return {
         "note": (
-            "These tools are callable by name right now even though they are "
-            "not advertised in the default tool list. Extension groups with "
-            "'active': true also auto-appear in the default list because this "
+            "These tools are dispatchable by this server but are NOT in the "
+            "advertised tool list, and most MCP hosts can only call a tool "
+            "they have been advertised -- this server sends no "
+            "tools/list_changed notification, so a gated tool does not become "
+            "callable part-way through a session. Treat this as a map of what "
+            "Anchor can do: if you need one of these, say so rather than "
+            "assuming the call will go through. Extension groups with "
+            "'active': true DO appear in the default list, because this "
             "project has data for them."
         ),
         "capabilities": groups,

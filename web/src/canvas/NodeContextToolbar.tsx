@@ -66,6 +66,7 @@ import { useUiStore } from "@/stores/uiStore";
 
 import { DEFAULT_BG, resolveColors } from "./colors";
 import { FillPicker } from "./FillPicker";
+import { ReviewActions } from "./ReviewActions";
 import { StrokePicker } from "./StrokePicker";
 import { TextPicker } from "./TextPicker";
 
@@ -162,6 +163,11 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
   useEffect(() => { setConfirmingDelete(false); }, [selectedNodeIds.join(",")]);
 
   if (!screenBox || selectedNodeIds.length === 0) return null;
+  // With one element selected the SelectionPanel carries the same controls,
+  // open on the left. Two sets of colour chips for one element is clutter,
+  // so the floating toolbar steps aside and stays for multi-select, where
+  // the panel does not apply.
+  if (selectedNodeIds.length === 1) return null;
 
   const isMulti = selectedNodeIds.length > 1;
   const isTriPlus = selectedNodeIds.length >= 3;
@@ -311,6 +317,15 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
             <span className="text-[11px]">Open viewer</span>
           </Button>
         ) : null}
+
+        {/* Review verdicts (#324) — Accept / Reject, shown only when the
+            selection contains a proposed (or rejected) node. One click
+            writes the verdict via a plain update-node data patch. */}
+        <ReviewActions
+          workspaceSlug={workspaceSlug}
+          nodeIds={selectedNodeIds}
+          getNodeData={getNodeData}
+        />
 
         {/* ────── Style chips ────── */}
         {/* Fill chip — square swatch tinted with current bg, falls back to

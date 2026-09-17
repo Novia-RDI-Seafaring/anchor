@@ -102,7 +102,7 @@ def test_existing_update_operations_share_strict_resolution(adapter, mixed_paren
     data = _input(case)
     expected = deepcopy(data)
     if case in {"exact", "inferred"}:
-        expected["rows"][0]["source_ref"].update(region_id="pressure", bbox=[60, 50, 90, 60])
+        expected["rows"][0]["source_ref"].update(region_id="pressure", bbox=[60, 50, 90, 60], cell={"row": 0, "col": 1})
     fields = {"data": data}
     if mixed_parent:
         fields["parent"] = "area"

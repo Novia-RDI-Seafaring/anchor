@@ -4,21 +4,25 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, Response
 
-from anchor.adapters.http.deps import get_workspace_service
+from anchor.adapters.http.deps import apply_actor_override, get_workspace_service
 from anchor.adapters.http.schemas import (
+    AddProposalSetMembersRequest,
     AlignNodesRequest,
     AttachReferenceRequest,
     CreateReferenceRequest,
     CreateSubCanvasRequest,
     CreateWorkspaceRequest,
     DistributeNodesRequest,
+    OpenProposalSetRequest,
     OrganizeSubtreeRequest,
     RenameWorkspaceRequest,
+    ReviewProposalSetRequest,
     SnapshotRequest,
     UpdateReferenceRequest,
 )
 from anchor.core.ids import InvalidWorkspaceSlugError, validate_workspace_slug
 from anchor.core.services.workspace_service import WorkspaceService
+from anchor.core.workspace.proposals import ProposalSetError
 from anchor.core.workspace.workspace import CommandError
 
 
@@ -65,9 +69,21 @@ async def rename_workspace(
     req: RenameWorkspaceRequest,
     svc: WorkspaceService = Depends(get_workspace_service),
 ):
+    """Update workspace settings: ``title`` (rename) and/or the
+    ``review_mode`` opt-in flag (#324). Same operation is exposed as the
+    ``canvas_set_review_mode`` MCP tool and ``anchor canvas review-mode``
+    CLI (adapter parity)."""
     _check_slug(slug)
+    if req.title is None and req.review_mode is None:
+        raise HTTPException(400, "nothing to update (send title and/or review_mode)")
     try:
-        return await svc.rename_workspace(slug, title=req.title)
+        out: dict = {"slug": slug}
+        if req.title is not None:
+            out = await svc.rename_workspace(slug, title=req.title)
+        if req.review_mode is not None:
+            state, _env = await svc.set_review_mode(slug, enabled=req.review_mode)
+            out["review_mode"] = state.metadata.get("review_mode", False) is True
+        return out
     except FileNotFoundError as exc:
         raise HTTPException(404, f"workspace {slug!r} not found") from exc
 
@@ -95,6 +111,134 @@ async def list_placeholders(slug: str, svc: WorkspaceService = Depends(get_works
         return await svc.list_placeholders(slug)
     except (KeyError, FileNotFoundError) as exc:
         raise HTTPException(404, f"workspace {slug!r} not found") from exc
+
+
+@router.get("/{slug}/changes")
+async def canvas_changes(
+    slug: str,
+    since_version: int | None = None,
+    since_ts: float | None = None,
+    svc: WorkspaceService = Depends(get_workspace_service),
+):
+    """What changed on this canvas after a point in its history (#325).
+
+    Query: ``since_version`` (a client's last-seen version) OR ``since_ts``
+    (unix timestamp) — not both; with neither the fold covers the whole log
+    and additionally carries the per-node ``touched`` attribution map.
+    Same envelope as the ``canvas_changes`` MCP tool and the
+    ``anchor canvas changes <slug>`` CLI (adapter parity). The web UI's
+    "While you were away" panel and the inspector's persisted "edited by"
+    chip both read this.
+    """
+    _check_slug(slug)
+    try:
+        return await svc.canvas_changes(
+            slug, since_version=since_version, since_ts=since_ts,
+        )
+    except CommandError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except (KeyError, FileNotFoundError) as exc:
+        raise HTTPException(404, f"workspace {slug!r} not found") from exc
+
+
+@router.get("/{slug}/proposal-sets")
+async def list_proposal_sets(
+    slug: str,
+    state: str | None = None,
+    svc: WorkspaceService = Depends(get_workspace_service),
+):
+    """List this canvas's proposal sets (#359), oldest first.
+
+    ``state=open`` narrows to sets still waiting for a verdict. Same
+    envelope as the ``canvas_list_proposal_sets`` MCP tool and the
+    ``anchor canvas proposal-sets`` CLI."""
+    _check_slug(slug)
+    try:
+        return {"proposal_sets": await svc.list_proposal_sets(slug, state=state)}
+    except (KeyError, FileNotFoundError) as exc:
+        raise HTTPException(404, f"workspace {slug!r} not found") from exc
+
+
+@router.post("/{slug}/proposal-sets", status_code=201)
+async def open_proposal_set(
+    slug: str,
+    req: OpenProposalSetRequest,
+    svc: WorkspaceService = Depends(get_workspace_service),
+):
+    """Group elements into one reviewable set and return the record."""
+    _check_slug(slug)
+    apply_actor_override(req.actor)
+    try:
+        return await svc.open_proposal_set(
+            slug, reason=req.reason, members=req.members,
+        )
+    except ProposalSetError as exc:
+        raise HTTPException(400, exc.message) from exc
+    except (KeyError, FileNotFoundError) as exc:
+        raise HTTPException(404, f"workspace {slug!r} not found") from exc
+
+
+@router.get("/{slug}/proposal-sets/{set_id}")
+async def get_proposal_set(
+    slug: str,
+    set_id: str,
+    svc: WorkspaceService = Depends(get_workspace_service),
+):
+    """One proposal set: its reason, author, members and state."""
+    _check_slug(slug)
+    try:
+        return await svc.get_proposal_set(slug, set_id)
+    except ProposalSetError as exc:
+        raise HTTPException(404, exc.message) from exc
+    except (KeyError, FileNotFoundError) as exc:
+        raise HTTPException(404, f"workspace {slug!r} not found") from exc
+
+
+@router.post("/{slug}/proposal-sets/{set_id}/members")
+async def add_proposal_set_members(
+    slug: str,
+    set_id: str,
+    req: AddProposalSetMembersRequest,
+    svc: WorkspaceService = Depends(get_workspace_service),
+):
+    """Add elements to an open set. Re-adding a member is a no-op."""
+    _check_slug(slug)
+    apply_actor_override(req.actor)
+    try:
+        return await svc.add_proposal_set_members(slug, set_id, members=req.members)
+    except ProposalSetError as exc:
+        raise HTTPException(400, exc.message) from exc
+    except (KeyError, FileNotFoundError) as exc:
+        raise HTTPException(404, f"workspace {slug!r} not found") from exc
+
+
+@router.post("/{slug}/proposal-sets/{set_id}/review")
+async def review_proposal_set(
+    slug: str,
+    set_id: str,
+    req: ReviewProposalSetRequest,
+    svc: WorkspaceService = Depends(get_workspace_service),
+):
+    """Accept or reject a whole set in one write.
+
+    Returns the reviewed set record and how many elements it touched."""
+    _check_slug(slug)
+    apply_actor_override(req.actor)
+    try:
+        _state, envelopes, record = await svc.review_proposal_set(
+            slug,
+            set_id,
+            verdict=req.verdict,
+            discard=req.discard,
+            except_ids=req.except_ids,
+        )
+    except ProposalSetError as exc:
+        raise HTTPException(400, exc.message) from exc
+    except CommandError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except (KeyError, FileNotFoundError) as exc:
+        raise HTTPException(404, f"workspace {slug!r} not found") from exc
+    return {"proposal_set": record, "events": len(envelopes)}
 
 
 @router.get("/{slug}/references")

@@ -68,4 +68,13 @@ class MemoryWorkspaceStore:
     async def get_events(self, slug: str) -> list[DomainEvent]:
         return list(self._events.get(slug, []))
 
+    async def read_events(self, slug: str, *, after_version: int = 0) -> list[DomainEvent]:
+        """Events with ``version > after_version``, ascending (#325)."""
+        if slug not in self._meta:
+            raise FileNotFoundError(f"workspace {slug!r} does not exist")
+        return sorted(
+            (e for e in self._events.get(slug, []) if e.version > after_version),
+            key=lambda e: e.version,
+        )
+
 
