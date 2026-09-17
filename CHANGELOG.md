@@ -11,6 +11,37 @@ next version section on tag.
 
 ### Changed
 
+- The canvas skill teaches composition, not just extraction. Asked a
+  question ("compare these pumps so I can pick one"), an agent would answer
+  with every spec table it had extracted, dropped on an empty board: all the
+  evidence present, the argument invisible. The skill explains why. It
+  specifies grounding in depth -- a worked JSON example for `spec` rows, an
+  explicit "do NOT pack values into `data.description`", and a runtime hint
+  steering prose into rows -- and said nothing at all about arranging an
+  answer. The words `area`, `tone`, `bg_color`, layout, column and legend
+  appeared zero times. The `area` node type, which is the grouping
+  primitive, was missing from the node-type shortlist, while `concept` and
+  `entity` were described as being "for grouping" when they are small
+  labelled shapes with no container behaviour. `canvas.md` now adds `area`
+  to the shortlist, corrects `concept` / `entity`, and carries two new
+  sections: one naming the two jobs a canvas does (a place to keep what a
+  document says, versus a case someone has to act on) and one on composing
+  the second so it can be read -- enclose rather than place, state the
+  reading order in a `text` element, spend colour on state and declare the
+  convention, make the conclusion the biggest thing, say what you rejected,
+  label the edges that carry reasoning, and mark what you assumed. A second
+  worked example lays out a decision canvas end to end.
+
+### Added
+
+- `canvas_propose_set` attaches a non-blocking `hint` when a set of eight or
+  more members contains no `area`, the mirror of the existing spec-rows
+  nudge: that one steers values into rows, this one steers an answer into a
+  shape a reviewer can read. A flat set is still a valid set; only the next
+  call is steered. An `area` drawn earlier, outside the proposed set, does
+  not count.
+
+
 - `get_crop` and `get_page_image` hand back an image an agent can actually
   look at. Both defaulted to `format="path"`, so a request to see a chart
   returned a filesystem path; the only way to turn that into pixels was for
