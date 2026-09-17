@@ -376,6 +376,20 @@ def index(
     typer.echo(json.dumps(out, indent=2))
 
 
+def entities(
+    slug: str,
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Print what a document is about: entities named in its gold regions.
+
+    A title and a page count do not say that a four-page leaflet covers
+    thirteen product models. This does."""
+    from anchor.extensions.anchor_pdfs.core.entities import list_entities
+
+    _, _, _, _, doc_store = _build_real_services(data_dir)
+    typer.echo(json.dumps(asyncio.run(list_entities(doc_store, slug)), indent=2))
+
+
 def regions(
     slug: str,
     page_pos: int | None = typer.Argument(
@@ -673,6 +687,7 @@ def register_document_commands(app: typer.Typer) -> None:
     app.command()(extract)
     app.command()(embed)
     app.command()(index)
+    app.command()(entities)
     app.command()(regions)
     app.command("inspect-region")(inspect_region_cmd)
     app.command("region-content")(region_content_cmd)

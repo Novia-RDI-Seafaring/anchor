@@ -64,6 +64,13 @@ async def get_index(
     return out
 
 
+@router.get("/{slug}/entities")
+async def entities(slug: str, store: DocStore = Depends(get_doc_store)):
+    from anchor.extensions.anchor_pdfs.core.entities import list_entities
+
+    return await list_entities(store, slug)
+
+
 @router.get("/{slug}/regions")
 async def get_regions(slug: str, page: int | None = None, store: DocStore = Depends(get_doc_store)):
     return await store.get_regions(slug, page=page)

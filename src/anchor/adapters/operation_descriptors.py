@@ -214,6 +214,13 @@ DOCUMENT_OPERATION_DESCRIPTORS: tuple[OperationDescriptor, ...] = (
         cli_command=("index",),
     ),
     OperationDescriptor(
+        id="document.list_entities",
+        service_method="get_regions",
+        http=HttpSurface("GET", "/api/documents/{slug}/entities"),
+        mcp_tool="list_entities",
+        cli_command=("entities",),
+    ),
+    OperationDescriptor(
         id="document.get_regions",
         service_method="get_regions",
         http=HttpSurface("GET", "/api/documents/{slug}/regions"),

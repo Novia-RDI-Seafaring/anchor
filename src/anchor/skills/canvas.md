@@ -114,12 +114,18 @@ call `canvas_propose_set(workspace_slug, reason, members)` to group them.
 words. Without a set, a human rules on thirty-five nodes one at a time and
 nothing records which of them belong together.
 
-Add more with `canvas_add_to_proposal_set`; re-adding a member is a no-op.
-Check back with `canvas_list_proposal_sets(workspace_slug, state="open")`
-to see what is still waiting, and read the verdict on a set you proposed
-earlier: `rejected` is feedback, so revise rather than re-propose the same
-thing. `canvas_review_proposal_set` is the human's verdict. Only call it
-when the user asks you to.
+The verdict comes back on the elements, not through a separate call: a
+human accepting a set stamps `data.review = {state: "accepted", ...}` on
+every member, rejecting stamps `"rejected"`, and `canvas_get_state`
+already returns both. So to see what happened to a set you proposed
+earlier, read the canvas. `rejected` is feedback: revise rather than
+re-propose the same thing.
+
+`canvas_add_to_proposal_set` (adding to a set after the fact),
+`canvas_list_proposal_sets` (listing sets as records) and
+`canvas_review_proposal_set` (the human's verdict, which you do not call
+unasked) live under the `canvas_advanced` capability and are not
+advertised by default.
 
 A thread suggestion (`intent_add_item`) already is a batch and needs no
 set: use a set for what you add outside a thread.

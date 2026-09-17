@@ -200,6 +200,24 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "list_entities",
+            "description": (
+                "What a document is ABOUT: every entity named in its gold "
+                "regions, with how often each appears and on which pages. "
+                "list_documents gives you a title and a page count, which does "
+                "not tell you that a four-page leaflet covers thirteen product "
+                "models. Call this before concluding what a document does or "
+                "does not contain, and before saying a corpus holds only one of "
+                "something. Sorted by frequency; use an entity name with "
+                "compose_synopsis or search_documents to go deeper."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {"slug": {"type": "string"}},
+                "required": ["slug"],
+            },
+        },
+        {
             "name": "get_gold_regions",
             "description": "Gold regions for a document; optionally filter to one page.",
             "inputSchema": {

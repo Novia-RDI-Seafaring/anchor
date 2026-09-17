@@ -26,6 +26,11 @@ regions tagged with the page number and bounding box they came from.
   `GET /api/search?q=…`. Embeddings are created during `ingest_pdf`; if a
   doc was ingested without them, run `embed` first (`anchor embed`).
 - `list_documents()` — every document and its current status.
+- `list_entities(slug)` - what a document is ABOUT: every entity its gold
+  regions name, with counts and pages. A title and a page count do not tell
+  you that a four-page leaflet covers thirteen product models. Call this
+  before concluding what a document contains, and before telling a user the
+  corpus holds only one of something.
 - `get_document_index(slug)` - a map of the document: outline, plus one
   entry per table and figure with its caption, shape, header row,
   first-column values, page and bbox. Table cell content is left out;
