@@ -184,15 +184,28 @@ export function PdfSourceView({
     };
   }, [canvasSlug, slug]);
 
-  // Fade the blue jump-to highlight a few seconds after it (re)appears. Keyed
-  // on the nav nonce too, so a re-click re-shows the flash even when the target
-  // page/bbox is unchanged.
+  // The jump-to highlight STAYS until something replaces or dismisses it.
+  //
+  // It used to fade after 4 s, which treats it as a "you landed here" cue.
+  // That is the wrong job: the reason to click a source ref is to check a
+  // value against the page it came from, and checking means looking at the
+  // card, looking at the page, and looking back. A highlight that has gone by
+  // then has left exactly when it was needed. It is replaced when another ref
+  // is opened (a new bbox arrives) and cleared with Escape.
   useEffect(() => {
     if (!highlightPage || !highlightBbox) return;
     setHighlightVisible(true);
-    const id = window.setTimeout(() => setHighlightVisible(false), 4000);
-    return () => window.clearTimeout(id);
   }, [highlightPage, highlightBbox, highlightNonce]);
+
+  // Escape dismisses it, so a persistent mark is never stuck on the page.
+  useEffect(() => {
+    if (!highlightVisible) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setHighlightVisible(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [highlightVisible]);
 
   // Load (and reload on slug change) the PDF document. One shared instance.
   useEffect(() => {
@@ -791,8 +804,12 @@ function PageSlot(props: SlotProps) {
   // overlay is pointer-events:none (so it never blocks text selection), so we
   // hit-test the click against the region bboxes here and pick the smallest
   // one containing the point (the most specific region).
-  const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!canvasSlug || !viewportSize || regions.length === 0) return;
+  // Which region the cursor is over, so its outline can be drawn on demand
+  // instead of painting all of them permanently.
+  const [hoverRegionId, setHoverRegionId] = useState<string | null>(null);
+
+  const regionAt = (e: React.MouseEvent<HTMLDivElement>): Region | null => {
+    if (!viewportSize || regions.length === 0) return null;
     const host = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - host.left;
     const y = e.clientY - host.top;
@@ -809,6 +826,12 @@ function PageSlot(props: SlotProps) {
         }
       }
     }
+    return best;
+  };
+
+  const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!canvasSlug) return;
+    const best = regionAt(e);
     if (best) {
       e.preventDefault();
       onCaptureRegion(best);
@@ -824,6 +847,13 @@ function PageSlot(props: SlotProps) {
       style={{ top: item.top, height: item.height, width: item.width }}
       onMouseUp={onMouseUp}
       onContextMenu={handleContextMenu}
+      onMouseMove={(e) => {
+        if (!canvasSlug) return;
+        const hit = regionAt(e);
+        const id = hit ? (hit.id ?? null) : null;
+        setHoverRegionId((prev) => (prev === id ? prev : id));
+      }}
+      onMouseLeave={() => setHoverRegionId(null)}
     >
       {shouldRender && doc ? (
         <div
@@ -846,17 +876,25 @@ function PageSlot(props: SlotProps) {
             const rect = bboxToRect(region.bbox);
             if (!rect) return null;
             const rid = region.id ?? `r${idx}`;
+            // Outlines are drawn ONLY for the region under the cursor.
+            // Painting all of them turned a four-page leaflet into a page of
+            // dashed boxes that competed with the source highlight for
+            // attention -- the one mark the reader actually came for. The
+            // rects stay in the DOM so the click target and the hit-test are
+            // unchanged; only the stroke is conditional.
+            const hovered = (region.id ?? null) === hoverRegionId;
             return (
               <rect
                 key={rid}
                 data-testid="region-capture-rect"
                 data-region-id={region.id ?? ""}
+                data-hovered={hovered ? "true" : "false"}
                 x={rect.left}
                 y={rect.top}
                 width={rect.width}
                 height={rect.height}
                 fill="none"
-                stroke="rgba(14, 165, 233, 0.35)"
+                stroke={hovered ? "rgba(14, 165, 233, 0.55)" : "transparent"}
                 strokeWidth={3}
                 strokeDasharray="3 3"
                 pointerEvents="stroke"

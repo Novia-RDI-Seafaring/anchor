@@ -167,4 +167,53 @@ describe("PdfSourceView (continuous)", () => {
     const slot = highlight.closest("[data-testid='pdf-page-slot']");
     expect(slot?.getAttribute("data-page")).toBe("5");
   });
+
+  it("keeps the highlight up instead of fading it after a few seconds", async () => {
+    // Clicking a source ref means "check this value against its page", which
+    // takes longer than a flash: read the card, read the page, look back. The
+    // highlight used to disappear after 4 s, exactly when it was needed.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      stubScroller();
+      await renderViewer({ highlightPage: 2, highlightBbox: [10, 20, 40, 60] });
+      expect(await screen.findByTestId("pdf-highlight")).toBeTruthy();
+      await act(async () => {
+        vi.advanceTimersByTime(30_000);
+      });
+      expect(screen.queryByTestId("pdf-highlight")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("outlines a region only while the cursor is over it", async () => {
+    // Painting every gold region turned a four-page leaflet into a page of
+    // dashed boxes that competed with the source highlight for attention.
+    vi.spyOn(documents, "regions").mockResolvedValue([
+      { id: "r1", bbox: [0, 0, 50, 50], kind: "table" },
+      { id: "r2", bbox: [0, 100, 50, 150], kind: "text" },
+    ] as never);
+    stubScroller();
+    await renderViewer({ canvasSlug: "board" });
+
+    const rects = await screen.findAllByTestId("region-capture-rect");
+    expect(rects.length).toBeGreaterThan(0);
+    // Nothing is outlined until the cursor is over a region.
+    for (const r of rects) {
+      expect(r.getAttribute("stroke")).toBe("transparent");
+      expect(r.getAttribute("data-hovered")).toBe("false");
+    }
+    // The click target survives: the rect is still in the DOM and clickable.
+    expect(rects[0]!.getAttribute("pointer-events")).toBe("stroke");
+  });
+
+  it("dismisses the highlight on Escape, so it is never stuck", async () => {
+    stubScroller();
+    await renderViewer({ highlightPage: 2, highlightBbox: [10, 20, 40, 60] });
+    expect(await screen.findByTestId("pdf-highlight")).toBeTruthy();
+    await act(async () => {
+      fireEvent.keyDown(window, { key: "Escape" });
+    });
+    await waitFor(() => expect(screen.queryByTestId("pdf-highlight")).toBeNull());
+  });
 });
