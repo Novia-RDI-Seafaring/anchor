@@ -17,6 +17,7 @@ from anchor.core.events.actor import Actor, actor_scope
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.core.workspace.proposals import ProposalSetError
 from anchor.core.workspace.review import review_warning
+from anchor.core.workspace.roles import role_warning
 from anchor.core.workspace.workspace import CommandError
 
 
@@ -149,6 +150,9 @@ def _data_warning(
     rw = review_warning(data, partial=partial)
     if rw is not None:
         parts.append(rw)
+    rolew = role_warning(data, partial=partial)
+    if rolew is not None:
+        parts.append(rolew)
     return " ".join(parts) or None
 
 

@@ -7,6 +7,7 @@ import { canvases } from "@/api/canvases";
 import { AnchoredText } from "@/canvas/AnchoredText";
 import { resolveText, SIZE_PX, type TextSize } from "@/canvas/colors";
 import { ReviewBadge } from "@/canvas/ReviewBadge";
+import { RoleBadge } from "@/canvas/RoleBadge";
 import { useInlineField } from "@/canvas/useInlineField";
 
 /**
@@ -130,6 +131,7 @@ export function TextNode({ id, data, selected }: NodeProps) {
         onResizeEnd={onResizeEnd}
       />
       <ReviewBadge data={data as Record<string, unknown>} nodeId={id} />
+      <RoleBadge data={data as Record<string, unknown>} />
       <Handle type="target" position={Position.Left} />
       {edit.editing ? (
         // The editor is the same size as the words, so nothing moves when

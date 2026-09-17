@@ -7,6 +7,7 @@ import { Pictogram } from "@/canvas/icons";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
 import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
 import { ReviewBadge } from "@/canvas/ReviewBadge";
+import { RoleBadge } from "@/canvas/RoleBadge";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
 
@@ -72,6 +73,7 @@ export function FactNode({ id, data, selected }: NodeProps) {
       />
       {ph.active ? <PlaceholderChip hint={ph.hint} /> : null}
       <ReviewBadge data={d} nodeId={id} />
+      <RoleBadge data={data} />
       <Handle type="target" position={Position.Left} />
       {/* Display label / body / pictogram inherit `color` from the wrapper
           (resolveColors → stroke). The edit-mode <input> keeps the

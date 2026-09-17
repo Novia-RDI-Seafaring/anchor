@@ -9,6 +9,26 @@ next version section on tag.
 
 ## [Unreleased]
 
+### Added
+
+- `data.role` names the part a card plays in an argument: `question`,
+  `criterion`, `option`, `evidence`, `assumption`, `decision`, `rejected`,
+  `open`. Any element can carry one and renders a small chip saying so.
+  A canvas that lays out a decision is made of cards playing known parts --
+  the parts design-rationale work has named for fifty years, IBIS as
+  question / idea / argument and Toulmin as claim / grounds / warrant /
+  rebuttal -- and without a way to say which is which a reader gets a pile
+  of boxes. These are roles rather than shapes (a decision and a rejected
+  option are the same card with different standing), so this is one
+  optional field on existing types rather than eight new node types,
+  mirroring `data.review` (#324): small closed vocabulary, any element, a
+  badge, never blocking a write. An unlisted word is stored, warned about,
+  and renders no chip. The chip always shows the word and not only a
+  colour, so it survives a zoomed-out board and a colour-blind reader. The
+  canvas skill documents the vocabulary, uses it in the worked decision
+  example, and gains a section on pushing bulk detail into a sub-canvas so
+  the parent stays readable at the zoom someone opens it at.
+
 ### Fixed
 
 - `anchor:` source links now resolve in every text-bearing card, not only

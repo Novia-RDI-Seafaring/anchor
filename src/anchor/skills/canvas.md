@@ -209,6 +209,45 @@ read out of a document, is the first thing the human must check. Give
 assumptions their own colour and put them where they will be seen, not
 in a footnote.
 
+### Say what each card is: `data.role`
+
+A decision canvas is made of cards playing known parts. `data.role` names
+the part, from a closed list, and the card renders a small chip saying so:
+
+| Role | The card is |
+| --- | --- |
+| `question` | what is being decided |
+| `criterion` | a requirement the answer has to satisfy |
+| `option` | a candidate answer |
+| `evidence` | a value or quote supporting or ruling out an option |
+| `assumption` | something you filled in rather than read from a source |
+| `decision` | the answer; at most one per question |
+| `rejected` | an option turned down, with the reason |
+| `open` | still unresolved, someone has to confirm it |
+
+Any element can carry one, the same way any element can carry
+`data.review`. Two reasons to bother. A reader learns one visual language
+instead of decoding whatever colours you picked, and the canvas becomes
+answerable: what did we decide, what did we assume, what is still open.
+Mark assumptions especially -- they are the first thing the human has to
+check, and they are invisible otherwise.
+
+A word outside the list is stored, warned about, and renders no chip.
+
+### Push the detail down into a sub-canvas
+
+An answer that needs its evidence on screen and its reasoning legible is
+usually two canvases, not one crowded board. `canvas_create_sub_canvas`
+makes a child canvas and drops a linking tile onto the parent in one call.
+
+Keep the argument on the parent: the question, the options, the decision,
+what is still open. Put the bulk behind a tile: the five extracted spec
+tables, the full dimension sheet, the page crops. The tile is labelled and
+double-clicks through, so nothing is hidden, it is one level down.
+
+The test is whether the parent still reads at the zoom a person opens it
+at. If they have to pan to find the conclusion, move detail down.
+
 ### A decision canvas, worked
 
 Four areas, a title, and the conclusion standing out. Positions are the
@@ -219,14 +258,14 @@ top-left corner of each element; children sit inside their area's box.
   {"node_type": "text", "label": "", "x": 40, "y": 0,
    "data": {"text": "Pump selection - 5 m lift, continuous, indoor", "text_size": "2xl", "width": 900}},
   {"node_type": "text", "label": "", "x": 40, "y": 60,
-   "data": {"text": "Read left to right. Blue = given, amber = assumed, green = decided.", "text_size": "sm", "width": 900}},
+   "data": {"text": "Read left to right. Cards say their own role.", "text_size": "sm", "width": 900}},
 
   {"node_type": "area", "label": "1. Requirements", "x": 40, "y": 120,
    "data": {"subtitle": "Duty point and site constraints", "width": 320, "height": 480}},
   {"node_type": "fact", "label": "R1 - Static lift 5 m", "x": 70, "y": 180,
-   "data": {"text": "Given. Basin to top of waterfall.", "bg_color": "#dbeafe"}},
+   "data": {"text": "Basin to top of waterfall.", "role": "criterion"}},
   {"node_type": "fact", "label": "R4 - Flow 15-30 m3/h", "x": 70, "y": 280,
-   "data": {"text": "ASSUMED for a 1 m wide sheet. Confirm.", "bg_color": "#fef3c7"}},
+   "data": {"text": "For a 1 m wide sheet. Confirm.", "role": "assumption"}},
 
   {"node_type": "area", "label": "2. Screening", "x": 400, "y": 120,
    "data": {"subtitle": "Which sizes can do it", "width": 380, "height": 480}},
@@ -238,16 +277,16 @@ top-left corner of each element; children sit inside their area's box.
 
   {"node_type": "area", "label": "3. Decision", "x": 820, "y": 120,
    "data": {"subtitle": "Selected pump", "width": 380, "height": 480}},
-  {"node_type": "fact", "label": "DECISION - LKH-10, 4-pole", "x": 850, "y": 180,
+  {"node_type": "fact", "label": "LKH-10, 4-pole", "x": 850, "y": 180,
    "data": {"text": "17 m3/h at 5 m. Shut-off 9 m: margin over duty.",
-            "bg_color": "#dcfce7", "text_size": "lg", "width": 320}},
-  {"node_type": "fact", "label": "Rejected - LKH-5", "x": 850, "y": 330,
-   "data": {"text": "Only reaches 5 m at run-out.", "bg_color": "#f1f5f9"}},
+            "role": "decision", "text_size": "lg", "width": 320}},
+  {"node_type": "fact", "label": "LKH-5", "x": 850, "y": 330,
+   "data": {"text": "Only reaches 5 m at run-out.", "role": "rejected"}},
 
   {"node_type": "area", "label": "4. Open before ordering", "x": 1240, "y": 120,
    "data": {"subtitle": "Confirm these, then order", "width": 340, "height": 480}},
   {"node_type": "fact", "label": "1 - Confirm the flow", "x": 1270, "y": 180,
-   "data": {"text": "Waterfall width decides LKH-10 vs LKH-20.", "bg_color": "#fef3c7"}}
+   "data": {"text": "Waterfall width decides LKH-10 vs LKH-20.", "role": "open"}}
 ]
 ```
 
