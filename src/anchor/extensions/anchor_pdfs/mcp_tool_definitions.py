@@ -295,9 +295,11 @@ def tool_definitions() -> list[dict[str, Any]]:
         {
             "name": "get_page_image",
             "description": (
-                "Page screenshot as a path (default) or base64. Use format='base64' from off-machine agents. "
-                "Pass dpi to re-render from the bronze PDF at higher resolution "
-                "(clamped to 72-600; the stored default is ~150 dpi, too coarse for e.g. chart tracing)."
+                "Look at a whole page: its screenshot, returned inline by default so you can read it "
+                "by eye rather than opening the file from disk yourself. 'path' and 'base64' are "
+                "available for callers that want the file or the raw bytes. Pass dpi to re-render "
+                "from the bronze PDF at higher resolution (clamped to 72-600; the stored default is "
+                "~150 dpi, too coarse for e.g. chart tracing)."
             ),
             "inputSchema": {
                 "type": "object",
@@ -305,7 +307,16 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "slug": {"type": "string"},
                     "page": {"type": "integer"},
                     "dpi": {"type": "integer", "description": "Optional re-render DPI (72-600); cached per DPI."},
-                    "format": {"type": "string", "enum": ["path", "base64"], "default": "path"},
+                    "format": {
+                        "type": "string",
+                        "enum": ["inline", "path", "base64"],
+                        "default": "inline",
+                        "description": (
+                            "'inline' (default) returns an MCP image the harness displays. 'path' "
+                            "returns the file path on this machine; 'base64' returns the bytes in "
+                            "the JSON envelope for off-machine callers."
+                        ),
+                    },
                 },
                 "required": ["slug", "page"],
             },
@@ -313,9 +324,12 @@ def tool_definitions() -> list[dict[str, Any]]:
         {
             "name": "get_crop",
             "description": (
-                "One gold region's crop PNG, addressed as '<page>/<region_id>.png' (e.g. '4/r1.png'). "
-                "Rendered lazily from the bronze PDF on first request (region bbox + margin, 300 dpi) "
-                "and cached; pass dpi to re-render at another resolution. Path or base64."
+                "Look at one gold region: its crop PNG, addressed as '<page>/<region_id>.png' "
+                "(e.g. '4/r1.png'; 'p4/r1' also accepted). Returns the image inline by default, so "
+                "you can read a chart, diagram or table by eye -- use this instead of opening the "
+                "file from disk yourself. Rendered lazily from the bronze PDF on first request "
+                "(region bbox + margin, 300 dpi) and cached; pass dpi to re-render at another "
+                "resolution."
             ),
             "inputSchema": {
                 "type": "object",
@@ -323,7 +337,16 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "slug": {"type": "string"},
                     "rel_path": {"type": "string", "description": "'<page>/<region_id>.png' like '4/r1.png' ('p4/r1' also accepted)."},
                     "dpi": {"type": "integer", "description": "Optional render DPI (72-600, default 300); an explicit value re-renders the cached crop."},
-                    "format": {"type": "string", "enum": ["path", "base64"], "default": "path"},
+                    "format": {
+                        "type": "string",
+                        "enum": ["inline", "path", "base64"],
+                        "default": "inline",
+                        "description": (
+                            "'inline' (default) returns an MCP image the harness displays, so you can "
+                            "see the region. 'path' returns the file path on this machine; 'base64' "
+                            "returns the bytes in the JSON envelope for off-machine callers."
+                        ),
+                    },
                 },
                 "required": ["slug", "rel_path"],
             },
