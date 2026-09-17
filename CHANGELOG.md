@@ -11,6 +11,20 @@ next version section on tag.
 
 ### Added
 
+- `list_entities(slug)` says what a document is ABOUT: every entity its gold
+  regions name, with counts and the pages each appears on. An agent's picture
+  of the corpus came from `list_documents`, which returns a slug, a title and
+  a page count, so a four-page leaflet describing thirteen pump models read as
+  one document called "Alfa Laval LKH" -- and an agent that checked the
+  smallest model reported it as "the only pump in the corpus". The extraction
+  knew all thirteen; nothing in the read surface would say so. Parity across
+  MCP `list_entities`, HTTP `GET /api/documents/{slug}/entities` and
+  `anchor entities <slug>`, advertised by default because a signal pointing at
+  an unreachable tool is the bug this release also fixes. Nothing is ranked
+  away: a top-N "covers" preview would have to break the tie between a real
+  model and a letter from a pump-code legend, and any rule invented for that
+  misleads the way the silence did.
+
 - `data.role` names the part a card plays in an argument: `question`,
   `criterion`, `option`, `evidence`, `assumption`, `decision`, `rejected`,
   `open`. Any element can carry one and renders a small chip saying so.
@@ -30,6 +44,26 @@ next version section on tag.
   the parent stays readable at the zoom someone opens it at.
 
 ### Fixed
+
+- `canvas_propose_set` is advertised by default. The skill instructs every
+  agent to finish a multi-element write with it, and it was gated behind the
+  `canvas_advanced` capability, whose note claimed gated tools were "callable
+  by name right now". That is true of this server, which dispatches by name,
+  and false of MCP hosts, which can call only what is in `tools/list`; no
+  `tools/list_changed` notification exists, so a gated tool never becomes
+  reachable mid-session. An agent following the skill could not do what the
+  skill told it to. The note now says plainly that a listed tool is
+  dispatchable but not advertised. The rest of the batch surface stays gated
+  and is not needed to follow the skill: a verdict is stamped onto each member
+  as `data.review`, which `canvas_get_state` already returns, and the skill
+  says so instead of sending agents to a gated call.
+
+- `canvas_snapshot` explains a refused connection instead of surfacing a raw
+  Playwright trace. It returned `Page.goto: net::ERR_CONNECTION_REFUSED at
+  http://127.0.0.1:8031/c/...`, which names what failed and nothing about the
+  fix. The snapshotter drives a browser against a running `anchor serve`, a
+  precondition no other canvas tool has, so it now says that and points at
+  `anchor serve-info` for which serves are up and what each is bound to.
 
 - `anchor:` source links now resolve in every text-bearing card, not only
   in `markdown`. `SourceRefLink` was imported by `MarkdownNode` alone, so a

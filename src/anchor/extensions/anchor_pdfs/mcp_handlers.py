@@ -224,6 +224,9 @@ async def call_tool(
             args["slug"], include_content=bool(args.get("include_content", False))
         )
         return json.dumps(out) if out else json.dumps({"error": "not found"})
+    if name == "list_entities":
+        from anchor.extensions.anchor_pdfs.core.entities import list_entities
+        return json.dumps(await list_entities(store, args["slug"]))
     if name == "get_gold_regions":
         return json.dumps(await store.get_regions(args["slug"], page=args.get("page")))
     if name == "inspect_region":
