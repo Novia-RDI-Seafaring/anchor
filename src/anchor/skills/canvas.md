@@ -32,7 +32,8 @@ real time on every connected client via SSE.
 | `image` | A region crop or screenshot. |
 | `text` | Words with no box: a title, a caption, a paragraph. |
 | `markdown` | Prose with structure — headings, lists, tables, code. `data.text` holds the Markdown source. |
-| `concept` / `entity` | Generic shapes for grouping or schematics. |
+| `area` | A dashed container that encloses other nodes. The grouping primitive: name a step or a theme and put its cards inside. |
+| `concept` / `entity` | Small labelled shapes for schematics. NOT containers. |
 | `canvas` | A tile that links to a child canvas. |
 
 The full list and the data shapes live in the on-disk substrate docs;
@@ -138,6 +139,115 @@ someone reads on a shared screen, or a headline you want legible zoomed
 out, wants `xl` or larger with a wider `width`; a dense reference table
 stays at the default. Pick the size when you create the element rather
 than leaving everything at the default and making the human zoom.
+
+### Two different jobs, two different canvases
+
+A canvas is used for two things, and they do not look alike.
+
+One is a **place to keep what a document says**: a document card, spec
+tables, crops, evidence edges. The layout barely matters because the
+value is in the grounding.
+
+The other is **a case somebody has to act on**: which pump, which
+material, is this design within limits. Here the layout IS the answer.
+The reader wants to know what was asked, what the options were, what you
+picked and what is still unresolved, in that order. Extracted values are
+the supporting evidence, not the point.
+
+The failure mode is answering the second with the first: every table you
+extracted, dropped on an empty board. Everything is present and nothing
+is legible. If the user asked a question rather than asked you to pull
+data, compose the answer.
+
+### Compose it so it can be read
+
+**Enclose, do not merely place.** Proximity is a weak grouping cue and a
+freeform board has no reading order of its own. Put each step of the
+argument in an `area` with a `label` and a one-line `subtitle`, and place
+its cards inside. A reader then sees the shape of the answer before
+reading a single card.
+
+**Say the reading order out loud.** A `text` element at `text_size` `xl`
+or `2xl` across the top, with a `sm` line under it naming the order and
+any colour convention you used ("read left to right: what we need, what
+fits, what we chose, what is still open"). A canvas that has to be
+deciphered costs more than the prose it replaced.
+
+**Let colour carry state, not decoration.** Colour and size register
+before any text is read, so spend them on the one distinction that
+matters. Pick a convention, state it in the subtitle line, and hold it
+for the whole canvas. `data.bg_color` and `data.stroke_color` take CSS
+colours and every node type accepts them. A convention that works:
+given facts in one colour, assumptions you made in another, the decision
+in a third, rejected options greyed. What matters is that it is
+consistent and declared, not which hues you choose.
+
+**Make the answer the biggest thing.** One card should be visibly the
+conclusion: larger `text_size`, a wider `width`, its own colour. If a
+reader zooms out and cannot tell what you concluded, the canvas failed
+regardless of how good the evidence under it is.
+
+**Say what you rejected.** An option considered and dropped, with the
+reason, is worth a card. It stops the reader re-asking the question you
+already answered, and it is the part a reviewer most needs in order to
+disagree with you.
+
+**Label the edges that carry reasoning.** An evidence edge says where a
+value came from. An edge between steps of an argument should say why it
+leads there ("fails at 5 m", "passes with margin"). An unlabelled edge
+between two claims is a line, not an argument.
+
+**Mark what you assumed.** Anything you filled in yourself, rather than
+read out of a document, is the first thing the human must check. Give
+assumptions their own colour and put them where they will be seen, not
+in a footnote.
+
+### A decision canvas, worked
+
+Four areas, a title, and the conclusion standing out. Positions are the
+top-left corner of each element; children sit inside their area's box.
+
+```json
+[
+  {"node_type": "text", "label": "", "x": 40, "y": 0,
+   "data": {"text": "Pump selection - 5 m lift, continuous, indoor", "text_size": "2xl", "width": 900}},
+  {"node_type": "text", "label": "", "x": 40, "y": 60,
+   "data": {"text": "Read left to right. Blue = given, amber = assumed, green = decided.", "text_size": "sm", "width": 900}},
+
+  {"node_type": "area", "label": "1. Requirements", "x": 40, "y": 120,
+   "data": {"subtitle": "Duty point and site constraints", "width": 320, "height": 480}},
+  {"node_type": "fact", "label": "R1 - Static lift 5 m", "x": 70, "y": 180,
+   "data": {"text": "Given. Basin to top of waterfall.", "bg_color": "#dbeafe"}},
+  {"node_type": "fact", "label": "R4 - Flow 15-30 m3/h", "x": 70, "y": 280,
+   "data": {"text": "ASSUMED for a 1 m wide sheet. Confirm.", "bg_color": "#fef3c7"}},
+
+  {"node_type": "area", "label": "2. Screening", "x": 400, "y": 120,
+   "data": {"subtitle": "Which sizes can do it", "width": 380, "height": 480}},
+  {"node_type": "spec", "label": "Screening at 5 m head", "x": 430, "y": 180,
+   "data": {"rows": [
+     {"key": "LKH-10", "value": "PASS - 17 m3/h", "source_ref": {"slug": "lkh", "page": 4, "region_id": "r1"}},
+     {"key": "LKH-5", "value": "FAIL - shut-off too low", "source_ref": {"slug": "lkh", "page": 4, "region_id": "r1"}}
+   ]}},
+
+  {"node_type": "area", "label": "3. Decision", "x": 820, "y": 120,
+   "data": {"subtitle": "Selected pump", "width": 380, "height": 480}},
+  {"node_type": "fact", "label": "DECISION - LKH-10, 4-pole", "x": 850, "y": 180,
+   "data": {"text": "17 m3/h at 5 m. Shut-off 9 m: margin over duty.",
+            "bg_color": "#dcfce7", "text_size": "lg", "width": 320}},
+  {"node_type": "fact", "label": "Rejected - LKH-5", "x": 850, "y": 330,
+   "data": {"text": "Only reaches 5 m at run-out.", "bg_color": "#f1f5f9"}},
+
+  {"node_type": "area", "label": "4. Open before ordering", "x": 1240, "y": 120,
+   "data": {"subtitle": "Confirm these, then order", "width": 340, "height": 480}},
+  {"node_type": "fact", "label": "1 - Confirm the flow", "x": 1270, "y": 180,
+   "data": {"text": "Waterfall width decides LKH-10 vs LKH-20.", "bg_color": "#fef3c7"}}
+]
+```
+
+Then edges: evidence edges from each `spec` back to the document card,
+and labelled edges between the areas' key cards carrying the reasoning
+("fails at 5 m", "passes with margin"). Finish with
+`canvas_propose_set` so the human rules on the answer as one thing.
 
 ### Spec nodes carry structured rows, not prose
 

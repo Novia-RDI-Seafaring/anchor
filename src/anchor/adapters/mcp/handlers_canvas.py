@@ -78,6 +78,42 @@ _SPEC_ROWS_HINT = (
 )
 
 
+# Non-fatal nudge for the composition failure mode: an agent answers a
+# question by dropping every card it made onto an empty board, so the human
+# opens a pile and has to reconstruct the argument. Enclosure is the strongest
+# grouping cue there is, and `area` is the primitive for it. Like the spec
+# nudge this never blocks the write; it steers the next call.
+_COMPOSITION_HINT = (
+    "This set has {n} members and no `area` among them, so a reviewer opens a "
+    "flat pile of cards. Put the parts of your answer inside `area` nodes that "
+    "name the steps a reader walks through (for example what was asked, what "
+    "the options are, what you picked, what is still open), add a `text` "
+    "element at text_size 'xl' or larger as the title, and use `data.bg_color` "
+    "consistently so state reads at a glance. Call canvas_node_types for the "
+    "fields each type renders."
+)
+#: Below this a flat set still reads fine, so stay quiet.
+_COMPOSITION_HINT_MIN_MEMBERS = 8
+
+
+def _composition_hint(record: dict[str, Any] | None, state: dict[str, Any] | None) -> str | None:
+    """Nudge when a large proposal set groups nothing (see _COMPOSITION_HINT)."""
+    if not isinstance(record, dict) or not isinstance(state, dict):
+        return None
+    members = record.get("members")
+    if not isinstance(members, list) or len(members) < _COMPOSITION_HINT_MIN_MEMBERS:
+        return None
+    member_ids = {m.get("id") if isinstance(m, dict) else m for m in members}
+    nodes = state.get("nodes")
+    nodes = list(nodes.values()) if isinstance(nodes, dict) else (nodes or [])
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        if node.get("id") in member_ids and node.get("node_type") == "area":
+            return None
+    return _COMPOSITION_HINT.format(n=len(members))
+
+
 def _alias_type(args: dict[str, Any], canonical: str) -> None:
     """Accept ``type`` as an alias for ``node_type`` / ``edge_type`` (#186).
 
@@ -208,7 +244,11 @@ async def _dispatch_tool(
                 )
             except ProposalSetError as exc:
                 return json.dumps({"error": exc.message})
-            return json.dumps({"proposal_set": record})
+            result: dict[str, Any] = {"proposal_set": record}
+            hint = _composition_hint(record, await svc.get_state(args["workspace_slug"]))
+            if hint is not None:
+                result["hint"] = hint
+            return json.dumps(result)
         if name == "canvas_add_to_proposal_set":
             try:
                 record = await svc.add_proposal_set_members(
