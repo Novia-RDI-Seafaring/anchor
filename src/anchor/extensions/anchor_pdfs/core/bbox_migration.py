@@ -213,7 +213,10 @@ async def migrate_document(
         return {"slug": slug, "status": "skipped", "reason": "page sizes unavailable"}
     heights = {p: s[1] for p, s in sizes.items()}
 
-    index = await store.get_index(slug)
+    # Read the unabridged index: this is a read-modify-write of index.json,
+    # and the default map form omits table cells. Writing that back would
+    # delete every table's cell content from disk.
+    index = await store.get_index(slug, include_content=True)
     if isinstance(index, dict):
         await store.write_silver_artifact(
             slug, "index.json", json.dumps(flip_index(index, heights), indent=2)

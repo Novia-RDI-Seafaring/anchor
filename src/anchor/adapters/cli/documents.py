@@ -357,11 +357,19 @@ def embed(
 
 def index(
     slug: str,
+    include_content: bool = typer.Option(
+        False,
+        "--include-content",
+        help="Include full table cell content (much larger output).",
+    ),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
-    """Print the silver index for a document."""
+    """Print the silver index for a document.
+
+    Table cell content is left out unless --include-content is given; read a
+    table with `anchor page-text <slug> <page>` instead."""
     _, _, _, _, doc_store = _build_real_services(data_dir)
-    out = asyncio.run(doc_store.get_index(slug))
+    out = asyncio.run(doc_store.get_index(slug, include_content=include_content))
     if out is None:
         typer.echo(f"no index for {slug!r}", err=True)
         raise typer.Exit(code=1)
