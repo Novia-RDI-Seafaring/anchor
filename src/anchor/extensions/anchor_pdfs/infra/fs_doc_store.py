@@ -1,10 +1,11 @@
 """Filesystem-backed DocStore.
 
-Mirrors the on-disk layout the v1 packages already use, so v1 and v2 can
-read/write the same data dir during migration:
+Owns document-addressed originals and slug-addressed extraction artifacts.
+Flat legacy originals remain readable only with unambiguous ownership:
 
     data_dir/
-        bronze/<filename>.pdf
+        bronze/<slug>/<sha256>.pdf
+        bronze/<slug>/original.json
         silver/<slug>/
             index.json
             pages.meta.json
@@ -16,19 +17,27 @@ read/write the same data dir during migration:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import time
 from contextlib import asynccontextmanager
+from copy import copy
 from datetime import UTC
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
+from uuid import uuid4
 
 import aiofiles
 
+from anchor.core.ids import validate_workspace_slug
 from anchor.core.upload_safety import UnsafeUploadError, assert_within, safe_upload_name
+from anchor.extensions.anchor_pdfs.core.generation import polished_membership
+from anchor.extensions.anchor_pdfs.core.ingest.validation import require_unique_region_ids
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
 from anchor.extensions.anchor_pdfs.core.silver import project_index
+from anchor.extensions.anchor_pdfs.core.source_identity import SourceIdentityError, original_source
+from anchor.extensions.anchor_pdfs.infra._generation import document_view
 from anchor.extensions.anchor_pdfs.infra._region_normalize import _normalise_regions
 
 #: How long a stale ingest lock file may sit before another writer reclaims it.
@@ -73,6 +82,120 @@ class FsDocStore:
         for p in (self.bronze, self.silver, self.gold, self.ingest_locks):
             p.mkdir(parents=True, exist_ok=True)
         self._lock = asyncio.Lock()
+        self._pinned: dict[str, str | None] = {}
+        self._published: dict[str, dict[str, Any]] = {}
+
+    def _current_manifest(self, slug: str) -> dict[str, Any] | None:
+        path = self._base_dir(self.silver, slug) / ".current.json"
+        path = assert_within(path, self.silver)
+        if not path.exists():
+            return None
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            token = manifest["generation"]
+            self._validate_generation(token)
+            if manifest.get("version") != 1 or not isinstance(manifest.get("pages"), list) or not isinstance(manifest.get("source"), dict):
+                raise ValueError
+            return manifest
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise SourceIdentityError("document generation metadata is invalid") from exc
+
+    def _current_generation(self, slug: str) -> str | None:
+        manifest = self._current_manifest(slug)
+        return manifest["generation"] if manifest is not None else None
+
+    @staticmethod
+    def _validate_generation(token: str) -> None:
+        if not isinstance(token, str) or len(token) != 32 or any(c not in "0123456789abcdef" for c in token):
+            raise SourceIdentityError("invalid document generation")
+
+    def snapshot(self, slug: str) -> FsDocStore:
+        if slug in self._pinned:
+            return self
+        manifest = self._current_manifest(slug)
+        view = copy(self)
+        view._pinned = {**self._pinned, slug: manifest["generation"] if manifest is not None else None}
+        view._published = {**self._published}
+        if manifest is not None:
+            view._published[slug] = manifest
+        return view
+
+    def replacement(self, slug: str, generation: str) -> FsDocStore:
+        self._validate_generation(generation)
+        view = copy(self)
+        view._pinned = {**self._pinned, slug: generation}
+        view._published = {s: m for s, m in self._published.items() if s != slug}
+        if not (view._doc_dir(self.silver, slug) / ".replacement.json").is_file():
+            raise SourceIdentityError("replacement generation is unavailable")
+        return view
+
+    async def begin_replacement(self, slug: str, pages: list[int]) -> str:
+        old = self.snapshot(slug)
+        token = uuid4().hex
+        view = copy(self)
+        view._pinned = {**self._pinned, slug: token}
+        base = view._doc_dir(self.silver, slug)
+        base.mkdir(parents=True, exist_ok=False)
+        view._doc_dir(self.gold, slug).mkdir(parents=True, exist_ok=False)
+        (base / ".replacement.json").write_text(json.dumps({
+            "parent": old._pinned[slug],
+        }), encoding="utf-8")
+        return token
+
+    async def publish_replacement(self, slug: str, generation: str, pages: list[int]) -> None:
+        view = self.replacement(slug, generation)
+        index = await view.get_index(slug, include_content=True)
+        if index is None or await view.get_raw_pdf_path(slug) is None:
+            raise SourceIdentityError("replacement is missing its source index or original")
+        membership = sorted(set(pages))
+        if any(not isinstance(page, int) or page < 1 for page in membership):
+            raise SourceIdentityError("replacement page membership is invalid")
+        metadata = await view.get_pages_meta(slug)
+        report = view._read_ingest_report(slug)
+        if (metadata is None or set(metadata.get("pages", {})) != {str(p) for p in membership}
+                or index["document"].get("page_count") != len(membership)
+                or not report or report.get("status") != "success"):
+            raise SourceIdentityError("replacement is incomplete or has inconsistent page membership")
+        for page in membership:
+            base = view._doc_dir(self.silver, slug) / "pages"
+            if any(not (base / f"{page}{suffix}").is_file() for suffix in (".raw.md", ".png", ".candidates.json")):
+                raise SourceIdentityError("replacement silver page is incomplete")
+        polished = polished_membership(report)
+        if not set(polished).issubset(membership) or any(
+            not (view._doc_dir(self.silver, slug) / "pages" / f"{page}.md").is_file() for page in polished
+        ):
+            raise SourceIdentityError("replacement polished page is incomplete or outside current membership")
+        gold = (await view.get_regions(slug))["pages"]
+        if not set(gold).issubset(membership):
+            raise SourceIdentityError("replacement gold is outside current page membership")
+        for page, regions in gold.items():
+            require_unique_region_ids(regions, page=page)
+        identities = {(page, r["id"]) for page, regions in gold.items() for r in regions}
+        embeddings = await view.get_embeddings(slug)
+        if embeddings and any((v["page"], v["region_id"]) not in identities for v in embeddings.get("vectors", [])):
+            raise SourceIdentityError("replacement embeddings contain obsolete regions")
+        base = view._doc_dir(self.silver, slug)
+        parent = json.loads((base / ".replacement.json").read_text(encoding="utf-8"))["parent"]
+        manifest = {"version": 1, "generation": generation, "source": index["document"]["source"],
+                    "pages": membership, "gold": {str(p): [r["id"] for r in rs] for p, rs in gold.items()},
+                    "embedded": embeddings is not None, "polished_pages": polished}
+        index["document"]["generation"] = {"id": generation, "pages": membership}
+        await view.write_silver_artifact(slug, "index.json", json.dumps(index))
+        # The only publication point switches both derived trees and source.
+        # Retained old trees keep previously returned file paths readable.
+        async with self.ingest_lock(slug):
+            current = self._current_generation(slug)
+            if current == generation:
+                return
+            if current != parent:
+                raise SourceIdentityError("replacement was superseded; begin a fresh ingest")
+            target = self._base_dir(self.silver, slug) / ".current.json"
+            tmp = target.with_name(f"{uuid4().hex}.tmp")
+            try:
+                tmp.write_text(json.dumps(manifest), encoding="utf-8")
+                os.replace(tmp, target)
+            finally:
+                tmp.unlink(missing_ok=True)
 
     # ── Per-slug ingest lock (issue #175) ────────────────────────────────
     #
@@ -89,7 +212,7 @@ class FsDocStore:
         assert_within(target, self.ingest_locks)
         return target
 
-    def _doc_dir(self, root: Path, slug: str) -> Path:
+    def _base_dir(self, root: Path, slug: str) -> Path:
         """``root/<slug>`` for a caller-supplied slug, refusing traversal.
 
         Slugs reach the store from HTTP/MCP/CLI arguments, so a read path built
@@ -105,6 +228,19 @@ class FsDocStore:
         candidate = os.path.normpath(os.path.join(base, slug))
         if not candidate.startswith(base + os.sep):
             raise UnsafeUploadError(f"document slug {slug!r} escapes {root!s}")
+        return Path(candidate)
+
+    def _doc_dir(self, root: Path, slug: str) -> Path:
+        base = self._base_dir(root, slug)
+        token = self._pinned[slug] if slug in self._pinned else self._current_generation(slug)
+        if token is not None:
+            base = assert_within(base / "generations" / token, base)
+        # A document directory can itself be a link. Check the final selected
+        # path against the storage layer, not only against that document link.
+        layer = os.path.realpath(os.fspath(root))
+        candidate = os.path.realpath(os.fspath(base))
+        if not candidate.startswith(layer + os.sep):
+            raise UnsafeUploadError("document directory escapes its storage layer")
         return Path(candidate)
 
     def _try_create_lock(self, path: Path) -> bool:
@@ -176,24 +312,23 @@ class FsDocStore:
                 continue
             slug = d.name
             try:
-                self._doc_dir(self.silver, slug)
+                reader = self.snapshot(slug)
+                idx = await reader.get_index(slug)
             except UnsafeUploadError:
                 continue
-            idx_path = d / "index.json"
             page_count = 0
             title = slug
             filename = ""
-            if idx_path.exists():
-                idx = json.loads(idx_path.read_text(encoding="utf-8"))
+            if idx is not None:
                 doc = idx.get("document", {})
                 page_count = int(doc.get("page_count", 0))
                 title = doc.get("title", slug)
                 filename = doc.get("filename", "")
-            has_gold = self._gold_complete(slug)
+            has_gold = reader._gold_complete(slug)
             # Count the regions actually on disk (not the marker's stale figure)
             # so a marker desynced by a concurrent --force (issue #175) still
             # reports the true region_count once the cross-check vouches for gold.
-            region_count = self._count_gold_regions(slug) if has_gold else 0
+            region_count = reader._count_gold_regions(slug) if has_gold else 0
             entry = {
                 "slug": slug, "title": title, "filename": filename,
                 "page_count": page_count, "has_gold": has_gold, "region_count": region_count,
@@ -206,7 +341,7 @@ class FsDocStore:
             # (issue #188) — surface it as a distinct, actionable non-ok state
             # so an agent retries instead of trusting a silent ok. Missing
             # report or `status: success` reads ok.
-            report = self._read_ingest_report(slug)
+            report = reader._read_ingest_report(slug)
             report_status = report.get("status") if report else None
             if report_status == "failed":
                 entry["status"] = "failed"
@@ -221,7 +356,7 @@ class FsDocStore:
                 entry["reason"] = report.get("reason", "gold extraction produced 0 regions")
             else:
                 entry["status"] = "ok"
-            marker = self._read_gold_marker(slug)
+            marker = reader._read_gold_marker(slug)
             if has_gold and marker:
                 if marker.get("mode"):
                     entry["gold_mode"] = marker["mode"]
@@ -319,6 +454,7 @@ class FsDocStore:
         # ingest-report the keyed pipeline wrote as its last step.
         return self._gold_artifacts_consistent(slug)
 
+    @document_view
     async def has_gold(self, slug: str) -> bool:
         return self._gold_complete(slug)
 
@@ -344,31 +480,46 @@ class FsDocStore:
             await f.write(payload)
         os.replace(tmp, target)
 
+    @document_view
     async def get_index(self, slug: str, *, include_content: bool = False) -> dict[str, Any] | None:
-        # The slug arrives from HTTP/MCP/CLI arguments. Inline
-        # normalise-then-prefix-check (not delegated) so the containment
-        # barrier sits in the same function that builds the path.
-        base = os.path.realpath(os.fspath(self.silver))
-        candidate = os.path.normpath(os.path.join(base, slug, "index.json"))
-        if not candidate.startswith(base + os.sep):
-            return None
-        p = Path(candidate)
-        if not p.exists():
-            return None
-        return project_index(json.loads(p.read_text(encoding="utf-8")), include_content=include_content)
+        p = self._doc_dir(self.silver, slug) / "index.json"
+        if self._pinned.get(slug) is not None and not p.is_file():
+            raise SourceIdentityError("document generation index is unavailable")
+        index = json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
+        manifest = self._published.get(slug)
+        if manifest is not None:
+            document = index.get("document", {}) if isinstance(index, dict) else {}
+            if document.get("source") != manifest["source"] or document.get("generation") != {"id": manifest["generation"], "pages": manifest["pages"]}:
+                raise SourceIdentityError("document generation and source metadata disagree")
+        return project_index(index, include_content=include_content)
 
+    @document_view
     async def get_pages_meta(self, slug: str) -> dict[str, Any] | None:
         p = self._doc_dir(self.silver, slug) / "pages.meta.json"
         return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
+    @document_view
     async def get_page_text(self, slug: str, page: int) -> str | None:
         pages = self._doc_dir(self.silver, slug) / "pages"
-        for name in (f"{int(page)}.md", f"{int(page)}.raw.md"):
+        names = (f"{int(page)}.md", f"{int(page)}.raw.md")
+        if self._pinned.get(slug) is not None:
+            proof = self._published.get(slug)
+            if proof is None:
+                report = self._read_ingest_report(slug) or {}
+                proof = report if report.get("status") == "success" else {}
+            try:
+                polished = polished_membership(proof)
+            except ValueError:
+                polished = []
+            if page not in polished:
+                names = (f"{int(page)}.raw.md",)
+        for name in names:
             p = pages / name
             if p.exists():
                 return p.read_text(encoding="utf-8")
         return None
 
+    @document_view
     async def get_page_image_path(
         self, slug: str, page: int, dpi: int | None = None
     ) -> Path | None:
@@ -376,6 +527,7 @@ class FsDocStore:
         p = self._doc_dir(self.silver, slug) / "pages" / name
         return p if p.exists() else None
 
+    @document_view
     async def get_page_candidates(self, slug: str, page: int) -> list[dict[str, Any]] | None:
         p = self._doc_dir(self.silver, slug) / "pages" / f"{int(page)}.candidates.json"
         if not p.is_file():
@@ -386,6 +538,7 @@ class FsDocStore:
             return None
         return data if isinstance(data, list) else None
 
+    @document_view
     async def get_regions(self, slug: str, page: int | None = None) -> dict[str, Any]:
         result: dict[str, Any] = {"slug": slug, "pages": {}}
         d = self._doc_dir(self.gold, slug) / "pages"
@@ -400,6 +553,7 @@ class FsDocStore:
             result["pages"][pg] = _normalise_regions(regions)
         return result
 
+    @document_view
     async def get_gold_map(self, slug: str) -> dict[str, Any] | None:
         # Keyed on actual gold completeness: silver-only documents and
         # crash-interrupted (partial) gold passes have no gold map.
@@ -418,28 +572,23 @@ class FsDocStore:
             "pages_meta": pages_meta or {},
         }
 
+    @document_view
     async def get_crop_path(self, slug: str, rel_path: str) -> Path | None:
         # ``rel_path`` arrives from the agent (e.g. region.crops.png →
         # ``"3/r1.png"``). It must stay inside this document's gold pages
         # directory. The previous implementation used an ad-hoc
         # ``re.sub(r"\.\.+", ".", ...)`` replacement which fails closed for
         # ``..`` but does nothing about backslashes, absolute paths, or
-        # symlink escapes. Inline normalise-then-prefix-check (not delegated,
-        # trusted root only in the realpath base) so the containment barrier
-        # sits in the same function that builds the path.
-        if not slug or "/" in slug or "\\" in slug or slug in {".", ".."}:
+        # symlink escapes. Resolve the candidate and verify containment.
+        base = self._doc_dir(self.gold, slug) / "pages"
+        candidate = (base / rel_path)
+        try:
+            resolved = assert_within(candidate, base)
+        except UnsafeUploadError:
             return None
-        base = os.path.realpath(os.fspath(self.gold))
-        doc_base = os.path.normpath(os.path.join(base, slug, "pages"))
-        candidate = os.path.normpath(os.path.join(base, slug, "pages", rel_path))
-        if not candidate.startswith(base + os.sep):
-            return None
-        # Second prefix: rel_path must not cross into a sibling document.
-        if not candidate.startswith(doc_base + os.sep):
-            return None
-        resolved = Path(candidate)
         return resolved if resolved.exists() else None
 
+    @document_view
     async def write_crop(self, slug: str, rel_path: str, data: bytes) -> Path:
         # Both components arrive from CLI/MCP/HTTP arguments, so the write
         # path is a path-injection sink. Inline normalise-then-prefix-check
@@ -448,8 +597,8 @@ class FsDocStore:
         if not slug or "/" in slug or "\\" in slug or slug in {".", ".."}:
             raise UnsafeUploadError(f"unsafe document slug: {slug!r}")
         base = os.path.realpath(os.fspath(self.gold))
-        doc_base = os.path.normpath(os.path.join(base, slug, "pages"))
-        candidate = os.path.normpath(os.path.join(base, slug, "pages", rel_path))
+        doc_base = os.path.realpath(os.path.join(os.fspath(self._doc_dir(self.gold, slug)), "pages"))
+        candidate = os.path.realpath(os.path.join(os.fspath(self._doc_dir(self.gold, slug)), "pages", rel_path))
         if not candidate.startswith(base + os.sep):
             raise UnsafeUploadError(f"crop rel_path {rel_path!r} escapes the gold dir")
         if not candidate.startswith(doc_base + os.sep):
@@ -460,30 +609,189 @@ class FsDocStore:
             await f.write(data)
         return target
 
-    async def get_raw_pdf_path(self, slug: str) -> Path | None:
-        # bronze/ uses the original filename, not the slug — recover from
-        # the silver index which carries `document.filename`.
-        index = await self.get_index(slug)
-        if not index:
+    @document_view
+    async def get_raw_pdf_path(self, slug: str, *, page: int | None = None) -> Path | None:
+        base = self._original_dir(slug)
+        try:
+            index = await self.get_index(slug)
+            if index is None and (self._doc_dir(self.silver, slug) / "index.json").exists():
+                raise ValueError
+            if index is not None and (not isinstance(index, dict) or not isinstance(index.get("document"), dict)):
+                raise ValueError
+            document = index["document"] if index is not None else {}
+            membership = document.get("generation", {}).get("pages")
+            if page is not None and membership is not None and page not in membership:
+                return None
+        except (OSError, ValueError, AttributeError) as exc:
+            raise SourceIdentityError("document source metadata is inconsistent") from exc
+        if "source" in document:
+            return self._verified_original(base, slug, document["source"])
+        if index is None and (base / "original.json").exists():
+            return self._verified_original(base, slug, self._original_record(base))
+        if index is None:
             return None
-        filename = (index.get("document") or {}).get("filename")
-        if not filename:
-            return None
-        p = self.bronze / filename
-        return p if p.is_file() else None
+        return self._legacy_original(slug, document)
 
-    async def stash_bronze(self, pdf_bytes: bytes, filename: str) -> Path:
-        # Defence-in-depth: re-validate the filename here so direct
-        # callers (CLI ``anchor ingest``, tests, future agents) get the
-        # same protection the HTTP upload route applies. ``safe_upload_name``
-        # rejects path components and a non-pdf extension; ``assert_within``
-        # rejects any residual escape via the resolved path.
+    def _legacy_original(self, slug: str, document: dict[str, Any]) -> Path | None:
+        """Read only: filename lookup requires a proven legacy ownership set."""
+        try:
+            filename = safe_upload_name(document.get("filename"), allowed_extensions={".pdf"})
+            path = assert_within(self.bronze / filename, self.bronze)
+            if not path.is_file():
+                return None
+            owners = []
+            for directory in self.silver.iterdir():
+                index_path = self.snapshot(directory.name)._doc_dir(self.silver, directory.name) / "index.json"
+                if not index_path.is_file():
+                    continue
+                assert_within(index_path, self.silver)
+                candidate = json.loads(index_path.read_text(encoding="utf-8"))["document"]
+                # Keep competing filename claims even after re-ingestion.
+                # Dropping a modernized owner would make an old conflict look
+                # unambiguous without establishing whose bytes survived.
+                name = safe_upload_name(candidate.get("filename"), allowed_extensions={".pdf"})
+                other = assert_within(self.bronze / name, self.bronze)
+                if os.path.normcase(str(other)) == os.path.normcase(str(path)):
+                    owners.append((directory.name, candidate.get("source_sha256")))
+            # A renamed/re-ingested document still claimed its old original.
+            # Retain that evidence so modernization cannot erase a conflict.
+            for directory in self.bronze.iterdir():
+                if not directory.is_dir() or not (directory / "original.json").exists():
+                    continue
+                record = self._original_record(directory)
+                if record.get("slug") != directory.name:
+                    raise SourceIdentityError("legacy original ownership metadata is inconsistent")
+                for claim in record.get("legacy_sources", []):
+                    name = safe_upload_name(claim["filename"], allowed_extensions={".pdf"})
+                    other = assert_within(self.bronze / name, self.bronze)
+                    if os.path.normcase(str(other)) == os.path.normcase(str(path)):
+                        owners.append((directory.name, claim.get("source_sha256")))
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            if not any(owner == slug for owner, _ in owners):
+                raise SourceIdentityError("legacy original ownership is inconsistent")
+            if len({owner for owner, _ in owners}) > 1 and not all(fingerprint == digest for _, fingerprint in owners):
+                raise SourceIdentityError(
+                    "legacy original has ambiguous ownership; recover each document's original and re-ingest"
+                )
+            if any(fingerprint is not None and fingerprint != digest for _, fingerprint in owners):
+                raise SourceIdentityError("legacy original fingerprint mismatch; recover the original")
+            return path
+        except SourceIdentityError:
+            raise
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise SourceIdentityError("legacy source metadata is unsafe or inconsistent") from exc
+
+    def _original_dir(self, slug: str) -> Path:
+        validate_workspace_slug(slug)
+        if slug.endswith(".") or PureWindowsPath(slug).is_reserved():
+            raise SourceIdentityError("document slug aliases a reserved filesystem name")
+        try:
+            for root in (self.bronze, self.silver):
+                if any(p.name != slug and p.name.casefold() == slug.casefold() for p in root.iterdir()):
+                    raise SourceIdentityError("document slug conflicts with an existing filesystem identity")
+            base = self._base_dir(self.bronze, slug)
+            silver = self._base_dir(self.silver, slug)
+            if base.is_symlink() or silver.is_symlink():
+                raise SourceIdentityError("original storage has conflicting ownership")
+            base = assert_within(base, self.bronze)
+            assert_within(self._doc_dir(self.silver, slug) / "index.json", self.silver)
+            return base
+        except (UnsafeUploadError, OSError) as exc:
+            raise SourceIdentityError("original storage path is unsafe or conflicting") from exc
+
+    @staticmethod
+    def _original_record(base: Path) -> dict[str, Any]:
+        try:
+            root = os.path.realpath(os.fspath(base))
+            candidate = os.path.realpath(os.path.join(root, "original.json"))
+            if not candidate.startswith(root + os.sep):
+                raise SourceIdentityError("original source metadata escapes its document")
+            path = Path(candidate)
+            record = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(record, dict):
+                raise ValueError
+            return record
+        except (OSError, ValueError) as exc:
+            raise SourceIdentityError("original source metadata is invalid; recover the original") from exc
+
+    @staticmethod
+    def _verified_original(base: Path, slug: str, source: Any) -> Path | None:
+        if not isinstance(source, dict) or source.get("slug") != slug:
+            raise SourceIdentityError("original source ownership does not match document identity")
+        digest = source.get("sha256")
+        if not isinstance(digest, str) or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+            raise SourceIdentityError("original source fingerprint is invalid")
+        try:
+            root = os.path.realpath(os.fspath(base))
+            candidate = os.path.realpath(os.path.join(root, f"{digest}.pdf"))
+            if not candidate.startswith(root + os.sep):
+                raise SourceIdentityError("original source escapes its document")
+            path = Path(candidate)
+            if not path.is_file():
+                return None
+            if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+                raise SourceIdentityError("original source fingerprint mismatch; recover the original")
+            return path
+        except OSError as exc:
+            raise SourceIdentityError("original source cannot be read") from exc
+        except UnsafeUploadError as exc:
+            raise SourceIdentityError("original source is unsafe or its fingerprint does not match") from exc
+
+    async def stash_bronze(self, pdf_bytes: bytes, filename: str, *, slug: str) -> Path:
         clean = safe_upload_name(filename, allowed_extensions={".pdf"})
-        async with self._lock:
-            target = self.bronze / clean
-            assert_within(target, self.bronze)
-            async with aiofiles.open(target, "wb") as f:
-                await f.write(pdf_bytes)
+        source = original_source(pdf_bytes, slug)
+        base = self._original_dir(slug)
+        if base.exists() and not base.is_dir():
+            raise SourceIdentityError("original storage conflicts with an existing legacy file")
+        # Serializes even filesystem aliases of a slug. The exact recorded
+        # owner must also agree (Windows treats case variants as one path).
+        async with self.ingest_lock(slug):
+            record_path = base / "original.json"
+            previous = self._original_record(base) if record_path.exists() else {}
+            if record_path.exists() and previous.get("slug") != slug:
+                raise SourceIdentityError("original storage belongs to a different document slug")
+            try:
+                legacy_sources = previous.get("legacy_sources", [])
+                if not isinstance(legacy_sources, list):
+                    raise SourceIdentityError("original ownership history is invalid")
+                for claim in legacy_sources:
+                    if not isinstance(claim, dict):
+                        raise SourceIdentityError("original ownership history is invalid")
+                    safe_upload_name(claim.get("filename"), allowed_extensions={".pdf"})
+                index = await self.get_index(slug)
+                if index is None and (self._doc_dir(self.silver, slug) / "index.json").exists():
+                    raise SourceIdentityError("document source metadata is inconsistent")
+                if index is not None:
+                    if not isinstance(index, dict) or not isinstance(index.get("document"), dict):
+                        raise SourceIdentityError("document source metadata is inconsistent")
+                    document = index["document"]
+                    if "source" not in document:
+                        claim = {"filename": safe_upload_name(document.get("filename"), allowed_extensions={".pdf"})}
+                        if "source_sha256" in document:
+                            claim["source_sha256"] = document["source_sha256"]
+                        if claim not in legacy_sources:
+                            legacy_sources = [*legacy_sources, claim]
+                target = assert_within(base / f"{source['sha256']}.pdf", base)
+                record_path = assert_within(record_path, base)
+                if target.exists():
+                    if self._verified_original(base, slug, source) is None:
+                        raise SourceIdentityError("original source target is not a file")
+                else:
+                    base.mkdir(parents=True, exist_ok=True)
+                    tmp = base / f"{uuid4().hex}.tmp"
+                    try:
+                        tmp.write_bytes(pdf_bytes)
+                        os.replace(tmp, target)
+                    finally:
+                        tmp.unlink(missing_ok=True)
+                tmp = base / f"{uuid4().hex}.tmp"
+                try:
+                    tmp.write_text(json.dumps({**source, "filename": clean, "legacy_sources": legacy_sources}), encoding="utf-8")
+                    os.replace(tmp, record_path)
+                finally:
+                    tmp.unlink(missing_ok=True)
+            except (OSError, ValueError) as exc:
+                raise SourceIdentityError("original source could not be stored safely") from exc
             return target
 
     async def write_silver_artifact(self, slug: str, name: str, payload: bytes | str) -> Path:
@@ -492,7 +800,7 @@ class FsDocStore:
         # normalise-then-prefix-check (not delegated) so the containment
         # barrier sits in the same function that builds the path.
         base = os.path.realpath(os.fspath(self.silver))
-        candidate = os.path.normpath(os.path.join(base, slug, name))
+        candidate = os.path.normpath(os.path.join(os.fspath(self._doc_dir(self.silver, slug)), name))
         if not candidate.startswith(base + os.sep):
             raise UnsafeUploadError(
                 f"silver artifact path escapes the silver dir: {slug!r}/{name!r}"
@@ -600,7 +908,7 @@ class FsDocStore:
             raise UnsafeUploadError(f"unsafe document slug: {slug!r}")
         base = os.path.realpath(os.fspath(self.gold))
         candidate = os.path.normpath(
-            os.path.join(base, slug, "pages", f"{int(page)}.regions.json")
+            os.path.join(os.fspath(self._doc_dir(self.gold, slug)), "pages", f"{int(page)}.regions.json")
         )
         if not candidate.startswith(base + os.sep):
             raise UnsafeUploadError(f"document slug {slug!r} escapes the gold dir")
@@ -611,6 +919,7 @@ class FsDocStore:
             await f.write(json.dumps({"page": page, "regions": normalised}, indent=2))
         return target
 
+    @document_view
     async def add_derived_region(self, slug: str, region: dict[str, Any]) -> Path:
         page = _derived_page(region)
         if page is None:
@@ -626,7 +935,7 @@ class FsDocStore:
                 raise UnsafeUploadError(f"unsafe document slug: {slug!r}")
             base = os.path.realpath(os.fspath(self.gold))
             candidate = os.path.normpath(
-                os.path.join(base, slug, "pages", f"{page}.regions.json")
+                os.path.join(os.fspath(self._doc_dir(self.gold, slug)), "pages", f"{page}.regions.json")
             )
             if not candidate.startswith(base + os.sep):
                 raise UnsafeUploadError(f"document slug {slug!r} escapes the gold dir")
@@ -646,18 +955,24 @@ class FsDocStore:
         # Inline normalise-then-prefix-check (not delegated): the slug can
         # arrive from a request (remove_region's cleanup writes here).
         base = os.path.realpath(os.fspath(self.gold))
-        candidate = os.path.normpath(os.path.join(base, slug, "embeddings.json"))
+        candidate = os.path.normpath(os.path.join(os.fspath(self._doc_dir(self.gold, slug)), "embeddings.json"))
         if not candidate.startswith(base + os.sep):
             raise UnsafeUploadError(f"document slug {slug!r} escapes the gold dir")
         target = Path(candidate)
         target.parent.mkdir(parents=True, exist_ok=True)
-        async with aiofiles.open(target, "w", encoding="utf-8") as f:
-            await f.write(json.dumps(payload))
+        tmp = target.with_name(f"{uuid4().hex}.tmp")
+        try:
+            async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
+                await f.write(json.dumps(payload))
+            os.replace(tmp, target)
+        finally:
+            tmp.unlink(missing_ok=True)
         return target
 
+    @document_view
     async def get_embeddings(self, slug: str) -> dict[str, Any] | None:
         base = os.path.realpath(os.fspath(self.gold))
-        candidate = os.path.normpath(os.path.join(base, slug, "embeddings.json"))
+        candidate = os.path.normpath(os.path.join(os.fspath(self._doc_dir(self.gold, slug)), "embeddings.json"))
         if not candidate.startswith(base + os.sep):
             return None
         target = Path(candidate)
@@ -671,7 +986,7 @@ class FsDocStore:
         if not self.gold.is_dir():
             return out
         for d in sorted(self.gold.iterdir()):
-            p = d / "embeddings.json"
+            p = self.snapshot(d.name)._doc_dir(self.gold, d.name) / "embeddings.json"
             if not p.is_file():
                 continue
             try:

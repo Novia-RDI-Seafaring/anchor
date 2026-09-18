@@ -15,6 +15,7 @@ from typer.testing import CliRunner
 
 from anchor.adapters.cli.main import app as cli_app
 from anchor.adapters.cli.services import _build_real_services
+from anchor.extensions.anchor_pdfs.core.source_identity import original_source
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
@@ -38,11 +39,12 @@ def _seed(data_dir) -> None:
     pdf.close()
 
     async def run():
-        await doc_store.stash_bronze(pdf_bytes, "testdoc.pdf")
+        await doc_store.stash_bronze(pdf_bytes, "testdoc.pdf", slug="testdoc")
         await doc_store.write_silver_artifact(
             "testdoc", "index.json",
             json.dumps({
-                "document": {"title": "Test Doc", "filename": "testdoc.pdf", "page_count": 1},
+                "document": {"title": "Test Doc", "filename": "testdoc.pdf", "page_count": 1,
+                             "source": original_source(pdf_bytes, "testdoc")},
                 "outline": [],
             }),
         )

@@ -31,7 +31,6 @@ from anchor.core.events.actor import Actor
 from anchor.extensions.anchor_cad import mcp_handlers as cad_handlers
 from anchor.extensions.anchor_fmus import mcp_handlers as fmu_handlers
 from anchor.extensions.anchor_pdfs import mcp_handlers as pdf_handlers
-from anchor.extensions.anchor_pdfs.core.value_provenance import enrich_spec_row_source_refs
 from anchor.extensions.anchor_sysml import mcp_handlers as sysml_handlers
 from anchor.infra.environment import (
     NoEnvironmentError,
@@ -488,20 +487,8 @@ def build_mcp_server(
             elif name in canvas_names:
                 b = get_bundle(args.pop("project", None))
 
-                # Enrich spec-row source refs against this project's doc store
-                # so row-level provenance survives canvas writes (from #136).
-                async def enrich_fields(
-                    fields: dict[str, Any], _doc_store=b.doc_store
-                ) -> dict[str, Any]:
-                    if "data" not in fields:
-                        return fields
-                    return {
-                        **fields,
-                        "data": await enrich_spec_row_source_refs(fields["data"], _doc_store),
-                    }
-
                 text = await handlers_canvas.call_tool(
-                    b.workspace, name, args, enrich_node_fields=enrich_fields,
+                    b.workspace, name, args,
                     actor=_client_actor(), data_dir=Path(b.config.data_dir),
                 )
             elif name in intent_names:

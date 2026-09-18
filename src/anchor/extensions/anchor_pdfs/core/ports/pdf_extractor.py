@@ -4,7 +4,7 @@ The output schema is the silver-format dict consumed by `core/silver.py`:
 
     {
       "items": [{"label": ..., "text": ..., "page": int, "bbox": [l,t,r,b],
-                 "cells"?: [{"row", "col", "text", "bbox"?}], ...}, ...],
+                 "cells"?: [{"row", "col", "row_span", "col_span", "text", "bbox"?}], ...}, ...],
       "pages": {page: {"width": float, "height": float}},   # PDF points
       "coord_origin": "top-left",                           # or "bottom-left"
     }
@@ -21,6 +21,12 @@ An extractor that natively works in PDF user space may declare
 accepted value. Labels use Anchor's normalized vocabulary (``text``,
 ``list_item``, ``table``, ``section_header``, ``title``, ``caption``,
 ``footnote``, ``picture``, ``page_header``, ``page_footer``, ...).
+
+Table cells must declare row_span and col_span, including explicit 1 values
+for unmerged cells. Preserve row_end/col_end (exclusive offsets), header and
+section flags, and table num_rows/num_cols when available. Missing span
+provenance remains inspectable but cannot certify a key/value association.
+Silver normalization owns the topology verdict; producers do not stamp it.
 """
 from __future__ import annotations
 

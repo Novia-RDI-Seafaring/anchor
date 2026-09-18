@@ -16,8 +16,8 @@ import { useUiStore } from "@/stores/uiStore";
 import { SourceDock } from "./SourceDock";
 
 vi.mock("./PdfSourceView", () => ({
-  PdfSourceView: ({ slug, page }: { slug: string; page: number }) => (
-    <div data-testid="pdf-source-view" data-slug={slug} data-page={page} />
+  PdfSourceView: ({ slug, page, total, generation }: { slug: string; page: number; total: number; generation?: string }) => (
+    <div data-testid="pdf-source-view" data-slug={slug} data-page={page} data-total={total} data-generation={generation} />
   ),
 }));
 
@@ -31,6 +31,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   useUiStore.setState({ pdfViewer: null });
   vi.restoreAllMocks();
 });
@@ -42,6 +43,25 @@ async function renderDock() {
 }
 
 describe("SourceDock", () => {
+  it("refreshes an open LKH viewer from four pages to its published one-page generation", async () => {
+    vi.useFakeTimers();
+    vi.mocked(documents.index).mockResolvedValue({
+      document: { page_count: 4, title: "Alfa Laval LKH", filename: "Alfa Laval LKH.pdf" }, outline: [],
+    });
+    await act(async () => { useUiStore.getState().openPdf("lkh-g4-shrink", { page: 2 }); });
+    await renderDock();
+    expect(screen.getByTestId("pdf-source-view").getAttribute("data-total")).toBe("4");
+    vi.mocked(documents.index).mockResolvedValue({
+      document: { page_count: 1, title: "Alfa Laval LKH", filename: "Alfa Laval LKH.pdf",
+        generation: { id: "replacement-b", pages: [1] } }, outline: [],
+    } as Awaited<ReturnType<typeof documents.index>>);
+    await act(async () => { await vi.advanceTimersByTimeAsync(8000); });
+    const view = screen.getByTestId("pdf-source-view");
+    expect(view.getAttribute("data-total")).toBe("1");
+    expect(view.getAttribute("data-generation")).toBe("replacement-b");
+    expect(view.getAttribute("data-page")).toBe("1");
+  });
+
   it("renders nothing when no document is open", async () => {
     await renderDock();
     expect(screen.queryByTestId("source-dock")).toBeNull();

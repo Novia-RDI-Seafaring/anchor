@@ -47,6 +47,9 @@ Docling or an embedding model. Commands that require an omitted service
 fail with an error that names the active profile.
 
 Each runtime gives `WorkspaceService` an
+optional producer node-data preparer so create and data-update operations
+share [source resolution](spec-source-resolution.md) without extension imports
+in the canvas core. It also gives `WorkspaceService` an
 `InProcessWorkspaceLocks` adapter. Mutations to one workspace are
 serialized across concurrent requests for the complete load, validate,
 append, snapshot, and publish sequence. Different workspaces can still
@@ -170,6 +173,9 @@ add their own. Today there are two:
 imports either.
 
 ### Region retrieval
+
+For source hashes, replacement membership and failure behavior, see
+[PDF replacement generations](document-generations.md).
 
 PDF ingest writes bronze, silver, and gold artifacts. Silver is the
 Docling view: page markdown, item metadata, bboxes, and table cells.

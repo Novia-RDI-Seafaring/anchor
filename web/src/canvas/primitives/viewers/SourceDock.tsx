@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { documents, type DocumentIndex } from "@/api/documents";
+import { useDocumentIndex } from "@/api/useDocumentIndex";
 import { useUiStore } from "@/stores/uiStore";
 
 import { PdfSourceView } from "./PdfSourceView";
@@ -36,26 +36,11 @@ export function SourceDock() {
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [index, setIndex] = useState<DocumentIndex | null>(null);
 
   const slug = viewer?.slug;
   const isDock = viewer?.mode === "dock";
-
-  useEffect(() => {
-    if (!slug) {
-      setIndex(null);
-      return;
-    }
-    let cancel = false;
-    documents.index(slug).then((idx) => {
-      if (!cancel) setIndex(idx);
-    }).catch(() => {
-      if (!cancel) setIndex(null);
-    });
-    return () => {
-      cancel = true;
-    };
-  }, [slug]);
+  const index = useDocumentIndex(slug, isDock);
+  const generation = index?.document.generation?.id;
 
   const onPointerMove = useCallback(
     (e: PointerEvent) => {
@@ -150,8 +135,10 @@ export function SourceDock() {
       </div>
       <div className="relative min-h-0 flex-1">
         <PdfSourceView
+          key={`${slug}:${generation ?? "legacy"}`}
           slug={slug}
-          page={viewer.page}
+          generation={generation}
+          page={Math.min(viewer.page, total || 1)}
           total={total}
           highlightBbox={viewer.highlightBbox}
           highlightPage={viewer.highlightPage}

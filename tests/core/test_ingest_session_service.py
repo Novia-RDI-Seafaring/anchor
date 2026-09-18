@@ -16,8 +16,8 @@ _TWO_PAGE_DOCLING = {
         {"label": "text", "text": "First paragraph.", "page": 1, "bbox": [0, 197, 200, 212]},
         {"label": "table", "text": "", "page": 2, "bbox": [0, 92, 500, 392],
          "cells": [
-             {"row": 0, "col": 0, "text": "Field", "bbox": [10, 102, 80, 132]},
-             {"row": 0, "col": 1, "text": "Value", "bbox": [100, 102, 180, 132]},
+             {"row": 0, "col": 0, "row_span": 1, "col_span": 1, "text": "Field", "bbox": [10, 102, 80, 132]},
+             {"row": 0, "col": 1, "row_span": 1, "col_span": 1, "text": "Value", "bbox": [100, 102, 180, 132]},
          ]},
         {"label": "text", "text": "Footnote.", "page": 2, "bbox": [0, 692, 200, 712]},
     ],
@@ -235,10 +235,12 @@ def test_status_is_the_resume_surface_by_id_and_slug():
         staged = json.loads(
             await s.session_store.read_text(sid, "gold/pages/2.regions.json")
         )
-        assert staged["regions"][0]["cells"] == [
+        cells = staged["regions"][0]["cells"]
+        assert [{k: c[k] for k in ("row", "col", "text", "bbox")} for c in cells] == [
             {"row": 0, "col": 0, "text": "Field", "bbox": [10.0, 102.0, 80.0, 132.0]},
             {"row": 0, "col": 1, "text": "Value", "bbox": [100.0, 102.0, 180.0, 132.0]},
         ]
+        assert staged["regions"][0]["table_topology"]["status"] == "valid"
         by_slug = await s.ingest_session.ingest_status(slug="demo")
         assert by_slug["session_id"] == sid
         assert by_slug["state"] == "open"
@@ -255,10 +257,10 @@ def test_submit_page_resolves_table_slice_to_selected_cells_and_bbox():
         s = _services()
         docling = deepcopy(_TWO_PAGE_DOCLING)
         docling["items"][3]["cells"].extend([
-            {"row": 1, "col": 0, "text": "Flow", "bbox": [10, 142, 80, 172]},
-            {"row": 1, "col": 1, "text": "10 l/s", "bbox": [100, 142, 180, 172]},
-            {"row": 2, "col": 0, "text": "Head", "bbox": [10, 182, 80, 212]},
-            {"row": 2, "col": 1, "text": "5 m", "bbox": [100, 182, 180, 212]},
+            {"row": 1, "col": 0, "row_span": 1, "col_span": 1, "text": "Flow", "bbox": [10, 142, 80, 172]},
+            {"row": 1, "col": 1, "row_span": 1, "col_span": 1, "text": "10 l/s", "bbox": [100, 142, 180, 172]},
+            {"row": 2, "col": 0, "row_span": 1, "col_span": 1, "text": "Head", "bbox": [10, 182, 80, 212]},
+            {"row": 2, "col": 1, "row_span": 1, "col_span": 1, "text": "5 m", "bbox": [100, 182, 180, 212]},
         ])
         s.extractor.docling = docling
         order = await _begin(s)

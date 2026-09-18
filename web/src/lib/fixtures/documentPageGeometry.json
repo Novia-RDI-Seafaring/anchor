@@ -1,0 +1,371 @@
+{
+  "gold_map": {
+    "slug": "geometry",
+    "document": {
+      "filename": "geometry.pdf",
+      "title": "Geometry",
+      "page_count": 3
+    },
+    "outline": [],
+    "pages": {
+      "1": [
+        {
+          "id": "review",
+          "kind": "text",
+          "title": "review",
+          "page": 1,
+          "bbox": [
+            60,
+            100,
+            240,
+            150
+          ],
+          "coord_origin": "top-left"
+        },
+        {
+          "id": "top-left",
+          "kind": "text",
+          "title": "top-left",
+          "page": 1,
+          "bbox": [
+            12,
+            16,
+            24,
+            26
+          ],
+          "coord_origin": "top-left"
+        },
+        {
+          "id": "bottom-right",
+          "kind": "text",
+          "title": "bottom-right",
+          "page": 1,
+          "bbox": [
+            570,
+            760,
+            590,
+            780
+          ],
+          "coord_origin": "top-left"
+        },
+        {
+          "id": "table",
+          "kind": "text",
+          "title": "table",
+          "page": 1,
+          "bbox": [
+            35,
+            200,
+            565,
+            735
+          ],
+          "coord_origin": "top-left"
+        }
+      ],
+      "2": [
+        {
+          "id": "review",
+          "kind": "text",
+          "title": "review",
+          "page": 2,
+          "bbox": [
+            60,
+            100,
+            240,
+            150
+          ],
+          "coord_origin": "top-left"
+        },
+        {
+          "id": "top-left",
+          "kind": "text",
+          "title": "top-left",
+          "page": 2,
+          "bbox": [
+            12,
+            16,
+            24,
+            26
+          ],
+          "coord_origin": "top-left"
+        },
+        {
+          "id": "bottom-right",
+          "kind": "text",
+          "title": "bottom-right",
+          "page": 2,
+          "bbox": [
+            770,
+            560,
+            790,
+            580
+          ],
+          "coord_origin": "top-left"
+        },
+        {
+          "id": "table",
+          "kind": "text",
+          "title": "table",
+          "page": 2,
+          "bbox": [
+            35,
+            200,
+            765,
+            535
+          ],
+          "coord_origin": "top-left"
+        }
+      ],
+      "3": [
+        {
+          "id": "review",
+          "kind": "text",
+          "title": "review",
+          "page": 3,
+          "bbox": [
+            60,
+            100,
+            240,
+            150
+          ],
+          "coord_origin": "top-left"
+        },
+        {
+          "id": "top-left",
+          "kind": "text",
+          "title": "top-left",
+          "page": 3,
+          "bbox": [
+            12,
+            16,
+            24,
+            26
+          ],
+          "coord_origin": "top-left"
+        },
+        {
+          "id": "bottom-right",
+          "kind": "text",
+          "title": "bottom-right",
+          "page": 3,
+          "bbox": [
+            390,
+            555,
+            410,
+            575
+          ],
+          "coord_origin": "top-left"
+        },
+        {
+          "id": "table",
+          "kind": "text",
+          "title": "table",
+          "page": 3,
+          "bbox": [
+            35,
+            200,
+            385,
+            530
+          ],
+          "coord_origin": "top-left"
+        }
+      ]
+    },
+    "pages_meta": {
+      "page_count": 3,
+      "bbox_origin": "top-left",
+      "pages": {
+        "1": {
+          "item_count": 4,
+          "labels": {
+            "text": 4
+          },
+          "item_ids": [
+            "p1-i0",
+            "p1-i1",
+            "p1-i2",
+            "p1-i3"
+          ],
+          "bbox_union": [
+            12.0,
+            16.0,
+            590.0,
+            780.0
+          ],
+          "page_size": [
+            600.0,
+            800.0
+          ]
+        },
+        "2": {
+          "item_count": 4,
+          "labels": {
+            "text": 4
+          },
+          "item_ids": [
+            "p2-i0",
+            "p2-i1",
+            "p2-i2",
+            "p2-i3"
+          ],
+          "bbox_union": [
+            12.0,
+            16.0,
+            790.0,
+            580.0
+          ],
+          "page_size": [
+            800.0,
+            600.0
+          ]
+        },
+        "3": {
+          "item_count": 4,
+          "labels": {
+            "text": 4
+          },
+          "item_ids": [
+            "p3-i0",
+            "p3-i1",
+            "p3-i2",
+            "p3-i3"
+          ],
+          "bbox_union": [
+            12.0,
+            16.0,
+            410.0,
+            575.0
+          ],
+          "page_size": [
+            420.0,
+            595.0
+          ]
+        }
+      }
+    }
+  },
+  "rasters": {
+    "72": {
+      "1": {
+        "width": 600,
+        "height": 800
+      },
+      "2": {
+        "width": 800,
+        "height": 600
+      },
+      "3": {
+        "width": 420,
+        "height": 595
+      }
+    },
+    "150": {
+      "1": {
+        "width": 1250,
+        "height": 1667
+      },
+      "2": {
+        "width": 1667,
+        "height": 1250
+      },
+      "3": {
+        "width": 875,
+        "height": 1240
+      }
+    },
+    "300": {
+      "1": {
+        "width": 2500,
+        "height": 3334
+      },
+      "2": {
+        "width": 3334,
+        "height": 2500
+      },
+      "3": {
+        "width": 1750,
+        "height": 2480
+      }
+    }
+  },
+  "boxes": {
+    "1": {
+      "review": [
+        60,
+        100,
+        240,
+        150
+      ],
+      "top-left": [
+        12,
+        16,
+        24,
+        26
+      ],
+      "bottom-right": [
+        570,
+        760,
+        590,
+        780
+      ],
+      "table": [
+        35,
+        200,
+        565,
+        735
+      ]
+    },
+    "2": {
+      "review": [
+        60,
+        100,
+        240,
+        150
+      ],
+      "top-left": [
+        12,
+        16,
+        24,
+        26
+      ],
+      "bottom-right": [
+        770,
+        560,
+        790,
+        580
+      ],
+      "table": [
+        35,
+        200,
+        765,
+        535
+      ]
+    },
+    "3": {
+      "review": [
+        60,
+        100,
+        240,
+        150
+      ],
+      "top-left": [
+        12,
+        16,
+        24,
+        26
+      ],
+      "bottom-right": [
+        390,
+        555,
+        410,
+        575
+      ],
+      "table": [
+        35,
+        200,
+        385,
+        530
+      ]
+    }
+  }
+}

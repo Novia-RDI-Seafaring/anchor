@@ -138,7 +138,6 @@ def test_mcp_tool_advertises_the_switch():
 
 def test_mcp_handler_defaults_to_the_map_and_honours_the_flag():
     from anchor.extensions.anchor_pdfs.mcp_handlers import call_tool
-
     from tests.fixtures.services import make_in_memory_services
 
     services = make_in_memory_services()

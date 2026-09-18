@@ -81,6 +81,9 @@ class ProjectRuntime:
     fmu: FmuService | None = None
     extension_status: dict[str, ExtensionRuntimeStatus] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        bind_workspace_sources(self.workspace, self.doc_store)
+
     def require_ingest(self) -> IngestService:
         """Return keyed PDF ingest or fail clearly for a reduced profile."""
         if self.ingest is None:
@@ -88,6 +91,14 @@ class ProjectRuntime:
                 f"the {self.profile.value!r} runtime profile does not include PDF ingest"
             )
         return self.ingest
+
+
+def bind_workspace_sources(workspace: WorkspaceService, doc_store: DocStore | None) -> None:
+    """Shared composition for normal runtimes and explicit-service HTTP apps."""
+    from anchor.extensions.anchor_pdfs.core.node_data import PdfNodeDataPreparer
+
+    if doc_store is not None:
+        workspace.bind_node_data_preparer(PdfNodeDataPreparer(doc_store))
 
 
 def build_ingest_service(

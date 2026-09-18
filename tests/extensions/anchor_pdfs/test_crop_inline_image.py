@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+from pathlib import Path
 
 import pytest
 
@@ -149,7 +150,7 @@ def test_get_crop_path_format_still_returns_a_path(tmp_path):
 
     out = asyncio.run(run())
     assert out["format"] == "path"
-    assert out["value"].endswith("4/r1.png")
+    assert Path(out["value"]).parts[-2:] == ("4", "r1.png")
 
 
 def test_ingest_get_page_downgrades_inline_because_it_nests_the_envelope(tmp_path):

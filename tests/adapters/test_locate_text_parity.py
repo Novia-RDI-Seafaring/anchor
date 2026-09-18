@@ -22,6 +22,7 @@ from anchor.adapters.mcp import tiering
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.extensions.anchor_pdfs import mcp_handlers
 from anchor.extensions.anchor_pdfs.core.services import IngestService
+from anchor.extensions.anchor_pdfs.core.source_identity import original_source
 from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
 from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
 from anchor.infra.bus.memory_bus import MemoryEventBus
@@ -42,13 +43,13 @@ def _pdf_bytes() -> bytes:
 
 
 async def _seed(store: FsDocStore) -> None:
-    # Stash the bronze PDF and the silver index so get_raw_pdf_path (which
-    # recovers the bronze filename from the index) can resolve the document.
-    await store.stash_bronze(_pdf_bytes(), "lkh.pdf")
+    raw = _pdf_bytes()
+    await store.stash_bronze(raw, "lkh.pdf", slug="lkh")
     await store.write_silver_artifact(
         "lkh", "index.json",
         json.dumps({
-            "document": {"title": "LKH", "filename": "lkh.pdf", "page_count": 1},
+            "document": {"title": "LKH", "filename": "lkh.pdf", "page_count": 1,
+                         "source": original_source(raw, "lkh")},
             "outline": [],
         }),
     )

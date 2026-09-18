@@ -48,7 +48,8 @@ def test_failed_ingest_is_visible_and_recoverable_on_fs(tmp_path):
             await ingest.ingest_pdf(b"%PDF-fake", "boom.pdf")
 
         # Orphan bronze is kept on purpose.
-        assert (tmp_path / "bronze" / "boom.pdf").is_file()
+        original = await store.get_raw_pdf_path("boom")
+        assert original is not None and original.read_bytes() == b"%PDF-fake"
 
         # Failure record persisted into the silver ingest-report.json slot,
         # creating silver/<slug>/ so the doc surfaces in list_documents.
@@ -59,7 +60,7 @@ def test_failed_ingest_is_visible_and_recoverable_on_fs(tmp_path):
         assert report["stage"] == "silver_extract"
         assert "docling exploded" in report["error"]
         assert report["filename"] == "boom.pdf"
-        assert report["bronze_path"].endswith("boom.pdf")
+        assert report["bronze_path"] == str(original)
         assert report["failed_at"].startswith("2023-")
 
         docs = await store.list_documents()
@@ -69,7 +70,7 @@ def test_failed_ingest_is_visible_and_recoverable_on_fs(tmp_path):
         assert entry["status"] == "failed"
         assert entry["stage"] == "silver_extract"
         assert "docling exploded" in entry["error"]
-        assert entry["bronze_path"].endswith("boom.pdf")
+        assert entry["bronze_path"] == str(original)
         # Failed-early doc has no gold and no real page count — that's correct.
         assert entry["has_gold"] is False
         assert entry["page_count"] == 0
