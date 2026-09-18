@@ -11,6 +11,9 @@ import { create } from "zustand";
  */
 export type PdfViewerMode = "dock" | "modal";
 
+/** How a hovered source ref answers "what is over there". */
+export type HoverPreviewMode = "panel" | "viewer";
+
 type PdfViewerState = {
   slug: string;             // document slug
   page: number;
@@ -131,6 +134,8 @@ type UiState = {
       highlightRegionId?: string;
       highlightBbox?: number[];
       highlightQuery?: string;
+      /** Opened by a hover, so a mouse-out should take it away again. */
+      transient?: boolean;
     },
   ) => void;
   closePdf: () => void;
@@ -143,6 +148,20 @@ type UiState = {
   setExplorerWidth: (px: number) => void;
   /** Collapse / expand the whole source cluster (explorer + viewer). */
   setSourceClusterCollapsed: (collapsed: boolean) => void;
+  /**
+   * What hovering a source ref does. Two ways to answer "what is at the other
+   * end of this link", kept side by side so they can be compared on the same
+   * canvas rather than argued about:
+   *   "panel"  - a small crop beside the link (default).
+   *   "viewer" - the full source pane fades in on the left, and fades away
+   *              again on mouse-out unless the ref was clicked, which pins it.
+   */
+  hoverPreviewMode: HoverPreviewMode;
+  setHoverPreviewMode: (mode: HoverPreviewMode) => void;
+  /** True while the viewer is only being previewed, so leaving closes it. */
+  pdfViewerPinned: boolean;
+  /** Promote a hover-opened viewer to a pinned one (a click did it). */
+  pinPdfViewer: () => void;
   toggleSourceCluster: () => void;
   setHoveredSourceRef: (ref: HoveredSourceRef) => void;
   clearHoveredSourceRef: () => void;
@@ -280,6 +299,7 @@ export function clampExplorerWidth(px: number): number {
 // session-only by design — it is content-driven, not a sticky choice).
 const EXPLORER_WIDTH_KEY = "anchor.explorerWidth";
 const SOURCE_CLUSTER_COLLAPSED_KEY = "anchor.sourceClusterCollapsed";
+const HOVER_PREVIEW_MODE_KEY = "anchor.hoverPreviewMode";
 
 function readStorage(key: string): string | null {
   // Guard everything: jsdom/private-mode environments may lack a usable
@@ -298,6 +318,12 @@ function readStorage(key: string): string | null {
 function readPersistedExplorerWidth(): number {
   const raw = readStorage(EXPLORER_WIDTH_KEY);
   return raw === null ? DEFAULT_EXPLORER_WIDTH : clampExplorerWidth(Number(raw));
+}
+
+function readPersistedHoverPreviewMode(): HoverPreviewMode {
+  // "panel" is the default: a small crop beside the link is the cheaper
+  // gesture, and the full viewer on hover is the thing being tried out.
+  return readStorage(HOVER_PREVIEW_MODE_KEY) === "viewer" ? "viewer" : "panel";
 }
 
 function readPersistedCollapsed(): boolean {
@@ -320,6 +346,8 @@ export const useUiStore = create<UiState>((set) => ({
   sourceDockRatio: DEFAULT_SOURCE_DOCK_RATIO,
   explorerWidth: readPersistedExplorerWidth(),
   sourceClusterCollapsed: readPersistedCollapsed(),
+  hoverPreviewMode: readPersistedHoverPreviewMode(),
+  pdfViewerPinned: false,
   hoveredSourceRef: null,
   armedTool: null,
   connectSourceId: null,
@@ -362,9 +390,19 @@ export const useUiStore = create<UiState>((set) => ({
             : undefined,
           nonce: (state.pdfViewer?.nonce ?? 0) + 1,
         },
+        // A hover-opened viewer stays only while the pointer does. A click
+        // pins it, and a pinned viewer is never un-pinned by a later hover.
+        pdfViewerPinned: options?.transient
+          ? state.pdfViewerPinned
+          : true,
       };
     }),
-  closePdf: () => set({ pdfViewer: null }),
+  closePdf: () => set({ pdfViewer: null, pdfViewerPinned: false }),
+  setHoverPreviewMode: (mode) => {
+    persist(HOVER_PREVIEW_MODE_KEY, mode);
+    set({ hoverPreviewMode: mode });
+  },
+  pinPdfViewer: () => set({ pdfViewerPinned: true }),
   activeReferenceId: null,
   setActiveReferenceId: (id) => set({ activeReferenceId: id }),
   setPdfPage: (page) =>

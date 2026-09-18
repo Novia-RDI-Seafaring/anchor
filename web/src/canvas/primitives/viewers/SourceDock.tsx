@@ -98,7 +98,10 @@ export function SourceDock() {
   return (
     <div
       ref={containerRef}
-      className="animate-in slide-in-from-left fixed inset-y-0 left-0 z-30 flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-neutral-300 bg-white shadow-2xl duration-200"
+      // Fades and slides together. A pane that appears on hover has to arrive
+      // softly, or sweeping a paragraph of links strobes the whole left half
+      // of the screen.
+      className="anchor-source-in fixed inset-y-0 left-0 z-30 flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-neutral-300 bg-white shadow-2xl"
       // Width is a fraction of the VIEWPORT, not of the space left over beside
       // the explorer, so the pages get real room and the pane can cover the
       // explorer. min/max keep it usable and keep some canvas reachable.
