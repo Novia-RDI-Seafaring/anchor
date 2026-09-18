@@ -157,13 +157,14 @@ export function LeftToolRail({ workspaceSlug }: Props) {
   return (
     <TooltipProvider delayDuration={250}>
       <div
-        // One horizontal row, centred at the top, the way Excalidraw and
-        // Figma place it: tools sit where the eye starts, and the left edge
-        // stays free for the source panel and the properties of whatever is
-        // selected.
-        className="pointer-events-auto absolute left-1/2 top-3 z-20 flex -translate-x-1/2 flex-row items-center gap-1 rounded-xl border border-neutral-200 bg-white/95 px-1.5 py-1 shadow-md backdrop-blur"
+        // A vertical rail down the left edge. A horizontal bar across the top
+        // competes with the canvas title and the page's own chrome, and it
+        // pushes the tools away from the hand that is already at the left of
+        // the board. Vertical also scales: adding a producer adds a row rather
+        // than eating the width the canvas needs.
+        className="pointer-events-auto absolute left-3 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-1 rounded-xl border border-neutral-200 bg-white/95 px-1 py-1.5 shadow-md backdrop-blur"
         role="toolbar"
-        aria-orientation="horizontal"
+        aria-orientation="vertical"
         aria-label="Canvas tools"
       >
         <RailGroup label="Shapes">
@@ -208,7 +209,7 @@ export function LeftToolRail({ workspaceSlug }: Props) {
                 </span>
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">
+            <TooltipContent side="right">
               <div className="font-medium">Connector</div>
               <div className="text-neutral-300">click one element, then another</div>
             </TooltipContent>
@@ -271,7 +272,7 @@ export function LeftToolRail({ workspaceSlug }: Props) {
                 </button>
               </PopoverPrimitive.Trigger>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Add from producer</TooltipContent>
+            <TooltipContent side="right">Add from producer</TooltipContent>
           </Tooltip>
           <PopoverPrimitive.Portal>
             <PopoverPrimitive.Content
@@ -295,11 +296,12 @@ export function LeftToolRail({ workspaceSlug }: Props) {
         </PopoverPrimitive.Root>
       </div>
 
-      {/* Hint line under the toolbar while a tool is armed, where
-          Excalidraw puts it. It used to sit at the same height as the bar
-          and covered the tiles once the bar moved to the top. */}
+      {/* Hint while a tool is armed. It sits along the bottom now that the
+          rail runs down the left: beside the rail it would cover the canvas
+          the user is about to click, and under a top bar it no longer has a
+          bar to sit under. */}
       {armedTool ? (
-        <div className="pointer-events-none absolute inset-x-0 top-[3.6rem] z-20 flex justify-center">
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center">
           <div className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white/95 px-3 py-1 text-[11px] text-neutral-600 shadow-sm backdrop-blur">
             <span className="font-medium text-neutral-800">{labelFor(armedTool)}</span>
             <span>· Click to place, drag to size · </span>
@@ -337,12 +339,13 @@ function labelFor(nodeType: string): string {
 }
 
 function RailDivider() {
-  return <div className="mx-0.5 h-6 w-px bg-neutral-200" aria-hidden />;
+  // Separates stacked groups, so it runs across the rail rather than down it.
+  return <div className="my-0.5 h-px w-6 bg-neutral-200" aria-hidden />;
 }
 
 function RailGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-row items-center gap-1" role="group" aria-label={label}>
+    <div className="flex flex-col items-center gap-1" role="group" aria-label={label}>
       {children}
     </div>
   );
@@ -399,7 +402,7 @@ function RailTile({
           ) : null}
         </button>
       </TooltipTrigger>
-      <TooltipContent side="bottom">
+      <TooltipContent side="right">
         <div className="font-medium">{meta.label}</div>
         {meta.hint ? (
           <div className="text-[10px] text-neutral-500">{meta.hint}</div>

@@ -11,6 +11,16 @@ next version section on tag.
 
 ### Changed
 
+- The canvas toolbar is a vertical rail down the left edge again. As a
+  horizontal bar centred at the top it competed with the canvas title and the
+  page chrome, and it sat away from the left edge where the hand already is.
+  Vertical also scales: registering another producer adds a row instead of
+  eating width the canvas needs. Groups stack, dividers run across the rail,
+  tooltips open to the right rather than downward onto the next tile, and the
+  armed-tool hint moved to the bottom, where it does not cover the spot the
+  user is about to click.
+
+
 - The source viewer slides in over the page instead of sharing the row with
   the files explorer. It was an in-flow flex sibling, so opening a document
   squeezed both sides: the canvas reflowed, and the PDF got a fraction of
