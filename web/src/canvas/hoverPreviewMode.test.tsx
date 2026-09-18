@@ -10,6 +10,11 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { SourceRefLink } from "@/canvas/SourceRefLink";
+import {
+  cancelTransientClose,
+  scheduleTransientClose,
+  TRANSIENT_CLOSE_MS,
+} from "@/canvas/transientViewer";
 import { HoverPreviewToggle } from "@/shell/HoverPreviewToggle";
 import { useUiStore } from "@/stores/uiStore";
 
@@ -89,6 +94,61 @@ describe("hover preview mode", () => {
     await user.hover(link);
     await user.unhover(link);
     await new Promise((r) => setTimeout(r, 300));
+
+    expect(useUiStore.getState().pdfViewer).not.toBeNull();
+  });
+});
+
+describe("reaching a hover-opened pane", () => {
+  it("survives the trip: entering the pane cancels the pending close", async () => {
+    // The pane opens on the far left while the link is out in the canvas, so
+    // reading it means leaving the link. When the close timer lived in the
+    // link, the pane vanished before the pointer could arrive.
+    useUiStore.setState({ hoverPreviewMode: "viewer" });
+    useUiStore.getState().openPdf("lkh", { page: 3, transient: true });
+    useUiStore.setState({ pdfViewerPinned: false });
+
+    scheduleTransientClose();
+    cancelTransientClose();
+    await new Promise((r) => setTimeout(r, TRANSIENT_CLOSE_MS + 120));
+
+    expect(useUiStore.getState().pdfViewer).not.toBeNull();
+  });
+
+  it("closes once the pointer is on neither the link nor the pane", async () => {
+    useUiStore.setState({ hoverPreviewMode: "viewer" });
+    useUiStore.getState().openPdf("lkh", { page: 3, transient: true });
+    useUiStore.setState({ pdfViewerPinned: false });
+
+    scheduleTransientClose();
+    await new Promise((r) => setTimeout(r, TRANSIENT_CLOSE_MS + 120));
+
+    expect(useUiStore.getState().pdfViewer).toBeNull();
+  });
+
+  it("allows time to cross the canvas, not just to twitch", () => {
+    // A debounce would be tens of milliseconds. This is a journey.
+    expect(TRANSIENT_CLOSE_MS).toBeGreaterThanOrEqual(400);
+  });
+
+  it("never closes a pinned pane, however long the pointer is away", async () => {
+    useUiStore.setState({ hoverPreviewMode: "viewer" });
+    useUiStore.getState().openPdf("lkh", { page: 3 });
+    expect(useUiStore.getState().pdfViewerPinned).toBe(true);
+
+    scheduleTransientClose();
+    await new Promise((r) => setTimeout(r, TRANSIENT_CLOSE_MS + 120));
+
+    expect(useUiStore.getState().pdfViewer).not.toBeNull();
+  });
+
+  it("leaves the pane alone in panel mode", async () => {
+    useUiStore.setState({ hoverPreviewMode: "panel" });
+    useUiStore.getState().openPdf("lkh", { page: 3, transient: true });
+    useUiStore.setState({ pdfViewerPinned: false });
+
+    scheduleTransientClose();
+    await new Promise((r) => setTimeout(r, TRANSIENT_CLOSE_MS + 120));
 
     expect(useUiStore.getState().pdfViewer).not.toBeNull();
   });

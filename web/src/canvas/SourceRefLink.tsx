@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ResolvableRef } from "@/api/documents";
 import { describeRef } from "@/canvas/anchorHref";
 import { CLOSE_DELAY_MS, OPEN_DELAY_MS, RefHoverPreview } from "@/canvas/RefHoverPreview";
+import { cancelTransientClose, scheduleTransientClose } from "@/canvas/transientViewer";
 import { useOpenSourceRef } from "@/canvas/useOpenSourceRef";
 import { useUiStore } from "@/stores/uiStore";
 
@@ -50,6 +51,7 @@ export function SourceRefLink({
     if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
     openTimer.current = null;
     closeTimer.current = null;
+    cancelTransientClose();
   };
   const scheduleOpen = (el: HTMLElement) => {
     cancelTimers();
@@ -65,14 +67,11 @@ export function SourceRefLink({
   };
   const scheduleClose = () => {
     cancelTimers();
-    closeTimer.current = window.setTimeout(() => {
-      setPreviewRect(null);
-      // Only a viewer this hover opened goes away again. One the user clicked
-      // open, or opened some other way, is theirs to close.
-      if (hoverMode === "viewer" && !useUiStore.getState().pdfViewerPinned) {
-        closePdf();
-      }
-    }, CLOSE_DELAY_MS);
+    closeTimer.current = window.setTimeout(() => setPreviewRect(null), CLOSE_DELAY_MS);
+    // The pane's own timer is shared, because the pane sits on the far left
+    // and the reader has to leave this link to reach it. Entering the pane
+    // cancels it; see transientViewer.
+    if (hoverMode === "viewer") scheduleTransientClose();
   };
 
   // Never leave a panel behind: unmount, scroll and Escape all dismiss it.

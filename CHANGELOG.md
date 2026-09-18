@@ -11,6 +11,18 @@ next version section on tag.
 
 ### Fixed
 
+- A hover-opened source pane can actually be read. In `viewer` hover mode the
+  pane opens on the left edge while the link that opened it sits out in the
+  canvas, so reading it means travelling to it -- and travelling means leaving
+  the link, which closed the pane before the pointer arrived. It flashed and
+  vanished, which reads as the viewer being broken. The close timer is shared
+  now, so entering the pane cancels it and leaving starts it again: the pane
+  goes away when the pointer is on neither the link nor the pane. The delay is
+  600ms rather than a debounce, because it measures a journey across the
+  canvas, not a twitch. A pinned pane is still never closed by a hover.
+
+### Fixed
+
 - The source viewer stops moving things that should not move. Two separate
   animations were fighting the reader. The pane slid in from the left, which
   drags the PAGES across the screen, and a reader watching a page travel is

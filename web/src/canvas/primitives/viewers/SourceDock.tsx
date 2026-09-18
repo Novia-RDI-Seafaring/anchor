@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useDocumentIndex } from "@/api/useDocumentIndex";
+import { cancelTransientClose, scheduleTransientClose } from "@/canvas/transientViewer";
 import { useUiStore } from "@/stores/uiStore";
 
 import { PdfSourceView } from "./PdfSourceView";
@@ -144,6 +145,10 @@ export function SourceDock() {
         maxWidth: "85vw",
       }}
       data-testid="source-dock"
+      // A hover-opened pane must survive the trip to it. Arriving cancels the
+      // pending close; leaving starts it again.
+      onPointerEnter={cancelTransientClose}
+      onPointerLeave={scheduleTransientClose}
     >
       {/* References now live inside the viewer's left rail as a tab next to
           Pages (see PdfSourceView), so a long citation can't stretch the dock. */}
