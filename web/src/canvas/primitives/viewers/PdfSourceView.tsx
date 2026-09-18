@@ -326,13 +326,19 @@ export function PdfSourceView({
     if (el) setScrollTop(el.scrollTop);
   }, []);
 
-  // Smooth-scroll to a page (thumbnail click + toolbar jump).
+  // Jump to a page (thumbnail click + toolbar jump).
+  //
+  // Instant, not smooth. The reader has already decided where they are going,
+  // so animating the trip makes them wait and watch pages they did not ask
+  // for stream past. Over a long document it is also slow enough to feel
+  // broken. See the highlight navigation below, which had the same problem
+  // more acutely.
   const scrollToPage = useCallback(
     (target: number) => {
       const el = scrollRef.current;
       if (!el) return;
       const top = scrollTopForPage(items, target, el.clientHeight, totalHeight);
-      el.scrollTo({ top, behavior: "smooth" });
+      el.scrollTo({ top });
     },
     [items, totalHeight],
   );
@@ -364,7 +370,11 @@ export function PdfSourceView({
     const top = rect
       ? scrollTopForPageRect(items, highlightPage, rect.top, rect.height, el.clientHeight, totalHeight)
       : scrollTopForPage(items, highlightPage, el.clientHeight, totalHeight);
-    el.scrollTo({ top, behavior: "smooth" });
+    // Instant. Opening a source ref should PUT you at the evidence, not take
+    // you on a trip to it: the pages between are not the answer, and with the
+    // viewer opening on hover the animation replays on every link the pointer
+    // touches.
+    el.scrollTo({ top });
     lastHighlightRef.current = key;
   }, [highlightNonce, highlightPage, highlightBbox, items, pdfPageSizes, zoom, totalHeight]);
 

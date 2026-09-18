@@ -9,6 +9,24 @@ next version section on tag.
 
 ## [Unreleased]
 
+### Fixed
+
+- The source viewer stops moving things that should not move. Two separate
+  animations were fighting the reader. The pane slid in from the left, which
+  drags the PAGES across the screen, and a reader watching a page travel is
+  reading nothing; it now fades, opacity only, in and out. And opening at a
+  source ref smooth-scrolled to the target page, so you watched the pages in
+  between stream past on the way to the evidence; that jump is instant now, as
+  is a thumbnail or toolbar jump, since in both cases the reader has already
+  decided where they are going. With the viewer opening on hover the scroll
+  animation replayed on every link the pointer touched, which is what made it
+  grating.
+
+- The pane fades out rather than vanishing. It used to unmount the instant the
+  viewer state cleared, which is fine for a deliberate close and jarring when
+  a pointer drifting off a link takes half the screen with it. It is held for
+  the length of the fade and stops accepting clicks while it leaves.
+
 ### Added
 
 - Two ways to answer "what is at the other end of this link", switchable from
