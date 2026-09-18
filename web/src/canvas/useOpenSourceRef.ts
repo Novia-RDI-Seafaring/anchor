@@ -43,7 +43,12 @@ export function useOpenSourceRef(
           highlightBbox: bbox,
           highlightQuery: query,
         });
-      if (refHasSelector(ref)) {
+      // Resolve when the ref names anything below the page. A cell or item
+      // selector tightens the box; a region-only ref -- the common shape an
+      // `anchor:` link writes -- carries no bbox at all, so without resolving
+      // it the viewer opened the page and highlighted nothing (#385).
+      const needsBox = !ref?.bbox && typeof ref?.region_id === "string";
+      if (refHasSelector(ref) || needsBox) {
         const fallbackPage = ref.page;
         void documents
           .resolveRef(slug, ref)

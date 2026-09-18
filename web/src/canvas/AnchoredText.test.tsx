@@ -1,4 +1,5 @@
-import { render } from "@testing-library/react";
+import { render, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 
@@ -77,6 +78,39 @@ describe("AnchoredText", () => {
     const { container } = draw("**bold** stays literal");
     expect(container.textContent).toBe("**bold** stays literal");
     expect(container.querySelector("strong")).toBeNull();
+  });
+
+  it("shows a source preview after hovering a link, not before", async () => {
+    // The delay is the point: sweeping a cursor across a paragraph of linked
+    // values must not strobe a panel per link.
+    const user = userEvent.setup();
+    const { container } = draw("Head is [24 m](anchor:lkh?page=3&bbox=1,2,3,4) at duty.");
+    const link = container.querySelector('[data-testid="source-ref-link"]')!;
+    expect(document.querySelector('[data-testid="ref-hover-preview"]')).toBeNull();
+
+    await user.hover(link);
+
+    await waitFor(
+      () => expect(document.querySelector('[data-testid="ref-hover-preview"]')).toBeTruthy(),
+      { timeout: 2000 },
+    );
+  });
+
+  it("takes the preview away again when the pointer leaves", async () => {
+    const user = userEvent.setup();
+    const { container } = draw("Head is [24 m](anchor:lkh?page=3&bbox=1,2,3,4) at duty.");
+    const link = container.querySelector('[data-testid="source-ref-link"]')!;
+    await user.hover(link);
+    await waitFor(
+      () => expect(document.querySelector('[data-testid="ref-hover-preview"]')).toBeTruthy(),
+      { timeout: 2000 },
+    );
+
+    await user.unhover(link);
+    await waitFor(
+      () => expect(document.querySelector('[data-testid="ref-hover-preview"]')).toBeNull(),
+      { timeout: 2000 },
+    );
   });
 
   it("marks a ref that points nowhere", () => {

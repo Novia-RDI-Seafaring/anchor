@@ -1,7 +1,9 @@
 import { Anchor } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import type { ResolvableRef } from "@/api/documents";
 import { describeRef } from "@/canvas/anchorHref";
+import { CLOSE_DELAY_MS, OPEN_DELAY_MS, RefHoverPreview } from "@/canvas/RefHoverPreview";
 import { useOpenSourceRef } from "@/canvas/useOpenSourceRef";
 import { useUiStore } from "@/stores/uiStore";
 
@@ -33,6 +35,49 @@ export function SourceRefLink({
   const setHovered = useUiStore((s) => s.setHoveredSourceRef);
   const clearHovered = useUiStore((s) => s.clearHoveredSourceRef);
 
+  // Hover preview (#373). The open delay stops panels strobing as the cursor
+  // sweeps a paragraph; the close delay lets the pointer travel from the link
+  // onto the panel without it vanishing underneath.
+  const [previewRect, setPreviewRect] = useState<DOMRect | null>(null);
+  const openTimer = useRef<number | null>(null);
+  const closeTimer = useRef<number | null>(null);
+
+  const cancelTimers = () => {
+    if (openTimer.current !== null) window.clearTimeout(openTimer.current);
+    if (closeTimer.current !== null) window.clearTimeout(closeTimer.current);
+    openTimer.current = null;
+    closeTimer.current = null;
+  };
+  const scheduleOpen = (el: HTMLElement) => {
+    cancelTimers();
+    openTimer.current = window.setTimeout(() => {
+      setPreviewRect(el.getBoundingClientRect());
+    }, OPEN_DELAY_MS);
+  };
+  const scheduleClose = () => {
+    cancelTimers();
+    closeTimer.current = window.setTimeout(() => setPreviewRect(null), CLOSE_DELAY_MS);
+  };
+
+  // Never leave a panel behind: unmount, scroll and Escape all dismiss it.
+  useEffect(() => cancelTimers, []);
+  useEffect(() => {
+    if (!previewRect) return;
+    const dismiss = () => {
+      cancelTimers();
+      setPreviewRect(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") dismiss();
+    };
+    window.addEventListener("scroll", dismiss, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("scroll", dismiss, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [previewRect]);
+
   if (!refValue) {
     return (
       <span
@@ -56,7 +101,7 @@ export function SourceRefLink({
         event.stopPropagation();
         openRef(refValue, text);
       }}
-      onMouseEnter={() =>
+      onMouseEnter={(event) => {
         setHovered({
           slug: refValue.slug ?? "",
           page: refValue.page ?? 1,
@@ -64,15 +109,27 @@ export function SourceRefLink({
           bbox: refValue.bbox,
           item_id: refValue.item_id,
           cell: refValue.cell,
-        })
-      }
-      onMouseLeave={() => clearHovered()}
+        });
+        scheduleOpen(event.currentTarget);
+      }}
+      onMouseLeave={() => {
+        clearHovered();
+        scheduleClose();
+      }}
     >
       {children}
       <Anchor
         className="ml-0.5 inline size-[0.85em] -translate-y-[0.05em] stroke-sky-500"
         aria-label="source"
       />
+      {previewRect ? (
+        <RefHoverPreview
+          refValue={refValue}
+          anchorRect={previewRect}
+          onPointerEnter={cancelTimers}
+          onPointerLeave={scheduleClose}
+        />
+      ) : null}
     </button>
   );
 }
