@@ -26,6 +26,9 @@ import { PdfSourceView } from "./PdfSourceView";
  * Renders nothing unless the shared viewer is open in "dock" mode, so the
  * full-screen quick-look path (PageWithBboxViewer) is untouched.
  */
+/** Keep in step with `.anchor-source-out` in index.css. */
+const FADE_OUT_MS = 120;
+
 export function SourceDock() {
   const viewer = useUiStore((s) => s.pdfViewer);
   const ratio = useUiStore((s) => s.sourceDockRatio);
@@ -74,6 +77,29 @@ export function SourceDock() {
     };
   }, [dragging, onPointerMove, stopDrag]);
 
+  // Exit animation bookkeeping. `exiting` keeps the pane rendered for the
+  // length of the fade after the viewer state clears.
+  const lastShown = useRef<{ viewer: NonNullable<typeof viewer>; slug: string } | null>(null);
+  const [exiting, setExiting] = useState(false);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    const isOpen = Boolean(viewer && slug && isDock);
+    if (isOpen) {
+      // Reopened (or opened at a different ref): cancel any pending fade.
+      wasOpen.current = true;
+      setExiting(false);
+      return undefined;
+    }
+    if (!wasOpen.current) return undefined;
+    wasOpen.current = false;
+    setExiting(true);
+    const id = window.setTimeout(() => setExiting(false), FADE_OUT_MS);
+    return () => window.clearTimeout(id);
+    // `exiting` is deliberately NOT a dependency: including it re-ran this
+    // effect the instant it was set, and the cleanup then cancelled the very
+    // timer that ends the fade, so the pane never unmounted.
+  }, [viewer, slug, isDock]);
+
   // Escape closes the dock — but let the floating "Make reference" menu (and an
   // active text selection) consume the first Escape, so it takes two presses to
   // go from "menu open" to "viewer closed" rather than closing everything at once.
@@ -90,18 +116,25 @@ export function SourceDock() {
     return () => document.removeEventListener("keydown", onKey);
   }, [isDock, close]);
 
-  if (!viewer || !slug || !isDock) return null;
+  // Keep the pane mounted through its fade-out. React unmounts the moment the
+  // viewer state clears, which gives an instant disappearance -- fine for a
+  // click-to-close, jarring when a pointer drifting off a link takes half the
+  // screen with it. Hold the last payload for the length of the fade.
+  const open = Boolean(viewer && slug && isDock);
+  if (open) lastShown.current = { viewer: viewer!, slug: slug! };
+  const shown = lastShown.current;
+  if (!shown || (!open && !exiting)) return null;
 
+  const { viewer: shownViewer, slug: shownSlug } = shown;
   const total = index?.document?.page_count ?? 0;
-  const docTitle = index?.document?.title ?? slug;
+  const docTitle = index?.document?.title ?? shownSlug;
 
   return (
     <div
       ref={containerRef}
-      // Fades and slides together. A pane that appears on hover has to arrive
-      // softly, or sweeping a paragraph of links strobes the whole left half
-      // of the screen.
-      className="anchor-source-in fixed inset-y-0 left-0 z-30 flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-neutral-300 bg-white shadow-2xl"
+      // Opacity only, in and out. Sliding would drag the PAGES across the
+      // screen, and a reader watching a page travel is reading nothing.
+      className={`${exiting ? "anchor-source-out" : "anchor-source-in"} fixed inset-y-0 left-0 z-30 flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-neutral-300 bg-white shadow-2xl`}
       // Width is a fraction of the VIEWPORT, not of the space left over beside
       // the explorer, so the pages get real room and the pane can cover the
       // explorer. min/max keep it usable and keep some canvas reachable.
@@ -138,17 +171,17 @@ export function SourceDock() {
       </div>
       <div className="relative min-h-0 flex-1">
         <PdfSourceView
-          key={`${slug}:${generation ?? "legacy"}`}
-          slug={slug}
+          key={`${shownSlug}:${generation ?? "legacy"}`}
+          slug={shownSlug}
           generation={generation}
-          page={Math.min(viewer.page, total || 1)}
+          page={Math.min(shownViewer.page, total || 1)}
           total={total}
-          highlightBbox={viewer.highlightBbox}
-          highlightPage={viewer.highlightPage}
-          highlightNonce={viewer.nonce}
+          highlightBbox={shownViewer.highlightBbox}
+          highlightPage={shownViewer.highlightPage}
+          highlightNonce={shownViewer.nonce}
           title={docTitle}
           onPageChange={setPage}
-          canvasSlug={viewer.workspaceSlug}
+          canvasSlug={shownViewer.workspaceSlug}
         />
         {/* Draggable divider, pinned to the dock's right edge. */}
         <div

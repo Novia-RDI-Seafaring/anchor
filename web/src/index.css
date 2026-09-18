@@ -93,22 +93,38 @@
   background: rgb(14 165 233 / 0.4) !important;
 }
 
-/* Source pane entrance.
+/* Source pane entrance and exit.
  *
  * The shadcn components in this project use `animate-in` / `fade-in`, which
  * come from a Tailwind animation plugin that is NOT installed here, so those
  * classes are inert. The source pane needs a real one: when it opens on hover
  * it has to arrive softly, or sweeping a paragraph of links strobes the left
- * half of the screen. Honours reduced-motion. */
+ * half of the screen.
+ *
+ * Opacity only, deliberately. A pane that slides also drags the PAGES across
+ * the screen, and a reader watching a page travel is reading nothing. The
+ * fade says "this appeared" without asking the eye to track anything. */
 @keyframes anchor-source-in {
-  from { opacity: 0; transform: translateX(-12px); }
-  to   { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes anchor-source-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
 }
 
 .anchor-source-in {
-  animation: anchor-source-in 150ms ease-out;
+  animation: anchor-source-in 140ms ease-out;
+}
+
+.anchor-source-out {
+  animation: anchor-source-out 120ms ease-in forwards;
+  /* Already leaving: do not let it swallow a click meant for the canvas. */
+  pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .anchor-source-in { animation: none; }
+  .anchor-source-in,
+  .anchor-source-out { animation: none; }
 }

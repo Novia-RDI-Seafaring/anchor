@@ -168,6 +168,25 @@ describe("PdfSourceView (continuous)", () => {
     expect(slot?.getAttribute("data-page")).toBe("5");
   });
 
+  it("jumps straight to the target instead of animating the trip", async () => {
+    // Opening a source ref should PUT you at the evidence. The pages in
+    // between are not the answer, and with the viewer opening on hover the
+    // animation replayed on every link the pointer touched.
+    const calls: ScrollToOptions[] = [];
+    stubScroller();
+    const realScrollTo = HTMLElement.prototype.scrollTo;
+    HTMLElement.prototype.scrollTo = function scrollTo(opts: ScrollToOptions | number) {
+      if (typeof opts === "object") calls.push(opts);
+    } as typeof HTMLElement.prototype.scrollTo;
+    try {
+      await renderViewer({ highlightPage: 5, highlightBbox: [10, 20, 40, 60] });
+      await waitFor(() => expect(calls.length).toBeGreaterThan(0));
+      for (const c of calls) expect(c.behavior).not.toBe("smooth");
+    } finally {
+      HTMLElement.prototype.scrollTo = realScrollTo;
+    }
+  });
+
   it("keeps the highlight up instead of fading it after a few seconds", async () => {
     // Clicking a source ref means "check this value against its page", which
     // takes longer than a flash: read the card, read the page, look back. The

@@ -7,7 +7,7 @@
  * returns to canvas-full. The real PdfSourceView is stubbed so these tests run
  * without PDF.js in jsdom.
  */
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { documents } from "@/api/documents";
@@ -140,6 +140,33 @@ describe("SourceDock", () => {
     await act(async () => {
       useUiStore.getState().closePdf();
     });
-    expect(screen.queryByTestId("source-dock")).toBeNull();
+    // Held for the length of the fade, then gone. An instant disappearance is
+    // fine for a click-to-close and jarring when a pointer drifting off a link
+    // takes half the screen with it.
+    await waitFor(() => expect(screen.queryByTestId("source-dock")).toBeNull());
+  });
+
+  it("fades out rather than vanishing, and stops taking clicks while it goes", async () => {
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    await act(async () => {
+      useUiStore.getState().closePdf();
+    });
+    // Still there for the moment, marked as leaving.
+    const leaving = screen.queryByTestId("source-dock");
+    expect(leaving?.className).toContain("anchor-source-out");
+    expect(leaving?.className).not.toContain("anchor-source-in");
+  });
+
+  it("does not slide, because that would drag the pages across the screen", async () => {
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    const dock = screen.getByTestId("source-dock");
+    expect(dock.className).toContain("anchor-source-in");
+    expect(dock.className).not.toContain("slide-in");
   });
 });
