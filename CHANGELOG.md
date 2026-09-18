@@ -9,6 +9,33 @@ next version section on tag.
 
 ## [Unreleased]
 
+### Added
+
+- Hovering a source ref shows the source (closes #373). It used to do two weak
+  things: a native tooltip reading "Open <ref>", and lighting up the region in
+  a document card IF one happened to be placed, open and visible. Otherwise a
+  reader learned nothing about what was at the other end without clicking,
+  which navigates away from the sentence they were reading. A panel now shows
+  a crop of the page around the referenced place with that place boxed inside,
+  so it reads as a located excerpt rather than a floating picture. A cell or
+  item selector is resolved first, so the box lands on the value rather than
+  the section holding it. Opens to the right of the link, flips left when it
+  would overflow, clamps vertically, and dismisses on leave, scroll and
+  Escape. An open delay stops panels strobing as the cursor sweeps a
+  paragraph; a close delay lets the pointer travel onto the panel. Rendered
+  through a portal, because `position: fixed` inside React Flow's transformed
+  viewport resolves against that transform and was scaling the panel with the
+  canvas zoom.
+
+### Fixed
+
+- Clicking a region-only source ref highlights the region instead of just
+  opening the page (closes #385). Resolution was gated on `refHasSelector`,
+  which is true only for a cell or item, so the commonest shape an `anchor:`
+  link writes -- `?page=2&region=r9`, which carries no bbox -- fell through to
+  "open the page with nothing marked". The same gap is why the hover preview
+  had nothing to crop.
+
 ### Changed
 
 - The canvas toolbar is a vertical rail down the left edge again. As a

@@ -9,7 +9,7 @@
  *    `source_ref` (with `region_id` if present). This drives the doc-node
  *    page-flip + region highlight, and feeds pickEdgeMode.
  */
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, waitFor, screen } from "@testing-library/react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -171,12 +171,16 @@ describe("TablePrimitive row handles", () => {
       ],
     });
     fireEvent.click(screen.getByRole("button", { name: "Open source page 2" }));
-    expect(useUiStore.getState().pdfViewer).toMatchObject({
-      slug: "alfa-laval-lkh",
-      page: 2,
-      highlightRegionId: "r9",
-      highlightPage: 2,
-    });
+    // A region-only ref is resolved to its box before the viewer opens (#385),
+    // so the open lands after a round trip rather than synchronously.
+    await waitFor(() =>
+      expect(useUiStore.getState().pdfViewer).toMatchObject({
+        slug: "alfa-laval-lkh",
+        page: 2,
+        highlightRegionId: "r9",
+        highlightPage: 2,
+      }),
+    );
   });
 
   it("uses a rendered bbox crop for dragged-region previews", async () => {
@@ -262,7 +266,10 @@ describe("TablePrimitive row handles", () => {
     }
     expect(screen.getAllByTestId("spec-value-marker")).toHaveLength(1);
     fireEvent.click(screen.getAllByRole("button", { name: "Open source page 1" })[1]!);
-    expect(useUiStore.getState().pdfViewer).toMatchObject({ slug: "doc", page: 1 });
+    // Region-only ref: resolved to its box first (#385), so the open is async.
+    await waitFor(() =>
+      expect(useUiStore.getState().pdfViewer).toMatchObject({ slug: "doc", page: 1 }),
+    );
   });
 
   it("removes verified presentation immediately on edit and requests deliberate revalidation", async () => {
