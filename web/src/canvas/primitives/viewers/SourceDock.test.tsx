@@ -82,19 +82,33 @@ describe("SourceDock", () => {
     expect(views[0]!.getAttribute("data-page")).toBe("4");
   });
 
-  it("sizes the pane as a definite fraction of the viewport space right of the explorer", async () => {
+  it("sizes the pane as a fraction of the viewport, not of the space beside the explorer", async () => {
     useUiStore.getState().setSourceDockRatio(0.6);
     await renderDock();
     await act(async () => {
       useUiStore.getState().openPdf("doc-a", { page: 1 });
     });
     const dock = screen.getByTestId("source-dock");
-    // Definite width (not a % of the shrink-wrapped cluster) so a wide child
-    // can't stretch the dock past the window, plus a hard cap so the canvas
-    // stays reachable. See the ballooning-references fix.
-    const ew = useUiStore.getState().explorerWidth;
-    expect(dock.style.width).toBe(`calc(0.6 * (100vw - ${ew}px))`);
-    expect(dock.style.maxWidth).toBe("70vw");
+    // The pane overlays the page instead of sharing the row, so its width no
+    // longer depends on the explorer. That is what gives the pages room: they
+    // used to get whatever was left between the explorer and the canvas.
+    // Normalised by the CSS parser: 0.6 * 100vw -> 60vw. The point is that it
+    // is a share of the VIEWPORT, with no explorer term in it at all.
+    expect(dock.style.width).toBe("calc(60vw)");
+    expect(dock.style.maxWidth).toBe("85vw");
+    expect(dock.style.width).not.toContain("px");
+  });
+
+  it("overlays the page rather than taking part in its layout", async () => {
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    const dock = screen.getByTestId("source-dock");
+    // Fixed + left-anchored: the canvas underneath never reflows when the
+    // viewer opens or closes, and the pane can cover the files explorer.
+    expect(dock.className).toContain("fixed");
+    expect(dock.className).toContain("left-0");
   });
 
   it("closing the dock returns to canvas-full (unmounts the pane)", async () => {

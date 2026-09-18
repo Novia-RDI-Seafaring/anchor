@@ -6,21 +6,29 @@ import { useUiStore } from "@/stores/uiStore";
 import { PdfSourceView } from "./PdfSourceView";
 
 /**
- * SourceDock — the left-docked split-screen source pane (#110a).
+ * SourceDock — the source pane that slides in over the page (#110a).
  *
- * Renders ONLY the left source pane + the draggable divider; the canvas keeps
- * filling the remaining space to the right. The dock is a single shared pane:
- * opening a different document/region swaps `pdfViewer` content in place (no
- * per-document instance). The divider drags to resize and the ratio persists
- * in the uiStore for the session. Closing the dock returns to canvas-full.
+ * It used to be an in-flow flex sibling between the files explorer and the
+ * canvas, so opening it squeezed BOTH: the canvas reflowed and the PDF got
+ * whatever was left between the explorer and the board. On a laptop that left
+ * the pages too narrow to read, which is the whole point of opening them.
  *
- * This component renders nothing unless the shared viewer is open in "dock"
- * mode, so the legacy modal quick-look path (PageWithBboxViewer) is untouched.
+ * Now it is an overlay anchored to the left edge of the page. It takes its
+ * width from the viewport rather than from the space left over, so it can
+ * cover the explorer and give the pages room, and the canvas underneath never
+ * reflows -- nothing moves when the viewer opens or closes, which also means
+ * no re-layout cost on every open.
+ *
+ * Still a single shared pane: opening a different document or region swaps
+ * `pdfViewer` content in place. The divider drags to resize, the ratio
+ * persists in uiStore, and Escape closes.
+ *
+ * Renders nothing unless the shared viewer is open in "dock" mode, so the
+ * full-screen quick-look path (PageWithBboxViewer) is untouched.
  */
 export function SourceDock() {
   const viewer = useUiStore((s) => s.pdfViewer);
   const ratio = useUiStore((s) => s.sourceDockRatio);
-  const explorerWidth = useUiStore((s) => s.explorerWidth);
   const setRatio = useUiStore((s) => s.setSourceDockRatio);
   const setPage = useUiStore((s) => s.setPdfPage);
   const setMode = useUiStore((s) => s.setPdfViewerMode);
@@ -51,11 +59,12 @@ export function SourceDock() {
 
   const onPointerMove = useCallback(
     (e: PointerEvent) => {
-      const el = containerRef.current?.parentElement;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      if (rect.width <= 0) return;
-      setRatio((e.clientX - rect.left) / rect.width);
+      // The overlay is anchored to the left edge of the window, so the drag
+      // maps straight onto the viewport. (It used to measure the parent flex
+      // row, which no longer describes where the pane sits.)
+      const width = window.innerWidth;
+      if (width <= 0) return;
+      setRatio(e.clientX / width);
     },
     [setRatio],
   );
@@ -104,16 +113,14 @@ export function SourceDock() {
   return (
     <div
       ref={containerRef}
-      className="flex h-full min-h-0 min-w-0 shrink-0 flex-col overflow-hidden border-r border-neutral-300 bg-white"
-      // Definite width = ratio of the viewport space right of the explorer.
-      // A `%` width here would resolve against the shrink-to-fit source cluster
-      // (indefinite), letting a long reference line shrink-wrap the dock past
-      // the whole window. min-w-0 + overflow-hidden keep content truncating
-      // instead of ballooning; the max cap guarantees the canvas stays reachable.
+      className="animate-in slide-in-from-left fixed inset-y-0 left-0 z-30 flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-neutral-300 bg-white shadow-2xl duration-200"
+      // Width is a fraction of the VIEWPORT, not of the space left over beside
+      // the explorer, so the pages get real room and the pane can cover the
+      // explorer. min/max keep it usable and keep some canvas reachable.
       style={{
-        width: `calc(${ratio} * (100vw - ${explorerWidth}px))`,
-        minWidth: "16rem",
-        maxWidth: "70vw",
+        width: `calc(${ratio} * 100vw)`,
+        minWidth: "20rem",
+        maxWidth: "85vw",
       }}
       data-testid="source-dock"
     >
