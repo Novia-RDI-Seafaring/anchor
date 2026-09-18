@@ -1,24 +1,18 @@
 /**
- * SourceCluster — the left source region of the canvas page (#220 part B).
+ * SourceCluster — the files explorer down the left of the canvas page (#220).
  *
- * Left-to-right the page reads: `[files explorer] [PDF viewer] [CANVAS]
- * [inspector]`. This component owns the first two: the files explorer and the
- * shared PDF viewer (SourceDock). It is:
+ * Left-to-right the page reads: `[files explorer] [CANVAS] [inspector]`. The
+ * PDF viewer is no longer part of this row: it slides in as an overlay
+ * (SourceDock, mounted by CanvasShell) so that opening a document does not
+ * reflow the canvas and does not have to share the row's width with the
+ * explorer. The explorer stays browsable underneath, and the viewer can cover
+ * it when the pages need the room.
  *
- *   - **Resizable**: a vertical divider sets the explorer width; SourceDock
- *     keeps its own divider for the viewer width (ratio of the area right of
- *     the explorer). Both widths persist in uiStore.
- *   - **Collapsible**: a chevron collapses the whole cluster so the canvas
- *     spans full width. When collapsed a slim rail with an expand button
- *     stays pinned to the left so the cluster is one click from returning.
- *
- * The PDF viewer pane (SourceDock) renders itself only when a document is
- * open; otherwise just the explorer shows. Closing the viewer leaves the
- * explorer in place — files are always browsable from the left.
+ * Resizable via a vertical divider; collapsible to a slim rail so the canvas
+ * spans full width. Both bits of state persist in uiStore.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { SourceDock } from "@/canvas/primitives/viewers/SourceDock";
 import { useUiStore } from "@/stores/uiStore";
 
 import { FilesExplorer } from "./FilesExplorer";
@@ -124,9 +118,6 @@ export function SourceCluster({ workspaceSlug }: Props) {
         </div>
       </div>
 
-      {/* PDF viewer pane — SourceDock renders only when a doc is open. It owns
-          its own width and resize divider (ratio of the cluster width). */}
-      <SourceDock />
     </div>
   );
 }

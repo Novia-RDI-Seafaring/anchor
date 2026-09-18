@@ -9,6 +9,19 @@ next version section on tag.
 
 ## [Unreleased]
 
+### Changed
+
+- The source viewer slides in over the page instead of sharing the row with
+  the files explorer. It was an in-flow flex sibling, so opening a document
+  squeezed both sides: the canvas reflowed, and the PDF got a fraction of
+  whatever was left between the explorer and the board. On a laptop that left
+  the pages too narrow to read, which is the entire reason to open them. The
+  pane is now a left-anchored overlay whose width is a share of the viewport,
+  so it can cover the explorer and the pages get real room (648px rather than
+  536px at the default ratio on a 1440px window, and it drags to 85% of the
+  viewport rather than 70%). The canvas underneath never reflows when the
+  viewer opens or closes.
+
 ### Fixed
 
 - A document card previews the exact thing a ref points at. A spec row whose
