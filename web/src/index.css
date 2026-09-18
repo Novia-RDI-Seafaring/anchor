@@ -92,3 +92,23 @@
 .textLayer ::-moz-selection {
   background: rgb(14 165 233 / 0.4) !important;
 }
+
+/* Source pane entrance.
+ *
+ * The shadcn components in this project use `animate-in` / `fade-in`, which
+ * come from a Tailwind animation plugin that is NOT installed here, so those
+ * classes are inert. The source pane needs a real one: when it opens on hover
+ * it has to arrive softly, or sweeping a paragraph of links strobes the left
+ * half of the screen. Honours reduced-motion. */
+@keyframes anchor-source-in {
+  from { opacity: 0; transform: translateX(-12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.anchor-source-in {
+  animation: anchor-source-in 150ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anchor-source-in { animation: none; }
+}

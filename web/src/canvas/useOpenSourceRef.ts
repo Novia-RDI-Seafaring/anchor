@@ -27,11 +27,13 @@ export function useOpenSourceRef(
   ref: ResolvableRef | null | undefined,
   /** Text to highlight inside the region, when the caller has it. */
   query?: string,
+  /** `transient: true` marks a hover-opened pane, which a mouse-out closes. */
+  opts?: { transient?: boolean },
 ) => void {
   const openPdf = useUiStore((s) => s.openPdf);
   const knownNodeId = options?.documentNodeId;
   return useCallback(
-    (ref, query) => {
+    (ref, query, opts) => {
       const slug = ref?.slug;
       if (!slug || !ref?.page) return;
       const open = (page: number, bbox?: number[]) =>
@@ -42,6 +44,7 @@ export function useOpenSourceRef(
           highlightRegionId: ref.region_id,
           highlightBbox: bbox,
           highlightQuery: query,
+          transient: opts?.transient,
         });
       // Resolve when the ref names anything below the page. A cell or item
       // selector tightens the box; a region-only ref -- the common shape an

@@ -11,6 +11,22 @@ next version section on tag.
 
 ### Added
 
+- Two ways to answer "what is at the other end of this link", switchable from
+  the canvas header so the same board can be judged under each rather than
+  argued about. `panel` (default) shows a small crop beside the link.
+  `viewer` fades the full source pane in on the left and fades it away again
+  when the pointer leaves -- unless the ref was clicked, which pins it. A pane
+  opened any other way is never closed by a passing hover. The choice persists
+  per browser.
+
+- A real entrance animation for the source pane. The shadcn components here
+  use `animate-in` / `fade-in`, which come from a Tailwind animation plugin
+  that is not installed, so those classes were inert. A pane that opens on
+  hover has to arrive softly or sweeping a paragraph of links strobes the left
+  half of the screen, so the fade is a keyframe in the stylesheet, and it
+  honours `prefers-reduced-motion`.
+
+
 - Hovering a source ref shows the source (closes #373). It used to do two weak
   things: a native tooltip reading "Open <ref>", and lighting up the region in
   a document card IF one happened to be placed, open and visible. Otherwise a

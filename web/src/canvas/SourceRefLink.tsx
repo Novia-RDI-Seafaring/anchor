@@ -34,6 +34,9 @@ export function SourceRefLink({
   const openRef = useOpenSourceRef(workspaceSlug);
   const setHovered = useUiStore((s) => s.setHoveredSourceRef);
   const clearHovered = useUiStore((s) => s.clearHoveredSourceRef);
+  const hoverMode = useUiStore((s) => s.hoverPreviewMode);
+  const closePdf = useUiStore((s) => s.closePdf);
+  const pinViewer = useUiStore((s) => s.pinPdfViewer);
 
   // Hover preview (#373). The open delay stops panels strobing as the cursor
   // sweeps a paragraph; the close delay lets the pointer travel from the link
@@ -51,12 +54,25 @@ export function SourceRefLink({
   const scheduleOpen = (el: HTMLElement) => {
     cancelTimers();
     openTimer.current = window.setTimeout(() => {
-      setPreviewRect(el.getBoundingClientRect());
+      if (hoverMode === "viewer") {
+        // Fade the real pane in instead of a crop beside the link. Marked
+        // transient so leaving takes it away again; clicking pins it.
+        openRef(refValue, text, { transient: true });
+      } else {
+        setPreviewRect(el.getBoundingClientRect());
+      }
     }, OPEN_DELAY_MS);
   };
   const scheduleClose = () => {
     cancelTimers();
-    closeTimer.current = window.setTimeout(() => setPreviewRect(null), CLOSE_DELAY_MS);
+    closeTimer.current = window.setTimeout(() => {
+      setPreviewRect(null);
+      // Only a viewer this hover opened goes away again. One the user clicked
+      // open, or opened some other way, is theirs to close.
+      if (hoverMode === "viewer" && !useUiStore.getState().pdfViewerPinned) {
+        closePdf();
+      }
+    }, CLOSE_DELAY_MS);
   };
 
   // Never leave a panel behind: unmount, scroll and Escape all dismiss it.
@@ -99,7 +115,10 @@ export function SourceRefLink({
       data-testid="source-ref-link"
       onClick={(event) => {
         event.stopPropagation();
+        cancelTimers();
         openRef(refValue, text);
+        // A click is a commitment: the pane stays when the pointer leaves.
+        pinViewer();
       }}
       onMouseEnter={(event) => {
         setHovered({
