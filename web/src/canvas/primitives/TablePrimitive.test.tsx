@@ -63,10 +63,24 @@ async function renderTable(data: Record<string, unknown>, selected = false) {
 }
 
 describe("TablePrimitive row handles", () => {
-  it("labels a historical source as unverified, not grounded", async () => {
+  it("shows no anchor for a ref that names no document, rather than a dead one", async () => {
+    // A page with no document, on a card with no document either, cannot be
+    // opened. The anchor used to render anyway and silently do nothing when
+    // clicked, which is worse than not offering it.
     await renderTable({ rows: [{ key: "Pressure", value: "42", source_ref: { page: 1 } }] });
+    expect(screen.queryByRole("button", { name: /Open source page/ })).toBeNull();
+  });
+
+  it("labels a historical source as unverified, not grounded", async () => {
+    await renderTable({
+      source_doc_slug: "doc",
+      rows: [{ key: "Pressure", value: "42", source_ref: { page: 1 } }],
+    });
     expect(screen.queryByTestId("spec-value-marker")).toBeNull();
-    expect(screen.getByText("Unverified")).toBeTruthy();
+    // Readable to a screen reader and on hover, but not printed: a column of
+    // grey "Unverified" labels on every ungrounded row says nothing happened.
+    expect(screen.getByLabelText("Evidence: Unverified").textContent).toBe("");
+    expect(screen.queryByText("Unverified")).toBeNull();
     expect(screen.getByRole("button", { name: "Open source page 1" })).toBeTruthy();
   });
   it("renders a row-handle carrier on every row, ids encoding the row key", async () => {
@@ -251,7 +265,7 @@ describe("TablePrimitive row handles", () => {
     expect(screen.getByText("no source").getAttribute("data-testid")).toBeNull();
   });
 
-  it("shows all evidence states with text and keeps stale citations clickable", async () => {
+  it("keeps every evidence state legible and stale citations clickable", async () => {
     const source_ref = { slug: "doc", page: 1, region_id: "pressure" };
     const evidence = { status: "verified", claim: { key: "pressure", value: "42" },
       source_ref, validation: { producer: "anchor_pdfs" } };
