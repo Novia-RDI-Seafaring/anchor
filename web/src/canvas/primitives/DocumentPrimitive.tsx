@@ -348,19 +348,20 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                     key={rid}
                     // `nodrag nopan` opts each region out of ReactFlow node-
                     // drag and viewport-pan, so HTML5 drag fires cleanly.
-                    className="nodrag nopan absolute cursor-grab active:cursor-grabbing"
+                    className={`nodrag nopan absolute cursor-grab active:cursor-grabbing${
+                      active ? " anchor-mark anchor-mark-flying" : ""
+                    }`}
                     style={{
                       left: `${xpc}%`,
                       top: `${ypc}%`,
                       width: `${wpc}%`,
                       height: `${hpc}%`,
-                      background: active
-                        ? "rgba(16, 185, 129, 0.18)"
-                        : "transparent",
-                      outline: active
-                        ? "2px solid #059669"
-                        : "1px solid transparent",
-                      outlineOffset: "-1px",
+                      // When it is the region being pointed at, the shared mark
+                      // supplies the look; an inline background would override
+                      // the class and put a second colour back on the board.
+                      ...(active
+                        ? {}
+                        : { background: "transparent", outline: "1px solid transparent", outlineOffset: "-1px" }),
                     }}
                     data-region-handle-id={`region:${rid}`}
                     title={r.title ?? r.kind ?? rid}
@@ -456,16 +457,21 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                 if (!rect) return null;
                 const { x: xpc, y: ypc, w: wpc, h: hpc } = rect;
                 return (
+                  // The same mark the source pane uses. A reader following one
+                  // ref should not have to learn two highlights depending on
+                  // whether the document happened to be on the board -- and
+                  // since the card and the pane now answer the same hover, the
+                  // two would otherwise disagree in colour about the same word.
+                  // It travels here too: the coordinates are percentages of the
+                  // page image, so they move only when the ref does.
                   <div
-                    className="pointer-events-none absolute"
+                    data-testid="external-highlight"
+                    className="anchor-mark anchor-mark-flying pointer-events-none absolute"
                     style={{
                       left: `${xpc}%`,
                       top: `${ypc}%`,
                       width: `${wpc}%`,
                       height: `${hpc}%`,
-                      background: "rgba(16, 185, 129, 0.22)",
-                      outline: "2px solid #059669",
-                      outlineOffset: "-1px",
                     }}
                   />
                 );
@@ -483,15 +489,12 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                   <div
                     key={`value-quad-${qi}`}
                     data-testid="value-quad"
-                    className="pointer-events-none absolute"
+                    className="anchor-mark pointer-events-none absolute"
                     style={{
                       left: `${xpc}%`,
                       top: `${ypc}%`,
                       width: `${wpc}%`,
                       height: `${hpc}%`,
-                      background: "rgba(250, 204, 21, 0.45)",
-                      outline: "1.5px solid #CA8A04",
-                      outlineOffset: "-1px",
                     }}
                   />
                 );

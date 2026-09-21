@@ -164,7 +164,7 @@ describe("DocumentPrimitive click isolation", () => {
     vi.mocked(documents.regions).mockResolvedValue(geometryFixture.gold_map.pages["1"]);
     vi.mocked(documents.locate).mockResolvedValue([bbox]);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => geometryFixture.gold_map }));
-    const { container } = await renderDoc(READY_DOC);
+    await renderDoc(READY_DOC);
     const image = screen.getByRole("img") as HTMLImageElement;
     Object.defineProperties(image, { naturalWidth: { value: 600 }, naturalHeight: { value: 800 } });
     await act(async () => {
@@ -176,9 +176,14 @@ describe("DocumentPrimitive click isolation", () => {
     expect(parseFloat(quad.style.top)).toBeCloseTo(13.5);
     expect(quad.style.width).toBe("4%");
     expect(parseFloat(quad.style.height)).toBeCloseTo(1.5);
-    const caller = container.querySelector<HTMLElement>('div[style*="0.22"]')!;
+    // Found by name now rather than by its colour: the caller highlight and
+    // the value quad are the same mark as the source pane draws, so neither
+    // carries a background of its own to match on.
+    const caller = screen.getByTestId("external-highlight");
     expect(caller.style.left).toBe(quad.style.left);
     expect(caller.style.top).toBe(quad.style.top);
+    expect(caller.className).toContain("anchor-mark");
+    expect(quad.className).toContain("anchor-mark");
     expect(useUiStore.getState().hoveredSourceRef?.bbox).toEqual(bbox);
   });
 
