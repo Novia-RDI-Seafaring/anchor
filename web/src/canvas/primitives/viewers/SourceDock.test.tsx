@@ -169,4 +169,94 @@ describe("SourceDock", () => {
     expect(dock.className).toContain("anchor-source-in");
     expect(dock.className).not.toContain("slide-in");
   });
+
+  it("does not take the pointer until the reader moves", async () => {
+    // The pane opens on the left edge, sometimes exactly under the link that
+    // opened it. If it grabbed the pointer on arrival, the link would get a
+    // mouseleave nobody performed, close the pane, get a mouseenter, reopen:
+    // the viewer strobed while the hand was still.
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1, transient: true });
+      useUiStore.setState({ pdfViewerPinned: false });
+    });
+    expect(screen.getByTestId("source-dock").style.pointerEvents).toBe("none");
+
+    await act(async () => {
+      // jsdom has no PointerEvent constructor; a MouseEvent of the same type
+      // reaches the same listeners.
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX: 10, clientY: 10 }));
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX: 200, clientY: 200 }));
+    });
+    expect(screen.getByTestId("source-dock").style.pointerEvents).toBe("");
+  });
+
+  it("takes the pointer straight away when it was clicked open", async () => {
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    expect(useUiStore.getState().pdfViewerPinned).toBe(true);
+    expect(screen.getByTestId("source-dock").style.pointerEvents).toBe("");
+  });
+
+  it("closes when the reader clicks past it", async () => {
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    await act(async () => {
+      document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    });
+    expect(useUiStore.getState().pdfViewer).toBeNull();
+  });
+
+  it("stays open when the click was on something that opens a ref", async () => {
+    // Otherwise the same gesture closes the pane and reopens it: a flash.
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    const link = document.createElement("button");
+    link.setAttribute("data-source-trigger", "");
+    document.body.appendChild(link);
+    await act(async () => {
+      link.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    });
+    expect(useUiStore.getState().pdfViewer).not.toBeNull();
+    link.remove();
+  });
+
+  it("stays open when the click lands inside the pane", async () => {
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    await act(async () => {
+      screen.getByTestId("pdf-source-view")
+        .dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    });
+    expect(useUiStore.getState().pdfViewer).not.toBeNull();
+  });
+
+  it("keeps the page it was showing all the way through the fade", async () => {
+    // The document index is dropped the instant the viewer state clears, which
+    // took the generation and the page count with it -- remounting the reader
+    // on a blank page 1 while it faded. The pane blinked on its way out.
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 4 });
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("pdf-source-view").getAttribute("data-page")).toBe("4"),
+    );
+    const before = screen.getByTestId("pdf-source-view").getAttribute("data-total");
+
+    await act(async () => {
+      useUiStore.getState().closePdf();
+    });
+    const leaving = screen.getByTestId("pdf-source-view");
+    expect(leaving.getAttribute("data-page")).toBe("4");
+    expect(leaving.getAttribute("data-total")).toBe(before);
+  });
 });

@@ -55,6 +55,8 @@ const ZOOM_STEP = 0.2;
  *  a wheel or pinch gesture is running the last raster is CSS-scaled instead,
  *  so PDF.js is not asked to re-render every page on every wheel event. */
 const RENDER_ZOOM_SETTLE_MS = 120;
+/** Keep in step with `.anchor-mark-flying` in index.css. */
+const MARK_FLIGHT_MS = 340;
 const OVERSCAN = 1;
 const THUMB_WIDTH = 96; // CSS px of the thumbnail image
 // Sensible page-size fallback (US Letter, points) before any size is known.
@@ -152,6 +154,8 @@ export function PdfSourceView({
   const [highlightVisible, setHighlightVisible] = useState(true);
   // Set after a programmatic scroll-to-highlight so we only do it once per target.
   const lastHighlightRef = useRef<string | null>(null);
+  /** The page the last highlight was on, so a move within it does not scroll. */
+  const lastHighlightPageRef = useRef<number | null>(null);
 
   // Keep the persistent reference highlights in sync with the canvas bibliography.
   useEffect(() => {
@@ -367,14 +371,33 @@ export function PdfSourceView({
       lastHighlightRef.current = key;
       return;
     }
-    const top = rect
-      ? scrollTopForPageRect(items, highlightPage, rect.top, rect.height, el.clientHeight, totalHeight)
-      : scrollTopForPage(items, highlightPage, el.clientHeight, totalHeight);
-    // Instant. Opening a source ref should PUT you at the evidence, not take
-    // you on a trip to it: the pages between are not the answer, and with the
-    // viewer opening on hover the animation replays on every link the pointer
-    // touches.
-    el.scrollTo({ top });
+    // Three cases, and the quietest one is the common one.
+    //
+    // SAME PAGE as the last ref: do not scroll at all. The page is already in
+    // front of the reader, so moving it makes the whole document lurch to
+    // relocate a box that could simply have moved. The highlight moves; the
+    // page stays.
+    //
+    // DIFFERENT PAGE, viewer already open: animate. Here there is a "from" --
+    // you can see one page and the next ref is on another -- and sliding
+    // between them shows how far apart they are. Jumping would teleport and
+    // leave you re-reading the header to work out where you landed.
+    //
+    // ARRIVING (first navigation of a mounted viewer, which includes opening
+    // a different document, since the viewer remounts per document): instant.
+    // There is no "from" yet, so animating only makes you wait while pages you
+    // did not ask for stream past.
+    //
+    // The target is the PAGE, not the box. Centring the box can crop the page
+    // to a strip of rows with no header and no neighbours, which is the
+    // context that tells you what you are looking at.
+    const arriving = lastHighlightRef.current === null;
+    const samePage = lastHighlightPageRef.current === highlightPage;
+    if (!samePage) {
+      const top = scrollTopForPage(items, highlightPage, el.clientHeight, totalHeight);
+      el.scrollTo(arriving ? { top } : { top, behavior: "smooth" });
+    }
+    lastHighlightPageRef.current = highlightPage;
     lastHighlightRef.current = key;
   }, [highlightNonce, highlightPage, highlightBbox, items, pdfPageSizes, zoom, totalHeight]);
 
@@ -398,6 +421,55 @@ export function PdfSourceView({
   const onPageRendered = useCallback((p: number, size: { w: number; h: number }) => {
     setRendered((m) => (m[p]?.w === size.w && m[p]?.h === size.h ? m : { ...m, [p]: size }));
   }, []);
+
+  // --- The mark -------------------------------------------------------
+  //
+  // One highlight for the whole document, positioned in the stacked content's
+  // own coordinates rather than inside a page. Pages are stacked in a single
+  // scroller, so a mark that lives above them all can travel between two refs
+  // -- on the same page or on different ones -- instead of vanishing here and
+  // reappearing there. Moving the MARK is also the cheap half of the idea: the
+  // page, the zoom and the raster are never touched, so nothing can fall out
+  // of step with them.
+  //
+  // It only animates when one ref replaces another. A mark appearing for the
+  // first time has nowhere to fly from, and a mark must never lag behind the
+  // page during a wheel zoom, so the transition is switched on for the length
+  // of a move and off again after.
+  const markPlacement = useMemo(() => {
+    if (!highlightVisible || !highlightPage || !highlightBbox) return null;
+    const item = items.find((it) => it.page === highlightPage);
+    const rect = bboxToRectOnPage(highlightPage, highlightBbox);
+    if (!item || !rect) return null;
+    // Pages are centred in the content box; the mark has to match that.
+    const pageLeft = Math.max(0, (contentWidth - item.width) / 2);
+    // Exactly the referenced box. Padding it up to a minimum was tried, so a
+    // one-cell mark would be easier to spot, and it made the mark cover the
+    // rows above and below the value it names -- which reads as the highlight
+    // being wrong rather than small.
+    return {
+      left: pageLeft + rect.left,
+      top: item.top + rect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+  }, [highlightVisible, highlightPage, highlightBbox, items, contentWidth, bboxToRectOnPage]);
+
+  const markOnScreen = useRef(false);
+  const [markFlying, setMarkFlying] = useState(false);
+  useEffect(() => {
+    if (!highlightPage || !highlightBbox) {
+      markOnScreen.current = false;
+      return undefined;
+    }
+    if (!markOnScreen.current) {
+      markOnScreen.current = true;
+      return undefined;
+    }
+    setMarkFlying(true);
+    const id = window.setTimeout(() => setMarkFlying(false), MARK_FLIGHT_MS);
+    return () => window.clearTimeout(id);
+  }, [highlightNonce, highlightPage, highlightBbox]);
 
   // Text selection -> pending "Make reference" action on page `p`.
   const onPageMouseUp = useCallback(
@@ -720,6 +792,14 @@ export function PdfSourceView({
             <div className="p-6 text-sm text-red-600">Could not load PDF: {loadError}</div>
           ) : (
             <div ref={contentRef} className="relative mx-auto" style={{ height: totalHeight, width: contentWidth || undefined }}>
+              {markPlacement ? (
+                <div
+                  data-testid="pdf-highlight"
+                  aria-hidden
+                  className={`anchor-mark pointer-events-none absolute z-10${markFlying ? " anchor-mark-flying" : ""}`}
+                  style={markPlacement}
+                />
+              ) : null}
               {items.map((it) => (
                 <PageSlot
                   key={it.page}
@@ -734,7 +814,6 @@ export function PdfSourceView({
                   activeReferenceId={activeReferenceId}
                   onSelectReference={setActiveReferenceId}
                   canvasSlug={canvasSlug}
-                  highlightBbox={highlightVisible && highlightPage === it.page ? highlightBbox : undefined}
                   confirmBbox={confirm?.page === it.page ? confirm.bbox : undefined}
                   pending={pending?.page === it.page ? pending : null}
                   bboxToRect={(bbox) => bboxToRectOnPage(it.page, bbox)}
@@ -780,7 +859,6 @@ type SlotProps = {
   activeReferenceId: string | null;
   onSelectReference: (id: string) => void;
   canvasSlug?: string;
-  highlightBbox?: number[];
   confirmBbox?: number[];
   pending: PendingAction | null;
   bboxToRect: (bbox: number[] | null | undefined) => { left: number; top: number; width: number; height: number } | null;
@@ -801,7 +879,7 @@ type SlotProps = {
 function PageSlot(props: SlotProps) {
   const {
     item, doc, zoom, renderZoom, rendered, shouldRender, regions, referenceMarks,
-    activeReferenceId, onSelectReference, canvasSlug, highlightBbox, confirmBbox,
+    activeReferenceId, onSelectReference, canvasSlug, confirmBbox,
     pending, bboxToRect, onMouseUp, onCaptureRegion, onRendered,
     onConfirmReference, onCancelPending, saving, registerRef,
   } = props;
@@ -809,7 +887,6 @@ function PageSlot(props: SlotProps) {
   // Overlays size to the page box at the current zoom, even while the raster
   // underneath is still the CSS-scaled one from the previous zoom.
   const viewportSize = rendered ? { w: item.width, h: item.height } : null;
-  const highlightRect = bboxToRect(highlightBbox);
   const confirmRect = bboxToRect(confirmBbox);
 
   // Right-click inside a section -> capture it for a reference. The region
@@ -966,25 +1043,7 @@ function PageSlot(props: SlotProps) {
         </svg>
       ) : null}
 
-      {highlightRect && viewportSize ? (
-        <svg
-          className="pointer-events-none absolute left-0 top-0"
-          width={viewportSize.w}
-          height={viewportSize.h}
-          style={{ width: viewportSize.w, height: viewportSize.h }}
-        >
-          <rect
-            data-testid="pdf-highlight"
-            x={highlightRect.left}
-            y={highlightRect.top}
-            width={highlightRect.width}
-            height={highlightRect.height}
-            fill="rgba(14, 165, 233, 0.18)"
-            stroke="#0369A1"
-            strokeWidth={2}
-          />
-        </svg>
-      ) : null}
+
 
       {pending && pending.kind === "region" && viewportSize ? (
         <svg

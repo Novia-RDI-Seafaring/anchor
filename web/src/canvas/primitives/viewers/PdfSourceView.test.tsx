@@ -98,20 +98,28 @@ function stubScroller(target: number | null = null): { lastTop: () => number | n
 
 async function renderViewer(props?: Partial<Parameters<typeof PdfSourceView>[0]>) {
   const onPageChange = vi.fn();
+  const view = (extra?: Partial<Parameters<typeof PdfSourceView>[0]>) => (
+    <PdfSourceView
+      slug="doc-a"
+      page={1}
+      total={PAGE_COUNT}
+      onPageChange={onPageChange}
+      {...props}
+      {...extra}
+    />
+  );
+  let rendered!: ReturnType<typeof render>;
   await act(async () => {
-    render(
-      <PdfSourceView
-        slug="doc-a"
-        page={1}
-        total={PAGE_COUNT}
-        onPageChange={onPageChange}
-        {...props}
-      />,
-    );
+    rendered = render(view());
   });
   // Let loadPdf + pageSizes resolve.
   await waitFor(() => expect(screen.getByTestId("thumbnail-rail")).toBeTruthy());
-  return { onPageChange };
+  const rerender = async (extra: Partial<Parameters<typeof PdfSourceView>[0]>) => {
+    await act(async () => {
+      rendered.rerender(view(extra));
+    });
+  };
+  return { onPageChange, rerender };
 }
 
 describe("PdfSourceView (continuous)", () => {
@@ -162,28 +170,124 @@ describe("PdfSourceView (continuous)", () => {
       expect(top).not.toBeNull();
       expect(top!).toBeGreaterThan(3 * (200 + 16));
     });
-    // The highlight rect is drawn on page 5's slot.
+    // The mark lives above the stacked pages rather than inside one of them,
+    // so that it can travel between two refs instead of blinking out on one
+    // page and in on another. So "drawn on page 5" is now a question about
+    // where it sits, not about which slot owns it.
     const highlight = await screen.findByTestId("pdf-highlight");
-    const slot = highlight.closest("[data-testid='pdf-page-slot']");
-    expect(slot?.getAttribute("data-page")).toBe("5");
+    expect(highlight.closest("[data-testid='pdf-page-slot']")).toBeNull();
+    const top = parseFloat(highlight.style.top);
+    const pageTop = 4 * (200 + 16);
+    expect(top).toBeGreaterThanOrEqual(pageTop);
+    expect(top).toBeLessThan(pageTop + 200);
   });
 
-  it("jumps straight to the target instead of animating the trip", async () => {
-    // Opening a source ref should PUT you at the evidence. The pages in
-    // between are not the answer, and with the viewer opening on hover the
-    // animation replayed on every link the pointer touched.
-    const calls: ScrollToOptions[] = [];
+  it("flies to the next ref instead of blinking out and in", async () => {
     stubScroller();
-    const realScrollTo = HTMLElement.prototype.scrollTo;
+    const { rerender } = await renderViewer({
+      highlightPage: 2,
+      highlightBbox: [10, 20, 40, 60],
+      highlightNonce: 1,
+    });
+    const first = await screen.findByTestId("pdf-highlight");
+    // Nowhere to fly from on the first mark: it simply appears.
+    expect(first.className).not.toContain("anchor-mark-flying");
+    const wasAt = first.style.top;
+
+    await rerender({ highlightPage: 2, highlightBbox: [10, 120, 40, 160], highlightNonce: 2 });
+    const moved = await screen.findByTestId("pdf-highlight");
+    // Same element, travelling -- not a new one in a new place.
+    expect(moved).toBe(first);
+    expect(moved.className).toContain("anchor-mark-flying");
+    expect(moved.style.top).not.toBe(wasAt);
+  });
+
+  it("takes the shape of what it lands on", async () => {
+    stubScroller();
+    const { rerender } = await renderViewer({
+      highlightPage: 2,
+      highlightBbox: [10, 20, 200, 60],
+      highlightNonce: 1,
+    });
+    const mark = await screen.findByTestId("pdf-highlight");
+    const wide = parseFloat(mark.style.width);
+
+    await rerender({ highlightPage: 2, highlightBbox: [10, 20, 30, 28], highlightNonce: 2 });
+    expect(parseFloat(mark.style.width)).toBeLessThan(wide);
+  });
+
+  it("sits exactly on the referenced box, not on its neighbours", async () => {
+    stubScroller();
+    // A single table cell. Padding the mark up to a readable minimum was tried
+    // and it spilled onto the rows above and below, marking values it does not
+    // name -- so the mark stays the size of the thing it points at.
+    await renderViewer({ highlightPage: 2, highlightBbox: [10, 20, 12, 22], highlightNonce: 1 });
+    const mark = await screen.findByTestId("pdf-highlight");
+    expect(parseFloat(mark.style.width)).toBeLessThan(15);
+    expect(parseFloat(mark.style.height)).toBeLessThan(15);
+  });
+
+  function captureScrolls() {
+    const calls: ScrollToOptions[] = [];
+    const real = HTMLElement.prototype.scrollTo;
     HTMLElement.prototype.scrollTo = function scrollTo(opts: ScrollToOptions | number) {
       if (typeof opts === "object") calls.push(opts);
     } as typeof HTMLElement.prototype.scrollTo;
+    return { calls, restore: () => { HTMLElement.prototype.scrollTo = real; } };
+  }
+
+  it("arrives instantly: opening at a ref does not animate the trip", async () => {
+    // There is no "from" yet, so animating just makes you wait while pages you
+    // did not ask for stream past -- and on hover it replayed per link.
+    stubScroller();
+    const { calls, restore } = captureScrolls();
     try {
       await renderViewer({ highlightPage: 5, highlightBbox: [10, 20, 40, 60] });
       await waitFor(() => expect(calls.length).toBeGreaterThan(0));
       for (const c of calls) expect(c.behavior).not.toBe("smooth");
     } finally {
-      HTMLElement.prototype.scrollTo = realScrollTo;
+      restore();
+    }
+  });
+
+  it("animates the travel to a ref on another page once the viewer is open", async () => {
+    // Now there IS a from: you can see one page and the next ref is on
+    // another. Sliding keeps the two related; jumping would teleport.
+    stubScroller();
+    const { calls, restore } = captureScrolls();
+    try {
+      const { rerender } = await renderViewer({
+        highlightPage: 2, highlightBbox: [10, 20, 40, 60], highlightNonce: 1,
+      });
+      await waitFor(() => expect(calls.length).toBeGreaterThan(0));
+      const arrival = calls.length;
+
+      await rerender({ highlightPage: 5, highlightBbox: [10, 20, 40, 60], highlightNonce: 2 });
+      await waitFor(() => expect(calls.length).toBeGreaterThan(arrival));
+      expect(calls[calls.length - 1]!.behavior).toBe("smooth");
+    } finally {
+      restore();
+    }
+  });
+
+  it("does not move the page for a ref on the SAME page", async () => {
+    // The page is already in front of the reader. Moving the whole document
+    // to relocate a box that could simply have moved is the lurch that made
+    // this feel busy.
+    stubScroller();
+    const { calls, restore } = captureScrolls();
+    try {
+      const { rerender } = await renderViewer({
+        highlightPage: 3, highlightBbox: [10, 20, 40, 60], highlightNonce: 1,
+      });
+      await waitFor(() => expect(calls.length).toBeGreaterThan(0));
+      const afterArrival = calls.length;
+
+      await rerender({ highlightPage: 3, highlightBbox: [200, 400, 260, 430], highlightNonce: 2 });
+      // Highlight moved, page did not.
+      expect(calls.length).toBe(afterArrival);
+    } finally {
+      restore();
     }
   });
 

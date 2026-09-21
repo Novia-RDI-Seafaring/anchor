@@ -128,3 +128,41 @@
   .anchor-source-in,
   .anchor-source-out { animation: none; }
 }
+
+/* The source mark: one highlighter stroke for the whole document.
+   `multiply` darkens the glyphs underneath instead of washing over them, which
+   is what a highlighter does to print -- an opaque fill would bury the value
+   you came to read. The spread shadow is a warm halo: on a page of small grey
+   type it is visible in peripheral vision, so the mark is found rather than
+   hunted for. */
+.anchor-mark {
+  /* The LOOK only. Layout and pointer behaviour belong to each call site: the
+     source pane's mark floats above the pages and takes no clicks, while a
+     region on a document card is the same mark AND the thing you drag onto the
+     canvas. Putting `pointer-events: none` in here would break that. */
+  border-radius: 2px;
+  background: rgba(250, 204, 21, 0.6);
+  /* Outline, not border. A border is drawn INSIDE the element, so on a mark
+     the size of one table cell it covered most of the value underneath -- the
+     thing the reader opened the mark to read. An outline is drawn outside the
+     box, costs no layout, and leaves the whole marked area showing through. */
+  outline: 1.25px solid rgba(161, 98, 7, 0.9);
+  mix-blend-mode: multiply;
+}
+
+/* Moving from one ref to another, the mark travels and takes its new shape
+   rather than blinking out here and in over there. Only switched on for the
+   length of a move: a mark that appears for the first time has nowhere to fly
+   from, and one that transitioned on every geometry change would lag behind
+   the page during a wheel zoom. */
+.anchor-mark-flying {
+  transition:
+    left 340ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    top 340ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    width 340ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    height 340ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anchor-mark-flying { transition: none; }
+}

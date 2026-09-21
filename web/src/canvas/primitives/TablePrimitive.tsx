@@ -1,18 +1,17 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
-import { Anchor as AnchorIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { canvases } from "@/api/canvases";
-import { documents } from "@/api/documents";
+import { documents, type ResolvableRef } from "@/api/documents";
 import { evidenceLabels, evidenceState, type EvidenceRow } from "@/canvas/evidence";
+import { SourceAnchorButton } from "@/canvas/SourceAnchorButton";
 import { resolveText } from "@/canvas/colors";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
 import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
 import { ReviewBadge } from "@/canvas/ReviewBadge";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
-import { useOpenSourceRef } from "@/canvas/useOpenSourceRef";
 import { useUiStore } from "@/stores/uiStore";
 
 type Row = EvidenceRow & {
@@ -178,26 +177,26 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   const rowHandleId = (i: number, row: Row): string =>
     `row:${i}:${(row.key || "").trim()}`;
 
-  // Click → open the PDF viewer at this spec's source page with the bbox
-  // highlighted. The viewer also wants a documentNodeId so its "send region
-  // to canvas" sidebar can wire evidence edges back to the same source
-  // document; the hook resolves it from the spec's stored
-  // source_doc_node_id, or by looking the document node up by slug for
-  // older nodes that don't carry one.
-  const openRef = useOpenSourceRef(workspaceSlug, { documentNodeId: d.source_doc_node_id });
-  const openSourceRef = (ref?: SourceRef, query?: string) => {
+  /** A row's or the card's stored ref, filled in from the card where the row
+   *  is terse: older rows carry a page but no slug, and the region id may
+   *  only exist at card level. Returns null when there is nothing to open.
+   *
+   *  Opening and previewing are both SourceAnchorButton's job now, so this
+   *  only has to produce the ref. The button resolves the tightest box
+   *  (cell > item > region > bbox) through useOpenSourceRef, and passes
+   *  `documentNodeId` on so the viewer's "send region to canvas" sidebar can
+   *  wire evidence edges back to the same source card. */
+  const normalizeRef = (ref?: SourceRef): ResolvableRef | null => {
     const slug = ref?.slug ?? d.source_doc_slug;
-    if (!slug || !ref?.page) return;
-    openRef(
-      {
-        ...ref,
-        slug,
-        region_id: ref.region_id ?? d.source_region_id ?? ref.source_region_id,
-      },
-      query,
-    );
+    if (!slug || !ref?.page) return null;
+    return {
+      ...ref,
+      slug,
+      page: ref.page,
+      region_id: ref.region_id ?? d.source_region_id ?? ref.source_region_id,
+    };
   };
-  const openSource = () => openSourceRef(d.source_ref);
+  const headerRef = normalizeRef(d.source_ref);
 
   const cropRel = d.crops?.png ?? d.crops?.svg ?? null;
   const storedCropUrl = d.source_doc_slug && cropRel ? documents.cropUrl(d.source_doc_slug, cropRel) : null;
@@ -300,23 +299,16 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         {/* The header anchor is the fallback for rows without their own
             reference. When every row is grounded, each row's anchor already
             opens its source, so a card-level anchor would be redundant. */}
-        {d.source_ref?.page && !(rows.length > 0 && rows.every((r) => r.source_ref?.page)) ? (
-          <button
-            type="button"
-            className="nodrag nopan grid h-6 w-6 shrink-0 place-items-center rounded border border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100"
-            title={`Open page ${d.source_ref.page} in viewer`}
-            aria-label={`Open source page ${d.source_ref.page}`}
-            onMouseDown={(e) => e.stopPropagation()}
-            onDoubleClick={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              // Stop bubbling here so the surrounding header onClick (which
-              // would fire `openSource` a second time) doesn't double-trigger.
-              e.stopPropagation();
-              openSource();
-            }}
-          >
-            <AnchorIcon size={12} strokeWidth={2.2} aria-hidden="true" />
-          </button>
+        {headerRef && !(rows.length > 0 && rows.every((r) => r.source_ref?.page)) ? (
+          <SourceAnchorButton
+            workspaceSlug={workspaceSlug}
+            documentNodeId={d.source_doc_node_id}
+            refValue={headerRef}
+            title={`Open page ${headerRef.page} in viewer`}
+            ariaLabel={`Open source page ${headerRef.page}`}
+            size={12}
+            className="h-6 w-6 shrink-0 border border-sky-300 bg-sky-50"
+          />
         ) : null}
       </div>
 
@@ -362,6 +354,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
               const hid = rowHandleId(i, r);
               const status = evidenceState(r);
               const evidenceLabel = evidenceLabels[status];
+              const rowRef = normalizeRef(r.source_ref);
               return (
                 <tr
                   key={`row-${i}`}
@@ -404,31 +397,39 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                     />
                   </td>
                   <td className="relative w-20 px-2 text-xs text-neutral-400">
+                    {/* Only a status worth acting on earns a word. "Unverified"
+                        and "No evidence" were printed on every ungrounded row,
+                        which is most of them while a spec is being built: a
+                        column of grey labels that say nothing happened. The
+                        state is still readable -- verified rows are tinted and
+                        carry a tick, everything else is plain -- and the full
+                        wording stays in the tooltip. */}
                     <span
                       aria-label={`Evidence: ${evidenceLabel}`}
                       title={status === "verified" ? "Validated for this claim at the recorded source generation" :
                         status === "stale" ? "Claim or evidence changed. Revalidate before relying on this citation." :
                           status === "unverified" ? "Source link exists; this claim has not been verified." : "No source evidence"}
-                      className={`block text-[10px] ${status === "verified" ? "text-emerald-700" : status === "stale" ? "text-amber-800" : "text-neutral-500"}`}
-                    >{evidenceLabel}</span>
-                    {r.source_ref?.page ? (
-                      <button
-                        type="button"
-                        className="nodrag nopan inline-grid h-5 w-5 place-items-center rounded text-sky-700 hover:bg-sky-100 hover:text-sky-900"
-                        title={`Open page ${r.source_ref.page} in viewer`}
-                        aria-label={`Open source page ${r.source_ref.page}`}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onDoubleClick={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openSourceRef(r.source_ref, status === "verified" ? r.value || undefined : undefined);
-                        }}
-                      >
-                        <AnchorIcon size={11} strokeWidth={2.2} aria-hidden="true" />
-                      </button>
+                      data-evidence-status={status}
+                      className={`block text-[10px] ${status === "verified" ? "text-emerald-700" : "text-amber-800"}`}
+                    >{status === "verified" ? "✓" : status === "stale" ? evidenceLabel : ""}</span>
+                    {rowRef ? (
+                      <SourceAnchorButton
+                        workspaceSlug={workspaceSlug}
+                        documentNodeId={d.source_doc_node_id}
+                        refValue={rowRef}
+                        query={status === "verified" ? r.value || undefined : undefined}
+                        title={`Open page ${rowRef.page} in viewer`}
+                        ariaLabel={`Open source page ${rowRef.page}`}
+                        className="h-5 w-5"
+                      />
                     ) : null}
+                    {/* Revalidation is an action, not a status, so it shows up
+                        when the pointer is on the row rather than sitting in
+                        the card permanently. */}
                     {canEdit && r.source_ref && status !== "verified" ? (
-                      <button type="button" className="nodrag nopan text-[10px] underline text-neutral-700"
+                      <button type="button"
+                        title="Re-check this claim against its source"
+                        className="nodrag nopan text-[10px] underline text-neutral-700 opacity-0 transition group-hover/tr:opacity-100 focus:opacity-100"
                         aria-label={`Revalidate evidence for ${r.key}`}
                         onClick={(e) => {
                           e.stopPropagation();

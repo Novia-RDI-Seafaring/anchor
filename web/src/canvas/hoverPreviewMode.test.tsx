@@ -4,10 +4,10 @@
  * that is easy to get wrong: a pane opened by a hover must go away again, and
  * a pane the user clicked open must not.
  */
-import { render, waitFor } from "@testing-library/react";
+import { fireEvent, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SourceRefLink } from "@/canvas/SourceRefLink";
 import {
@@ -17,6 +17,15 @@ import {
 } from "@/canvas/transientViewer";
 import { HoverPreviewToggle } from "@/shell/HoverPreviewToggle";
 import { useUiStore } from "@/stores/uiStore";
+
+// Whether a document card for this ref is on the canvas and visible. The real
+// one asks the rendered canvas; here it is a switch, so the preference can be
+// tested without standing up React Flow.
+let cardInView = false;
+vi.mock("@/canvas/useOpenSourceRef", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/canvas/useOpenSourceRef")>()),
+  documentCardInView: () => cardInView,
+}));
 
 const REF = { slug: "lkh", page: 3, bbox: [1, 2, 3, 4] };
 
@@ -29,7 +38,94 @@ function drawLink() {
 }
 
 beforeEach(() => {
-  useUiStore.setState({ pdfViewer: null, pdfViewerPinned: false, hoverPreviewMode: "panel" });
+  cardInView = false;
+  useUiStore.setState({
+    pdfViewer: null,
+    pdfViewerPinned: false,
+    hoverPreviewMode: "panel",
+    hoveredSourceRef: null,
+  });
+});
+
+describe("an already-open pane", () => {
+  it("keeps the next hover, even though a card is showing the document", async () => {
+    // The reader opened it and is looking at it. Lighting up a card behind the
+    // pane answers a question they are not asking.
+    cardInView = true;
+    useUiStore.getState().openPdf("other-doc", { page: 1 });
+    expect(useUiStore.getState().pdfViewerPinned).toBe(true);
+
+    const user = userEvent.setup();
+    const { container } = drawLink();
+    await user.hover(container.querySelector('[data-testid="source-ref-link"]')!);
+
+    // The pane swapped document in place rather than staying on the old one.
+    await waitFor(() => expect(useUiStore.getState().pdfViewer?.slug).toBe("lkh"));
+  });
+
+  it("stays open after the pointer leaves, because it was clicked open", async () => {
+    cardInView = true;
+    useUiStore.getState().openPdf("other-doc", { page: 1 });
+    const user = userEvent.setup();
+    const { container } = drawLink();
+    const link = container.querySelector('[data-testid="source-ref-link"]')!;
+
+    await user.hover(link);
+    await waitFor(() => expect(useUiStore.getState().pdfViewer?.slug).toBe("lkh"));
+    expect(useUiStore.getState().pdfViewerPinned).toBe(true);
+
+    await user.unhover(link);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(useUiStore.getState().pdfViewer).not.toBeNull();
+  });
+
+  it("moves the pane in panel mode too, rather than adding a crop beside the link", async () => {
+    useUiStore.setState({ hoverPreviewMode: "panel" });
+    useUiStore.getState().openPdf("other-doc", { page: 1 });
+    const user = userEvent.setup();
+    const { container } = drawLink();
+    await user.hover(container.querySelector('[data-testid="source-ref-link"]')!);
+
+    await waitFor(() => expect(useUiStore.getState().pdfViewer?.slug).toBe("lkh"));
+    expect(document.querySelector('[data-testid="ref-hover-preview"]')).toBeNull();
+  });
+});
+
+describe("a document already on the canvas", () => {
+  it("is lit up in place rather than opened a second time", async () => {
+    // Covering a document the reader can already see with another copy of it
+    // is the worst of both, and it costs them the canvas they arranged.
+    cardInView = true;
+    useUiStore.setState({ hoverPreviewMode: "viewer" });
+    const user = userEvent.setup();
+    const { container } = drawLink();
+    await user.hover(container.querySelector('[data-testid="source-ref-link"]')!);
+    await new Promise((r) => setTimeout(r, 400));
+
+    expect(useUiStore.getState().pdfViewer).toBeNull();
+    expect(document.querySelector('[data-testid="ref-hover-preview"]')).toBeNull();
+    // The card is told where to look.
+    expect(useUiStore.getState().hoveredSourceRef).toMatchObject({ slug: "lkh", page: 3 });
+  });
+
+  it("opens the pane anyway when no card is showing it", async () => {
+    cardInView = false;
+    useUiStore.setState({ hoverPreviewMode: "viewer" });
+    const user = userEvent.setup();
+    const { container } = drawLink();
+    await user.hover(container.querySelector('[data-testid="source-ref-link"]')!);
+
+    await waitFor(() => expect(useUiStore.getState().pdfViewer?.slug).toBe("lkh"));
+  });
+
+  it("still opens the pane on a click, because a click is a commitment", async () => {
+    cardInView = true;
+    const user = userEvent.setup();
+    const { container } = drawLink();
+    await user.click(container.querySelector('[data-testid="source-ref-link"]')!);
+
+    await waitFor(() => expect(useUiStore.getState().pdfViewer?.slug).toBe("lkh"));
+  });
 });
 
 describe("hover preview mode", () => {
@@ -96,6 +192,35 @@ describe("hover preview mode", () => {
     await new Promise((r) => setTimeout(r, 300));
 
     expect(useUiStore.getState().pdfViewer).not.toBeNull();
+  });
+});
+
+describe("a ref that arrives under a still pointer", () => {
+  it("does not open on a bare mouseenter with no movement", async () => {
+    // As the pane fades out it uncovers the link that opened it, and the link
+    // gets a mouseenter the reader never performed. Acting on it reopened the
+    // pane mid-fade: the flicker on mouse-out, with a second round of page and
+    // region requests behind it.
+    useUiStore.setState({ hoverPreviewMode: "viewer" });
+    const { container } = drawLink();
+    const link = container.querySelector('[data-testid="source-ref-link"]')!;
+
+    fireEvent.mouseEnter(link);
+    await new Promise((r) => setTimeout(r, 300));
+
+    expect(useUiStore.getState().pdfViewer).toBeNull();
+    expect(document.querySelector('[data-testid="ref-hover-preview"]')).toBeNull();
+  });
+
+  it("opens as soon as the pointer actually moves over it", async () => {
+    useUiStore.setState({ hoverPreviewMode: "viewer" });
+    const { container } = drawLink();
+    const link = container.querySelector('[data-testid="source-ref-link"]')!;
+
+    fireEvent.mouseEnter(link);
+    fireEvent.mouseMove(link);
+
+    await waitFor(() => expect(useUiStore.getState().pdfViewer?.slug).toBe("lkh"));
   });
 });
 

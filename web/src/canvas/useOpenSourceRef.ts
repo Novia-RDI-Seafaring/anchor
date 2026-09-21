@@ -65,11 +65,40 @@ export function useOpenSourceRef(
 }
 
 /** The document node on this canvas that shows `slug`, if one is placed. */
-function documentNodeIdFor(slug: string): string | undefined {
+export function documentNodeIdFor(slug: string): string | undefined {
   const nodes = useCanvasStore.getState().nodes;
   for (const node of Object.values(nodes)) {
     if (node.node_type !== "document") continue;
     if ((node.data as { slug?: string } | undefined)?.slug === slug) return node.id;
   }
   return undefined;
+}
+
+/**
+ * Is the document card for `slug` placed on this canvas AND actually on screen?
+ *
+ * Placement alone is not enough. A card parked off in a far corner of the board
+ * can be highlighted all day and the reader will never see it, which is worse
+ * than opening the pane: nothing at all appears to happen. So this asks the
+ * rendered canvas, not the store -- React Flow puts the node id on the DOM
+ * element, and the browser already knows where the viewport transform has put
+ * it. A card mostly scrolled off one edge does not count either.
+ */
+export function documentCardInView(slug: string | undefined): boolean {
+  if (!slug || typeof document === "undefined") return false;
+  const nodeId = documentNodeIdFor(slug);
+  if (!nodeId) return false;
+  // Matched by attribute rather than built into a selector: node ids come from
+  // the server and are not guaranteed to be selector-safe.
+  const el = Array.from(document.querySelectorAll(".react-flow__node")).find(
+    (n) => n.getAttribute("data-id") === nodeId,
+  );
+  if (!el) return false;
+  const r = el.getBoundingClientRect();
+  if (r.width < 40 || r.height < 40) return false;
+  // Most of the card, not a sliver of its edge.
+  const visibleW = Math.min(r.right, window.innerWidth) - Math.max(r.left, 0);
+  const visibleH = Math.min(r.bottom, window.innerHeight) - Math.max(r.top, 0);
+  if (visibleW <= 0 || visibleH <= 0) return false;
+  return (visibleW * visibleH) / (r.width * r.height) >= 0.6;
 }
