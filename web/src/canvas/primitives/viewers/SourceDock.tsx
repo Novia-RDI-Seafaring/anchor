@@ -37,6 +37,7 @@ export function SourceDock() {
   const setPage = useUiStore((s) => s.setPdfPage);
   const setMode = useUiStore((s) => s.setPdfViewerMode);
   const close = useUiStore((s) => s.closePdf);
+  const pinned = useUiStore((s) => s.pdfViewerPinned);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -45,6 +46,8 @@ export function SourceDock() {
   const isDock = viewer?.mode === "dock";
   const index = useDocumentIndex(slug, isDock);
   const generation = index?.document.generation?.id;
+  const open = Boolean(viewer && slug && isDock);
+  const nonce = viewer?.nonce;
 
   const onPointerMove = useCallback(
     (e: PointerEvent) => {
@@ -80,7 +83,13 @@ export function SourceDock() {
 
   // Exit animation bookkeeping. `exiting` keeps the pane rendered for the
   // length of the fade after the viewer state clears.
-  const lastShown = useRef<{ viewer: NonNullable<typeof viewer>; slug: string } | null>(null);
+  const lastShown = useRef<{
+    viewer: NonNullable<typeof viewer>;
+    slug: string;
+    generation: string | undefined;
+    total: number;
+    title: string;
+  } | null>(null);
   const [exiting, setExiting] = useState(false);
   const wasOpen = useRef(false);
   useEffect(() => {
@@ -117,18 +126,81 @@ export function SourceDock() {
     return () => document.removeEventListener("keydown", onKey);
   }, [isDock, close]);
 
+  // The pane opens on the LEFT EDGE, which is sometimes exactly where the link
+  // that opened it is sitting. Appearing under a stationary pointer gave the
+  // link a `mouseleave` the reader never performed, which scheduled the close,
+  // which faded the pane out, which gave the link a `mouseenter` again: the
+  // viewer strobed while the hand held still.
+  //
+  // So a hover-opened pane does not take the pointer until the reader moves.
+  // Until then it is `pointer-events: none` and the hover stays on the link
+  // underneath, where it belongs. The first real movement arms it, and from
+  // then on it behaves normally: entering cancels the close, leaving starts
+  // it. A pane that was clicked open is armed immediately -- a click is
+  // already a deliberate move.
+  const [pointerArmed, setPointerArmed] = useState(true);
+  useEffect(() => {
+    if (!open) return undefined;
+    if (pinned) {
+      setPointerArmed(true);
+      return undefined;
+    }
+    setPointerArmed(false);
+    let origin: { x: number; y: number } | null = null;
+    const onMove = (e: PointerEvent) => {
+      if (!origin) {
+        origin = { x: e.clientX, y: e.clientY };
+        return;
+      }
+      // A few pixels of tremor is not a decision to go somewhere.
+      if (Math.hypot(e.clientX - origin.x, e.clientY - origin.y) < 6) return;
+      setPointerArmed(true);
+    };
+    window.addEventListener("pointermove", onMove, true);
+    return () => window.removeEventListener("pointermove", onMove, true);
+  }, [open, pinned, slug, nonce]);
+
+  // Click away to close. The pane covers half the screen; reaching past it for
+  // the canvas and having it stay put makes it feel stuck rather than open.
+  // A click on something that OPENS a ref is not a click away -- otherwise the
+  // same gesture would close the pane and reopen it.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      if (containerRef.current?.contains(target)) return;
+      if (target.closest?.("[data-source-trigger]")) return;
+      if (target.closest?.('[data-testid="ref-hover-preview"]')) return;
+      close();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [open, close]);
+
   // Keep the pane mounted through its fade-out. React unmounts the moment the
   // viewer state clears, which gives an instant disappearance -- fine for a
   // click-to-close, jarring when a pointer drifting off a link takes half the
   // screen with it. Hold the last payload for the length of the fade.
-  const open = Boolean(viewer && slug && isDock);
-  if (open) lastShown.current = { viewer: viewer!, slug: slug! };
+  if (open) {
+    // The index goes with it. `useDocumentIndex` is disabled the moment the
+    // viewer state clears, so during the fade the generation went undefined
+    // and the page count went to zero -- which changed PdfSourceView's `key`
+    // and snapped the page back to 1. The reader saw the pane blink to a
+    // blank first page on its way out. Hold the whole payload, not half of it.
+    lastShown.current = {
+      viewer: viewer!,
+      slug: slug!,
+      generation,
+      total: index?.document?.page_count ?? lastShown.current?.total ?? 0,
+      title: index?.document?.title ?? slug!,
+    };
+  }
   const shown = lastShown.current;
   if (!shown || (!open && !exiting)) return null;
 
-  const { viewer: shownViewer, slug: shownSlug } = shown;
-  const total = index?.document?.page_count ?? 0;
-  const docTitle = index?.document?.title ?? shownSlug;
+  const { viewer: shownViewer, slug: shownSlug, total, title: docTitle } = shown;
+  const shownGeneration = shown.generation;
 
   return (
     <div
@@ -143,7 +215,9 @@ export function SourceDock() {
         width: `calc(${ratio} * 100vw)`,
         minWidth: "20rem",
         maxWidth: "85vw",
+        pointerEvents: pointerArmed ? undefined : "none",
       }}
+      data-pointer-armed={pointerArmed ? "" : undefined}
       data-testid="source-dock"
       // A hover-opened pane must survive the trip to it. Arriving cancels the
       // pending close; leaving starts it again.
@@ -176,9 +250,9 @@ export function SourceDock() {
       </div>
       <div className="relative min-h-0 flex-1">
         <PdfSourceView
-          key={`${shownSlug}:${generation ?? "legacy"}`}
+          key={`${shownSlug}:${shownGeneration ?? "legacy"}`}
           slug={shownSlug}
-          generation={generation}
+          generation={shownGeneration}
           page={Math.min(shownViewer.page, total || 1)}
           total={total}
           highlightBbox={shownViewer.highlightBbox}
