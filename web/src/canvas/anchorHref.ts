@@ -67,6 +67,13 @@ export function parseAnchorHref(href: string | undefined | null): ResolvableRef 
   // A bbox is four numbers or it is not a bbox.
   if (bbox && bbox.length === 4) ref.bbox = bbox;
 
+  // Extra places, repeated: `&also=p3/r1/item:p3-i6`. The params above are
+  // the primary place, which is where the viewer scrolls. These are only
+  // drawn, so one unreadable extra costs the reader nothing. The backend
+  // owns the grammar; here it only has to survive the trip.
+  const also = params.getAll("also").map((v) => v.trim()).filter(Boolean);
+  if (also.length > 0) ref.also = also;
+
   return ref;
 }
 
@@ -76,6 +83,7 @@ export function formatAnchorHref(ref: ResolvableRef): string {
   if (typeof ref.page === "number") params.set("page", String(ref.page));
   if (ref.region_id) params.set("region", ref.region_id);
   if (ref.item_id) params.set("item", ref.item_id);
+  for (const place of ref.also ?? []) params.append("also", place);
   if (typeof ref.cell?.row === "number" && typeof ref.cell?.col === "number") {
     params.set("cell", `${ref.cell.row},${ref.cell.col}`);
   }

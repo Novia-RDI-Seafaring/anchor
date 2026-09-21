@@ -166,3 +166,37 @@
 @media (prefers-reduced-motion: reduce) {
   .anchor-mark-flying { transition: none; }
 }
+
+/* An extra place fades in where it is, rather than travelling.
+   It is a second sighting of the same claim, not the same mark somewhere new:
+   watching one slide from a table cell to a drawing callout would describe a
+   movement that never happened. */
+@keyframes anchor-mark-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.anchor-mark-fade {
+  animation: anchor-mark-in 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anchor-mark-fade { animation: none; }
+}
+
+/* A traced stroke: the dimension line and its witness lines, thickened.
+   Drawn over the page rather than under a wash, so the geometry the span is
+   measuring stays visible. Fades in with the rest of the extra places. */
+.anchor-stroke polyline {
+  fill: none;
+  stroke: rgba(29, 78, 216, 0.85);
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.anchor-stroke {
+  animation: anchor-mark-in 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anchor-stroke { animation: none; }
+}

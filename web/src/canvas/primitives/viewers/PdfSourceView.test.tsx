@@ -227,6 +227,140 @@ describe("PdfSourceView (continuous)", () => {
     expect(parseFloat(mark.style.height)).toBeLessThan(15);
   });
 
+  it("draws one mark per place a reference points at", async () => {
+    stubScroller();
+    await renderViewer({
+      highlightPage: 2,
+      highlightBbox: [10, 20, 40, 60],
+      highlightAlso: [
+        { page: 2, bbox: [100, 200, 110, 210], precision: "item" },
+      ],
+      highlightNonce: 1,
+    });
+    await waitFor(() =>
+      expect(screen.getAllByTestId("pdf-highlight")).toHaveLength(2),
+    );
+  });
+
+  it("travels the primary mark and re-fades the extras in place", async () => {
+    // The primary is the place the reader is navigating to, so it flies: the
+    // same element, moved. An extra place is a second sighting of the same
+    // claim rather than that mark somewhere new, so it fades in where it is.
+    // Sliding one from a table cell to a drawing callout would describe a
+    // movement that never happened.
+    stubScroller();
+    const { rerender } = await renderViewer({
+      highlightPage: 2,
+      highlightBbox: [10, 20, 40, 60],
+      highlightAlso: [{ page: 2, bbox: [100, 200, 110, 210], precision: "item" }],
+      highlightNonce: 1,
+    });
+    const keyOf = () =>
+      screen.getAllByTestId("pdf-highlight").map((el) => el.getAttribute("data-mark-kind"));
+    expect(keyOf()).toEqual(["primary#0", "item#0"]);
+
+    const before = screen.getAllByTestId("pdf-highlight");
+    await rerender({
+      highlightPage: 2,
+      highlightBbox: [10, 300, 40, 340],
+      highlightAlso: [{ page: 2, bbox: [400, 500, 410, 510], precision: "item" }],
+      highlightNonce: 2,
+    });
+    const after = screen.getAllByTestId("pdf-highlight");
+    // The primary is the same element, moved.
+    expect(after[0]).toBe(before[0]);
+    expect(after[0]!.className).toContain("anchor-mark-flying");
+    // The extra is a fresh element, faded in where it belongs.
+    expect(after[1]).not.toBe(before[1]);
+    expect(after[1]!.className).toContain("anchor-mark-fade");
+    expect(after[1]!.className).not.toContain("anchor-mark-flying");
+    // Kinds still line up, so nothing crossed over.
+    expect(keyOf()).toEqual(["primary#0", "item#0"]);
+  });
+
+  it("tells two places of the same kind apart", async () => {
+    stubScroller();
+    await renderViewer({
+      highlightPage: 2,
+      highlightBbox: [10, 20, 40, 60],
+      highlightAlso: [
+        { page: 2, bbox: [100, 200, 110, 210], precision: "cell" },
+        { page: 2, bbox: [300, 200, 310, 210], precision: "cell" },
+      ],
+      highlightNonce: 1,
+    });
+    await waitFor(() =>
+      expect(
+        screen.getAllByTestId("pdf-highlight").map((el) => el.getAttribute("data-mark-kind")),
+      ).toEqual(["primary#0", "cell#0", "cell#1"]),
+    );
+  });
+
+  it("still draws the primary when an extra place has no geometry", async () => {
+    // A highlight that never appears is worse than a partial one.
+    stubScroller();
+    await renderViewer({
+      highlightPage: 2,
+      highlightBbox: [10, 20, 40, 60],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      highlightAlso: [{ page: 2, bbox: [1, 2] as any, precision: "item" }],
+      highlightNonce: 1,
+    });
+    await waitFor(() => expect(screen.getAllByTestId("pdf-highlight")).toHaveLength(1));
+  });
+
+  it("traces a stroke rather than boxing it", async () => {
+    // A dimension is a span between two witness lines. A box around it would
+    // cover the part of the drawing the span is measuring.
+    stubScroller();
+    await renderViewer({
+      highlightPage: 2,
+      highlightBbox: [10, 20, 40, 60],
+      highlightAlso: [
+        { page: 2, bbox: [100, 200, 160, 200], precision: "line",
+          line: [100, 200, 160, 200] },
+      ],
+      highlightNonce: 1,
+    });
+    const stroke = await screen.findByTestId("pdf-highlight-stroke");
+    expect(stroke.querySelector("polyline")?.getAttribute("points")).toBeTruthy();
+    // And it is NOT also drawn as a box.
+    expect(screen.getAllByTestId("pdf-highlight")).toHaveLength(1);
+  });
+
+  it("draws a stroke of more than two points", async () => {
+    stubScroller();
+    await renderViewer({
+      highlightPage: 2,
+      highlightBbox: [10, 20, 40, 60],
+      highlightAlso: [
+        { page: 2, bbox: [100, 100, 200, 200], precision: "line",
+          line: [100, 100, 200, 100, 200, 200] },
+      ],
+      highlightNonce: 1,
+    });
+    const stroke = await screen.findByTestId("pdf-highlight-stroke");
+    const pts = stroke.querySelector("polyline")!.getAttribute("points")!;
+    expect(pts.trim().split(/\s+/)).toHaveLength(3);
+  });
+
+  it("ignores a stroke with an odd or too-short run of coordinates", async () => {
+    stubScroller();
+    await renderViewer({
+      highlightPage: 2,
+      highlightBbox: [10, 20, 40, 60],
+      highlightAlso: [
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { page: 2, bbox: [0, 0, 1, 1], precision: "line", line: [1, 2] as any },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { page: 2, bbox: [0, 0, 1, 1], precision: "line", line: [1, 2, 3] as any },
+      ],
+      highlightNonce: 1,
+    });
+    await waitFor(() => expect(screen.getAllByTestId("pdf-highlight")).toHaveLength(1));
+    expect(screen.queryByTestId("pdf-highlight-stroke")).toBeNull();
+  });
+
   function captureScrolls() {
     const calls: ScrollToOptions[] = [];
     const real = HTMLElement.prototype.scrollTo;

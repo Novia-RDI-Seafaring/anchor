@@ -256,6 +256,7 @@ export function SourceDock() {
           page={Math.min(shownViewer.page, total || 1)}
           total={total}
           highlightBbox={shownViewer.highlightBbox}
+          highlightAlso={shownViewer.highlightAlso}
           highlightPage={shownViewer.highlightPage}
           highlightNonce={shownViewer.nonce}
           title={docTitle}

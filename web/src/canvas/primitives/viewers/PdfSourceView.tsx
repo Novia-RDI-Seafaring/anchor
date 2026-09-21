@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import "pdfjs-dist/web/pdf_viewer.css";
 
-import { documents, type Region } from "@/api/documents";
+import { documents, type Region, type ResolvedPlace } from "@/api/documents";
 import { REFERENCES_CHANGED_EVENT, references } from "@/api/references";
 import { bboxToViewportRect } from "@/lib/pdfHighlight";
 import {
@@ -69,6 +69,12 @@ type Props = {
   total: number;
   /** Region bbox to highlight (PDF points), applies only on `highlightPage`. */
   highlightBbox?: number[];
+  /**
+   * Extra places the same reference points at, already resolved. Drawn, never
+   * navigated to: `highlightBbox` on `highlightPage` stays the place the view
+   * scrolls to, because a reference has to land somewhere definite.
+   */
+  highlightAlso?: ResolvedPlace[];
   highlightPage?: number;
   /** Bumped by the store on each openPdf; forces re-navigation on a re-click. */
   highlightNonce?: number;
@@ -100,6 +106,7 @@ export function PdfSourceView({
   page,
   total,
   highlightBbox,
+  highlightAlso,
   highlightPage,
   highlightNonce,
   title,
@@ -436,24 +443,93 @@ export function PdfSourceView({
   // first time has nowhere to fly from, and a mark must never lag behind the
   // page during a wheel zoom, so the transition is switched on for the length
   // of a move and off again after.
-  const markPlacement = useMemo(() => {
-    if (!highlightVisible || !highlightPage || !highlightBbox) return null;
-    const item = items.find((it) => it.page === highlightPage);
-    const rect = bboxToRectOnPage(highlightPage, highlightBbox);
-    if (!item || !rect) return null;
-    // Pages are centred in the content box; the mark has to match that.
-    const pageLeft = Math.max(0, (contentWidth - item.width) / 2);
-    // Exactly the referenced box. Padding it up to a minimum was tried, so a
-    // one-cell mark would be easier to spot, and it made the mark cover the
-    // rows above and below the value it names -- which reads as the highlight
-    // being wrong rather than small.
-    return {
-      left: pageLeft + rect.left,
-      top: item.top + rect.top,
-      width: rect.width,
-      height: rect.height,
+  // Every place this reference points at, each with a key naming its KIND.
+  //
+  // The key is what makes a move read as one. Going from reference A to
+  // reference B, React pairs the marks by key, so the cell mark flies to the
+  // new cell and the callout mark flies to the new callout. Pair them any
+  // other way -- by position in the list, say -- and the two marks cross over
+  // each other on screen, which says something untrue about what moved where.
+  // The index disambiguates a reference that names two cells.
+  const markPlacements = useMemo(() => {
+    if (!highlightVisible || !highlightPage || !highlightBbox) return [];
+    const seen = new Map<string, number>();
+    const place = (page: number, bbox: number[], kind: string) => {
+      const item = items.find((it) => it.page === page);
+      const rect = bboxToRectOnPage(page, bbox);
+      if (!item || !rect) return null;
+      const n = seen.get(kind) ?? 0;
+      seen.set(kind, n + 1);
+      // Pages are centred in the content box; the mark has to match that.
+      const pageLeft = Math.max(0, (contentWidth - item.width) / 2);
+      // Exactly the referenced box. Padding it up to a minimum was tried, so a
+      // one-cell mark would be easier to spot, and it made the mark cover the
+      // rows above and below the value it names -- which reads as the highlight
+      // being wrong rather than small.
+      return {
+        key: `${kind}#${n}`,
+        primary: kind === "primary",
+        left: pageLeft + rect.left,
+        top: item.top + rect.top,
+        width: rect.width,
+        height: rect.height,
+      };
     };
-  }, [highlightVisible, highlightPage, highlightBbox, items, contentWidth, bboxToRectOnPage]);
+    const out = [];
+    const primary = place(highlightPage, highlightBbox, "primary");
+    if (primary) out.push(primary);
+    for (const extra of highlightAlso ?? []) {
+      // A stroke is drawn by the overlay below, never as a box. That holds
+      // even when its coordinates are unusable: the bounds of a line are a
+      // flat rectangle, and drawing one would put a mark across the page at
+      // the wrong thing rather than admit there was nothing to trace.
+      if (extra?.precision === "line" || Array.isArray(extra?.line)) continue;
+      if (!Array.isArray(extra?.bbox) || extra.bbox.length !== 4) continue;
+      const mark = place(extra.page, extra.bbox, extra.precision ?? "place");
+      if (mark) out.push(mark);
+    }
+    return out;
+  }, [
+    highlightVisible,
+    highlightPage,
+    highlightBbox,
+    highlightAlso,
+    items,
+    contentWidth,
+    bboxToRectOnPage,
+  ]);
+
+  // Strokes. A dimension on an engineering drawing is a span between two
+  // witness lines, and a box around it would cover the very part being
+  // measured. Tracing the stroke the draughtsman already drew says the same
+  // thing in the drawing's own language, which is why these thicken rather
+  // than highlight.
+  const strokePlacements = useMemo(() => {
+    if (!highlightVisible) return [];
+    const out: { key: string; left: number; top: number; points: string }[] = [];
+    let n = 0;
+    for (const extra of highlightAlso ?? []) {
+      const pts = extra?.line;
+      if (!Array.isArray(pts) || pts.length < 4 || pts.length % 2) continue;
+      const item = items.find((it) => it.page === extra.page);
+      const size = pdfPageSizes[extra.page];
+      if (!item || !size) continue;
+      const sx = item.width / size.w;
+      const sy = item.height / size.h;
+      const pageLeft = Math.max(0, (contentWidth - item.width) / 2);
+      const points: string[] = [];
+      for (let i = 0; i < pts.length; i += 2) {
+        points.push(`${pts[i]! * sx},${pts[i + 1]! * sy}`);
+      }
+      out.push({
+        key: `line#${n++}`,
+        left: pageLeft,
+        top: item.top,
+        points: points.join(" "),
+      });
+    }
+    return out;
+  }, [highlightVisible, highlightAlso, items, pdfPageSizes, contentWidth]);
 
   const markOnScreen = useRef(false);
   const [markFlying, setMarkFlying] = useState(false);
@@ -792,14 +868,39 @@ export function PdfSourceView({
             <div className="p-6 text-sm text-red-600">Could not load PDF: {loadError}</div>
           ) : (
             <div ref={contentRef} className="relative mx-auto" style={{ height: totalHeight, width: contentWidth || undefined }}>
-              {markPlacement ? (
-                <div
-                  data-testid="pdf-highlight"
+              {strokePlacements.map(({ key, left, top, points }) => (
+                <svg
+                  key={`${key}@${highlightNonce ?? 0}`}
+                  data-testid="pdf-highlight-stroke"
                   aria-hidden
-                  className={`anchor-mark pointer-events-none absolute z-10${markFlying ? " anchor-mark-flying" : ""}`}
-                  style={markPlacement}
+                  className="anchor-stroke pointer-events-none absolute z-10 overflow-visible"
+                  style={{ left, top, width: 0, height: 0 }}
+                >
+                  <polyline points={points} />
+                </svg>
+              ))}
+              {markPlacements.map(({ key, primary, ...box }) => (
+                <div
+                  // Only the primary keeps a stable key, so only the primary
+                  // travels. An extra place is a second sighting of the same
+                  // claim, not the same mark in a new spot, and watching one
+                  // fly across the page from a table cell to a drawing callout
+                  // suggests a movement that did not happen. The nonce in the
+                  // key remounts it, which is what replays the fade.
+                  key={primary ? key : `${key}@${highlightNonce ?? 0}`}
+                  data-testid="pdf-highlight"
+                  data-mark-kind={key}
+                  aria-hidden
+                  className={`anchor-mark pointer-events-none absolute z-10 ${
+                    primary
+                      ? markFlying
+                        ? "anchor-mark-flying"
+                        : ""
+                      : "anchor-mark-fade"
+                  }`}
+                  style={box}
                 />
-              ) : null}
+              ))}
               {items.map((it) => (
                 <PageSlot
                   key={it.page}
