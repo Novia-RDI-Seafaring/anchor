@@ -480,7 +480,14 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "{slug, page, bbox, precision} where precision names the "
                 "layer that answered, so a viewer or citation can trust the "
                 "geometry. A selector without stored geometry falls through "
-                "to the next layer; a legacy ref resolves exactly as before."
+                "to the next layer; a legacy ref resolves exactly as before. "
+                "A ref may name more than one place: put the extras under "
+                "'also' and each comes back resolved, with its own precision, "
+                "in the answer's 'also'. Use it when one claim is evidenced in "
+                "two spots at once, such as a value in a specification table "
+                "and the callout naming that dimension on the drawing beside "
+                "it. The ref's own selectors stay the primary place, which is "
+                "where a viewer scrolls; 'also' does not nest."
             ),
             "inputSchema": {
                 "type": "object",
@@ -490,7 +497,9 @@ def tool_definitions() -> list[dict[str, Any]]:
                         "type": "object",
                         "description": (
                             "The source_ref: {page?, region_id?, item_id?, "
-                            "cell?: {row, col}, bbox?}"
+                            "cell?: {row, col}, bbox?, also?}. 'also' is a "
+                            "list of extra places, each the same shape, or "
+                            "the compact string form 'p3/r1/item:p3-i6'."
                         ),
                     },
                 },
