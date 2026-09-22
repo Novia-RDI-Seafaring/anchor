@@ -17,6 +17,7 @@ import {
   type PageLayoutItem,
   type ZoomAnchor,
 } from "@/lib/pdfContinuous";
+import { onViewerZoomRequest } from "@/canvas/viewerZoom";
 import type { SourceRef } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
@@ -57,6 +58,8 @@ const ZOOM_STEP = 0.2;
 const RENDER_ZOOM_SETTLE_MS = 120;
 /** Keep in step with `.anchor-mark-flying` in index.css. */
 const MARK_FLIGHT_MS = 340;
+/** Breathing room before a mark counts as out of sight rather than near the edge. */
+const MARK_MARGIN_PX = 24;
 const OVERSCAN = 1;
 const THUMB_WIDTH = 96; // CSS px of the thumbnail image
 // Sensible page-size fallback (US Letter, points) before any size is known.
@@ -468,7 +471,6 @@ export function PdfSourceView({
       // being wrong rather than small.
       return {
         key: `${kind}#${n}`,
-        primary: kind === "primary",
         left: pageLeft + rect.left,
         top: item.top + rect.top,
         width: rect.width,
@@ -721,6 +723,150 @@ export function PdfSourceView({
     return () => el.removeEventListener("wheel", onWheel);
   }, [doc]);
 
+  // --- Zoom that answers to the mark -----------------------------------
+  //
+  // Three gestures, all of them the reader's, none of them the viewer's own
+  // judgement. An earlier attempt zoomed to each reference by itself and was
+  // wrong often enough to be worse than nothing.
+  //
+  // When the zoom changes for one of these reasons, the mark is what should
+  // stay put -- it is the thing being read. The scroll is applied in a layout
+  // effect rather than alongside the zoom, because the scroller's height
+  // follows the zoom: writing scrollTop before the re-zoomed layout commits
+  // clamps it against the OLD height and the landing falls short.
+  const recentreOnMark = useRef(false);
+  // `fitWidth` is defined further down, with the toolbar it belongs to. The
+  // ref lets the resize effect above reach the current one without hoisting
+  // the whole callback up here away from its buttons.
+  const fitWidthRef = useRef<() => void>(() => {});
+
+  const markBounds = useCallback(() => {
+    if (!highlightPage || !highlightBbox) return null;
+    const boxes = [highlightBbox];
+    for (const extra of highlightAlso ?? []) {
+      // Only what is on the same page: no zoom shows two pages at once.
+      if (extra?.page === highlightPage && Array.isArray(extra.bbox) && extra.bbox.length === 4) {
+        boxes.push(extra.bbox);
+      }
+    }
+    const xs = boxes.flatMap((b) => [b[0]!, b[2]!]);
+    const ys = boxes.flatMap((b) => [b[1]!, b[3]!]);
+    return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+  }, [highlightPage, highlightBbox, highlightAlso]);
+
+  // 1. The wheel, while the pointer is on a reference out in the canvas.
+  useEffect(() => {
+    return onViewerZoomRequest((deltaY, deltaMode) => {
+      recentreOnMark.current = true;
+      setZoom((z) => wheelZoom(z, deltaY, deltaMode, false, MIN_ZOOM, MAX_ZOOM));
+    });
+  }, []);
+
+  // 2. A reference whose places do not all fit. Zoom out until they do, and
+  //    only then -- a reference that fits keeps whatever zoom the reader set,
+  //    which is the point of them setting it.
+  useEffect(() => {
+    const bounds = markBounds();
+    const size = highlightPage ? pdfPageSizes[highlightPage] : undefined;
+    if (!bounds || !size || containerSize.w <= 0 || containerSize.h <= 0) return;
+    const w = bounds.x1 - bounds.x0;
+    const h = bounds.y1 - bounds.y0;
+    if (w <= 0 || h <= 0) return;
+    const usableW = Math.max(1, containerSize.w - 48);
+    const usableH = Math.max(1, containerSize.h - 48);
+    setZoom((z) => {
+      if (w * z <= usableW && h * z <= usableH) return z;
+      const fit = Math.min(usableW / w, usableH / h);
+      const next = Math.max(MIN_ZOOM, Math.min(z, +fit.toFixed(3)));
+      if (next !== z) recentreOnMark.current = true;
+      return next;
+    });
+  }, [markBounds, highlightPage, pdfPageSizes, containerSize.w, containerSize.h, highlightNonce]);
+
+  // 3. The pane itself being resized. Dragging the divider is a statement
+  //    about how much room the pages should have, so they take all of it.
+  const lastPaneWidth = useRef<number | null>(null);
+  useEffect(() => {
+    const w = containerSize.w;
+    if (w <= 0) return;
+    const had = lastPaneWidth.current;
+    lastPaneWidth.current = w;
+    // Not on the first measurement: that is the pane appearing, not a resize.
+    if (had === null || Math.abs(had - w) < 1) return;
+    fitWidthRef.current();
+  }, [containerSize.w]);
+
+  // 4. The mark, having arrived somewhere the reader cannot see, brings the
+  //    page to it. Deliberately AFTER the flight: the mark travels first, and
+  //    only once it is there does it take hold of the page and centre itself.
+  //    Moving both at once reads as everything sliding at once, and it is
+  //    then unclear what went where.
+  //
+  //    Only when it would otherwise be out of sight. Zoomed out, a jump to the
+  //    next row is already on screen and the page should stay exactly where it
+  //    is -- moving the whole document to relocate a mark that could simply
+  //    have moved is the lurch this rule exists to prevent.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !highlightPage) return undefined;
+    const id = window.setTimeout(() => {
+      const bounds = markBounds();
+      const size = pdfPageSizes[highlightPage];
+      const item = items.find((it) => it.page === highlightPage);
+      if (!bounds || !size || !item) return;
+      const rect = bboxToViewportRect(
+        [bounds.x0, bounds.y0, bounds.x1, bounds.y1],
+        size.w,
+        size.h,
+        { width: size.w * zoom, height: size.h * zoom },
+      );
+      if (!rect) return;
+      const top = item.top + rect.top;
+      const bottom = top + rect.height;
+      const viewTop = el.scrollTop;
+      const viewBottom = viewTop + el.clientHeight;
+      // Comfortably in view, margin and all: leave the page alone.
+      if (top >= viewTop + MARK_MARGIN_PX && bottom <= viewBottom - MARK_MARGIN_PX) return;
+      el.scrollTo({
+        top: scrollTopForPageRect(
+          items, highlightPage, rect.top, rect.height, el.clientHeight, totalHeight,
+        ),
+        behavior: "smooth",
+      });
+    }, MARK_FLIGHT_MS);
+    return () => window.clearTimeout(id);
+  }, [
+    highlightNonce, highlightPage, highlightBbox, markBounds,
+    items, pdfPageSizes, zoom, totalHeight,
+  ]);
+
+  // Put the mark back under the reader's eye after a zoom they asked for.
+  useLayoutEffect(() => {
+    if (!recentreOnMark.current) return;
+    recentreOnMark.current = false;
+    const el = scrollRef.current;
+    const bounds = markBounds();
+    if (!el || !bounds || !highlightPage) return;
+    const size = pdfPageSizes[highlightPage];
+    if (!size) return;
+    const { items: li, totalHeight: th } = buildPageLayout(
+      effectiveTotal || 0,
+      pdfPageSizes,
+      zoom,
+      fallbackSize,
+    );
+    const rect = bboxToViewportRect(
+      [bounds.x0, bounds.y0, bounds.x1, bounds.y1],
+      size.w,
+      size.h,
+      { width: size.w * zoom, height: size.h * zoom },
+    );
+    if (!rect) return;
+    el.scrollTop = scrollTopForPageRect(
+      li, highlightPage, rect.top, rect.height, el.clientHeight, th,
+    );
+  }, [zoom, markBounds, highlightPage, pdfPageSizes, effectiveTotal, fallbackSize]);
+
   // Cmd/Ctrl + = / - / 0 while the viewer has focus.
   const onViewerKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!e.ctrlKey && !e.metaKey) return;
@@ -747,6 +893,7 @@ export function PdfSourceView({
     const usable = Math.max(1, el.clientWidth - 48);
     setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(usable / size.w).toFixed(3))));
   }, [pdfPageSizes, page, fallbackSize]);
+  fitWidthRef.current = fitWidth;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-neutral-100">
@@ -879,24 +1026,21 @@ export function PdfSourceView({
                   <polyline points={points} />
                 </svg>
               ))}
-              {markPlacements.map(({ key, primary, ...box }) => (
+              {markPlacements.map(({ key, ...box }) => (
                 <div
-                  // Only the primary keeps a stable key, so only the primary
-                  // travels. An extra place is a second sighting of the same
-                  // claim, not the same mark in a new spot, and watching one
-                  // fly across the page from a table cell to a drawing callout
-                  // suggests a movement that did not happen. The nonce in the
-                  // key remounts it, which is what replays the fade.
-                  key={primary ? key : `${key}@${highlightNonce ?? 0}`}
+                  // Stable, so every mark travels rather than blinking out and
+                  // in. The key is the KIND, so a move pairs like with like:
+                  // the cell mark goes to the next cell, the callout mark to
+                  // the next callout. Paired by list position they would cross
+                  // over and say something untrue about what moved where.
+                  key={key}
                   data-testid="pdf-highlight"
                   data-mark-kind={key}
                   aria-hidden
-                  className={`anchor-mark pointer-events-none absolute z-10 ${
-                    primary
-                      ? markFlying
-                        ? "anchor-mark-flying"
-                        : ""
-                      : "anchor-mark-fade"
+                  // The fade is a mount animation, so it plays once when a
+                  // mark first appears and never fights the travel afterwards.
+                  className={`anchor-mark anchor-mark-fade pointer-events-none absolute z-10${
+                    markFlying ? " anchor-mark-flying" : ""
                   }`}
                   style={box}
                 />

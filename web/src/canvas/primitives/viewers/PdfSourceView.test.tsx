@@ -13,6 +13,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { documents } from "@/api/documents";
 
+import { requestViewerZoom } from "@/canvas/viewerZoom";
+
 import { PdfSourceView } from "./PdfSourceView";
 
 const PAGE_COUNT = 6;
@@ -242,12 +244,10 @@ describe("PdfSourceView (continuous)", () => {
     );
   });
 
-  it("travels the primary mark and re-fades the extras in place", async () => {
-    // The primary is the place the reader is navigating to, so it flies: the
-    // same element, moved. An extra place is a second sighting of the same
-    // claim rather than that mark somewhere new, so it fades in where it is.
-    // Sliding one from a table cell to a drawing callout would describe a
-    // movement that never happened.
+  it("travels every mark, pairing them by kind so neither crosses over", async () => {
+    // Both marks move, so the eye can follow each to where it went. Paired by
+    // position in the list instead, the cell mark and the callout mark would
+    // swap places on screen and describe a movement that did not happen.
     stubScroller();
     const { rerender } = await renderViewer({
       highlightPage: 2,
@@ -267,14 +267,10 @@ describe("PdfSourceView (continuous)", () => {
       highlightNonce: 2,
     });
     const after = screen.getAllByTestId("pdf-highlight");
-    // The primary is the same element, moved.
+    // The same elements, moved -- not new ones in new places.
     expect(after[0]).toBe(before[0]);
-    expect(after[0]!.className).toContain("anchor-mark-flying");
-    // The extra is a fresh element, faded in where it belongs.
-    expect(after[1]).not.toBe(before[1]);
-    expect(after[1]!.className).toContain("anchor-mark-fade");
-    expect(after[1]!.className).not.toContain("anchor-mark-flying");
-    // Kinds still line up, so nothing crossed over.
+    expect(after[1]).toBe(before[1]);
+    for (const el of after) expect(el.className).toContain("anchor-mark-flying");
     expect(keyOf()).toEqual(["primary#0", "item#0"]);
   });
 
@@ -359,6 +355,109 @@ describe("PdfSourceView (continuous)", () => {
     });
     await waitFor(() => expect(screen.getAllByTestId("pdf-highlight")).toHaveLength(1));
     expect(screen.queryByTestId("pdf-highlight-stroke")).toBeNull();
+  });
+
+  it("zooms when the reader wheels over a reference out in the canvas", async () => {
+    stubScroller();
+    await renderViewer({ highlightPage: 2, highlightBbox: [10, 20, 40, 60], highlightNonce: 1 });
+    const zoomLabel = () => screen.getByLabelText("Reset zoom").textContent;
+    const before = zoomLabel();
+    await act(async () => {
+      requestViewerZoom(-120, 0);
+    });
+    expect(zoomLabel()).not.toBe(before);
+  });
+
+  it("zooms out only far enough to fit a reference that names several places", async () => {
+    // A reference that already fits keeps whatever zoom the reader set. That
+    // is the whole point of them setting it.
+    stubScroller();
+    const { rerender } = await renderViewer({
+      highlightPage: 2,
+      highlightBbox: [10, 20, 40, 60],
+      highlightNonce: 1,
+    });
+    const read = () => parseInt(screen.getByLabelText("Reset zoom").textContent!, 10);
+    const fitting = read();
+
+    // Now one whose places span far more than the pane can show at this zoom.
+    await rerender({
+      highlightPage: 2,
+      highlightBbox: [10, 20, 40, 60],
+      highlightAlso: [{ page: 2, bbox: [10, 20000, 40, 20040], precision: "item" }],
+      highlightNonce: 2,
+    });
+    expect(read()).toBeLessThan(fitting);
+  });
+
+  it("ignores places on another page when deciding what has to fit", async () => {
+    // No zoom shows two pages at once, so a place elsewhere is not a reason
+    // to shrink the one the reader is looking at.
+    stubScroller();
+    const { rerender } = await renderViewer({
+      highlightPage: 2,
+      highlightBbox: [10, 20, 40, 60],
+      highlightNonce: 1,
+    });
+    const read = () => parseInt(screen.getByLabelText("Reset zoom").textContent!, 10);
+    const before = read();
+    await rerender({
+      highlightPage: 2,
+      highlightBbox: [10, 20, 40, 60],
+      highlightAlso: [{ page: 5, bbox: [10, 20000, 40, 20040], precision: "item" }],
+      highlightNonce: 2,
+    });
+    expect(read()).toBe(before);
+  });
+
+  it("brings the page to a mark that landed out of sight, once it has landed", async () => {
+    // The mark travels first; only then does it take hold of the page. Moving
+    // both at once reads as everything sliding, and what went where is lost.
+    const scroller = stubScroller(0);
+    const tops: (number | null)[] = [];
+    const { rerender } = await renderViewer({
+      highlightPage: 2,
+      highlightBbox: [10, 20, 40, 60],
+      highlightNonce: 1,
+    });
+    // Let the arrival settle so later movement is this rule's doing.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 420));
+    });
+    const settled = scroller.lastTop();
+
+    // Far down the same page, well past a 400px viewport.
+    await rerender({ highlightPage: 2, highlightBbox: [10, 700, 40, 740], highlightNonce: 2 });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 120));
+    });
+    tops.push(scroller.lastTop());   // still flying: page has not moved
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 400));
+    });
+    tops.push(scroller.lastTop());   // landed: page has been brought over
+
+    expect(tops[0]).toBe(settled);
+    expect(tops[1]).not.toBe(settled);
+  });
+
+  it("leaves the page alone for a mark that is already on screen", async () => {
+    // A small jump at a readable zoom: the mark moves, the document does not.
+    const scroller = stubScroller(0);
+    const { rerender } = await renderViewer({
+      highlightPage: 1,
+      highlightBbox: [10, 20, 40, 60],
+      highlightNonce: 1,
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 420));
+    });
+    const settled = scroller.lastTop();
+    await rerender({ highlightPage: 1, highlightBbox: [10, 90, 40, 130], highlightNonce: 2 });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 420));
+    });
+    expect(scroller.lastTop()).toBe(settled);
   });
 
   function captureScrolls() {
