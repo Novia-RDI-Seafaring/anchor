@@ -125,6 +125,7 @@ async def resolve_ref_route(
     item_id: str | None = None,
     row: int | None = None,
     col: int | None = None,
+    also: list[str] | None = Query(default=None),
     store: DocStore = Depends(get_doc_store),
 ):
     """Resolve a source_ref to the most precise stored evidence bbox.
@@ -132,6 +133,12 @@ async def resolve_ref_route(
     Precedence: cell (row+col) > item_id > region_id > nothing (404).
     The viewer's highlight calls this instead of re-implementing the
     precedence rules client-side.
+
+    Repeat ``also`` to name extra places in the compact form, e.g.
+    ``?page=3&region_id=r2&row=1&col=2&also=p3/r1/item:p3-i6``. They come
+    back under ``also`` in the answer, each with its own precision. Query
+    parameters have no room for nested objects, which is what the compact
+    form is for; MCP and the CLI pass whole ref objects instead.
     """
     ref: dict[str, Any] = {}
     if page is not None:
@@ -142,6 +149,8 @@ async def resolve_ref_route(
         ref["item_id"] = item_id
     if row is not None and col is not None:
         ref["cell"] = {"row": row, "col": col}
+    if also:
+        ref["also"] = list(also)
     out = await resolve_source_ref(store, slug, ref)
     if out is None:
         raise HTTPException(404, "unresolvable ref")

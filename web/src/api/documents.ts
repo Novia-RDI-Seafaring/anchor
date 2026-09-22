@@ -43,6 +43,14 @@ export type ResolvableRef = {
   region_id?: string;
   item_id?: string;
   cell?: { row?: number; col?: number } | null;
+  /**
+   * Extra places this reference also points at, in the compact form
+   * `p3/r1/item:p3-i6`. One claim can be evidenced in more than one spot:
+   * the value in a table and the callout naming that dimension on the
+   * drawing beside it. The ref's own selectors stay the primary place,
+   * which is where the viewer scrolls; these are only drawn.
+   */
+  also?: string[];
 };
 
 /** Answer of `GET /api/documents/{slug}/resolve-ref` (#242 P2b). */
@@ -52,6 +60,25 @@ export type ResolvedRef = {
   bbox: number[];
   /** Which layer resolved: cell > item > region > bbox. */
   precision: "cell" | "item" | "region" | "bbox";
+  region_id?: string;
+  item_id?: string;
+  cell?: { row: number; col: number };
+  /** The extra places, each resolved on its own terms with its own precision. */
+  also?: ResolvedPlace[];
+};
+
+/** One resolved place. The primary answer has the same shape plus `also`. */
+export type ResolvedPlace = {
+  page: number;
+  bbox: number[];
+  precision: "cell" | "item" | "region" | "bbox" | "line";
+  /**
+   * Page coordinates in pairs, when this place is a stroke rather than a box.
+   * A dimension on an engineering drawing is a span between two witness
+   * lines, and boxing it would cover the part being measured. `bbox` is still
+   * the stroke's bounds, for anything that only understands boxes.
+   */
+  line?: number[];
   region_id?: string;
   item_id?: string;
   cell?: { row: number; col: number };
@@ -66,6 +93,9 @@ export type ResolvedRef = {
 export function refHasSelector(ref: ResolvableRef | null | undefined): boolean {
   if (!ref) return false;
   if (typeof ref.item_id === "string" && ref.item_id.length > 0) return true;
+  // Extra places only exist in the resolver's answer, so a ref naming any
+  // must ask for it even when its own selectors would not have.
+  if ((ref.also?.length ?? 0) > 0) return true;
   return typeof ref.cell?.row === "number" && typeof ref.cell?.col === "number";
 }
 
@@ -101,6 +131,8 @@ export const documents = {
       params.set("row", String(ref.cell.row));
       params.set("col", String(ref.cell.col));
     }
+    // Repeated, because a query string has no room for a list of objects.
+    for (const place of ref.also ?? []) params.append("also", place);
     try {
       const rsp = await api.get<ResolvedRef>(
         `/api/documents/${slug}/resolve-ref?${params.toString()}`,

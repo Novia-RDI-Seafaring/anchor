@@ -73,3 +73,48 @@ describe("describeRef", () => {
     ).toContain("cell 1,2");
   });
 });
+
+describe("a reference to more than one place", () => {
+  it("reads the extra places off the link", () => {
+    // One claim, evidenced twice: the value in the table and the callout
+    // naming that dimension on the drawing beside it.
+    const ref = parseAnchorHref(
+      "anchor:lkh?page=3&region=r2&cell=1,2&also=p3/r1/item:p3-i6",
+    );
+    expect(ref).toMatchObject({
+      slug: "lkh",
+      page: 3,
+      region_id: "r2",
+      cell: { row: 1, col: 2 },
+      also: ["p3/r1/item:p3-i6"],
+    });
+  });
+
+  it("takes as many extra places as the link names", () => {
+    const ref = parseAnchorHref(
+      "anchor:lkh?page=3&region=r2&also=p3/r1/item:p3-i6&also=p3/r1/item:p3-i9",
+    );
+    expect(ref?.also).toEqual(["p3/r1/item:p3-i6", "p3/r1/item:p3-i9"]);
+  });
+
+  it("leaves a single-place link exactly as it was", () => {
+    // Every reference written before this existed still has to parse the same.
+    const ref = parseAnchorHref("anchor:lkh?page=3&region=r2&cell=1,2");
+    expect(ref?.also).toBeUndefined();
+  });
+
+  it("survives the round trip back into a link", () => {
+    const href = formatAnchorHref({
+      slug: "lkh",
+      page: 3,
+      region_id: "r2",
+      also: ["p3/r1/item:p3-i6"],
+    });
+    expect(parseAnchorHref(href)?.also).toEqual(["p3/r1/item:p3-i6"]);
+  });
+
+  it("drops empty extras rather than carrying a place that names nothing", () => {
+    const ref = parseAnchorHref("anchor:lkh?page=3&also=&also=%20");
+    expect(ref?.also).toBeUndefined();
+  });
+});

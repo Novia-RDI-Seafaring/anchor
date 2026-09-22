@@ -147,6 +147,13 @@
      thing the reader opened the mark to read. An outline is drawn outside the
      box, costs no layout, and leaves the whole marked area showing through. */
   outline: 1.25px solid rgba(161, 98, 7, 0.9);
+  /* The wash reaches a little past the box it marks. A pen does that, and on
+     a one-cell mark the few extra pixels are the difference between findable
+     and not. It grows from the SAME rectangle in every direction, so the mark
+     stays centred on what it names -- which a padded width and an unmoved
+     left edge would not. Semi-transparent, so the slight overlap onto a
+     neighbouring row reads as ink rather than as a claim about that row. */
+  box-shadow: 0 0 0 2.5px rgba(250, 204, 21, 0.42);
   mix-blend-mode: multiply;
 }
 
@@ -165,4 +172,36 @@
 
 @media (prefers-reduced-motion: reduce) {
   .anchor-mark-flying { transition: none; }
+}
+
+/* Every mark fades in when it first appears. A mount animation, so it plays
+   once and then leaves the travelling to the transition. */
+@keyframes anchor-mark-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.anchor-mark-fade {
+  animation: anchor-mark-in 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anchor-mark-fade { animation: none; }
+}
+
+/* A traced stroke: the dimension line and its witness lines, thickened.
+   Drawn over the page rather than under a wash, so the geometry the span is
+   measuring stays visible. Fades in with the rest of the extra places. */
+.anchor-stroke polyline {
+  fill: none;
+  stroke: rgba(29, 78, 216, 0.85);
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.anchor-stroke {
+  animation: anchor-mark-in 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anchor-stroke { animation: none; }
 }

@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import type { ResolvedPlace } from "@/api/documents";
+
 /**
  * How the shared source pane is surfaced:
  *   - "dock":  left-docked split-screen pane next to the canvas (#110a, the
@@ -24,6 +26,14 @@ type PdfViewerState = {
   highlightRegionId?: string;
   highlightBbox?: number[];
   highlightPage?: number;
+  /**
+   * Extra places the same reference points at, already resolved. One claim
+   * can be evidenced in more than one spot: the value in a table and the
+   * callout naming that dimension on the drawing. `highlightBbox` stays the
+   * primary place, which is what the viewer scrolls to; these are drawn
+   * alongside it and never navigated to.
+   */
+  highlightAlso?: ResolvedPlace[];
   /**
    * The grounded value's text. When set, the viewer locates this text inside
    * the region (via documents.locate) and draws a value-precise yellow
@@ -133,6 +143,7 @@ type UiState = {
       documentNodeId?: string;
       highlightRegionId?: string;
       highlightBbox?: number[];
+      highlightAlso?: ResolvedPlace[];
       highlightQuery?: string;
       /** Opened by a hover, so a mouse-out should take it away again. */
       transient?: boolean;
@@ -384,6 +395,7 @@ export const useUiStore = create<UiState>((set) => ({
           documentNodeId: options?.documentNodeId,
           highlightRegionId: options?.highlightRegionId,
           highlightBbox: options?.highlightBbox,
+          highlightAlso: options?.highlightAlso,
           highlightQuery: options?.highlightQuery,
           highlightPage: options?.highlightRegionId || options?.highlightBbox
             ? options?.page ?? 1

@@ -13,7 +13,12 @@
  */
 import { useCallback } from "react";
 
-import { documents, refHasSelector, type ResolvableRef } from "@/api/documents";
+import {
+  documents,
+  refHasSelector,
+  type ResolvableRef,
+  type ResolvedPlace,
+} from "@/api/documents";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
@@ -36,13 +41,15 @@ export function useOpenSourceRef(
     (ref, query, opts) => {
       const slug = ref?.slug;
       if (!slug || !ref?.page) return;
-      const open = (page: number, bbox?: number[]) =>
+      const open = (page: number, bbox?: number[], also?: ResolvedPlace[]) =>
         openPdf(slug, {
           page,
           workspaceSlug,
           documentNodeId: knownNodeId ?? documentNodeIdFor(slug),
           highlightRegionId: ref.region_id,
           highlightBbox: bbox,
+          // The primary place is what we scroll to; these are drawn beside it.
+          highlightAlso: also,
           highlightQuery: query,
           transient: opts?.transient,
         });
@@ -55,7 +62,9 @@ export function useOpenSourceRef(
         const fallbackPage = ref.page;
         void documents
           .resolveRef(slug, ref)
-          .then((resolved) => open(resolved?.page ?? fallbackPage, resolved?.bbox ?? ref.bbox));
+          .then((resolved) =>
+            open(resolved?.page ?? fallbackPage, resolved?.bbox ?? ref.bbox, resolved?.also),
+          );
         return;
       }
       open(ref.page, ref.bbox);
