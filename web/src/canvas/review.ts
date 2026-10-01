@@ -8,14 +8,14 @@
  *
  * The server stamps `proposed` on agent-created nodes in review-mode
  * workspaces (`metadata.review_mode == true`); humans accept/reject via a
- * plain update-node data patch. Visual language: proposed gets a quiet
- * violet chip (distinct from the placeholder's sky-blue "empty" signal);
- * rejected keeps its badge and renders dimmed — never hidden, because a
- * rejection is feedback the agent must still be able to read. Accepted
- * nodes drop the badge entirely.
+ * plain update-node data patch. The stamp is no longer worn on the card:
+ * no chip, no dimming. The verdict on a change lives with the change, under
+ * its ghost in the intent thread, and a per-element stamp left from an
+ * earlier round read as the element's status long after it stopped being
+ * one. The toolbar actions and the panels still read and write it.
  *
- * One tiny module (mirroring placeholder.ts) so the badge, the toolbar
- * actions, and the graph-level dimming can't drift apart.
+ * One tiny module (mirroring placeholder.ts) so the readers and writers of
+ * the stamp can't drift apart.
  */
 import type { MaybeData } from "./placeholder";
 
@@ -74,9 +74,5 @@ export function isReviewable(data: MaybeData): boolean {
   return s === "proposed" || s === "rejected";
 }
 
-/** Violet-500 — the proposed-badge accent (placeholders own sky-blue). */
+/** Violet-500 — the proposal-set ring accent (placeholders own sky-blue). */
 export const REVIEW_PROPOSED_COLOR = "rgb(139, 92, 246)";
-/** Rose-500 — the rejected-badge accent. */
-export const REVIEW_REJECTED_COLOR = "rgb(244, 63, 94)";
-/** Opacity applied to a rejected node's whole body (dimmed, not hidden). */
-export const REVIEW_REJECTED_OPACITY = 0.45;

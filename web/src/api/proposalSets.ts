@@ -32,6 +32,14 @@ export type ProposalActor = {
 export type ProposalMember = {
   kind: "node" | "edge";
   id: string;
+  /**
+   * What the element looked like before this proposal touched it, present
+   * only on a member the agent CHANGED rather than created. Declining such a
+   * member restores these values instead of removing the element, and the
+   * review panel diffs against them -- a retitled card looks fine either way
+   * until you can see what the title was.
+   */
+  before?: Record<string, unknown>;
 };
 
 /** Lifecycle of a set. `open` means it is still waiting for a human verdict. */
