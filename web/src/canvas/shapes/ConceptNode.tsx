@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 
 import { resolveColors, resolveText } from "@/canvas/colors";
 import { Pictogram } from "@/canvas/icons";
+import { NodeSourceBadge } from "@/canvas/NodeSourceBadge";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
 import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
 import { ReviewBadge } from "@/canvas/ReviewBadge";
@@ -125,6 +126,7 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
         </div>
       </div>
       <Handle type="source" position={Position.Right} />
+      <NodeSourceBadge data={data} workspaceSlug={workspaceSlug} />
     </div>
   );
 }

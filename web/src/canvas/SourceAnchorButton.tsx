@@ -1,4 +1,5 @@
 import { Anchor as AnchorIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
 import type { ResolvableRef } from "@/api/documents";
 import { useOpenSourceRef } from "@/canvas/useOpenSourceRef";
@@ -27,6 +28,7 @@ export function SourceAnchorButton({
   ariaLabel,
   size = 11,
   className = "",
+  children,
 }: {
   workspaceSlug: string | undefined;
   /** The document card this ref belongs to, when the caller knows it. */
@@ -38,6 +40,7 @@ export function SourceAnchorButton({
   ariaLabel?: string;
   size?: number;
   className?: string;
+  children?: ReactNode;
 }) {
   const openRef = useOpenSourceRef(workspaceSlug, { documentNodeId });
   const pinViewer = useUiStore((s) => s.pinPdfViewer);
@@ -47,7 +50,7 @@ export function SourceAnchorButton({
     <button
       type="button"
       data-source-anchor=""
-      className={`nodrag nopan inline-grid place-items-center rounded text-sky-700 hover:bg-sky-100 hover:text-sky-900 ${className}`}
+      className={`nodrag nopan ${children ? "inline-flex items-center gap-1" : "inline-grid place-items-center"} rounded text-sky-700 hover:bg-sky-100 hover:text-sky-900 ${className}`}
       title={title}
       aria-label={ariaLabel ?? title}
       onMouseDown={(e) => e.stopPropagation()}
@@ -61,7 +64,8 @@ export function SourceAnchorButton({
       }}
       {...hoverProps}
     >
-      <AnchorIcon size={size} strokeWidth={2.2} aria-hidden="true" />
+      <AnchorIcon size={size} strokeWidth={2.2} aria-hidden="true" className="shrink-0" />
+      {children}
       {preview}
     </button>
   );
