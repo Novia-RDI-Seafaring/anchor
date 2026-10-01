@@ -42,6 +42,7 @@ from sse_starlette.sse import EventSourceResponse
 from anchor.adapters.http.deps import apply_actor_override, get_intent_service
 from anchor.core.events.actor import Actor
 from anchor.core.intents.intent import INTENT_KINDS, INTENT_PENDING_EVENT
+from anchor.core.intents.timing import intent_timing
 from anchor.core.services.intent_service import (
     IntentService,
     SuggestionApplyError,
@@ -209,6 +210,23 @@ async def get_intent(
     if intent is None:
         return _not_found(intent_id)
     return {"intent": intent.to_dict()}
+
+
+@router.get("/{intent_id}/timing")
+async def intent_timing_route(
+    intent_id: str,
+    request: Request,
+    intents: IntentService = Depends(get_intent_service),
+):
+    """How long this intent took and how many calls it cost: pickup, first
+    suggestion, last agent item, resolution, and the adapter calls in its
+    window from the activity log, by kind and by name."""
+    intent = await intents.get(intent_id)
+    if intent is None:
+        return _not_found(intent_id)
+    log = getattr(request.app.state, "activity", None)
+    calls = log.read(since=intent.created_at) if log is not None else []
+    return {"timing": intent_timing(intent, calls)}
 
 
 @router.post("/{intent_id}/items")

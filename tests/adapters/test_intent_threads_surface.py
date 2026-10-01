@@ -231,7 +231,7 @@ def test_mcp_thread_tools_tiering():
     # Act, then ask, in one call is the agent's main write: core too.
     assert "intent_act" in tiering.CORE_NAMES
     gated = {"get_intent", "intent_ask", "intent_answer", "intent_apply", "intent_decline",
-             "intent_revert"}
+             "intent_revert", "intent_timing"}
     assert not (gated & tiering.CORE_NAMES)
     group = next(g for g in tiering._CAPABILITY_GROUPS if g["capability"] == "intent_threads")
     assert set(group["names"]) == gated
@@ -648,3 +648,60 @@ def test_cli_act(tmp_path):
     )
     assert out["suggestion"]["state"] == "applied"
     assert out["question"]["options"] == ["Yes", "No"]
+
+
+# -- the loop measured: timing on every adapter ----------------------------- #
+def test_http_records_calls_and_sums_them_per_intent(tmp_path):
+    s = make_in_memory_services()
+    app = build_app(
+        workspace_service=s.workspace, ingest_service=s.ingest, doc_store=s.doc_store,
+        bus=s.bus, intent_service=s.intents, canvases_dir=tmp_path / "canvases",
+    )
+    client = TestClient(app)
+    client.post("/api/workspaces", json={"slug": "cv"})
+    client.post("/api/workspaces/cv/nodes", json={"id": "n1", "label": "N1"})
+    intent = _ask(client)
+    client.get("/api/workspaces/cv/state")
+    client.post(f"/api/intents/{intent['id']}/act",
+                json={"text": "rename", "ops": RENAME, "actor": {"kind": "agent", "label": "claude"}})
+    log = client.get("/api/activity").json()
+    names = [e["name"] for e in log["entries"]]
+    assert "POST /api/intents" in names and "GET /api/workspaces/{}/state" in names
+    act = next(e for e in log["entries"] if e["name"] == "POST /api/intents/{}/act")
+    assert act["intent"] == intent["id"] and act["status"] == 200 and act["ms"] >= 0
+    assert "/api/activity" not in " ".join(names)
+    timing = client.get(f"/api/intents/{intent['id']}/timing").json()["timing"]
+    assert timing["agent_items"] == 1 and timing["first_suggestion_s"] is not None
+    # The in-memory services run on a fixed clock while the log keeps real
+    # time, so the window cannot be checked here; the MCP test below does.
+    assert "calls" in timing and "calls_by_name" in timing
+    assert client.get("/api/intents/ghost/timing").status_code == 404
+
+
+async def test_mcp_timing_counts_its_own_calls(_home):
+    create_env("local")
+    create_project(env_mod.resolve_environment("local"), "pumps")
+    router = ProjectRouter(env_arg="local")
+    server = build_mcp_server(router=router)
+    bundle = router.bundle_for("pumps")
+    await bundle.workspace.create_workspace("cv")
+    await bundle.workspace.add_node("cv", id="n1", label="N1", x=0, y=0)
+    intent = (await _call(server, "intent_ask", project="pumps", workspace_slug="cv",
+                          text="name this", targets=["n1"]))["intent"]
+    await _call(server, "intent_act", project="pumps", id=intent["id"], text="r", ops=RENAME)
+    timing = (await _call(server, "intent_timing", project="pumps", id=intent["id"]))["timing"]
+    assert timing["calls_by_kind"].get("mcp", 0) >= 1
+    assert timing["calls_by_name"]["intent_act"] == 1
+
+
+def test_cli_timing_and_activity(tmp_path):
+    from anchor.adapters.cli.services import _build_canvas_runtime
+
+    runtime = _build_canvas_runtime(tmp_path)
+    asyncio.run(runtime.workspace.create_workspace("cv"))
+    asyncio.run(runtime.workspace.add_node("cv", id="n1", label="N1", x=0, y=0))
+    intent = _cli(["intent", "ask", "cv", "--text", "name this", "--target", "n1"], tmp_path)["intent"]
+    _cli(["intent", "--actor", "agent:claude", "act", intent["id"], "--text", "r", "--ops", json.dumps(RENAME)], tmp_path)
+    timing = _cli(["intent", "timing", intent["id"]], tmp_path)["timing"]
+    assert timing["agent_items"] == 1
+    assert "entries" in _cli(["activity"], tmp_path)

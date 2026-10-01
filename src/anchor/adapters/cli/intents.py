@@ -188,6 +188,42 @@ def intent_show(
     typer.echo(json.dumps({"intent": intent.to_dict()}, indent=2))
 
 
+@intent_app.command("timing")
+def intent_timing_cmd(
+    intent_id: str = typer.Argument(..., help="The intent id."),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """How long an intent took and how many calls it cost."""
+    from anchor.core.intents.timing import intent_timing
+    from anchor.infra.activity import ActivityLog
+
+    svc = _intent_service(data_dir)
+    intent = asyncio.run(svc.get(intent_id))
+    if intent is None:
+        typer.echo(json.dumps({"error": "not_found", "id": intent_id}), err=True)
+        raise typer.Exit(code=1)
+    calls = ActivityLog(_runtime_data_dir(data_dir)).read(since=intent.created_at)
+    typer.echo(json.dumps({"timing": intent_timing(intent, calls)}, indent=2))
+
+
+def _runtime_data_dir(data_dir: Path) -> Path:
+    from anchor.adapters.cli.services import _build_canvas_runtime
+
+    return Path(_build_canvas_runtime(data_dir).config.data_dir)
+
+
+def activity(
+    since: float | None = typer.Option(None, "--since", help="Unix timestamp; entries from here on."),
+    limit: int = typer.Option(2000, "--limit", help="At most this many, newest kept."),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """The activity log: one entry per adapter call, oldest first."""
+    from anchor.infra.activity import ActivityLog
+
+    entries = ActivityLog(_runtime_data_dir(data_dir)).read(since=since, limit=limit)
+    typer.echo(json.dumps({"entries": entries, "count": len(entries)}, indent=2))
+
+
 @intent_app.command("ask")
 def intent_ask(
     slug: str = typer.Argument(..., help="The canvas the ask is anchored to."),

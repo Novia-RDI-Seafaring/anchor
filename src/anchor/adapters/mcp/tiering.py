@@ -235,6 +235,7 @@ _CAPABILITY_GROUPS: list[dict[str, Any]] = [
             "intent_apply",
             "intent_decline",
             "intent_revert",
+            "intent_timing",
         ],
     },
     {

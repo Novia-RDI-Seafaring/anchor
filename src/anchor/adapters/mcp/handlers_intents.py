@@ -25,12 +25,14 @@ from typing import Any
 
 from anchor.core.events.actor import Actor, actor_scope
 from anchor.core.intents.intent import INTENT_KINDS
+from anchor.core.intents.timing import intent_timing
 from anchor.core.services.intent_service import (
     IntentService,
     SuggestionApplyError,
     ThreadError,
     UnknownIntentKindError,
 )
+from anchor.infra.activity import ActivityLog
 
 TOOL_NAMES: set[str] = {
     "list_pending_intents",
@@ -45,6 +47,7 @@ TOOL_NAMES: set[str] = {
     "intent_apply",
     "intent_decline",
     "intent_revert",
+    "intent_timing",
 }
 
 _PLACE_SCHEMA: dict[str, Any] = {
@@ -175,6 +178,23 @@ def tool_definitions() -> list[dict[str, Any]]:
                         "description": "Outcome payload recorded on the intent.",
                     },
                 },
+                "required": ["id"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "intent_timing",
+            "description": (
+                "How long an intent took and how many calls it cost: seconds "
+                "from the ask to the first placed status (pickup), to the "
+                "first suggestion, to the last agent item and to resolution; "
+                "and the adapter calls made in that window, by kind and by "
+                "name, from the activity log. For looking at the loop itself, "
+                "not for handling the ask."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {"id": id_arg},
                 "required": ["id"],
                 "additionalProperties": False,
             },
@@ -451,12 +471,20 @@ async def call_tool(
     args: dict[str, Any],
     *,
     actor: Actor | None = None,
+    activity: ActivityLog | None = None,
 ) -> str:
     """Dispatch one intent tool call. Thread writes are attributed to
     ``actor`` (the connected MCP client, #322); with none given they fall
-    back to the generic ``{kind: "agent", label: "mcp-agent"}``."""
+    back to the generic ``{kind: "agent", label: "mcp-agent"}``. ``activity``
+    is the project's call log, for ``intent_timing``."""
     if actor is None:
         actor = Actor(kind="agent", label="mcp-agent")
+    if name == "intent_timing":
+        intent = await intents.get(args["id"])
+        if intent is None:
+            return json.dumps({"error": "not_found", "id": args.get("id")})
+        calls = activity.read(since=intent.created_at) if activity is not None else []
+        return json.dumps({"timing": intent_timing(intent, calls)})
     with actor_scope(actor):
         return await _dispatch(intents, name, args)
 

@@ -41,3 +41,12 @@ async def get_status(
         workspace=workspace,
         doc_store=doc_store,
     )
+
+
+@router.get("/activity")
+async def activity(request: Request, since: float | None = None, limit: int = 2000):
+    """The activity log: one entry per adapter call, oldest first. ``since``
+    is a unix timestamp; ``limit`` caps the tail."""
+    log = getattr(request.app.state, "activity", None)
+    entries = log.read(since=since, limit=max(1, min(limit, 20000))) if log is not None else []
+    return {"entries": entries, "count": len(entries)}
