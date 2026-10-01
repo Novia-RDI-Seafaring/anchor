@@ -115,16 +115,21 @@ class WorkspaceBatchOperations:
         actor: Actor,
         causation_id: str,
         approver: Actor,
+        restore: bool = False,
     ) -> tuple[Workspace, list[DomainEvent], dict[str, str]]:
         """Apply ``ops`` all-or-nothing. Returns the new state, the emitted
         envelopes (in order, cascades included) and the client-id -> real-id
         map. Raises :class:`BatchApplyError` (a ``CommandError``) when any op
-        fails planning; the canvas is untouched in that case."""
+        fails planning; the canvas is untouched in that case.
+
+        ``restore`` marks the batch as an undo the server wrote itself: the
+        elements go back exactly as they were, under their own ids, with the
+        review and evidence they had. See ``_plan``."""
         if not ops:
             raise CommandError("suggestion has no ops")
         async with self._locks.lock(slug):
             state = await self._store.load(slug)
-            planned, id_map = await self._plan(state, ops, approver=approver)
+            planned, id_map = await self._plan(state, ops, approver=approver, restore=restore)
             envelopes: list[DomainEvent] = []
             new_state = state
             for cmd, override in planned:
@@ -150,17 +155,29 @@ class WorkspaceBatchOperations:
         ops: list[dict[str, Any]],
         *,
         approver: Actor,
+        restore: bool = False,
     ) -> tuple[list[tuple[BaseModel, Actor | None]], dict[str, str]]:
         """Validate every op on a copy of ``state``; return the commands to
-        emit (with an actor override for cascades) and the id map."""
+        emit (with an actor override for cascades) and the id map.
+
+        A restore skips the two things a write normally does to what it is
+        given. It stamps no "accepted" review, because the element is going
+        back to whatever verdict it had. And it skips evidence preparation,
+        which throws away verdicts a caller sends: right for a caller, wrong
+        here, where the verdicts are the server's own record of the element
+        before the change. Putting a change back must leave the reader's
+        checks and approvals as they were. Only ``revert_suggestion`` asks
+        for it, with undo ops the server computed; no adapter can reach it.
+        """
         sim = state
         id_map: dict[str, str] = {}
         planned: list[tuple[BaseModel, Actor | None]] = []
         stamp = accepted_review(approver, self._clock.now())
         for index, op in enumerate(ops):
-            cmd = self._build(index, op, sim, id_map, stamp)
+            cmd = self._build(index, op, sim, id_map, None if restore else stamp, keep_ids=restore)
             try:
-                cmd = await self._prepare_command(sim, cmd)
+                if not restore:
+                    cmd = await self._prepare_command(sim, cmd)
                 validate_command(sim, cmd, node_types=self._node_types)
             except CommandError as exc:
                 # The reason returned to clients is templated from the op
@@ -185,7 +202,8 @@ class WorkspaceBatchOperations:
         op: Any,
         sim: Workspace,
         id_map: dict[str, str],
-        stamp: dict[str, Any],
+        stamp: dict[str, Any] | None,
+        keep_ids: bool = False,
     ) -> BaseModel:
         if not isinstance(op, dict):
             raise BatchApplyError(index, "op must be an object {type, payload}")
@@ -207,7 +225,15 @@ class WorkspaceBatchOperations:
 
         if cls is NodeAdded:
             client_id = payload.get("id")
-            real_id = new_id()
+            # An undo re-adds a node under the id it had, so the references
+            # everything else holds to it come back true. A proposal never
+            # keeps ids: its ids are the client's, and minting is what stops
+            # two proposals colliding.
+            real_id = (
+                client_id
+                if keep_ids and isinstance(client_id, str) and client_id
+                else new_id()
+            )
             if isinstance(client_id, str) and client_id:
                 id_map[client_id] = real_id
             payload["id"] = real_id
@@ -220,7 +246,11 @@ class WorkspaceBatchOperations:
             payload["data"] = self._stamped(payload.get("data"), stamp, index)
         elif cls is EdgeAdded:
             client_id = payload.get("id")
-            real_id = new_id()
+            real_id = (
+                client_id
+                if keep_ids and isinstance(client_id, str) and client_id
+                else new_id()
+            )
             if isinstance(client_id, str) and client_id:
                 id_map[client_id] = real_id
             payload["id"] = real_id
@@ -253,9 +283,9 @@ class WorkspaceBatchOperations:
             ) from exc
 
     @staticmethod
-    def _stamped(data: Any, stamp: dict[str, Any], index: int) -> dict[str, Any]:
+    def _stamped(data: Any, stamp: dict[str, Any] | None, index: int) -> dict[str, Any]:
         if data is None:
             data = {}
         if not isinstance(data, dict):
             raise BatchApplyError(index, "payload.data must be an object")
-        return {**data, "review": dict(stamp)}
+        return {**data, "review": dict(stamp)} if stamp is not None else dict(data)

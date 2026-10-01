@@ -231,6 +231,7 @@ class WorkspaceService:
         actor: Actor,
         causation_id: str,
         approver: Actor,
+        restore: bool = False,
     ) -> tuple[Workspace, list[DomainEvent], dict[str, str]]:
         """Apply a staged suggestion's ops all-or-nothing (#343).
 
@@ -243,9 +244,15 @@ class WorkspaceService:
         ``data.review = {state: "accepted", by: <approver>, at}``. Returns
         the new state, the emitted envelopes, and the client-id -> real-id
         map for ``NodeAdded`` / ``EdgeAdded`` ops that carried one.
+
+        ``restore`` puts elements back exactly as they were: under the ids
+        they carry, with their own review and evidence rather than a fresh
+        stamp and a re-derived verdict. What an undo needs, and nothing else
+        should ask for.
         """
         return await self._batch.apply(
             slug, ops, actor=actor, causation_id=causation_id, approver=approver,
+            restore=restore,
         )
 
     async def list_placeholders(self, slug: str) -> list[dict[str, Any]]:

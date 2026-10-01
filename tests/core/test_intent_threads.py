@@ -490,3 +490,236 @@ async def test_decline_records_comment_as_message_item():
         _, s2 = await svc.add_item(intent.id, type="suggestion", text="v2", ops=ops)
     intent, _ = await svc.decline_suggestion(intent.id, s2.id)
     assert intent.items[-1].id == s2.id
+
+
+# -- placed messages: ghosts of work to come (progress on the canvas) --------- #
+async def _svc_with_intent():
+    svc, ws, _bus, _clock = _services()
+    intent = await _thread(svc, ws)
+    return svc, intent
+
+
+async def test_placed_message_starts_planned_and_round_trips():
+    svc, intent = await _svc_with_intent()
+    with actor_scope(AGENT):
+        _, item = await svc.add_item(
+            intent.id, type="message", text="1. adding LKH-5 node",
+            place={"x": 355, "y": 391, "width": 351, "height": 182},
+        )
+    assert item.state == "planned"
+    assert item.place == {"x": 355.0, "y": 391.0, "width": 351.0, "height": 182.0}
+    # Survives the store, with the place intact.
+    again = await svc.get(intent.id)
+    assert again.items[0].place == item.place
+    assert ThreadItem.from_dict(item.to_dict()).place == item.place
+
+
+async def test_question_can_offer_options():
+    svc, intent = await _svc_with_intent()
+    with actor_scope(AGENT):
+        _, q = await svc.add_item(
+            intent.id, type="question", text="Every other word, or every other row?",
+            options=["every other word", "every other row", " every other row "],
+        )
+    # Kept in order, trimmed, without repeats; still an open question.
+    assert q.options == ["every other word", "every other row"]
+    assert q.state == "open"
+    again = await svc.get(intent.id)
+    assert again.items[0].options == q.options
+    assert ThreadItem.from_dict(q.to_dict()).options == q.options
+    # A press on an option is an ordinary answer.
+    with actor_scope(HUMAN):
+        _, answered = await svc.answer_question(intent.id, q.id, text="every other row")
+    assert answered.answer == "every other row" and answered.state == "answered"
+
+
+async def test_only_a_question_offers_options():
+    svc, intent = await _svc_with_intent()
+    with actor_scope(AGENT):
+        with pytest.raises(ThreadError) as exc:
+            await svc.add_item(intent.id, type="message", text="hi", options=["a"])
+        assert exc.value.code == "invalid_item"
+        with pytest.raises(ThreadError):
+            await svc.add_item(intent.id, type="question", text="?", options=["", "a"])
+
+
+async def test_message_without_place_has_no_state():
+    svc, intent = await _svc_with_intent()
+    with actor_scope(AGENT):
+        _, item = await svc.add_item(intent.id, type="message", text="fetching page 3")
+    assert item.state is None and item.place is None
+
+
+async def test_place_is_validated_not_coerced():
+    svc, intent = await _svc_with_intent()
+    with actor_scope(AGENT):
+        for bad in ({"x": 1}, {"x": "1", "y": 2}, {"x": 1, "y": float("nan")}, [1, 2], {"x": True, "y": 0}):
+            with pytest.raises(ThreadError) as exc:
+                await svc.add_item(intent.id, type="message", text="x", place=bad)
+            assert exc.value.code == "invalid_item"
+        # Only a message or a question can sit on the canvas.
+        with pytest.raises(ThreadError):
+            await svc.add_item(intent.id, type="result", text="done", place={"x": 0, "y": 0})
+
+
+async def test_update_item_moves_a_ghost_through_its_states():
+    svc, intent = await _svc_with_intent()
+    with actor_scope(AGENT):
+        _, ghost = await svc.add_item(
+            intent.id, type="message", text="2. adding dimensions", place={"x": 0, "y": 0},
+        )
+        _, active = await svc.update_item(
+            intent.id, ghost.id, text="fetching page 3", state="active",
+        )
+        assert active.state == "active" and active.text == "fetching page 3"
+        _, moved = await svc.update_item(intent.id, ghost.id, place={"x": 10, "y": 20})
+        assert moved.place == {"x": 10.0, "y": 20.0} and moved.state == "active"
+        _, done = await svc.update_item(intent.id, ghost.id, state="done")
+        assert done.state == "done"
+    # The change is the same item, not a new line in the thread.
+    assert len((await svc.get(intent.id)).items) == 1
+
+
+async def test_update_item_refuses_what_it_should():
+    svc, intent = await _svc_with_intent()
+    with actor_scope(AGENT):
+        _, plain = await svc.add_item(intent.id, type="message", text="note")
+        _, sugg = await svc.add_item(intent.id, type="suggestion", text="v1", ops=[
+            {"type": "NodeAdded", "payload": {"id": "n9", "label": "N9"}},
+        ])
+        # A state on a message that has no place means nothing.
+        with pytest.raises(ThreadError):
+            await svc.update_item(intent.id, plain.id, state="active")
+        # A state outside the vocabulary.
+        with pytest.raises(ThreadError):
+            await svc.update_item(intent.id, plain.id, place={"x": 0, "y": 0}, state="flying")
+        # Only messages change in place; a suggestion has its own verbs.
+        with pytest.raises(ThreadError):
+            await svc.update_item(intent.id, sugg.id, text="v2")
+        # Blank text is not an update.
+        with pytest.raises(ThreadError):
+            await svc.update_item(intent.id, plain.id, text="   ")
+        with pytest.raises(KeyError):
+            await svc.update_item("nope", plain.id, text="x")
+    # Giving a plain message a place makes it a ghost, starting planned.
+    with actor_scope(AGENT):
+        _, placed = await svc.update_item(intent.id, plain.id, place={"x": 5, "y": 5})
+    assert placed.state == "planned"
+
+
+# -- act, then ask: an applied suggestion can be put back ------------------- #
+async def test_apply_records_the_way_back_and_revert_takes_it():
+    svc, ws, _bus, _clock = _services()
+    intent = await _thread(svc, ws)  # n1 -- e1 --> n2 on cv
+    ops = [
+        {"type": "NodeUpdated", "payload": {"id": "n1", "fields": {"label": "Renamed"}}},
+        {"type": "NodeAdded", "payload": {"id": "c9", "label": "New", "x": 5, "y": 6}},
+        {"type": "EdgeAdded", "payload": {"id": "e9", "source": "n1", "target": "c9"}},
+        {"type": "NodeRemoved", "payload": {"id": "n2"}},
+    ]
+    with actor_scope(AGENT):
+        _, item = await svc.add_item(intent.id, type="suggestion", text="do it", ops=ops)
+        _, item, applied = await svc.apply_suggestion(intent.id, item.id)
+    assert item.state == SUGGESTION_APPLIED
+    real_c9 = applied["id_map"].get("c9", "c9")
+    mid = await ws.get_state("cv")
+    assert {n["id"] for n in mid["nodes"]} == {"n1", real_c9}
+    assert next(n for n in mid["nodes"] if n["id"] == "n1")["label"] == "Renamed"
+    # The way back, in reverse order, naming the ids that were actually used.
+    assert [op["type"] for op in item.undo_ops] == [
+        "NodeAdded", "EdgeAdded", "EdgeRemoved", "NodeRemoved", "NodeUpdated",
+    ]
+    assert item.undo_ops[2]["payload"]["id"] == applied["id_map"].get("e9", "e9")
+    assert item.undo_ops[3]["payload"]["id"] == real_c9
+    assert item.undo_ops[4]["payload"]["fields"] == {"label": "N1"}
+
+    with actor_scope(HUMAN):
+        _, item, reverted = await svc.revert_suggestion(intent.id, item.id)
+    assert item.state == "reverted"
+    after = await ws.get_state("cv")
+    assert {n["id"] for n in after["nodes"]} == {"n1", "n2"}
+    assert next(n for n in after["nodes"] if n["id"] == "n1")["label"] == "N1"
+    # The edge that cascaded away with n2 is back too.
+    assert {e["id"] for e in after["edges"]} == {"e1"}
+    assert reverted["versions"]
+
+
+async def test_revert_refuses_what_it_should():
+    svc, ws, _bus, _clock = _services()
+    intent = await _thread(svc, ws)
+    with actor_scope(AGENT):
+        _, pending = await svc.add_item(intent.id, type="suggestion", text="v1", ops=[
+            {"type": "NodeUpdated", "payload": {"id": "n1", "fields": {"label": "x"}}},
+        ])
+        _, note = await svc.add_item(intent.id, type="message", text="hi")
+    with pytest.raises(ThreadError) as exc:
+        await svc.revert_suggestion(intent.id, pending.id)
+    assert exc.value.code == "not_applied"
+    with pytest.raises(ThreadError):
+        await svc.revert_suggestion(intent.id, note.id)
+    # Applied before undo existed: refused with a reason, not guessed at.
+    # (A record from before this field: cleared through the store, since the
+    # service re-reads the thread rather than trusting what it handed out.)
+    with actor_scope(AGENT):
+        _, item, _ = await svc.apply_suggestion(intent.id, pending.id)
+    stored = await svc.get(intent.id)
+    stored.find_item(item.id).undo_ops = None
+    await svc._store.replace(stored)
+    with pytest.raises(ThreadError) as exc:
+        await svc.revert_suggestion(intent.id, item.id)
+    assert exc.value.code == "no_undo"
+
+
+async def test_revert_puts_back_the_checks_and_verdicts_it_found():
+    """Putting a change back leaves the card as it was, verdicts and all.
+
+    Evidence normally refuses verdicts a caller sends, so writing the old
+    rows back used to leave every row stale. The way back is the server's
+    own record of the card, so it is restored as it was.
+    """
+    from copy import deepcopy
+
+    from anchor.adapters.project_runtime import bind_workspace_sources
+    from anchor.extensions.anchor_pdfs.infra.memory_doc_store import MemoryDocStore
+    from tests.adapters.test_value_provenance_parity import _input, _regions
+
+    svc, ws, _bus, _clock = _services()
+    docs = MemoryDocStore()
+    await docs.write_gold_region_file("doc", 1, _regions())
+    bind_workspace_sources(ws, docs)
+    await ws.create_workspace("cv")
+    data = _input("exact")
+    data["rows"][0]["review"] = {"state": "accepted", "by": {"kind": "human", "label": "reader"}}
+    await ws.add_node("cv", id="spec", node_type="spec", data=data)
+    await ws.add_node("cv", id="aside", label="Aside", x=0, y=0,
+                      data={"review": {"state": "rejected", "by": {"kind": "human", "label": "reader"}}})
+    before = await ws.get_state("cv")
+    spec_before = deepcopy(next(n for n in before["nodes"] if n["id"] == "spec")["data"])
+    aside_before = deepcopy(next(n for n in before["nodes"] if n["id"] == "aside")["data"])
+    assert spec_before["rows"][0]["evidence"]["status"] == "verified"
+
+    with actor_scope(HUMAN):
+        intent = await svc.enqueue("user_request", origin_canvas_id="cv", payload={"text": "add +1"},
+                                   targets=[{"workspace_id": "cv", "node_id": "spec"}])
+    changed = deepcopy(spec_before["rows"])
+    changed[0]["value"] = "43"
+    ops = [
+        {"type": "NodeUpdated", "payload": {"id": "spec", "fields": {
+            "data": {"rows": changed, "description": "added 1"}}}},
+        {"type": "NodeRemoved", "payload": {"id": "aside"}},
+    ]
+    with actor_scope(AGENT):
+        _, item = await svc.add_item(intent.id, type="suggestion", text="+1", ops=ops)
+        _, item, _ = await svc.apply_suggestion(intent.id, item.id)
+    mid = await ws.get_state("cv")
+    assert next(n for n in mid["nodes"] if n["id"] == "spec")["data"]["rows"][0]["evidence"]["status"] == "stale"
+
+    with actor_scope(HUMAN):
+        await svc.revert_suggestion(intent.id, item.id)
+    after = await ws.get_state("cv")
+    nodes = {n["id"]: n for n in after["nodes"]}
+    # The card exactly as it was: the verified check, the reader's verdict,
+    # and no trace of the key the change added.
+    assert nodes["spec"]["data"] == spec_before
+    # A removed element comes back with its own verdict, not a fresh "accepted".
+    assert nodes["aside"]["data"] == aside_before

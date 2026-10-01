@@ -225,7 +225,11 @@ def test_mcp_thread_tools_tiering():
     names = {d["name"] for d in handlers_intents.tool_definitions()}
     assert names == handlers_intents.TOOL_NAMES
     assert "intent_add_item" in tiering.CORE_NAMES
-    gated = {"get_intent", "intent_ask", "intent_answer", "intent_apply", "intent_decline"}
+    # Narrating progress travels with adding the item: an agent that can post
+    # to a thread by default can move its own ghosts by default.
+    assert "intent_update_item" in tiering.CORE_NAMES
+    gated = {"get_intent", "intent_ask", "intent_answer", "intent_apply", "intent_decline",
+             "intent_revert"}
     assert not (gated & tiering.CORE_NAMES)
     group = next(g for g in tiering._CAPABILITY_GROUPS if g["capability"] == "intent_threads")
     assert set(group["names"]) == gated
@@ -365,3 +369,214 @@ def test_cli_thread_round_trip(tmp_path):
     assert "not_pending" in bad.output
     missing = runner.invoke(cli_app, ["intent", "show", "ghost", "--data-dir", str(tmp_path)])
     assert missing.exit_code == 1 and "not_found" in missing.output
+
+
+# -- placed messages reach every adapter (progress narrated on the canvas) -- #
+def test_http_placed_message_and_update():
+    client, _ = _client()
+    intent = _ask(client)
+    added = client.post(
+        f"/api/intents/{intent['id']}/items",
+        json={"type": "message", "text": "1. adding LKH-5 node",
+              "place": {"x": 355, "y": 391, "width": 351, "height": 182}},
+    )
+    assert added.status_code == 200, added.text
+    item = added.json()["item"]
+    assert item["state"] == "planned" and item["place"]["x"] == 355.0
+
+    moved = client.patch(
+        f"/api/intents/{intent['id']}/items/{item['id']}",
+        json={"text": "fetching page 3", "state": "active"},
+    )
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["item"] == {**item, "text": "fetching page 3", "state": "active"}
+
+    bad = client.patch(
+        f"/api/intents/{intent['id']}/items/{item['id']}", json={"state": "flying"},
+    )
+    assert bad.status_code == 400 and bad.json()["error"] == "invalid_item"
+    gone = client.patch(f"/api/intents/nope/items/{item['id']}", json={"text": "x"})
+    assert gone.status_code == 404
+
+
+async def test_mcp_placed_message_and_update(_home):
+    create_env("local")
+    create_project(env_mod.resolve_environment("local"), "pumps")
+    router = ProjectRouter(env_arg="local")
+    server = build_mcp_server(router=router)
+    bundle = router.bundle_for("pumps")
+    await bundle.workspace.create_workspace("cv")
+    await bundle.workspace.add_node("cv", id="n1", label="N1", x=0, y=0)
+    # Narrating progress is a default-on verb, like adding the item was.
+    assert "intent_update_item" in await _advertised(server)
+
+    intent = (await _call(server, "intent_ask", project="pumps", workspace_slug="cv",
+                          text="build it", targets=["n1"]))["intent"]
+    ghost = (await _call(
+        server, "intent_add_item", project="pumps", id=intent["id"],
+        type="message", text="2. adding dimensions", place={"x": 177, "y": 792},
+    ))["item"]
+    assert ghost["state"] == "planned" and ghost["author"]["kind"] == "agent"
+
+    done = (await _call(
+        server, "intent_update_item", project="pumps", id=intent["id"],
+        item_id=ghost["id"], text="landed", state="done",
+    ))["item"]
+    assert done["id"] == ghost["id"] and done["state"] == "done" and done["text"] == "landed"
+
+    # A state the vocabulary does not know never reaches the service: the
+    # tool's input schema refuses it first. What the service refuses is a
+    # state on a message that has no place to be in.
+    plain = (await _call(server, "intent_add_item", project="pumps", id=intent["id"],
+                         type="message", text="fetching page 3"))["item"]
+    err = await _call(server, "intent_update_item", project="pumps", id=intent["id"],
+                      item_id=plain["id"], state="active")
+    assert err["error"] == "invalid_item"
+
+
+def test_cli_placed_message_and_update(tmp_path):
+    from anchor.adapters.cli.services import _build_canvas_runtime
+
+    runtime = _build_canvas_runtime(tmp_path)
+    asyncio.run(runtime.workspace.create_workspace("cv"))
+    asyncio.run(runtime.workspace.add_node("cv", id="n1", label="N1", x=0, y=0))
+    intent = _cli(["intent", "ask", "cv", "--text", "build it", "--target", "n1"], tmp_path)["intent"]
+
+    ghost = _cli(
+        ["intent", "--actor", "agent:claude", "add-item", intent["id"],
+         "--type", "message", "--text", "3. adding drawing", "--place", "300,900,200,120"],
+        tmp_path,
+    )["item"]
+    assert ghost["state"] == "planned"
+    assert ghost["place"] == {"x": 300.0, "y": 900.0, "width": 200.0, "height": 120.0}
+
+    active = _cli(
+        ["intent", "update-item", intent["id"], ghost["id"], "--state", "active",
+         "--text", "cropping region 3/r1"],
+        tmp_path,
+    )["item"]
+    assert active["state"] == "active" and active["text"] == "cropping region 3/r1"
+
+    # A malformed --place is refused up front, with a JSON error on stderr.
+    bad = runner.invoke(
+        cli_app, ["intent", "add-item", intent["id"], "--type", "message", "--text", "x",
+                  "--place", "1,2,3", "--data-dir", str(tmp_path)],
+    )
+    assert bad.exit_code == 1
+
+
+# -- a question's options reach every adapter ------------------------------ #
+def test_http_question_options():
+    client, _ = _client()
+    intent = _ask(client)
+    added = client.post(
+        f"/api/intents/{intent['id']}/items",
+        json={"type": "question", "text": "Every other word, or every other row?",
+              "options": ["every other word", "every other row"]},
+    )
+    assert added.status_code == 200, added.text
+    item = added.json()["item"]
+    assert item["options"] == ["every other word", "every other row"]
+    answered = client.post(
+        f"/api/intents/{intent['id']}/items/{item['id']}/answer",
+        json={"text": "every other row"},
+    )
+    assert answered.status_code == 200 and answered.json()["item"]["answer"] == "every other row"
+    bad = client.post(
+        f"/api/intents/{intent['id']}/items",
+        json={"type": "message", "text": "hi", "options": ["a"]},
+    )
+    assert bad.status_code == 400 and bad.json()["error"] == "invalid_item"
+
+
+async def test_mcp_question_options(_home):
+    create_env("local")
+    create_project(env_mod.resolve_environment("local"), "pumps")
+    router = ProjectRouter(env_arg="local")
+    server = build_mcp_server(router=router)
+    bundle = router.bundle_for("pumps")
+    await bundle.workspace.create_workspace("cv")
+    await bundle.workspace.add_node("cv", id="n1", label="N1", x=0, y=0)
+    intent = (await _call(server, "intent_ask", project="pumps", workspace_slug="cv",
+                          text="every other word swedish", targets=["n1"]))["intent"]
+    q = (await _call(
+        server, "intent_add_item", project="pumps", id=intent["id"],
+        type="question", text="Word or row?", options=["every other word", "every other row"],
+    ))["item"]
+    assert q["options"] == ["every other word", "every other row"] and q["state"] == "open"
+
+
+def test_cli_question_options(tmp_path):
+    from anchor.adapters.cli.services import _build_canvas_runtime
+
+    runtime = _build_canvas_runtime(tmp_path)
+    asyncio.run(runtime.workspace.create_workspace("cv"))
+    asyncio.run(runtime.workspace.add_node("cv", id="n1", label="N1", x=0, y=0))
+    intent = _cli(["intent", "ask", "cv", "--text", "build it", "--target", "n1"], tmp_path)["intent"]
+    q = _cli(
+        ["intent", "--actor", "agent:claude", "add-item", intent["id"],
+         "--type", "question", "--text", "Word or row?",
+         "--option", "every other word", "--option", "every other row"],
+        tmp_path,
+    )["item"]
+    assert q["options"] == ["every other word", "every other row"]
+
+
+# -- revert reaches every adapter ------------------------------------------- #
+def test_http_revert_puts_it_back():
+    client, s = _client()
+    intent = _ask(client)
+    added = client.post(f"/api/intents/{intent['id']}/items",
+                        json={"type": "suggestion", "text": "rename", "ops": RENAME})
+    item = added.json()["item"]
+    assert client.post(f"/api/intents/{intent['id']}/items/{item['id']}/apply").status_code == 200
+
+    def label_of_n1():
+        state = asyncio.run(s.workspace.get_state("cv"))
+        return next(n["label"] for n in state["nodes"] if n["id"] == "n1")
+
+    assert label_of_n1() == "Pump A"
+    back = client.post(f"/api/intents/{intent['id']}/items/{item['id']}/revert")
+    assert back.status_code == 200, back.text
+    assert back.json()["item"]["state"] == "reverted"
+    assert label_of_n1() == "N1"
+    again = client.post(f"/api/intents/{intent['id']}/items/{item['id']}/revert")
+    assert again.status_code == 400 and again.json()["error"] == "not_applied"
+
+
+async def test_mcp_revert_puts_it_back(_home):
+    create_env("local")
+    create_project(env_mod.resolve_environment("local"), "pumps")
+    router = ProjectRouter(env_arg="local")
+    server = build_mcp_server(router=router)
+    bundle = router.bundle_for("pumps")
+    await bundle.workspace.create_workspace("cv")
+    await bundle.workspace.add_node("cv", id="n1", label="N1", x=0, y=0)
+    intent = (await _call(server, "intent_ask", project="pumps", workspace_slug="cv",
+                          text="rename", targets=["n1"]))["intent"]
+    item = (await _call(server, "intent_add_item", project="pumps", id=intent["id"],
+                        type="suggestion", text="rename", ops=RENAME))["item"]
+    await _call(server, "intent_apply", project="pumps", id=intent["id"], item_id=item["id"])
+    back = await _call(server, "intent_revert", project="pumps", id=intent["id"],
+                       item_id=item["id"])
+    assert back["item"]["state"] == "reverted"
+    state = await bundle.workspace.get_state("cv")
+    assert state["nodes"][0]["label"] == "N1"
+
+
+def test_cli_revert_puts_it_back(tmp_path):
+    from anchor.adapters.cli.services import _build_canvas_runtime
+
+    runtime = _build_canvas_runtime(tmp_path)
+    asyncio.run(runtime.workspace.create_workspace("cv"))
+    asyncio.run(runtime.workspace.add_node("cv", id="n1", label="N1", x=0, y=0))
+    intent = _cli(["intent", "ask", "cv", "--text", "rename", "--target", "n1"], tmp_path)["intent"]
+    ops_file = tmp_path / "ops.json"
+    ops_file.write_text(json.dumps(RENAME))
+    item = _cli(["intent", "add-item", intent["id"], "--type", "suggestion", "--text", "v1",
+                 "--ops", f"@{ops_file}"], tmp_path)["item"]
+    _cli(["intent", "apply", intent["id"], item["id"]], tmp_path)
+    back = _cli(["intent", "revert", intent["id"], item["id"]], tmp_path)
+    assert back["item"]["state"] == "reverted"
+    state = asyncio.run(runtime.workspace.get_state("cv"))
+    assert state["nodes"][0]["label"] == "N1"

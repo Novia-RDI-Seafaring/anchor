@@ -78,7 +78,9 @@ async def test_base_single_project_advertises_core_not_full_surface(tmp_path):
     #
     # Raise this only for a tool the agent cannot do without: the point of the
     # cap is that the default list stays a curated slice of a ~45-tool surface.
-    assert len(names) <= 27
+    # +1 for intent_update_item: an agent narrating its own progress on the
+    # canvas cannot be asked to enable a capability first.
+    assert len(names) <= 28
     assert set(names) == set(tiering.CORE_NAMES) - tiering.CORE_LIFECYCLE_NAMES
     # No lifecycle tools in single-project mode.
     assert "create_environment" not in names
@@ -92,7 +94,7 @@ async def test_base_multiproject_advertises_core_plus_lifecycle(tmp_path):
     # (create_project, list_projects), so the cap is one higher than the
     # single-project slice: 24 curated (intent_add_item joined in #343) +
     # 2 lifecycle = 26 with server_info.
-    assert len(names) <= 29
+    assert len(names) <= 30  # +1 for intent_update_item, as above
     assert tiering.CORE_NAMES.issubset(set(names))
     # The long tail is gated out by default.
     for gated in ("fmu_inspect", "inspect", "sysml_render", "create_environment",

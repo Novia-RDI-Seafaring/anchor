@@ -76,11 +76,28 @@ THREAD_ITEM_TYPES: frozenset[str] = frozenset(
 QUESTION_OPEN = "open"
 QUESTION_ANSWERED = "answered"
 
-#: ``suggestion`` states. ``message`` and ``result`` carry ``state: None``.
+#: ``message`` states, for a message that has a *place* on the canvas.
+#:
+#: A placed message is a ghost of work to come: "1. adding LKH-5 node" drawn
+#: where the node will go, so the reader watches the plan take shape rather
+#: than waiting for the canvas to change all at once. ``planned`` is grey and
+#: dotted; ``active`` is the one being worked on now; ``done`` means the real
+#: element has landed and the ghost may go. A message with no place keeps
+#: ``state: None`` and is just a line in the thread.
+PLACED_PLANNED = "planned"
+PLACED_ACTIVE = "active"
+PLACED_DONE = "done"
+PLACE_STATES: frozenset[str] = frozenset({PLACED_PLANNED, PLACED_ACTIVE, PLACED_DONE})
+
+#: ``suggestion`` states. ``result`` carries ``state: None``.
 SUGGESTION_PENDING = "pending"
 SUGGESTION_APPLIED = "applied"
 SUGGESTION_DECLINED = "declined"
 SUGGESTION_SUPERSEDED = "superseded"
+#: Applied, then put back by a human. The other half of "act, then ask": an
+#: agent may apply its own suggestion at once when the ask is plain, and the
+#: reader's verdict becomes keep-or-revert rather than approve-or-decline.
+SUGGESTION_REVERTED = "reverted"
 
 #: The canvas event vocabulary a suggestion's ops may use. Apply reuses the
 #: workspace reducer, so no new mutation code exists for suggestions.
@@ -121,6 +138,18 @@ class ThreadItem(BaseModel):
     ops: list[dict[str, Any]] | None = None
     supersedes: str | None = None
     applied_versions: list[int] | None = None
+    #: Where on the canvas this item belongs, ``{x, y, width?, height?}`` in
+    #: canvas coordinates. Optional: most items are lines in a thread, not
+    #: things on the board. The sketch that came in with the intent carries
+    #: positions too, so an agent building what was drawn can put its ghosts
+    #: where the reader put the shapes.
+    place: dict[str, Any] | None = None
+    #: The ops that undo this suggestion, captured at apply time against the
+    #: canvas as it was. What makes "put it back" cheap enough to offer.
+    undo_ops: list[dict[str, Any]] | None = None
+    #: Question only: answers the asker can offer, so the human can reply
+    #: with one press instead of typing. Free text is still an answer.
+    options: list[str] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -139,6 +168,12 @@ class ThreadItem(BaseModel):
             d["supersedes"] = self.supersedes
         if self.applied_versions is not None:
             d["applied_versions"] = list(self.applied_versions)
+        if self.place is not None:
+            d["place"] = dict(self.place)
+        if self.undo_ops is not None:
+            d["undo_ops"] = [dict(op) for op in self.undo_ops]
+        if self.options is not None:
+            d["options"] = list(self.options)
         return d
 
     @classmethod
@@ -169,6 +204,17 @@ class ThreadItem(BaseModel):
             ),
             applied_versions=(
                 [int(v) for v in versions_raw] if isinstance(versions_raw, list) else None
+            ),
+            place=(dict(raw["place"]) if isinstance(raw.get("place"), dict) else None),
+            undo_ops=(
+                [dict(op) for op in raw["undo_ops"] if isinstance(op, dict)]
+                if isinstance(raw.get("undo_ops"), list)
+                else None
+            ),
+            options=(
+                [str(o) for o in raw["options"] if isinstance(o, str) and o.strip()]
+                if isinstance(raw.get("options"), list)
+                else None
             ),
         )
 

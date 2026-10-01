@@ -217,7 +217,7 @@ async def add_item(
     body: dict,
     intents: IntentService = Depends(get_intent_service),
 ):
-    """Append a thread item: ``{type, text?, ops?, supersedes?}``."""
+    """Append a thread item: ``{type, text?, ops?, supersedes?, place?, options?}``."""
     _actor_override(body)
     try:
         intent, item = await intents.add_item(
@@ -226,6 +226,37 @@ async def add_item(
             text=body.get("text") or "",
             ops=body.get("ops"),
             supersedes=body.get("supersedes"),
+            place=body.get("place"),
+            options=body.get("options"),
+        )
+    except KeyError:
+        return _not_found(intent_id)
+    except ThreadError as exc:
+        return _thread_error(exc)
+    return {"intent": intent.to_dict(), "item": item.to_dict()}
+
+
+@router.patch("/{intent_id}/items/{item_id}")
+async def update_item(
+    intent_id: str,
+    item_id: str,
+    body: dict,
+    intents: IntentService = Depends(get_intent_service),
+):
+    """Change a message in place: ``{text?, state?, place?}``.
+
+    For work in progress. A ghost drawn where a node will go moves from
+    ``planned`` to ``active`` to ``done`` here, and its status line is
+    rewritten rather than the thread growing an entry per step.
+    """
+    _actor_override(body)
+    try:
+        intent, item = await intents.update_item(
+            intent_id,
+            item_id,
+            text=body.get("text"),
+            state=body.get("state"),
+            place=body.get("place"),
         )
     except KeyError:
         return _not_found(intent_id)
@@ -274,6 +305,24 @@ async def apply_suggestion(
     except ThreadError as exc:
         return _thread_error(exc)
     return {"intent": intent.to_dict(), "item": item.to_dict(), "applied": applied}
+
+
+@router.post("/{intent_id}/items/{item_id}/revert")
+async def revert_suggestion(
+    intent_id: str,
+    item_id: str,
+    body: dict | None = None,
+    intents: IntentService = Depends(get_intent_service),
+):
+    """Put an applied suggestion back, all-or-nothing, from its recorded undo."""
+    _actor_override(body)
+    try:
+        intent, item, reverted = await intents.revert_suggestion(intent_id, item_id)
+    except KeyError:
+        return _not_found(intent_id)
+    except ThreadError as exc:
+        return _thread_error(exc)
+    return {"intent": intent.to_dict(), "item": item.to_dict(), "reverted": reverted}
 
 
 @router.post("/{intent_id}/items/{item_id}/decline")

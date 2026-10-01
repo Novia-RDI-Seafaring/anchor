@@ -39,9 +39,29 @@ TOOL_NAMES: set[str] = {
     "get_intent",
     "intent_ask",
     "intent_add_item",
+    "intent_update_item",
     "intent_answer",
     "intent_apply",
     "intent_decline",
+    "intent_revert",
+}
+
+_PLACE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "description": (
+        "Where on the canvas this item belongs, in canvas coordinates. A "
+        "message with a place shows as a ghost box there; a question with a "
+        "place is asked beside that spot. The intent's `sketch`, when it has "
+        "one, carries the positions the human drew -- use those."
+    ),
+    "properties": {
+        "x": {"type": "number"},
+        "y": {"type": "number"},
+        "width": {"type": "number"},
+        "height": {"type": "number"},
+    },
+    "required": ["x", "y"],
+    "additionalProperties": False,
 }
 
 _OP_SCHEMA: dict[str, Any] = {
@@ -95,7 +115,19 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "Each record carries `targets` ([{workspace_id, node_id}], the "
                 "canvas selection the ask is anchored to), `base_version` (the "
                 "canvas version when it was asked) and `items` (the thread so "
-                "far). Handle each one, reply in its thread with "
+                "far). A request drawn on the canvas also carries what the "
+                "drawing said, resolved in the browser: `payload.sketch` (boxes "
+                "and lines drawn as new elements), `cuts` (a line across a "
+                "table: after which row), `strikes` (an edge crossed out) and "
+                "`pointers` (where each label's line starts: the card and, on "
+                "a table, the row). Read `pointers` before asking what a "
+                "request applies to, and offer the place the line started as "
+                "the first option. Handle each one: the moment you pick one up, post a "
+                "`message` saying what you are about to do, with a `place` "
+                "where the result will land so a ghost box shows there while "
+                "you work; do it; then mark that message `done` with "
+                "intent_update_item. A board that shows nothing while the agent "
+                "works reads as an agent doing nothing. Reply in its thread with "
                 "intent_add_item, then call resolve_intent. A thread whose "
                 "latest item is your own `question` with state `open` is "
                 "still waiting on the human: skip it and come back later. "
@@ -189,11 +221,25 @@ def tool_definitions() -> list[dict[str, Any]]:
             "name": "intent_add_item",
             "description": (
                 "Reply in a thread. `type` is one of: `message` (a comment or "
-                "progress note), `question` (the ask is ambiguous: ask, then "
+                "progress note), `question` (the ask is ambiguous: ask, offer the "
+                "likely readings as `options` so the answer is one press, then "
                 "wait for the human's answer via get_intent), `suggestion` (a "
                 "STAGED batch of canvas ops with `text` as the rationale; the "
                 "human previews it and approves or declines, and nothing "
-                "changes on the canvas until approval), `result` (a summary "
+                "changes on the canvas until approval -- the preview IS your "
+                "ops, drawn on the board where they will land: a NodeAdded "
+                "shows as the card with its rows at its x/y, a NodeUpdated as "
+                "the card as it will read, an EdgeAdded as the line; so give "
+                "every NodeAdded a real position and full data, and put the "
+                "text to work on WHY rather than on describing what the ops "
+                "already show). When the ask is plain and the change is small -- "
+                "split this table here, add the card I drew -- do not wait: post "
+                "the suggestion and call intent_apply on it yourself. The change "
+                "lands on the canvas at once and the human gets keep / put it "
+                "back instead of approve / decline; the way back is recorded "
+                "when you apply, so nothing is at risk. Reserve the pending "
+                "step for changes that are large, destructive, or genuinely "
+                "ambiguous), `result` (a summary "
                 "when you are done; then call resolve_intent). Never edit a "
                 "thread's targeted elements directly: propose a suggestion. "
                 "Group ops that depend on each other into one suggestion; keep "
@@ -224,8 +270,50 @@ def tool_definitions() -> list[dict[str, Any]]:
                         "type": "string",
                         "description": "Suggestion only: the earlier suggestion this revises.",
                     },
+                    "place": _PLACE_SCHEMA,
+                    "options": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Question only: answers to offer, each one press for the "
+                            "human. Offer them whenever the ask has a few likely "
+                            "readings ('every other word' / 'every other row'): a "
+                            "press costs less than a sentence, and the reply comes "
+                            "back as the question's `answer`. Free text still answers."
+                        ),
+                    },
                 },
                 "required": ["id", "type"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "intent_update_item",
+            "description": (
+                "Change one of your own `message` items in place: its `text`, "
+                "its `state`, or its `place`. Use it to narrate work in "
+                "progress on the canvas. Post a placed message per element you "
+                "are about to add ('1. adding LKH-5 node' at the sketch's "
+                "coordinates): it shows as a ghost, `planned`. Set `state: "
+                "active` on the one you are working on now, rewrite `text` as "
+                "you go ('fetching page 3', 'found the measures table'), and "
+                "set `state: done` once the real element has landed so the "
+                "ghost can go. A message with no place has no state."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": id_arg,
+                    "item_id": {"type": "string", "description": "The message item to change."},
+                    "text": {"type": "string", "description": "New text."},
+                    "state": {
+                        "type": "string",
+                        "enum": ["planned", "active", "done"],
+                        "description": "Placed messages only.",
+                    },
+                    "place": _PLACE_SCHEMA,
+                },
+                "required": ["id", "item_id"],
                 "additionalProperties": False,
             },
         },
@@ -259,6 +347,24 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {"id": id_arg, "item_id": item_arg},
+                "required": ["id", "item_id"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "intent_revert",
+            "description": (
+                "Put an applied suggestion back (a human's verb). The inverse "
+                "ops were recorded when it was applied, so this is atomic and "
+                "exact. Use it when an agent applied its change directly and "
+                "the human wants the canvas as it was."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": id_arg,
+                    "item_id": {"type": "string", "description": "The applied suggestion."},
+                },
                 "required": ["id", "item_id"],
                 "additionalProperties": False,
             },
@@ -344,6 +450,17 @@ async def _dispatch(intents: IntentService, name: str, args: dict[str, Any]) -> 
                 text=args.get("text") or "",
                 ops=args.get("ops"),
                 supersedes=args.get("supersedes"),
+                place=args.get("place"),
+                options=args.get("options"),
+            )
+            return json.dumps({"intent": intent.to_dict(), "item": item.to_dict()})
+        if name == "intent_update_item":
+            intent, item = await intents.update_item(
+                args["id"],
+                args["item_id"],
+                text=args.get("text"),
+                state=args.get("state"),
+                place=args.get("place"),
             )
             return json.dumps({"intent": intent.to_dict(), "item": item.to_dict()})
         if name == "intent_answer":
@@ -357,6 +474,11 @@ async def _dispatch(intents: IntentService, name: str, args: dict[str, Any]) -> 
             )
             return json.dumps(
                 {"intent": intent.to_dict(), "item": item.to_dict(), "applied": applied}
+            )
+        if name == "intent_revert":
+            intent, item, reverted = await intents.revert_suggestion(args["id"], args["item_id"])
+            return json.dumps(
+                {"intent": intent.to_dict(), "item": item.to_dict(), "reverted": reverted}
             )
         if name == "intent_decline":
             intent, item = await intents.decline_suggestion(
