@@ -228,6 +228,8 @@ def test_mcp_thread_tools_tiering():
     # Narrating progress travels with adding the item: an agent that can post
     # to a thread by default can move its own ghosts by default.
     assert "intent_update_item" in tiering.CORE_NAMES
+    # Act, then ask, in one call is the agent's main write: core too.
+    assert "intent_act" in tiering.CORE_NAMES
     gated = {"get_intent", "intent_ask", "intent_answer", "intent_apply", "intent_decline",
              "intent_revert"}
     assert not (gated & tiering.CORE_NAMES)
@@ -580,3 +582,69 @@ def test_cli_revert_puts_it_back(tmp_path):
     assert back["item"]["state"] == "reverted"
     state = asyncio.run(runtime.workspace.get_state("cv"))
     assert state["nodes"][0]["label"] == "N1"
+
+
+# -- act, then ask: one call on every adapter -------------------------------- #
+def test_http_act_in_one_call():
+    client, _ = _client()
+    intent = _ask(client)
+    status = client.post(
+        f"/api/intents/{intent['id']}/items",
+        json={"type": "message", "text": "renaming", "place": {"x": 1, "y": 2},
+              "actor": {"kind": "agent", "label": "claude"}},
+    ).json()["item"]
+    rsp = client.post(
+        f"/api/intents/{intent['id']}/act",
+        json={"text": "Renamed N1", "ops": RENAME, "done": [status["id"]],
+              "question": {"text": "Right?", "options": ["Yes", "No"]},
+              "actor": {"kind": "agent", "label": "claude"}},
+    )
+    assert rsp.status_code == 200, rsp.text
+    body = rsp.json()
+    assert body["suggestion"]["state"] == "applied"
+    assert body["applied"]["versions"]
+    assert body["question"]["options"] == ["Yes", "No"]
+    assert body["result"] is None
+    items = {i["id"]: i for i in body["intent"]["items"]}
+    assert items[status["id"]]["state"] == "done"
+    # A failed apply: 409, nothing after the suggestion happened.
+    bad = client.post(
+        f"/api/intents/{intent['id']}/act",
+        json={"text": "ghost", "ops": [{"type": "NodeUpdated", "payload": {"id": "nope", "fields": {}}}],
+              "question": {"text": "?"}},
+    )
+    assert bad.status_code == 409 and bad.json()["error"] == "apply_failed"
+    assert client.post("/api/intents/ghost/act", json={"text": "x", "ops": RENAME}).status_code == 404
+
+
+async def test_mcp_act_is_core_and_works(_home):
+    create_env("local")
+    create_project(env_mod.resolve_environment("local"), "pumps")
+    router = ProjectRouter(env_arg="local")
+    server = build_mcp_server(router=router)
+    bundle = router.bundle_for("pumps")
+    await bundle.workspace.create_workspace("cv")
+    await bundle.workspace.add_node("cv", id="n1", label="N1", x=0, y=0)
+    assert "intent_act" in await _advertised(server)
+    intent = (await _call(server, "intent_ask", project="pumps", workspace_slug="cv",
+                          text="name this", targets=["n1"]))["intent"]
+    out = await _call(server, "intent_act", project="pumps", id=intent["id"],
+                      text="Renamed N1", ops=RENAME, result="done", resolve=True)
+    assert out["suggestion"]["state"] == "applied" and out["result"]["type"] == "result"
+    assert out["intent"]["status"] == "resolved"
+
+
+def test_cli_act(tmp_path):
+    from anchor.adapters.cli.services import _build_canvas_runtime
+
+    runtime = _build_canvas_runtime(tmp_path)
+    asyncio.run(runtime.workspace.create_workspace("cv"))
+    asyncio.run(runtime.workspace.add_node("cv", id="n1", label="N1", x=0, y=0))
+    intent = _cli(["intent", "ask", "cv", "--text", "name this", "--target", "n1"], tmp_path)["intent"]
+    out = _cli(
+        ["intent", "--actor", "agent:claude", "act", intent["id"], "--text", "Renamed N1",
+         "--ops", json.dumps(RENAME), "--ask", "Right?", "--option", "Yes", "--option", "No"],
+        tmp_path,
+    )
+    assert out["suggestion"]["state"] == "applied"
+    assert out["question"]["options"] == ["Yes", "No"]

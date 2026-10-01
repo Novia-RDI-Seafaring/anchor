@@ -83,6 +83,9 @@ CORE_INTENT_NAMES: set[str] = {
     # Narrating progress travels with adding the item: an agent that can post
     # to a thread by default can move its own ghosts by default.
     "intent_update_item",
+    # Act, then ask, in one call: the agent's main write after it knows
+    # what to do, so it rides with the inbox rather than behind a gate.
+    "intent_act",
 }
 
 # The canvas verbs an agent reaches for first.

@@ -252,6 +252,53 @@ def intent_add_item(
     typer.echo(json.dumps({"intent": intent.to_dict(), "item": item.to_dict()}, indent=2))
 
 
+@intent_app.command("act")
+def intent_act(
+    intent_id: str = typer.Argument(..., help="The intent (thread) id."),
+    text: str = typer.Option(..., "--text", help="What the change does."),
+    ops: str = typer.Option(..., "--ops", help="Ops as a JSON array, or @path to a JSON file."),
+    supersedes: str | None = typer.Option(None, "--supersedes", help="An earlier suggestion this revises."),
+    stage: bool = typer.Option(False, "--stage", help="Stage for the human instead of applying."),
+    done: list[str] | None = typer.Option(None, "--done", help="A placed status to mark done; repeat."),
+    ask: str | None = typer.Option(None, "--ask", help="A question to follow the change."),
+    option: list[str] | None = typer.Option(None, "--option", help="An answer to offer; repeat."),
+    ask_place: str | None = typer.Option(None, "--ask-place", help="Where the question sits: 'x,y' or 'x,y,w,h'."),
+    result: str | None = typer.Option(None, "--result", help="A closing note."),
+    resolve: bool = typer.Option(False, "--resolve", help="Resolve the thread as well."),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Act, then ask, in one call: suggest, apply, mark statuses done, ask."""
+    svc = _intent_service(data_dir)
+    question = None
+    if ask:
+        question = {"text": ask, "options": list(option) if option else None, "place": _place_arg(ask_place)}
+    out = _run(
+        svc.act(
+            intent_id,
+            text=text,
+            ops=_json_arg(ops, "--ops"),
+            supersedes=supersedes,
+            apply=not stage,
+            done=list(done) if done else None,
+            question=question,
+            result=result,
+            resolve=resolve,
+        )
+    )
+    typer.echo(
+        json.dumps(
+            {
+                "intent": out["intent"].to_dict(),
+                "suggestion": out["suggestion"].to_dict(),
+                "applied": out["applied"],
+                "question": out["question"].to_dict() if out["question"] else None,
+                "result": out["result"].to_dict() if out["result"] else None,
+            },
+            indent=2,
+        )
+    )
+
+
 @intent_app.command("update-item")
 def intent_update_item(
     intent_id: str = typer.Argument(..., help="The intent (thread) id."),

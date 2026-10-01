@@ -236,6 +236,50 @@ async def add_item(
     return {"intent": intent.to_dict(), "item": item.to_dict()}
 
 
+@router.post("/{intent_id}/act")
+async def act(
+    intent_id: str,
+    body: dict,
+    intents: IntentService = Depends(get_intent_service),
+):
+    """Act, then ask, in one call: ``{text, ops, supersedes?, apply?, done?,
+    question?, result?, resolve?}``.
+
+    Posts a suggestion and applies it, marks the ``done`` placed messages
+    done, then adds a ``question`` (``{text, options?, place?}``) or a
+    ``result``, and resolves if asked. 409 ``apply_failed`` means nothing
+    after the suggestion happened and the canvas is untouched.
+    """
+    _actor_override(body)
+    try:
+        out = await intents.act(
+            intent_id,
+            text=str(body.get("text") or ""),
+            ops=body.get("ops") or [],
+            supersedes=body.get("supersedes"),
+            apply=body.get("apply", True) is not False,
+            done=body.get("done"),
+            question=body.get("question"),
+            result=body.get("result"),
+            resolve=bool(body.get("resolve")),
+        )
+    except KeyError:
+        return _not_found(intent_id)
+    except ThreadError as exc:
+        return _thread_error(exc)
+    return _act_payload(out)
+
+
+def _act_payload(out: dict) -> dict:
+    return {
+        "intent": out["intent"].to_dict(),
+        "suggestion": out["suggestion"].to_dict(),
+        "applied": out["applied"],
+        "question": out["question"].to_dict() if out["question"] else None,
+        "result": out["result"].to_dict() if out["result"] else None,
+    }
+
+
 @router.patch("/{intent_id}/items/{item_id}")
 async def update_item(
     intent_id: str,
