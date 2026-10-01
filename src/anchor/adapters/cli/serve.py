@@ -18,6 +18,11 @@ def _find_free_port(host: str, start: int, *, limit: int = 20) -> int:
     """First bindable port at or after `start`. Raises OSError if none in range."""
     for candidate in range(start, start + limit):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            # The server binds with SO_REUSEADDR, so a connection still in
+            # TIME_WAIT from the last run does not stop it. The probe must
+            # judge the port the same way, or a restart lands one port up
+            # while every client keeps knocking on the old one.
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 probe.bind((host, candidate))
                 return candidate
