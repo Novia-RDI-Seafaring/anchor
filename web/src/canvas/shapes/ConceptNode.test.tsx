@@ -288,33 +288,17 @@ describe("ConceptNode review badge", () => {
     );
   }
 
-  it("renders the proposed badge with the proposing agent's label", () => {
-    const { queryByTestId } = renderWith({
-      label: "Guess",
-      review: { state: "proposed", by: { kind: "agent", label: "claude" } },
-    });
-    const badge = queryByTestId("review-badge");
-    expect(badge).not.toBeNull();
-    expect(badge?.getAttribute("data-review-state")).toBe("proposed");
-    expect(badge?.textContent).toContain("proposed");
-    expect(badge?.textContent).toContain("claude");
-  });
-
-  it("renders the rejected badge", () => {
-    const { queryByTestId } = renderWith({
-      label: "No",
-      review: { state: "rejected" },
-    });
-    const badge = queryByTestId("review-badge");
-    expect(badge).not.toBeNull();
-    expect(badge?.getAttribute("data-review-state")).toBe("rejected");
-  });
-
-  it("renders no badge for accepted or review-less nodes", () => {
-    expect(
-      renderWith({ label: "ok", review: { state: "accepted" } })
-        .queryByTestId("review-badge"),
-    ).toBeNull();
+  it("wears no review chip, whatever the element's own review stamp says", () => {
+    // The verdict on a change lives with the change now (under the ghost,
+    // in the thread); a per-element stamp from an earlier round is not the
+    // element's status and is not shown as one.
+    for (const review of [
+      { state: "proposed", by: { kind: "agent", label: "claude" } },
+      { state: "rejected" },
+      { state: "accepted" },
+    ]) {
+      expect(renderWith({ label: "x", review }).queryByTestId("review-badge")).toBeNull();
+    }
     expect(renderWith({ label: "plain" }).queryByTestId("review-badge")).toBeNull();
   });
 });

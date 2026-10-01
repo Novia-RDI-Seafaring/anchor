@@ -13,8 +13,14 @@
  */
 import { useCallback } from "react";
 
-import { documents, refHasSelector, type ResolvableRef } from "@/api/documents";
+import {
+  documents,
+  refHasSelector,
+  type ResolvableRef,
+  type ResolvedPlace,
+} from "@/api/documents";
 import { useCanvasStore } from "@/stores/canvasStore";
+import { placesFromAlso } from "@/canvas/sourceHighlight";
 import { useUiStore } from "@/stores/uiStore";
 
 export function useOpenSourceRef(
@@ -36,16 +42,27 @@ export function useOpenSourceRef(
     (ref, query, opts) => {
       const slug = ref?.slug;
       if (!slug || !ref?.page) return;
-      const open = (page: number, bbox?: number[]) =>
-        openPdf(slug, {
+      // Extra places written as page boxes need no resolving, and the
+      // resolver's query string cannot carry them: drawn as they are, beside
+      // whatever the server resolves.
+      const boxed: ResolvedPlace[] = placesFromAlso(
+        (ref as { also?: unknown }).also,
+        ref.page,
+      ).map((pl) => ({ page: pl.page, bbox: pl.bbox, precision: "bbox" as const }));
+      const open = (page: number, bbox?: number[], resolvedAlso?: ResolvedPlace[]) => {
+        const also = [...(resolvedAlso ?? []), ...boxed];
+        return openPdf(slug, {
           page,
           workspaceSlug,
           documentNodeId: knownNodeId ?? documentNodeIdFor(slug),
           highlightRegionId: ref.region_id,
           highlightBbox: bbox,
+          // The primary place is what we scroll to; these are drawn beside it.
+          highlightAlso: also.length > 0 ? also : undefined,
           highlightQuery: query,
           transient: opts?.transient,
         });
+      };
       // Resolve when the ref names anything below the page. A cell or item
       // selector tightens the box; a region-only ref -- the common shape an
       // `anchor:` link writes -- carries no bbox at all, so without resolving
@@ -55,7 +72,9 @@ export function useOpenSourceRef(
         const fallbackPage = ref.page;
         void documents
           .resolveRef(slug, ref)
-          .then((resolved) => open(resolved?.page ?? fallbackPage, resolved?.bbox ?? ref.bbox));
+          .then((resolved) =>
+            open(resolved?.page ?? fallbackPage, resolved?.bbox ?? ref.bbox, resolved?.also),
+          );
         return;
       }
       open(ref.page, ref.bbox);

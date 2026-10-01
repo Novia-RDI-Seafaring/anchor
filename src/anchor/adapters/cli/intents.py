@@ -6,7 +6,7 @@
 ``anchor intent show <id>``            one full record incl. thread items.
 ``anchor intent ask <slug> --text ... --target <node>...``
                                        create a thread anchored to a selection.
-``anchor intent add-item <id> --type ... [--text] [--ops] [--supersedes]``
+``anchor intent add-item <id> --type ... [--text] [--ops] [--supersedes] [--option]``
                                        append a message / question / suggestion / result.
 ``anchor intent answer <id> <item> --text ...``   answer a question.
 ``anchor intent apply <id> <item>``               approve + apply a suggestion.
@@ -71,6 +71,27 @@ def _intent_service(data_dir: Path):
         now=SystemClock().now,
         workspace=runtime.workspace,
     )
+
+
+def _place_arg(value: str | None) -> dict[str, float] | None:
+    """``'x,y'`` or ``'x,y,w,h'`` as a place, or None. Anything else exits 1."""
+    if value is None:
+        return None
+    parts = [p.strip() for p in value.split(",")]
+    if len(parts) not in (2, 4):
+        typer.echo(json.dumps({"error": "invalid_place", "flag": "--place",
+                               "expected": "x,y or x,y,w,h"}), err=True)
+        raise typer.Exit(code=1)
+    try:
+        nums = [float(p) for p in parts]
+    except ValueError:
+        typer.echo(json.dumps({"error": "invalid_place", "flag": "--place",
+                               "expected": "numbers"}), err=True)
+        raise typer.Exit(code=1) from None
+    out = {"x": nums[0], "y": nums[1]}
+    if len(nums) == 4:
+        out["width"], out["height"] = nums[2], nums[3]
+    return out
 
 
 def _json_arg(value: str, flag: str) -> Any:
@@ -202,13 +223,52 @@ def intent_add_item(
     supersedes: str | None = typer.Option(
         None, "--supersedes", help="Suggestion only: the earlier suggestion this revises."
     ),
+    place: str | None = typer.Option(
+        None,
+        "--place",
+        help="Message/question only: where on the canvas, as 'x,y' or 'x,y,w,h'.",
+    ),
+    option: list[str] | None = typer.Option(
+        None,
+        "--option",
+        help="Question only: an answer to offer as one press; repeat for several.",
+    ),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Append an item to a thread (author = this invocation's actor)."""
     parsed_ops = _json_arg(ops, "--ops") if ops is not None else None
     svc = _intent_service(data_dir)
     intent, item = _run(
-        svc.add_item(intent_id, type=type_, text=text, ops=parsed_ops, supersedes=supersedes)
+        svc.add_item(
+            intent_id,
+            type=type_,
+            text=text,
+            ops=parsed_ops,
+            supersedes=supersedes,
+            place=_place_arg(place),
+            options=list(option) if option else None,
+        )
+    )
+    typer.echo(json.dumps({"intent": intent.to_dict(), "item": item.to_dict()}, indent=2))
+
+
+@intent_app.command("update-item")
+def intent_update_item(
+    intent_id: str = typer.Argument(..., help="The intent (thread) id."),
+    item_id: str = typer.Argument(..., help="The message item id."),
+    text: str | None = typer.Option(None, "--text", help="New text."),
+    state: str | None = typer.Option(
+        None, "--state", help="Placed messages only: planned | active | done."
+    ),
+    place: str | None = typer.Option(
+        None, "--place", help="Where on the canvas, as 'x,y' or 'x,y,w,h'."
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Change a message in place: narrate work in progress on the canvas."""
+    svc = _intent_service(data_dir)
+    intent, item = _run(
+        svc.update_item(intent_id, item_id, text=text, state=state, place=_place_arg(place))
     )
     typer.echo(json.dumps({"intent": intent.to_dict(), "item": item.to_dict()}, indent=2))
 
@@ -241,6 +301,20 @@ def intent_apply(
             indent=2,
         )
     )
+
+
+@intent_app.command("revert")
+def intent_revert(
+    intent_id: str = typer.Argument(..., help="The intent (thread) id."),
+    item_id: str = typer.Argument(..., help="The applied suggestion item id."),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Put an applied suggestion back, from the undo recorded when it was applied."""
+    svc = _intent_service(data_dir)
+    intent, item, reverted = _run(svc.revert_suggestion(intent_id, item_id))
+    typer.echo(json.dumps(
+        {"intent": intent.to_dict(), "item": item.to_dict(), "reverted": reverted}, indent=2,
+    ))
 
 
 @intent_app.command("decline")

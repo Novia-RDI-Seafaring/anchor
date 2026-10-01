@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
+import { regionDropPayload } from "@/canvas/regionDrop";
 import { BACKEND_URL } from "@/api/client";
 import { documents, refHasSelector, type Region } from "@/api/documents";
 import { useDocumentIndex } from "@/api/useDocumentIndex";
@@ -194,7 +195,10 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   const pageW = pageMeta[page]?.width ?? 0;
   const pageH = pageMeta[page]?.height ?? 0;
   const canScale = imgSize && pageW > 0 && pageH > 0;
-  const coverUrl = isReady && slug ? documents.pageImageUrl(slug, page, generation) : null;
+  // The page is served as soon as the PDF is on disk, long before ingestion
+  // finishes, and the explorer already shows it. Only the regions and marks
+  // drawn over it wait for ingestion.
+  const coverUrl = slug ? documents.pageImageUrl(slug, page, generation) : null;
   const ingestProgress = typeof d.ingest_progress === "number"
     ? Math.max(0, Math.min(100, Math.round(d.ingest_progress)))
     : status === "pending"
@@ -388,24 +392,10 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                     }}
                     onDragStart={(e) => {
                       e.stopPropagation();
-                      const payload = {
-                        node_type: "spec",
-                        label: r.title ?? r.kind ?? rid,
-                        data: {
-                          source_doc_slug: slug,
-                          source_doc_node_id: id,
-                          source_region_id: rid,
-                          crops: r.crops,
-                          description: (r as { description?: string }).description,
-                          tags: (r as { tags?: string[] }).tags ?? [],
-                          source_ref: {
-                            coord_origin: "top-left",
-                            kind: "pdf-page-bbox",
-                            page,
-                            bbox,
-                          },
-                        },
-                      };
+                      // Same rule as the source dock: a diagram drops as a
+                      // picture, anything else as a spec card.
+                      const payload = regionDropPayload({ slug, page, region: r, documentNodeId: id });
+                      if (!payload) return;
                       e.dataTransfer.effectAllowed = "copy";
                       e.dataTransfer.setData(
                         "application/x-anchor-node",
@@ -499,6 +489,31 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                   />
                 );
               })
+            : null}
+          {/* The other places the hovered reference points at, on this page:
+              the letter naming the dimension on the drawing, beside the cell
+              the value came from. The viewer and the pictures on the canvas
+              draw them; the card drew only the cell. */}
+          {canScale && imgSize && hoveredSourceRef?.slug === slug
+            ? (hoveredSourceRef?.places ?? [])
+                .filter((pl) => pl.page === page)
+                .map((pl, pi) => {
+                  const rect = bboxToImageRect(pl.bbox, pageW, pageH, 100, 100);
+                  if (!rect) return null;
+                  return (
+                    <div
+                      key={`also-${pi}`}
+                      data-testid="also-place"
+                      className="anchor-mark anchor-mark-fade anchor-mark-flying pointer-events-none absolute"
+                      style={{
+                        left: `${rect.x}%`,
+                        top: `${rect.y}%`,
+                        width: `${rect.w}%`,
+                        height: `${rect.h}%`,
+                      }}
+                    />
+                  );
+                })
             : null}
         </div>
       ) : (

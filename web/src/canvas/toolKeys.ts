@@ -1,4 +1,4 @@
-import { CONNECT_TOOL } from "./registry";
+import { CONNECT_TOOL, INTENT_TOOL } from "./registry";
 
 /**
  * One letter per tool, the way every drawing tool does it: press it and the
@@ -18,6 +18,7 @@ export const TOOL_KEYS: Record<string, string> = {
   m: "markdown",
   a: CONNECT_TOOL,
   c: CONNECT_TOOL,
+  i: INTENT_TOOL,
 };
 
 /** The letter shown on a tool's tile. First key wins when two map to one tool. */

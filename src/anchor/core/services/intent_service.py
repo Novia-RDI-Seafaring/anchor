@@ -26,6 +26,7 @@ a project-level sentinel) so a per-canvas SSE subscriber sees the signal.
 """
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -35,12 +36,15 @@ from anchor.core.intents.intent import (
     INTENT_KINDS,
     INTENT_PENDING_EVENT,
     PENDING,
+    PLACE_STATES,
+    PLACED_PLANNED,
     QUESTION_ANSWERED,
     RESOLVED,
     SUGGESTION_APPLIED,
     SUGGESTION_DECLINED,
     SUGGESTION_OP_TYPES,
     SUGGESTION_PENDING,
+    SUGGESTION_REVERTED,
     SUGGESTION_SUPERSEDED,
     THREAD_ITEM_TYPES,
     Intent,
@@ -118,6 +122,123 @@ def _validate_targets(targets: Any) -> list[dict[str, Any]]:
                 "invalid_targets", "each target needs string workspace_id and node_id",
             )
         out.append({"workspace_id": ws, "node_id": node})
+    return out
+
+
+def _inverse_data(patch: Any, was: Any) -> Any:
+    """The data patch that undoes ``patch`` on data that was ``was``.
+
+    Node data is deep-merged, so writing the old dict back would leave any
+    key the change added in place. Every key the patch touched goes back to
+    its old value, and a key that did not exist before is deleted (``None``
+    is the merge's delete). Nested dicts are undone the same way.
+    """
+    if not isinstance(patch, dict) or not isinstance(was, dict):
+        return was
+    out: dict[str, Any] = {}
+    for key, value in patch.items():
+        if key not in was:
+            out[key] = None
+        elif isinstance(value, dict) and isinstance(was[key], dict):
+            out[key] = _inverse_data(value, was[key])
+        else:
+            out[key] = was[key]
+    return out
+
+
+def _undo_for(
+    before: dict[str, Any],
+    ops: list[dict[str, Any]],
+    id_map: dict[str, str],
+) -> list[dict[str, Any]]:
+    """The ops that put a canvas back to ``before`` after ``ops`` ran.
+
+    Each op's inverse, in reverse order. An add becomes a remove of the id it
+    was actually given; an update restores the fields it touched from the
+    node as it was; a removal re-adds the node as it was together with the
+    edges that cascaded away with it. Anything that cannot be inverted --
+    an update to a node that did not exist -- is simply not in the list, as
+    the batch would have refused it anyway.
+    """
+    nodes = {n["id"]: n for n in before.get("nodes", []) if isinstance(n, dict)}
+    edges = {e["id"]: e for e in before.get("edges", []) if isinstance(e, dict)}
+    real = lambda given: id_map.get(given, given)  # noqa: E731
+
+    def edge_payload(e: dict[str, Any]) -> dict[str, Any]:
+        # Handles under both spellings: the command model reads the alias.
+        out = dict(e)
+        if "sourceHandle" in out:
+            out["source_handle"] = out["sourceHandle"]
+        if "targetHandle" in out:
+            out["target_handle"] = out["targetHandle"]
+        return out
+
+    undo: list[dict[str, Any]] = []
+    for op in reversed(ops):
+        kind = op.get("type")
+        payload = op.get("payload") or {}
+        ident = str(payload.get("id") or "")
+        if kind == "NodeAdded":
+            undo.append({"type": "NodeRemoved", "payload": {"id": real(ident)}})
+        elif kind == "NodeUpdated":
+            was = nodes.get(ident)
+            if was is None:
+                continue
+            fields = payload.get("fields") or {}
+            undo.append({
+                "type": "NodeUpdated",
+                "payload": {"id": ident, "fields": {
+                    k: _inverse_data(fields[k], was.get(k)) if k == "data" else was.get(k)
+                    for k in fields
+                }},
+            })
+        elif kind == "NodeRemoved":
+            was = nodes.get(ident)
+            if was is None:
+                continue
+            undo.append({"type": "NodeAdded", "payload": dict(was)})
+            for e in edges.values():
+                if e.get("source") == ident or e.get("target") == ident:
+                    undo.append({"type": "EdgeAdded", "payload": edge_payload(e)})
+        elif kind == "EdgeAdded":
+            undo.append({"type": "EdgeRemoved", "payload": {"id": real(ident)}})
+        elif kind == "EdgeRemoved":
+            was = edges.get(ident)
+            if was is not None:
+                undo.append({"type": "EdgeAdded", "payload": edge_payload(was)})
+        elif kind == "EdgeUpdated":
+            was = edges.get(ident)
+            if was is None:
+                continue
+            fields = payload.get("fields") or {}
+            undo.append({
+                "type": "EdgeUpdated",
+                "payload": {"id": ident, "fields": {k: was.get(k) for k in fields}},
+            })
+    return undo
+
+
+def _validate_place(place: Any) -> dict[str, Any] | None:
+    """``{x, y, width?, height?}`` as numbers, or None when not given.
+
+    Malformed is refused, not coerced: a ghost drawn at ``NaN`` is a ghost
+    nobody will ever find.
+    """
+    if place is None:
+        return None
+    if not isinstance(place, dict):
+        raise ThreadError("invalid_item", "place must be an object {x, y, width?, height?}")
+    out: dict[str, Any] = {}
+    for key in ("x", "y"):
+        if key not in place:
+            raise ThreadError("invalid_item", f"place needs {key}")
+    for key in ("x", "y", "width", "height"):
+        if key not in place:
+            continue
+        value = place[key]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or math.isnan(value):
+            raise ThreadError("invalid_item", f"place.{key} must be a number")
+        out[key] = float(value)
     return out
 
 
@@ -293,6 +414,8 @@ class IntentService:
         text: str = "",
         ops: list[dict[str, Any]] | None = None,
         supersedes: str | None = None,
+        place: dict[str, Any] | None = None,
+        options: list[str] | None = None,
     ) -> tuple[Intent, ThreadItem]:
         """Append an item to a thread. ``author`` is the ambient actor.
 
@@ -301,6 +424,14 @@ class IntentService:
         ``supersedes`` names an earlier suggestion in the same thread; if that
         one is still pending it becomes ``superseded``. Raises ``KeyError``
         for an unknown intent and :class:`ThreadError` for a bad item.
+
+        ``place`` puts a ``message`` or ``question`` on the canvas at
+        ``{x, y, width?, height?}``. A placed message is a ghost of work to
+        come and starts ``planned``; see :func:`update_item` for moving it
+        through ``active`` to ``done``.
+
+        ``options`` are answers a ``question`` offers, so the human can reply
+        with one press; free text is still accepted as an answer.
         """
         if type not in THREAD_ITEM_TYPES:
             raise ThreadError(
@@ -317,6 +448,24 @@ class IntentService:
             raise ThreadError("invalid_item", "only a suggestion carries ops")
         if supersedes is not None and type != "suggestion":
             raise ThreadError("invalid_item", "only a suggestion can supersede another")
+        clean_place = _validate_place(place)
+        if clean_place is not None and type not in ("message", "question"):
+            raise ThreadError(
+                "invalid_item", "only a message or a question can be placed on the canvas",
+            )
+        clean_options: list[str] | None = None
+        if options is not None:
+            if type != "question":
+                raise ThreadError("invalid_item", "only a question offers options")
+            if not isinstance(options, list) or not all(
+                isinstance(o, str) and o.strip() for o in options
+            ):
+                raise ThreadError("invalid_item", "options must be non-empty strings")
+            seen: list[str] = []
+            for o in options:
+                if o.strip() not in seen:
+                    seen.append(o.strip())
+            clean_options = seen or None
         intent = await self._require(intent_id)
         if supersedes is not None:
             prior = intent.find_item(supersedes)
@@ -331,11 +480,63 @@ class IntentService:
             author=self._actor(),
             text=text,
             created_at=self._ts(),
-            state=initial_item_state(type),
+            state=(
+                PLACED_PLANNED
+                if type == "message" and clean_place is not None
+                else initial_item_state(type)
+            ),
             ops=clean_ops,
             supersedes=supersedes,
+            place=clean_place,
+            options=clean_options,
         )
         intent.items.append(item)
+        await self._store.replace(intent)
+        await self._signal_pending(intent.origin_canvas_id)
+        return intent, item
+
+    async def update_item(
+        self,
+        intent_id: str,
+        item_id: str,
+        *,
+        text: str | None = None,
+        state: str | None = None,
+        place: dict[str, Any] | None = None,
+    ) -> tuple[Intent, ThreadItem]:
+        """Change a ``message`` in place: its text, its state, or where it sits.
+
+        Only messages. They are the one kind of item that describes work in
+        progress, and progress is a thing that changes: "fetching page 3"
+        becomes "found the measures table" without the thread growing a line
+        for every step. A question's answer and a suggestion's verdict have
+        their own verbs, and an item once applied is history.
+
+        ``state`` must be one of ``planned`` / ``active`` / ``done`` and only
+        means anything for a placed message; setting it on one with no place
+        is refused rather than silently stored.
+        """
+        intent = await self._require(intent_id)
+        item = self._require_item(intent, item_id)
+        if item.type != "message":
+            raise ThreadError("invalid_item", f"item {item_id!r} is a {item.type}, not a message")
+        if text is not None:
+            if not isinstance(text, str) or not text.strip():
+                raise ThreadError("invalid_item", "a message needs text")
+            item.text = text
+        clean_place = _validate_place(place)
+        if clean_place is not None:
+            item.place = clean_place
+            if item.state is None:
+                item.state = PLACED_PLANNED
+        if state is not None:
+            if state not in PLACE_STATES:
+                raise ThreadError(
+                    "invalid_item", f"state must be one of {sorted(PLACE_STATES)}, not {state!r}",
+                )
+            if item.place is None:
+                raise ThreadError("invalid_item", "only a placed message has a state")
+            item.state = state
         await self._store.replace(intent)
         await self._signal_pending(intent.origin_canvas_id)
         return intent, item
@@ -380,6 +581,9 @@ class IntentService:
         if item.state != SUGGESTION_PENDING:
             raise ThreadError("not_pending", f"suggestion {item_id!r} is {item.state}")
         slug = self._thread_canvas(intent)
+        # The canvas as it stands, so the way back can be written down before
+        # anything moves. Cheap here, impossible later.
+        before = await self._workspace.get_state(slug)
         try:
             _state, envelopes, id_map = await self._workspace.apply_batch(
                 slug,
@@ -392,12 +596,62 @@ class IntentService:
             raise SuggestionApplyError(exc) from exc
         item.state = SUGGESTION_APPLIED
         item.applied_versions = [env.version for env in envelopes]
+        item.undo_ops = _undo_for(before, list(item.ops or []), dict(id_map))
         await self._store.replace(intent)
         await self._signal_pending(intent.origin_canvas_id)
         return intent, item, {
             "workspace_id": slug,
             "versions": list(item.applied_versions),
             "id_map": dict(id_map),
+            "events": [env.model_dump() for env in envelopes],
+        }
+
+    async def revert_suggestion(
+        self, intent_id: str, item_id: str,
+    ) -> tuple[Intent, ThreadItem, dict[str, Any]]:
+        """Put an applied suggestion back, all-or-nothing.
+
+        The inverse ops were written down when it was applied, so this is
+        the same batch path in the other direction: attributed to the actor
+        putting it back, caused by the item. The item becomes ``reverted``.
+        Refused for anything not currently ``applied``, and for a suggestion
+        applied before undo was recorded -- there is nothing honest to do
+        with those but say so.
+        """
+        if self._workspace is None:
+            raise ThreadError(
+                "workspace_unavailable", "no workspace service is wired for revert",
+            )
+        intent = await self._require(intent_id)
+        item = self._require_item(intent, item_id)
+        if item.type != "suggestion":
+            raise ThreadError("not_a_suggestion", f"item {item_id!r} is a {item.type}")
+        if item.state != SUGGESTION_APPLIED:
+            raise ThreadError("not_applied", f"suggestion {item_id!r} is {item.state}")
+        if not item.undo_ops:
+            raise ThreadError(
+                "no_undo", f"suggestion {item_id!r} was applied without a way back recorded",
+            )
+        slug = self._thread_canvas(intent)
+        try:
+            _state, envelopes, _ids = await self._workspace.apply_batch(
+                slug,
+                list(item.undo_ops),
+                actor=self._actor(),
+                causation_id=item.id,
+                approver=self._actor(),
+                # Put things back as they were: the ids they had, and the
+                # checks and verdicts they carried before the change.
+                restore=True,
+            )
+        except BatchApplyError as exc:
+            raise SuggestionApplyError(exc) from exc
+        item.state = SUGGESTION_REVERTED
+        await self._store.replace(intent)
+        await self._signal_pending(intent.origin_canvas_id)
+        return intent, item, {
+            "workspace_id": slug,
+            "versions": [env.version for env in envelopes],
             "events": [env.model_dump() for env in envelopes],
         }
 

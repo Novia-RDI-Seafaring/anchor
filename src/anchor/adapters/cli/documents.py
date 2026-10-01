@@ -220,6 +220,12 @@ def resolve_ref(
     Precedence: cell {row, col} > item_id (silver item 'p<page>-i<n>') >
     region_id > the ref's own bbox. The answer carries `precision` naming
     the layer that resolved.
+
+    A ref may name more than one place. Put the extras under `also`, either
+    as whole ref objects or in the compact form 'p3/r1/item:p3-i6', and each
+    comes back resolved under `also` in the answer. The ref's own selectors
+    stay the primary place. Use it when one claim is evidenced twice over,
+    such as a value in a table and the callout naming it on the drawing.
     """
     raw = read_json_arg(ref)
     try:

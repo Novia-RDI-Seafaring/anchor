@@ -72,20 +72,29 @@ def actor_ref(actor: Actor | None) -> dict[str, Any]:
     return by
 
 
-def validate_members(members: Any) -> list[dict[str, str]]:
+def validate_members(members: Any) -> list[dict[str, Any]]:
     """Normalise a members list, rejecting anything malformed.
 
-    Accepts ``{"kind": "node"|"edge", "id": "..."}`` entries, or a bare
-    string id as shorthand for a node (the common case). Duplicates are
-    dropped, order is preserved.
+    Accepts ``{"kind": "node"|"edge", "id": "...", "before"?: {...}}``
+    entries, or a bare string id as shorthand for a node (the common case).
+    Duplicates are dropped, order is preserved.
+
+    ``before`` is what the element looked like before the proposal touched
+    it, and only belongs on a member the agent CHANGED rather than created.
+    It earns its place twice. Declining a change needs to restore the old
+    values, not delete the element -- discarding a modified node removes the
+    reader's own work along with the edit. And reviewing one is much easier
+    against what it replaced than in isolation: a retitled card looks fine
+    either way until you can see what the title was.
     """
     if members is None:
         return []
     if not isinstance(members, list):
         raise ProposalSetError("members must be a list")
-    out: list[dict[str, str]] = []
+    out: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for entry in members:
+        before: Any = None
         if isinstance(entry, str):
             kind, ident = "node", entry
         elif isinstance(entry, dict):
@@ -93,6 +102,9 @@ def validate_members(members: Any) -> list[dict[str, str]]:
             ident = entry.get("id")
             if not isinstance(ident, str) or not ident:
                 raise ProposalSetError("each member needs a non-empty id")
+            before = entry.get("before")
+            if before is not None and not isinstance(before, dict):
+                raise ProposalSetError("member 'before' must be an object")
         else:
             raise ProposalSetError("each member must be an object or an id string")
         if kind not in MEMBER_KINDS:
@@ -103,7 +115,10 @@ def validate_members(members: Any) -> list[dict[str, str]]:
         if key in seen:
             continue
         seen.add(key)
-        out.append({"kind": kind, "id": ident})
+        member: dict[str, Any] = {"kind": kind, "id": ident}
+        if before is not None:
+            member["before"] = dict(before)
+        out.append(member)
     return out
 
 

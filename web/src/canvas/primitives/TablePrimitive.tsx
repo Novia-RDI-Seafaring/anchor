@@ -4,7 +4,11 @@ import { useParams } from "react-router-dom";
 
 import { canvases } from "@/api/canvases";
 import { documents, type ResolvableRef } from "@/api/documents";
+import { PictureHighlightBoxes, usePictureHighlights } from "@/canvas/PictureHighlights";
+import { placesFromAlso } from "@/canvas/sourceHighlight";
 import { evidenceLabels, evidenceState, type EvidenceRow } from "@/canvas/evidence";
+import { refReview } from "@/canvas/refReview";
+import { RefReviewChip, refVerdict } from "@/canvas/RefReviewChip";
 import { SourceAnchorButton } from "@/canvas/SourceAnchorButton";
 import { resolveText } from "@/canvas/colors";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
@@ -168,6 +172,12 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       // Carry the cell value so the document node can draw the value-precise
       // highlight inside the region, not just the region rectangle (#197).
       query: row.value || undefined,
+      // And the other places it points at, so a picture of the drawing on
+      // the canvas can light the letter as well as the viewer does.
+      ...(() => {
+        const places = placesFromAlso((ref as { also?: unknown }).also, ref.page);
+        return places.length > 0 ? { places } : {};
+      })(),
     });
   };
 
@@ -204,6 +214,19 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
     ? documents.pageCropUrl(d.source_doc_slug, d.source_ref.page, d.source_ref.bbox)
     : null;
   const previewUrl = renderedCropUrl ?? storedCropUrl;
+  // The section's picture is the page cut to the section's bbox, so a
+  // hovered reference into that section -- a value's cell, a letter on a
+  // drawing -- is lit on it, the same as on a picture element.
+  const litOnPreview = usePictureHighlights(
+    renderedCropUrl && d.source_ref
+      ? {
+          slug: d.source_doc_slug,
+          page: d.source_ref.page,
+          bbox: d.source_ref.bbox,
+          region_id: d.source_ref.region_id ?? d.source_region_id,
+        }
+      : null,
+  );
 
   const canEdit = selected ?? false;
   // Inline title rename — wires the spec table's `label` field to the same
@@ -314,10 +337,16 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
 
       {previewUrl ? (
         <div className="border-b border-neutral-200 bg-neutral-50">
+          {/* Shrink-wrapped round the picture, so the lit boxes, placed in
+              percent, land on the picture and not on the letterbox. */}
+          <div className="relative mx-auto w-fit max-w-full">
           <img
             src={previewUrl}
             alt={d.label ?? "region"}
-            className="block max-h-32 w-full object-contain"
+            title={d.description}
+            // Up to a readable height: capped at 128 px, a table's rows
+            // shrank to a grey strip whatever the card's width.
+            className="block h-auto max-h-80 w-auto max-w-full"
             loading="lazy"
             draggable={false}
             onError={(e) => {
@@ -334,6 +363,8 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
               }
             }}
           />
+          <PictureHighlightBoxes boxes={litOnPreview} />
+          </div>
         </div>
       ) : null}
 
@@ -412,30 +443,42 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                       data-evidence-status={status}
                       className={`block text-[10px] ${status === "verified" ? "text-emerald-700" : "text-amber-800"}`}
                     >{status === "verified" ? "✓" : status === "stale" ? evidenceLabel : ""}</span>
+                    {/* The chip wraps the anchor: hovering the anchor opens
+                        the source AND the verdict menu, and the verdict sits
+                        in the icon's corner, so the mark and the thing it
+                        judges read as one object. */}
                     {rowRef ? (
-                      <SourceAnchorButton
-                        workspaceSlug={workspaceSlug}
-                        documentNodeId={d.source_doc_node_id}
-                        refValue={rowRef}
-                        query={status === "verified" ? r.value || undefined : undefined}
-                        title={`Open page ${rowRef.page} in viewer`}
-                        ariaLabel={`Open source page ${rowRef.page}`}
-                        className="h-5 w-5"
-                      />
-                    ) : null}
-                    {/* Revalidation is an action, not a status, so it shows up
-                        when the pointer is on the row rather than sitting in
-                        the card permanently. */}
-                    {canEdit && r.source_ref && status !== "verified" ? (
-                      <button type="button"
-                        title="Re-check this claim against its source"
-                        className="nodrag nopan text-[10px] underline text-neutral-700 opacity-0 transition group-hover/tr:opacity-100 focus:opacity-100"
-                        aria-label={`Revalidate evidence for ${r.key}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          persistRows(rows.map((row, j) => j === i ? { ...row, revalidate_evidence: true } : row));
-                        }}
-                      >Check</button>
+                      <RefReviewChip
+                        label={r.key || `row ${i + 1}`}
+                        review={refReview(r)}
+                        onRevalidate={
+                          canEdit && status !== "verified"
+                            ? () =>
+                                persistRows(
+                                  rows.map((row, j) =>
+                                    j === i ? { ...row, revalidate_evidence: true } : row,
+                                  ),
+                                )
+                            : undefined
+                        }
+                        onChange={(state, note) =>
+                          persistRows(
+                            rows.map((row, j) =>
+                              j === i ? { ...row, ...refVerdict(state, note) } : row,
+                            ),
+                          )
+                        }
+                      >
+                        <SourceAnchorButton
+                          workspaceSlug={workspaceSlug}
+                          documentNodeId={d.source_doc_node_id}
+                          refValue={rowRef}
+                          query={status === "verified" ? r.value || undefined : undefined}
+                          title={`Open page ${rowRef.page} in viewer`}
+                          ariaLabel={`Open source page ${rowRef.page}`}
+                          className="h-5 w-5"
+                        />
+                      </RefReviewChip>
                     ) : null}
                     {/* Per-row source handle. Never visible or grabbable
                         (see the handle rule in index.css): it only gives an
@@ -454,10 +497,10 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
             })}
           </tbody>
         </table>
-      ) : (
-        <div className="px-3 py-2 text-neutral-700 leading-snug">
-          {d.description}
-        </div>
+      ) : previewUrl ? null : (
+        // Beside the section's picture the description is the section again,
+        // flattened into a paragraph; it stays as the picture's tooltip.
+        <div className="px-3 py-2 text-neutral-700 leading-snug">{d.description}</div>
       )}
 
       {canEdit ? (

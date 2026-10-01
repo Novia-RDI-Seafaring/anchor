@@ -29,6 +29,10 @@ import { EdgeContextMenu, type EdgeContextMenuTarget } from "@/canvas/EdgeContex
 import { EdgeContextToolbar } from "@/canvas/EdgeContextToolbar";
 import { NodeContextMenu, type ContextMenuTarget } from "@/canvas/NodeContextMenu";
 import { NodeContextToolbar } from "@/canvas/NodeContextToolbar";
+import { CommentLasso } from "@/canvas/CommentLasso";
+import { proposalSets } from "@/api/proposalSets";
+import { ProposalReview } from "@/canvas/ProposalReview";
+import type { Box as LassoBox } from "@/canvas/lasso";
 import { SelectionPanel } from "@/canvas/SelectionPanel";
 import { WaypointEditor } from "@/canvas/WaypointEditor";
 import {
@@ -40,8 +44,7 @@ import {
   paintRectFrom,
 } from "@/canvas/PaintGhost";
 import { connectClick } from "@/canvas/connect";
-import { CONNECT_TOOL, nodeTypes, paletteEntries } from "@/canvas/registry";
-import { REVIEW_REJECTED_OPACITY, reviewState } from "@/canvas/review";
+import { CONNECT_TOOL, INTENT_TOOL, nodeTypes, paletteEntries } from "@/canvas/registry";
 import { refreshWorkspaces } from "@/canvas/useWorkspacesList";
 import { CanvasSse, type CanvasEvent } from "@/realtime/sseClient";
 import { useCanvasStore } from "@/stores/canvasStore";
@@ -191,10 +194,6 @@ function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
   // mounting NodeResizer when the prop is read at render time. The flag
   // is forward-compatible: producers / consumers can ignore it today.
   const locked = (n.data as { locked?: boolean } | undefined)?.locked === true;
-  // Review states (#324): a rejected node stays on the canvas as visible
-  // feedback for the proposing agent, but renders dimmed. Applied here at
-  // the wrapper level so every node type gets it without per-shape wiring.
-  const rejected = reviewState(n.data).state === "rejected";
   return {
     id: n.id,
     position: { x: relX, y: relY },
@@ -203,7 +202,6 @@ function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
     ...parentProps,
     ...(isArea ? { zIndex: -1, draggable: true } : {}),
     ...(locked ? { draggable: false } : {}),
-    ...(rejected ? { style: { opacity: REVIEW_REJECTED_OPACITY } } : {}),
   };
 }
 
@@ -242,13 +240,48 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   // the row-level `hoveredSourceRef` swap above — both feed the same per-edge
   // active/dimmed flags the evidence renderers already understand.
   const hoveredNodeId = useUiStore((s) => s.hoveredNodeId);
+  // Marking up is a tool on the rail (`i`, like the others): armed, the
+  // canvas takes ink. Deriving the mode from the armed tool rather than
+  // keeping its own flag is what puts its pens and its queue beside the
+  // rail with the tool, and what lets any other tool, or escape, put the
+  // pen down the same way it would drop a shape.
+  const armedTool = useUiStore((s) => s.armedTool);
+  const armTool = useUiStore((s) => s.armTool);
+  const disarmTool = useUiStore((s) => s.disarmTool);
+  const commentMode = armedTool === INTENT_TOOL;
+  const setCommentMode = useCallback(
+    (on: boolean) => {
+      if (on && armedTool !== INTENT_TOOL) armTool(INTENT_TOOL);
+      if (!on && armedTool === INTENT_TOOL) disarmTool();
+    },
+    [armedTool, armTool, disarmTool],
+  );
+  const [reviewingSet, setReviewingSet] = useState<string | null>(null);
+  // Sets still waiting on a verdict, so the canvas can offer to show the
+  // change rather than only ringing what was touched. A ring says something
+  // was edited; it cannot say whether to accept it.
+  const [openSets, setOpenSets] = useState<{ id: string; reason: string }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      void proposalSets
+        .list(slug, { state: "open" })
+        .then((sets) => {
+          if (!cancelled) setOpenSets(sets.map((x) => ({ id: x.id, reason: x.reason })));
+        })
+        .catch(() => undefined);
+    load();
+    const id = window.setInterval(load, 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [slug]);
   const setSelectedNodeId = useUiStore((s) => s.setSelectedNodeId);
   const setSelectedEdgeId = useUiStore((s) => s.setSelectedEdgeId);
   const selectedEdgeId = useUiStore((s) => s.selectedEdgeId);
   const setPropertiesOpen = useUiStore((s) => s.setPropertiesOpen);
-  const armedTool = useUiStore((s) => s.armedTool);
   const pendingRenameId = useUiStore((s) => s.pendingInlineRenameNodeId);
-  const disarmTool = useUiStore((s) => s.disarmTool);
   // Connector tool: the element a connector starts from, once picked.
   const connectSourceId = useUiStore((s) => s.connectSourceId);
   const setConnectSourceId = useUiStore((s) => s.setConnectSourceId);
@@ -287,6 +320,20 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   // Edge right-click menu target. Set by `onEdgeContextMenu`. Same
   // dismissal contract as the node menu (Esc / outside / item-pick).
   const [edgeContextTarget, setEdgeContextTarget] = useState<EdgeContextMenuTarget | null>(null);
+
+  // Picking up the pen puts the selection down, as a click on empty canvas
+  // would. A node left selected keeps its connectors out, and a stroke that
+  // started on one dragged a new edge off it instead of marking it.
+  useEffect(() => {
+    if (!commentMode) return;
+    setRfNodes((prev) => (prev.some((n) => n.selected) ? prev.map((n) => (n.selected ? { ...n, selected: false } : n)) : prev));
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+    setConnectSourceId(null);
+    setPropertiesOpen(false);
+    setContextMenuTarget(null);
+    setEdgeContextTarget(null);
+  }, [commentMode, setSelectedNodeId, setSelectedEdgeId, setConnectSourceId, setPropertiesOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -997,7 +1044,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     flowY: number,
     sizeOverride?: { width: number; height: number },
   ) => {
-    if (!armedTool || armedTool === CONNECT_TOOL) return;
+    if (!armedTool || armedTool === CONNECT_TOOL || armedTool === INTENT_TOOL) return;
     // Special path: sub-canvas placement goes through the composite
     // `createSubCanvas` endpoint so the child workspace + linking node
     // land atomically. The slug is generated client-side; the backend
@@ -1067,7 +1114,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   };
 
   const onPointerDown = (event: React.PointerEvent) => {
-    if (!armedTool) return;
+    if (!armedTool || armedTool === INTENT_TOOL) return;
     const target = event.target as HTMLElement;
     // Connector tool: a press on an element starts a connector. Dragging to
     // another element joins them on release; a press and release on the same
@@ -1227,7 +1274,12 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   return (
     <div
       ref={rootRef}
-      className={`relative h-full w-full ${armedTool ? "cursor-crosshair" : ""}`}
+      // The crosshair is forced through every descendant while a placing
+      // tool is armed. Not for the pen: its surface sets its own cursor -- a
+      // crosshair to draw, a hand over drawn ink -- and its buttons theirs.
+      className={`relative h-full w-full ${
+        armedTool && armedTool !== INTENT_TOOL ? "cursor-crosshair" : ""
+      }`}
       {...(readOnly
         ? {}
         : {
@@ -1502,6 +1554,54 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         <Controls showInteractive={!readOnly} />
         <MiniMap pannable zoomable />
       </ReactFlow>
+      {/* Reviewer mark-up, prototype: the pointing half only. Draw across or
+          around things, cmd-click to correct what the stroke caught. The
+          selection is inert -- it cannot drag, delete or rewire anything, so
+          it is safe to scribble across a board you care about. */}
+      {/* Open proposals, offered where the work is rather than only in a
+          side panel: the reader is looking at the canvas. */}
+      {openSets.length > 0 && !reviewingSet ? (
+        <div className="absolute left-1/2 top-3 z-30 -translate-x-1/2">
+          {openSets.map((set) => (
+            <button
+              key={set.id}
+              type="button"
+              data-testid="proposal-review-open"
+              onClick={() => setReviewingSet(set.id)}
+              title={set.reason}
+              className="mb-1 block max-w-[28rem] truncate rounded-full border border-violet-300 bg-white/95 px-3 py-1 text-[11px] text-violet-800 shadow-sm hover:bg-violet-50"
+            >
+              review proposal · {set.reason}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {reviewingSet ? (
+        <ProposalReview
+          workspaceSlug={slug}
+          setId={reviewingSet}
+          onClose={() => setReviewingSet(null)}
+        />
+      ) : null}
+      <CommentLasso
+        active={commentMode}
+        onExit={() => setCommentMode(false)}
+        workspaceSlug={slug}
+        boxes={Object.values(nodes).map((n): LassoBox => {
+          // The size ReactFlow measured is what the reader actually sees, so
+          // it is what the stroke should be judged against.
+          const rf = rfNodesRef.current.find((r) => r.id === n.id) as
+            | { measured?: { width?: number; height?: number } }
+            | undefined;
+          return {
+            id: n.id,
+            x: n.x,
+            y: n.y,
+            width: rf?.measured?.width ?? n.width ?? 180,
+            height: rf?.measured?.height ?? n.height ?? 80,
+          };
+        })}
+      />
       {Object.values(uploadJobs).map((job) => {
         const isFailed = job.status === "failed";
         const label = job.status === "starting_ingest"

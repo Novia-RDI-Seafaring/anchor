@@ -177,7 +177,18 @@ class WorkspaceProposalOperations:
                 if kind == "node":
                     if ident not in state.nodes:
                         continue  # already gone: nothing to stamp
-                    if discard:
+                    before = member.get("before")
+                    if discard and isinstance(before, dict):
+                        # A member the proposal CHANGED, not one it created.
+                        # Discarding it must put back what it replaced:
+                        # removing the node would take the reader's own work
+                        # along with the edit, which is the opposite of
+                        # declining a change.
+                        commands.append(
+                            (NodeUpdated(id=ident, fields=dict(before)), False),
+                        )
+                        working = apply(working, NodeUpdated(id=ident, fields=dict(before)))
+                    elif discard:
                         # Removing a node drops its edges too. Emit those
                         # EdgeRemoved events explicitly (attributed to the
                         # system, as elsewhere) so every listener sees the

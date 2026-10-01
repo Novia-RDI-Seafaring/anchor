@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import type { ResolvedPlace } from "@/api/documents";
+
 /**
  * How the shared source pane is surfaced:
  *   - "dock":  left-docked split-screen pane next to the canvas (#110a, the
@@ -24,6 +26,14 @@ type PdfViewerState = {
   highlightRegionId?: string;
   highlightBbox?: number[];
   highlightPage?: number;
+  /**
+   * Extra places the same reference points at, already resolved. One claim
+   * can be evidenced in more than one spot: the value in a table and the
+   * callout naming that dimension on the drawing. `highlightBbox` stays the
+   * primary place, which is what the viewer scrolls to; these are drawn
+   * alongside it and never navigated to.
+   */
+  highlightAlso?: ResolvedPlace[];
   /**
    * The grounded value's text. When set, the viewer locates this text inside
    * the region (via documents.locate) and draws a value-precise yellow
@@ -77,6 +87,12 @@ type HoveredSourceRef = {
    * highlight inside the region (#197), not just the region rectangle.
    */
   query?: string;
+  /**
+   * Further places the reference points at, with their boxes: a row's `also`
+   * (the letter naming the dimension on the drawing). A picture of that page
+   * on the canvas lights them too, not only the source viewer.
+   */
+  places?: { page: number; bbox: number[] }[];
 } | null;
 
 type UiState = {
@@ -88,6 +104,15 @@ type UiState = {
    * a sane band by `setSourceDockRatio`.
    */
   sourceDockRatio: number;
+  /**
+   * The source pane's zoom, kept while the app is open. The reader picks a
+   * zoom to read something at; the pane remounts whenever a different
+   * document opens, so without this every hover handed them back the default
+   * and they had to set it again. Session-only, like the dock ratio: a
+   * remembered zoom is convenience within a sitting, not a preference worth
+   * greeting someone with tomorrow.
+   */
+  pdfZoom: number;
   /**
    * Width in pixels of the left files explorer (the VS Code style file list
    * that sits at the very left of the source cluster, #220 part B). Persists
@@ -133,6 +158,7 @@ type UiState = {
       documentNodeId?: string;
       highlightRegionId?: string;
       highlightBbox?: number[];
+      highlightAlso?: ResolvedPlace[];
       highlightQuery?: string;
       /** Opened by a hover, so a mouse-out should take it away again. */
       transient?: boolean;
@@ -142,6 +168,8 @@ type UiState = {
   setPdfPage: (page: number) => void;
   /** Flip the shared pane between the docked and modal surfaces in place. */
   setPdfViewerMode: (mode: PdfViewerMode) => void;
+  /** Remember the source pane's zoom across opens, within this session. */
+  setPdfZoom: (zoom: number) => void;
   /** Clamp + store the left source-pane width ratio (0..1). */
   setSourceDockRatio: (ratio: number) => void;
   /** Clamp + store the left files-explorer width in pixels. */
@@ -344,6 +372,7 @@ function persist(key: string, value: string) {
 export const useUiStore = create<UiState>((set) => ({
   pdfViewer: null,
   sourceDockRatio: DEFAULT_SOURCE_DOCK_RATIO,
+  pdfZoom: 1,
   explorerWidth: readPersistedExplorerWidth(),
   sourceClusterCollapsed: readPersistedCollapsed(),
   hoverPreviewMode: readPersistedHoverPreviewMode(),
@@ -384,6 +413,7 @@ export const useUiStore = create<UiState>((set) => ({
           documentNodeId: options?.documentNodeId,
           highlightRegionId: options?.highlightRegionId,
           highlightBbox: options?.highlightBbox,
+          highlightAlso: options?.highlightAlso,
           highlightQuery: options?.highlightQuery,
           highlightPage: options?.highlightRegionId || options?.highlightBbox
             ? options?.page ?? 1
@@ -414,6 +444,7 @@ export const useUiStore = create<UiState>((set) => ({
       state.pdfViewer ? { pdfViewer: { ...state.pdfViewer, mode } } : state,
     ),
   setSourceDockRatio: (ratio) => set({ sourceDockRatio: clampDockRatio(ratio) }),
+  setPdfZoom: (zoom) => set({ pdfZoom: zoom }),
   setExplorerWidth: (px) => {
     const next = clampExplorerWidth(px);
     persist(EXPLORER_WIDTH_KEY, String(next));

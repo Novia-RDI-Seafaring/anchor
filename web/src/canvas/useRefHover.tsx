@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { ResolvableRef } from "@/api/documents";
+import { placesFromAlso } from "@/canvas/sourceHighlight";
 import { CLOSE_DELAY_MS, OPEN_DELAY_MS, RefHoverPreview } from "@/canvas/RefHoverPreview";
 import { cancelTransientClose, scheduleTransientClose } from "@/canvas/transientViewer";
+import { requestViewerZoom, viewerAcceptsZoom } from "@/canvas/viewerZoom";
 import { documentCardInView, useOpenSourceRef } from "@/canvas/useOpenSourceRef";
 import { useUiStore } from "@/stores/uiStore";
 
@@ -133,6 +135,35 @@ export function useRefHover(
    */
   const armed = useRef(false);
   const setHovered = useUiStore((s) => s.setHoveredSourceRef);
+
+  // The wheel, while the pointer is on this reference, zooms the source pane.
+  // A reader hovering a link is looking at the pane, not at the link, so that
+  // is what the wheel should drive. Left alone it drives what is under the
+  // pointer -- the canvas -- and the board zooms while the thing they are
+  // reading does not.
+  //
+  // A native listener, because React's onWheel is passive and cannot stop the
+  // canvas from taking the same gesture. Attached only while the pointer is
+  // here, so the wheel behaves normally everywhere else. It is claimed only
+  // when a pane is actually open to receive it.
+  const detachWheel = useRef<(() => void) | null>(null);
+  const claimWheel = (el: HTMLElement) => {
+    detachWheel.current?.();
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) return; // leave browser/page zoom alone
+      if (!viewerAcceptsZoom() || !useUiStore.getState().pdfViewer) return;
+      e.preventDefault();
+      e.stopPropagation();
+      requestViewerZoom(e.deltaY, e.deltaMode);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    detachWheel.current = () => el.removeEventListener("wheel", onWheel);
+  };
+  const releaseWheel = () => {
+    detachWheel.current?.();
+    detachWheel.current = null;
+  };
+  useEffect(() => releaseWheel, []);
   const hoverProps = {
     "data-source-trigger": "",
     onMouseEnter: () => {
@@ -142,6 +173,10 @@ export function useRefHover(
       // button). Clearing is left to whoever owns the surrounding element: doing
       // it here would drop the highlight while the pointer is still inside a row.
       if (refValue?.slug) {
+        // With the other places it points at: this broadcast replaces the
+        // row's, and dropping them put the letter out on the picture of the
+        // drawing half a second after the row had lit it.
+        const places = placesFromAlso((refValue as { also?: unknown }).also, refValue.page ?? 1);
         setHovered({
           slug: refValue.slug,
           page: refValue.page ?? 1,
@@ -150,16 +185,19 @@ export function useRefHover(
           item_id: refValue.item_id,
           cell: refValue.cell,
           query,
+          ...(places.length > 0 ? { places } : {}),
         });
       }
     },
     onMouseMove: (event: React.MouseEvent<HTMLElement>) => {
       if (armed.current) return;
       armed.current = true;
+      claimWheel(event.currentTarget);
       scheduleOpen(event.currentTarget);
     },
     onMouseLeave: () => {
       armed.current = false;
+      releaseWheel();
       scheduleClose();
     },
   } as const;

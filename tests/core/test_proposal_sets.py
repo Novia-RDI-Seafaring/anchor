@@ -255,3 +255,86 @@ def test_sets_survive_replay_from_the_event_log(tmp_path):
         assert replayed.nodes["a"].data["review"]["state"] == "accepted"
 
     asyncio.run(run())
+
+
+# ── Declining a change, rather than an addition ─────────────────────────────
+#
+# A set groups whatever the agent touched. Where it CREATED something,
+# discarding removes it and the canvas is as it was. Where it EDITED something
+# that already existed, removing the node takes the reader's own work along
+# with the edit, which is the opposite of declining a change. A member that
+# carries `before` is put back instead.
+
+def test_discarding_a_changed_member_restores_what_it_replaced():
+    async def run():
+        s = await _canvas_with_proposals(make_in_memory_services())
+        with actor_scope(HUMAN):
+            await s.workspace.add_node("w1", id="card", label="Original", x=0, y=400)
+        with actor_scope(AGENT):
+            record = await s.workspace.open_proposal_set(
+                "w1",
+                reason="retitle it",
+                members=[{"kind": "node", "id": "card", "before": {"label": "Original"}}],
+            )
+            await s.workspace.update_node("w1", "card", {"label": "Cap'n Card"})
+        state = await s.workspace.get_state("w1")
+        assert next(n for n in state["nodes"] if n["id"] == "card")["label"] == "Cap'n Card"
+
+        with actor_scope(HUMAN):
+            await s.workspace.review_proposal_set(
+                "w1", record["id"], verdict="rejected", discard=True,
+            )
+        state = await s.workspace.get_state("w1")
+        card = next((n for n in state["nodes"] if n["id"] == "card"), None)
+        # Still there, and back to what it was.
+        assert card is not None
+        assert card["label"] == "Original"
+
+    asyncio.run(run())
+
+
+def test_discarding_still_removes_a_member_the_agent_created():
+    async def run():
+        s = await _canvas_with_proposals(make_in_memory_services())
+        with actor_scope(AGENT):
+            record = await s.workspace.open_proposal_set(
+                "w1", reason="added two", members=["a", "b"],
+            )
+            await s.workspace.review_proposal_set(
+                "w1", record["id"], verdict="rejected", discard=True,
+            )
+        state = await s.workspace.get_state("w1")
+        assert [n["id"] for n in state["nodes"]] == []
+
+    asyncio.run(run())
+
+
+def test_a_before_survives_the_round_trip_into_the_record():
+    async def run():
+        s = await _canvas_with_proposals(make_in_memory_services())
+        with actor_scope(AGENT):
+            record = await s.workspace.open_proposal_set(
+                "w1",
+                reason="changed a",
+                members=[{"kind": "node", "id": "a", "before": {"label": "A"}}],
+            )
+        assert record["members"][0]["before"] == {"label": "A"}
+        sets = await s.workspace.list_proposal_sets("w1")
+        assert sets[0]["members"][0]["before"] == {"label": "A"}
+
+    asyncio.run(run())
+
+
+def test_a_malformed_before_is_refused_rather_than_stored():
+    async def run():
+        s = await _canvas_with_proposals(make_in_memory_services())
+        try:
+            await s.workspace.open_proposal_set(
+                "w1", reason="bad", members=[{"kind": "node", "id": "a", "before": "nope"}],
+            )
+        except ProposalSetError as exc:
+            assert "before" in str(exc)
+        else:
+            raise AssertionError("a non-object 'before' should be refused")
+
+    asyncio.run(run())

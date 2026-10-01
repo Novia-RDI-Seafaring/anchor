@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import "pdfjs-dist/web/pdf_viewer.css";
 
-import { documents, type Region } from "@/api/documents";
+import { isPictureRegion, regionDropPayload } from "@/canvas/regionDrop";
+import { documents, type Region, type ResolvedPlace } from "@/api/documents";
 import { REFERENCES_CHANGED_EVENT, references } from "@/api/references";
 import { bboxToViewportRect } from "@/lib/pdfHighlight";
 import {
@@ -17,6 +18,7 @@ import {
   type PageLayoutItem,
   type ZoomAnchor,
 } from "@/lib/pdfContinuous";
+import { onViewerZoomRequest } from "@/canvas/viewerZoom";
 import type { SourceRef } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
@@ -55,8 +57,13 @@ const ZOOM_STEP = 0.2;
  *  a wheel or pinch gesture is running the last raster is CSS-scaled instead,
  *  so PDF.js is not asked to re-render every page on every wheel event. */
 const RENDER_ZOOM_SETTLE_MS = 120;
+
+/** A page raster as it is on screen: its CSS size and the zoom it was drawn at. */
+type RenderedSize = { w: number; h: number; zoom: number };
 /** Keep in step with `.anchor-mark-flying` in index.css. */
 const MARK_FLIGHT_MS = 340;
+/** Breathing room before a mark counts as out of sight rather than near the edge. */
+const MARK_MARGIN_PX = 24;
 const OVERSCAN = 1;
 const THUMB_WIDTH = 96; // CSS px of the thumbnail image
 // Sensible page-size fallback (US Letter, points) before any size is known.
@@ -69,6 +76,12 @@ type Props = {
   total: number;
   /** Region bbox to highlight (PDF points), applies only on `highlightPage`. */
   highlightBbox?: number[];
+  /**
+   * Extra places the same reference points at, already resolved. Drawn, never
+   * navigated to: `highlightBbox` on `highlightPage` stays the place the view
+   * scrolls to, because a reference has to land somewhere definite.
+   */
+  highlightAlso?: ResolvedPlace[];
   highlightPage?: number;
   /** Bumped by the store on each openPdf; forces re-navigation on a re-click. */
   highlightNonce?: number;
@@ -100,6 +113,7 @@ export function PdfSourceView({
   page,
   total,
   highlightBbox,
+  highlightAlso,
   highlightPage,
   highlightNonce,
   title,
@@ -111,9 +125,12 @@ export function PdfSourceView({
   const docRef = useRef<PdfDoc | null>(null);
   const destroyRef = useRef<(() => Promise<void>) | null>(null);
 
-  const [zoom, setZoom] = useState(1);
+  // Picked up where the reader left it. Read once rather than subscribed: the
+  // pane owns its zoom while it is open, and a subscription would feed every
+  // wheel notch back in through a second path.
+  const [zoom, setZoom] = useState(() => useUiStore.getState().pdfZoom);
   // The zoom pages are rasterized at; trails `zoom` by RENDER_ZOOM_SETTLE_MS.
-  const [renderZoom, setRenderZoom] = useState(1);
+  const [renderZoom, setRenderZoom] = useState(() => useUiStore.getState().pdfZoom);
   // The stacked content box (for the pointer-anchored wheel zoom).
   const contentRef = useRef<HTMLDivElement | null>(null);
   // Pending pointer anchor for a wheel zoom: the spot under the pointer, and
@@ -128,7 +145,7 @@ export function PdfSourceView({
   const [pdfPageSizes, setPdfPageSizes] = useState<Record<number, { w: number; h: number }>>({});
   // Rendered viewport size per page (CSS px) once a page has drawn — lets the
   // overlays map a bbox into pixels precisely on rendered pages.
-  const [rendered, setRendered] = useState<Record<number, { w: number; h: number }>>({});
+  const [rendered, setRendered] = useState<Record<number, RenderedSize>>({});
   // Scroller geometry, driving virtualization + page-in-view detection.
   const [scrollTop, setScrollTop] = useState(0);
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
@@ -410,16 +427,25 @@ export function PdfSourceView({
       const size = pdfPageSizes[p];
       if (!size) return null;
       // Scale the rendered viewport to the current zoom: during a wheel gesture
-      // the raster trails `zoom`, but overlays must track the page box.
-      const vw = r ? r.w * (zoom / renderZoom) : size.w * zoom;
-      const vh = r ? r.h * (zoom / renderZoom) : size.h * zoom;
+      // the raster trails `zoom`, but overlays must track the page box. The
+      // zoom the raster was actually drawn at is what it is scaled from --
+      // not `renderZoom`, which the raster can lag behind when a render is
+      // still in flight or was cancelled, and a highlight scaled against
+      // the wrong one sat a few px off its cell, further off the further
+      // down the page.
+      const vw = r ? r.w * (zoom / r.zoom) : size.w * zoom;
+      const vh = r ? r.h * (zoom / r.zoom) : size.h * zoom;
       return bboxToViewportRect(bbox, size.w, size.h, { width: vw, height: vh });
     },
-    [rendered, pdfPageSizes, zoom, renderZoom],
+    [rendered, pdfPageSizes, zoom],
   );
 
-  const onPageRendered = useCallback((p: number, size: { w: number; h: number }) => {
-    setRendered((m) => (m[p]?.w === size.w && m[p]?.h === size.h ? m : { ...m, [p]: size }));
+  const onPageRendered = useCallback((p: number, size: RenderedSize) => {
+    setRendered((m) =>
+      m[p]?.w === size.w && m[p]?.h === size.h && m[p]?.zoom === size.zoom
+        ? m
+        : { ...m, [p]: size },
+    );
   }, []);
 
   // --- The mark -------------------------------------------------------
@@ -436,24 +462,92 @@ export function PdfSourceView({
   // first time has nowhere to fly from, and a mark must never lag behind the
   // page during a wheel zoom, so the transition is switched on for the length
   // of a move and off again after.
-  const markPlacement = useMemo(() => {
-    if (!highlightVisible || !highlightPage || !highlightBbox) return null;
-    const item = items.find((it) => it.page === highlightPage);
-    const rect = bboxToRectOnPage(highlightPage, highlightBbox);
-    if (!item || !rect) return null;
-    // Pages are centred in the content box; the mark has to match that.
-    const pageLeft = Math.max(0, (contentWidth - item.width) / 2);
-    // Exactly the referenced box. Padding it up to a minimum was tried, so a
-    // one-cell mark would be easier to spot, and it made the mark cover the
-    // rows above and below the value it names -- which reads as the highlight
-    // being wrong rather than small.
-    return {
-      left: pageLeft + rect.left,
-      top: item.top + rect.top,
-      width: rect.width,
-      height: rect.height,
+  // Every place this reference points at, each with a key naming its KIND.
+  //
+  // The key is what makes a move read as one. Going from reference A to
+  // reference B, React pairs the marks by key, so the cell mark flies to the
+  // new cell and the callout mark flies to the new callout. Pair them any
+  // other way -- by position in the list, say -- and the two marks cross over
+  // each other on screen, which says something untrue about what moved where.
+  // The index disambiguates a reference that names two cells.
+  const markPlacements = useMemo(() => {
+    if (!highlightVisible || !highlightPage || !highlightBbox) return [];
+    const seen = new Map<string, number>();
+    const place = (page: number, bbox: number[], kind: string) => {
+      const item = items.find((it) => it.page === page);
+      const rect = bboxToRectOnPage(page, bbox);
+      if (!item || !rect) return null;
+      const n = seen.get(kind) ?? 0;
+      seen.set(kind, n + 1);
+      // Pages are centred in the content box; the mark has to match that.
+      const pageLeft = Math.max(0, (contentWidth - item.width) / 2);
+      // Exactly the referenced box. Padding it up to a minimum was tried, so a
+      // one-cell mark would be easier to spot, and it made the mark cover the
+      // rows above and below the value it names -- which reads as the highlight
+      // being wrong rather than small.
+      return {
+        key: `${kind}#${n}`,
+        left: pageLeft + rect.left,
+        top: item.top + rect.top,
+        width: rect.width,
+        height: rect.height,
+      };
     };
-  }, [highlightVisible, highlightPage, highlightBbox, items, contentWidth, bboxToRectOnPage]);
+    const out = [];
+    const primary = place(highlightPage, highlightBbox, "primary");
+    if (primary) out.push(primary);
+    for (const extra of highlightAlso ?? []) {
+      // A stroke is drawn by the overlay below, never as a box. That holds
+      // even when its coordinates are unusable: the bounds of a line are a
+      // flat rectangle, and drawing one would put a mark across the page at
+      // the wrong thing rather than admit there was nothing to trace.
+      if (extra?.precision === "line" || Array.isArray(extra?.line)) continue;
+      if (!Array.isArray(extra?.bbox) || extra.bbox.length !== 4) continue;
+      const mark = place(extra.page, extra.bbox, extra.precision ?? "place");
+      if (mark) out.push(mark);
+    }
+    return out;
+  }, [
+    highlightVisible,
+    highlightPage,
+    highlightBbox,
+    highlightAlso,
+    items,
+    contentWidth,
+    bboxToRectOnPage,
+  ]);
+
+  // Strokes. A dimension on an engineering drawing is a span between two
+  // witness lines, and a box around it would cover the very part being
+  // measured. Tracing the stroke the draughtsman already drew says the same
+  // thing in the drawing's own language, which is why these thicken rather
+  // than highlight.
+  const strokePlacements = useMemo(() => {
+    if (!highlightVisible) return [];
+    const out: { key: string; left: number; top: number; points: string }[] = [];
+    let n = 0;
+    for (const extra of highlightAlso ?? []) {
+      const pts = extra?.line;
+      if (!Array.isArray(pts) || pts.length < 4 || pts.length % 2) continue;
+      const item = items.find((it) => it.page === extra.page);
+      const size = pdfPageSizes[extra.page];
+      if (!item || !size) continue;
+      const sx = item.width / size.w;
+      const sy = item.height / size.h;
+      const pageLeft = Math.max(0, (contentWidth - item.width) / 2);
+      const points: string[] = [];
+      for (let i = 0; i < pts.length; i += 2) {
+        points.push(`${pts[i]! * sx},${pts[i + 1]! * sy}`);
+      }
+      out.push({
+        key: `line#${n++}`,
+        left: pageLeft,
+        top: item.top,
+        points: points.join(" "),
+      });
+    }
+    return out;
+  }, [highlightVisible, highlightAlso, items, pdfPageSizes, contentWidth]);
 
   const markOnScreen = useRef(false);
   const [markFlying, setMarkFlying] = useState(false);
@@ -591,6 +685,12 @@ export function PdfSourceView({
     return () => window.clearTimeout(id);
   }, [toast]);
 
+  // Hand the zoom back, so reopening or hovering another reference lands the
+  // reader where they were rather than at the default.
+  useEffect(() => {
+    useUiStore.getState().setPdfZoom(zoom);
+  }, [zoom]);
+
   // Re-rasterize once zoom settles.
   useEffect(() => {
     if (renderZoom === zoom) return;
@@ -645,6 +745,150 @@ export function PdfSourceView({
     return () => el.removeEventListener("wheel", onWheel);
   }, [doc]);
 
+  // --- Zoom that answers to the mark -----------------------------------
+  //
+  // Three gestures, all of them the reader's, none of them the viewer's own
+  // judgement. An earlier attempt zoomed to each reference by itself and was
+  // wrong often enough to be worse than nothing.
+  //
+  // When the zoom changes for one of these reasons, the mark is what should
+  // stay put -- it is the thing being read. The scroll is applied in a layout
+  // effect rather than alongside the zoom, because the scroller's height
+  // follows the zoom: writing scrollTop before the re-zoomed layout commits
+  // clamps it against the OLD height and the landing falls short.
+  const recentreOnMark = useRef(false);
+  // `fitWidth` is defined further down, with the toolbar it belongs to. The
+  // ref lets the resize effect above reach the current one without hoisting
+  // the whole callback up here away from its buttons.
+  const fitWidthRef = useRef<() => void>(() => {});
+
+  const markBounds = useCallback(() => {
+    if (!highlightPage || !highlightBbox) return null;
+    const boxes = [highlightBbox];
+    for (const extra of highlightAlso ?? []) {
+      // Only what is on the same page: no zoom shows two pages at once.
+      if (extra?.page === highlightPage && Array.isArray(extra.bbox) && extra.bbox.length === 4) {
+        boxes.push(extra.bbox);
+      }
+    }
+    const xs = boxes.flatMap((b) => [b[0]!, b[2]!]);
+    const ys = boxes.flatMap((b) => [b[1]!, b[3]!]);
+    return { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+  }, [highlightPage, highlightBbox, highlightAlso]);
+
+  // 1. The wheel, while the pointer is on a reference out in the canvas.
+  useEffect(() => {
+    return onViewerZoomRequest((deltaY, deltaMode) => {
+      recentreOnMark.current = true;
+      setZoom((z) => wheelZoom(z, deltaY, deltaMode, false, MIN_ZOOM, MAX_ZOOM));
+    });
+  }, []);
+
+  // 2. A reference whose places do not all fit. Zoom out until they do, and
+  //    only then -- a reference that fits keeps whatever zoom the reader set,
+  //    which is the point of them setting it.
+  useEffect(() => {
+    const bounds = markBounds();
+    const size = highlightPage ? pdfPageSizes[highlightPage] : undefined;
+    if (!bounds || !size || containerSize.w <= 0 || containerSize.h <= 0) return;
+    const w = bounds.x1 - bounds.x0;
+    const h = bounds.y1 - bounds.y0;
+    if (w <= 0 || h <= 0) return;
+    const usableW = Math.max(1, containerSize.w - 48);
+    const usableH = Math.max(1, containerSize.h - 48);
+    setZoom((z) => {
+      if (w * z <= usableW && h * z <= usableH) return z;
+      const fit = Math.min(usableW / w, usableH / h);
+      const next = Math.max(MIN_ZOOM, Math.min(z, +fit.toFixed(3)));
+      if (next !== z) recentreOnMark.current = true;
+      return next;
+    });
+  }, [markBounds, highlightPage, pdfPageSizes, containerSize.w, containerSize.h, highlightNonce]);
+
+  // 3. The pane itself being resized. Dragging the divider is a statement
+  //    about how much room the pages should have, so they take all of it.
+  const lastPaneWidth = useRef<number | null>(null);
+  useEffect(() => {
+    const w = containerSize.w;
+    if (w <= 0) return;
+    const had = lastPaneWidth.current;
+    lastPaneWidth.current = w;
+    // Not on the first measurement: that is the pane appearing, not a resize.
+    if (had === null || Math.abs(had - w) < 1) return;
+    fitWidthRef.current();
+  }, [containerSize.w]);
+
+  // 4. The mark, having arrived somewhere the reader cannot see, brings the
+  //    page to it. Deliberately AFTER the flight: the mark travels first, and
+  //    only once it is there does it take hold of the page and centre itself.
+  //    Moving both at once reads as everything sliding at once, and it is
+  //    then unclear what went where.
+  //
+  //    Only when it would otherwise be out of sight. Zoomed out, a jump to the
+  //    next row is already on screen and the page should stay exactly where it
+  //    is -- moving the whole document to relocate a mark that could simply
+  //    have moved is the lurch this rule exists to prevent.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !highlightPage) return undefined;
+    const id = window.setTimeout(() => {
+      const bounds = markBounds();
+      const size = pdfPageSizes[highlightPage];
+      const item = items.find((it) => it.page === highlightPage);
+      if (!bounds || !size || !item) return;
+      const rect = bboxToViewportRect(
+        [bounds.x0, bounds.y0, bounds.x1, bounds.y1],
+        size.w,
+        size.h,
+        { width: size.w * zoom, height: size.h * zoom },
+      );
+      if (!rect) return;
+      const top = item.top + rect.top;
+      const bottom = top + rect.height;
+      const viewTop = el.scrollTop;
+      const viewBottom = viewTop + el.clientHeight;
+      // Comfortably in view, margin and all: leave the page alone.
+      if (top >= viewTop + MARK_MARGIN_PX && bottom <= viewBottom - MARK_MARGIN_PX) return;
+      el.scrollTo({
+        top: scrollTopForPageRect(
+          items, highlightPage, rect.top, rect.height, el.clientHeight, totalHeight,
+        ),
+        behavior: "smooth",
+      });
+    }, MARK_FLIGHT_MS);
+    return () => window.clearTimeout(id);
+  }, [
+    highlightNonce, highlightPage, highlightBbox, markBounds,
+    items, pdfPageSizes, zoom, totalHeight,
+  ]);
+
+  // Put the mark back under the reader's eye after a zoom they asked for.
+  useLayoutEffect(() => {
+    if (!recentreOnMark.current) return;
+    recentreOnMark.current = false;
+    const el = scrollRef.current;
+    const bounds = markBounds();
+    if (!el || !bounds || !highlightPage) return;
+    const size = pdfPageSizes[highlightPage];
+    if (!size) return;
+    const { items: li, totalHeight: th } = buildPageLayout(
+      effectiveTotal || 0,
+      pdfPageSizes,
+      zoom,
+      fallbackSize,
+    );
+    const rect = bboxToViewportRect(
+      [bounds.x0, bounds.y0, bounds.x1, bounds.y1],
+      size.w,
+      size.h,
+      { width: size.w * zoom, height: size.h * zoom },
+    );
+    if (!rect) return;
+    el.scrollTop = scrollTopForPageRect(
+      li, highlightPage, rect.top, rect.height, el.clientHeight, th,
+    );
+  }, [zoom, markBounds, highlightPage, pdfPageSizes, effectiveTotal, fallbackSize]);
+
   // Cmd/Ctrl + = / - / 0 while the viewer has focus.
   const onViewerKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (!e.ctrlKey && !e.metaKey) return;
@@ -671,6 +915,7 @@ export function PdfSourceView({
     const usable = Math.max(1, el.clientWidth - 48);
     setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +(usable / size.w).toFixed(3))));
   }, [pdfPageSizes, page, fallbackSize]);
+  fitWidthRef.current = fitWidth;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-neutral-100">
@@ -792,14 +1037,36 @@ export function PdfSourceView({
             <div className="p-6 text-sm text-red-600">Could not load PDF: {loadError}</div>
           ) : (
             <div ref={contentRef} className="relative mx-auto" style={{ height: totalHeight, width: contentWidth || undefined }}>
-              {markPlacement ? (
-                <div
-                  data-testid="pdf-highlight"
+              {strokePlacements.map(({ key, left, top, points }) => (
+                <svg
+                  key={`${key}@${highlightNonce ?? 0}`}
+                  data-testid="pdf-highlight-stroke"
                   aria-hidden
-                  className={`anchor-mark pointer-events-none absolute z-10${markFlying ? " anchor-mark-flying" : ""}`}
-                  style={markPlacement}
+                  className="anchor-stroke pointer-events-none absolute z-10 overflow-visible"
+                  style={{ left, top, width: 0, height: 0 }}
+                >
+                  <polyline points={points} />
+                </svg>
+              ))}
+              {markPlacements.map(({ key, ...box }) => (
+                <div
+                  // Stable, so every mark travels rather than blinking out and
+                  // in. The key is the KIND, so a move pairs like with like:
+                  // the cell mark goes to the next cell, the callout mark to
+                  // the next callout. Paired by list position they would cross
+                  // over and say something untrue about what moved where.
+                  key={key}
+                  data-testid="pdf-highlight"
+                  data-mark-kind={key}
+                  aria-hidden
+                  // The fade is a mount animation, so it plays once when a
+                  // mark first appears and never fights the travel afterwards.
+                  className={`anchor-mark anchor-mark-fade pointer-events-none absolute z-10${
+                    markFlying ? " anchor-mark-flying" : ""
+                  }`}
+                  style={box}
                 />
-              ) : null}
+              ))}
               {items.map((it) => (
                 <PageSlot
                   key={it.page}
@@ -810,6 +1077,7 @@ export function PdfSourceView({
                   rendered={rendered[it.page]}
                   shouldRender={shouldRenderPage(it.page)}
                   regions={canvasSlug ? regionsByPage[it.page] ?? [] : []}
+                  slug={slug}
                   referenceMarks={refMarksByPage.get(it.page) ?? []}
                   activeReferenceId={activeReferenceId}
                   onSelectReference={setActiveReferenceId}
@@ -852,9 +1120,11 @@ type SlotProps = {
   zoom: number;
   /** The zoom the page raster was drawn at; trails `zoom` during a gesture. */
   renderZoom: number;
-  rendered?: { w: number; h: number };
+  rendered?: RenderedSize;
   shouldRender: boolean;
   regions: Region[];
+  /** The document these pages are from, for what a dragged section carries. */
+  slug: string;
   referenceMarks: { id: string; bbox: number[] }[];
   activeReferenceId: string | null;
   onSelectReference: (id: string) => void;
@@ -864,7 +1134,7 @@ type SlotProps = {
   bboxToRect: (bbox: number[] | null | undefined) => { left: number; top: number; width: number; height: number } | null;
   onMouseUp: () => void;
   onCaptureRegion: (region: Region) => void;
-  onRendered: (page: number, size: { w: number; h: number }) => void;
+  onRendered: (page: number, size: RenderedSize) => void;
   onConfirmReference: () => void;
   onCancelPending: () => void;
   saving: boolean;
@@ -878,7 +1148,7 @@ type SlotProps = {
  */
 function PageSlot(props: SlotProps) {
   const {
-    item, doc, zoom, renderZoom, rendered, shouldRender, regions, referenceMarks,
+    item, doc, zoom, renderZoom, rendered, shouldRender, regions, slug, referenceMarks,
     activeReferenceId, onSelectReference, canvasSlug, confirmBbox,
     pending, bboxToRect, onMouseUp, onCaptureRegion, onRendered,
     onConfirmReference, onCancelPending, saving, registerRef,
@@ -999,6 +1269,39 @@ function PageSlot(props: SlotProps) {
           })}
         </svg>
       ) : null}
+
+      {/* The hovered section can be dragged onto the canvas, by a small tab
+          at its corner. The outline itself cannot be a drag source (it is
+          SVG, and the browser's drag needs an element), and covering the
+          section with one would take the text under it. A table lands as a
+          spec card, a drawing as a picture cut from the page. */}
+      {canvasSlug && viewportSize && hoverRegionId
+        ? (() => {
+            const region = regions.find((r) => (r.id ?? null) === hoverRegionId);
+            const rect = region ? bboxToRect(region.bbox) : null;
+            if (!region || !rect) return null;
+            return (
+              <div
+                data-testid="region-drag-tab"
+                draggable
+                title={`drag "${region.title ?? region.kind ?? ""}" onto the canvas`}
+                className="absolute z-20 flex cursor-grab items-center gap-1 whitespace-nowrap rounded-full border border-sky-300 bg-white/95 px-2 py-0.5 text-[10px] text-sky-700 shadow-sm active:cursor-grabbing"
+                style={{ left: rect.left + rect.width - 8, top: rect.top - 10, transform: "translateX(-100%)" }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onDragStart={(e) => {
+                  e.stopPropagation();
+                  const payload = regionDropPayload({ slug, page: item.page, region });
+                  if (!payload) return;
+                  e.dataTransfer.effectAllowed = "copy";
+                  e.dataTransfer.setData("application/x-anchor-node", JSON.stringify(payload));
+                }}
+              >
+                <span aria-hidden>⠿</span>
+                {isPictureRegion(region) ? "drag picture to canvas" : "drag to canvas"}
+              </div>
+            );
+          })()
+        : null}
 
       {/* Persistent green marks for every reference sourced from this page, so
           created references stay visible (not just the transient confirm flash).
