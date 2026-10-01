@@ -445,3 +445,14 @@ describe("DocumentPrimitive hover-driven page revert (#187)", () => {
     expect(screen.getByText(/page 3 \/ 3/)).toBeTruthy();
   });
 });
+
+describe("DocumentPrimitive while ingesting", () => {
+  it("shows the page as soon as the PDF is in, and waits for ingestion only for the regions", async () => {
+    vi.mocked(documents.regions).mockResolvedValue(geometryFixture.gold_map.pages["1"]);
+    const { container } = await renderDoc({ ...READY_DOC, status: "ingesting", ingest_progress: 35 });
+    const image = screen.getByRole("img") as HTMLImageElement;
+    expect(image.getAttribute("src")).toContain("/api/documents/pump/pages/1/image");
+    expect(container.querySelector("[data-region-handle-id]")).toBeNull();
+    expect(documents.regions).not.toHaveBeenCalled();
+  });
+});

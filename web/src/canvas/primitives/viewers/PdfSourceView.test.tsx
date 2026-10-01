@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { documents } from "@/api/documents";
 
 import { requestViewerZoom } from "@/canvas/viewerZoom";
+import { useUiStore } from "@/stores/uiStore";
 
 import { PdfSourceView } from "./PdfSourceView";
 
@@ -51,9 +52,9 @@ vi.mock("./PdfPageCanvas", () => ({
   }: {
     page: number;
     zoom: number;
-    onRendered?: (p: number, s: { w: number; h: number }) => void;
+    onRendered?: (p: number, s: { w: number; h: number; zoom: number }) => void;
   }) => {
-    onRendered?.(page, { w: 100 * zoom, h: 200 * zoom });
+    onRendered?.(page, { w: 100 * zoom, h: 200 * zoom, zoom });
     return <div data-testid="page-canvas-stub" data-page={page} />;
   },
 }));
@@ -571,5 +572,26 @@ describe("PdfSourceView (continuous)", () => {
       fireEvent.keyDown(window, { key: "Escape" });
     });
     await waitFor(() => expect(screen.queryByTestId("pdf-highlight")).toBeNull());
+  });
+});
+
+describe("PdfSourceView zoom memory", () => {
+  it("opens at the zoom the reader last left it", async () => {
+    // The pane remounts whenever a different document opens. Without this,
+    // every hover handed the reader back the default and they set it again.
+    useUiStore.setState({ pdfZoom: 1.8 });
+    stubScroller();
+    await renderViewer({ highlightPage: 1 });
+    expect(screen.getByLabelText("Reset zoom").textContent).toBe("180%");
+  });
+
+  it("hands the zoom back when the reader changes it", async () => {
+    useUiStore.setState({ pdfZoom: 1 });
+    stubScroller();
+    await renderViewer({ highlightPage: 1 });
+    await act(async () => {
+      requestViewerZoom(-120, 0);
+    });
+    expect(useUiStore.getState().pdfZoom).not.toBe(1);
   });
 });

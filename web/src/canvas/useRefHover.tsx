@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { ResolvableRef } from "@/api/documents";
+import { placesFromAlso } from "@/canvas/sourceHighlight";
 import { CLOSE_DELAY_MS, OPEN_DELAY_MS, RefHoverPreview } from "@/canvas/RefHoverPreview";
 import { cancelTransientClose, scheduleTransientClose } from "@/canvas/transientViewer";
 import { requestViewerZoom, viewerAcceptsZoom } from "@/canvas/viewerZoom";
@@ -172,6 +173,10 @@ export function useRefHover(
       // button). Clearing is left to whoever owns the surrounding element: doing
       // it here would drop the highlight while the pointer is still inside a row.
       if (refValue?.slug) {
+        // With the other places it points at: this broadcast replaces the
+        // row's, and dropping them put the letter out on the picture of the
+        // drawing half a second after the row had lit it.
+        const places = placesFromAlso((refValue as { also?: unknown }).also, refValue.page ?? 1);
         setHovered({
           slug: refValue.slug,
           page: refValue.page ?? 1,
@@ -180,6 +185,7 @@ export function useRefHover(
           item_id: refValue.item_id,
           cell: refValue.cell,
           query,
+          ...(places.length > 0 ? { places } : {}),
         });
       }
     },

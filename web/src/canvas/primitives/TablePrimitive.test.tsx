@@ -298,7 +298,10 @@ describe("TablePrimitive row handles", () => {
     fireEvent.blur(screen.getByPlaceholderText("value"));
     expect(screen.getByText("Stale")).toBeTruthy();
     expect(screen.queryByTestId("spec-value-marker")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Revalidate evidence for Pressure" }));
+    // Asking the server to look again now lives in the reference's own menu,
+    // beside the reader's verdict, rather than as a second "Check" on the row.
+    fireEvent.contextMenu(screen.getByTestId("ref-review-chip"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Revalidate evidence for Pressure" }));
     expect(patch.mock.lastCall?.[2].data).toMatchObject({ rows: [{
       key: "Pressure", value: "999999", source_ref, revalidate_evidence: true,
     }] });
@@ -437,5 +440,73 @@ describe("TablePrimitive header anchor", () => {
     // One row anchor plus the header anchor.
     expect(screen.getAllByRole("button", { name: /Open source page 3/ })).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: /Open source page/ })[0]?.className).toContain("h-6");
+  });
+});
+
+describe("saying whether a reference checks out", () => {
+  const ROW = { key: "B", value: "87", source_ref: { slug: "doc", page: 3, region_id: "r2" } };
+
+  it("offers a verdict on a right-click on the anchor", async () => {
+    // Hovering the anchor is for looking; the verdict is a deliberate act,
+    // a right-click away.
+    await renderTable({ source_doc_slug: "doc", rows: [ROW] });
+    const chip = screen.getByTestId("ref-review-chip");
+    expect(chip.getAttribute("data-state")).toBe("unjudged");
+    expect(screen.queryByTestId("ref-review-menu")).toBeNull();
+
+    fireEvent.contextMenu(chip);
+    expect(screen.getByTestId("ref-review-menu")).toBeTruthy();
+  });
+
+  it("records the verdict on the row it belongs to", async () => {
+    const patch = vi.spyOn(canvases, "patchNode").mockResolvedValue({} as never);
+    await renderTable({ source_doc_slug: "doc", rows: [ROW] });
+    fireEvent.contextMenu(screen.getByTestId("ref-review-chip"));
+    fireEvent.click(screen.getByTestId("ref-review-reject"));
+
+    await waitFor(() => expect(patch).toHaveBeenCalled());
+    const rows = (patch.mock.calls.at(-1)![2] as { data: { rows: unknown[] } }).data.rows;
+    expect(rows[0]).toMatchObject({ review: { state: "rejected", by: { kind: "human" } } });
+  });
+
+  it("keeps the reason with the verdict", async () => {
+    const patch = vi.spyOn(canvases, "patchNode").mockResolvedValue({} as never);
+    await renderTable({ source_doc_slug: "doc", rows: [ROW] });
+    fireEvent.contextMenu(screen.getByTestId("ref-review-chip"));
+    fireEvent.change(screen.getByTestId("ref-review-note"), {
+      target: { value: "points at J2" },
+    });
+    fireEvent.click(screen.getByTestId("ref-review-reject"));
+
+    await waitFor(() => expect(patch).toHaveBeenCalled());
+    const rows = (patch.mock.calls.at(-1)![2] as { data: { rows: unknown[] } }).data.rows;
+    expect(rows[0]).toMatchObject({ review: { note: "points at J2" } });
+  });
+
+  it("marks a judged reference and leaves an unjudged one bare", async () => {
+    // The same reason the evidence column stopped printing "Unverified" on
+    // every row: a column of labels saying nothing happened buries the rows
+    // where something did.
+    await renderTable({
+      source_doc_slug: "doc",
+      rows: [ROW, { ...ROW, key: "C", review: { state: "accepted" } }],
+    });
+    const [unjudged, judged] = screen.getAllByTestId("ref-review-chip");
+    expect(unjudged!.querySelector('[data-testid="ref-review-mark"]')).toBeNull();
+    expect(judged!.querySelector('[data-testid="ref-review-mark"]')).toBeTruthy();
+    expect(judged!.getAttribute("data-state")).toBe("accepted");
+  });
+
+  it("marks a verdict that carries a note", async () => {
+    await renderTable({
+      source_doc_slug: "doc",
+      rows: [{ ...ROW, review: { state: "rejected", note: "wrong field" } }],
+    });
+    expect(screen.getByTestId("ref-review-has-note")).toBeTruthy();
+  });
+
+  it("does not offer a verdict where there is no reference to check", async () => {
+    await renderTable({ rows: [{ key: "B", value: "87" }] });
+    expect(screen.queryByTestId("ref-review-chip")).toBeNull();
   });
 });

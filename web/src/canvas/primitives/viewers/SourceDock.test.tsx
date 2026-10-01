@@ -11,6 +11,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { documents } from "@/api/documents";
+import { TRANSIENT_CLOSE_MS } from "@/canvas/transientViewer";
 import { useUiStore } from "@/stores/uiStore";
 
 import { SourceDock } from "./SourceDock";
@@ -237,6 +238,62 @@ describe("SourceDock", () => {
         .dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
     });
     expect(useUiStore.getState().pdfViewer).not.toBeNull();
+  });
+
+  it("survives a resize drag that wanders outside it", async () => {
+    // Narrowing walks the pointer off the pane's edge. A hover-opened pane
+    // would close underneath the hand resizing it, having just been told by
+    // the resize that it is wanted.
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1, transient: true });
+      useUiStore.setState({ pdfViewerPinned: false, hoverPreviewMode: "viewer" });
+    });
+    await act(async () => {
+      screen.getByTestId("source-dock-divider")
+        .dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    });
+    await act(async () => {
+      screen.getByTestId("source-dock")
+        .dispatchEvent(new MouseEvent("pointerleave", { bubbles: false }));
+      await new Promise((r) => setTimeout(r, TRANSIENT_CLOSE_MS + 120));
+    });
+    expect(useUiStore.getState().pdfViewer).not.toBeNull();
+  });
+
+  it("is not closed by a click that lands outside while resizing", async () => {
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    await act(async () => {
+      screen.getByTestId("source-dock-divider")
+        .dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    });
+    await act(async () => {
+      document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    });
+    expect(useUiStore.getState().pdfViewer).not.toBeNull();
+  });
+
+  it("is not closed by judging a reference", async () => {
+    // The verdict menu is portalled to the body, so it lands outside the pane
+    // and looked like a click away: recording a verdict took the evidence off
+    // the screen at the very moment of recording it.
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    const menu = document.createElement("div");
+    menu.setAttribute("data-ref-review", "");
+    const button = document.createElement("button");
+    menu.appendChild(button);
+    document.body.appendChild(menu);
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    });
+    expect(useUiStore.getState().pdfViewer).not.toBeNull();
+    menu.remove();
   });
 
   it("keeps the page it was showing all the way through the fade", async () => {

@@ -46,6 +46,7 @@ export function SourceAnchorButton({
   return (
     <button
       type="button"
+      data-source-anchor=""
       className={`nodrag nopan inline-grid place-items-center rounded text-sky-700 hover:bg-sky-100 hover:text-sky-900 ${className}`}
       title={title}
       aria-label={ariaLabel ?? title}

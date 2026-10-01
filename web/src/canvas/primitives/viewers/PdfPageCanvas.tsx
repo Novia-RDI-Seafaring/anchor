@@ -18,7 +18,8 @@ type Props = {
   page: number;
   zoom: number;
   /** Notifies the parent of the rendered viewport size (CSS px) once known. */
-  onRendered?: (page: number, size: { w: number; h: number }) => void;
+  /** The raster is on screen; `size` is its CSS size and `zoom` what it was drawn at. */
+  onRendered?: (page: number, size: { w: number; h: number; zoom: number }) => void;
 };
 
 export function PdfPageCanvas({ doc, page, zoom, onRendered }: Props) {
@@ -29,6 +30,12 @@ export function PdfPageCanvas({ doc, page, zoom, onRendered }: Props) {
   useEffect(() => {
     let cancelled = false;
     let disposeSelection: (() => void) | null = null;
+    // The render in flight, so the cleanup can stop it. pdf.js refuses to
+    // start a second render on a canvas whose first is still running, and
+    // that refusal was being swallowed: a zoom change mid-render left the
+    // page at the OLD raster in a slot sized for the new zoom, with the
+    // highlight scaled against a size that no longer matched anything.
+    let renderTask: { cancel: () => void; promise: Promise<unknown> } | null = null;
     const token = ++tokenRef.current;
     const canvas = canvasRef.current;
     const textLayerDiv = textLayerRef.current;
@@ -51,11 +58,13 @@ export function PdfPageCanvas({ doc, page, zoom, onRendered }: Props) {
       canvas.style.height = `${Math.floor(viewport.height)}px`;
 
       const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined;
-      const renderTask = pdfPage.render({ canvas, canvasContext: ctx, viewport, transform });
+      renderTask = pdfPage.render({ canvas, canvasContext: ctx, viewport, transform });
       try {
         await renderTask.promise;
       } catch {
         return; // cancelled render
+      } finally {
+        renderTask = null;
       }
       if (cancelled || token !== tokenRef.current) return;
 
@@ -79,12 +88,13 @@ export function PdfPageCanvas({ doc, page, zoom, onRendered }: Props) {
       // Constrain selection to this page (multi-column gap handling) — the raw
       // TextLayer does not do this on its own.
       disposeSelection = registerTextLayerSelection(textLayerDiv);
-      onRendered?.(page, { w: viewport.width, h: viewport.height });
+      onRendered?.(page, { w: viewport.width, h: viewport.height, zoom });
     }
 
     void renderPage();
     return () => {
       cancelled = true;
+      renderTask?.cancel();
       disposeSelection?.();
     };
   }, [doc, page, zoom, onRendered]);

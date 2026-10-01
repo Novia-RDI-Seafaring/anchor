@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import "pdfjs-dist/web/pdf_viewer.css";
 
+import { isPictureRegion, regionDropPayload } from "@/canvas/regionDrop";
 import { documents, type Region, type ResolvedPlace } from "@/api/documents";
 import { REFERENCES_CHANGED_EVENT, references } from "@/api/references";
 import { bboxToViewportRect } from "@/lib/pdfHighlight";
@@ -56,6 +57,9 @@ const ZOOM_STEP = 0.2;
  *  a wheel or pinch gesture is running the last raster is CSS-scaled instead,
  *  so PDF.js is not asked to re-render every page on every wheel event. */
 const RENDER_ZOOM_SETTLE_MS = 120;
+
+/** A page raster as it is on screen: its CSS size and the zoom it was drawn at. */
+type RenderedSize = { w: number; h: number; zoom: number };
 /** Keep in step with `.anchor-mark-flying` in index.css. */
 const MARK_FLIGHT_MS = 340;
 /** Breathing room before a mark counts as out of sight rather than near the edge. */
@@ -121,9 +125,12 @@ export function PdfSourceView({
   const docRef = useRef<PdfDoc | null>(null);
   const destroyRef = useRef<(() => Promise<void>) | null>(null);
 
-  const [zoom, setZoom] = useState(1);
+  // Picked up where the reader left it. Read once rather than subscribed: the
+  // pane owns its zoom while it is open, and a subscription would feed every
+  // wheel notch back in through a second path.
+  const [zoom, setZoom] = useState(() => useUiStore.getState().pdfZoom);
   // The zoom pages are rasterized at; trails `zoom` by RENDER_ZOOM_SETTLE_MS.
-  const [renderZoom, setRenderZoom] = useState(1);
+  const [renderZoom, setRenderZoom] = useState(() => useUiStore.getState().pdfZoom);
   // The stacked content box (for the pointer-anchored wheel zoom).
   const contentRef = useRef<HTMLDivElement | null>(null);
   // Pending pointer anchor for a wheel zoom: the spot under the pointer, and
@@ -138,7 +145,7 @@ export function PdfSourceView({
   const [pdfPageSizes, setPdfPageSizes] = useState<Record<number, { w: number; h: number }>>({});
   // Rendered viewport size per page (CSS px) once a page has drawn — lets the
   // overlays map a bbox into pixels precisely on rendered pages.
-  const [rendered, setRendered] = useState<Record<number, { w: number; h: number }>>({});
+  const [rendered, setRendered] = useState<Record<number, RenderedSize>>({});
   // Scroller geometry, driving virtualization + page-in-view detection.
   const [scrollTop, setScrollTop] = useState(0);
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
@@ -420,16 +427,25 @@ export function PdfSourceView({
       const size = pdfPageSizes[p];
       if (!size) return null;
       // Scale the rendered viewport to the current zoom: during a wheel gesture
-      // the raster trails `zoom`, but overlays must track the page box.
-      const vw = r ? r.w * (zoom / renderZoom) : size.w * zoom;
-      const vh = r ? r.h * (zoom / renderZoom) : size.h * zoom;
+      // the raster trails `zoom`, but overlays must track the page box. The
+      // zoom the raster was actually drawn at is what it is scaled from --
+      // not `renderZoom`, which the raster can lag behind when a render is
+      // still in flight or was cancelled, and a highlight scaled against
+      // the wrong one sat a few px off its cell, further off the further
+      // down the page.
+      const vw = r ? r.w * (zoom / r.zoom) : size.w * zoom;
+      const vh = r ? r.h * (zoom / r.zoom) : size.h * zoom;
       return bboxToViewportRect(bbox, size.w, size.h, { width: vw, height: vh });
     },
-    [rendered, pdfPageSizes, zoom, renderZoom],
+    [rendered, pdfPageSizes, zoom],
   );
 
-  const onPageRendered = useCallback((p: number, size: { w: number; h: number }) => {
-    setRendered((m) => (m[p]?.w === size.w && m[p]?.h === size.h ? m : { ...m, [p]: size }));
+  const onPageRendered = useCallback((p: number, size: RenderedSize) => {
+    setRendered((m) =>
+      m[p]?.w === size.w && m[p]?.h === size.h && m[p]?.zoom === size.zoom
+        ? m
+        : { ...m, [p]: size },
+    );
   }, []);
 
   // --- The mark -------------------------------------------------------
@@ -668,6 +684,12 @@ export function PdfSourceView({
     }, 2200);
     return () => window.clearTimeout(id);
   }, [toast]);
+
+  // Hand the zoom back, so reopening or hovering another reference lands the
+  // reader where they were rather than at the default.
+  useEffect(() => {
+    useUiStore.getState().setPdfZoom(zoom);
+  }, [zoom]);
 
   // Re-rasterize once zoom settles.
   useEffect(() => {
@@ -1055,6 +1077,7 @@ export function PdfSourceView({
                   rendered={rendered[it.page]}
                   shouldRender={shouldRenderPage(it.page)}
                   regions={canvasSlug ? regionsByPage[it.page] ?? [] : []}
+                  slug={slug}
                   referenceMarks={refMarksByPage.get(it.page) ?? []}
                   activeReferenceId={activeReferenceId}
                   onSelectReference={setActiveReferenceId}
@@ -1097,9 +1120,11 @@ type SlotProps = {
   zoom: number;
   /** The zoom the page raster was drawn at; trails `zoom` during a gesture. */
   renderZoom: number;
-  rendered?: { w: number; h: number };
+  rendered?: RenderedSize;
   shouldRender: boolean;
   regions: Region[];
+  /** The document these pages are from, for what a dragged section carries. */
+  slug: string;
   referenceMarks: { id: string; bbox: number[] }[];
   activeReferenceId: string | null;
   onSelectReference: (id: string) => void;
@@ -1109,7 +1134,7 @@ type SlotProps = {
   bboxToRect: (bbox: number[] | null | undefined) => { left: number; top: number; width: number; height: number } | null;
   onMouseUp: () => void;
   onCaptureRegion: (region: Region) => void;
-  onRendered: (page: number, size: { w: number; h: number }) => void;
+  onRendered: (page: number, size: RenderedSize) => void;
   onConfirmReference: () => void;
   onCancelPending: () => void;
   saving: boolean;
@@ -1123,7 +1148,7 @@ type SlotProps = {
  */
 function PageSlot(props: SlotProps) {
   const {
-    item, doc, zoom, renderZoom, rendered, shouldRender, regions, referenceMarks,
+    item, doc, zoom, renderZoom, rendered, shouldRender, regions, slug, referenceMarks,
     activeReferenceId, onSelectReference, canvasSlug, confirmBbox,
     pending, bboxToRect, onMouseUp, onCaptureRegion, onRendered,
     onConfirmReference, onCancelPending, saving, registerRef,
@@ -1244,6 +1269,39 @@ function PageSlot(props: SlotProps) {
           })}
         </svg>
       ) : null}
+
+      {/* The hovered section can be dragged onto the canvas, by a small tab
+          at its corner. The outline itself cannot be a drag source (it is
+          SVG, and the browser's drag needs an element), and covering the
+          section with one would take the text under it. A table lands as a
+          spec card, a drawing as a picture cut from the page. */}
+      {canvasSlug && viewportSize && hoverRegionId
+        ? (() => {
+            const region = regions.find((r) => (r.id ?? null) === hoverRegionId);
+            const rect = region ? bboxToRect(region.bbox) : null;
+            if (!region || !rect) return null;
+            return (
+              <div
+                data-testid="region-drag-tab"
+                draggable
+                title={`drag "${region.title ?? region.kind ?? ""}" onto the canvas`}
+                className="absolute z-20 flex cursor-grab items-center gap-1 whitespace-nowrap rounded-full border border-sky-300 bg-white/95 px-2 py-0.5 text-[10px] text-sky-700 shadow-sm active:cursor-grabbing"
+                style={{ left: rect.left + rect.width - 8, top: rect.top - 10, transform: "translateX(-100%)" }}
+                onMouseDown={(e) => e.stopPropagation()}
+                onDragStart={(e) => {
+                  e.stopPropagation();
+                  const payload = regionDropPayload({ slug, page: item.page, region });
+                  if (!payload) return;
+                  e.dataTransfer.effectAllowed = "copy";
+                  e.dataTransfer.setData("application/x-anchor-node", JSON.stringify(payload));
+                }}
+              >
+                <span aria-hidden>⠿</span>
+                {isPictureRegion(region) ? "drag picture to canvas" : "drag to canvas"}
+              </div>
+            );
+          })()
+        : null}
 
       {/* Persistent green marks for every reference sourced from this page, so
           created references stay visible (not just the transient confirm flash).

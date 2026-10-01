@@ -132,7 +132,9 @@ export const documents = {
       params.set("col", String(ref.cell.col));
     }
     // Repeated, because a query string has no room for a list of objects.
-    for (const place of ref.also ?? []) params.append("also", place);
+    // Only the compact form travels in a URL; a place given as a page box
+    // is drawn as it is by the caller and would arrive as "[object Object]".
+    for (const place of ref.also ?? []) if (typeof place === "string") params.append("also", place);
     try {
       const rsp = await api.get<ResolvedRef>(
         `/api/documents/${slug}/resolve-ref?${params.toString()}`,

@@ -88,3 +88,11 @@ describe("ChartPrimitive rendering", () => {
     expect(getByText("no series data")).toBeTruthy();
   });
 });
+
+describe("ChartPrimitive legend", () => {
+  it("names every series, not only the first four", () => {
+    const series = ["A", "B", "C", "D", "E"].map((label, i) => ({ label, points: [[5, i], [90, i + 1]] }));
+    const { getByText } = renderNode({ label: "Dimensions", chart: { series } });
+    for (const label of ["A", "B", "C", "D", "E"]) expect(getByText(label)).toBeTruthy();
+  });
+});

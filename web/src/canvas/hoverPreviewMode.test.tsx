@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SourceRefLink } from "@/canvas/SourceRefLink";
 import {
   cancelTransientClose,
+  holdTransientViewer,
   scheduleTransientClose,
   TRANSIENT_CLOSE_MS,
 } from "@/canvas/transientViewer";
@@ -289,5 +290,54 @@ describe("HoverPreviewToggle", () => {
 
     expect(useUiStore.getState().hoverPreviewMode).toBe("viewer");
     expect(getByTestId("hover-mode-viewer").getAttribute("aria-pressed")).toBe("true");
+  });
+});
+
+describe("holding the pane open", () => {
+  it("survives a close scheduled while it is held", async () => {
+    // Cancelling once is not enough: the next mouse-out re-arms the timer and
+    // the page goes anyway, mid-sentence.
+    useUiStore.setState({ hoverPreviewMode: "viewer" });
+    useUiStore.getState().openPdf("lkh", { page: 3, transient: true });
+    useUiStore.setState({ pdfViewerPinned: false });
+
+    const release = holdTransientViewer();
+    scheduleTransientClose();
+    await new Promise((r) => setTimeout(r, TRANSIENT_CLOSE_MS + 120));
+    expect(useUiStore.getState().pdfViewer).not.toBeNull();
+
+    release();
+    await new Promise((r) => setTimeout(r, TRANSIENT_CLOSE_MS + 120));
+    expect(useUiStore.getState().pdfViewer).toBeNull();
+  });
+
+  it("needs every hold released, not just the last one taken", async () => {
+    useUiStore.setState({ hoverPreviewMode: "viewer" });
+    useUiStore.getState().openPdf("lkh", { page: 3, transient: true });
+    useUiStore.setState({ pdfViewerPinned: false });
+
+    const a = holdTransientViewer();
+    const b = holdTransientViewer();
+    a();
+    await new Promise((r) => setTimeout(r, TRANSIENT_CLOSE_MS + 120));
+    expect(useUiStore.getState().pdfViewer).not.toBeNull();
+
+    b();
+    await new Promise((r) => setTimeout(r, TRANSIENT_CLOSE_MS + 120));
+    expect(useUiStore.getState().pdfViewer).toBeNull();
+  });
+
+  it("ignores a release called twice, so one caller cannot free another's hold", async () => {
+    useUiStore.setState({ hoverPreviewMode: "viewer" });
+    useUiStore.getState().openPdf("lkh", { page: 3, transient: true });
+    useUiStore.setState({ pdfViewerPinned: false });
+
+    const a = holdTransientViewer();
+    const b = holdTransientViewer();
+    a();
+    a();
+    await new Promise((r) => setTimeout(r, TRANSIENT_CLOSE_MS + 120));
+    expect(useUiStore.getState().pdfViewer).not.toBeNull();
+    b();
   });
 });

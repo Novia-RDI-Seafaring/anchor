@@ -169,14 +169,22 @@ export function SourceDock() {
     const onDown = (e: PointerEvent) => {
       const target = e.target as HTMLElement | null;
       if (!target) return;
+      // Resizing is a statement that the pane is wanted, so a drag that
+      // wanders outside it is not a click away from it.
+      if (dragging) return;
       if (containerRef.current?.contains(target)) return;
       if (target.closest?.("[data-source-trigger]")) return;
       if (target.closest?.('[data-testid="ref-hover-preview"]')) return;
+      // Judging a reference is done WITH the source, not instead of it. The
+      // verdict menu is portalled to the body, so it lands outside the pane
+      // and read as a click away -- recording a verdict took the evidence
+      // off the screen at the moment of recording it.
+      if (target.closest?.("[data-ref-review]")) return;
       close();
     };
     document.addEventListener("pointerdown", onDown, true);
     return () => document.removeEventListener("pointerdown", onDown, true);
-  }, [open, close]);
+  }, [open, close, dragging]);
 
   // Keep the pane mounted through its fade-out. React unmounts the moment the
   // viewer state clears, which gives an instant disappearance -- fine for a
@@ -207,7 +215,10 @@ export function SourceDock() {
       ref={containerRef}
       // Opacity only, in and out. Sliding would drag the PAGES across the
       // screen, and a reader watching a page travel is reading nothing.
-      className={`${exiting ? "anchor-source-out" : "anchor-source-in"} fixed inset-y-0 left-0 z-30 flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-neutral-300 bg-white shadow-2xl`}
+      // Above everything the canvas lays over itself -- the mark-up pens,
+      // labels and handles sit at z-40 -- and below dialogs at z-50. The
+      // pen bar used to show through the open source.
+      className={`${exiting ? "anchor-source-out" : "anchor-source-in"} fixed inset-y-0 left-0 z-[45] flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-neutral-300 bg-white shadow-2xl`}
       // Width is a fraction of the VIEWPORT, not of the space left over beside
       // the explorer, so the pages get real room and the pane can cover the
       // explorer. min/max keep it usable and keep some canvas reachable.
@@ -222,7 +233,12 @@ export function SourceDock() {
       // A hover-opened pane must survive the trip to it. Arriving cancels the
       // pending close; leaving starts it again.
       onPointerEnter={cancelTransientClose}
-      onPointerLeave={scheduleTransientClose}
+      // Except mid-drag. Narrowing the pane walks the pointer off its edge,
+      // and a hover-opened pane would then close underneath the hand that was
+      // resizing it -- having just been told, by the resize, that it is wanted.
+      onPointerLeave={() => {
+        if (!dragging) scheduleTransientClose();
+      }}
     >
       {/* References now live inside the viewer's left rail as a tab next to
           Pages (see PdfSourceView), so a long citation can't stretch the dock. */}
@@ -271,6 +287,8 @@ export function SourceDock() {
           className="absolute -right-1.5 top-0 z-10 h-full w-3 cursor-col-resize"
           onPointerDown={(e) => {
             e.preventDefault();
+            // Grabbing the divider keeps the pane, however it was opened.
+            cancelTransientClose();
             setDragging(true);
           }}
           data-testid="source-dock-divider"

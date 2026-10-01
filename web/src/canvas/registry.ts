@@ -39,6 +39,7 @@ import { api } from "@/api/client";
 
 // Primitives — generic OIP-aware renderers
 import { DocumentPrimitive } from "./primitives/DocumentPrimitive";
+import { ImagePrimitive } from "./primitives/ImagePrimitive";
 import { Model3DPrimitive } from "./primitives/Model3DPrimitive";
 import { SubCanvasPrimitive } from "./primitives/SubCanvasPrimitive";
 import { SysmlBlockPrimitive } from "./primitives/SysmlBlockPrimitive";
@@ -77,7 +78,7 @@ export type PaletteMeta = {
    */
   noDefaultLabel?: boolean;
   /** Glyph identifier for the toolbar icon (matches the tile's SVG). */
-  glyph: "rect" | "circle" | "diamond" | "dashed-rect" | "text" | "note" | "markdown" | "fact" | "page" | "table" | "cube" | "block" | "requirement" | "package" | "fmu" | "sub-canvas";
+  glyph: "rect" | "circle" | "diamond" | "dashed-rect" | "text" | "note" | "markdown" | "fact" | "page" | "table" | "cube" | "block" | "requirement" | "package" | "fmu" | "sub-canvas" | "image";
   /** Ordering hint within a section (lower first). */
   order?: number;
   /**
@@ -304,11 +305,19 @@ registerNodeRenderer("sysml:package", SysmlPackagePrimitive, {
   glyph: "package",
   order: 70,
 });
+// A picture: a URL, or a cut from a document page by page and bbox.
+registerNodeRenderer("image", ImagePrimitive, {
+  group: "cards",
+  label: "Image",
+  hint: "a picture, or a cut from a document page",
+  glyph: "image",
+  width: 320,
+  order: 45,
+});
 // future primitives (when their renderers land):
 //   registerNodeRenderer("media", MediaPrimitive);
 //   registerNodeRenderer("code", CodePrimitive);
 //   registerNodeRenderer("plot", PlotPrimitive);
-//   registerNodeRenderer("image", ImagePrimitive);
 //   registerNodeRenderer("fmu", FmuPrimitive);
 
 /**
@@ -449,3 +458,8 @@ export const nodeTypes: NodeTypes = new Proxy({} as NodeTypes, {
  * ends at. Kept out of the palette registry so nothing tries to place it as a
  * node. */
 export const CONNECT_TOOL = "__connect__";
+/**
+ * The mark-up mode as a rail tool: armed, the canvas takes ink instead of
+ * clicks. Not a shape either; it places nothing.
+ */
+export const INTENT_TOOL = "__intent__";

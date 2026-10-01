@@ -16,12 +16,19 @@ import { useUiStore } from "@/stores/uiStore";
  * The delay is generous for the same reason. It is not a debounce, it is the
  * time to cross the canvas, and crossing costs more than dismissing something
  * that sits under your cursor.
+ *
+ * Some things need longer than any delay. Writing a note about why a reference
+ * is wrong takes as long as it takes, and the source has to still be there at
+ * the end of the sentence. Cancelling the timer is not enough for that: the
+ * next mouse-out re-arms it and the page goes anyway. So a caller can HOLD the
+ * pane open instead, and nothing closes it until the hold is released.
  */
 
 /** Long enough to travel from a link in the canvas to the pane on the left. */
 export const TRANSIENT_CLOSE_MS = 600;
 
 let timer: number | null = null;
+let holds = 0;
 
 export function cancelTransientClose(): void {
   if (timer !== null) {
@@ -40,9 +47,31 @@ export function scheduleTransientClose(): void {
   cancelTransientClose();
   timer = window.setTimeout(() => {
     timer = null;
+    // Held open by something the reader is still using.
+    if (holds > 0) return;
     const state = useUiStore.getState();
     if (state.hoverPreviewMode !== "viewer") return;
     if (state.pdfViewerPinned) return;
     state.closePdf();
   }, TRANSIENT_CLOSE_MS);
+}
+
+/**
+ * Keep the pane open until the returned function is called.
+ *
+ * For interactions that outlast any close delay and need the source still on
+ * screen: judging a reference, writing down why it is wrong. Releasing hands
+ * the pane back to the usual rule rather than closing it outright, so a reader
+ * still inside it keeps it.
+ */
+export function holdTransientViewer(): () => void {
+  holds += 1;
+  cancelTransientClose();
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    holds = Math.max(0, holds - 1);
+    if (holds === 0) scheduleTransientClose();
+  };
 }
