@@ -205,3 +205,24 @@
 @media (prefers-reduced-motion: reduce) {
   .anchor-stroke { animation: none; }
 }
+
+/* The mark-up pen held up (Space): nothing it lays over the canvas takes the
+   pointer, so the board underneath can be hovered and clicked. */
+[data-pen-up] * {
+  pointer-events: none !important;
+}
+
+/* With the pen up a drag pans the board, so the board shows the hand. An
+   anchor is still pressed to open it, so it keeps the pointing hand. */
+body[data-pen-lifted] .react-flow,
+body[data-pen-lifted] .react-flow * {
+  cursor: grab !important;
+}
+body[data-pen-lifted] .react-flow :is([data-testid="ref-review-chip"], [data-source-anchor]),
+body[data-pen-lifted] .react-flow :is([data-testid="ref-review-chip"], [data-source-anchor]) * {
+  cursor: pointer !important;
+}
+body[data-pen-panning] *,
+body[data-pen-lifted][data-pen-panning] .react-flow :is(*, [data-source-anchor]) {
+  cursor: grabbing !important;
+}

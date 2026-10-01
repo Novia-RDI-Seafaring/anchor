@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CONNECT_TOOL } from "./registry";
+import { CONNECT_TOOL, INTENT_TOOL } from "./registry";
 import { KEY_FOR_TOOL, TOOL_KEYS } from "./toolKeys";
 
 describe("tool shortcuts", () => {
@@ -8,6 +8,8 @@ describe("tool shortcuts", () => {
     expect(TOOL_KEYS.t).toBe("text");
     expect(TOOL_KEYS.r).toBe("concept");
     expect(TOOL_KEYS.a).toBe(CONNECT_TOOL);
+    // Marking up is a tool like the others: one letter, on the rail.
+    expect(TOOL_KEYS.i).toBe(INTENT_TOOL);
   });
 
   it("gives every tool one letter to print on its tile", () => {

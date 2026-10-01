@@ -30,13 +30,13 @@
  */
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
-import { Plus, X } from "lucide-react";
+import { Plus, WandSparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { cad } from "@/api/cad";
 import { canvases } from "@/api/canvases";
 import { fmu } from "@/api/fmu";
-import { canDragFromToolbar, CONNECT_TOOL, paletteEntries, type PaletteMeta } from "@/canvas/registry";
+import { canDragFromToolbar, CONNECT_TOOL, INTENT_TOOL, paletteEntries, type PaletteMeta } from "@/canvas/registry";
 
 import { KEY_FOR_TOOL, TOOL_KEYS } from "@/canvas/toolKeys";
 import {
@@ -100,7 +100,10 @@ export function LeftToolRail({ workspaceSlug }: Props) {
         // Single-key tool shortcuts, the way every drawing tool does it.
         // Only when the user is not typing and holds no modifier.
         const tool = TOOL_KEYS[event.key.toLowerCase()];
-        if (tool) {
+        // While marking up, letters are not tool keys: the pens have the
+        // numbers and `i` puts the pen down. Reaching for `t` to type and
+        // landing in the text tool would drop the whole mark-up.
+        if (tool && (armedTool !== INTENT_TOOL || tool === INTENT_TOOL)) {
           event.preventDefault();
           armTool(tool);
           return;
@@ -112,6 +115,10 @@ export function LeftToolRail({ workspaceSlug }: Props) {
         // Also deselect the active node so the selection ring + in-flight
         // edits clear. The hook's `canEdit` flip drives the commit.
         if (typing) return; // typing inside an input — let the input own Esc
+        // Marking up owns its own escape: it backs out a layer at a time
+        // (field, selection, then the mode) and disarms itself at the end.
+        // Disarming here as well would drop the mode on the first press.
+        if (armedTool === INTENT_TOOL) return;
         if (armedTool) disarmTool();
         setSelectedNodeId(null);
         setPropertiesOpen(false);
@@ -156,6 +163,10 @@ export function LeftToolRail({ workspaceSlug }: Props) {
 
   return (
     <TooltipProvider delayDuration={250}>
+      {/* While marking up the rail stands aside and the pens take its
+          place, same spot, dark: one bar for one mode, and its first tile
+          is the way back. The tools cannot be used mid-mark-up anyway. */}
+      {armedTool !== INTENT_TOOL ? (
       <div
         // A vertical rail down the left edge. A horizontal bar across the top
         // competes with the canvas title and the page's own chrome, and it
@@ -167,6 +178,44 @@ export function LeftToolRail({ workspaceSlug }: Props) {
         aria-orientation="vertical"
         aria-label="Canvas tools"
       >
+        {/* Mark up. Armed, the canvas takes ink: rings, lines, words, filed
+            as intents for the agent. First on the rail because it is the
+            tool the reader reaches for most while reviewing, and because its
+            pens and its queue dock to the right of it, so everything about
+            marking up sits in one place. */}
+        <RailGroup label="Mark up">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                data-testid="comment-mode-toggle"
+                aria-label="Mark up"
+                aria-pressed={armedTool === INTENT_TOOL}
+                onClick={() => armTool(INTENT_TOOL)}
+                className={`relative grid h-9 w-9 place-items-center rounded-lg border text-neutral-600 transition ${
+                  armedTool === INTENT_TOOL
+                    ? "border-violet-400 bg-violet-50 text-violet-700"
+                    : "border-transparent hover:border-neutral-300 hover:bg-neutral-50"
+                }`}
+              >
+                <WandSparkles size={16} strokeWidth={1.75} aria-hidden />
+                <span
+                  className="pointer-events-none absolute bottom-0 right-0.5 text-[8px] leading-none text-neutral-400"
+                  aria-hidden
+                >
+                  I
+                </span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <div className="font-medium">Mark up</div>
+              <div className="text-neutral-300">draw across or around things, then queue it for the agent</div>
+            </TooltipContent>
+          </Tooltip>
+        </RailGroup>
+
+        <RailDivider />
+
         <RailGroup label="Shapes">
           {shapes.map((e) => (
             <RailTile
@@ -295,12 +344,15 @@ export function LeftToolRail({ workspaceSlug }: Props) {
           </PopoverPrimitive.Portal>
         </PopoverPrimitive.Root>
       </div>
+      ) : null}
 
       {/* Hint while a tool is armed. It sits along the bottom now that the
           rail runs down the left: beside the rail it would cover the canvas
           the user is about to click, and under a top bar it no longer has a
           bar to sit under. */}
-      {armedTool ? (
+      {/* Not for marking up: nothing is placed, and the mode has its own
+          panel beside the pens that says what to do. */}
+      {armedTool && armedTool !== INTENT_TOOL ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center">
           <div className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white/95 px-3 py-1 text-[11px] text-neutral-600 shadow-sm backdrop-blur">
             <span className="font-medium text-neutral-800">{labelFor(armedTool)}</span>
@@ -340,7 +392,7 @@ function labelFor(nodeType: string): string {
 
 function RailDivider() {
   // Separates stacked groups, so it runs across the rail rather than down it.
-  return <div className="my-0.5 h-px w-6 bg-neutral-200" aria-hidden />;
+  return <div className="my-1 h-px w-7 bg-neutral-300" aria-hidden />;
 }
 
 function RailGroup({ label, children }: { label: string; children: React.ReactNode }) {
@@ -440,6 +492,14 @@ function Glyph({ glyph }: { glyph: PaletteMeta["glyph"] }) {
       return (
         <svg viewBox="0 0 24 24" className={cls} fill="none" strokeWidth={1.5} strokeDasharray="3 2">
           <rect x="3" y="5" width="18" height="14" rx="2" />
+        </svg>
+      );
+    case "image":
+      return (
+        <svg viewBox="0 0 24 24" className={cls} fill="none" strokeWidth={1.5}>
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <circle cx="9" cy="10" r="1.6" />
+          <path d="M4 18l5-5 4 4 3-3 4 4" />
         </svg>
       );
     case "text":
