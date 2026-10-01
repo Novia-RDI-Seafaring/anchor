@@ -26,6 +26,7 @@ a project-level sentinel) so a per-canvas SSE subscriber sees the signal.
 """
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -235,7 +236,7 @@ def _validate_place(place: Any) -> dict[str, Any] | None:
         if key not in place:
             continue
         value = place[key]
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or math.isnan(value):
             raise ThreadError("invalid_item", f"place.{key} must be a number")
         out[key] = float(value)
     return out

@@ -3,7 +3,7 @@
  * A reader hovering a link is looking at the pane, so that is what should
  * zoom — not the board underneath the pointer.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { onViewerZoomRequest, requestViewerZoom, viewerAcceptsZoom } from "@/canvas/viewerZoom";
 
