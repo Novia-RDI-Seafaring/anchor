@@ -15,6 +15,7 @@ import { PlaceholderChip } from "@/canvas/PlaceholderChip";
 import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
 import { ReviewBadge } from "@/canvas/ReviewBadge";
 import { useInlineField } from "@/canvas/useInlineField";
+import { fitWidth, keyColumnPercent } from "@/canvas/specLayout";
 import { useLiveResize } from "@/canvas/useLiveResize";
 import { useUiStore } from "@/stores/uiStore";
 
@@ -261,9 +262,18 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   // room, but doesn't go smaller than the user-chosen size. Width still
   // gets honoured explicitly because the user typically resizes spec
   // tables horizontally to control column widths.
+  // A card nobody has sized is as wide as its rows, so every value reads
+  // in full from the start; the key column takes the share its longest key
+  // needs. An agent used to screenshot a new card and widen it.
+  const fontPx = text.fontSize.endsWith("rem")
+    ? parseFloat(text.fontSize) * 16
+    : text.fontSize.endsWith("px")
+      ? parseFloat(text.fontSize)
+      : 14;
+  const keyPct = keyColumnPercent(rows);
   const wrapperStyle: React.CSSProperties = sized
     ? { width: liveW, minHeight: liveH }
-    : {};
+    : { width: fitWidth(rows, fontPx) };
   if (ph.active) {
     wrapperStyle.background = PLACEHOLDER_BG;
     wrapperStyle.borderColor = PLACEHOLDER_STROKE;
@@ -376,7 +386,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       {rows.length > 0 || !d.description ? (
         <table className="w-full table-fixed">
           <colgroup>
-            <col style={{ width: "45%" }} />
+            <col style={{ width: `${keyPct}%` }} />
             <col />
             <col style={{ width: "5rem" }} />
           </colgroup>
