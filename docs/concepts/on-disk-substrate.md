@@ -6,8 +6,9 @@
    `anchor serve --data-dir ./received`. Same canvases, same documents.
 2. **Inspectable.** Plain `.json` and `.md`. `cat` works. `jq` works.
    `git log` of the data folder tells a coherent story.
-3. **Independently lifecycled.** Documents and canvases don't depend
-   on each other. Add or remove either without orphaning the other.
+3. **Separate lifecycles.** Deleting a canvas does not delete its source
+   documents. Removing a source document can leave unresolved references
+   on canvases that cited it.
 4. **Producer-extensible.** Every extension owns a top-level folder.
    Adding a new extension doesn't change paths owned by existing ones.
 

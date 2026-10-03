@@ -125,35 +125,38 @@ project        : --project  >  ANCHOR_PROJECT  >  anchor use  >  "default"
 }}
 ```
 
-## Configuration precedence
+## Configuration and selection
 
-Highest priority first:
+Project selection and model policy have different rules. A CLI command can
+resolve a working folder's marker, explicit selectors, process selectors, or
+the saved CLI session default. MCP is pinned to its named environment and uses
+a per-call project or `open_project` session selection. `anchor use` does not
+change the MCP session.
 
-1. Explicit flags / constructor args
-2. `ANCHOR_*` environment variables
-3. A `.env` file (next to the environment profile)
-4. The project `anchor.toml` marker
-5. The environment `env.toml`
-6. Built-in defaults
+The environment owns provider, endpoint, and local-only policy. A project may
+override permitted non-security settings, but it cannot redirect that policy.
+Process variables cannot silently retarget a named environment either.
+Credentials are scoped to the selected environment; its `.env` is not a second
+provider profile. See [Configuration](../reference/configuration.md).
 
-A project usually has no overrides and inherits the environment. It overrides a
-value by adding it to its own `anchor.toml` marker, alongside the `env` and
-`name` keys. So an operator's `ANCHOR_*` override always wins over a committed
-default, and a malformed config is ignored with a warning rather than crashing
-the CLI. Storage is structural (the project folder's `.anchor_data/`), not a
-setting. There is no `data_dir` key to keep in sync.
+Storage normally follows the project folder's `.anchor_data/`. A raw
+`--data-dir` override is available on commands that expose that flag; it is
+separate from normal named project selection.
 
 ## Data zones and egress
 
 The provider you pick governs what leaves the host:
 
-- **`local` / `ollama`** keep document content on your machine or LAN.
+- **`local`** runs ANCHOR extraction on this computer with cached models.
+- **`ollama`** sends model input to the configured Ollama endpoint.
+- **`harness`** returns page work items to your connected agent.
 - **`openai`** sends page images and extracted text to OpenAI.
 - **`azure` / `custom`** send the same content only to the endpoint you name.
 
-Embeddings stay **local** (`bge-small`) by default, so text never leaves the
-host even when the vision model is remote. Choosing a `text-embedding-*` model
-opts those vectors into the endpoint.
+Region embeddings use a local model by default. Choosing an allowed
+`text-embedding-*` model sends embedding input text to the configured
+endpoint. Vision stages and the external harness have separate content
+disclosure paths; local embeddings do not make those stages local.
 
 See [Choose a provider and enable gold](../guides/provider-setup.md) for the
 setup and recovery workflow, [Configuration](../reference/configuration.md)
