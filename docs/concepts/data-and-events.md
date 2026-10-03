@@ -1,168 +1,94 @@
-# Data model & events
+# Data and events
 
-## The workspace aggregate
+## Canvas state
 
-A **workspace** is the entire state of one canvas. In code it's a
-pydantic model with three fields:
+One workspace represents one canvas. The domain `Workspace` holds its slug,
+title, version, nodes, edges, metadata, and last event identity. Nodes and edges
+are dictionaries in the domain aggregate; the public state response exposes
+them as lists:
 
-```python
-class Workspace:
-    meta: WorkspaceMeta        # slug, title, created_at, version
-    nodes: dict[str, Node]     # id → Node
-    edges: dict[str, Edge]     # id → Edge
+```json
+{
+  "slug": "pump-selection",
+  "title": "Pump selection",
+  "version": 0,
+  "nodes": [],
+  "edges": [],
+  "metadata": {}
+}
 ```
 
-A `Node` carries `id`, `node_type`, `label`, `x`, `y`, `width?`,
-`height?`, `parent?`, and a free-form `data` dict that extensions use
-for type-specific payload (e.g. `pdf:document` nodes put `slug` and
-`page_count` in there).
+A node has an identity, type, label, position, optional dimensions/parent, and
+type-specific `data`. An edge connects two node identities and can name explicit
+handles. A spec table stores rows inside node data, with per-row source links
+and producer-issued evidence binding when available.
 
-An `Edge` carries `id`, `source` (node id), `target` (node id), `label`,
-`edge_type` (`floating` or `anchored`), and `data`.
+Use `canvas_node_types` or `anchor canvas node-types` to inspect renderer data
+contracts. Public source resolution and [claim evidence](claim-evidence.md)
+rules are part of preparing those writes, not a separate frontend-only verdict.
 
-There is **no list view** of all workspaces in memory. Workspaces are
-loaded on demand from disk and held only while a request is in flight
-or an SSE subscriber is listening.
+## Mutation path
 
-## Events are the canon
+Adapters invoke project services. A workspace mutation loads the current state,
+validates the command, prepares source-aware data where relevant, applies domain
+events, appends them to the log, saves the state, and publishes updates.
+Dependent changes such as removing connected edges are handled by domain rules.
 
-Every mutation produces a `DomainEvent`. The state on disk is *derived*
-from the event log; the event log is the truth.
+Within a runtime process, workspace locks serialize the mutation sequence.
+These locks do not coordinate separate operating-system processes. Avoid
+simultaneous writes to the same canvas from independent CLI, MCP, or server
+processes.
 
-```python
-class DomainEvent:
-    id: str               # client-supplied UUID, idempotency key
-    ts: float             # server-assigned timestamp
-    version: int          # monotonic per-workspace counter
-    workspace_id: str
-    type: str             # "NodeAdded", "EdgeRemoved", ...
-    payload: dict         # the event-specific fields
-    causation_id: str | None   # for cascade tracing
+## Event envelope and types
+
+`DomainEvent` carries an ID, timestamp, per-workspace version, workspace ID,
+type, payload, optional causation ID, and optional actor attribution. IDs support
+deduplication when the same event identity is resubmitted; do not assume every
+newly issued high-level command automatically reuses a previous identity.
+
+Canvas event families include node and edge changes, canvas clearing/snapshots,
+reference operations, metadata changes, and proposal-set review. The current
+definitions live in `src/anchor/core/events/canvas.py`. Extensions publish
+processing events for their own services as well.
+
+## Persistence and replay
+
+Each canvas has:
+
+```text
+.anchor_data/canvases/<slug>/
+  meta.json
+  state.json
+  events.jsonl
 ```
 
-The canvas defines 11 event types, all in `core/events/canvas.py`:
+The filesystem store loads the state snapshot and replays logged events newer
+than its version. Snapshot writes replace the snapshot file atomically. The
+append-only log retains change history and supports reads after a version.
+Back up state, metadata, and the log together; a project backup should also
+include referenced documents and intent threads.
 
-| Event              | When                                        | Cascades?                       |
-| ------------------ | ------------------------------------------- | ------------------------------- |
-| `NodeAdded`        | new node created                            | no                              |
-| `NodeRemoved`      | node deleted                                | yes — to `EdgeRemoved` for every touching edge |
-| `NodeMoved`        | drag finished                               | no                              |
-| `NodeResized`      | resize handle released                      | no                              |
-| `NodeUpdated`      | label/data changed                          | no                              |
-| `NodeReparented`   | dropped into / out of an `area`             | no                              |
-| `EdgeAdded`        | new edge connected                          | no                              |
-| `EdgeRemoved`      | edge deleted (or cascaded from node remove) | no                              |
-| `EdgeUpdated`      | edge label / data changed                   | no                              |
-| `CanvasCleared`    | bulk wipe                                   | implicit — all nodes/edges gone |
-| `CanvasSnapshot`   | replay checkpoint                           | no — informational              |
+## Browser synchronization
 
-Extensions add their own event types (`DocBronzed`, `DocSilvered`,
-`DocPolished`, `IngestProgress`, `FmuUploaded`, `SimulationCompleted`)
-on the same bus, in the extension's own namespace.
+`GET /api/workspaces/<slug>/events` opens SSE. The server sends a `snapshot`,
+then `patch` events with domain changes and `presence` updates. The browser
+reconciles optimistic edits with persisted state and can re-read a snapshot
+after reconnecting or detecting a version gap.
 
-## The mutation pipeline
+The HTTP process tails persisted canvas events so writes from CLI and MCP
+processes can reach browser subscribers. This bridges file changes into its
+in-process event bus. It is not shared-memory synchronization or cross-process
+locking, and there is no fixed latency guarantee.
 
-Every command — whether from a browser, an MCP-speaking agent, or the
-CLI — goes through the same six steps:
+## Intent threads
 
-```
-[client command]
-       │
-       ▼  acquire per-workspace asyncio.Lock
-[load Workspace from store]
-       │
-       ▼
-[validate command]   ← invariants: edge endpoints exist,
-       │               parent exists, idempotent on duplicate id,
-       │               row-level evidence edges require source_ref
-       ▼
-[apply event]        ← pure reducer: (state, event) → new_state
-       │               (also: cascade events for cascading commands)
-       ▼
-[append_event to store]   ← events.jsonl + atomic snapshot.json
-       │                    version is now N+1
-       ▼
-[publish to event bus]    ← MemoryEventBus, in-process pub-sub
-       │
-       ▼
-[return (state, event)]
-```
+Intents are durable project-level requests with an origin canvas, optional
+targets, and thread items. Markup submissions and harness PDF uploads can create
+them. The agent pulls pending intents, posts questions or suggestions, and
+resolves completed work. Human answers and review decisions remain attached to
+the thread. An empty placeholder node does not create a request.
 
-The same flow drives the SSE stream and the MCP `notifications/resources/updated`
-ping. There is no second "send the event to subscribers" step — the bus
-*is* the dispatch.
-
-The lock keeps mutations on one workspace serialised; different
-workspaces proceed in parallel. Extensions emit their own events
-(`DocBronzed`, `IngestProgress`, `SimulationCompleted`) on the same
-bus.
-
-## Document ingestion pipeline
-
-The PDF extension stores the original source before deriving structured
-content and source-grounded regions for use by canvases, agents, and
-simulations.
-
-![Document ingestion and provenance data pipeline](../assets/diagrams/data-pipeline.svg)
-
-*Source files move through bronze, silver, and gold artefacts; every
-downstream consumer receives values with source provenance.*
-
-## Real-time sync as a side effect
-
-The frontend uses `EventSource` against
-`GET /api/workspaces/{slug}/events`. The server immediately writes a
-`snapshot` event with the full state at the current `version`, then
-forwards every new `DomainEvent` as a `patch` event.
-
-The browser-side store (`canvasStore.ts`, Zustand) pattern-matches on
-`event.type` and updates its `nodes[id]` / `edges[id]` dictionary.
-ReactFlow re-renders only the changed node thanks to dict keys.
-
-If the client detects a version gap (network blip, sleep/wake), it
-re-fetches the snapshot via `GET /api/workspaces/{slug}/state` and
-resumes streaming. The reconnection is invisible to the user.
-
-**Optimistic local writes** work on top of this. Drag a node → the
-store updates `nodes[id].x/y` immediately and renders the next frame;
-in parallel, the browser PATCHes `/api/workspaces/{slug}/nodes/{id}`;
-the server emits `NodeMoved`; SSE delivers it back; the store's
-`applyEvent` runs idempotently because the event id matches a request
-the client already issued. On 4xx/5xx the optimistic write is rolled
-back and a toast surfaces the error.
-
-## Idempotency, ordering, replay
-
-- **Idempotent.** Every event carries a client-generated `id`. Re-sent
-  events are dropped by the store. Crashed-during-write requests are
-  safely retryable.
-- **Ordered per workspace.** A per-workspace `asyncio.Lock` serialises
-  the validate→apply→append→publish path; `version` increments by
-  exactly 1 per accepted event. Different workspaces proceed in
-  parallel.
-- **Replayable.** `events.jsonl` is append-only. `snapshot.json` is a
-  cached fold over those events at a known version. Cold-boot the
-  process, replay events from the snapshot's version onward, and you
-  have the same state.
-
-## What the SSE stream carries
-
-The stream is small and predictable:
-
-```
-event: snapshot
-data: {"meta": {...}, "nodes": {...}, "edges": {...}, "version": 42}
-
-event: patch
-data: {"id": "...", "type": "NodeMoved", "version": 43, "payload": {"id": "n1", "x": 120, "y": 80}, ...}
-
-event: patch
-data: {"id": "...", "type": "EdgeAdded", "version": 44, ...}
-```
-
-This is what makes the system **agent-friendly**. An MCP client doesn't
-need a special "agent protocol" — it subscribes to the same SSE feed
-the browser uses, or it polls `canvas_get_state`. Two-way sync between
-a human dragging on a canvas and an agent making tool calls is just
-both parties speaking to the same `WorkspaceService` and listening to
-the same bus.
+The inbox notification carries a pending count; clients retrieve payloads
+separately. An external harness still has to run the agent and poll or respond
+to available signals. See [MCP tools](../reference/mcp.md) and the
+[tutorial](../getting-started/tutorial.md).

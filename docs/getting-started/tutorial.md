@@ -1,175 +1,120 @@
-# ANCHOR tutorial - first day
+# Tutorial: from a PDF to a reviewed table
 
-Five minutes from zero to "agent fills in my engineering specs while I watch".
+This walkthrough continues the [Quickstart](quickstart.md). It assumes project
+`pump-study` in environment `study`, canvas `pump-selection`, an ingested PDF,
+and an agent connected to the same environment.
 
-This walkthrough assumes you have a working AI harness on your machine
-(Claude Code, Cursor, opencode). If not, do that first; the agent is the
-half of ANCHOR that makes the canvas pay off.
-
-!!! tip "New here? Start with the Quickstart"
-    The [Quickstart](quickstart.md) is the shortest no-key path to your first
-    grounded value. This tutorial goes deeper into the `anchor demo` canvas and
-    the "agent fills the placeholders" flow.
-
-## 1. Install
-
-You need Python 3.12+. CI runs on Linux and performs CLI smoke checks on
-macOS and Windows.
+## Open the correct project
 
 ```bash
-uv tool install anchor-kb        # or: pipx install anchor-kb / pip install anchor-kb
-anchor version
+anchor use study pump-study
+anchor serve --env study --project pump-study
 ```
 
-After the install completes, `anchor` and `anchor-mcp` are on your `$PATH`.
+Keep the server running and open its printed URL. If it is already running for
+this project, use that instance. `anchor serve-info` lists running servers.
 
-!!! tip "Quick demo vs. a real project"
-    This tutorial uses `anchor demo`, which works out of the box in the default
-    environment's default project. For your own work, `cd` into a working
-    folder and run `anchor init`. It initializes a **project** there and binds
-    it to an environment. The first time, it asks you to pick a provider (your
-    data zone), or pass `--provider`, or run `anchor env create` first.
-    See [Environments and projects](../guides/environments-and-projects.md).
+Ask the agent to call `list_projects`, then `open_project("pump-study")` or pass
+`project="pump-study"` on project-scoped calls. A canvas slug alone does not
+identify its project.
 
-## 2. Run `anchor demo`
+## Build a useful table
 
-```bash
-anchor demo
-```
+Tell the agent what you need and which source to use:
 
-This does three things in every installation:
+> On canvas `pump-selection` in project `pump-study`, make one specification
+> table from the pump datasheet. Include operating limits, units, and the
+> relevant product variant. Each row must link to the source page and the most
+> precise available locator. Do not infer unstated values.
 
-1. Creates the default environment's `default` project if it's missing.
-2. Creates a workspace called `demo` and drops six
-   **placeholder spec nodes** with hints like "Max inlet pressure",
-   "Temperature range", "Motor power range".
-3. Starts the server on `localhost:8002`.
+With gold regions, the agent can search regions and retrieve their reconstructed
+content. With local-only extraction, it can inspect page text and available
+layout geometry. Semantic gold-region search is unavailable without gold
+regions and embeddings. Reading through an agent exposes that content to its
+configured model, even if the ANCHOR environment uses `local`.
 
-If an optional local demo PDF is already present, `anchor demo` also ingests
-it and adds a document node. The public repository and package do not ship a
-vendor PDF. For a normal first run, ingest your own PDF in another terminal:
+An agent can add or update the table through MCP. The browser reads the same
+persisted canvas and refreshes through server-sent events.
 
-```bash
-anchor ingest /path/to/datasheet.pdf
-```
+## Check the evidence
 
-Silver extraction is local. Gold regions build only when you configure a keyed
-vision provider. For public OpenAI, `OPENAI_API_KEY` can work; for Azure or a
-custom endpoint, use `ANCHOR_OPENAI_API_KEY` plus the endpoint and deployment
-names.
-Leave the server running.
+Click the source anchor beside a row. Inspect the PDF in the source dock:
 
-If the server's already running on that port, pass `--port 8003`. MCP tools
-still work through stdio; for canvas snapshots, add
-`"--base-url", "http://localhost:8003"` to the installed `anchor-mcp`
-arguments in your harness configuration.
+1. Check that the value belongs to the right parameter and product variant.
+2. Check the units and any operating conditions or footnotes.
+3. If the reference opens a whole page, locate the value yourself. Selecting
+   text can pin a more precise box to the row.
+4. Correct the table or ask the agent to revise it when the claim is wrong.
 
-## 3. Open the canvas
+Rows distinguish **Verified**, **Unverified**, **Stale**, and **No evidence**.
+Verified means ANCHOR matched the row's key and value to stored validated
+evidence. It is not an engineering approval. A substantive edit can make a
+previously verified row stale while keeping its source link. Use the row's
+**Check** action to request revalidation against the current stored evidence.
+See [Claim and evidence](../concepts/claim-evidence.md) for the matching limits.
 
-```text
-http://localhost:8002/c/demo
-```
+## Make a request on the canvas
 
-You'll see:
+Use the **mark up** tool on the left rail, or press `i` while you are not typing.
+Mark the objects or rows you mean and write a specific request, for example:
 
-- Six **placeholder spec nodes** in a grid on the right. Each carries a
-  dashed sky-blue outline and a small `empty <hint>` chip in the
-  top-right corner. That's the "agent please fill this" signal.
-- A **document node** after you ingest your PDF.
+> Check the units in these rows and add the cited operating conditions.
 
-Try it: right-click a plain shape, pick `Mark as placeholder`. It
-flips to the dashed-sky look. Pick `Clear placeholder` to revert.
+Click **send to agent**. The remark stays on the board with its thread. It
+becomes a durable project-level intent that your agent can retrieve. Ask the
+agent to check pending intents for `pump-study` if it is not already doing so.
+ANCHOR does not run an agent or guarantee that your client continuously polls.
 
-## 4. Register ANCHOR with your AI harness
+An empty shape or a node marked as a placeholder identifies a possible target;
+it does not, by itself, submit a request. A valid submitted ask needs text or
+meaningful drawing content.
+
+## Review the response
+
+The agent may ask a question in the remark thread. Answer it there so the
+clarification stays attached to the request.
+
+For a suggested canvas change, inspect the preview and choose **approve** or
+**decline**. You can send further marks or text as feedback. Applied small
+changes may offer **keep** and **revert** controls in the same thread. These
+controls concern that change; they are not a general canvas undo history.
+
+Agent-created nodes can also use the canvas review mode and proposal sets.
+Those group added elements for review and are separate from intent-thread
+suggestions. The resulting table remains editable by you.
+
+## Reuse the project
 
 In a second terminal:
 
 ```bash
-anchor install claude-code           # or: claude-desktop, cursor
+anchor use study pump-study
+anchor list
+anchor canvas list
+anchor canvas state pump-selection
+anchor intents
 ```
 
-This writes an MCP entry pointing at your default environment, plus the skill.
-The server serves that environment; you name a project per call, or use its
-`default` project (where `anchor demo` lives). To serve a different
-environment, install with `anchor install claude-code --env <name>`.
+The corpus belongs to the project, so one document can support several canvases.
+Stop the server with `Ctrl+C`; restart it with the same environment and project
+to continue. Copy the whole project folder, including `anchor.toml` and
+`.anchor_data/`, for a filesystem backup. An environment's credentials are
+separate from the project.
 
-Restart Claude Code. In any conversation, `/mcp` should now show `anchor` with
-its available tools. For Codex, Cursor, OpenCode, and generic stdio clients,
-see [Agent configuration](../guides/agent-configuration.md).
+## Optional: explore the demo canvas
 
-ANCHOR's MCP server also returns a short system-prompt block on connect
-that tells the agent how to think about the canvas: the substrates,
-the source-grounding rule, and the placeholder protocol. You don't
-need to brief it yourself.
+`anchor demo` seeds a canvas called `demo` with six placeholder spec nodes and
+starts a server. It can ingest an optional local sample PDF if one is available;
+the public package does not ship a vendor datasheet. Check which project the
+command resolves before using it for real work. The demo's empty nodes still
+need an explicit request before an agent fills them.
 
-## 5. Ask the agent to fill the placeholders
+## Next steps
 
-In your harness, paste:
-
-> Please fill in the placeholder spec nodes on the `demo` canvas using
-> `canvas_list_placeholders` + `search_documents`.
-
-The agent will:
-
-1. Call `canvas_list_placeholders(workspace_slug="demo")` to see what's
-   empty.
-2. For each placeholder, call `search_documents` (or `get_gold_regions`)
-   to find the relevant region of your ingested PDF.
-3. Call `canvas_update_node` with the resolved rows + a `source_ref`
-   carrying the doc slug, page, and bbox. The `placeholder: false` flag
-   clears the dashed outline and chip.
-
-## 6. Watch it happen live
-
-Your browser tab on `/c/demo` is subscribed to a Server-Sent Events feed.
-As the agent writes each node, you'll see:
-
-- The chip disappears.
-- The dashed sky outline flips to solid neutral.
-- The spec rows fade in.
-- A source anchor icon appears beside grounded rows. Click it to open
-  the source page in the viewer.
-
-No reload needed. The same SSE stream is how a second browser tab, a
-second agent, or a headless viewer would see the same updates.
-
-## 7. Inspect a value's source
-
-Click a row's source anchor icon on a spec table to open the PDF viewer
-at that page, with the relevant region or value highlighted. This is
-the trust mechanism: every grounded value the agent writes points back
-to a specific page and bbox when available. If you don't see a source
-ref, treat the value as ungrounded.
-
-## What's next
-
-- Drop another PDF onto the canvas and the same flow works on a fresh
-  doc. `anchor ingest /path/to/file.pdf` runs the pipeline from the CLI.
-- Make your own placeholders: right-click any shape, then `Mark as
-  placeholder`. Set `data.placeholder_hint` via the Properties panel to
-  give the agent a steer.
-- Run `anchor canvas placeholders demo` in a shell to see the agent-
-  visible list any time.
-- Read [Many interfaces](../concepts/interfaces.md) to understand why CLI / MCP / HTTP
-  are peers, not one wrapping another.
-
-## Troubleshooting
-
-`anchor ingest` produced no gold regions. Bronze and silver still run locally,
-but the gold region step needs a keyed vision provider. For Azure, check all of
-these before retrying with `--force`: `ANCHOR_OPENAI_API_KEY` is set to the
-Azure resource key, `openai_base_url` ends in `/openai/v1/`, and
-`region_model` is the Azure deployment name. Run `anchor check --probe`, then
-`anchor list` and `anchor gold-map <slug>` after ingest.
-
-`/mcp` doesn't list `anchor`. Restart your harness fully (`Cmd+Q`,
-reopen, not just close the window). MCP server lists load on startup.
-
-Port 8002 is taken. Pass `--port` to `anchor demo`. For MCP snapshots,
-add a matching `--base-url http://localhost:<port>` argument to the
-installed `anchor-mcp` entry in your harness configuration.
-
-The canvas didn't update live. The browser is fine; SSE always
-reconciles on next state read. Force a refresh, but first check
-`anchor canvas state demo` from the shell; if the state's there, the
-SSE reconnect just hasn't fired yet.
+- [Documents and canvases](../guides/documents-and-canvases.md): upload modes,
+  source references, and common commands.
+- [Provider setup](../guides/provider-setup.md): local, harness, and endpoint
+  extraction choices.
+- [Environments and projects](../guides/environments-and-projects.md): working
+  folders, named projects, and storage selection.
+- [Agent setup](../guides/agent-setup.md): client installers and troubleshooting.
