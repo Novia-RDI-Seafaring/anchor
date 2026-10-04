@@ -13,12 +13,13 @@ Mechanism
    first. These are advertised on every connection.
 2. The long tail (rare canvas ops, the harness ingest sub-protocol, FMU / CAD
    / SysML extension tools, derive/embed/synopsis) is GATED. It is advertised
-   only when an extension is actually *active* for the resolved default
-   project (it has data), and is always reachable through the
-   ``anchor_list_capabilities`` meta-tool below.
+   for an extension that is *active* for the resolved default project
+   (it has data). The ``anchor_list_capabilities`` meta-tool catalogs
+   the rest without changing the advertised list.
 3. Gating only changes ADVERTISEMENT. ``server.call_tool`` routes by tool name
-   independently of the advertised list, so a gated tool stays callable the
-   moment a harness discovers it. Nothing here deletes or renames a tool.
+   independently of the advertised list. Hosts that expose only tools/list
+   cannot call an omitted tool; catalog discovery does not enable it.
+   Nothing here deletes or renames a tool.
 
 Why advertisement, not dispatch
 ===============================
@@ -27,8 +28,8 @@ The MCP ``list_tools`` handler is connection-level: it has no per-call
 does. We therefore gate against the *resolved default* project (session
 default or the environment default) -- the project the agent is most likely
 acting on. If that resolution is unavailable (e.g. an un-initialized
-environment), we simply advertise the core; the long tail is still one
-``anchor_list_capabilities`` call away.
+environment), we simply advertise the core; the long tail remains
+discoverable through ``anchor_list_capabilities``.
 """
 from __future__ import annotations
 
@@ -42,6 +43,7 @@ from typing import Any
 CORE_LIFECYCLE_NAMES: set[str] = {
     "list_projects",
     "create_project",
+    "open_project",
 }
 
 CORE_STATUS_NAMES: set[str] = {
@@ -100,6 +102,8 @@ CORE_INTENT_NAMES: set[str] = {
 # fact and polling. canvas_review_proposal_set is the human's verdict, which
 # the skill tells agents not to call unasked.
 CORE_CANVAS_NAMES: set[str] = {
+    # Project and canvas discovery must work from the initial host tool list.
+    "canvas_list_workspaces",
     "canvas_create_workspace",
     "canvas_get_state",
     "canvas_add_node",
@@ -195,7 +199,6 @@ _CAPABILITY_GROUPS: list[dict[str, Any]] = [
             "canvas_update_edge",
             "canvas_clear",
             "canvas_delete_workspace",
-            "canvas_list_workspaces",
             "canvas_set_review_mode",
             # canvas_propose_set is advertised by default; these are the rest
             # of the batch surface.
@@ -237,13 +240,12 @@ _CAPABILITY_GROUPS: list[dict[str, Any]] = [
     {
         "capability": "lifecycle_advanced",
         "when_to_use": (
-            "Environment + project administration beyond list/create: make a "
-            "new environment, set the session default project, edit a project's "
+            "Environment + project administration beyond list/create/open: make a "
+            "new environment, edit a project's "
             "description, or remove / rename a project to clean up."
         ),
         "names": [
             "create_environment",
-            "open_project",
             "update_project",
             "remove_project",
             "rename_project",

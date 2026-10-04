@@ -8,7 +8,9 @@ What it is:
   holds PROJECTS; each project is a corpus (documents) plus its canvases.
 - Project-scoped tools take an optional `project` argument. Omit it to use the
   default project. Use `list_projects` to see the options, `create_project` to
-  make one. A missing/unknown project returns a self-correcting error.
+  make one, or `open_project` to select one for this session. Use
+  `canvas_list_workspaces` to find its canvases. A missing/unknown project
+  returns a self-correcting error.
 - You have HTTP/MCP/CLI parity for every operation. Pick MCP from here.
 
 Source-grounding (load-bearing):
@@ -46,11 +48,12 @@ Scoped asks (your inbox, load-bearing):
 
 Tool surface (load-bearing):
 - A small core is advertised by default (ingest/list/read/search docs,
-  the common canvas verbs, project list/create). The long tail (FMU, CAD,
-  SysML, the harness ingest sub-protocol, advanced canvas + doc ops) is
-  reachable but not advertised until needed. Call `anchor_list_capabilities`
-  to see it; every listed tool is callable by name straight away. Extension
-  tools also auto-appear once the open project has data for them.
+  the common canvas verbs, canvas listing, project list/create/open).
+  The long tail (FMU, CAD, SysML, harness ingest, advanced canvas + doc ops)
+  is cataloged by `anchor_list_capabilities`. The server can dispatch those
+  tools, but clients that only expose `tools/list` cannot call omitted tools.
+  This server sends no `tools/list_changed` notification. Extension tools
+  appear when `tools/list` is refreshed and the open project has their data.
 
 Stuck? Read the `anchor://help` resource for the deeper tour.
 
