@@ -192,7 +192,10 @@ def build_index(docling: dict[str, Any], *, filename: str = "", title: str = "")
 INDEX_CONTENT_FIELDS: tuple[str, ...] = ("cells",)
 
 
-def project_index(index: dict[str, Any] | None, *, include_content: bool = False) -> dict[str, Any] | None:
+def project_index(
+    index: dict[str, Any] | None, *, include_content: bool = False,
+    pages_meta: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     """Return the index with per-entry content included or stripped.
 
     The silver index is a map of the document: an outline plus one entry per
@@ -207,9 +210,23 @@ def project_index(index: dict[str, Any] | None, *, include_content: bool = False
     ``bbox``). Pass ``include_content=True`` for the unabridged record.
     ``None`` passes through so callers can keep reporting "not found".
     """
-    if index is None or include_content:
-        return index
+    if index is None:
+        return None
     out = dict(index)
+    # Geometry belongs to silver, independent of whether gold is complete.
+    # Keep item content out of this map and retain the explicit origin stamp.
+    if isinstance(pages_meta, dict):
+        current = "pages" in pages_meta
+        pages = pages_meta.get("pages") if current else pages_meta
+        summary = {
+            str(page): {k: v for k, v in entry.items() if k in {"page_size", "width", "height"}}
+            for page, entry in pages.items() if isinstance(entry, dict)
+        } if isinstance(pages, dict) else {}
+        out["pages_meta"] = {"pages": summary} if current else summary
+        if "bbox_origin" in pages_meta:
+            out["pages_meta"]["bbox_origin"] = pages_meta["bbox_origin"]
+    if include_content:
+        return out
     tables = out.get("tables")
     if isinstance(tables, list):
         out["tables"] = [

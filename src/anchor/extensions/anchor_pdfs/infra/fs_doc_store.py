@@ -491,7 +491,7 @@ class FsDocStore:
             document = index.get("document", {}) if isinstance(index, dict) else {}
             if document.get("source") != manifest["source"] or document.get("generation") != {"id": manifest["generation"], "pages": manifest["pages"]}:
                 raise SourceIdentityError("document generation and source metadata disagree")
-        return project_index(index, include_content=include_content)
+        return project_index(index, include_content=include_content, pages_meta=await self.get_pages_meta(slug))
 
     @document_view
     async def get_pages_meta(self, slug: str) -> dict[str, Any] | None:

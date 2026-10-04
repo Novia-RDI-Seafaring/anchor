@@ -10,6 +10,7 @@ export type DocumentSummary = {
 };
 
 export type DocumentIndex = {
+  pages_meta?: unknown;
   document: { filename: string; title: string; page_count: number;
     generation?: { id: string; pages: number[] } };
   outline: Array<{ level: number; title: string; page: number; bbox: number[] }>;

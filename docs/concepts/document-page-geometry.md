@@ -2,7 +2,10 @@
 
 Document cards and the raster modal read source-page dimensions through
 `web/src/lib/documentPageGeometry.ts`. Silver's `build_pages_meta` produces
-`pages.meta.json`; the gold-map endpoint exposes it as `pages_meta`:
+`pages.meta.json`. The raster modal reads its compact geometry summary from
+the document index's `pages_meta`, including for local-only documents without
+gold regions. HTTP, MCP, and CLI index responses carry the same summary from
+the selected document generation. The card reads `pages_meta` from gold-map:
 
 ```json
 {
