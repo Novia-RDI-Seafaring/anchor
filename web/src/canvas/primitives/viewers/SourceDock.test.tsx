@@ -10,15 +10,15 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { documents } from "@/api/documents";
+import { documents, type DocumentIndex } from "@/api/documents";
 import { TRANSIENT_CLOSE_MS } from "@/canvas/transientViewer";
 import { useUiStore } from "@/stores/uiStore";
 
 import { SourceDock } from "./SourceDock";
 
 vi.mock("./PdfSourceView", () => ({
-  PdfSourceView: ({ slug, page, total, generation }: { slug: string; page: number; total: number; generation?: string }) => (
-    <div data-testid="pdf-source-view" data-slug={slug} data-page={page} data-total={total} data-generation={generation} />
+  PdfSourceView: ({ slug, page, total, generation, index }: { slug: string; page: number; total: number; generation?: string; index?: DocumentIndex | null }) => (
+    <div data-testid="pdf-source-view" data-slug={slug} data-page={page} data-total={total} data-generation={generation} data-outline={index?.outline?.map((entry) => entry.title).join(",")} />
   ),
 }));
 
@@ -44,6 +44,16 @@ async function renderDock() {
 }
 
 describe("SourceDock", () => {
+  it("passes the fetched outline into the shared PDF view", async () => {
+    vi.mocked(documents.index).mockResolvedValue({
+      document: { title: "Manual", filename: "manual.pdf", page_count: 5 },
+      outline: [{ title: "Operating limits", level: 1, page: 3, bbox: [10, 40, 80, 50] }],
+    });
+    useUiStore.getState().openPdf("manual", { mode: "dock" });
+    await renderDock();
+    expect(screen.getByTestId("pdf-source-view").getAttribute("data-outline")).toBe("Operating limits");
+  });
+
   it("refreshes an open LKH viewer from four pages to its published one-page generation", async () => {
     vi.useFakeTimers();
     vi.mocked(documents.index).mockResolvedValue({

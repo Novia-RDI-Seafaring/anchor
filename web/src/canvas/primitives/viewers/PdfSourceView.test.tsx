@@ -24,6 +24,7 @@ const PAGE_COUNT = 6;
 function makeDoc() {
   return {
     numPages: PAGE_COUNT,
+    getOutline: vi.fn(async () => []),
     getPage: vi.fn(async (_p: number) => ({
       view: [0, 0, 100, 200],
       getViewport: ({ scale }: { scale: number }) => ({ width: 100 * scale, height: 200 * scale }),
@@ -126,6 +127,21 @@ async function renderViewer(props?: Partial<Parameters<typeof PdfSourceView>[0]>
 }
 
 describe("PdfSourceView (continuous)", () => {
+  it("jumps to a silver heading and flashes its box on the target page", async () => {
+    const scroller = stubScroller();
+    const { onPageChange } = await renderViewer({ index: {
+      document: { title: "Manual", filename: "manual.pdf", page_count: 6 },
+      outline: [{ title: "Operating limits", level: 1, page: 4, bbox: [10, 40, 80, 50] }],
+    } });
+    fireEvent.click(screen.getByRole("tab", { name: "Contents" }));
+    fireEvent.click(screen.getByRole("button", { name: "Operating limits 4" }));
+    expect(scroller.lastTop()).toBe(632);
+    expect(onPageChange).toHaveBeenCalledWith(4);
+    const flash = await screen.findByTestId("reference-confirm-flash");
+    expect(flash.closest("[data-testid='pdf-page-slot']")?.getAttribute("data-page")).toBe("4");
+    await waitFor(() => expect(screen.queryByTestId("reference-confirm-flash")).toBeNull(), { timeout: 3000 });
+  });
+
   it("renders a thumbnail rail with one thumbnail per page", async () => {
     stubScroller();
     await renderViewer();
@@ -137,7 +153,7 @@ describe("PdfSourceView (continuous)", () => {
   it("hides the rail when toggled off", async () => {
     stubScroller();
     await renderViewer();
-    fireEvent.click(screen.getByLabelText("Toggle thumbnails"));
+    fireEvent.click(screen.getByLabelText("Toggle PDF navigation"));
     expect(screen.queryByTestId("thumbnail-rail")).toBeNull();
   });
 

@@ -73,6 +73,20 @@ when a bare ID is ambiguous. An invalid replacement does not replace the
 previous complete document generation. See
 [Document generations](../concepts/document-generations.md).
 
+## Navigate a PDF
+
+Open a document in the source dock and choose **Contents** beside **Pages**.
+Headings are nested by level; extracted tables and figures have separate lists.
+Choose an entry to jump to its page. When the index supplies a bounding box,
+the dock briefly highlights that part of the page.
+
+The viewer prefers the extracted silver outline, then tries the PDF's embedded
+bookmarks. If neither is available, a short hint points you back to **Pages**.
+In **Full screen** quick-look, use the **Contents** button to open the same
+navigation panel. Choosing an entry opens its page. Full-screen box overlays
+also require page geometry available to quick-look; use the dock for source
+review when quick-look reports that page dimensions are unknown.
+
 ## Create and organize canvases
 
 ```bash

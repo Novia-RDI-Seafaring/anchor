@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import "pdfjs-dist/web/pdf_viewer.css";
 
 import { isPictureRegion, regionDropPayload } from "@/canvas/regionDrop";
-import { documents, type Region, type ResolvedPlace } from "@/api/documents";
+import { documents, type DocumentIndex, type Region, type ResolvedPlace } from "@/api/documents";
 import { REFERENCES_CHANGED_EVENT, references } from "@/api/references";
 import { bboxToViewportRect } from "@/lib/pdfHighlight";
 import {
@@ -30,6 +30,8 @@ import {
   viewportRectToBbox,
 } from "./makeReference";
 import { PdfPageCanvas } from "./PdfPageCanvas";
+import { PdfNavigationRail } from "./PdfNavigationRail";
+import type { ContentsEntry } from "./pdfContents";
 import { loadPdf, pageSizes as readPageSizes, type PdfDoc } from "./pdfjs";
 
 /**
@@ -65,7 +67,6 @@ const MARK_FLIGHT_MS = 340;
 /** Breathing room before a mark counts as out of sight rather than near the edge. */
 const MARK_MARGIN_PX = 24;
 const OVERSCAN = 1;
-const THUMB_WIDTH = 96; // CSS px of the thumbnail image
 // Sensible page-size fallback (US Letter, points) before any size is known.
 const FALLBACK_PAGE = { w: 612, h: 792 };
 
@@ -74,6 +75,7 @@ type Props = {
   generation?: string;
   page: number;
   total: number;
+  index?: DocumentIndex | null;
   /** Region bbox to highlight (PDF points), applies only on `highlightPage`. */
   highlightBbox?: number[];
   /**
@@ -112,6 +114,7 @@ export function PdfSourceView({
   generation,
   page,
   total,
+  index,
   highlightBbox,
   highlightAlso,
   highlightPage,
@@ -300,8 +303,8 @@ export function PdfSourceView({
   // the deep-zoom highlight target (so the bbox can be drawn even before the
   // user scrolls it into view — without mounting the whole contiguous span).
   const shouldRenderPage = useCallback(
-    (p: number) => (p >= range.start && p <= range.end) || p === highlightPage,
-    [range.start, range.end, highlightPage],
+    (p: number) => (p >= range.start && p <= range.end) || p === highlightPage || p === confirm?.page,
+    [range.start, range.end, highlightPage, confirm?.page],
   );
 
   // Track the scroller's size (drives virtualization + fit-width).
@@ -363,6 +366,13 @@ export function PdfSourceView({
     },
     [items, totalHeight],
   );
+
+  const navigateContents = useCallback((entry: ContentsEntry) => {
+    if (!entry.page) return;
+    scrollToPage(entry.page);
+    onPageChange(entry.page);
+    setConfirm(entry.bbox ? { page: entry.page, bbox: entry.bbox } : null);
+  }, [scrollToPage, onPageChange]);
 
   // Navigate to the highlight target when it changes. Two-phase so a click is
   // never a no-op: scroll to the page by index first (works from continuous
@@ -677,13 +687,13 @@ export function PdfSourceView({
 
   // Auto-dismiss the toast + the confirmation flash.
   useEffect(() => {
-    if (!toast) return;
+    if (!toast && !confirm) return;
     const id = window.setTimeout(() => {
       setToast(null);
       setConfirm(null);
     }, 2200);
     return () => window.clearTimeout(id);
-  }, [toast]);
+  }, [toast, confirm]);
 
   // Hand the zoom back, so reopening or hovering another reference lands the
   // reader where they were rather than at the default.
@@ -926,8 +936,8 @@ export function PdfSourceView({
             onClick={() => setRailOpen((v) => !v)}
             aria-pressed={railOpen}
             className="rounded border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-50"
-            title={railOpen ? "Hide thumbnails" : "Show thumbnails"}
-            aria-label="Toggle thumbnails"
+            title={railOpen ? "Hide PDF navigation" : "Show PDF navigation"}
+            aria-label="Toggle PDF navigation"
           >
             ▤
           </button>
@@ -987,43 +997,9 @@ export function PdfSourceView({
         </div>
       </div>
       <div className="flex min-h-0 flex-1">
-        {/* Thumbnail rail (#220): one thumb per page, click -> scroll-to-page,
-            the in-view page is highlighted. Backed by the page-image endpoint
-            so it does not contend for the PDF.js worker. */}
         {railOpen && effectiveTotal > 0 ? (
-          <div
-            data-testid="thumbnail-rail"
-            className="w-[120px] shrink-0 overflow-y-auto border-r border-neutral-200 bg-neutral-50 p-2"
-          >
-            <ul className="flex flex-col gap-2">
-              {items.map((it) => {
-                const active = it.page === page;
-                return (
-                  <li key={it.page}>
-                    <button
-                      type="button"
-                      data-testid="thumbnail"
-                      data-page={it.page}
-                      aria-current={active ? "page" : undefined}
-                      onClick={() => scrollToPage(it.page)}
-                      className={`block w-full rounded border bg-white p-0.5 text-center ${
-                        active ? "border-sky-500 ring-2 ring-sky-300" : "border-neutral-300 hover:border-neutral-400"
-                      }`}
-                    >
-                      <img
-                        src={documents.pageImageUrl(slug, it.page, generation)}
-                        alt={`Page ${it.page}`}
-                        loading="lazy"
-                        width={THUMB_WIDTH}
-                        className="mx-auto block h-auto w-full"
-                      />
-                      <span className="block py-0.5 text-[10px] tabular-nums text-neutral-500">{it.page}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+          <PdfNavigationRail slug={slug} generation={generation} page={page}
+            total={effectiveTotal} index={index} pdf={doc} onNavigate={navigateContents} />
         ) : null}
         <div
           ref={scrollRef}
