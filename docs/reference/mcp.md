@@ -23,10 +23,13 @@ second named server to access another environment. See
 
 ## Discover the full surface
 
-The initial advertised tool list is a small core. Call
-`anchor_list_capabilities` to discover the long tail. Listed tools are callable
-by name even when they were omitted from the initial list; applicable extension
-tools may also appear when a project contains their data.
+The initial advertised tool list is a small core, including `open_project`
+and `canvas_list_workspaces` for project and canvas discovery. Call
+`anchor_list_capabilities` to inspect the long tail. The server can dispatch
+cataloged tools, but clients that expose only `tools/list` cannot call omitted
+tools. The catalog does not enable them, and the server sends no
+`tools/list_changed` notification. Applicable extension tools may appear on a
+refreshed tool list when the selected project contains their data.
 
 The server supplies connection instructions and the `anchor://help` resource.
 Claude Code's installer additionally writes a composed skill. Codex and Claude
