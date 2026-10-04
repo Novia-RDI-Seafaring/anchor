@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useDocumentIndex } from "@/api/useDocumentIndex";
+import type { DocumentIndex } from "@/api/documents";
 import { cancelTransientClose, scheduleTransientClose } from "@/canvas/transientViewer";
 import { useUiStore } from "@/stores/uiStore";
 
@@ -89,6 +90,7 @@ export function SourceDock() {
     generation: string | undefined;
     total: number;
     title: string;
+    index: DocumentIndex | null;
   } | null>(null);
   const [exiting, setExiting] = useState(false);
   const wasOpen = useRef(false);
@@ -202,6 +204,7 @@ export function SourceDock() {
       generation,
       total: index?.document?.page_count ?? lastShown.current?.total ?? 0,
       title: index?.document?.title ?? slug!,
+      index,
     };
   }
   const shown = lastShown.current;
@@ -271,6 +274,7 @@ export function SourceDock() {
           generation={shownGeneration}
           page={Math.min(shownViewer.page, total || 1)}
           total={total}
+          index={shown.index}
           highlightBbox={shownViewer.highlightBbox}
           highlightAlso={shownViewer.highlightAlso}
           highlightPage={shownViewer.highlightPage}

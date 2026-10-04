@@ -49,6 +49,24 @@ async function renderViewer() {
 }
 
 describe("PageWithBboxViewer value-precise highlight", () => {
+  it("navigates quick-look contents while preserving the canvas context", async () => {
+    vi.mocked(documents.index).mockResolvedValue({
+      document: { title: "Manual", filename: "manual.pdf", page_count: 3 },
+      outline: [{ title: "Operating limits", level: 1, page: 3, bbox: [10, 40, 80, 50] }],
+    });
+    useUiStore.getState().openPdf("manual", { page: 1, mode: "modal", workspaceSlug: "board", documentNodeId: "doc-1", highlightQuery: "old value" });
+    await renderViewer();
+    fireEvent.click(screen.getByRole("button", { name: "Contents" }));
+    fireEvent.click(screen.getByRole("button", { name: "Operating limits 3" }));
+    expect(screen.getByText("3 / 3")).toBeTruthy();
+    expect(screen.getByRole("img").getAttribute("src")).toContain("/pages/3/image");
+    expect(useUiStore.getState().pdfViewer).toMatchObject({
+      slug: "manual", mode: "modal", page: 3, highlightPage: 3, highlightBbox: [10, 40, 80, 50],
+      workspaceSlug: "board", documentNodeId: "doc-1",
+    });
+    expect(useUiStore.getState().pdfViewer?.highlightQuery).toBeUndefined();
+  });
+
   it("refreshes a removed real-datasheet page in an already-open modal", async () => {
     vi.useFakeTimers();
     await renderViewer();
