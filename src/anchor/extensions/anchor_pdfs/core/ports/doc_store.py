@@ -66,7 +66,9 @@ class DocStore(Protocol):
         Table entries carry their full ``cells`` content only when
         ``include_content`` is true. The default is the map form: identifying
         fields (caption, shape, header_row, first_column_values) and the
-        address (page, bbox) without the content."""
+        address (page, bbox) without the content. When available, ``pages_meta``
+        carries silver page sizes and the coordinate-origin stamp from the
+        same document generation, without per-page item content."""
         raise NotImplementedError
 
     async def get_pages_meta(self, slug: str) -> dict[str, Any] | None:

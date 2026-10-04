@@ -113,7 +113,7 @@ describe("PageWithBboxViewer value-precise highlight", () => {
 });
 
 it.each(["72", "150", "300"] as const)("uses declared page points with a %s-DPI modal raster", async (dpi) => {
-  vi.spyOn(documents, "index").mockResolvedValue({ document: fixture.gold_map.document, outline: [] });
+  vi.spyOn(documents, "index").mockResolvedValue({ document: fixture.gold_map.document, outline: [], pages_meta: fixture.gold_map.pages_meta });
   vi.spyOn(documents, "regions").mockResolvedValue(fixture.gold_map.pages["1"]);
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => fixture.gold_map }));
   useUiStore.getState().openPdf("geometry", { page: 1, mode: "modal" });
@@ -130,7 +130,57 @@ it.each(["72", "150", "300"] as const)("uses declared page points with a %s-DPI 
   expect(Number(rect.getAttribute("height")) / raster.height).toBeCloseTo(0.0625, 12);
 });
 
-it("keeps the modal image and region list when precise geometry is unknown", async () => {
+it.each(["72", "150", "300"] as const)("highlights a silver-only source box with a %s-DPI raster", async (dpi) => {
+  vi.mocked(documents.index).mockResolvedValue({ document: fixture.gold_map.document,
+    outline: [], pages_meta: fixture.gold_map.pages_meta });
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
+  useUiStore.getState().openPdf("silver-only", { page: 1, mode: "modal", highlightBbox: [60, 100, 240, 150] });
+  let container!: HTMLElement;
+  await act(async () => { container = render(<PageWithBboxViewer />).container; });
+  const image = screen.getByRole("img") as HTMLImageElement;
+  const raster = fixture.rasters[dpi]["1"];
+  Object.defineProperties(image, { naturalWidth: { value: raster.width }, naturalHeight: { value: raster.height } });
+  await act(async () => { fireEvent.load(image); });
+  const rect = container.querySelector("rect")!;
+  expect(Number(rect.getAttribute("x")) / raster.width).toBeCloseTo(0.1, 12);
+  expect(Number(rect.getAttribute("y")) / raster.height).toBeCloseTo(0.125, 12);
+  expect(Number(rect.getAttribute("width")) / raster.width).toBeCloseTo(0.3, 12);
+  expect(Number(rect.getAttribute("height")) / raster.height).toBeCloseTo(0.0625, 12);
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it("refreshes geometry and removes obsolete boxes on document replacement", async () => {
+  vi.useFakeTimers();
+  vi.mocked(documents.index).mockResolvedValue({ document: { ...fixture.gold_map.document,
+    generation: { id: "old", pages: [1, 2] } }, outline: [], pages_meta: fixture.gold_map.pages_meta });
+  useUiStore.getState().openPdf("replacement", { page: 1, mode: "modal", highlightBbox: [60, 100, 240, 150] });
+  let container!: HTMLElement;
+  await act(async () => { container = render(<PageWithBboxViewer />).container; });
+  const loadImage = async () => {
+    const image = screen.getByRole("img") as HTMLImageElement;
+    Object.defineProperties(image, { naturalWidth: { value: 600 }, naturalHeight: { value: 800 } });
+    await act(async () => { fireEvent.load(image); });
+  };
+  await loadImage();
+  expect(container.querySelector("rect")?.getAttribute("x")).toBe("60");
+  vi.mocked(documents.index).mockResolvedValue({ document: { ...fixture.gold_map.document,
+    generation: { id: "new", pages: [1] } }, outline: [],
+    pages_meta: { bbox_origin: "top-left", pages: { "1": { page_size: [1200, 1600] } } } });
+  await act(async () => { await vi.advanceTimersByTimeAsync(8000); });
+  await loadImage();
+  expect(container.querySelector("rect")?.getAttribute("x")).toBe("30");
+  vi.mocked(documents.index).mockResolvedValue({ document: { ...fixture.gold_map.document,
+    generation: { id: "unknown", pages: [1] } }, outline: [] });
+  await act(async () => { await vi.advanceTimersByTimeAsync(8000); });
+  await loadImage();
+  expect(container.querySelector("rect")).toBeNull();
+  expect(screen.getByRole("status").textContent).toContain("page dimensions unknown");
+});
+
+it.each([undefined, { bbox_origin: "bottom-left", pages: fixture.gold_map.pages_meta.pages }])(
+  "keeps the modal image and region list when precise geometry is unknown: %j", async (pages_meta) => {
+  vi.mocked(documents.index).mockResolvedValue({ document: fixture.gold_map.document, outline: [], pages_meta });
   vi.mocked(documents.regions).mockResolvedValue(fixture.gold_map.pages["1"]);
   useUiStore.getState().openPdf("geometry", { page: 1, mode: "modal" });
   let container!: HTMLElement;

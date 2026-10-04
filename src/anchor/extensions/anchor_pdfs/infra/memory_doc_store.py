@@ -213,7 +213,8 @@ class MemoryDocStore:
     async def get_index(self, slug: str, *, include_content: bool = False) -> dict[str, Any] | None:
         if self._generation is not None and slug not in self._indexes:
             raise SourceIdentityError("document generation index is unavailable")
-        return project_index(self._indexes.get(slug), include_content=include_content)
+        return project_index(self._indexes.get(slug), include_content=include_content,
+                             pages_meta=await self.get_pages_meta(slug))
 
     @document_view
     async def get_pages_meta(self, slug: str) -> dict[str, Any] | None:
