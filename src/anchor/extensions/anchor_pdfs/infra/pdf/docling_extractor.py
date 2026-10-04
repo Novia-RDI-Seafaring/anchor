@@ -252,6 +252,7 @@ def _flatten(doc: Any) -> dict[str, Any]:
     ``coord_origin`` stamp."""
     items: list[dict[str, Any]] = []
     tables: list[dict[str, Any]] = []
+    metadata, groups = _index_structure(doc)
     page_sizes = _page_sizes(doc)
     page_heights = {p: s[1] for p, s in page_sizes.items()}
 
@@ -260,6 +261,7 @@ def _flatten(doc: Any) -> dict[str, Any]:
             page = getattr(prov, "page_no", 0) if prov else 0
             bbox = _bbox_from_prov(prov, page_heights.get(page))
             items.append({
+                **metadata.get(getattr(it, "self_ref", ""), {}),
                 "label": getattr(it, "label", "text"),
                 "text": _text_for_prov(getattr(it, "text", ""), prov),
                 "page": page,
@@ -290,6 +292,7 @@ def _flatten(doc: Any) -> dict[str, Any]:
                     cell_data["bbox"] = cell_bbox
                 cells.append(cell_data)
         table_data = {
+            **metadata.get(getattr(tbl, "self_ref", ""), {}),
             "page": page, "bbox": bbox, "cells": cells,
             "num_rows": getattr(getattr(tbl, "data", None), "num_rows", None),
             "num_cols": getattr(getattr(tbl, "data", None), "num_cols", None),
@@ -305,14 +308,63 @@ def _flatten(doc: Any) -> dict[str, Any]:
         prov = (pic.prov or [None])[0] if hasattr(pic, "prov") else None
         page = getattr(prov, "page_no", 0) if prov else 0
         bbox = _bbox_from_prov(prov, page_heights.get(page))
-        items.append({"label": "picture", "text": "", "page": page, "bbox": bbox})
+        items.append({
+            **metadata.get(getattr(pic, "self_ref", ""), {}),
+            "label": "picture", "text": "", "page": page, "bbox": bbox,
+        })
 
     return {
         "items": items,
+        "groups": groups,
         "tables": tables,
         "pages": {p: {"width": w, "height": h} for p, (w, h) in page_sizes.items()},
         "coord_origin": "top-left",
     }
+
+
+def _index_structure(doc: Any) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+    """Keep tree order and relationships without changing durable item indexes."""
+    if not callable(getattr(doc, "iterate_items", None)):
+        return {}, []
+    metadata: dict[str, dict[str, Any]] = {}
+    groups: list[dict[str, Any]] = []
+    ancestors: list[tuple[int, dict[str, Any]]] = []
+    for order, (node, depth) in enumerate(doc.iterate_items(with_groups=True)):
+        while ancestors and ancestors[-1][0] >= depth:
+            ancestors.pop()
+        ref = getattr(node, "self_ref", "")
+        label = getattr(node, "label", "")
+        label = getattr(label, "value", label)
+        if ref.startswith("#/groups/"):
+            group = {
+                "id": ref, "label": label, "name": getattr(node, "name", ""),
+                "parent": ancestors[-1][1]["id"] if ancestors else None,
+                "level": len(ancestors) + 1, "reading_order": order,
+            }
+            groups.append(group)
+            ancestors.append((depth, group))
+            continue
+        entry: dict[str, Any] = {
+            "reading_order": order,
+            "group_path": [group["id"] for _, group in ancestors],
+        }
+        level = getattr(node, "level", None)
+        if isinstance(level, int):
+            entry["level"] = level
+        for field in ("captions", "references", "footnotes"):
+            links = getattr(node, field, []) or []
+            if links:
+                entry[field] = [
+                    {"id": link.cref, "text": getattr(link.resolve(doc), "text", "")}
+                    for link in links
+                ]
+        metadata[ref] = entry
+        prov = (getattr(node, "prov", []) or [None])[0]
+        page = getattr(prov, "page_no", None)
+        if page is not None:
+            for _, group in ancestors:
+                group.setdefault("page", page)
+    return metadata, groups
 
 
 def _bbox_top_left(bb: Any, page_height: float | None) -> list[float]:

@@ -129,6 +129,16 @@ def build_index(docling: dict[str, Any], *, filename: str = "", title: str = "")
     if not isinstance(items, list):
         items = []
 
+    # New extractors retain Docling tree order; legacy payloads keep their order.
+    items = [it for _, it in sorted(
+        ((position, it) for position, it in enumerate(items) if isinstance(it, dict)),
+        key=lambda pair: pair[1].get("reading_order", pair[0]),
+    )]
+    groups = {
+        group["id"]: group for group in docling.get("groups", [])
+        if isinstance(group, dict) and isinstance(group.get("id"), str)
+    }
+
     pages = {int(it["page"]) for it in items if isinstance(it, dict) and isinstance(it.get("page"), (int, float))}
     page_count = max(pages) if pages else 0
 
@@ -136,7 +146,7 @@ def build_index(docling: dict[str, Any], *, filename: str = "", title: str = "")
     tables: list[dict[str, Any]] = []
     figures: list[dict[str, Any]] = []
 
-    last_header_by_page: dict[int, str] = {}
+    last_header_by_page: dict[int, tuple[str, list[str]]] = {}
     resolved_title = title
 
     for it in items:
@@ -152,14 +162,17 @@ def build_index(docling: dict[str, Any], *, filename: str = "", title: str = "")
         page = int(page)
 
         if label in _SECTION_LABELS and text:
-            level = 1 if label == "title" else _guess_level(text)
-            outline.append({"level": level, "title": text, "page": page, "bbox": _clean_bbox(bbox)})
-            last_header_by_page[page] = text
+            level = it.get("level") or (1 if label == "title" else _guess_level(text))
+            heading = {"level": level, "title": text, "page": page, "bbox": _clean_bbox(bbox)}
+            if "group_path" in it:
+                heading["group_path"] = it["group_path"]
+            outline.append(heading)
+            last_header_by_page[page] = (text, it.get("group_path", []))
             if not resolved_title:
                 resolved_title = text
 
         elif label == "table":
-            caption = last_header_by_page.get(page, "")
+            caption = _index_caption(it, groups, last_header_by_page.get(page))
             header_row, first_col, shape = _summarize_table_cells(it.get("cells"))
             tables.append({
                 "id": f"t{len(tables) + 1}",
@@ -171,11 +184,12 @@ def build_index(docling: dict[str, Any], *, filename: str = "", title: str = "")
                 "first_column_values": first_col,
                 "cells": _clean_table_cells(it.get("cells")),
                 "table_topology": topology_status(it),
+                **_index_relationships(it),
             })
 
         elif label == "picture":
-            caption = last_header_by_page.get(page, "")
-            figures.append({"page": page, "bbox": _clean_bbox(bbox), "caption": caption})
+            caption = _index_caption(it, groups, last_header_by_page.get(page))
+            figures.append({"page": page, "bbox": _clean_bbox(bbox), "caption": caption, **_index_relationships(it)})
 
     return {
         "document": {
@@ -186,7 +200,38 @@ def build_index(docling: dict[str, Any], *, filename: str = "", title: str = "")
         "outline": outline,
         "tables": tables,
         "figures": figures,
+        "groups": list(groups.values()),
     }
+
+
+def _index_relationships(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        field: item[field] for field in ("group_path", "captions", "references", "footnotes")
+        if field in item
+    }
+
+
+def _index_caption(
+    item: dict[str, Any], groups: dict[str, dict[str, Any]],
+    preceding_header: tuple[str, list[str]] | None,
+) -> str:
+    captions = item.get("captions", [])
+    explicit = " ".join(
+        caption["text"].strip() for caption in captions
+        if isinstance(caption, dict) and isinstance(caption.get("text"), str)
+        and caption["text"].strip()
+    )
+    if explicit:
+        return explicit
+    path = item.get("group_path", [])
+    if preceding_header and preceding_header[1] == path:
+        return preceding_header[0]
+    for ref in reversed(path):
+        group = groups.get(ref, {})
+        if group.get("label") in {"chapter", "section"} and group.get("name"):
+            return group["name"]
+    # Legacy payloads have no tree metadata; retain their preceding-header fallback.
+    return preceding_header[0] if preceding_header and "group_path" not in item else ""
 
 
 INDEX_CONTENT_FIELDS: tuple[str, ...] = ("cells",)
