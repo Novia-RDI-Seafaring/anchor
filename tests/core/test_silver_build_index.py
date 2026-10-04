@@ -217,3 +217,52 @@ def test_point_in_bbox_tolerates_reversed_y_order():
     assert point_in_bbox((5, 5), [0, 0, 10, 10]) is True
     assert point_in_bbox((5, 5), [0, 10, 10, 0]) is True
     assert point_in_bbox((5, 5), [10, 10, 0, 0]) is False
+
+
+def test_index_uses_tree_order_instead_of_flat_collection_order():
+    items = [
+        {"label": "section_header", "text": "Operating limits", "page": 2, "reading_order": 0},
+        {"label": "section_header", "text": "Materials", "page": 2, "reading_order": 2},
+        {"label": "section_header", "text": "Review note", "page": 2, "reading_order": 4},
+        {"label": "table", "page": 2, "reading_order": 1},
+        {"label": "table", "page": 2, "reading_order": 3},
+    ]
+    index = build_index({"items": items})
+    assert [table["caption"] for table in index["tables"]] == ["Operating limits", "Materials"]
+    assert items[2]["text"] == "Review note"
+
+
+def test_explicit_caption_wins_and_relationships_survive_projection():
+    captions = [{"id": "#/texts/3", "text": "Table 1. Rated conditions"}]
+    references = [{"id": "#/texts/4", "text": "See Table 1"}]
+    footnotes = [{"id": "#/texts/5", "text": "At nominal speed"}]
+    index = build_index({"items": [
+        {"label": "section_header", "text": "Wrong heading", "page": 1},
+        {"label": "table", "page": 1, "captions": captions,
+         "references": references, "footnotes": footnotes},
+        {"label": "picture", "page": 1, "captions": captions},
+    ]})
+    assert index["tables"][0]["caption"] == "Table 1. Rated conditions"
+    assert index["tables"][0]["references"] == references
+    assert index["tables"][0]["footnotes"] == footnotes
+    assert index["figures"][0]["caption"] == "Table 1. Rated conditions"
+
+
+def test_nested_group_context_does_not_leak_from_sibling_section():
+    groups = [
+        {"id": "chapter", "label": "chapter", "name": "Pump", "parent": None},
+        {"id": "limits", "label": "section", "name": "Limits", "parent": "chapter"},
+        {"id": "list", "label": "list", "name": "list", "parent": "limits"},
+        {"id": "materials", "label": "section", "name": "Materials", "parent": "chapter"},
+    ]
+    index = build_index({"groups": groups, "items": [
+        {"label": "section_header", "text": "Nested limits", "page": 1,
+         "level": 3, "group_path": ["chapter", "limits"]},
+        {"label": "list_item", "text": "Maximum speed", "page": 1,
+         "group_path": ["chapter", "limits", "list"]},
+        {"label": "table", "page": 1, "group_path": ["chapter", "materials"]},
+    ]})
+    assert index["outline"][0]["level"] == 3
+    assert index["outline"][0]["group_path"] == ["chapter", "limits"]
+    assert index["groups"] == groups
+    assert index["tables"][0]["caption"] == "Materials"
