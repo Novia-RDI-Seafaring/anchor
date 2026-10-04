@@ -49,6 +49,13 @@ export function SourceDock() {
   const generation = index?.document.generation?.id;
   const open = Boolean(viewer && slug && isDock);
   const nonce = viewer?.nonce;
+  const onPageChange = useCallback((page: number) => {
+    const active = useUiStore.getState().pdfViewer;
+    // Scroll effects can arrive after the dock hands navigation to quick-look.
+    if (active?.mode === "dock" && active.slug === slug && active.nonce === nonce) {
+      setPage(page);
+    }
+  }, [setPage, slug, nonce]);
 
   const onPointerMove = useCallback(
     (e: PointerEvent) => {
@@ -95,8 +102,7 @@ export function SourceDock() {
   const [exiting, setExiting] = useState(false);
   const wasOpen = useRef(false);
   useEffect(() => {
-    const isOpen = Boolean(viewer && slug && isDock);
-    if (isOpen) {
+    if (open) {
       // Reopened (or opened at a different ref): cancel any pending fade.
       wasOpen.current = true;
       setExiting(false);
@@ -110,7 +116,7 @@ export function SourceDock() {
     // `exiting` is deliberately NOT a dependency: including it re-ran this
     // effect the instant it was set, and the cleanup then cancelled the very
     // timer that ends the fade, so the pane never unmounted.
-  }, [viewer, slug, isDock]);
+  }, [open]);
 
   // Escape closes the dock — but let the floating "Make reference" menu (and an
   // active text selection) consume the first Escape, so it takes two presses to
@@ -208,7 +214,9 @@ export function SourceDock() {
     };
   }
   const shown = lastShown.current;
-  if (!shown || (!open && !exiting)) return null;
+  // The first closed render precedes the exit effect. Keep the same inner
+  // viewer mounted on that render too, so its scroll position survives.
+  if (!shown || (!open && !exiting && !wasOpen.current)) return null;
 
   const { viewer: shownViewer, slug: shownSlug, total, title: docTitle } = shown;
   const shownGeneration = shown.generation;
@@ -280,7 +288,7 @@ export function SourceDock() {
           highlightPage={shownViewer.highlightPage}
           highlightNonce={shownViewer.nonce}
           title={docTitle}
-          onPageChange={setPage}
+          onPageChange={onPageChange}
           canvasSlug={shownViewer.workspaceSlug}
         />
         {/* Draggable divider, pinned to the dock's right edge. */}
