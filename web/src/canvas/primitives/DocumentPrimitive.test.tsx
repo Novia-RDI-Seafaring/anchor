@@ -98,6 +98,28 @@ const READY_DOC = {
 };
 
 describe("DocumentPrimitive click isolation", () => {
+  it("moves the existing main, word and extra-place marks to the next reference", async () => {
+    vi.mocked(documents.regions).mockResolvedValue(geometryFixture.gold_map.pages["1"]);
+    vi.mocked(documents.locate).mockImplementation(async (_slug, _page, _query, bbox) => bbox ? [bbox] : []);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => geometryFixture.gold_map }));
+    await renderDoc(READY_DOC);
+    const image = screen.getByRole("img") as HTMLImageElement;
+    Object.defineProperties(image, { naturalWidth: { value: 600 }, naturalHeight: { value: 800 } });
+    const pointAt = (top: number) => useUiStore.getState().setHoveredSourceRef({
+      slug: "pump", page: 1, bbox: [72, top, 96, top + 12], query: `row ${top}`,
+      places: [{ page: 1, bbox: [100, top, 110, top + 10] }],
+    });
+    await act(async () => { fireEvent.load(image); pointAt(108); });
+    const marks = ["external-highlight", "value-quad", "also-place"].map((id) => screen.getByTestId(id));
+    const tops = marks.map((mark) => mark.style.top);
+    await act(async () => { pointAt(160); });
+    marks.forEach((mark, i) => {
+      expect(screen.getByTestId(["external-highlight", "value-quad", "also-place"][i]!)).toBe(mark);
+      expect(mark.classList.contains("anchor-mark-flying")).toBe(true);
+      expect(mark.style.top).not.toBe(tops[i]);
+    });
+  });
+
   it.each(["72", "150", "300"] as const)("maps the actual backend page_size payload at %s DPI", async (dpi) => {
     vi.mocked(documents.regions).mockResolvedValue(geometryFixture.gold_map.pages["1"]);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => geometryFixture.gold_map }));
