@@ -89,6 +89,7 @@ type Props = {
   highlightNonce?: number;
   title?: string;
   onPageChange: (page: number) => void;
+  onContentsHighlightChange?: (highlight: { page: number; bbox: number[] } | null) => void;
   /**
    * The canvas this viewer authors references into. References are
    * canvas-scoped (#147); without a canvas slug the "Make reference" action is
@@ -121,6 +122,7 @@ export function PdfSourceView({
   highlightNonce,
   title,
   onPageChange,
+  onContentsHighlightChange,
   canvasSlug,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -161,7 +163,11 @@ export function PdfSourceView({
   const [saving, setSaving] = useState(false);
   // Lightweight confirmation: toast text + the page/bbox to flash (PDF points).
   const [toast, setToast] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<{ page: number; bbox: number[] } | null>(null);
+  const [confirm, setConfirm] = useState<{ page: number; bbox: number[]; contents?: boolean } | null>(null);
+  useEffect(() => {
+    onContentsHighlightChange?.(confirm?.contents ? confirm : null);
+  }, [confirm, onContentsHighlightChange]);
+  useEffect(() => { setConfirm(null); }, [highlightNonce]);
   // The reference the user is focused on (shared with the sidebar list) plus
   // the setter, so clicking a green box selects the matching row, and vice-versa.
   const activeReferenceId = useUiStore((s) => s.activeReferenceId);
@@ -371,7 +377,7 @@ export function PdfSourceView({
     if (!entry.page) return;
     scrollToPage(entry.page);
     onPageChange(entry.page);
-    setConfirm(entry.bbox ? { page: entry.page, bbox: entry.bbox } : null);
+    setConfirm(entry.bbox ? { page: entry.page, bbox: entry.bbox, contents: true } : null);
   }, [scrollToPage, onPageChange]);
 
   // Navigate to the highlight target when it changes. Two-phase so a click is

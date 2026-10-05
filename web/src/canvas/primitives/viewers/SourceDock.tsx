@@ -49,6 +49,29 @@ export function SourceDock() {
   const generation = index?.document.generation?.id;
   const open = Boolean(viewer && slug && isDock);
   const nonce = viewer?.nonce;
+  const contentsHighlight = useRef<{
+    slug: string; nonce?: number; generation?: string; page: number; bbox: number[];
+  } | null>(null);
+  const onContentsHighlightChange = useCallback((highlight: { page: number; bbox: number[] } | null) => {
+    const active = useUiStore.getState().pdfViewer;
+    if (active?.mode === "dock" && active.slug === slug && active.nonce === nonce) {
+      contentsHighlight.current = highlight ? { ...highlight, slug: active.slug, nonce, generation } : null;
+    }
+  }, [slug, nonce, generation]);
+  const openFullscreen = () => {
+    const active = useUiStore.getState().pdfViewer;
+    const highlight = contentsHighlight.current;
+    if (active?.mode !== "dock") return;
+    if (highlight && highlight.slug === active.slug && highlight.nonce === active.nonce
+      && highlight.generation === generation && highlight.page === active.page) {
+      useUiStore.getState().openPdf(active.slug, {
+        page: active.page, mode: "modal", highlightBbox: highlight.bbox,
+        workspaceSlug: active.workspaceSlug, documentNodeId: active.documentNodeId,
+      });
+    } else {
+      setMode("modal");
+    }
+  };
   const onPageChange = useCallback((page: number) => {
     const active = useUiStore.getState().pdfViewer;
     // Scroll effects can arrive after the dock hands navigation to quick-look.
@@ -258,7 +281,7 @@ export function SourceDock() {
         <div className="flex items-center gap-1">
           <button
             type="button"
-            onClick={() => setMode("modal")}
+            onClick={openFullscreen}
             className="rounded px-1.5 py-0.5 hover:bg-neutral-200"
             title="Open as full-screen quick-look"
           >
@@ -289,6 +312,7 @@ export function SourceDock() {
           highlightNonce={shownViewer.nonce}
           title={docTitle}
           onPageChange={onPageChange}
+          onContentsHighlightChange={onContentsHighlightChange}
           canvasSlug={shownViewer.workspaceSlug}
         />
         {/* Draggable divider, pinned to the dock's right edge. */}
