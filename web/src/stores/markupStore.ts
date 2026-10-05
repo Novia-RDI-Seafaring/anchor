@@ -1,9 +1,11 @@
-import { createStore } from "zustand/vanilla";
 import type { Intent } from "@/api/intents";
-import type { Sketch } from "@/canvas/sketch";
 import type { Cut } from "@/canvas/cuts";
-import type { Strike } from "@/canvas/strikes";
 import { markHits, pivotStroke, strokeHeading, type Box, type Point } from "@/canvas/lasso";
+import { GHOST_GROUNDS, PALETTE } from "@/canvas/markup/constants";
+import type { Sketch } from "@/canvas/sketch";
+import type { Strike } from "@/canvas/strikes";
+import { createStore } from "zustand/vanilla";
+export { GHOST_GROUNDS, PALETTE } from "@/canvas/markup/constants";
 
 export type Note = {
   id: string;
@@ -108,27 +110,6 @@ export type Filed = {
  * rests on its own ground; a tap on that ground brings it back to the pen.
  */
 export type Stack = Queued & { ground: string };
-
-export const PALETTE = [
-  { key: "1", name: "violet", ink: "rgb(139, 92, 246)" },
-  { key: "2", name: "red", ink: "rgb(220, 38, 38)" },
-  { key: "3", name: "orange", ink: "rgb(234, 88, 12)" },
-  { key: "4", name: "amber", ink: "rgb(202, 138, 4)" },
-  { key: "5", name: "green", ink: "rgb(22, 163, 74)" },
-  { key: "6", name: "teal", ink: "rgb(13, 148, 136)" },
-  { key: "7", name: "blue", ink: "rgb(37, 99, 235)" },
-  { key: "8", name: "pink", ink: "rgb(219, 39, 119)" },
-  { key: "9", name: "graphite", ink: "rgb(63, 63, 70)" },
-] as const;
-
-export const GHOST_GROUNDS: readonly [string, ...string[]] = [
-  "#8a93a6",
-  "#c9a86a",
-  "#6fa8a0",
-  "#b58aa5",
-  "#8f9c6b",
-  "#a68a7a",
-];
 
 export type Selection = { strokes: number[]; notes: string[] };
 export const NOTHING_SELECTED: Selection = { strokes: [], notes: [] };
