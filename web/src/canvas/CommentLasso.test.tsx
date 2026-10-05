@@ -53,15 +53,16 @@ async function mount() {
   const onExit = vi.fn();
   const onFiled = vi.fn();
   const underHover = vi.fn();
-  const result = render(<div className="react-flow">
+  const view = (active: boolean) => <div className="react-flow">
     <button data-testid="underlying-node" onMouseEnter={underHover}>Pump</button>
-    <CommentLasso active boxes={boxes} workspaceSlug="study" onExit={onExit} onFiled={onFiled} />
-  </div>);
+    <CommentLasso active={active} boxes={boxes} workspaceSlug="study" onExit={onExit} onFiled={onFiled} />
+  </div>;
+  const result = render(view(true));
+  const setActive = async (active: boolean) => { await act(async () => { result.rerender(view(active)); }); };
   await act(async () => {});
-  return { ...result, onExit, onFiled, underHover };
+  return { ...result, onExit, onFiled, underHover, setActive };
 }
-function draw(points: [number, number][]) {
-  const surface = screen.getByTestId("comment-lasso-surface");
+function draw(points: [number, number][], surface = screen.getByTestId("comment-lasso-surface")) {
   const event = ([clientX, clientY]: [number, number]) => ({ clientX, clientY, button: 0, pointerId: 1 });
   fireEvent.pointerDown(surface, event(points[0]!));
   for (const point of points.slice(1)) fireEvent.pointerMove(surface, event(point));
@@ -154,6 +155,42 @@ describe("CommentLasso interactions", () => {
     expect(screen.getAllByTestId("comment-lasso-shelved")).toHaveLength(1);
   });
 
+  it("keeps live ink, labels and shelved stacks while the pen is inactive", async () => {
+    const { setActive } = await mount();
+    draw(ring); label("First remark");
+    fireEvent.click(screen.getByTestId("comment-lasso-new"));
+    draw(ring.map(([x, y]) => [x + 350, y + 200])); label("Second remark");
+    const livePoints = marks().at(-1)!.getAttribute("points");
+    const ground = screen.getByTestId("comment-lasso-blob").getAttribute("fill");
+    await setActive(false);
+    expect(screen.queryByTestId("comment-lasso-surface")).toBeNull();
+    await setActive(true);
+    expect(marks().at(-1)!.getAttribute("points")).toBe(livePoints);
+    expect((screen.getByTestId("comment-lasso-note") as HTMLTextAreaElement).value).toBe("Second remark");
+    expect(screen.getByTestId("comment-lasso-blob").getAttribute("fill")).toBe(ground);
+    expect(screen.getAllByTestId("comment-lasso-shelved")).toHaveLength(1);
+    const surface = screen.getByTestId("comment-lasso-surface");
+    fireEvent.pointerDown(surface, { clientX: 150, clientY: 140, button: 0 });
+    fireEvent.pointerUp(surface, { clientX: 150, clientY: 140, button: 0 });
+    await waitFor(() => expect((screen.getByTestId("comment-lasso-note") as HTMLTextAreaElement).value).toBe("First remark"));
+  });
+
+  it("gives independently mounted overlays their own ink lifetime", async () => {
+    const first = await mount();
+    const second = await mount();
+    const surface = first.container.querySelector<HTMLElement>('[data-testid="comment-lasso-surface"]')!;
+    draw(ring, surface);
+    const note = first.container.querySelector<HTMLTextAreaElement>('[data-testid="comment-lasso-note"]')!;
+    fireEvent.change(note, { target: { value: "Only the first overlay" } });
+    fireEvent.keyDown(note, { key: "Enter" });
+    expect(first.container.querySelector("polyline")).toBeTruthy();
+    expect(second.container.querySelector("polyline")).toBeNull();
+    expect(second.container.querySelector('[data-testid="comment-lasso-note"]')).toBeNull();
+    second.unmount();
+    expect(first.container.querySelector("polyline")).toBeTruthy();
+    expect(note.value).toBe("Only the first overlay");
+  });
+
   it("holding Space lifts every overlay and releases the pointer to the node underneath", async () => {
     const { underHover } = await mount(); draw(ring); label();
     fireEvent.keyDown(window, { key: " ", code: "Space" });
@@ -186,7 +223,8 @@ describe("CommentLasso interactions", () => {
   it.each(["pending", "applied"])("renders a suggestion in %s state from a thread", async (state) => {
     const intent = baseIntent();
     intent.items = [{ id: "change", type: "suggestion", author: { kind: "agent" },
-      text: "Use the new limit", created_at: 2, state, ops: [] }];
+      text: "Use the new limit", created_at: 2, state,
+      ops: [{ type: "NodeUpdated", payload: { id: "pump", fields: { label: "Pump limit" } } }] }];
     vi.mocked(intents.listPending).mockResolvedValue([intent]);
     vi.mocked(intents.get).mockResolvedValue(intent);
     await mount();
