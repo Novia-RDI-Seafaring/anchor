@@ -294,7 +294,7 @@ export function Readout({ model }: { model: Pick<MarkupModel, "panelRef" | "pane
         cmd-click a node to add or remove it {"\u00b7"} shift-drag to pick out marks {"\u00b7"} n
         sets this remark aside and starts another {"\u00b7"} drag a line to move it,
         option-drag to pull it {"\u00b7"} hold space to lift the pen and look underneath
-        {"\u00b7"} esc puts the pen down, the ink stays
+        {" \u00b7"} esc puts the pen down, the ink stays
         {shelf.length > 0
           ? ` \u00b7 ${shelf.length} set aside: press its tile, or tap its ground, to go on with it`
           : ""}
