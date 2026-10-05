@@ -17,6 +17,8 @@ import { requestViewerZoom } from "@/canvas/viewerZoom";
 import { useUiStore } from "@/stores/uiStore";
 
 import { PdfSourceView } from "./PdfSourceView";
+import { SourceDock } from "./SourceDock";
+import { PageWithBboxViewer } from "./PageWithBboxViewer";
 
 const PAGE_COUNT = 6;
 
@@ -125,6 +127,87 @@ async function renderViewer(props?: Partial<Parameters<typeof PdfSourceView>[0]>
   };
   return { onPageChange, rerender };
 }
+
+describe("dock Contents to fullscreen", () => {
+  beforeEach(() => {
+    useUiStore.setState({ pdfViewer: null, pdfZoom: 1 });
+    vi.spyOn(documents, "index").mockResolvedValue({
+      document: { title: "Manual", filename: "manual.pdf", page_count: PAGE_COUNT },
+      outline: [],
+      tables: [{ caption: "Operating data", page: 2, bbox: [10, 40, 80, 90] }],
+      pages_meta: { bbox_origin: "top-left", pages: {
+        "2": { page_size: [100, 200] }, "3": { page_size: [100, 200] },
+      } },
+    });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    act(() => useUiStore.setState({ pdfViewer: null }));
+  });
+
+  async function selectTable() {
+    stubScroller();
+    useUiStore.getState().openPdf("manual", { mode: "dock" });
+    await act(async () => { render(<><SourceDock /><PageWithBboxViewer /></>); });
+    fireEvent.click(screen.getByRole("tab", { name: "Contents" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Operating data/ }));
+    expect(await screen.findByTestId("reference-confirm-flash")).toBeTruthy();
+  }
+  async function loadModalImage(slug = "manual", page = 2) {
+    const image = await screen.findByAltText(`${slug} page ${page}`);
+    Object.defineProperties(image, { naturalWidth: { value: 200 }, naturalHeight: { value: 400 } });
+    await act(async () => { fireEvent.load(image); });
+    return image.parentElement!;
+  }
+
+  it("draws the dock's selected silver table on the first fullscreen transition", async () => {
+    await selectTable();
+    fireEvent.click(screen.getByTitle("Open as full-screen quick-look"));
+    expect(useUiStore.getState().pdfViewer).toMatchObject({
+      slug: "manual", mode: "modal", page: 2, highlightPage: 2, highlightBbox: [10, 40, 80, 90],
+    });
+    const page = await loadModalImage();
+    const box = page.querySelector("rect")!;
+    expect(box).not.toBeNull();
+    expect(["x", "y", "width", "height"].map((key) => Number(box.getAttribute(key))))
+      .toEqual([20, 80, 140, 100]);
+    fireEvent.click(screen.getByRole("button", { name: /Next/ }));
+    expect((await loadModalImage("manual", 3)).querySelector("rect")).toBeNull();
+  });
+
+  it("does not revive an expired dock confirmation", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await selectTable();
+    await act(async () => { vi.advanceTimersByTime(2300); });
+    expect(screen.queryByTestId("reference-confirm-flash")).toBeNull();
+    fireEvent.click(screen.getByTitle("Open as full-screen quick-look"));
+    expect((await loadModalImage()).querySelector("rect")).toBeNull();
+  });
+
+  it("does not transfer a table box after navigating to another page", async () => {
+    await selectTable();
+    await act(async () => { useUiStore.getState().setPdfPage(3); });
+    fireEvent.click(screen.getByTitle("Open as full-screen quick-look"));
+    expect((await loadModalImage("manual", 3)).querySelector("rect")).toBeNull();
+  });
+
+  it("does not transfer the previous document's table box", async () => {
+    await selectTable();
+    await act(async () => { useUiStore.getState().openPdf("replacement", { page: 2, mode: "dock" }); });
+    await act(async () => { useUiStore.getState().setPdfPage(2); });
+    fireEvent.click(screen.getByTitle("Open as full-screen quick-look"));
+    expect((await loadModalImage("replacement")).querySelector("rect")).toBeNull();
+  });
+
+  it("keeps a new source highlight when reopening the same document", async () => {
+    await selectTable();
+    await act(async () => { useUiStore.getState().openPdf("manual", {
+      page: 2, highlightBbox: [20, 100, 60, 120],
+    }); });
+    fireEvent.click(screen.getByTitle("Open as full-screen quick-look"));
+    expect(useUiStore.getState().pdfViewer?.highlightBbox).toEqual([20, 100, 60, 120]);
+  });
+});
 
 describe("PdfSourceView (continuous)", () => {
   it("jumps to a silver heading and flashes its box on the target page", async () => {
