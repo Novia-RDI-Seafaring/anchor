@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
+import { useStore } from "zustand";
+import { createMarkupStore, PALETTE, GHOST_GROUNDS, NOTHING_SELECTED, type Mark, type Note, type Queued, type Filed, type Stack, type Selection } from "@/stores/markupStore";
 import { useReactFlow, useViewport } from "@xyflow/react";
 
 import { Plus, WandSparkles } from "lucide-react";
 
 import { INTENTS_CHANGED_EVENT, intents, type Intent } from "@/api/intents";
 import { describeSketch, resolveSketch, type Sketch } from "@/canvas/sketch";
-import { describeCuts, resolveCuts, type Cut, type RowBand } from "@/canvas/cuts";
+import { describeCuts, resolveCuts, type RowBand } from "@/canvas/cuts";
 import { describePointers, resolvePointers } from "@/canvas/pointers";
-import { describeStrikes, resolveStrikes, type EdgePath, type Strike } from "@/canvas/strikes";
+import { describeStrikes, resolveStrikes, type EdgePath } from "@/canvas/strikes";
 import { previewCentre, previewOps, type Preview } from "@/canvas/preview";
 import { useCanvasStore } from "@/stores/canvasStore";
 import {
@@ -43,7 +45,6 @@ import {
   nearestOnStroke,
   pullStroke,
   nearRect,
-  pivotStroke,
   strokeAt,
   strokeBounds,
   strokeHeading,
@@ -116,15 +117,7 @@ const CALLOUT_GAP_PX = 40;
 const PANEL_INSET_PX = 40;
 /** The region behind a remark: a quiet slate, whichever pens were used. */
 const BLOB_FILL = "#4b4f63";
-/** The grounds sent remarks rest on, one each in turn: quiet, and unlike any pen. */
-const GHOST_GROUNDS: readonly [string, ...string[]] = [
-  "#8a93a6",
-  "#c9a86a",
-  "#6fa8a0",
-  "#b58aa5",
-  "#8f9c6b",
-  "#a68a7a",
-];
+
 /** How far the shape around a remark stands off what it contains. */
 const BLOB_PAD_PX = 46;
 /** Clear air between where a leader stops and where its words start. */
@@ -140,24 +133,7 @@ const CORNERS = [
 const ERASE_PX = 26;
 const INK = "rgb(139, 92, 246)";
 
-/**
- * The pens on the bar, in the order the number keys reach them.
- *
- * Nine, because that is how many number keys there are to hand and how many
- * distinct colours a reader can actually keep meanings for. Violet first: it
- * is the colour every mark has been until now, so the default does not move.
- */
-const PALETTE = [
-  { key: "1", name: "violet", ink: "rgb(139, 92, 246)" },
-  { key: "2", name: "red", ink: "rgb(220, 38, 38)" },
-  { key: "3", name: "orange", ink: "rgb(234, 88, 12)" },
-  { key: "4", name: "amber", ink: "rgb(202, 138, 4)" },
-  { key: "5", name: "green", ink: "rgb(22, 163, 74)" },
-  { key: "6", name: "teal", ink: "rgb(13, 148, 136)" },
-  { key: "7", name: "blue", ink: "rgb(37, 99, 235)" },
-  { key: "8", name: "pink", ink: "rgb(219, 39, 119)" },
-  { key: "9", name: "graphite", ink: "rgb(63, 63, 70)" },
-] as const;
+
 
 
 /** The square a mark is sized by, drawn with the same pen as the mark. */
@@ -293,10 +269,8 @@ function HostedNote({
 }) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
   useCaret(ref, editing);
-  // Held in a ref so re-measuring is driven by the text and the box, not by
-  // the parent handing down a new closure on every render.
-  const grow = useRef(onGrow);
-  grow.current = onGrow;
+  // Re-measure for text and geometry; use the current host callback inside the effect.
+  const grow = useEffectEvent(onGrow);
 
   // Measured and applied in one pass, imperatively.
   //
@@ -317,7 +291,9 @@ function HostedNote({
     // The shape itself has to follow. Growing only the textarea left the words
     // hanging out of the bottom of a box that stayed the size it was drawn.
     // One pixel of slack keeps a rounding difference from asking forever.
-    if (text > height + 1) grow.current(text);
+    if (text > height + 1) grow(text);
+    // Effect events always use the latest callback and are not effect dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, height, width, fontSize]);
 
   return (
@@ -787,110 +763,6 @@ function FaintNote({
   );
 }
 
-type Note = {
-  id: string;
-  x: number;
-  y: number;
-  text: string;
-  /** Written inside a shape that was drawn: the note takes that shape's box. */
-  inStroke?: number;
-  /** Where the leader that offered this note started. */
-  from?: Point;
-  /**
-   * The words carry on a stroke the reader drew, rather than a leader offered
-   * to them, so no separate line is drawn to reach them.
-   */
-  continues?: boolean;
-  /** Which stroke they carry on from, so dragging them can swing it. */
-  onStroke?: number;
-  /**
-   * Which ring they belong to. The line is not stored: it is drawn from that
-   * ring's centre to wherever the words are now, clipped at the outline. So
-   * carrying the words anywhere keeps the line looking like it comes out of
-   * the middle of the ring, with no pivot point left behind on the edge.
-   */
-  ringStroke?: number;
-  /** Offered rather than asked for: it evaporates unless it is used. */
-  offered?: boolean;
-  /** The pen it was written with. */
-  color?: string;
-  /**
-   * Carried by hand, so the layout leaves it alone.
-   *
-   * Auto-placed words are positioned by rule, not stored; dragging one is the
-   * reader saying they want it exactly there, and a rule that immediately put
-   * it back would be arguing with them.
-   */
-  pinned?: boolean;
-};
-
-type Queued = {
-  id: string;
-  text: string;
-  ids: string[];
-  /** The drawing read as nodes and edges, so the agent gets the shape of it. */
-  sketch: Sketch;
-  /** Lines across tables, read as the row boundary they went through. */
-  cuts: Cut[];
-  /** Crosses over edges, read as the edge to take away. */
-  strikes: Strike[];
-  marks: Mark[];
-  /** The words as written and placed, so a queued remark still reads as one. */
-  notes: Note[];
-};
-
-/**
- * One drawn stroke and the pen it was drawn with.
- *
- * Strokes used to be bare geometry, which left nowhere to put a colour. The
- * points stay separate from the colour rather than being mixed into it, so
- * every geometry helper keeps taking plain points and none of them had to
- * learn about pens.
- */
-type Mark = {
-  points: Point[];
-  color: string;
-  /**
-   * Drawn from one element and dropped on another: a join rather than a
-   * remark. The ids are what an agent reads -- "connect these two" -- and the
-   * line is clipped to the edge so it looks joined rather than drawn over.
-   */
-  link?: { from: string | null; to: string };
-};
-
-/**
- * A remark that has been sent, still on the board as a ghost.
- *
- * Filing an intent used to make it vanish, which left the reader looking at
- * a blank canvas and a line of text saying it had gone somewhere. It has not
- * gone anywhere: the agent is about to work on exactly this spot. So the ink
- * stays, faint, and becomes the place where that work shows up -- the
- * agent's progress, its questions, and in the end the proposal to approve.
- */
-type Filed = {
-  intentId: string;
-  text: string;
-  ids: string[];
-  sketch: Sketch;
-  marks: Mark[];
-  notes: Note[];
-  /** The pen it was drawn with: the ghost and its status wear the same one. */
-  color: string;
-  /** The ground it rested on while it was being drawn; the ghost keeps it. */
-  ground?: string;
-  /** The thread as last fetched. Null until the first poll lands. */
-  intent: Intent | null;
-};
-
-/**
- * A remark set aside, unsent, while another is being drawn.
- *
- * Several asks can be in the making at once -- one half-drawn while a
- * second comes to mind -- and they must not fold into each other. Each
- * rests on its own ground; a tap on that ground brings it back to the pen.
- */
-type Stack = Queued & { ground: string };
-
 /** Size of a ghost node the agent placed without saying how big. */
 const GHOST_W = 220;
 const GHOST_H = 90;
@@ -994,8 +866,7 @@ function splitGhostText(text: string): { title: string; status: string } {
 }
 
 /** Marks the reader has picked out: drawn strokes, and comments on open canvas. */
-type Selection = { strokes: number[]; notes: string[] };
-const NOTHING_SELECTED: Selection = { strokes: [], notes: [] };
+
 
 export function CommentLasso({
   active,
@@ -1017,10 +888,6 @@ export function CommentLasso({
   const { screenToFlowPosition, getViewport, setViewport } = useReactFlow();
   const storeNodes = useCanvasStore((st) => st.nodes);
   const storeEdges = useCanvasStore((st) => st.edges);
-  const storeEdgesRef = useRef(storeEdges);
-  storeEdgesRef.current = storeEdges;
-  const storeNodesRef = useRef(storeNodes);
-  storeNodesRef.current = storeNodes;
 
   /**
    * Where a card's rows sit, in canvas coordinates.
@@ -1032,7 +899,7 @@ export function CommentLasso({
    */
   const rowsOf = useCallback(
     (nodeId: string): RowBand[] | null => {
-      const rows = (storeNodesRef.current[nodeId]?.data as { rows?: { key?: string }[] } | undefined)
+      const rows = (useCanvasStore.getState().nodes[nodeId]?.data as { rows?: { key?: string }[] } | undefined)
         ?.rows;
       if (!rows || rows.length < 2) return null;
       // Node ids are plain slugs, but escape when the platform can: jsdom may not.
@@ -1059,7 +926,7 @@ export function CommentLasso({
    */
   const edgesOf = useCallback((): EdgePath[] => {
     const out: EdgePath[] = [];
-    for (const [id, edge] of Object.entries(storeEdgesRef.current)) {
+    for (const [id, edge] of Object.entries(useCanvasStore.getState().edges)) {
       const safe = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(id) : id;
       const el = document.querySelector<SVGPathElement>(
         `.react-flow__edge[data-id="${safe}"] path.react-flow__edge-path`,
@@ -1085,71 +952,33 @@ export function CommentLasso({
   // when it was drawn and slid out of register with the cards underneath.
   const viewport = useViewport();
 
-  const [marks, setMarks] = useState<Mark[]>([]);
-  /** The pen in hand. Number keys pick it; everything drawn next takes it. */
-  const [ink, setInk] = useState<string>(PALETTE[0].ink);
-  const [current, setCurrent] = useState<Point[] | null>(null);
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [ids, setIds] = useState<string[]>([]);
-  const [manual, setManual] = useState<string[] | null>(null);
-  const [hoveredStroke, setHoveredStroke] = useState<number | null>(null);
-  /**
-   * Which note is being written in, if any.
-   *
-   * Writing is a mode and it has to be possible to leave it. While a note is
-   * being written its shape carries handles and its field takes the pointer;
-   * once it is committed the shape is just ink again, so the next line can be
-   * drawn straight out of it.
-   */
-  const [editing, setEditing] = useState<string | null>(null);
-  /**
-   * The marks the reader has picked out, to move, resize or erase together.
-   *
-   * Shift-drag draws a rubber band over the mark-up layer; a plain click picks
-   * out one. Nothing here selects the canvas's own elements -- those are
-   * chosen by what the ink crosses, which is a different question.
-   */
-  const [selected, setSelected] = useState<Selection>(NOTHING_SELECTED);
-  /** The rubber band, while it is being dragged. */
-  const [marquee, setMarquee] = useState<{ a: Point; b: Point } | null>(null);
-  /**
-   * The element a line in progress would join, if it were let go now.
-   *
-   * Shown while drawing, so the reader knows before they commit whether this
-   * is going to be a connection or a remark -- the difference matters and is
-   * otherwise invisible until it is too late.
-   */
-  const [dropOn, setDropOn] = useState<string | null>(null);
-  /**
-   * The label in hand: clicked or dragged, so its cross is showing.
-   *
-   * A label and the line it sits on the end of are one object -- the line
-   * exists to reach the words. So picking up either picks up both, and
-   * deleting the label takes the line with it.
-   */
-  const [activeLabel, setActiveLabel] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
-  /** Remarks already sent, kept on the board as ghosts with their threads. */
-  const [filed, setFiled] = useState<Filed[]>([]);
-  /** The filed remark whose thread is open in the panel, if any. */
-  const [openFiled, setOpenFiled] = useState<string | null>(null);
-  /**
-   * Applied changes the reader has said to keep. Local only: keeping a change
-   * that is already on the canvas records nothing, it just lets the ghost go.
-   * Putting one back is the real verb, and goes to the server.
-   */
-  const [kept, setKept] = useState<Set<string>>(() => new Set());
-  /**
-   * The pen held up off the page, while Space is down: the surface lets
-   * everything through, so what the agent put on the board can be hovered
-   * and opened -- an anchor, a card -- without leaving the mode. Release
-   * and the pen is back, ink and mode untouched.
-   */
-  const [lifted, setLifted] = useState(false);
-  /** The set-aside remark under the pointer, so its ground can say it is there. */
-  const [hoverShelf, setHoverShelf] = useState<string | null>(null);
-  const liftedRef = useRef(lifted);
-  liftedRef.current = lifted;
+  const [markupStore] = useState(createMarkupStore);
+  const {
+    marks, ink, notes, ids, manual, hoveredStroke, editing, selected, dropOn,
+    activeLabel, sending, filed, openFiled, kept, lifted, hoverShelf, shelf,
+    ground, panelAt, answering,
+  } = useStore(markupStore);
+  const {
+    updateNotes: setNotes, setTargets: setIds, setManualTargets: setManual,
+    hoverMark: setHoveredStroke, editNote: setEditing, selectMarks: setSelected,
+    previewJoin: setDropOn, selectLabel: setActiveLabel, openThread: setOpenFiled,
+    liftPen: setLifted, hoverStack: setHoverShelf, movePanel: setPanelAt,
+    writeAnswer: setAnswering, keepSuggestion, setMargin: setMarginDeg,
+  } = markupStore.getState();
+  const [current, renderCurrent] = useState<Point[] | null>(null);
+  const currentGesture = useRef<Point[] | null>(null);
+  const setCurrent = useCallback((update: React.SetStateAction<Point[] | null>) => {
+    const next = typeof update === "function" ? update(currentGesture.current) : update;
+    currentGesture.current = next;
+    renderCurrent(next);
+  }, []);
+  const [marquee, renderMarquee] = useState<{ a: Point; b: Point } | null>(null);
+  const marqueeGesture = useRef<{ a: Point; b: Point } | null>(null);
+  const setMarquee = useCallback((update: React.SetStateAction<typeof marquee>) => {
+    const next = typeof update === "function" ? update(marqueeGesture.current) : update;
+    marqueeGesture.current = next;
+    renderMarquee(next);
+  }, []);
   // The hand shows while the pen is up, since a drag now moves the board.
   useEffect(() => {
     if (!lifted) return undefined;
@@ -1158,73 +987,17 @@ export function CommentLasso({
       delete document.body.dataset.penLifted;
     };
   }, [lifted]);
-  /** Remarks set aside unsent, each on its own ground. */
-  const [shelf, setShelf] = useState<Stack[]>([]);
-  const shelfRef = useRef(shelf);
-  shelfRef.current = shelf;
-  /** Which ground the live remark rests on. */
-  const groundSeq = useRef(0);
-  const [ground, setGround] = useState<string>(GHOST_GROUNDS[0]);
-  const nextGround = () => {
-    groundSeq.current += 1;
-    return GHOST_GROUNDS[groundSeq.current % GHOST_GROUNDS.length] ?? GHOST_GROUNDS[0];
-  };
-  /** A tap that drew nothing; checked against the shelved grounds. */
   const tapRef = useRef<Point | null>(null);
-  /** Where the reader carried the panel to; null is its resting place. */
-  const [panelAt, setPanelAt] = useState<{ x: number; y: number } | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const panelDrag = useRef<{ startX: number; startY: number; x: number; y: number } | null>(null);
-  /**
-   * The reader has judged the last thing there was to judge: resolve the
-   * intent, so its ghost goes and the queue count drops. Keeping and
-   * putting back are both verdicts; a remark whose every suggestion has one
-   * is finished. Left unresolved, a kept remark came back on every reload
-   * as if it were still waiting.
-   */
-  const settle = async (intentId: string, judged: Set<string>) => {
-    try {
-      const it = await intents.get(intentId);
-      if (!it || it.status !== "pending") return;
-      const open = (it.items ?? []).some(
-        (x) =>
-          x.type === "suggestion" &&
-          (x.state === "pending" ||
-            (x.state === "applied" && x.author.kind !== "human" && !judged.has(x.id))),
-      );
-      if (!open) await intents.resolve(intentId, { verdict: "judged on the board" });
-    } catch {
-      // The next poll shows whatever state the server is in.
-    }
-  };
-  /** Which question is being answered, and with what. */
-  const [answering, setAnswering] = useState<{ item: string; text: string } | null>(null);
+  const settle = (intentId: string, judged: Set<string>) => markupStore.getState().settle(intentId, judged, intents);
 
   const drawing = useRef(false);
   /** A stroke just landed: the click that ends it is not a click on it. */
   const drewJustNow = useRef(false);
-  const strokesRef = useRef<Point[][]>([]);
-  const marksRef = useRef<Mark[]>([]);
-  const applyMarksRef = useRef<(next: Mark[]) => void>(() => {});
-  const inkRef = useRef(ink);
-  const notesRef = useRef<Note[]>([]);
-  const boxesRef = useRef(boxes);
-  const viewportRef = useRef(viewport);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const marqueeDrag = useRef(false);
   const labelDrag = useRef<{ id: string; start: Point; from: Point } | null>(null);
-  const labelLinesRef = useRef<Set<number>>(new Set());
-  /** Which way the last offered remark went: the margin this page is using. */
-  const marginDeg = useRef<number | null>(null);
-  const activeLabelRef = useRef<string | null>(null);
-  const removeLabelRef = useRef<(id: string) => void>(() => {});
-  const selectedRef = useRef<Selection>(NOTHING_SELECTED);
-  const onExitRef = useRef(onExit);
-  /** The notes with their on-screen position and leader baked in; see snapshot. */
-  const settledNotesRef = useRef<Note[]>([]);
-  onExitRef.current = onExit;
-  const removeSelectedRef = useRef<() => void>(() => {});
-  const recolourRef = useRef<(color: string) => void>(() => {});
   /** A stroke being pulled at one place (option-drag on its ink). */
   const pullDrag = useRef<{ index: number; grab: Point; start: Point; points: Point[]; reach: number } | null>(null);
   const groupDrag = useRef<{
@@ -1239,55 +1012,32 @@ export function CommentLasso({
   // to be handed back. Marking up a board you cannot move is useless: the
   // remark is usually about something off screen.
   const panning = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null);
-  boxesRef.current = boxes;
-  viewportRef.current = viewport;
   // Geometry, derived. Everything that reads strokes keeps reading points, and
   // the colours ride alongside on the same indices -- so there is no second
   // array to keep in step, which is where colour would otherwise drift.
   const strokes = marks.map((m) => m.points);
-  strokesRef.current = strokes;
-  marksRef.current = marks;
-  inkRef.current = ink;
 
-  /** The one way strokes change: ref first, so the same handler can read back. */
-  const applyMarks = (next: Mark[]) => {
-    marksRef.current = next;
-    strokesRef.current = next.map((m) => m.points);
-    setMarks(next);
-  };
-  applyMarksRef.current = applyMarks;
-  notesRef.current = notes;
+  /** Store actions are synchronous, so handlers can read the resulting geometry. */
+  const applyMarks = markupStore.getState().replaceMarks;
 
-  const reset = useCallback(() => {
-    marginDeg.current = null;
-    setDropOn(null);
-    setActiveLabel(null);
-    applyMarksRef.current([]);
+  const reset = () => {
+    markupStore.getState().resetRemark();
     setCurrent(null);
-    setNotes([]);
-    setIds([]);
-    setManual(null);
-    setHoveredStroke(null);
-    setSelected(NOTHING_SELECTED);
     setMarquee(null);
-  }, []);
+  };
 
   useEffect(() => {
     if (!active) {
+      markupStore.getState().pauseMarkup();
       // Putting the pen down keeps the ink. Only what was mid-gesture goes:
       // a half-drawn stroke, a selection, a label being carried. What was
       // drawn is still there when the pen comes back,
       // the same as the agent's work on what was already filed. Clearing it
       // on the way out made escape, and the button, a way to lose a remark.
       setCurrent(null);
-      setDropOn(null);
-      setActiveLabel(null);
-      setEditing(null);
-      setHoveredStroke(null);
-      setSelected(NOTHING_SELECTED);
       setMarquee(null);
     }
-  }, [active]);
+  }, [active, markupStore, setCurrent, setMarquee]);
 
   // What was filed before this page loaded, rebuilt from the sketches the
   // server kept. Freehand ink does not survive a reload; the boxes do.
@@ -1301,16 +1051,13 @@ export function CommentLasso({
           .filter((i) => i.origin_canvas_id === workspaceSlug)
           .map(filedFromIntent)
           .filter((f): f is Filed => f !== null);
-        setFiled((prev) => {
-          const have = new Set(prev.map((f) => f.intentId));
-          return [...prev, ...mine.filter((f) => !have.has(f.intentId))];
-        });
+        markupStore.getState().loadFiled(mine);
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [workspaceSlug]);
+  }, [workspaceSlug, markupStore]);
 
   // Asking after each filed remark: its thread is where the agent's
   // progress, questions and proposal arrive. A push signal exists for the
@@ -1330,23 +1077,7 @@ export function CommentLasso({
         }),
       );
       if (cancelled) return;
-      setFiled((prev) =>
-        prev
-          .map((f) => {
-            const got = latest.find((i) => i?.id === f.intentId);
-            return got ? { ...f, intent: got } : f;
-          })
-          // Resolved and nothing left to judge: the ghost has done its job.
-          // Resolving IS the judgement on what was applied -- keep and put
-          // it back both resolve -- so only a suggestion still pending keeps
-          // a resolved remark on the board. Judging by a set held in memory
-          // meant a reload brought every kept remark back as unjudged.
-          .filter((f) => {
-            const it = f.intent;
-            if (!it || it.status !== "resolved") return true;
-            return (it.items ?? []).some((x) => x.type === "suggestion" && x.state === "pending");
-          }),
-      );
+      markupStore.getState().refreshFiled(latest);
     };
     void refresh();
     const timer = window.setInterval(() => void refresh(), THREAD_POLL_MS);
@@ -1360,6 +1091,63 @@ export function CommentLasso({
     // Re-arm when the SET of filed remarks changes, not on every poll result.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filed.map((f) => f.intentId).join("|"), workspaceSlug]);
+
+  const calledOut = (() => {
+    const byNode = new Map<string, { id: string; centre: Point }[]>();
+    for (const n of notes) {
+      if (n.pinned || n.ringStroke === undefined) continue;
+      const ring = strokes[n.ringStroke];
+      if (!ring) continue;
+      // Called out only when the ring is about ONE card. A ring round two
+      // put its words "beside the first card" -- which was the gap between
+      // them, inside the ring, looking for all the world like a text box.
+      // Several cards keep the clear-space placement outside the ring.
+      const hits = lassoHits(ring, boxes);
+      if (hits.length !== 1) continue;
+      const on = hits[0]!;
+      const list = byNode.get(on) ?? [];
+      list.push({ id: n.id, centre: loopCentre(ringOutline(ring)) });
+      byNode.set(on, list);
+    }
+    const out = new Map<string, CalloutPlace>();
+    const gap = CALLOUT_GAP_PX / Math.max(0.2, viewport.zoom);
+    for (const [nodeId, items] of byNode) {
+      const node = boxes.find((b) => b.id === nodeId);
+      if (!node) continue;
+      for (const [id, place] of calloutPlaces(items, node, gap)) out.set(id, place);
+    }
+    return out;
+  })();
+
+  /** Where a note actually sits: called out by rule, or where it was carried. */
+  const notePos = (n: Note): Point => {
+    const place = calledOut.get(n.id);
+    return place ? { x: place.x, y: place.y } : { x: n.x, y: n.y };
+  };
+
+  /**
+   * Where a note's line begins.
+   *
+   * For a note that belongs to a ring this is recomputed rather than stored:
+   * from the ring's centre, out through wherever the words are now, cut at
+   * the outline. Storing the edge point would fix the line to one spot on the
+   * rim, and carrying the words round to the far side would leave it hooking
+   * back on itself.
+   */
+  const lineFrom = (n: Note): Point | undefined => {
+    if (n.ringStroke === undefined) return n.from;
+    const ring = strokes[n.ringStroke];
+    if (!ring) return n.from;
+    const outline = ringOutline(ring);
+    if (outline.length < 3) return n.from;
+    return exitLoop(outline, loopCentre(outline), notePos(n));
+  };
+
+
+
+  const settledNotes = notes.map((note) => ({
+    ...note, ...notePos(note), from: lineFrom(note) ?? note.from,
+  }));
 
   const toFlow = useCallback(
     (e: { clientX: number; clientY: number }) =>
@@ -1435,8 +1223,8 @@ export function CommentLasso({
     // carries the whole selection with it.
     {
       const p = toFlow(e);
-      const hit = strokeAt(p, strokesRef.current, 10 / Math.max(0.1, viewportRef.current.zoom));
-      if (hit >= 0 && !labelLinesRef.current.has(hit)) {
+      const hit = strokeAt(p, markupStore.getState().marks.map((mark) => mark.points), 10 / Math.max(0.1, getViewport().zoom));
+      if (hit >= 0 && !new Set(markupStore.getState().notes.map((note) => note.onStroke)).has(hit)) {
         // Option held: pull the line here rather than move the shape. The
         // reach is a quarter of the line, so a ring drawn a row short is
         // pulled over the row without the rest of it going anywhere.
@@ -1444,7 +1232,7 @@ export function CommentLasso({
           e.preventDefault();
           e.stopPropagation();
           (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-          const points = strokesRef.current[hit]!;
+          const points = markupStore.getState().marks.map((mark) => mark.points)[hit]!;
           let length = 0;
           for (let i = 1; i < points.length; i++) {
             length += Math.hypot(points[i]!.x - points[i - 1]!.x, points[i]!.y - points[i - 1]!.y);
@@ -1454,12 +1242,12 @@ export function CommentLasso({
           setActiveLabel(null);
           return;
         }
-        const inSelection = selectedRef.current.strokes.includes(hit);
+        const inSelection = markupStore.getState().selected.strokes.includes(hit);
         if (!inSelection) {
           setSelected(NOTHING_SELECTED);
           setActiveLabel(null);
         }
-        startGroupDrag("move", undefined, inSelection ? selectedRef.current : { strokes: [hit], notes: [] })(e);
+        startGroupDrag("move", undefined, inSelection ? markupStore.getState().selected : { strokes: [hit], notes: [] })(e);
         return;
       }
     }
@@ -1484,9 +1272,9 @@ export function CommentLasso({
     if (pull) {
       const p = toFlow(e);
       const next = pullStroke(pull.points, pull.grab, { x: p.x - pull.start.x, y: p.y - pull.start.y }, pull.reach);
-      const nextStrokes = strokesRef.current.map((st, i) => (i === pull.index ? next : st));
-      applyMarks(marksRef.current.map((m, i) => ({ ...m, points: nextStrokes[i]! })));
-      setIds(manual ?? markHits(nextStrokes, boxesRef.current));
+      const nextStrokes = markupStore.getState().marks.map((mark) => mark.points).map((st, i) => (i === pull.index ? next : st));
+      applyMarks(markupStore.getState().marks.map((m, i) => ({ ...m, points: nextStrokes[i]! })));
+      setIds(manual ?? markHits(nextStrokes, boxes));
       return;
     }
     const pan = panning.current;
@@ -1506,9 +1294,9 @@ export function CommentLasso({
     }
     if (!drawing.current) {
       // Which drawn stroke is under the pointer, so its × can appear.
-      const slack = 10 / Math.max(0.1, viewportRef.current.zoom);
-      const hit = strokeAt(p, strokesRef.current, slack);
-      const next = hit >= 0 && !labelLinesRef.current.has(hit) ? hit : null;
+      const slack = 10 / Math.max(0.1, getViewport().zoom);
+      const hit = strokeAt(p, markupStore.getState().marks.map((mark) => mark.points), slack);
+      const next = hit >= 0 && !new Set(markupStore.getState().notes.map((note) => note.onStroke)).has(hit) ? hit : null;
       setHoveredStroke((prev) => (prev === next ? prev : next));
       const over = next === null ? shelfAt(p) : null;
       setHoverShelf((prev) => (prev === over ? prev : over));
@@ -1517,12 +1305,12 @@ export function CommentLasso({
     setCurrent((prev) => {
       const nextStroke = prev ? [...prev, p] : [p];
       // Live, so the reader watches a line become a ring.
-      setIds(markHits([...strokesRef.current, nextStroke], boxesRef.current));
+      setIds(markHits([...markupStore.getState().marks.map((mark) => mark.points), nextStroke], boxes));
       setManual(null);
-      const slack = SNAP_PX / Math.max(0.1, viewportRef.current.zoom);
+      const slack = SNAP_PX / Math.max(0.1, getViewport().zoom);
       const onto = isLoop(nextStroke)
         ? null
-        : dropTarget(nextStroke, boxesRef.current, slack);
+        : dropTarget(nextStroke, boxes, slack);
       // A ring is never a connector: it encloses what it is about.
       setDropOn((cur) => (cur === (onto?.id ?? null) ? cur : (onto?.id ?? null)));
       return nextStroke;
@@ -1543,7 +1331,7 @@ export function CommentLasso({
     if (marqueeDrag.current) {
       marqueeDrag.current = false;
       setMarquee((m) => {
-        if (m) setSelected(withinBand(rectFrom(m.a, m.b), strokesRef.current, notesRef.current));
+        if (m) setSelected(withinBand(rectFrom(m.a, m.b), markupStore.getState().marks.map((mark) => mark.points), markupStore.getState().notes));
         return null;
       });
       return;
@@ -1557,7 +1345,7 @@ export function CommentLasso({
       tapRef.current = null;
       if (!at) return;
       const hit = shelfAt(at);
-      if (hit) switchToRef.current(hit);
+      if (hit) switchTo(hit);
     }, 0);
     setCurrent((cur) => {
       // A click leaves a dot. It is a mis-aim or a moment's hesitation, never
@@ -1572,11 +1360,11 @@ export function CommentLasso({
       // edge it met, so it reads as attached rather than drawn across, and
       // both ends are recorded -- that pair is the whole content of the
       // gesture, and it needs no words to be understood.
-      const slack = SNAP_PX / Math.max(0.1, viewportRef.current.zoom);
-      const onto = isLoop(cur) ? null : dropTarget(cur, boxesRef.current, slack);
+      const slack = SNAP_PX / Math.max(0.1, getViewport().zoom);
+      const onto = isLoop(cur) ? null : dropTarget(cur, boxes, slack);
       const start = cur[0]!;
       const leftFrom =
-        boxesRef.current.find(
+        boxes.find(
           (b) => b.id !== onto?.id && nearRect(start, b, slack),
         )?.id ?? null;
       const points = onto ? clipToBox(cur, onto) : cur;
@@ -1592,18 +1380,18 @@ export function CommentLasso({
       const shapeIndex =
         isLoop(cur) || split
           ? -1
-          : marksRef.current.findIndex((m) => {
+          : markupStore.getState().marks.findIndex((m) => {
               if (!isLoop(m.points)) return false;
               const outline = ringOutline(m.points);
               return outline.length >= 3 && insidePolygon(cur[0]!, outline);
             });
-      const pen = shapeIndex >= 0 ? marksRef.current[shapeIndex]!.color : inkRef.current;
+      const pen = shapeIndex >= 0 ? markupStore.getState().marks[shapeIndex]!.color : markupStore.getState().ink;
       applyMarks([
-        ...marksRef.current,
+        ...markupStore.getState().marks,
         ...(split && line.length > 1
           ? [
-              { points: split.loop, color: inkRef.current },
-              { points: line, color: inkRef.current },
+              { points: split.loop, color: markupStore.getState().ink },
+              { points: line, color: markupStore.getState().ink },
             ]
           : [
               {
@@ -1613,21 +1401,21 @@ export function CommentLasso({
               },
             ]),
       ]);
-      const next = strokesRef.current;
+      const next = markupStore.getState().marks.map((mark) => mark.points);
       drewJustNow.current = true;
       setDropOn(null);
-      const hits = markHits(next, boxesRef.current);
+      const hits = markHits(next, boxes);
       setIds(hits);
       // What THIS shape caught, which is a different question from what the
       // whole mark is about. Judging by the mark meant a fresh box drawn on
       // empty canvas inherited the hits of an earlier stroke, and was offered
       // a leader out to a card it had nothing to do with.
-      const caught = lassoHits(cur, boxesRef.current);
+      const caught = lassoHits(cur, boxes);
       // Every ring that catches something gets its own offer. Gating on "no
       // notes at all" meant the first remark used up the offer for the whole
       // mark: ringing a second thing left the reader with nowhere to type and
       // no sign of why. Only an offer nobody has taken blocks another.
-      const pendingOffer = notesRef.current.some((n) => n.offered && !n.text.trim());
+      const pendingOffer = markupStore.getState().notes.some((n) => n.offered && !n.text.trim());
       // A closed shape drawn on open canvas is not pointing at anything: it
       // IS the place for the words. Offering a leader out to a field beside it
       // would answer a question nobody asked, and leave the reader with a box
@@ -1644,7 +1432,7 @@ export function CommentLasso({
             text: "",
             inStroke: next.length - 1,
             offered: true,
-            color: inkRef.current,
+            color: markupStore.getState().ink,
           },
         ]);
         setEditing(id);
@@ -1657,8 +1445,8 @@ export function CommentLasso({
       const leftShape =
         isLoop(cur) || split
           ? -1
-          : strokesRef.current.findIndex((st, i) => {
-              if (i >= strokesRef.current.length - 1 || !isLoop(st)) return false;
+          : markupStore.getState().marks.map((mark) => mark.points).findIndex((st, i) => {
+              if (i >= markupStore.getState().marks.map((mark) => mark.points).length - 1 || !isLoop(st)) return false;
               const outline = ringOutline(st);
               return outline.length >= 3 && insidePolygon(cur[0]!, outline);
             });
@@ -1676,7 +1464,7 @@ export function CommentLasso({
           // its size from the middle: a ring round two cards was sending its
           // words as far away as the ring was wide.
           const bounds = strokeBounds(cur);
-          const zoom = Math.max(0.2, viewportRef.current.zoom);
+          const zoom = Math.max(0.2, getViewport().zoom);
           const gap = CALLOUT_GAP_PX / zoom;
           const outline = ringOutline(cur);
           const centre = loopCentre(outline);
@@ -1690,24 +1478,23 @@ export function CommentLasso({
             gap,
             { width: NOTE_W, height: NOTE_H },
             [
-              ...boxesRef.current,
+              ...boxes,
               // Not the ring itself: its bounding box is what the words are
               // being placed outside of, and counting it blocked every
               // direction but straight up and down for a ring of any size.
-              ...strokesRef.current.filter((_, i) => i !== next.length - 1).map(strokeBounds),
-              ...notesRef.current.filter((n) => n.inStroke === undefined).map(noteRect),
+              ...markupStore.getState().marks.map((mark) => mark.points).filter((_, i) => i !== next.length - 1).map(strokeBounds),
+              ...markupStore.getState().notes.filter((n) => n.inStroke === undefined).map(noteRect),
               ...offScreen(),
             ],
             gap / 2,
-            marginDeg.current ?? undefined,
+            markupStore.getState().marginDeg ?? undefined,
           );
           // Remember which way this one went, so the next lines up with it --
           // when it went sideways. A margin is a side of the page; an offer
           // that had to go up or down was making do, and remembering it sent
           // the next ring's words straight down past two clear sides.
           const went = (Math.atan2(at.y - centre.y, at.x - centre.x) * 180) / Math.PI;
-          marginDeg.current =
-            Math.abs(Math.cos((went * Math.PI) / 180)) >= Math.SQRT1_2 ? went : null;
+          setMarginDeg(Math.abs(Math.cos((went * Math.PI) / 180)) >= Math.SQRT1_2 ? went : null);
           setNotes((prev) => [
             ...prev,
             {
@@ -1717,7 +1504,7 @@ export function CommentLasso({
               text: "",
               ringStroke: next.length - 1,
               offered: true,
-              color: inkRef.current,
+              color: markupStore.getState().ink,
             },
           ]);
         } else {
@@ -1745,7 +1532,7 @@ export function CommentLasso({
               // highlighting something nobody is talking about any more.
               ...(split && line.length > 1 ? { ringStroke: next.length - 2 } : {}),
               offered: true,
-              color: inkRef.current,
+              color: markupStore.getState().ink,
             },
           ]);
         }
@@ -1762,11 +1549,11 @@ export function CommentLasso({
     e.preventDefault();
     e.stopPropagation();
     const p = toFlow(e);
-    const inside = strokesRef.current.findIndex((st) => insideStroke(p, st));
+    const inside = markupStore.getState().marks.map((mark) => mark.points).findIndex((st) => insideStroke(p, st));
     // Writing in a shape that already holds words picks those words back up.
     // Adding a second note in the same box would stack two lots of text in
     // one place, and the reader meant to edit what is there.
-    const existing = notesRef.current.find((n) =>
+    const existing = markupStore.getState().notes.find((n) =>
       inside >= 0 ? n.inStroke === inside : hitsNote(p, n),
     );
     if (existing) {
@@ -1781,7 +1568,7 @@ export function CommentLasso({
         x: p.x,
         y: p.y,
         text: "",
-        color: inkRef.current,
+        color: markupStore.getState().ink,
         ...(inside >= 0 ? { inStroke: inside } : {}),
       },
     ]);
@@ -1803,19 +1590,19 @@ export function CommentLasso({
       // pulled and sized -- they are the remark itself, and wrapping them in
       // handles turned every comment into an object to be managed. A drawn
       // shape is the thing that has a size worth dragging.
-      const hit = strokeAt(p, strokesRef.current, 10 / Math.max(0.1, viewportRef.current.zoom));
-      const own = hit >= 0 && !labelLinesRef.current.has(hit);
+      const hit = strokeAt(p, markupStore.getState().marks.map((mark) => mark.points), 10 / Math.max(0.1, getViewport().zoom));
+      const own = hit >= 0 && !new Set(markupStore.getState().notes.map((note) => note.onStroke)).has(hit);
       setSelected(own ? { strokes: [hit], notes: [] } : NOTHING_SELECTED);
       // Clicking a label's line is clicking the label: one object.
       const owner =
         hit >= 0 && !own
-          ? (notesRef.current.find((n) => n.onStroke === hit)?.id ?? null)
+          ? (markupStore.getState().notes.find((n) => n.onStroke === hit)?.id ?? null)
           : null;
       setActiveLabel(owner);
       return;
     }
     const p = toFlow(e);
-    const hit = [...boxesRef.current]
+    const hit = [...boxes]
       .reverse()
       .find((b) => p.x >= b.x && p.x <= b.x + b.width && p.y >= b.y && p.y <= b.y + b.height);
     if (!hit) return;
@@ -1830,11 +1617,11 @@ export function CommentLasso({
 
   /** Put a stroke back with new geometry, leaving everything else alone. */
   const replaceStroke = (index: number, points: Point[]) => {
-    if (!marksRef.current[index]) return;
+    if (!markupStore.getState().marks[index]) return;
     applyMarks(
-      marksRef.current.map((m, i) => (i === index ? { ...m, points } : m)),
+      markupStore.getState().marks.map((m, i) => (i === index ? { ...m, points } : m)),
     );
-    setIds(manual ?? markHits(strokesRef.current, boxesRef.current));
+    setIds(manual ?? markHits(markupStore.getState().marks.map((mark) => mark.points), boxes));
   };
 
   /**
@@ -1845,7 +1632,7 @@ export function CommentLasso({
    * than move the whole shape out from under the cursor.
    */
   const growHost = (index: number, neededHeight: number) => {
-    const stroke = strokesRef.current[index];
+    const stroke = markupStore.getState().marks.map((mark) => mark.points)[index];
     if (!stroke) return;
     const b = strokeBounds(stroke);
     if (b.height >= neededHeight - 0.5) return;
@@ -1862,11 +1649,11 @@ export function CommentLasso({
   const rectOf = (sel: Selection): Rect | null =>
     unionRect([
       ...sel.strokes
-        .map((i) => strokesRef.current[i])
+        .map((i) => markupStore.getState().marks.map((mark) => mark.points)[i])
         .filter((st): st is Point[] => st !== undefined)
         .map(strokeBounds),
       ...sel.notes
-        .map((id) => notesRef.current.find((n) => n.id === id))
+        .map((id) => markupStore.getState().notes.find((n) => n.id === id))
         .filter((n): n is Note => n !== undefined)
         .map(noteRect),
     ]);
@@ -1906,10 +1693,10 @@ export function CommentLasso({
             }
           : { x: from.x, y: from.y },
         strokes: sel.strokes
-          .map((i) => [i, strokesRef.current[i]] as const)
+          .map((i) => [i, markupStore.getState().marks.map((mark) => mark.points)[i]] as const)
           .filter((pair): pair is readonly [number, Point[]] => pair[1] !== undefined),
         notes: sel.notes
-          .map((id) => notesRef.current.find((n) => n.id === id))
+          .map((id) => markupStore.getState().notes.find((n) => n.id === id))
           .filter((n): n is Note => n !== undefined)
           .map((n) => [n.id, { x: n.x, y: n.y }] as const),
       };
@@ -1935,15 +1722,15 @@ export function CommentLasso({
             };
           })();
 
-    const nextStrokes = [...strokesRef.current];
+    const nextStrokes = [...markupStore.getState().marks.map((mark) => mark.points)];
     for (const [index, points] of g.strokes) {
       nextStrokes[index] =
         g.mode === "move"
           ? translateStroke(points, to.x - g.from.x, to.y - g.from.y)
           : remapStroke(points, g.from, to);
     }
-    applyMarks(marksRef.current.map((m, i) => ({ ...m, points: nextStrokes[i]! })));
-    setIds(manual ?? markHits(nextStrokes, boxesRef.current));
+    applyMarks(markupStore.getState().marks.map((m, i) => ({ ...m, points: nextStrokes[i]! })));
+    setIds(manual ?? markHits(nextStrokes, boxes));
     if (g.notes.length > 0) {
       setNotes((prev) =>
         prev.map((n) => {
@@ -1965,7 +1752,7 @@ export function CommentLasso({
     // the mark out. Let go somewhere else: a move, and the click that
     // follows is not a click.
     const p = toFlow(e);
-    if (Math.hypot(p.x - g.start.x, p.y - g.start.y) * viewportRef.current.zoom > 3) {
+    if (Math.hypot(p.x - g.start.x, p.y - g.start.y) * getViewport().zoom > 3) {
       drewJustNow.current = true;
     }
   };
@@ -1976,21 +1763,7 @@ export function CommentLasso({
    * Nothing picked out means nothing to recolour -- the key has already set
    * the pen in hand, which is what it does the rest of the time.
    */
-  const recolourSelected = (color: string) => {
-    if (selected.strokes.length === 0 && selected.notes.length === 0) return;
-    const inSelection = new Set(selected.strokes);
-    applyMarks(
-      marksRef.current.map((m, i) => (inSelection.has(i) ? { ...m, color } : m)),
-    );
-    const notesToo = new Set(selected.notes);
-    setNotes((prev) =>
-      prev.map((n) =>
-        notesToo.has(n.id) || (n.inStroke !== undefined && inSelection.has(n.inStroke))
-          ? { ...n, color }
-          : n,
-      ),
-    );
-  };
+
 
   /**
    * Carry a label somewhere else, and let its leader follow.
@@ -2002,34 +1775,7 @@ export function CommentLasso({
    * connector appears: the reader has separated the two, and a line is what
    * says they still belong together.
    */
-  const moveLabel = (id: string, to: Point) => {
-    const note = notesRef.current.find((n) => n.id === id);
-    if (!note) return;
-    // Words at the end of a line the reader drew: the LINE follows them. It
-    // swings and stretches about the point it started from, so one gesture
-    // stays one line. Leaving the stroke where it was and running a connector
-    // out to the words put an elbow in the middle of it.
-    const i = note.onStroke;
-    if (i !== undefined && marksRef.current[i]) {
-      // The line is a mark of its own, and its first point sits on the edge
-      // of whatever it left. Swinging it about that point keeps it attached
-      // there, and touches nothing else.
-      const swung = pivotStroke(marksRef.current[i]!.points, to);
-      applyMarks(marksRef.current.map((m, k) => (k === i ? { ...m, points: swung } : m)));
-      setIds(manual ?? markHits(strokesRef.current, boxesRef.current));
-      const { end, from } = strokeHeading(swung);
-      setNotes((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, x: end.x, y: end.y, from } : n)),
-      );
-      return;
-    }
-    // Words at the end of a leader the app offered: only the far end moves,
-    // so the leader pivots about where it met the ink. Carrying them by hand
-    // pins them, so the callout layout stops moving them about.
-    setNotes((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, x: to.x, y: to.y, pinned: true } : n)),
-    );
-  };
+  const moveLabel = (id: string, to: Point) => markupStore.getState().moveLabel(id, to, boxes);
 
   /**
    * Take a label and the line it belongs to.
@@ -2050,50 +1796,7 @@ export function CommentLasso({
    * point at strokes by index, and dropping some shifts the rest, which
    * every path here used to get subtly wrong for one of the three kinds.
    */
-  const dropMarks = (strokes: Iterable<number>, noteIds: Iterable<string> = []) => {
-    const gone = new Set(strokes);
-    const goneNotes = new Set(noteIds);
-    // Close over the gesture: a note whose ring or line is going takes its
-    // other marks with it; a note going takes its ring and line.
-    let grew = true;
-    while (grew) {
-      grew = false;
-      for (const n of notesRef.current) {
-        const linked = [n.onStroke, n.ringStroke].filter((i): i is number => i !== undefined);
-        const hit = goneNotes.has(n.id) || linked.some((i) => gone.has(i));
-        if (!hit) continue;
-        if (!goneNotes.has(n.id)) {
-          goneNotes.add(n.id);
-          grew = true;
-        }
-        for (const i of linked) {
-          if (!gone.has(i)) {
-            gone.add(i);
-            grew = true;
-          }
-        }
-      }
-    }
-    const kept = strokesRef.current.filter((_, i) => !gone.has(i));
-    const shift = (i: number) => i - [...gone].filter((g) => g < i).length;
-    const re = (i: number | undefined) => (i === undefined || gone.has(i) ? undefined : shift(i));
-    applyMarks(marksRef.current.filter((_, i) => !gone.has(i)));
-    setNotes((prev) =>
-      prev
-        .filter((n) => !goneNotes.has(n.id))
-        .filter((n) => n.inStroke === undefined || !gone.has(n.inStroke))
-        .map((n) => ({
-          ...n,
-          inStroke: re(n.inStroke),
-          onStroke: re(n.onStroke),
-          ringStroke: re(n.ringStroke),
-        })),
-    );
-    setIds(manual ?? markHits(kept, boxesRef.current));
-    setSelected(NOTHING_SELECTED);
-    setActiveLabel(null);
-    setHoveredStroke(null);
-  };
+  const dropMarks = (strokes: Iterable<number>, noteIds: Iterable<string> = []) => markupStore.getState().dropMarks(strokes, noteIds, boxes);
 
   const removeLabel = (id: string) => dropMarks([], [id]);
 
@@ -2103,27 +1806,20 @@ export function CommentLasso({
   /** Remove one stroke, and the gesture it was part of. */
   const removeStroke = (index: number) => dropMarks([index]);
 
-  /**
-   * Put the remark in hand on the pile and start a clean one.
-   *
-   * The strokes are captured BEFORE the ref is reset: a state updater runs
-   * when React gets round to it, by which point the ref is already the empty
-   * array for the next remark, and the queued ink vanished.
-   */
   /** The live remark as it would be queued, without queueing it. */
   const snapshot = (text: string, id = `q${Date.now()}`): Queued => {
     // The notes are taken as they stand on screen -- called out beside a
     // card, with the leader that reaches them -- since after queueing
     // nothing recomputes either, and the words used to jump to where they
     // were first offered and lose their line.
-    const drawn = marksRef.current;
-    const written = settledNotesRef.current.filter((n) => n.text.trim());
+    const drawn = markupStore.getState().marks;
+    const written = settledNotes.filter((n) => n.text.trim());
     const sketch = resolveSketch(
       drawn.map((m) => m.points),
       written,
-      boxesRef.current,
+      boxes,
     );
-    const cuts = resolveCuts(drawn.map((m) => m.points), boxesRef.current, rowsOf);
+    const cuts = resolveCuts(drawn.map((m) => m.points), boxes, rowsOf);
     const strikes = resolveStrikes(drawn.map((m) => m.points), edgesOf());
     return { id, text, ids, sketch, cuts, strikes, marks: drawn, notes: written };
   };
@@ -2133,16 +1829,16 @@ export function CommentLasso({
     const corners: Point[] = [
       ...st.marks.flatMap((m) => m.points),
       ...st.notes.filter((n) => n.inStroke === undefined).flatMap((n) => rectCorners(noteRect(n))),
-      ...boxesRef.current.filter((b) => st.ids.includes(b.id)).flatMap(rectCorners),
+      ...boxes.filter((b) => st.ids.includes(b.id)).flatMap(rectCorners),
     ];
     if (corners.length < 3) return null;
-    const shape = blobAround(corners, BLOB_PAD_PX / Math.max(0.2, viewportRef.current.zoom));
+    const shape = blobAround(corners, BLOB_PAD_PX / Math.max(0.2, getViewport().zoom));
     return shape.length >= 3 ? shape : null;
   };
 
   /** The set-aside remark whose ground is under a canvas point, if any. */
   const shelfAt = (at: Point): string | null => {
-    const hit = shelfRef.current.find((st) => {
+    const hit = markupStore.getState().shelf.find((st) => {
       const b = blobOf(st);
       return b ? insidePolygon(at, b) : false;
     });
@@ -2165,62 +1861,20 @@ export function CommentLasso({
     setViewport({ zoom: vp.zoom, x: vp.x + r.width / 2 - cx, y: vp.y + r.height / 2 - cy }, { duration: 300 });
   };
 
-  /** Set the live remark aside on its ground, unsent, and clear the pen. */
-  const shelveLive = () => {
-    if (marksRef.current.length === 0 && !notesRef.current.some((n) => n.text.trim())) return;
-    const text = notesRef.current.map((n) => n.text.trim()).filter(Boolean).join("\n\n");
-    const entry: Stack = { ...snapshot(text), ground };
-    setShelf((prev) => [...prev, entry]);
-    reset();
-  };
-
-  /**
-   * A fresh remark, with the current one set aside rather than sent.
-   *
-   * The next stroke after sending is already a new remark; this is for the
-   * ask that comes to mind before the last one is finished.
-   */
+  const liveSnapshot = () => snapshot(markupStore.getState().notes.map((note) => note.text.trim()).filter(Boolean).join("\n\n"));
   const newStack = () => {
-    if (marksRef.current.length === 0 && !notesRef.current.some((n) => n.text.trim())) return;
-    shelveLive();
-    setGround(nextGround());
-    // A fresh remark starts in a fresh pen: the first one no remark on the
-    // board is using, so the new ink is never the ink of the one just set
-    // aside. When every pen is in use, the next one along.
-    const used = new Set([
-      ...marksRef.current.map((m) => m.color),
-      ...shelfRef.current.flatMap((st) => st.marks.map((m) => m.color)),
-      ...filed.flatMap((f) => f.marks.map((m) => m.color)),
-      ink,
-    ]);
-    const at = PALETTE.findIndex((pen) => pen.ink === ink);
-    const order = [...PALETTE.slice(at + 1), ...PALETTE.slice(0, at + 1)];
-    const fresh = order.find((pen) => !used.has(pen.ink)) ?? order[0];
-    if (fresh) setInk(fresh.ink);
+    const state = markupStore.getState();
+    if (state.marks.length === 0 && !state.notes.some((note) => note.text.trim())) return;
+    markupStore.getState().newStack(liveSnapshot());
+    setCurrent(null);
+    setMarquee(null);
   };
-
-  /** Bring a set-aside remark back to the pen, setting the live one aside. */
   const switchTo = (id: string) => {
-    const target = shelfRef.current.find((st) => st.id === id);
-    if (!target) return;
-    shelveLive();
-    setShelf((prev) => prev.filter((st) => st.id !== id));
-    applyMarks(target.marks);
-    setNotes(target.notes.map((n) => ({ ...n, offered: false })));
-    setIds(target.ids);
-    setManual(target.ids);
-    setGround(target.ground);
-    // Its own pen back in hand, so the next stroke is the same ink as the
-    // rest of the remark rather than the one just set aside.
-    const pen = target.marks[target.marks.length - 1]?.color;
-    if (pen) setInk(pen);
-    setSelected(NOTHING_SELECTED);
-    setActiveLabel(null);
+    if (!markupStore.getState().shelf.some((stack) => stack.id === id)) return;
+    markupStore.getState().switchStack(id, liveSnapshot());
+    setCurrent(null);
+    setMarquee(null);
   };
-  const switchToRef = useRef(switchTo);
-  switchToRef.current = switchTo;
-  const newStackRef = useRef(newStack);
-  newStackRef.current = newStack;
 
   /**
    * The remark goes to the agent as it stands, and its ink fades to a
@@ -2235,20 +1889,19 @@ export function CommentLasso({
    */
   const sendRemark = async () => {
     if (sending) return;
-    const q = snapshot(notesRef.current.map((n) => n.text.trim()).filter(Boolean).join("\n\n"));
-    setSending(true);
+    const q = snapshot(markupStore.getState().notes.map((n) => n.text.trim()).filter(Boolean).join("\n\n"));
     try {
       // The words, then the shape of the drawing under them. Both, because
       // not every reader will parse a structure and the two must never
       // disagree about what was drawn.
-      const pointers = resolvePointers(q.notes, q.marks.map((m) => m.points), boxesRef.current, rowsOf);
+      const pointers = resolvePointers(q.notes, q.marks.map((m) => m.points), boxes, rowsOf);
       const drawn = [describeSketch(q.sketch), describeCuts(q.cuts), describeStrikes(q.strikes), describePointers(pointers)]
         .filter(Boolean)
         .join("\n");
       // A struck edge's two ends are what the ask is about, so they are
       // targets too: the cross itself caught no card.
       const ends = q.strikes.flatMap((k) => [k.source, k.target]);
-      const created = await intents.create({
+      const sent = await markupStore.getState().send(q, () => intents.create({
         text: !drawn ? q.text : q.text ? `${q.text}\n\n--- drawn ---\n${drawn}` : drawn,
         workspaceSlug,
         targets: Array.from(new Set([...q.ids, ...ends, ...pointers.map((pt) => pt.node)])),
@@ -2256,32 +1909,17 @@ export function CommentLasso({
         ...(q.cuts.length > 0 ? { cuts: q.cuts } : {}),
         ...(q.strikes.length > 0 ? { strikes: q.strikes } : {}),
         ...(pointers.length > 0 ? { pointers } : {}),
-      });
+      }));
       // Sent, not gone: the remark stays on the board as the place its own
       // outcome will appear.
-      setFiled((prev) => [
-        ...prev,
-        {
-          intentId: created.id,
-          text: q.text,
-          ids: q.ids,
-          sketch: q.sketch,
-          marks: q.marks,
-          notes: q.notes,
-          color: q.marks[0]?.color ?? INK,
-          ground,
-          intent: created,
-        },
-      ]);
-      reset();
-      // The ghost keeps this ground; the next remark takes a fresh one.
-      setGround(nextGround());
-      onFiled?.();
+      if (sent) {
+        setCurrent(null);
+        setMarquee(null);
+        onFiled?.();
+      }
     } catch (err) {
       // The remark is still on the board, untouched, so nothing is lost.
       window.alert(`Not sent: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setSending(false);
     }
   };
 
@@ -2307,15 +1945,66 @@ export function CommentLasso({
     return () => el.removeEventListener("wheel", onWheel);
   }, [active, getViewport, setViewport]);
 
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+      // Keys typed into a field belong to the field. Escape there leaves the
+      // words; here it would clear every mark on the board, and backspace
+      // there deletes a letter, not the label being written in.
+      const target = e.target as HTMLElement | null;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return;
+      if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        if (!e.repeat) setLifted(true);
+        return;
+      }
+      // 1-9 reach for a pen. A mark already picked out is recoloured instead,
+      // so the same key means "this colour" whether the reader is about to
+      // draw or has just pointed at something drawn.
+      const pen = PALETTE.find((c) => c.key === e.key);
+      if (pen && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        markupStore.getState().recolour(pen.ink);
+        return;
+      }
+      // n: a new remark, the current one set aside unsent.
+      if (e.key === "n" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        newStack();
+        return;
+      }
+      // Delete takes what has been picked out. Nothing picked out means
+      // nothing to delete -- it never falls through to clearing the mark.
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (markupStore.getState().activeLabel) {
+          e.preventDefault();
+          removeLabel(markupStore.getState().activeLabel!);
+          return;
+        }
+        if (markupStore.getState().selected.strokes.length + markupStore.getState().selected.notes.length === 0) return;
+        e.preventDefault();
+        removeSelected();
+        return;
+      }
+      if (e.key !== "Escape") return;
+      // Escape puts the selection down first. Starting the whole mark over is
+      // a bigger thing than letting go of what is picked out, and pressing
+      // escape to get out of a selection should not cost the reader the lot.
+      if (markupStore.getState().selected.strokes.length + markupStore.getState().selected.notes.length > 0) {
+        setSelected(NOTHING_SELECTED);
+        return;
+      }
+      // Nothing picked out: the only thing left to back out of is the mode.
+      // Escape never clears the ink. It used to, when there was ink and no
+      // selection, and one press too many after leaving a field wiped a
+      // whole remark with no way back. The ink is kept and waits for the pen
+      // to come back down; deleting is a selection and a delete key.
+      onExit?.();
+  });
+
   useEffect(() => {
     if (!active) {
       setLifted(false);
       return undefined;
     }
-    const typing = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      return t?.tagName === "INPUT" || t?.tagName === "TEXTAREA" || Boolean(t?.isContentEditable);
-    };
     // With the pen up, a drag moves the board under it: the hand tool of
     // every drawing program, held on the same key. A trackpad has no middle
     // button, and leaving the mode just to look elsewhere lost the pen.
@@ -2338,7 +2027,7 @@ export function CommentLasso({
     // a press starts a pan. Caught in the capture phase, before the canvas's
     // own listeners hear of it.
     const onPress = (e: Event) => {
-      if (!liftedRef.current) return;
+      if (!markupStore.getState().lifted) return;
       const t = e.target as HTMLElement | null;
       if (!t?.closest?.(".react-flow")) return;
       if (t.closest('[data-testid="ref-review-chip"], [data-source-anchor]')) return;
@@ -2356,60 +2045,6 @@ export function CommentLasso({
     const onBlur = () => {
       endPan();
       setLifted(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      // Keys typed into a field belong to the field. Escape there leaves the
-      // words; here it would clear every mark on the board, and backspace
-      // there deletes a letter, not the label being written in.
-      if (typing(e)) return;
-      if (e.key === " " || e.code === "Space") {
-        e.preventDefault();
-        if (!e.repeat) setLifted(true);
-        return;
-      }
-      // 1-9 reach for a pen. A mark already picked out is recoloured instead,
-      // so the same key means "this colour" whether the reader is about to
-      // draw or has just pointed at something drawn.
-      const pen = PALETTE.find((c) => c.key === e.key);
-      if (pen && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        e.preventDefault();
-        setInk(pen.ink);
-        recolourRef.current(pen.ink);
-        return;
-      }
-      // n: a new remark, the current one set aside unsent.
-      if (e.key === "n" && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        e.preventDefault();
-        newStackRef.current();
-        return;
-      }
-      // Delete takes what has been picked out. Nothing picked out means
-      // nothing to delete -- it never falls through to clearing the mark.
-      if (e.key === "Delete" || e.key === "Backspace") {
-        if (activeLabelRef.current) {
-          e.preventDefault();
-          removeLabelRef.current(activeLabelRef.current);
-          return;
-        }
-        if (selectedRef.current.strokes.length + selectedRef.current.notes.length === 0) return;
-        e.preventDefault();
-        removeSelectedRef.current();
-        return;
-      }
-      if (e.key !== "Escape") return;
-      // Escape puts the selection down first. Starting the whole mark over is
-      // a bigger thing than letting go of what is picked out, and pressing
-      // escape to get out of a selection should not cost the reader the lot.
-      if (selectedRef.current.strokes.length + selectedRef.current.notes.length > 0) {
-        setSelected(NOTHING_SELECTED);
-        return;
-      }
-      // Nothing picked out: the only thing left to back out of is the mode.
-      // Escape never clears the ink. It used to, when there was ink and no
-      // selection, and one press too many after leaving a field wiped a
-      // whole remark with no way back. The ink is kept and waits for the pen
-      // to come back down; deleting is a selection and a delete key.
-      onExitRef.current?.();
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("keyup", onKeyUp);
@@ -2429,7 +2064,9 @@ export function CommentLasso({
       window.removeEventListener("pointercancel", endPan);
       endPan();
     };
-  }, [active, getViewport, setViewport]);
+    // onKey is an effect event, intentionally excluded from dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, getViewport, setViewport, markupStore, setLifted]);
 
   if (!active) return null;
 
@@ -2515,9 +2152,6 @@ export function CommentLasso({
   // the label owns them, carries them when it moves and takes them when it is
   // deleted. Offering them their own cross put two of them on one gesture,
   // one at the end of the line and one on the words.
-  const labelLines = new Set(
-    notes.map((n) => n.onStroke).filter((i): i is number => i !== undefined),
-  );
   /**
    * Words for highlights on a card, called out down its sides.
    *
@@ -2525,62 +2159,6 @@ export function CommentLasso({
    * is added or removed: the remaining remarks spread back out over the card
    * instead of leaving a gap where a deleted one used to be.
    */
-  const calledOut = (() => {
-    const byNode = new Map<string, { id: string; centre: Point }[]>();
-    for (const n of notes) {
-      if (n.pinned || n.ringStroke === undefined) continue;
-      const ring = strokes[n.ringStroke];
-      if (!ring) continue;
-      // Called out only when the ring is about ONE card. A ring round two
-      // put its words "beside the first card" -- which was the gap between
-      // them, inside the ring, looking for all the world like a text box.
-      // Several cards keep the clear-space placement outside the ring.
-      const hits = lassoHits(ring, boxes);
-      if (hits.length !== 1) continue;
-      const on = hits[0]!;
-      const list = byNode.get(on) ?? [];
-      list.push({ id: n.id, centre: loopCentre(ringOutline(ring)) });
-      byNode.set(on, list);
-    }
-    const out = new Map<string, CalloutPlace>();
-    const gap = CALLOUT_GAP_PX / Math.max(0.2, viewport.zoom);
-    for (const [nodeId, items] of byNode) {
-      const node = boxes.find((b) => b.id === nodeId);
-      if (!node) continue;
-      for (const [id, place] of calloutPlaces(items, node, gap)) out.set(id, place);
-    }
-    return out;
-  })();
-
-  /** Where a note actually sits: called out by rule, or where it was carried. */
-  const notePos = (n: Note): Point => {
-    const place = calledOut.get(n.id);
-    return place ? { x: place.x, y: place.y } : { x: n.x, y: n.y };
-  };
-
-  /**
-   * Where a note's line begins.
-   *
-   * For a note that belongs to a ring this is recomputed rather than stored:
-   * from the ring's centre, out through wherever the words are now, cut at
-   * the outline. Storing the edge point would fix the line to one spot on the
-   * rim, and carrying the words round to the far side would leave it hooking
-   * back on itself.
-   */
-  const lineFrom = (n: Note): Point | undefined => {
-    if (n.ringStroke === undefined) return n.from;
-    const ring = strokes[n.ringStroke];
-    if (!ring) return n.from;
-    const outline = ringOutline(ring);
-    if (outline.length < 3) return n.from;
-    return exitLoop(outline, loopCentre(outline), notePos(n));
-  };
-
-  settledNotesRef.current = notes.map((n) => ({
-    ...n,
-    ...notePos(n),
-    from: lineFrom(n) ?? n.from,
-  }));
 
   /**
    * Everything this remark covers: the ink, the words, and the cards caught.
@@ -2626,12 +2204,6 @@ export function CommentLasso({
     selected.strokes.length === 1 && selected.notes.length === 0
       ? selected.strokes[0]!
       : null;
-  selectedRef.current = selected;
-  removeSelectedRef.current = removeSelected;
-  recolourRef.current = recolourSelected;
-  activeLabelRef.current = activeLabel;
-  labelLinesRef.current = labelLines;
-  removeLabelRef.current = removeLabel;
 
   return (
     // One wrapper for every layer the pen lays over the canvas. It has no
@@ -3021,8 +2593,7 @@ export function CommentLasso({
               editing={editing === n.id}
               color={n.color ?? INK}
               onBlur={() => {
-                setNotes((prev) => prev.filter((m) => m.id !== n.id || m.text.trim()));
-                setEditing((cur) => (cur === n.id ? null : cur));
+                markupStore.getState().commitNote(n.id);
               }}
               onCommit={() => setEditing(null)}
               onGrow={(px) => growHost(n.inStroke!, px / zoom + inset * 2)}
@@ -3063,8 +2634,7 @@ export function CommentLasso({
             }
             onBlur={() => {
               // An empty note is a mis-click, or an offer nobody took.
-              setNotes((prev) => prev.filter((m) => m.id !== n.id || m.text.trim()));
-              setEditing((cur) => (cur === n.id ? null : cur));
+              markupStore.getState().commitNote(n.id);
             }}
             onCommit={() => setEditing(null)}
             onGrab={(e) => {
@@ -3156,10 +2726,10 @@ export function CommentLasso({
                     title={`${live ? "in hand" : "set aside, press to go on with it"}${words ? `: ${words.slice(0, 60)}` : ""}`}
                     onClick={() => {
                       if (live) {
-                        reveal({ marks: marksRef.current, notes: notesRef.current, ids });
+                        reveal({ marks: markupStore.getState().marks, notes: markupStore.getState().notes, ids });
                         return;
                       }
-                      const target = shelfRef.current.find((x) => x.id === st.id);
+                      const target = markupStore.getState().shelf.find((x) => x.id === st.id);
                       if (target) reveal(target);
                       switchTo(st.id!);
                     }}
@@ -3191,8 +2761,7 @@ export function CommentLasso({
               aria-pressed={inHand}
               title={`${pen.name} (${pen.key})`}
               onClick={() => {
-                setInk(pen.ink);
-                recolourSelected(pen.ink);
+                markupStore.getState().recolour(pen.ink);
               }}
               className="relative grid h-8 w-8 place-items-center rounded transition"
               style={{
@@ -3426,8 +2995,7 @@ export function CommentLasso({
                     data-testid="comment-lasso-keep"
                     className="rounded bg-emerald-600 px-2 py-0.5 text-[11px] text-white hover:bg-emerald-700"
                     onClick={() => {
-                      const next = new Set(kept).add(applied.id);
-                      setKept(next);
+                      const next = keepSuggestion(applied.id);
                       void settle(f.intentId, next);
                     }}
                   >
