@@ -21,6 +21,7 @@ import {
 import { onViewerZoomRequest } from "@/canvas/viewerZoom";
 import type { SourceRef } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
+import { SourceMark } from "@/canvas/SourceMark";
 
 import {
   buildRegionSourceRef,
@@ -1025,7 +1026,7 @@ export function PdfSourceView({
                 </svg>
               ))}
               {markPlacements.map(({ key, ...box }) => (
-                <div
+                <SourceMark
                   // Stable, so every mark travels rather than blinking out and
                   // in. The key is the KIND, so a move pairs like with like:
                   // the cell mark goes to the next cell, the callout mark to
@@ -1034,13 +1035,9 @@ export function PdfSourceView({
                   key={key}
                   data-testid="pdf-highlight"
                   data-mark-kind={key}
-                  aria-hidden
-                  // The fade is a mount animation, so it plays once when a
-                  // mark first appears and never fights the travel afterwards.
-                  className={`anchor-mark anchor-mark-fade pointer-events-none absolute z-10${
-                    markFlying ? " anchor-mark-flying" : ""
-                  }`}
-                  style={box}
+                  className="z-10"
+                  flying={markFlying}
+                  box={box}
                 />
               ))}
               {items.map((it) => (
