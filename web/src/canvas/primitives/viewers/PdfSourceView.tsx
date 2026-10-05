@@ -21,6 +21,7 @@ import {
 import { onViewerZoomRequest } from "@/canvas/viewerZoom";
 import type { SourceRef } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
+import { SourceMark } from "@/canvas/SourceMark";
 
 import {
   buildRegionSourceRef,
@@ -89,6 +90,7 @@ type Props = {
   highlightNonce?: number;
   title?: string;
   onPageChange: (page: number) => void;
+  onContentsHighlightChange?: (highlight: { page: number; bbox: number[] } | null) => void;
   /**
    * The canvas this viewer authors references into. References are
    * canvas-scoped (#147); without a canvas slug the "Make reference" action is
@@ -121,6 +123,7 @@ export function PdfSourceView({
   highlightNonce,
   title,
   onPageChange,
+  onContentsHighlightChange,
   canvasSlug,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -161,7 +164,11 @@ export function PdfSourceView({
   const [saving, setSaving] = useState(false);
   // Lightweight confirmation: toast text + the page/bbox to flash (PDF points).
   const [toast, setToast] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<{ page: number; bbox: number[] } | null>(null);
+  const [confirm, setConfirm] = useState<{ page: number; bbox: number[]; contents?: boolean } | null>(null);
+  useEffect(() => {
+    onContentsHighlightChange?.(confirm?.contents ? confirm : null);
+  }, [confirm, onContentsHighlightChange]);
+  useEffect(() => { setConfirm(null); }, [highlightNonce]);
   // The reference the user is focused on (shared with the sidebar list) plus
   // the setter, so clicking a green box selects the matching row, and vice-versa.
   const activeReferenceId = useUiStore((s) => s.activeReferenceId);
@@ -371,7 +378,7 @@ export function PdfSourceView({
     if (!entry.page) return;
     scrollToPage(entry.page);
     onPageChange(entry.page);
-    setConfirm(entry.bbox ? { page: entry.page, bbox: entry.bbox } : null);
+    setConfirm(entry.bbox ? { page: entry.page, bbox: entry.bbox, contents: true } : null);
   }, [scrollToPage, onPageChange]);
 
   // Navigate to the highlight target when it changes. Two-phase so a click is
@@ -1025,7 +1032,7 @@ export function PdfSourceView({
                 </svg>
               ))}
               {markPlacements.map(({ key, ...box }) => (
-                <div
+                <SourceMark
                   // Stable, so every mark travels rather than blinking out and
                   // in. The key is the KIND, so a move pairs like with like:
                   // the cell mark goes to the next cell, the callout mark to
@@ -1034,13 +1041,9 @@ export function PdfSourceView({
                   key={key}
                   data-testid="pdf-highlight"
                   data-mark-kind={key}
-                  aria-hidden
-                  // The fade is a mount animation, so it plays once when a
-                  // mark first appears and never fights the travel afterwards.
-                  className={`anchor-mark anchor-mark-fade pointer-events-none absolute z-10${
-                    markFlying ? " anchor-mark-flying" : ""
-                  }`}
-                  style={box}
+                  className="z-10"
+                  flying={markFlying}
+                  box={box}
                 />
               ))}
               {items.map((it) => (

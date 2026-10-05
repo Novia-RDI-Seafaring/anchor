@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { documents } from "@/api/documents";
 import { boxesOnPicture, isOwnHover, type PictureBox } from "@/canvas/sourceHighlight";
 import { useUiStore } from "@/stores/uiStore";
+import { SourceMark } from "@/canvas/SourceMark";
 
 export type PictureCut = { slug?: string; page?: number; bbox?: number[]; region_id?: string };
 
@@ -70,15 +71,14 @@ export function PictureHighlightBoxes({ boxes }: { boxes: PictureBox[] }) {
   return (
     <>
       {boxes.map((b, i) => (
-        <div
+        <SourceMark
           key={b.key ?? i}
           data-testid="image-source-highlight"
-          className="anchor-mark-fade anchor-mark-flying pointer-events-none absolute rounded-sm border-2 border-amber-500 bg-amber-300/30"
-          style={{
-            left: `calc(${b.left}% - 3px)`,
-            top: `calc(${b.top}% - 3px)`,
-            width: `calc(${b.width}% + 6px)`,
-            height: `calc(${b.height}% + 6px)`,
+          box={{
+            left: `${b.left}%`,
+            top: `${b.top}%`,
+            width: `${b.width}%`,
+            height: `${b.height}%`,
           }}
         />
       ))}
