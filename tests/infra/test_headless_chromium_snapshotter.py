@@ -38,7 +38,7 @@ def test_snapshotter_satisfies_port_protocol(tmp_path: Path):
     # `Protocol` runtime check isn't available without @runtime_checkable;
     # assert the method shape instead — it's what the port actually
     # promises callers.
-    assert callable(getattr(s, "snapshot"))
+    assert callable(s.snapshot)
     params = signature(s.snapshot).parameters
     assert set(params.keys()) >= {"slug", "format", "viewport", "full_page"}
     # Reference the port symbol so the import stays useful (catches drift
@@ -66,6 +66,35 @@ def test_snapshotter_rejects_unknown_format(tmp_path: Path):
         with pytest.raises(ValueError, match="unsupported snapshot format"):
             await s.snapshot("w1", format="webp")
     asyncio.run(run())
+
+
+def test_node_wait_selector_waits_only_when_nodes_expected():
+    # #306: with nodes in the workspace state, the shell selector alone is
+    # not enough — wait for a node element. Empty/unknown keeps the old
+    # shell-plus-settle behaviour (an empty canvas has nothing to wait for).
+    from anchor.infra.snapshot.headless_chromium_snapshotter import (
+        NODE_SELECTOR,
+        node_wait_selector,
+    )
+
+    assert node_wait_selector(3) == NODE_SELECTOR == ".react-flow__node"
+    assert node_wait_selector(1) == NODE_SELECTOR
+    assert node_wait_selector(0) is None
+    assert node_wait_selector(None) is None
+
+
+def test_node_wait_timeout_message_names_what_it_waited_for():
+    from anchor.infra.snapshot.headless_chromium_snapshotter import (
+        node_wait_timeout_message,
+    )
+
+    msg = node_wait_timeout_message(
+        "w1", expect_nodes=3, url="http://localhost:8003/c/w1", timeout_ms=30000,
+    )
+    assert "3 node(s)" in msg
+    assert ".react-flow__node" in msg
+    assert "http://localhost:8003/c/w1" in msg
+    assert "30000 ms" in msg
 
 
 @pytest.mark.slow

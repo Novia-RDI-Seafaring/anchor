@@ -1,157 +1,153 @@
 # Quickstart
 
-From nothing to a source-grounded value in about five minutes. No API key.
+Create a project, open a canvas, and ask your agent to build a specification
+table from a PDF. You need Python 3.12+, [uv](https://docs.astral.sh/uv/), and
+an MCP-capable agent client for the agent steps.
 
-This is the opinionated path. It uses the `harness` provider, so your agent
-reads the PDF pages and ANCHOR keeps every byte on your machine. When you want
-server-side extraction later, [step 6](#6-optional-server-side-gold-with-openai)
-adds it.
-
-## 1. Install
+## 1. Install ANCHOR
 
 ```bash
 uv tool install anchor-kb
+anchor version
 ```
 
-You now have two commands on your PATH: `anchor` (the CLI) and `anchor-mcp`
-(the MCP server your harness talks to). The wheel bundles the web UI, so no
-Node toolchain is needed to run it.
+The published wheel includes the browser UI. You do not need Node.js for normal
+use. If `anchor` is not found, run `uv tool update-shell`, reopen the terminal,
+and retry. See [Install](installation.md) for source builds and upgrades.
 
-Requires Python 3.12+. `pipx install anchor-kb` and `pip install anchor-kb`
-also work. Installing from a git checkout needs an extra build step; see
-[Install](installation.md).
+## 2. Choose how the PDF will be read
 
-## 2. Pick an environment
+An **environment** stores the provider configuration. A **project** holds your
+documents and canvases. Each project belongs to one environment.
 
-An **environment** is a named trust boundary: it decides where your document
-content may go. You pick a provider once, and that choice is the environment's
-data zone.
+| Provider | Who interprets regions on the page? | What to expect |
+| --- | --- | --- |
+| `harness` | Your connected agent | No ANCHOR API key. Page content reaches your agent and potentially its model provider. |
+| `local` | Local Docling layout extraction only | Page text, layout geometry, and PDF viewing; no model-assisted gold regions or gold-region semantic search. |
+| `ollama` | Your configured vision model | Model calls go to your Ollama endpoint, which can be on this computer or another host. |
+| `openai`, `azure`, `custom` | A configured vision endpoint | Requires endpoint setup and credentials. Content is sent to that endpoint. |
 
-| Provider | What extracts gold regions | Data leaves your machine? | Key needed? |
-|---|---|---|---|
-| `harness` | Your agent reads pages, ANCHOR embeds locally | No | No |
-| `local` | Nothing (silver only: page text + search) | No | No |
-| `openai` | OpenAI vision, server-side | Yes (to OpenAI) | Yes |
-| `azure` | Azure OpenAI vision, server-side | Yes (to your Azure) | Yes |
-| `ollama` | A local vision model you run | No | No |
-
-Start with `harness`. It produces gold regions (structured values with page +
-bbox provenance) with no key and no new egress:
+This walkthrough uses `harness`. Choose it for a PDF you can share with your
+agent's model provider. For local processing, use `--provider local` in the
+next command; step 5 explains the different upload behavior. Read
+[Provider setup](../guides/provider-setup.md) for endpoint-backed extraction.
 
 ```bash
-anchor env create home --provider harness --yes
+anchor env create study --provider harness --yes
+anchor models prefetch --env study
 ```
 
-This creates an environment named `home`. Gold regions still come out, because
-your agent does the reading. ANCHOR embeds them locally with a bundled model.
+Prefetch downloads the local extraction and embedding models once. It needs
+network access and may take several minutes. It does not ingest your PDF.
 
-## 3. Wire ANCHOR into your harness
-
-Point your agent at the environment. Each install writes one named MCP server,
-so the entry name tells you which environment it serves.
-
-=== "Claude Desktop"
-
-    ```bash
-    anchor install claude-desktop --env home
-    ```
-
-=== "Claude Code"
-
-    ```bash
-    anchor install claude-code --env home
-    ```
-
-=== "Cursor"
-
-    ```bash
-    anchor install cursor --env home
-    ```
-
-Restart the harness. In Claude Code or Cursor, `/mcp` should now list `anchor`
-with its tools. For Codex, OpenCode, and generic stdio clients, see
-[Agent configuration](../guides/agent-configuration.md).
-
-## 4. Ingest a PDF, no key
-
-Drag a PDF into your harness chat, or point it at a file, and ask it to ingest.
-On the `harness` provider the agent runs the page-by-page session itself:
-`ingest_begin` -> `ingest_get_page` -> `ingest_submit_page` (once per page) ->
-`ingest_finalize`. The agent reads each page; ANCHOR computes the region boxes
-and embeds them locally on finalize. Nothing is sent to a cloud model.
-
-> Ingest the PDF at ~/Downloads/lkh-pump.pdf into ANCHOR, then tell me the
-> max inlet pressure with its source page.
-
-When it finishes you have bronze (the raw PDF), silver (per-page text and
-images), and gold (structured regions with page + bbox), all on disk under the
-project's `.anchor_data/`.
-
-## 5. See the grounding
-
-Start the canvas server and open a document:
+## 3. Create a project and canvas
 
 ```bash
-anchor serve            # http://127.0.0.1:8002
+anchor project create pump-study --env study
+anchor use study pump-study
+anchor canvas create pump-selection --title "Pump selection"
 ```
 
-Open a spec value in the viewer and it points back to its exact page and
-region. That link, value to page to bbox, is the whole contract: if a value
-has no source ref, treat it as ungrounded.
+`anchor use` selects the project for subsequent CLI commands. It does not
+select the agent's MCP project. You will name `pump-study` in the agent request.
+The managed project lives under
+`~/.anchor/envs/study/projects/pump-study/`, with its files in `.anchor_data/`.
 
-Confirm the environment resolved the way you expect at any time:
+Prefer to keep a project in your own working folder? Run
+`anchor init pump-study --env study` there instead of `anchor project create`.
+See [Environments and projects](../guides/environments-and-projects.md).
+
+## 4. Connect your agent and start the browser
+
+Run the installer for the client you use:
 
 ```bash
-anchor check --env home
+anchor install codex --env study
 ```
 
-It prints the data zone, the provider, and whether a key is present.
-
-## 6. Optional: server-side gold with OpenAI
-
-Prefer ANCHOR to do the extraction with a cloud vision model instead of your
-agent? Create an `openai` environment and give it a key. The key lives in the
-environment's gitignored `.env`, and it must use the `ANCHOR_` name:
+Other built-in targets are `claude-code`, `claude-desktop`, and `cursor`.
+Replace `codex` with your target. Restart or reconnect the client so it loads
+the MCP server. The installer registers ANCHOR; it does not start an agent.
+See [Agent setup](../guides/agent-setup.md) for what each installer writes.
 
 ```bash
-anchor env create cloud --provider openai --yes
-echo 'ANCHOR_OPENAI_API_KEY=sk-...' >> ~/.anchor/envs/cloud/.env
-anchor check --env cloud --probe
+anchor serve --env study --project pump-study
 ```
 
-`--probe` makes one tiny live call to confirm the key and endpoint work. Then
-ingest through the built-in path (`anchor ingest file.pdf`, canvas drag-drop,
-or MCP `ingest_pdf`) and ANCHOR extracts gold server-side.
+Leave this terminal running. Open the URL printed by the server, normally
+<http://127.0.0.1:8002>, then open the `pump-selection` canvas. Its usual direct
+URL is <http://127.0.0.1:8002/c/pump-selection>. If port 8002 is occupied,
+ANCHOR selects another free port and prints that URL.
 
-For Azure OpenAI, the base URL and deployment-name specifics are in the
-[Azure OpenAI test-drive](../guides/azure-test-drive.md).
+## 5. Add your PDF
+
+Drag a PDF from your computer onto the canvas, or use **+ > PDF datasheet**.
+The upload creates a document card.
+
+With `harness`, the card displays **awaiting agent**. The upload saves the PDF
+and queues an ingestion request; an external agent must process it. Ask your
+agent:
+
+> Use ANCHOR project `pump-study` in environment `study`. Check the pending
+> intents and process the PDF dropped on canvas `pump-selection`. Complete
+> the harness ingestion session, update the document card, and resolve the
+> ingestion intent. Tell me whether extraction completed and how many regions
+> are available.
+
+The agent uses `ingest_begin`, reads page work items with `ingest_get_page`,
+submits interpretations with `ingest_submit_page`, and publishes them with
+`ingest_finalize`. ANCHOR validates the submitted regions and derives their
+content from stored extraction geometry. The session is not an automatic
+consequence of connecting an MCP server.
+
+With `local`, the server runs Docling extraction itself. The PDF becomes
+available for page text and source viewing without gold regions. You can also
+ingest through the CLI in another terminal:
+
+```bash
+anchor use study pump-study
+anchor ingest "/path/to/datasheet.pdf"
+anchor list
+```
+
+Use your actual path, such as `"C:/Users/you/Downloads/datasheet.pdf"` on
+Windows. CLI ingestion adds the document to the project corpus; it does not
+place a document card on the canvas. Drag the document from the files explorer
+onto the canvas when you need a card. In a `harness` environment, CLI ingestion
+alone does not run the agent's page-by-page gold session.
+
+## 6. Ask for one source-linked table
+
+Once the PDF is ready, ask your agent:
+
+> In ANCHOR project `pump-study`, use the ingested datasheet to create one spec
+> table on `pump-selection`. Include maximum inlet pressure, temperature
+> limits, and operating speed if the document states them. Keep the units and
+> product variant. Give every row its own source reference. Leave missing
+> values explicitly unresolved.
+
+The table appears on the canvas. Click a row's source anchor to open the PDF
+page and, when a precise locator is available, highlight the cited area.
+Page-only references open the page without a precise highlight. A source link
+supports inspection; it does not establish that the extracted claim is correct.
+
+Compare the key, value, units, and product variant against the source. See
+[Working with documents and canvases](../guides/documents-and-canvases.md) for
+row evidence states and [the tutorial](tutorial.md) for canvas requests and
+proposal review.
 
 ## Troubleshooting
 
-**Ingest finished but there are 0 gold regions or no embeddings.**
-The environment has no vision provider or no key. Two fixes:
+| Symptom | What to check |
+| --- | --- |
+| Document stays **awaiting agent** | Ask the connected agent to pull pending intents for `pump-study` and run the harness ingestion session. |
+| Agent sees an empty project | Ask it to call `list_projects` and `anchor_status`, then use `project="pump-study"` or `open_project("pump-study")`. CLI `anchor use` does not retarget MCP. |
+| No gold regions or semantic search results | Expected with `local`. With `harness`, finish the ingestion session. With an endpoint provider, check the provider and credentials, then re-ingest deliberately. |
+| Local model loading fails | Run `anchor models prefetch --env study` while online; inspect its errors before retrying ingestion. |
+| PDF text is missing | Try built-in ingestion with `anchor ingest "/path/to/file.pdf" --full-page-ocr --force`. |
+| Browser shows a different project | Check `anchor serve-info`; restart the server with explicit `--env study --project pump-study`. |
+| Source link opens only a page | The reference has no resolvable region, item, cell, or explicit box. Inspect the page and add a text selection as evidence when needed. |
 
-- Use the no-key path: switch to a `harness` environment and let the agent do
-  the reading (steps 2 to 4). This is the recommended default.
-- Or configure a keyed provider: `openai` / `azure`, with the key in
-  `~/.anchor/envs/<name>/.env` named `ANCHOR_OPENAI_API_KEY` (not a bare
-  `OPENAI_API_KEY`).
-
-Run `anchor check --env <name> --probe` to see which one you are missing.
-
-**`/mcp` does not list `anchor`.**
-Restart the harness fully (quit and reopen, not just close the window). MCP
-servers load on startup.
-
-**Port 8002 is taken.**
-Pass `anchor serve --port 8003`. If you use canvas snapshots, add a matching
-`--base-url http://localhost:8003` to the installed `anchor-mcp` arguments.
-
-## Next steps
-
-- [First-day tutorial](tutorial.md): the `anchor demo` canvas and the
-  "agent fills the placeholders" flow.
-- [Environments and projects](../guides/environments-and-projects.md): the full
-  trust-boundary and project model.
-- [Many interfaces](../concepts/interfaces.md): why CLI, MCP, and HTTP are
-  peers, not one wrapping another.
+For confidential PDFs, cached local ingestion can keep ANCHOR's model processing
+on this computer. Connecting a remote agent still lets that agent retrieve
+document content. Choose both the environment and the agent accordingly.

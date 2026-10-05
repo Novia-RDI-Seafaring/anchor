@@ -14,9 +14,17 @@ Install ANCHOR and create an environment:
 
 ```bash
 uv tool install anchor-kb
-anchor env create local  # pick provider / data zone (name it whatever you like)
-anchor serve
+anchor env create study --provider harness --yes
+anchor project create pump-study --env study
+anchor use study pump-study
+anchor serve --env study --project pump-study
 ```
+
+Use `harness` only for PDFs approved for the agent's data policy. Use
+`--provider local` for ANCHOR-side local extraction without model-assisted gold.
+The manual examples below use environment `local`; substitute `study` if you
+followed the setup above. See [Agent setup](agent-setup.md) for installer targets
+and the difference between CLI and MCP project selection.
 
 `anchor-mcp` can run as a local stdio process without exposing a network MCP
 endpoint. Keep `anchor serve` running when you want the browser UI, live canvas
@@ -31,7 +39,8 @@ anchor-mcp --env local
 ```
 
 Projects inside that environment are addressed by a per-call `project` argument;
-omit it for the default project. `list_projects` enumerates them. A second
+omit it for the session selected by `open_project`, or `default` before
+a session selection. `list_projects` enumerates them. A second
 environment is a second named server. The installers
 (`anchor install claude-desktop --env <name>`) write the entry for you. The
 examples below show the manual form; add `--env <name>` to select a
@@ -60,6 +69,10 @@ reference when available.
 
 For canvas questions, inspect the workspace state before editing it. Preserve
 existing nodes and edges unless the user asks to remove them.
+
+Check pending intents for the selected project. For a submitted canvas ask,
+reply in its thread and stage suggestions for human review. Do not approve
+your own suggestion. An empty placeholder does not submit work.
 
 If ANCHOR appears empty, call `anchor_status` and `list_projects`, and pass the
 right `project` argument before assuming there is no data.

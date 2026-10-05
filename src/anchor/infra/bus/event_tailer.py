@@ -80,7 +80,7 @@ class EventTailer:
                 pass
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self.poll_interval)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Timeout is the polling cadence; loop again unless stopped.
                 pass
 

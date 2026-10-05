@@ -39,15 +39,17 @@ that matters first, **where may document content go?**, and writes a non-secret
 
 | Provider | Data zone |
 | --- | --- |
-| `local` | on-host; nothing leaves the network (bronze/silver + local search; no gold regions) |
+| `local` | on-host; nothing leaves the network (bronze/silver; no gold regions or region embeddings) |
 | `ollama` | your machine / LAN; no internet egress, with offline gold regions via a local vision model |
+| `harness` | the connected agent reads pages; its provider policy controls any further egress |
 | `openai` | public cloud |
 | `azure` | your Azure tenant / region |
 | `custom` | any OpenAI-compatible endpoint; you label the zone |
 
 It scaffolds the environment's `default` project and prints the next steps. The
 API key is **never** written to the profile. Keep it in `ANCHOR_OPENAI_API_KEY`
-or a gitignored `.env` next to the profile.
+or a gitignored `.env` next to the profile. The key file does not choose a
+provider and is not loaded until the environment has a valid `env.toml`.
 
 `anchor init` runs inside a working folder and starts a project there. With no
 name it uses the folder's basename. It binds to an environment via `--env
@@ -123,35 +125,40 @@ project        : --project  >  ANCHOR_PROJECT  >  anchor use  >  "default"
 }}
 ```
 
-## Configuration precedence
+## Configuration and selection
 
-Highest priority first:
+Project selection and model policy have different rules. A CLI command can
+resolve a working folder's marker, explicit selectors, process selectors, or
+the saved CLI session default. MCP is pinned to its named environment and uses
+a per-call project or `open_project` session selection. `anchor use` does not
+change the MCP session.
 
-1. Explicit flags / constructor args
-2. `ANCHOR_*` environment variables
-3. A `.env` file (next to the environment profile)
-4. The project `anchor.toml` marker
-5. The environment `env.toml`
-6. Built-in defaults
+The environment owns provider, endpoint, and local-only policy. A project may
+override permitted non-security settings, but it cannot redirect that policy.
+Process variables cannot silently retarget a named environment either.
+Credentials are scoped to the selected environment; its `.env` is not a second
+provider profile. See [Configuration](../reference/configuration.md).
 
-A project usually has no overrides and inherits the environment. It overrides a
-value by adding it to its own `anchor.toml` marker, alongside the `env` and
-`name` keys. So an operator's `ANCHOR_*` override always wins over a committed
-default, and a malformed config is ignored with a warning rather than crashing
-the CLI. Storage is structural (the project folder's `.anchor_data/`), not a
-setting. There is no `data_dir` key to keep in sync.
+Storage normally follows the project folder's `.anchor_data/`. A raw
+`--data-dir` override is available on commands that expose that flag; it is
+separate from normal named project selection.
 
 ## Data zones and egress
 
 The provider you pick governs what leaves the host:
 
-- **`local` / `ollama`** keep document content on your machine or LAN.
+- **`local`** runs ANCHOR extraction on this computer with cached models.
+- **`ollama`** sends model input to the configured Ollama endpoint.
+- **`harness`** returns page work items to your connected agent.
 - **`openai`** sends page images and extracted text to OpenAI.
 - **`azure` / `custom`** send the same content only to the endpoint you name.
 
-Embeddings stay **local** (`bge-small`) by default, so text never leaves the
-host even when the vision model is remote. Choosing a `text-embedding-*` model
-opts those vectors into the endpoint.
+Region embeddings use a local model by default. Choosing an allowed
+`text-embedding-*` model sends embedding input text to the configured
+endpoint. Vision stages and the external harness have separate content
+disclosure paths; local embeddings do not make those stages local.
 
-See [Configuration](../reference/configuration.md) for the full key reference
-and [Agent setup](../guides/agent-setup.md) for connecting a harness.
+See [Choose a provider and enable gold](../guides/provider-setup.md) for the
+setup and recovery workflow, [Configuration](../reference/configuration.md)
+for the full key reference, and [Agent setup](../guides/agent-setup.md) for
+connecting a harness.

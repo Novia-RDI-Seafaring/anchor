@@ -216,6 +216,17 @@ def _build_pipeline_options(device: str, full_page_ocr: bool = False) -> Any:
     pipeline_options.ocr_options = RapidOcrOptions(
         backend="onnxruntime", force_full_page_ocr=full_page_ocr
     )
+    # Docling enables torch.compile for the Transformers layout model by
+    # default. On Windows CPU installs that sends the first page through
+    # TorchInductor, which requires the MSVC `cl` compiler and can fail with
+    # InvalidCxxCompiler or appear stuck during the first inference. Anchor
+    # does not need a compiled model for local ingestion, so keep this path
+    # portable. The attribute guard preserves compatibility with older
+    # Docling releases that do not expose this option.
+    layout_options = getattr(pipeline_options, "layout_options", None)
+    engine_options = getattr(layout_options, "engine_options", None)
+    if engine_options is not None and hasattr(engine_options, "compile_model"):
+        engine_options.compile_model = False
     return pipeline_options
 
 
@@ -234,82 +245,189 @@ def _convert(
 
 
 def _flatten(doc: Any) -> dict[str, Any]:
-    """Mirrors the v1 anchor_ingest.bronze._flatten_docling logic."""
+    """Mirrors the v1 anchor_ingest.bronze._flatten_docling logic.
+
+    Emits the silver contract (#281): every bbox converted to top-left PDF
+    points using the page size Docling reports, plus ``pages`` sizes and a
+    ``coord_origin`` stamp."""
     items: list[dict[str, Any]] = []
     tables: list[dict[str, Any]] = []
-    page_heights = _page_heights(doc)
+    metadata, groups = _index_structure(doc)
+    page_sizes = _page_sizes(doc)
+    page_heights = {p: s[1] for p, s in page_sizes.items()}
 
     for it in getattr(doc, "texts", []) or []:
-        prov = (it.prov or [None])[0] if hasattr(it, "prov") else None
-        page = getattr(prov, "page_no", 0) if prov else 0
-        bbox = _bbox_from_prov(prov)
-        items.append({
-            "label": getattr(it, "label", "text"),
-            "text": getattr(it, "text", ""),
-            "page": page,
-            "bbox": bbox,
-        })
+        for prov in getattr(it, "prov", []) or [None]:
+            page = getattr(prov, "page_no", 0) if prov else 0
+            bbox = _bbox_from_prov(prov, page_heights.get(page))
+            items.append({
+                **metadata.get(getattr(it, "self_ref", ""), {}),
+                "label": getattr(it, "label", "text"),
+                "text": _text_for_prov(getattr(it, "text", ""), prov),
+                "page": page,
+                "bbox": bbox,
+            })
 
     for tbl in getattr(doc, "tables", []) or []:
         prov = (tbl.prov or [None])[0] if hasattr(tbl, "prov") else None
         page = getattr(prov, "page_no", 0) if prov else 0
-        bbox = _bbox_from_prov(prov)
+        bbox = _bbox_from_prov(prov, page_heights.get(page))
         cells = []
         if hasattr(tbl, "data") and hasattr(tbl.data, "table_cells"):
             for cell in tbl.data.table_cells:
                 cell_data = {
                     "row": getattr(cell, "start_row_offset_idx", None),
                     "col": getattr(cell, "start_col_offset_idx", None),
+                    "row_end": getattr(cell, "end_row_offset_idx", None),
+                    "col_end": getattr(cell, "end_col_offset_idx", None),
+                    "row_span": getattr(cell, "row_span", 1),
+                    "col_span": getattr(cell, "col_span", 1),
+                    "column_header": getattr(cell, "column_header", False),
+                    "row_header": getattr(cell, "row_header", False),
+                    "row_section": getattr(cell, "row_section", False),
                     "text": getattr(cell, "text", ""),
                 }
                 cell_bbox = _bbox_from_cell(cell, page_heights.get(page))
                 if cell_bbox:
                     cell_data["bbox"] = cell_bbox
                 cells.append(cell_data)
+        table_data = {
+            **metadata.get(getattr(tbl, "self_ref", ""), {}),
+            "page": page, "bbox": bbox, "cells": cells,
+            "num_rows": getattr(getattr(tbl, "data", None), "num_rows", None),
+            "num_cols": getattr(getattr(tbl, "data", None), "num_cols", None),
+        }
         items.append({
             "label": "table",
             "text": "",
-            "page": page,
-            "bbox": bbox,
-            "cells": cells,
+            **table_data,
         })
-        tables.append({"page": page, "bbox": bbox, "cells": cells})
+        tables.append(table_data)
 
     for pic in getattr(doc, "pictures", []) or []:
         prov = (pic.prov or [None])[0] if hasattr(pic, "prov") else None
         page = getattr(prov, "page_no", 0) if prov else 0
-        bbox = _bbox_from_prov(prov)
-        items.append({"label": "picture", "text": "", "page": page, "bbox": bbox})
+        bbox = _bbox_from_prov(prov, page_heights.get(page))
+        items.append({
+            **metadata.get(getattr(pic, "self_ref", ""), {}),
+            "label": "picture", "text": "", "page": page, "bbox": bbox,
+        })
 
-    return {"items": items, "tables": tables}
+    return {
+        "items": items,
+        "groups": groups,
+        "tables": tables,
+        "pages": {p: {"width": w, "height": h} for p, (w, h) in page_sizes.items()},
+        "coord_origin": "top-left",
+    }
 
 
-def _bbox_from_prov(prov: Any) -> list[float]:
+def _index_structure(doc: Any) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+    """Keep tree order and relationships without changing durable item indexes."""
+    if not callable(getattr(doc, "iterate_items", None)):
+        return {}, []
+    metadata: dict[str, dict[str, Any]] = {}
+    groups: list[dict[str, Any]] = []
+    ancestors: list[tuple[int, dict[str, Any]]] = []
+    for order, (node, depth) in enumerate(doc.iterate_items(with_groups=True)):
+        while ancestors and ancestors[-1][0] >= depth:
+            ancestors.pop()
+        ref = getattr(node, "self_ref", "")
+        label = getattr(node, "label", "")
+        label = getattr(label, "value", label)
+        if ref.startswith("#/groups/"):
+            group = {
+                "id": ref, "label": label, "name": getattr(node, "name", ""),
+                "parent": ancestors[-1][1]["id"] if ancestors else None,
+                "level": len(ancestors) + 1, "reading_order": order,
+            }
+            groups.append(group)
+            ancestors.append((depth, group))
+            continue
+        entry: dict[str, Any] = {
+            "reading_order": order,
+            "group_path": [group["id"] for _, group in ancestors],
+        }
+        level = getattr(node, "level", None)
+        if isinstance(level, int):
+            entry["level"] = level
+        for field in ("captions", "references", "footnotes"):
+            links = getattr(node, field, []) or []
+            if links:
+                entry[field] = [
+                    {"id": link.cref, "text": getattr(link.resolve(doc), "text", "")}
+                    for link in links
+                ]
+        metadata[ref] = entry
+        prov = (getattr(node, "prov", []) or [None])[0]
+        page = getattr(prov, "page_no", None)
+        if page is not None:
+            for _, group in ancestors:
+                group.setdefault("page", page)
+    return metadata, groups
+
+
+def _bbox_top_left(bb: Any, page_height: float | None) -> list[float]:
+    """A Docling BoundingBox as top-left PDF points (#281).
+
+    Docling boxes carry their own ``coord_origin`` (BOTTOMLEFT by default for
+    PDF user space). Convert explicitly rather than trusting the default, so a
+    pipeline-option change can never flip silver silently. Fails closed
+    (``[]``) when the origin is bottom-left and the page height is unknown."""
+    if bb is None:
+        return []
+    origin = str(getattr(bb, "coord_origin", "")).upper()
+    if "TOPLEFT" in origin:
+        pass
+    elif page_height is not None and hasattr(bb, "to_top_left_origin"):
+        bb = bb.to_top_left_origin(page_height)
+    elif page_height is not None:
+        return [float(bb.l), page_height - float(bb.t), float(bb.r), page_height - float(bb.b)]
+    else:
+        return []
+    top, bottom = sorted((float(bb.t), float(bb.b)))
+    left, right = sorted((float(bb.l), float(bb.r)))
+    return [left, top, right, bottom]
+
+
+def _bbox_from_prov(prov: Any, page_height: float | None) -> list[float]:
     if prov is None or not hasattr(prov, "bbox") or prov.bbox is None:
         return []
-    bb = prov.bbox
-    return [float(bb.l), float(bb.t), float(bb.r), float(bb.b)]
+    return _bbox_top_left(prov.bbox, page_height)
+
+
+def _text_for_prov(text: str, prov: Any) -> str:
+    charspan = getattr(prov, "charspan", None)
+    if (
+        isinstance(text, str)
+        and isinstance(charspan, tuple)
+        and len(charspan) == 2
+        and all(isinstance(v, int) for v in charspan)
+    ):
+        start, end = charspan
+        if 0 <= start <= end <= len(text):
+            return text[start:end]
+    return text
 
 
 def _bbox_from_cell(cell: Any, page_height: float | None) -> list[float]:
-    bb = getattr(cell, "bbox", None)
-    if bb is None:
-        return []
-    if page_height is not None and hasattr(bb, "to_bottom_left_origin"):
-        bb = bb.to_bottom_left_origin(page_height)
-    elif "BOTTOMLEFT" not in str(getattr(bb, "coord_origin", "")).upper():
-        return []
-    return [float(bb.l), float(bb.t), float(bb.r), float(bb.b)]
+    return _bbox_top_left(getattr(cell, "bbox", None), page_height)
 
 
-def _page_heights(doc: Any) -> dict[int, float]:
+def _page_sizes(doc: Any) -> dict[int, tuple[float, float]]:
+    """``{page_no: (width, height)}`` in PDF points, from Docling's page table."""
     pages = getattr(doc, "pages", None)
     if not isinstance(pages, dict):
         return {}
-    out: dict[int, float] = {}
+    out: dict[int, tuple[float, float]] = {}
     for page_no, page in pages.items():
         size = getattr(page, "size", None)
+        width = getattr(size, "width", None)
         height = getattr(size, "height", None)
-        if isinstance(page_no, int) and isinstance(height, (int, float)):
-            out[page_no] = float(height)
+        if (
+            isinstance(page_no, int)
+            and isinstance(width, (int, float))
+            and isinstance(height, (int, float))
+        ):
+            out[page_no] = (float(width), float(height))
     return out

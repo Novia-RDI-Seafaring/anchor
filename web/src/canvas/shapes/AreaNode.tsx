@@ -122,8 +122,12 @@ export function AreaNode({ id, data, selected }: NodeProps) {
           />
         ) : (
           <div
-            className={`text-[10px] uppercase tracking-[0.18em] text-neutral-700 ${selected ? "cursor-text" : "cursor-pointer"}`}
+            className={`uppercase tracking-[0.18em] text-neutral-700 ${selected ? "cursor-text" : "cursor-pointer"}`}
             style={{
+              // A region's title is the heading of whatever it holds, so it
+              // follows `text_size` like every other element. Pinned at 10px
+              // it stayed unreadable on a canvas meant to be read zoomed out.
+              fontSize: t.headingFontSize,
               // Only override colour when the user has explicitly picked
               // one — otherwise the neutral-700 cascade carries the look.
               ...((d as { text_color?: string }).text_color
@@ -143,7 +147,12 @@ export function AreaNode({ id, data, selected }: NodeProps) {
           </div>
         )}
         {d.subtitle ? (
-          <div className="text-[10px] italic text-neutral-500">{d.subtitle}</div>
+          <div
+            className="italic text-neutral-500"
+            style={{ fontSize: `calc(${t.headingFontSize} * 0.85)`, fontFamily: t.fontFamily }}
+          >
+            {d.subtitle}
+          </div>
         ) : null}
       </div>
     </div>

@@ -11,11 +11,13 @@ reports exactly what it will move.
 """
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
 import typer
 
+from anchor.adapters.cli.common import DEFAULT_DATA_DIR
 from anchor.infra import environment as env_mod
 from anchor.infra.environment import (
     DATA_DIRNAME,
@@ -33,8 +35,42 @@ def _has_payload(path: Path) -> bool:
     return path.is_dir() and any(path.iterdir())
 
 
+@migrate_app.command("bbox-origin")
+def migrate_bbox_origin(
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="List legacy documents, change nothing."),
+) -> None:
+    """Rewrite legacy bottom-left bboxes to the canonical top-left convention (#281).
+
+    Idempotent: documents whose pages.meta carries ``bbox_origin: top-left`` are
+    skipped. ``anchor serve`` runs this automatically at startup; use it by hand
+    for a project you only reach through the CLI or MCP.
+    """
+    import asyncio
+
+    from anchor.adapters.cli.services import _build_real_services
+    from anchor.extensions.anchor_pdfs.core.bbox_migration import (
+        migrate_all,
+        needs_migration,
+    )
+
+    _, _, workspace, ingest_svc, doc_store = _build_real_services(data_dir)
+
+    async def run() -> dict:
+        if dry_run:
+            legacy = []
+            for doc in await doc_store.list_documents():
+                if needs_migration(await doc_store.get_pages_meta(doc["slug"])):
+                    legacy.append(doc["slug"])
+            return {"dry_run": True, "legacy_documents": legacy}
+        return await migrate_all(doc_store, getattr(ingest_svc, "renderer", None), workspace)
+
+    typer.echo(json.dumps(asyncio.run(run()), indent=2))
+
+
 @migrate_app.callback(invoke_without_command=True)
 def migrate(
+    ctx: typer.Context,
     env: str = typer.Option(
         None, "--env", help="Target environment name (default: the default env)."
     ),
@@ -45,6 +81,8 @@ def migrate(
     dry_run: bool = typer.Option(False, "--dry-run", help="Show the plan, change nothing."),
 ) -> None:
     """Create the default environment and move ~/anchor-data into it."""
+    if ctx.invoked_subcommand is not None:
+        return
     env_name = env or default_env_name()
     legacy = (source or env_mod.LEGACY_DATA_DIR).expanduser()
     environment = resolve_environment(env_name)

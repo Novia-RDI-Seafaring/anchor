@@ -56,8 +56,12 @@ export function resolveColors(data: MaybeData): { bg: string; stroke: string } {
 
 /** Allowed text alignment values. */
 export type TextAlign = "left" | "center" | "right";
-/** Allowed text size buckets — mapped to rem sizes by `resolveText`. */
-export type TextSize = "sm" | "md" | "lg";
+/** Allowed text size buckets — mapped to rem sizes by `resolveText`.
+ *
+ * The scale runs past "readable card" into "readable across the room": a
+ * canvas is also used to explain something on a shared screen, and a body
+ * capped at 16px forced people to zoom in and lose the overview. */
+export type TextSize = "xs" | "sm" | "md" | "lg" | "xl" | "2xl" | "3xl";
 /** Allowed font-family slugs — mapped to CSS stacks by `resolveText`. */
 export type TextFamily = "default" | "sans" | "serif" | "mono";
 
@@ -68,6 +72,11 @@ export type ResolvedText = {
   textAlign: TextAlign;
   fontFamily: string;
   fontSize: string;
+  /** Size for the element's heading. Cards used to pin this at 11px, so a
+   *  card set to a large body kept a heading nobody could read from a step
+   *  back. It tracks the body instead, with a floor so small bodies keep a
+   *  heading that still reads as one. */
+  headingFontSize: string;
 };
 
 const FONT_STACKS: Record<TextFamily, string> = {
@@ -81,10 +90,38 @@ const FONT_STACKS: Record<TextFamily, string> = {
 };
 
 const SIZE_REMS: Record<TextSize, string> = {
+  xs: "0.625rem", // ~10px
   sm: "0.75rem", // ~12px
   md: "0.875rem", // ~14px
   lg: "1rem", // ~16px
+  xl: "1.25rem", // ~20px
+  "2xl": "1.75rem", // ~28px
+  "3xl": "2.5rem", // ~40px
 };
+
+/** Heading size per body size. Small bodies keep the historical 11px
+ *  heading; from `lg` up the heading grows with the body so a card scales
+ *  as one piece. */
+const HEADING_REMS: Record<TextSize, string> = {
+  xs: "0.6875rem",
+  sm: "0.6875rem",
+  md: "0.6875rem",
+  lg: "0.8125rem",
+  xl: "1rem",
+  "2xl": "1.375rem",
+  "3xl": "1.875rem",
+};
+
+/** Every bucket, smallest first — the order the size control renders. */
+export const TEXT_SIZES: readonly TextSize[] = [
+  "xs",
+  "sm",
+  "md",
+  "lg",
+  "xl",
+  "2xl",
+  "3xl",
+] as const;
 
 const TEXT_ALIGNS: ReadonlySet<TextAlign> = new Set(["left", "center", "right"] as const);
 
@@ -95,8 +132,9 @@ function asAlign(value: unknown, fallback: TextAlign): TextAlign {
 }
 
 function asSize(value: unknown, fallback: TextSize): TextSize {
-  if (value === "sm" || value === "md" || value === "lg") return value;
-  return fallback;
+  return typeof value === "string" && (TEXT_SIZES as readonly string[]).includes(value)
+    ? (value as TextSize)
+    : fallback;
 }
 
 function asFamily(value: unknown, fallback: TextFamily): TextFamily {
@@ -120,6 +158,17 @@ function asFamily(value: unknown, fallback: TextFamily): TextFamily {
  *
  * Callers spread the returned object into the label element's inline style.
  */
+/** Pixel size per bucket, for callers that need a number (resizing text). */
+export const SIZE_PX: Record<TextSize, number> = {
+  xs: 10,
+  sm: 12,
+  md: 14,
+  lg: 16,
+  xl: 20,
+  "2xl": 28,
+  "3xl": 40,
+};
+
 export function resolveText(data: MaybeData): ResolvedText {
   const d = (data ?? {}) as Record<string, unknown>;
   const explicit = asColor(d.text_color, "");
@@ -129,12 +178,21 @@ export function resolveText(data: MaybeData): ResolvedText {
   const textAlign = asAlign(d.text_align, "left");
   const family = asFamily(d.text_family, "default");
   const size = asSize(d.text_size, "md");
+  // `font_px` is what dragging a text element's corner writes: a size
+  // between the buckets. It wins over the bucket when present, the way a
+  // custom colour wins over a swatch.
+  const explicitPx = typeof d.font_px === "number" && d.font_px > 0 ? d.font_px : null;
+  const bodyPx = explicitPx ?? SIZE_PX[size];
+  const headingPx = explicitPx
+    ? Math.max(11, Math.round(explicitPx * 0.75))
+    : null;
   return {
     color,
     fontWeight,
     textAlign,
     fontFamily: FONT_STACKS[family],
-    fontSize: SIZE_REMS[size],
+    fontSize: explicitPx ? `${bodyPx}px` : SIZE_REMS[size],
+    headingFontSize: headingPx ? `${headingPx}px` : HEADING_REMS[size],
   };
 }
 

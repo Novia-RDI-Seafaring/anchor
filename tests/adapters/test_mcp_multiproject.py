@@ -15,10 +15,13 @@ from anchor.adapters.mcp.server import (
 )
 from anchor.infra import environment as env_mod
 from anchor.infra.environment import (
+    DEFAULT_PROJECT,
     NoEnvironmentError,
     NoProjectError,
     create_env,
     create_project,
+    resolve_environment,
+    resolve_project_config,
 )
 
 _CLEAR = ("ANCHOR_ENV", "ANCHOR_PROJECT", "ANCHOR_DATA_DIR")
@@ -126,6 +129,25 @@ def test_router_create_environment(tmp_path):
     assert result["environment"] == "work"
     router.create_project("pumps")
     assert "pumps" in [p["name"] for p in router.list_projects()["projects"]]
+    config = resolve_project_config(resolve_environment("work"), "pumps")
+    assert config.local_only is True
+
+
+def test_router_rejects_custom_environment_without_endpoint(tmp_path):
+    router = ProjectRouter(env_arg=None)
+
+    with pytest.raises(ValueError, match="requires an explicit model endpoint"):
+        router.create_environment("work", provider="custom")
+
+    assert not (tmp_path / ".anchor" / "envs" / "work" / "env.toml").exists()
+
+
+def test_router_applies_ollama_default_endpoint(tmp_path):
+    router = ProjectRouter(env_arg=None)
+    router.create_environment("work", provider="ollama")
+    config = resolve_project_config(resolve_environment("work"), DEFAULT_PROJECT)
+
+    assert config.openai_base_url == "http://localhost:11434/v1"
 
 
 # -- multiplexing isolation -------------------------------------------------- #
@@ -141,6 +163,25 @@ async def test_two_projects_are_isolated(tmp_path):
     assert (env.project_dir("alpha") / "canvases" / "boarda").is_dir()
     assert (env.project_dir("beta") / "canvases" / "boardb").is_dir()
     assert not (env.project_dir("alpha") / "canvases" / "boardb").exists()
+
+
+def test_workspace_locks_survive_bundle_lru_eviction(tmp_path):
+    # #272: evicting a project's runtime bundle from the router LRU and
+    # re-resolving it must hand back the SAME per-workspace lock objects, so
+    # a writer holding the pre-eviction lock still serializes new writers.
+    env = create_env("local")
+    create_project(env, "alpha")
+    create_project(env, "beta")
+    router = ProjectRouter(env_arg="local", cache_size=1)
+
+    before = router.bundle_for("alpha")
+    lock_before = before.workspace.locks.lock("board")
+
+    router.bundle_for("beta")  # size-1 cache: evicts alpha's bundle
+    after = router.bundle_for("alpha")  # re-resolved, freshly built bundle
+
+    assert after is not before
+    assert after.workspace.locks.lock("board") is lock_before
 
 
 # -- server wiring helpers --------------------------------------------------- #

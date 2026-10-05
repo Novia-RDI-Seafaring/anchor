@@ -20,6 +20,7 @@ from anchor.extensions.anchor_pdfs.core.pointed_extraction import (
 from anchor.extensions.anchor_pdfs.core.services import IngestService
 from anchor.extensions.anchor_pdfs.infra.memory_doc_store import MemoryDocStore
 from anchor.infra.bus.memory_bus import MemoryEventBus
+from tests.fixtures.tables import canonical_regions
 
 
 def _service(store: MemoryDocStore) -> IngestService:
@@ -37,7 +38,7 @@ async def _seed_lkh(store: MemoryDocStore) -> None:
         }),
     )
     # p2/r4 — a spec table with key/value cells.
-    await store.write_gold_region_file("lkh", 2, [{
+    await store.write_gold_region_file("lkh", 2, canonical_regions([{
         "id": "r4",
         "kind": "table",
         "title": "Specifications",
@@ -50,9 +51,9 @@ async def _seed_lkh(store: MemoryDocStore) -> None:
             {"row": 1, "col": 0, "text": "Max inlet pressure", "bbox": [55, 455, 200, 438]},
             {"row": 1, "col": 1, "text": "600 kPa", "bbox": [210, 455, 360, 438]},
         ],
-    }])
+    }]))
     # p3/r1 — an unrelated table (so page selection matters).
-    await store.write_gold_region_file("lkh", 3, [{
+    await store.write_gold_region_file("lkh", 3, canonical_regions([{
         "id": "r1",
         "kind": "table",
         "title": "Other",
@@ -62,7 +63,7 @@ async def _seed_lkh(store: MemoryDocStore) -> None:
             {"row": 0, "col": 0, "text": "Weight", "bbox": [10, 90, 60, 80]},
             {"row": 0, "col": 1, "text": "42 kg", "bbox": [80, 90, 140, 80]},
         ],
-    }])
+    }]))
     await store.mark_gold_complete("lkh", {"mode": "keyed", "region_count": 3})
 
 
@@ -86,12 +87,16 @@ async def test_fills_leaves_with_provenance_and_reports_unfilled():
     assert out["data"]["model"] == "LKH-5"
     assert out["data"]["max_inlet_pressure"] == "600 kPa"
     # Every filled leaf has a provenance entry with a real source_ref.
-    assert out["provenance"]["/model"] == {
+    model_ref = out["provenance"]["/model"]
+    assert {k: v for k, v in model_ref.items() if k != "detail"} == {
+        "coord_origin": "top-left",
         "slug": "lkh", "page": 2, "region_id": "r4",
-        "bbox": [210.0, 477.0, 360.0, 460.0], "quote": "LKH-5",
+        "bbox": [210.0, 123.0, 360.0, 140.0], "quote": "LKH-5",
     }
+    assert model_ref["detail"]["table_topology"]["key_text"] == "Model"
+    assert model_ref["detail"]["table_topology"]["status"] == "valid"
     assert out["provenance"]["/max_inlet_pressure"]["quote"] == "600 kPa"
-    assert out["provenance"]["/max_inlet_pressure"]["bbox"] == [210.0, 455.0, 360.0, 438.0]
+    assert out["provenance"]["/max_inlet_pressure"]["bbox"] == [210.0, 145.0, 360.0, 162.0]
     # The array of objects the source did not cover is reported, not guessed.
     assert out["data"]["connections"] == []
     assert "/connections" in out["unfilled"]
@@ -118,7 +123,7 @@ async def test_number_and_bool_leaf_coercion():
         "d", "index.json",
         json.dumps({"document": {"title": "D", "filename": "d.pdf", "page_count": 1}, "outline": []}),
     )
-    await store.write_gold_region_file("d", 1, [{
+    await store.write_gold_region_file("d", 1, canonical_regions([{
         "id": "r1", "kind": "table", "page": 1, "bbox": [0, 100, 200, 0],
         "cells": [
             {"row": 0, "col": 0, "text": "Stages", "bbox": [10, 90, 60, 80]},
@@ -126,7 +131,7 @@ async def test_number_and_bool_leaf_coercion():
             {"row": 1, "col": 0, "text": "Certified", "bbox": [10, 70, 60, 60]},
             {"row": 1, "col": 1, "text": "yes", "bbox": [80, 70, 140, 60]},
         ],
-    }])
+    }]))
     await store.mark_gold_complete("d", {"mode": "keyed"})
 
     out = await extract_pointed(
@@ -216,7 +221,7 @@ async def test_nested_object_leaves_get_pointer_provenance():
         "t", "index.json",
         json.dumps({"document": {"title": "T", "filename": "t.pdf", "page_count": 1}, "outline": []}),
     )
-    await store.write_gold_region_file("t", 1, [{
+    await store.write_gold_region_file("t", 1, canonical_regions([{
         "id": "r1", "kind": "table", "page": 1, "bbox": [0, 100, 200, 0],
         "cells": [
             {"row": 0, "col": 0, "text": "min", "bbox": [10, 90, 60, 80]},
@@ -224,7 +229,7 @@ async def test_nested_object_leaves_get_pointer_provenance():
             {"row": 1, "col": 0, "text": "max", "bbox": [10, 70, 60, 60]},
             {"row": 1, "col": 1, "text": "140 C", "bbox": [80, 70, 140, 60]},
         ],
-    }])
+    }]))
     await store.mark_gold_complete("t", {"mode": "keyed"})
 
     out = await extract_pointed(

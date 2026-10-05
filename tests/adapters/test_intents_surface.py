@@ -194,3 +194,62 @@ async def test_mcp_resolve_missing_intent(_home):
     server = build_mcp_server(router=ProjectRouter(env_arg="local"))
     out = json.loads(await _call(server, "resolve_intent", project="pumps", id="ghost"))
     assert out["error"] == "not_found"
+
+
+# -- user_request (the web Intents panel's free-text kind, #323) -------------- #
+def test_http_user_request_round_trip():
+    """The web Intents panel's create path: a free-text user_request with an
+    optional target node ref enqueues, lists, and resolves over HTTP."""
+    client, _s = _client()
+    enq = client.post(
+        "/api/intents",
+        json={
+            "kind": "user_request",
+            "origin_canvas_id": "cv",
+            "payload": {
+                "text": "compare inlet pressures",
+                "workspace_id": "cv",
+                "node_id": "n7",
+            },
+        },
+    ).json()
+    assert enq["intent"]["kind"] == "user_request"
+    assert enq["intent"]["payload"]["text"] == "compare inlet pressures"
+    assert enq["intent"]["payload"]["node_id"] == "n7"
+
+    assert client.get("/api/intents").json()["count"] == 1
+
+    resolved = client.post(
+        f"/api/intents/{enq['intent']['id']}/resolve",
+        json={"result": {"note": "answered on the canvas"}},
+    ).json()
+    assert resolved["resolved"]["status"] == "resolved"
+    assert resolved["resolved"]["result"]["note"] == "answered on the canvas"
+    # /all keeps it for the panel's "recently resolved" section.
+    all_items = client.get("/api/intents/all").json()["intents"]
+    assert [i["status"] for i in all_items] == ["resolved"]
+
+
+async def test_mcp_sees_user_request_intent(_home):
+    """A panel-enqueued user_request reaches the agent through the MCP inbox
+    unchanged (kind, text, and target node ref flow through)."""
+    create_env("local")
+    create_project(env_mod.resolve_environment("local"), "pumps")
+    router = ProjectRouter(env_arg="local")
+    server = build_mcp_server(router=router)
+
+    bundle = router.bundle_for("pumps")
+    intent = await bundle.intents.enqueue(
+        "user_request",
+        origin_canvas_id="cv",
+        payload={"text": "label the valves", "workspace_id": "cv", "node_id": "n1"},
+    )
+
+    nxt = json.loads(await _call(server, "next_intent", project="pumps"))
+    assert nxt["intent"]["id"] == intent.id
+    assert nxt["intent"]["kind"] == "user_request"
+    assert nxt["intent"]["payload"] == {
+        "text": "label the valves",
+        "workspace_id": "cv",
+        "node_id": "n1",
+    }

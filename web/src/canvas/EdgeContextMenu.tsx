@@ -10,7 +10,7 @@
  * edge. We stash the screen coordinates + edge id and render a fixed
  * panel. Closing happens on Esc / outside-click / item-select.
  */
-import { ChevronRight, Trash2 } from "lucide-react";
+import { ChevronRight, ExternalLink, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { canvases } from "@/api/canvases";
@@ -64,6 +64,28 @@ export function EdgeContextMenu({ workspaceSlug, target, onClose }: Props) {
   if (!edge) return null;
 
   const user = resolveEdgeUserStyle(edge.data);
+
+  // Anchored evidence edges carry a source_ref back to a document region.
+  // Offer a jump-to-source action when one is present (needs a slug + page to
+  // open the viewer). Mirrors the spec node's anchor-icon open.
+  const sourceRef = (
+    edge.data as
+      | { source_ref?: { slug?: string; page?: number; region_id?: string; bbox?: number[] } }
+      | undefined
+  )?.source_ref;
+  const openSource =
+    sourceRef?.slug && sourceRef?.page
+      ? () => {
+          useUiStore.getState().openPdf(sourceRef.slug as string, {
+            page: sourceRef.page,
+            mode: "dock",
+            workspaceSlug,
+            highlightRegionId: sourceRef.region_id,
+            highlightBbox: sourceRef.bbox,
+          });
+          onClose();
+        }
+      : null;
 
   const patch = async (fields: Record<string, unknown>) => {
     try { await canvases.patchEdge(workspaceSlug, edge.id, fields); }
@@ -123,6 +145,14 @@ export function EdgeContextMenu({ workspaceSlug, target, onClose }: Props) {
       style={{ position: "fixed", left: target.x, top: target.y, zIndex: 60 }}
       className="min-w-[12rem] overflow-visible rounded-md border border-neutral-200 bg-white p-1 text-neutral-700 shadow-lg"
     >
+      {openSource ? (
+        <>
+          <MenuItem icon={<ExternalLink className="size-3.5" />} onClick={openSource}>
+            Open source
+          </MenuItem>
+          <Separator />
+        </>
+      ) : null}
       <SubmenuRow
         open={openSub === "route"}
         onEnter={() => setOpenSub("route")}

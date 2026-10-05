@@ -1,9 +1,11 @@
 """HTTP request/response Pydantic schemas."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
+
+from anchor.core.events.actor import Actor
 
 
 class CreateProjectRequest(BaseModel):
@@ -21,8 +23,16 @@ class CreateWorkspaceRequest(BaseModel):
 
 
 class RenameWorkspaceRequest(BaseModel):
-    """Update only the display title; the slug (directory id) is immutable."""
-    title: str
+    """Body for ``PATCH /api/workspaces/{slug}``.
+
+    The slug (directory id) is immutable. ``title`` updates the display
+    title (the historic rename op). ``review_mode`` toggles the
+    workspace's review opt-in (#324): when true, agent-created nodes get
+    ``data.review = {state: "proposed", ...}`` stamped server-side.
+    Both fields are optional; at least one must be present.
+    """
+    title: str | None = None
+    review_mode: bool | None = None
 
 
 class AddNodeRequest(BaseModel):
@@ -41,7 +51,14 @@ class AddNodeRequest(BaseModel):
     width: float | None = None
     height: float | None = None
     parent: str | None = None
+    locked: bool | None = None
+    visible: bool | None = None
+    layer: Literal["background", "content", "annotation"] | None = None
+    opacity: float | None = None
     data: dict[str, Any] = {}
+    # Explicit actor attribution override (#322). Omitted → the HTTP
+    # default `{kind: "human", label: "browser"}` applies.
+    actor: Actor | None = None
 
 
 class UpdateNodeRequest(BaseModel):
@@ -51,7 +68,13 @@ class UpdateNodeRequest(BaseModel):
     width: float | None = None
     height: float | None = None
     parent: str | None = None
+    locked: bool | None = None
+    visible: bool | None = None
+    layer: Literal["background", "content", "annotation"] | None = None
+    opacity: float | None = None
     data: dict[str, Any] | None = None
+    # Explicit actor attribution override (#322).
+    actor: Actor | None = None
 
 
 class AddEdgeRequest(BaseModel):
@@ -67,6 +90,8 @@ class AddEdgeRequest(BaseModel):
     sourceHandle: str | None = None
     targetHandle: str | None = None
     data: dict[str, Any] = {}
+    # Explicit actor attribution override (#322).
+    actor: Actor | None = None
 
 
 class UpdateEdgeRequest(BaseModel):
@@ -80,6 +105,8 @@ class UpdateEdgeRequest(BaseModel):
     sourceHandle: str | None = None
     targetHandle: str | None = None
     data: dict[str, Any] | None = None
+    # Explicit actor attribution override (#322).
+    actor: Actor | None = None
 
 
 class IngestUploadResponse(BaseModel):
@@ -131,6 +158,38 @@ class CreateReferenceRequest(BaseModel):
     source_ref: dict[str, Any]
     label: str | None = None
     created_by: str = "human"
+
+
+class OpenProposalSetRequest(BaseModel):
+    """Body for ``POST /api/workspaces/{slug}/proposal-sets`` (#359).
+
+    ``reason`` says why these elements were proposed together and is
+    required. ``members`` are element ids (``"n1"`` is shorthand for a
+    node) or ``{kind, id}`` objects; they may also be added later."""
+
+    reason: str
+    members: list[Any] | None = None
+    actor: Actor | None = None
+
+
+class AddProposalSetMembersRequest(BaseModel):
+    """Body for ``POST /api/workspaces/{slug}/proposal-sets/{id}/members``."""
+
+    members: list[Any]
+    actor: Actor | None = None
+
+
+class ReviewProposalSetRequest(BaseModel):
+    """Body for ``POST /api/workspaces/{slug}/proposal-sets/{id}/review``.
+
+    ``verdict`` is ``"accepted"`` or ``"rejected"``. ``discard`` (rejections
+    only) removes the members instead of stamping them, cascading their
+    edges. ``except_ids`` leaves those members untouched."""
+
+    verdict: str
+    discard: bool = False
+    except_ids: list[str] | None = None
+    actor: Actor | None = None
 
 
 class AttachReferenceRequest(BaseModel):

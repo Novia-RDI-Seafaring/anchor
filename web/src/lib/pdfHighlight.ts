@@ -4,14 +4,14 @@
  * PDF.js renders a page through a viewport at a given `scale`. The viewport
  * exposes the page size in PDF points (`viewBox` width/height) and the
  * rendered size in CSS pixels (`width`/`height`). A region bbox arrives in
- * Docling's PDF user-space (BOTTOM-LEFT origin) and the element order inside
- * the 4-tuple is NOT guaranteed (`[left, top, right, bottom]` for some
- * documents, `[left, bottom, right, top]` for others — see lib/bbox).
+ * the canonical convention (#281, OIP `pdf-page-bbox`): PDF points, TOP-LEFT
+ * origin, `[left, top, right, bottom]`. Element order is still normalised per
+ * axis so a legacy or hand-typed box can never collapse.
  *
- * This module maps such a bbox into the rendered pixel space the overlay div
- * lives in (TOP-LEFT origin, CSS px), order-independently. It mirrors the
- * convention in `bboxToImageRect`, but keyed off the PDF.js viewport instead
- * of a rasterised page image, so it stays correct at any zoom level.
+ * This module scales such a bbox into the rendered pixel space the overlay
+ * div lives in (also top-left, CSS px). It mirrors `bboxToImageRect`, but
+ * keyed off the PDF.js viewport instead of a rasterised page image, so it
+ * stays correct at any zoom level.
  */
 
 export type PixelRect = { left: number; top: number; width: number; height: number };
@@ -29,7 +29,7 @@ export type ViewportLike = {
 };
 
 /**
- * Map a region bbox (PDF points, bottom-left origin, unknown tuple order) to a
+ * Map a region bbox (PDF points, top-left origin, order-normalised) to a
  * rectangle in the rendered page's CSS-pixel space (top-left origin).
  *
  * @param bbox    region bbox, length >= 4, in PDF user-space points
@@ -60,8 +60,8 @@ export function bboxToViewportRect(
 
   return {
     left: left * sx,
-    // Bottom-left PDF origin: the larger PDF-y maps to the top edge.
-    top: (pageH - yHigh) * sy,
+    // Top-left PDF origin (#281): the smaller PDF-y is the top edge.
+    top: yLow * sy,
     width: (right - left) * sx,
     height: (yHigh - yLow) * sy,
   };

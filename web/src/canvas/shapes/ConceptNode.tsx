@@ -3,8 +3,11 @@ import { useParams } from "react-router-dom";
 
 import { resolveColors, resolveText } from "@/canvas/colors";
 import { Pictogram } from "@/canvas/icons";
+import { NodeSourceBadge } from "@/canvas/NodeSourceBadge";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
 import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
+import { ReviewBadge } from "@/canvas/ReviewBadge";
+import { RoleBadge } from "@/canvas/RoleBadge";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
 
@@ -59,7 +62,11 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
     <div
       className={`relative rounded-lg border ${borderStyle} px-3 py-2 text-sm shadow-sm ${opacityClass} ${wrapCursor}`}
       style={{
-        ...(liveW && liveH ? { width: liveW, height: liveH } : {}),
+        // Width and height are independent: an element set wide but not
+        // tall (the usual case for prose at a large text size) used to be
+        // ignored, because the style only applied when BOTH were present.
+        ...(liveW ? { width: liveW } : {}),
+        ...(liveH ? { height: liveH } : {}),
         background: bg,
         borderColor: stroke,
         color: stroke,
@@ -73,6 +80,9 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
         {...resizeHandlers}
       />
       {ph.active ? <PlaceholderChip hint={ph.hint} /> : null}
+      <ReviewBadge data={d} nodeId={id} />
+      <RoleBadge data={data} />
+
       <Handle type="target" position={Position.Left} />
       {/* Label / pictogram inherit `color` from the wrapper above (resolveColors
           → stroke). Removing the hardcoded `text-neutral-*` classes lets the
@@ -106,13 +116,17 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
             </div>
           )}
           {d.subtitle ? (
-            <div className="truncate text-[11px] italic text-neutral-500 leading-tight">
+            <div
+              className="truncate italic text-neutral-500 leading-tight"
+              style={{ fontSize: t.headingFontSize, textAlign: t.textAlign, fontFamily: t.fontFamily }}
+            >
               {d.subtitle}
             </div>
           ) : null}
         </div>
       </div>
       <Handle type="source" position={Position.Right} />
+      <NodeSourceBadge data={data} workspaceSlug={workspaceSlug} />
     </div>
   );
 }

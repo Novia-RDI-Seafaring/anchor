@@ -82,8 +82,11 @@ uv run anchor serve            # backend on http://127.0.0.1:8002
 pnpm --dir web dev             # Vite HMR on http://localhost:5173
 ```
 
-Default data dir is `~/anchor-data`. Override by passing `--data-dir`
-consistently to commands and agent installers.
+Project data normally lives in `<project>/.anchor_data/`. Use an initialized
+working folder or select a managed project with `--env` / `--project` and
+`anchor use`. MCP installers pin an environment; choose the MCP project with
+`open_project` or a per-call `project` argument. `~/anchor-data` is a legacy
+storage path. See [the project guide](docs/guides/environments-and-projects.md).
 
 ## Workflow
 

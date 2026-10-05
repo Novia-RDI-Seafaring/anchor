@@ -30,6 +30,8 @@ export function ReferencesPanel({ canvasSlug }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const openPdf = useUiStore((s) => s.openPdf);
+  const activeReferenceId = useUiStore((s) => s.activeReferenceId);
+  const setActiveReferenceId = useUiStore((s) => s.setActiveReferenceId);
 
   const refresh = useCallback(async () => {
     try {
@@ -59,6 +61,7 @@ export function ReferencesPanel({ canvasSlug }: Props) {
 
   const openSource = useCallback(
     (ref: Reference) => {
+      setActiveReferenceId(ref.id);
       const sr = ref.source_ref;
       openPdf(sr.slug, {
         page: sr.page,
@@ -69,7 +72,7 @@ export function ReferencesPanel({ canvasSlug }: Props) {
         highlightQuery: sr.detail?.quote,
       });
     },
-    [openPdf, canvasSlug],
+    [openPdf, canvasSlug, setActiveReferenceId],
   );
 
   const onDelete = useCallback(
@@ -104,7 +107,7 @@ export function ReferencesPanel({ canvasSlug }: Props) {
 
   return (
     <div
-      className="flex max-h-[45%] min-h-0 shrink-0 flex-col border-b border-neutral-200 bg-white"
+      className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden bg-white"
       data-testid="references-panel"
     >
       <div className="flex items-baseline justify-between border-b border-neutral-200 bg-neutral-50 px-2 py-1">
@@ -127,6 +130,7 @@ export function ReferencesPanel({ canvasSlug }: Props) {
             <ReferenceRow
               key={ref.id}
               reference={ref}
+              active={ref.id === activeReferenceId}
               onOpen={() => openSource(ref)}
               onDelete={() => onDelete(ref)}
               onRename={(label) => onRename(ref, label)}
@@ -160,11 +164,13 @@ function referenceTitle(ref: Reference): string {
 
 function ReferenceRow({
   reference,
+  active,
   onOpen,
   onDelete,
   onRename,
 }: {
   reference: Reference;
+  active: boolean;
   onOpen: () => void;
   onDelete: () => void;
   onRename: (label: string) => void;
@@ -172,10 +178,17 @@ function ReferenceRow({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(reference.label ?? "");
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const rowRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (editing) inputRef.current?.focus();
   }, [editing]);
+
+  // Scroll the row into view when it becomes the active reference (e.g. after
+  // clicking its green box in the PDF viewer).
+  useEffect(() => {
+    if (active) rowRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [active]);
 
   const sr = reference.source_ref;
   const quote = sr.detail?.quote?.trim();
@@ -192,8 +205,14 @@ function ReferenceRow({
 
   return (
     <div
-      className="group rounded border border-neutral-200 bg-white px-2 py-1.5 text-xs hover:bg-neutral-50"
+      ref={rowRef}
+      className={`group rounded border px-2 py-1.5 text-xs ${
+        active
+          ? "border-green-500 bg-green-50 ring-1 ring-green-500"
+          : "border-neutral-200 bg-white hover:bg-neutral-50"
+      }`}
       data-testid="reference-row"
+      data-active={active || undefined}
     >
       <div className="flex items-start gap-2">
         {thumbUrl ? (

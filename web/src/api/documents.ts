@@ -10,7 +10,9 @@ export type DocumentSummary = {
 };
 
 export type DocumentIndex = {
-  document: { filename: string; title: string; page_count: number };
+  pages_meta?: unknown;
+  document: { filename: string; title: string; page_count: number;
+    generation?: { id: string; pages: number[] } };
   outline: Array<{ level: number; title: string; page: number; bbox: number[] }>;
   tables?: Array<Record<string, unknown>>;
   figures?: Array<Record<string, unknown>>;
@@ -30,6 +32,74 @@ export type Region = {
 
 type RegionsResponse = { slug: string; pages: Record<string, Region[]> };
 
+/**
+ * A source_ref loose enough to cover node / row / edge refs. The optional
+ * selectors point below the region (#242 P2): `item_id` names one silver
+ * item (`p<page>-i<n>`), `cell` a `{row, col}` of a table.
+ */
+export type ResolvableRef = {
+  slug?: string;
+  page?: number;
+  bbox?: number[];
+  region_id?: string;
+  item_id?: string;
+  cell?: { row?: number; col?: number } | null;
+  /**
+   * Extra places this reference also points at, in the compact form
+   * `p3/r1/item:p3-i6`. One claim can be evidenced in more than one spot:
+   * the value in a table and the callout naming that dimension on the
+   * drawing beside it. The ref's own selectors stay the primary place,
+   * which is where the viewer scrolls; these are only drawn.
+   */
+  also?: string[];
+};
+
+/** Answer of `GET /api/documents/{slug}/resolve-ref` (#242 P2b). */
+export type ResolvedRef = {
+  slug: string;
+  page: number;
+  bbox: number[];
+  /** Which layer resolved: cell > item > region > bbox. */
+  precision: "cell" | "item" | "region" | "bbox";
+  region_id?: string;
+  item_id?: string;
+  cell?: { row: number; col: number };
+  /** The extra places, each resolved on its own terms with its own precision. */
+  also?: ResolvedPlace[];
+};
+
+/** One resolved place. The primary answer has the same shape plus `also`. */
+export type ResolvedPlace = {
+  page: number;
+  bbox: number[];
+  precision: "cell" | "item" | "region" | "bbox" | "line";
+  /**
+   * Page coordinates in pairs, when this place is a stroke rather than a box.
+   * A dimension on an engineering drawing is a span between two witness
+   * lines, and boxing it would cover the part being measured. `bbox` is still
+   * the stroke's bounds, for anything that only understands boxes.
+   */
+  line?: number[];
+  region_id?: string;
+  item_id?: string;
+  cell?: { row: number; col: number };
+};
+
+/**
+ * True when `ref` carries a below-region selector (`cell` or `item_id`)
+ * the backend resolver can turn into a tighter stored bbox (#242 P2c).
+ * Refs without a selector take the unchanged region-level highlight path —
+ * no request is made for them.
+ */
+export function refHasSelector(ref: ResolvableRef | null | undefined): boolean {
+  if (!ref) return false;
+  if (typeof ref.item_id === "string" && ref.item_id.length > 0) return true;
+  // Extra places only exist in the resolver's answer, so a ref naming any
+  // must ask for it even when its own selectors would not have.
+  if ((ref.also?.length ?? 0) > 0) return true;
+  return typeof ref.cell?.row === "number" && typeof ref.cell?.col === "number";
+}
+
 function normaliseRegion(region: Region): Region {
   if (region.bbox || !region.approximate_bbox) return region;
   return { ...region, bbox: region.approximate_bbox };
@@ -46,6 +116,38 @@ export const documents = {
     return Object.values(rsp.pages ?? {}).flat().map(normaliseRegion);
   },
   goldMap: (slug: string) => api.get<Record<string, unknown>>(`/api/documents/${slug}/gold-map`),
+  /**
+   * Resolve a source_ref to the most precise stored evidence bbox via
+   * `GET /api/documents/{slug}/resolve-ref` (#242 P2b/P2c). Precedence
+   * (cell > item > region) is decided server-side, so the viewer never
+   * re-implements it. Resolves to `null` (never throws) on 404/error so
+   * the caller falls back to the ref's own bbox — the pre-#274 highlight.
+   */
+  resolveRef: async (slug: string, ref: ResolvableRef): Promise<ResolvedRef | null> => {
+    const params = new URLSearchParams();
+    if (typeof ref.page === "number") params.set("page", String(ref.page));
+    if (ref.region_id) params.set("region_id", ref.region_id);
+    if (ref.item_id) params.set("item_id", ref.item_id);
+    if (typeof ref.cell?.row === "number" && typeof ref.cell?.col === "number") {
+      params.set("row", String(ref.cell.row));
+      params.set("col", String(ref.cell.col));
+    }
+    // Repeated, because a query string has no room for a list of objects.
+    // Only the compact form travels in a URL; a place given as a page box
+    // is drawn as it is by the caller and would arrive as "[object Object]".
+    for (const place of ref.also ?? []) if (typeof place === "string") params.append("also", place);
+    try {
+      const rsp = await api.get<ResolvedRef>(
+        `/api/documents/${slug}/resolve-ref?${params.toString()}`,
+      );
+      if (typeof rsp?.page === "number" && Array.isArray(rsp.bbox) && rsp.bbox.length === 4) {
+        return rsp;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  },
   /**
    * Locate `query` on a page and return its page-space quad(s) (value-precise
    * highlight, #197). `bbox` clips the search to a region so a value that
@@ -78,9 +180,10 @@ export const documents = {
    * (PDF.js) so the user gets a selectable text layer instead of a page
    * screenshot. Served by `GET /api/documents/{slug}/pdf`.
    */
-  pdfUrl: (slug: string) => `${BACKEND_URL}/api/documents/${slug}/pdf`,
-  pageImageUrl: (slug: string, page: number) =>
-    `${BACKEND_URL}/api/documents/${slug}/pages/${page}/image`,
+  pdfUrl: (slug: string, generation?: string) =>
+    `${BACKEND_URL}/api/documents/${slug}/pdf${generation ? `?generation=${encodeURIComponent(generation)}` : ""}`,
+  pageImageUrl: (slug: string, page: number, generation?: string) =>
+    `${BACKEND_URL}/api/documents/${slug}/pages/${page}/image${generation ? `?generation=${encodeURIComponent(generation)}` : ""}`,
   pageCropUrl: (slug: string, page: number, bbox: number[], dpi = 300) =>
     `${BACKEND_URL}/api/documents/${slug}/pages/${page}/crop?${new URLSearchParams({
       bbox: bbox.join(","),

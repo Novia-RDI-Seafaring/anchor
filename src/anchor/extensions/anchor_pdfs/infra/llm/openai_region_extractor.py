@@ -34,7 +34,8 @@ class OpenAIRegionExtractor:
         prompt = (
             f"List the visual regions on page {page_no} of this engineering PDF. "
             "For each region emit: id, kind (chart|spec_block|table|figure|diagram|text), "
-            "title, description, approximate bbox [left, top, right, bottom] in BOTTOMLEFT coords, "
+            "title, description, approximate bbox [left, top, right, bottom] in top-left "
+            "PDF points (origin at the page's top-left corner, y increasing downward), "
             "tags[], entities[]. For tables and spec blocks, make regions tight: split "
             "distinct visual sections or sub-tables separated by headers, whitespace, or rules. "
             "Do not merge adjacent sub-tables, and keep values from neighboring groups out of "

@@ -22,9 +22,11 @@ order so the rendered output is deterministic across installs.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from importlib.resources import files
 from pathlib import Path
-from typing import Iterable
+
+from anchor.adapters.extension_host import discover_third_party_manifest_paths
 
 #: Bundled extensions whose skill files ship in this wheel. Keep the
 #: order stable — it determines the section ordering in the rendered
@@ -166,15 +168,6 @@ def list_bundled_extensions() -> tuple[str, ...]:
     return _BUNDLED_EXTENSIONS
 
 
-def _xdg_config_home() -> Path:
-    """Return ``$XDG_CONFIG_HOME`` with the standard fallback."""
-    import os
-    raw = os.environ.get("XDG_CONFIG_HOME", "").strip()
-    if raw:
-        return Path(raw)
-    return Path.home() / ".config"
-
-
 def discover_third_party_manifests(
     data_dir: Path | None = None,
 ) -> list[Path]:
@@ -196,15 +189,4 @@ def discover_third_party_manifests(
     and the OIP validator. The composer just ignores anything it
     can't read.
     """
-    found: list[Path] = []
-
-    system_dir = _xdg_config_home() / "oip" / "producers.d"
-    if system_dir.is_dir():
-        found.extend(sorted(system_dir.glob("*.json")))
-
-    if data_dir is not None:
-        project_dir = Path(data_dir) / ".oip" / "producers.d"
-        if project_dir.is_dir():
-            found.extend(sorted(project_dir.glob("*.json")))
-
-    return found
+    return discover_third_party_manifest_paths(data_dir)

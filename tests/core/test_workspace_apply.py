@@ -35,6 +35,29 @@ def test_node_added_inserts_node():
     assert "a" not in state.nodes  # original not mutated
 
 
+def test_node_added_preserves_structural_fields():
+    state = make_workspace()
+    state2 = apply(
+        state,
+        NodeAdded(
+            id="a",
+            width=120,
+            height=80,
+            locked=True,
+            visible=False,
+            layer="annotation",
+            opacity=0.5,
+        ),
+    )
+    node = state2.nodes["a"]
+    assert node.width == 120
+    assert node.height == 80
+    assert node.locked is True
+    assert node.visible is False
+    assert node.layer == "annotation"
+    assert node.opacity == 0.5
+
+
 def test_node_moved_updates_position():
     state = apply(make_workspace(), NodeAdded(id="a"))
     state2 = apply(state, NodeMoved(id="a", x=100, y=200))

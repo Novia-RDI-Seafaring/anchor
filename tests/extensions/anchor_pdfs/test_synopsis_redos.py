@@ -13,7 +13,6 @@ import pytest
 
 from anchor.extensions.anchor_pdfs.core.synopsis import _OPERATING_POINT_RE
 
-
 # ---------------------------------------------------------------------------
 # Matching cases
 # ---------------------------------------------------------------------------

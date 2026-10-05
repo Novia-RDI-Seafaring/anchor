@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextvars
 import os
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -43,6 +44,21 @@ CONFIG_FILENAME = "anchor.toml"
 _ACTIVE_LAYERS: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
     "anchor_active_config_layers", default=None
 )
+
+_POSIX_ENV_VAR_PATTERN = re.compile(r"\$(\w+)|\$\{([^}]+)\}")
+
+
+def expand_env_vars(value: str) -> str:
+    """Expand Windows and POSIX environment-variable syntax."""
+    expanded = os.path.expandvars(value)
+
+    def replace(match: re.Match[str]) -> str:
+        name = match.group(1) or match.group(2) or ""
+        if name == "HOME" and name not in os.environ:
+            return str(Path.home())
+        return os.environ.get(name, match.group(0))
+
+    return _POSIX_ENV_VAR_PATTERN.sub(replace, expanded)
 
 
 def _load_toml_tolerant(path: Path) -> dict[str, Any]:
@@ -116,7 +132,7 @@ class AnchorConfig(BaseSettings):
         expanding here fixes the tilde once for all adapters rather than at
         each call site.
         """
-        return Path(os.path.expandvars(str(value))).expanduser()
+        return Path(expand_env_vars(str(value))).expanduser()
     # Loopback by default: the HTTP server is unauthenticated and edits
     # local engineering data. Users who want LAN access can opt in via
     # ``ANCHOR_HTTP_HOST=0.0.0.0`` or ``--host 0.0.0.0``, and at that
@@ -124,9 +140,9 @@ class AnchorConfig(BaseSettings):
     http_host: str = "127.0.0.1"
     http_port: int = 8002
 
-    # The provider chosen by `anchor init` (see anchor.infra.providers). Purely
-    # a record of intent: it does not change wiring on its own — the endpoint /
-    # models below do — but it lets the status surface name the active data zone.
+    # The provider chosen by `anchor init` (see anchor.infra.providers). This is
+    # the environment's model-egress capability; runtime composition fails
+    # closed when it is absent or names a no-server-egress provider.
     provider: str | None = None
 
     openai_api_key: SecretStr | None = None
@@ -176,17 +192,18 @@ class AnchorConfig(BaseSettings):
         Keeping env above the toml means an operator's `ANCHOR_*` override
         always wins over a committed project default.
         """
+        layers = _ACTIVE_LAYERS.get()
         sources: list[PydanticBaseSettingsSource] = [
             init_settings,
             env_settings,
-            dotenv_settings,
         ]
-        layers = _ACTIVE_LAYERS.get()
+        if layers is None:
+            sources.append(dotenv_settings)
         if layers is not None:
             # The environment/project resolver has already merged the
-            # environment env.toml under the project anchor.toml. Use that
-            # as the single toml-level source instead of walking up for a stray
-            # anchor.toml, so the resolved layering is honored exactly.
+            # environment env.toml under the project anchor.toml and has loaded
+            # that environment's .env into os.environ. Do not also load an
+            # unrelated .env from the process working directory.
             sources.append(_MappingSettingsSource(settings_cls, layers))
         else:
             toml_path = discover_config_file()

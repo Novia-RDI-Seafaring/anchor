@@ -35,6 +35,9 @@ def test_build_pipeline_options_default_no_full_page_ocr():
 
     opts = dx._build_pipeline_options("cpu")
     assert opts.ocr_options.force_full_page_ocr is False
+    engine_options = getattr(opts.layout_options, "engine_options", None)
+    if engine_options is not None:
+        assert engine_options.compile_model is False
 
 
 @pytest.mark.skipif(not _rapid_ocr_available(), reason="docling not installed")

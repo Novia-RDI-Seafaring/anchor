@@ -26,9 +26,26 @@ regions tagged with the page number and bounding box they came from.
   `GET /api/search?q=…`. Embeddings are created during `ingest_pdf`; if a
   doc was ingested without them, run `embed` first (`anchor embed`).
 - `list_documents()` — every document and its current status.
-- `get_document_index(slug)` — silver outline (sections, tables, figures).
+- `list_entities(slug)` - what a document is ABOUT: every entity its gold
+  regions name, with counts and pages. A title and a page count do not tell
+  you that a four-page leaflet covers thirteen product models. Call this
+  before concluding what a document contains, and before telling a user the
+  corpus holds only one of something.
+- `get_document_index(slug)` - a map of the document: outline, plus one
+  entry per table and figure with its caption, shape, header row,
+  first-column values, page and bbox. Table cell content is left out;
+  read a table with `get_page_text(slug, page)` or, on a gold document,
+  `inspect_region`. `include_content=true` returns every cell in one
+  result and is much larger, so reach for it only when you truly need
+  the whole document at once.
 - `get_gold_regions(slug, page?)` — structured regions with `page + bbox`.
 - `get_page_text(slug, page)` — polished or raw page markdown.
+- `get_crop(slug, "<page>/<region_id>.png")` - LOOK at one region: the crop
+  comes back as an image the harness displays, so you can read a chart,
+  diagram or scanned table by eye. `get_page_image(slug, page)` does the
+  same for a whole page. Use these rather than opening files under
+  `.anchor_data/` yourself; reading the store directly bypasses the tool
+  surface and may not even be permitted.
 
 ### Finding content — search first, then retrieve
 
@@ -82,6 +99,11 @@ session protocol:
    - Name region geometry with `member_item_ids: ["p3-i0", "p3-i1"]`;
      the server computes the bbox. Use `approx_bbox` only when no
      candidate covers a visual.
+   - For one logical part of a table, use `table_slice` with the table
+     candidate id and exact `rows` plus optional `columns`, for example
+     `{"candidate_id": "p3-i2", "rows": [0, 4, 5], "columns": [0, 1]}`.
+     Candidate cells provide the indexes. The server keeps only those cells
+     and computes cell-level content and bbox provenance.
    - A rejection returns `errors` naming the bad fields; fix and
      resubmit (resubmitting a page replaces it).
 3. For documents over ~4 pages, fan out: spawn subagents, each given

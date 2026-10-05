@@ -71,7 +71,7 @@ class FlakyRegionExtractor:
         return [
             {
                 "id": "r1", "kind": "text", "title": "recovered region",
-                "description": "x", "bbox": [10, 600, 200, 580],
+                "description": "x", "bbox": [10, 195, 200, 215],
                 "tags": [], "entities": [], "page": page_no,
             }
         ]

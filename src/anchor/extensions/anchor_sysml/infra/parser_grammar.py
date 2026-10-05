@@ -28,10 +28,9 @@ from anchor.extensions.anchor_sysml.infra.parser_helpers import (
 )
 from anchor.extensions.anchor_sysml.infra.parser_requirements import (
     parse_metadata_block,
-    parse_requirement,    # re-exported for the top-level driver
-    parse_satisfy,        # re-exported for the top-level driver
+    parse_requirement,  # re-exported for the top-level driver
+    parse_satisfy,  # re-exported for the top-level driver
 )
-
 
 __all__ = [
     "parse_block",

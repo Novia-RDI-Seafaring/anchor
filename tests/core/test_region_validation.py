@@ -1,6 +1,8 @@
 """Shared region schema validation - pure core module."""
 from __future__ import annotations
 
+import pytest
+
 from anchor.extensions.anchor_pdfs.core.ingest.validation import (
     REGION_KINDS,
     bbox_error,
@@ -76,7 +78,7 @@ def test_non_dict_region_is_rejected():
 def test_validate_regions_splits_valid_from_invalid():
     valid, errors = validate_regions([
         _region(),
-        _region(kind="banner"),
+        _region(id="invalid-r2", kind="banner"),
         "garbage",
     ])
     assert len(valid) == 1
@@ -89,3 +91,33 @@ def test_validate_regions_rejects_non_list_payload():
     valid, errors = validate_regions({"regions": []})
     assert valid == []
     assert errors
+
+
+@pytest.mark.parametrize("count", [2, 3])
+@pytest.mark.parametrize("identical", [False, True])
+def test_duplicate_ids_reject_entire_page_without_renaming(count, identical):
+    regions = [_region(content="A" if identical else str(i)) for i in range(count)]
+    valid, errors = validate_regions(regions)
+    assert valid == []
+    assert len(errors) == count - 1
+    assert all(error["field"] == "id" and error["region_id"] == "r1" for error in errors)
+    assert all(region["id"] == "r1" for region in regions)
+
+
+def test_unique_ids_are_returned_unchanged():
+    regions = [_region(), _region(id="r2")]
+    assert validate_regions(regions) == (regions, [])
+
+
+@pytest.mark.parametrize("bad_id", ["", " ", 42, [], {}])
+def test_malformed_id_follows_existing_schema_rejection(bad_id):
+    valid, errors = validate_regions([_region(id=bad_id)])
+    assert not valid
+    assert errors[0]["message"] == "id must be a non-empty string when present"
+
+
+def test_missing_and_null_ids_keep_existing_validator_semantics():
+    missing = _region()
+    missing.pop("id")
+    regions = [missing, _region(id=None)]
+    assert validate_regions(regions) == (regions, [])

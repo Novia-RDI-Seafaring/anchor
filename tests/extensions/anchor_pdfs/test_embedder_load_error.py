@@ -1,56 +1,62 @@
-"""Regression for #237: the embedder's eager preload thread must not leak.
+"""The ONNX embedder loads lazily, and a failed load surfaces from ``embed()``.
 
-``LocalSentenceTransformerEmbedder`` warms the model in a daemon thread on
-construction. If that load fails (e.g. a HuggingFace download error on CI), the
-exception must be captured, not left unhandled in the background thread — an
-unhandled thread exception aborts the interpreter at teardown with exit code
-134. The error must instead surface from ``embed()`` where a caller can handle
-it.
+Construction must not build the session or start a thread. The predecessor
+imported ``sentence_transformers`` (torch + transformers + scipy + sklearn)
+and warmed it in a daemon thread, which deadlocked inside ``create_module``:
+two such threads wedged on CPython's import lock versus the Windows loader
+lock and hung the MCP handshake, and moving the import to first-embed simply
+moved the hang into ``search_documents``. onnxruntime removes the cost rather
+than rescheduling it, so laziness here is just tidiness.
+
+The load error is still cached, so a broken model id fails the same way every
+call instead of re-downloading (this is what #237 was about: an unhandled
+exception escaping a background load aborted the interpreter at teardown).
 """
 from __future__ import annotations
 
-import sys
 import threading
-import types
 
 import pytest
 
-from anchor.extensions.anchor_pdfs.infra.llm.local_sentence_transformer_embedder import (
-    LocalSentenceTransformerEmbedder,
-)
+from anchor.extensions.anchor_pdfs.infra.llm.onnx_bge_embedder import OnnxBgeEmbedder
 
 
-def _install_failing_sentence_transformers(monkeypatch):
-    """Fake sentence_transformers whose SentenceTransformer(...) always raises."""
-    fake = types.ModuleType("sentence_transformers")
+def _install_failing_session(monkeypatch):
+    """Make session construction raise, as an unreachable hub would."""
 
-    class _BoomSentenceTransformer:
-        def __init__(self, *_args, **_kwargs):
-            raise RuntimeError("hub unreachable")
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("hub unreachable")
 
-    fake.SentenceTransformer = _BoomSentenceTransformer  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "sentence_transformers", fake)
+    monkeypatch.setattr(OnnxBgeEmbedder, "_ensure_loaded", _boom)
 
 
-def test_preload_failure_is_captured_not_leaked(monkeypatch):
-    _install_failing_sentence_transformers(monkeypatch)
+def test_construction_neither_loads_nor_starts_a_thread():
+    before = set(threading.enumerate())
 
-    # Constructing must not raise even though the eager load fails.
-    emb = LocalSentenceTransformerEmbedder("nonexistent/model")
+    emb = OnnxBgeEmbedder("nonexistent/model")
 
-    # The daemon preload thread must finish without an unhandled exception.
-    for t in threading.enumerate():
-        if t is not threading.current_thread() and t.daemon:
-            t.join(timeout=5)
+    assert set(threading.enumerate()) == before
+    assert emb._session is None
+    assert emb._load_error is None
+    assert emb.dim is None
 
-    assert emb._load_error is not None
-    assert isinstance(emb._load_error, RuntimeError)
+
+def test_model_id_is_recorded_for_embeddings_metadata():
+    assert OnnxBgeEmbedder("some/model").model_id == "some/model"
+
+
+@pytest.mark.asyncio
+async def test_embed_of_nothing_never_touches_the_model():
+    emb = OnnxBgeEmbedder("nonexistent/model")
+
+    assert await emb.embed([]) == []
+    assert emb._session is None
 
 
 @pytest.mark.asyncio
 async def test_embed_reraises_the_load_error(monkeypatch):
-    _install_failing_sentence_transformers(monkeypatch)
-    emb = LocalSentenceTransformerEmbedder("nonexistent/model")
+    _install_failing_session(monkeypatch)
+    emb = OnnxBgeEmbedder("nonexistent/model")
 
     with pytest.raises(RuntimeError, match="hub unreachable"):
         await emb.embed(["anything"])

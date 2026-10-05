@@ -129,7 +129,7 @@ class IrPackage(BaseModel):
     blocks: list[IrBlock] = Field(default_factory=list)
     requirements: list[IrRequirement] = Field(default_factory=list)
     satisfies: list[IrSatisfy] = Field(default_factory=list)
-    sub_packages: list["IrPackage"] = Field(default_factory=list)
+    sub_packages: list[IrPackage] = Field(default_factory=list)
     doc: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     source_ref: SourceRef = Field(default_factory=SourceRef)

@@ -168,6 +168,7 @@ export function SysmlBlockPrimitive({ data }: NodeProps) {
                       id={`port-${p.name}`}
                       type="target"
                       position={Position.Left}
+                      className="canvas-port-socket"
                       // Snap the handle to the row's vertical centre. Using
                       // `top: 50%` aligns the marker with the row text.
                       style={{ top: "50%", left: -6 }}
@@ -178,6 +179,7 @@ export function SysmlBlockPrimitive({ data }: NodeProps) {
                       id={`port-${p.name}`}
                       type="source"
                       position={Position.Right}
+                      className="canvas-port-socket"
                       style={{ top: "50%", right: -6 }}
                     />
                   ) : null}

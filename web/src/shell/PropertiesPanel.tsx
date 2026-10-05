@@ -1,17 +1,11 @@
 /**
- * PropertiesPanel — right-side off-canvas Sheet for editing the currently
- * selected node.
+ * PropertiesPanel — right-side off-canvas Sheet (the inspector) for editing
+ * the currently selected node.
  *
- * Coexistence rule (Library vs Properties):
- *   Only one right-side drawer is open at a time. When a node is selected
- *   on the canvas, the Library closes and Properties opens. When the user
- *   manually opens Library again, Properties closes. The mutual exclusion
- *   is enforced in `uiStore.setPropertiesOpen` and `setLibraryDrawerOpen`
- *   (the parallel Library agent owns the latter; we coordinated on the
- *   contract). Rationale: side-by-side drawers crowd a narrow viewport
- *   and the "open Library and select a node" gesture would otherwise be
- *   ambiguous. Letting selection win keeps the panel attached to the
- *   user's current focus.
+ * The right edge hosts the inspector only. Ingested files moved to the left
+ * files explorer and the old right-side Library drawer was retired (#220),
+ * so there is no longer a competing right-side drawer to coordinate with.
+ * The panel opens when a node is selected and closes on deselect / Esc.
  *
  * Architecture:
  *   - Selected node is sourced from `useCanvasStore.nodes[selectedNodeId]`
@@ -24,9 +18,10 @@
  *     version-monotonic `applyEvent` in `canvasStore` — idempotent, so
  *     local-then-echo double-application is a non-issue.
  */
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
+import type { ChangeActor } from "@/api/canvases";
 import {
   Sheet,
   SheetContent,
@@ -34,10 +29,11 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { useCanvasStore } from "@/stores/canvasStore";
+import { actorLabel, useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
 import { OrganizeEditor } from "./editors/OrganizeEditor";
+import { getTouchedMap } from "./persistedAttribution";
 import { dispatchEditor } from "./PropertiesPanel.dispatch";
 
 export function PropertiesPanel() {
@@ -48,6 +44,34 @@ export function PropertiesPanel() {
   const node = useCanvasStore((s) =>
     selectedNodeId ? s.nodes[selectedNodeId] ?? null : null,
   );
+  // Latest actor to touch the selected node, from live SSE events (#322).
+  const lastEditor = useCanvasStore((s) =>
+    selectedNodeId ? s.lastEditors[selectedNodeId] ?? null : null,
+  );
+  // Persisted fallback (#325): for nodes not touched this session, the
+  // event log's "last touched by" answer — fetched lazily on the first
+  // selection that needs it (one whole-log fold per canvas per session,
+  // cached in `persistedAttribution`), never bulk-fetched on canvas load.
+  const [persistedEditor, setPersistedEditor] = useState<ChangeActor | null>(null);
+  const { id: workspaceSlugFromUrl } = useParams<{ id: string }>();
+  const workspaceSlug = workspaceSlugFromUrl ?? "";
+  useEffect(() => {
+    setPersistedEditor(null);
+    if (!open || !selectedNodeId || !workspaceSlug || lastEditor) return;
+    let cancelled = false;
+    getTouchedMap(workspaceSlug)
+      .then((touched) => {
+        if (!cancelled) setPersistedEditor(touched[selectedNodeId] ?? null);
+      })
+      .catch(() => {
+        // Unreachable backend / old server: the chip just stays hidden.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, selectedNodeId, workspaceSlug, lastEditor]);
+  // Session answer wins (it is fresher); the persisted one fills the gap.
+  const editedBy = lastEditor ?? persistedEditor;
   // Whether the selected node touches any edge — the Organize section
   // is hidden entirely when not, so the panel doesn't show a buttons
   // strip with nothing to act on. The server-side organizer treats edges
@@ -59,8 +83,6 @@ export function PropertiesPanel() {
         )
       : false,
   );
-  const { id: workspaceSlugFromUrl } = useParams<{ id: string }>();
-  const workspaceSlug = workspaceSlugFromUrl ?? "";
 
   // If the selected node disappears from the store (deletion, workspace
   // switch, ...), close the panel rather than render an empty shell.
@@ -89,6 +111,14 @@ export function PropertiesPanel() {
               ? <>Editing <code className="rounded bg-neutral-100 px-1 font-mono">{node.node_type}</code> · {node.id}</>
               : "Select a node on the canvas to edit it."}
           </SheetDescription>
+          {node && editedBy ? (
+            <span
+              data-testid="edited-by-chip"
+              className="inline-flex w-fit items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-500"
+            >
+              edited by {actorLabel(editedBy)}
+            </span>
+          ) : null}
         </SheetHeader>
         <div className="flex-1 overflow-y-auto p-3">
           {node && Editor ? (

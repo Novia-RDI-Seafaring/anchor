@@ -1,198 +1,115 @@
-# Adoption
+# Connect an agent
 
-This guide describes the supported path for running ANCHOR outside the
-repository and connecting it to an MCP-capable agent harness.
+ANCHOR supplies tools to an external MCP-capable agent. The agent's client and
+model run separately from the canvas server. Browser requests wait until that
+agent retrieves and handles them.
 
-## 1. Install and run
+## Create an environment and project first
 
-Install the packaged application:
+Follow the [Quickstart](../getting-started/quickstart.md), or use an existing
+environment and project. These examples use environment `study`, project
+`pump-study`, and canvas `pump-selection`.
 
-```bash
-uv tool install anchor-kb
-anchor serve
-```
+The provider controls ANCHOR's model clients. Your harness controls its own
+model calls. With `harness`, page work items reach the agent. With `local`,
+ANCHOR skips model-assisted gold extraction, but MCP tools can still return
+document content to a connected agent.
 
-The wheel includes the web frontend. You need Node.js and pnpm only when
-working on `web/` from a source checkout:
+## Register your client
 
-```bash
-git clone https://github.com/Novia-RDI-Seafaring/anchor
-cd anchor
-uv sync --extra dev
-pnpm --dir web install
-uv run anchor serve
-# in another terminal:
-pnpm --dir web dev
-```
+Run one installer for your client:
 
-Source development requires Node.js 20+ and pnpm 10. If `pnpm` is not
-installed globally, use Corepack for the frontend commands instead:
+| Client | Command | What it installs |
+| --- | --- | --- |
+| Codex | `anchor install codex --env study` | Named MCP entry, normally `anchor-study`. No separate skill file. |
+| Claude Desktop | `anchor install claude-desktop --env study` | Named MCP entry, normally `anchor-study`. |
+| Claude Code | `anchor install claude-code --env study` | MCP entry named `anchor` and a composed ANCHOR skill. |
+| Cursor | `anchor install cursor --env study` | MCP entry named `anchor`; optional project rules with `--rules`. |
 
-```bash
-corepack pnpm@10 --dir web install
-corepack pnpm@10 --dir web dev
-```
+Restart or reconnect the client after registration. Each entry launches
+`anchor-mcp --env study` over stdio. The MCP server provides tool descriptions,
+connection instructions, and an `anchor://help` resource. It does not start the
+browser server.
 
-ANCHOR serves the UI and HTTP API at `http://127.0.0.1:8002` by default.
-It is unauthenticated, so bind to a network interface only behind an
-authentication layer.
+Codex and Claude Desktop support `--name` for multiple named entries. Claude
+Code and Cursor use a single `anchor` entry; rerunning their installer selects
+the requested environment for that entry. `--dry-run` previews an installer.
+Codex's installer preserves settings but rewrites TOML formatting and comments;
+it makes a one-time `config.toml.anchorbak` backup.
 
-The recommended setup is one environment with a project inside it. Run
-`anchor env create` to choose the AI provider / data zone; it creates a named
-environment and its default project. Then run `anchor init` inside a working
-folder to start a project bound to that environment:
+Cursor's optional `--rules` writes a project-scoped pointer to `AGENTS.md` and
+the CLI/MCP surfaces. Use it when those instructions exist in your workspace;
+the rules file does not create the project conventions itself.
 
-```bash
-anchor env create local
-cd ~/work/pumps
-anchor init
-anchor ingest /path/to/datasheet.pdf
-anchor serve
-```
+See [Agent configuration](agent-configuration.md) for manual configuration and
+other clients. No hosted MCP HTTP endpoint is provided by `anchor serve`.
 
-Storage is structural. A project is a folder with an `anchor.toml` marker and a
-hidden `.anchor_data/` holding its corpus. A managed project lives under
-`~/.anchor/envs/<env>/projects/<project>/`. The environment keeps a
-`projects.toml` registry mapping each project name to its folder.
+## Confirm the environment and project
 
-`anchor demo` creates a `demo` workspace and placeholder nodes. It ingests an
-optional local sample PDF when one is present, but the public package does not
-ship a vendor PDF. In normal use, ingest a PDF you are allowed to process.
+Ask the agent:
 
-## 2. Agent harness setup
+> List ANCHOR projects in `study`. Open `pump-study` and report its status.
+> Check pending intents for that project before starting work.
 
-ANCHOR exposes MCP tools through the `anchor-mcp` stdio executable. Register it
-with the installer, which points at an environment by name:
+The agent uses `list_projects`, `open_project`, `anchor_status`, and
+`list_pending_intents`. It can instead pass `project="pump-study"` on each
+project-scoped tool. `anchor use study pump-study` selects only the CLI project;
+it does not retarget the MCP server or agent session.
 
-```bash
-anchor install claude-code               # MCP entry + skill (default env)
-anchor install claude-desktop --env work
-anchor install cursor --env work
-```
+The initial MCP tool list is intentionally small. The agent can call
+`anchor_list_capabilities` to discover advanced canvas, ingestion, CAD, SysML,
+and FMU tools. A tool omitted from the initial advertised list is not necessarily
+unavailable.
 
-The entry runs `anchor-mcp --env <name>`. The server serves that one
-environment; projects inside it are addressed by a per-call `project` argument
-(`list_projects` enumerates them). A second environment is a second named
-server.
-
-Cursor has no global skills directory, so the MCP entry alone gives a Cursor
-agent the tools and the server's own briefing but not the project conventions.
-For a Cursor workspace that is an Anchor project, add `--rules` to also write a
-project-scoped `.cursor/rules/anchor.mdc` that points the agent at `AGENTS.md`
-plus the CLI/MCP surfaces:
+## Start the canvas server
 
 ```bash
-cd ~/work/pumps
-anchor install cursor --rules            # writes ./.cursor/rules/anchor.mdc
+anchor serve --env study --project pump-study
 ```
 
-The rules file is a short pointer, not a copy of `AGENTS.md`. The write is
-idempotent and will not overwrite a file you have edited unless you pass
-`--force`; use `--project-dir` to target a directory other than the current
-one.
+Open the printed URL and the `pump-selection` canvas. A browser server serves
+one project; the named MCP server can address multiple projects in its environment.
+Choose the same project on both sides.
 
-Restart the harness and verify that `anchor` appears in its MCP server list.
-The set of tools depends on available optional extensions, such as the FMU
-runtime.
+Browser changes arrive through SSE. MCP uses its own local stdio process and
+the persisted project stores. Do not assume the client is continuously listening
+or polling. Tell it to check pending intents at the start of an ANCHOR task.
 
-If reinstalling ANCHOR fails on Windows because `anchor-mcp.exe` is in use,
-close the MCP client and follow the reinstall steps in
-[Install](../getting-started/installation.md#reinstall-or-upgrade).
+## Give a concrete request
 
-See [Agent configuration](agent-configuration.md) for verified Claude Code,
-Codex, Gemini CLI, OpenCode, Cursor, and generic stdio examples.
+> In project `pump-study`, process the pending PDF ingestion intent on
+> `pump-selection`, then propose one spec table with row-level source references.
+> Ask me in the intent thread if the desired product variant is unclear.
 
-`anchor serve` exposes the browser UI, HTTP API, and browser SSE updates. It
-does not expose an authenticated remote-MCP HTTP endpoint. A hosted or remote
-MCP integration therefore requires additional transport and authentication
-work.
+For submitted canvas asks, the agent should reply in the thread and stage
+suggestions for your review. It should wait for clarification or approval rather
+than approving its own suggestion. Direct extraction requests made in the agent
+chat can also create canvas objects through the normal canvas tools.
 
-## 3. Viewing and snapshotting canvases
+## Troubleshooting
 
-Keep a browser open on:
+- **No documents:** verify the MCP environment, call `list_projects`, and use
+  the right project. Check the browser server with `anchor serve-info`.
+- **Awaiting agent:** have the agent pull the ingestion intent and complete the
+  harness session. A PDF upload does not automatically run your harness.
+- **Executable missing:** locate `anchor-mcp` with `Get-Command anchor-mcp`
+  on PowerShell or `command -v anchor-mcp` on Bash, then reconnect the client
+  with the correct executable path.
+- **Tool missing:** ask for `anchor_list_capabilities`. FMU simulation also
+  requires the optional runtime.
+- **Windows reinstall blocked:** close clients using the installed MCP server
+  before upgrading. See [Install](../getting-started/installation.md#reinstall-or-upgrade).
 
-```text
-http://127.0.0.1:8002/c/<workspace-slug>
-```
+## Optional canvas snapshots
 
-Changes written through HTTP, CLI, or MCP are reflected through the browser's
-SSE subscription.
-
-Snapshots render the same browser canvas through headless Chromium and
-therefore require a running `anchor serve`:
+Snapshots need a running server and Playwright Chromium. For a uv tool install:
 
 ```bash
-anchor canvas snapshot <workspace-slug> --out canvas.png
+uv tool run --from anchor-kb playwright install chromium
+anchor canvas snapshot pump-selection --out canvas.png
 ```
 
-From MCP, use `canvas_snapshot(..., format="inline")` when the harness can
-render image content directly. Use `format="path"` for local agents that can
-read files from the same machine, or `format="base64"` when raw transfer is
-needed.
-
-## 4. LLM endpoints and local operation
-
-Without an LLM key, PDF ingestion still creates the local bronze and silver
-layers. Gold-region extraction and page polishing require a vision-capable
-OpenAI-compatible endpoint.
-
-For OpenAI:
-
-```dotenv
-ANCHOR_OPENAI_API_KEY=<your-api-key>
-ANCHOR_POLISH_MODEL=gpt-5.4
-ANCHOR_REGION_MODEL=gpt-5.4
-```
-
-For an OpenAI-compatible endpoint, set `ANCHOR_OPENAI_BASE_URL` as well. For
-example, Azure OpenAI v1 uses deployment names as model identifiers:
-
-```dotenv
-ANCHOR_OPENAI_API_KEY=<your-azure-key>
-ANCHOR_OPENAI_BASE_URL=https://<resource-name>.openai.azure.com/openai/v1/
-ANCHOR_POLISH_MODEL=<vision-capable-deployment-name>
-ANCHOR_REGION_MODEL=<vision-capable-deployment-name>
-```
-
-For Azure, `ANCHOR_OPENAI_API_KEY` must be the Azure resource key. A personal
-`OPENAI_API_KEY` in your shell is not proof that the Azure project is
-configured. The model values must be Azure deployment names, not base model
-names.
-
-An Ollama or other local OpenAI-compatible server can use the same wiring:
-
-```dotenv
-ANCHOR_OPENAI_API_KEY=local
-ANCHOR_OPENAI_BASE_URL=http://localhost:11434/v1
-ANCHOR_POLISH_MODEL=<vision-model-name>
-ANCHOR_REGION_MODEL=<vision-model-name>
-```
-
-Use a model that accepts image input and evaluate extraction quality on your
-own documents before relying on extracted engineering values.
-
-Embeddings use the local sentence-transformer model
-`BAAI/bge-small-en-v1.5` by default. The Python dependency ships with ANCHOR;
-the model weights must already be cached or downloaded before fully offline
-use.
-
-## 5. Offline boundary
-
-| Step | Local without a hosted API? | Notes |
-|---|---|---|
-| Store source PDF and render pages | Yes | Files stay under the project's `.anchor_data/`. |
-| Silver extraction | Yes | Docling and local rendering. |
-| Gold extraction and page polish | Conditional | Requires a configured vision endpoint; this may be local. |
-| Region embeddings and search | Yes, after model availability | Local sentence-transformer default. |
-| Workspace state, HTTP, SSE, MCP-stdio | Yes | Runs on the local machine. |
-| Canvas snapshot | Yes | Requires local `anchor serve` and Chromium support. |
-| Agent harness model calls | Outside ANCHOR | Governed by the harness you choose. |
-
-## Code pointers
-
-- Harness installer: `src/anchor/adapters/cli/install.py`
-- CLI wiring: `src/anchor/adapters/cli/main.py`
-- MCP stdio entry: `src/anchor/adapters/mcp/stdio_main.py`
-- MCP snapshot promotion: `src/anchor/adapters/mcp/server.py`
-- Runtime configuration: `src/anchor/infra/config.py`
-- PDF LLM adapters: `src/anchor/extensions/anchor_pdfs/infra/llm/`
+The agent can request `canvas_snapshot` with `format="inline"` for image-capable
+clients. If the server uses another port, set the MCP entry's `--base-url` to
+the printed server URL. A snapshot request must target the project served by
+that browser server.

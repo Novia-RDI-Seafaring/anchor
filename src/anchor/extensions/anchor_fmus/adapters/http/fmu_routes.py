@@ -32,6 +32,33 @@ async def list_models(service: FmuService = Depends(get_fmu_service)) -> JSONRes
     return JSONResponse([m.model_dump() for m in models])
 
 
+# The /simulations routes must be registered before /{slug}: FastAPI matches
+# in registration order, so a later fixed path is shadowed by the catch-all
+# (GET /api/fmu/simulations used to resolve as slug="simulations" and 404).
+
+
+@router.get("/simulations")
+async def list_simulations(
+    fmu_slug: str | None = None,
+    service: FmuService = Depends(get_fmu_service),
+) -> JSONResponse:
+    """List simulation runs, optionally filtered to one FMU."""
+    runs = await service.list_simulations(fmu_slug)
+    return JSONResponse([r.model_dump() for r in runs])
+
+
+@router.get("/simulations/{simulation_id}/results")
+async def get_results(
+    simulation_id: str,
+    service: FmuService = Depends(get_fmu_service),
+) -> JSONResponse:
+    """Return the time series for a completed simulation."""
+    series = await service.get_series(simulation_id)
+    if series is None:
+        raise HTTPException(404, f"unknown simulation: {simulation_id}")
+    return JSONResponse(series.model_dump())
+
+
 @router.get("/{slug}")
 async def get_model(slug: str, service: FmuService = Depends(get_fmu_service)) -> JSONResponse:
     """Return one FMU's model description by slug."""
@@ -53,14 +80,14 @@ async def inspect(
     try:
         filename = safe_upload_name(file.filename, allowed_extensions={".fmu"})
     except UnsafeUploadError as exc:
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
     body = await file.read()
     if len(body) > _MAX_FMU_BYTES:
         raise HTTPException(413, f"FMU exceeds {_MAX_FMU_BYTES // (1024 * 1024)} MB cap")
     try:
         model = await service.upload_and_inspect(body, filename)
-    except ValueError:
-        raise HTTPException(400, "could not parse FMU")
+    except ValueError as exc:
+        raise HTTPException(400, "could not parse FMU") from exc
     return JSONResponse(model.model_dump())
 
 
@@ -85,27 +112,7 @@ async def simulate(
             output_interval=float(body.get("output_interval", 0.01)),
         )
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
     return JSONResponse(run.model_dump())
 
 
-@router.get("/simulations/{simulation_id}/results")
-async def get_results(
-    simulation_id: str,
-    service: FmuService = Depends(get_fmu_service),
-) -> JSONResponse:
-    """Return the time series for a completed simulation."""
-    series = await service.get_series(simulation_id)
-    if series is None:
-        raise HTTPException(404, f"unknown simulation: {simulation_id}")
-    return JSONResponse(series.model_dump())
-
-
-@router.get("/simulations")
-async def list_simulations(
-    fmu_slug: str | None = None,
-    service: FmuService = Depends(get_fmu_service),
-) -> JSONResponse:
-    """List simulation runs, optionally filtered to one FMU."""
-    runs = await service.list_simulations(fmu_slug)
-    return JSONResponse([r.model_dump() for r in runs])

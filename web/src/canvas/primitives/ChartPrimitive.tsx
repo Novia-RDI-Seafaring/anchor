@@ -172,7 +172,9 @@ export function ChartPrimitive({ id: _id, data, selected }: NodeProps) {
       {/* legend + provenance footer */}
       <div className="flex items-center justify-between gap-2 px-3 py-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 overflow-hidden">
-          {(geom?.series ?? []).slice(0, 4).map((s, i) => (
+          {/* Every series named: a line drawn without its name in the legend
+              cannot be read. The row wraps rather than cutting off. */}
+          {(geom?.series ?? []).map((s, i) => (
             <span key={s.label || i} className="flex items-center gap-1 text-[10px] text-neutral-600">
               <span className="inline-block h-2 w-2 rounded-sm" style={{ background: s.color ?? PALETTE[i % PALETTE.length] }} />
               <span className="max-w-[80px] truncate">{s.label}</span>

@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import type { ResolvedPlace } from "@/api/documents";
+
 /**
  * How the shared source pane is surfaced:
  *   - "dock":  left-docked split-screen pane next to the canvas (#110a, the
@@ -10,6 +12,9 @@ import { create } from "zustand";
  * surface without losing page/highlight context.
  */
 export type PdfViewerMode = "dock" | "modal";
+
+/** How a hovered source ref answers "what is over there". */
+export type HoverPreviewMode = "panel" | "viewer";
 
 type PdfViewerState = {
   slug: string;             // document slug
@@ -22,12 +27,26 @@ type PdfViewerState = {
   highlightBbox?: number[];
   highlightPage?: number;
   /**
+   * Extra places the same reference points at, already resolved. One claim
+   * can be evidenced in more than one spot: the value in a table and the
+   * callout naming that dimension on the drawing. `highlightBbox` stays the
+   * primary place, which is what the viewer scrolls to; these are drawn
+   * alongside it and never navigated to.
+   */
+  highlightAlso?: ResolvedPlace[];
+  /**
    * The grounded value's text. When set, the viewer locates this text inside
    * the region (via documents.locate) and draws a value-precise yellow
    * highlight layered over the region rectangle (#197). Falls back to the
    * region-level highlight when the text cannot be located.
    */
   highlightQuery?: string;
+  /**
+   * Bumped on every `openPdf` call so the viewer re-navigates and re-flashes
+   * even when the target page/bbox is unchanged — i.e. an intentional re-click
+   * on the same (or an already-shown) reference is never a no-op.
+   */
+  nonce?: number;
 };
 
 /**
@@ -41,6 +60,18 @@ type HoveredSourceRef = {
   page: number;
   region_id?: string;    // when known (regions resolved by id)
   bbox?: number[];       // raw bbox in PDF user-space
+  /**
+   * Selectors that point BELOW the region: one silver item, or one table
+   * cell. The click path already resolves these to the tightest stored bbox
+   * (`resolve_source_ref`, precedence cell > item > region > bbox), so the
+   * source dock lands on the cell. Hover used to drop them, which is why a
+   * document card previewing the same ref drew a box around the whole
+   * section while the dock highlighted one value. Carry them so both
+   * surfaces can agree.
+   */
+  item_id?: string;
+  /** Shape mirrors ResolvableRef: both indices are optional there. */
+  cell?: { row?: number; col?: number } | null;
   /**
    * Marks a deliberate, pinned reference (e.g. broadcast by a *selected*
    * referencing node) as opposed to a transient on-hover signal. A document
@@ -56,6 +87,12 @@ type HoveredSourceRef = {
    * highlight inside the region (#197), not just the region rectangle.
    */
   query?: string;
+  /**
+   * Further places the reference points at, with their boxes: a row's `also`
+   * (the letter naming the dimension on the drawing). A picture of that page
+   * on the canvas lights them too, not only the source viewer.
+   */
+  places?: { page: number; bbox: number[] }[];
 } | null;
 
 type UiState = {
@@ -67,14 +104,30 @@ type UiState = {
    * a sane band by `setSourceDockRatio`.
    */
   sourceDockRatio: number;
-  hoveredSourceRef: HoveredSourceRef;
   /**
-   * True when the right-side Library drawer (shadcn Sheet) is open.
-   * Session-only — the drawer is a transient launcher, not a layout
-   * preference, so we don't persist it. Toggled by the Library button on
-   * the left tool rail and the `]` keyboard shortcut.
+   * The source pane's zoom, kept while the app is open. The reader picks a
+   * zoom to read something at; the pane remounts whenever a different
+   * document opens, so without this every hover handed them back the default
+   * and they had to set it again. Session-only, like the dock ratio: a
+   * remembered zoom is convenience within a sitting, not a preference worth
+   * greeting someone with tomorrow.
    */
-  libraryDrawerOpen: boolean;
+  pdfZoom: number;
+  /**
+   * Width in pixels of the left files explorer (the VS Code style file list
+   * that sits at the very left of the source cluster, #220 part B). Persists
+   * across reloads via localStorage so the user's chosen explorer width is a
+   * sticky layout preference. Clamped to a sane band by `setExplorerWidth`.
+   */
+  explorerWidth: number;
+  /**
+   * True when the whole source cluster (files explorer + PDF viewer) is
+   * collapsed so the canvas spans full width. Persists across reloads. When
+   * collapsed a slim re-open affordance remains so the cluster is one click
+   * away. Toggled by `toggleSourceCluster` and the `[` keyboard shortcut.
+   */
+  sourceClusterCollapsed: boolean;
+  hoveredSourceRef: HoveredSourceRef;
   /**
    * draw.io-style "armed tool" state — when set to a node_type string the
    * canvas treats the next click (or click+drag) as a placement gesture
@@ -92,6 +145,9 @@ type UiState = {
    *     `+` menu opens a Dialog instead. Arming is for shapes/cards only.
    */
   armedTool: string | null;
+  /** While the connector tool is armed, the element a connector will start
+   *  from once the user has clicked it. Null between connectors. */
+  connectSourceId: string | null;
   openPdf: (
     slug: string,
     options?: {
@@ -102,21 +158,44 @@ type UiState = {
       documentNodeId?: string;
       highlightRegionId?: string;
       highlightBbox?: number[];
+      highlightAlso?: ResolvedPlace[];
       highlightQuery?: string;
+      /** Opened by a hover, so a mouse-out should take it away again. */
+      transient?: boolean;
     },
   ) => void;
   closePdf: () => void;
   setPdfPage: (page: number) => void;
   /** Flip the shared pane between the docked and modal surfaces in place. */
   setPdfViewerMode: (mode: PdfViewerMode) => void;
+  /** Remember the source pane's zoom across opens, within this session. */
+  setPdfZoom: (zoom: number) => void;
   /** Clamp + store the left source-pane width ratio (0..1). */
   setSourceDockRatio: (ratio: number) => void;
+  /** Clamp + store the left files-explorer width in pixels. */
+  setExplorerWidth: (px: number) => void;
+  /** Collapse / expand the whole source cluster (explorer + viewer). */
+  setSourceClusterCollapsed: (collapsed: boolean) => void;
+  /**
+   * What hovering a source ref does. Two ways to answer "what is at the other
+   * end of this link", kept side by side so they can be compared on the same
+   * canvas rather than argued about:
+   *   "panel"  - a small crop beside the link (default).
+   *   "viewer" - the full source pane fades in on the left, and fades away
+   *              again on mouse-out unless the ref was clicked, which pins it.
+   */
+  hoverPreviewMode: HoverPreviewMode;
+  setHoverPreviewMode: (mode: HoverPreviewMode) => void;
+  /** True while the viewer is only being previewed, so leaving closes it. */
+  pdfViewerPinned: boolean;
+  /** Promote a hover-opened viewer to a pinned one (a click did it). */
+  pinPdfViewer: () => void;
+  toggleSourceCluster: () => void;
   setHoveredSourceRef: (ref: HoveredSourceRef) => void;
   clearHoveredSourceRef: () => void;
-  setLibraryDrawerOpen: (open: boolean) => void;
-  toggleLibraryDrawer: () => void;
   /** Arm `type` (or toggle off if already armed for the same type). */
   armTool: (type: string) => void;
+  setConnectSourceId: (id: string | null) => void;
   /** Force-disarm whatever tool is currently armed. */
   disarmTool: () => void;
   // --- Properties panel (added by node-content-editing agent) -----------
@@ -128,9 +207,9 @@ type UiState = {
    */
   selectedNodeId: string | null;
   /**
-   * True when the right-side Properties panel (shadcn Sheet) is open.
-   * Mutually exclusive with `libraryDrawerOpen` — opening Properties
-   * closes Library, and vice-versa. Documented in PropertiesPanel.tsx.
+   * True when the right-side Properties panel (shadcn Sheet) is open. The
+   * right edge hosts the inspector only now that the Library drawer is
+   * retired (#220 part B) — ingested files live in the left explorer.
    */
   propertiesOpen: boolean;
   setSelectedNodeId: (id: string | null) => void;
@@ -191,6 +270,36 @@ type UiState = {
    */
   selectedEdgeId: string | null;
   setSelectedEdgeId: (id: string | null) => void;
+
+  // --- Reference selection ----------------------------------------------
+  /**
+   * Id of the reference the user is focused on, shared between the PDF viewer
+   * (its green source boxes) and the References list in the left explorer, so
+   * clicking one highlights the other. Null when nothing is focused.
+   */
+  activeReferenceId: string | null;
+  setActiveReferenceId: (id: string | null) => void;
+
+  // --- Proposal sets (#359) ---------------------------------------------
+  /**
+   * Ids of every element belonging to an OPEN proposal set on this canvas.
+   *
+   * A set records its members; the members do not record the set. So a node
+   * has no way to know it is part of a batch waiting for review, and the
+   * marker on it has to come from here. Written by `useProposalSetsFeed`
+   * (mounted by FilesExplorer, so it survives a tab switch), read by
+   * `ReviewBadge`.
+   */
+  proposalMemberIds: string[];
+  setProposalMemberIds: (ids: string[]) => void;
+  /**
+   * Ids of the one proposal set the pointer is over in the Proposals panel,
+   * or empty when nothing is hovered. Same broadcast idea as
+   * `hoveredSourceRef`: a transient pointer signal that must never touch
+   * canonical canvas state or echo through SSE.
+   */
+  proposalHighlightIds: string[];
+  setProposalHighlightIds: (ids: string[]) => void;
 };
 
 /** Default split: source pane takes a touch under half the width. */
@@ -204,12 +313,73 @@ export function clampDockRatio(ratio: number): number {
   return Math.min(MAX_SOURCE_DOCK_RATIO, Math.max(MIN_SOURCE_DOCK_RATIO, ratio));
 }
 
+/** Default width of the left files explorer, in pixels. */
+export const DEFAULT_EXPLORER_WIDTH = 248;
+const MIN_EXPLORER_WIDTH = 160;
+const MAX_EXPLORER_WIDTH = 520;
+
+export function clampExplorerWidth(px: number): number {
+  if (!Number.isFinite(px)) return DEFAULT_EXPLORER_WIDTH;
+  return Math.min(MAX_EXPLORER_WIDTH, Math.max(MIN_EXPLORER_WIDTH, px));
+}
+
+// Layout preferences persist across reloads (the dock ratio stays
+// session-only by design — it is content-driven, not a sticky choice).
+const EXPLORER_WIDTH_KEY = "anchor.explorerWidth";
+const SOURCE_CLUSTER_COLLAPSED_KEY = "anchor.sourceClusterCollapsed";
+const HOVER_PREVIEW_MODE_KEY = "anchor.hoverPreviewMode";
+
+function readStorage(key: string): string | null {
+  // Guard everything: jsdom/private-mode environments may lack a usable
+  // localStorage (missing methods, throwing getters). Failures fall back to
+  // the in-memory default rather than crashing store creation.
+  try {
+    if (typeof window === "undefined") return null;
+    const ls = window.localStorage;
+    if (!ls || typeof ls.getItem !== "function") return null;
+    return ls.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function readPersistedExplorerWidth(): number {
+  const raw = readStorage(EXPLORER_WIDTH_KEY);
+  return raw === null ? DEFAULT_EXPLORER_WIDTH : clampExplorerWidth(Number(raw));
+}
+
+function readPersistedHoverPreviewMode(): HoverPreviewMode {
+  // "panel" is the default: a small crop beside the link is the cheaper
+  // gesture, and the full viewer on hover is the thing being tried out.
+  return readStorage(HOVER_PREVIEW_MODE_KEY) === "viewer" ? "viewer" : "panel";
+}
+
+function readPersistedCollapsed(): boolean {
+  return readStorage(SOURCE_CLUSTER_COLLAPSED_KEY) === "1";
+}
+
+function persist(key: string, value: string) {
+  try {
+    if (typeof window === "undefined") return;
+    const ls = window.localStorage;
+    if (!ls || typeof ls.setItem !== "function") return;
+    ls.setItem(key, value);
+  } catch {
+    // Private-mode / quota — layout falls back to in-memory only.
+  }
+}
+
 export const useUiStore = create<UiState>((set) => ({
   pdfViewer: null,
   sourceDockRatio: DEFAULT_SOURCE_DOCK_RATIO,
+  pdfZoom: 1,
+  explorerWidth: readPersistedExplorerWidth(),
+  sourceClusterCollapsed: readPersistedCollapsed(),
+  hoverPreviewMode: readPersistedHoverPreviewMode(),
+  pdfViewerPinned: false,
   hoveredSourceRef: null,
-  libraryDrawerOpen: false,
   armedTool: null,
+  connectSourceId: null,
   selectedNodeId: null,
   propertiesOpen: false,
   dropTargetAreaId: null,
@@ -217,25 +387,54 @@ export const useUiStore = create<UiState>((set) => ({
   hoveredNodeId: null,
   pendingInlineRenameNodeId: null,
   selectedEdgeId: null,
+  proposalMemberIds: [],
+  proposalHighlightIds: [],
   openPdf: (slug, options) =>
-    set((state) => ({
-      pdfViewer: {
-        slug,
-        page: options?.page ?? 1,
-        // One shared pane: reuse the surface the viewer is already on unless
-        // the caller pins a specific mode. Defaults to the docked split-screen.
-        mode: options?.mode ?? state.pdfViewer?.mode ?? "dock",
-        workspaceSlug: options?.workspaceSlug,
-        documentNodeId: options?.documentNodeId,
-        highlightRegionId: options?.highlightRegionId,
-        highlightBbox: options?.highlightBbox,
-        highlightQuery: options?.highlightQuery,
-        highlightPage: options?.highlightRegionId || options?.highlightBbox
-          ? options?.page ?? 1
-          : undefined,
-      },
-    })),
-  closePdf: () => set({ pdfViewer: null }),
+    set((state) => {
+      const mode = options?.mode ?? state.pdfViewer?.mode ?? "dock";
+      // Opening a document in the dock must reveal it: with the source
+      // cluster collapsed the dock is not rendered at all, so setting
+      // `pdfViewer` alone did nothing visible and a click on a row anchor
+      // or a region looked dead (it only highlighted when the viewer
+      // happened to be open already).
+      if (mode === "dock" && state.sourceClusterCollapsed) {
+        persist(SOURCE_CLUSTER_COLLAPSED_KEY, "0");
+      }
+      return {
+        sourceClusterCollapsed:
+          mode === "dock" ? false : state.sourceClusterCollapsed,
+        pdfViewer: {
+          slug,
+          page: options?.page ?? 1,
+          // One shared pane: reuse the surface the viewer is already on unless
+          // the caller pins a specific mode. Defaults to the docked split-screen.
+          mode,
+          workspaceSlug: options?.workspaceSlug,
+          documentNodeId: options?.documentNodeId,
+          highlightRegionId: options?.highlightRegionId,
+          highlightBbox: options?.highlightBbox,
+          highlightAlso: options?.highlightAlso,
+          highlightQuery: options?.highlightQuery,
+          highlightPage: options?.highlightRegionId || options?.highlightBbox
+            ? options?.page ?? 1
+            : undefined,
+          nonce: (state.pdfViewer?.nonce ?? 0) + 1,
+        },
+        // A hover-opened viewer stays only while the pointer does. A click
+        // pins it, and a pinned viewer is never un-pinned by a later hover.
+        pdfViewerPinned: options?.transient
+          ? state.pdfViewerPinned
+          : true,
+      };
+    }),
+  closePdf: () => set({ pdfViewer: null, pdfViewerPinned: false }),
+  setHoverPreviewMode: (mode) => {
+    persist(HOVER_PREVIEW_MODE_KEY, mode);
+    set({ hoverPreviewMode: mode });
+  },
+  pinPdfViewer: () => set({ pdfViewerPinned: true }),
+  activeReferenceId: null,
+  setActiveReferenceId: (id) => set({ activeReferenceId: id }),
   setPdfPage: (page) =>
     set((state) =>
       state.pdfViewer ? { pdfViewer: { ...state.pdfViewer, page } } : state,
@@ -245,17 +444,33 @@ export const useUiStore = create<UiState>((set) => ({
       state.pdfViewer ? { pdfViewer: { ...state.pdfViewer, mode } } : state,
     ),
   setSourceDockRatio: (ratio) => set({ sourceDockRatio: clampDockRatio(ratio) }),
+  setPdfZoom: (zoom) => set({ pdfZoom: zoom }),
+  setExplorerWidth: (px) => {
+    const next = clampExplorerWidth(px);
+    persist(EXPLORER_WIDTH_KEY, String(next));
+    set({ explorerWidth: next });
+  },
+  setSourceClusterCollapsed: (collapsed) => {
+    persist(SOURCE_CLUSTER_COLLAPSED_KEY, collapsed ? "1" : "0");
+    set({ sourceClusterCollapsed: collapsed });
+  },
+  toggleSourceCluster: () =>
+    set((state) => {
+      const next = !state.sourceClusterCollapsed;
+      persist(SOURCE_CLUSTER_COLLAPSED_KEY, next ? "1" : "0");
+      return { sourceClusterCollapsed: next };
+    }),
   setHoveredSourceRef: (ref) => set({ hoveredSourceRef: ref }),
   clearHoveredSourceRef: () => set({ hoveredSourceRef: null }),
-  setLibraryDrawerOpen: (open) => set({ libraryDrawerOpen: open }),
-  toggleLibraryDrawer: () =>
-    set((state) => ({ libraryDrawerOpen: !state.libraryDrawerOpen })),
+  setConnectSourceId: (id) => set({ connectSourceId: id }),
   armTool: (type) =>
     set((state) => ({
       // Clicking the same icon a second time toggles the tool off.
       armedTool: state.armedTool === type ? null : type,
+      // Switching tools abandons a half-drawn connector.
+      connectSourceId: null,
     })),
-  disarmTool: () => set({ armedTool: null }),
+  disarmTool: () => set({ armedTool: null, connectSourceId: null }),
   // --- Properties panel actions (appended) ------------------------------
   // Mutual exclusion with selectedEdgeId — selecting a node deselects any
   // currently-selected edge so the EdgeContextToolbar never shows up at
@@ -269,18 +484,9 @@ export const useUiStore = create<UiState>((set) => ({
     set((state) => (id !== null
       ? { selectedEdgeId: id, selectedNodeId: null }
       : { ...state, selectedEdgeId: null })),
-  setPropertiesOpen: (open) =>
-    set((state) =>
-      open
-        ? { propertiesOpen: true, libraryDrawerOpen: false }
-        : { ...state, propertiesOpen: false },
-    ),
+  setPropertiesOpen: (open) => set({ propertiesOpen: open }),
   toggleProperties: () =>
-    set((state) =>
-      state.propertiesOpen
-        ? { propertiesOpen: false }
-        : { propertiesOpen: true, libraryDrawerOpen: false },
-    ),
+    set((state) => ({ propertiesOpen: !state.propertiesOpen })),
   setDropTargetAreaId: (id) => set({ dropTargetAreaId: id }),
   setIsDraggingNode: (dragging) => set({ isDraggingNode: dragging }),
   setHoveredNodeId: (id) => set({ hoveredNodeId: id }),
@@ -296,4 +502,9 @@ export const useUiStore = create<UiState>((set) => ({
     }
     return false;
   },
+  // Both proposal slots are plain replacements. Subscribers select a boolean
+  // ("is my id in there?"), so a fresh array with the same contents costs a
+  // selector run and no re-render.
+  setProposalMemberIds: (ids) => set({ proposalMemberIds: ids }),
+  setProposalHighlightIds: (ids) => set({ proposalHighlightIds: ids }),
 }));

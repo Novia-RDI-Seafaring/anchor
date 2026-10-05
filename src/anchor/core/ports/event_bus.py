@@ -1,7 +1,8 @@
 """EventBus protocol — pub-sub for domain events."""
 from __future__ import annotations
 
-from typing import AsyncIterator, Protocol
+from collections.abc import AsyncIterator
+from typing import Protocol
 
 from anchor.core.events.envelope import DomainEvent
 

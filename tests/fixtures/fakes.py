@@ -18,13 +18,14 @@ class FakePdfExtractor:
     """
 
     def __init__(self, docling: dict[str, Any] | None = None) -> None:
-        # Bboxes are BOTTOMLEFT [left, top, right, bottom] with top > bottom,
-        # matching the convention docling and core/silver.py use.
+        # Bboxes are top-left PDF points [left, top, right, bottom] with
+        # top <= bottom (#281), matching the contract core/silver.py enforces.
         self.docling = docling or {
             "items": [
-                {"label": "title", "text": "Demo Doc", "page": 1, "bbox": [0, 720, 200, 700]},
-                {"label": "section_header", "text": "Section A", "page": 1, "bbox": [0, 620, 100, 600]},
-                {"label": "text", "text": "First paragraph.", "page": 1, "bbox": [0, 595, 200, 580]},
+                # Top-left PDF points (#281): y grows downward, title first.
+                {"label": "title", "text": "Demo Doc", "page": 1, "bbox": [0, 72, 200, 92]},
+                {"label": "section_header", "text": "Section A", "page": 1, "bbox": [0, 172, 100, 192]},
+                {"label": "text", "text": "First paragraph.", "page": 1, "bbox": [0, 197, 200, 212]},
             ],
         }
         self.calls: list[dict[str, Any]] = []
@@ -39,13 +40,23 @@ class FakePdfExtractor:
 class FakePdfRenderer:
     def __init__(self, page_count: int = 1) -> None:
         self.page_count = page_count
+        # Recorded crop_region calls so plumbing tests can assert the bbox /
+        # dpi that actually reached the renderer.
+        self.crop_calls: list[dict[str, Any]] = []
 
     async def render_pages(self, pdf_path: Path, dpi: int = 150) -> dict[int, bytes]:
         return {p: f"PNG-bytes-page-{p}".encode() for p in range(1, self.page_count + 1)}
 
+    async def page_sizes(self, pdf_path: Path) -> dict[int, tuple[float, float]]:
+        # US Letter in points, for every page.
+        return {p: (612.0, 792.0) for p in range(1, self.page_count + 1)}
+
     async def crop_region(
         self, pdf_path: Path, page: int, bbox: list[float], fmt: CropFormat = "png", dpi: int = 200,
     ) -> bytes:
+        self.crop_calls.append({
+            "pdf_path": pdf_path, "page": page, "bbox": list(bbox), "fmt": fmt, "dpi": dpi,
+        })
         return f"CROP-{page}-{bbox}-{fmt}".encode()
 
 
@@ -62,7 +73,7 @@ class FakePolisher:
 class FakeRegionExtractor:
     def __init__(self, regions_per_page: list[dict[str, Any]] | None = None) -> None:
         self._regions = regions_per_page or [
-            {"id": "r1", "kind": "text", "title": "fake region", "description": "x", "bbox": [10, 600, 200, 580], "tags": [], "entities": []}
+            {"id": "r1", "kind": "text", "title": "fake region", "description": "x", "bbox": [10, 195, 200, 215], "tags": [], "entities": []}
         ]
 
     async def extract_page(
@@ -111,11 +122,13 @@ class FakeSnapshotter:
         format: str = "png",
         viewport: tuple[int, int] | None = None,
         full_page: bool = True,
+        expect_nodes: int | None = None,
     ):
         from anchor.core.ports.snapshot import SnapshotResult
 
         self.calls.append({
-            "slug": slug, "format": format, "viewport": viewport, "full_page": full_page,
+            "slug": slug, "format": format, "viewport": viewport,
+            "full_page": full_page, "expect_nodes": expect_nodes,
         })
         ctype = "image/svg+xml" if format == "svg" else "image/png"
         if self.mode == "path":

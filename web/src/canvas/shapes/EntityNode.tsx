@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 
 import { resolveColors, resolveText } from "@/canvas/colors";
 import { Pictogram } from "@/canvas/icons";
+import { NodeSourceBadge } from "@/canvas/NodeSourceBadge";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
 
@@ -95,6 +96,7 @@ export function EntityNode({ id, data, selected }: NodeProps) {
         </span>
       )}
       <Handle type="source" position={Position.Right} />
+      <NodeSourceBadge data={data} workspaceSlug={workspaceSlug} />
     </div>
   );
 }

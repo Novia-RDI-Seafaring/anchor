@@ -8,7 +8,6 @@ from __future__ import annotations
 from anchor.extensions.anchor_sysml.core.schemas import Diagnostic, SourceRef
 from anchor.extensions.anchor_sysml.infra.lexer import Token
 
-
 # ── Cursor ───────────────────────────────────────────────────────────────
 
 

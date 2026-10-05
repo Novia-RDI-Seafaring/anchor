@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { documents } from "./documents";
+import { documents, refHasSelector } from "./documents";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -63,6 +63,92 @@ describe("documents.locate", () => {
 
     const quads = await documents.locate("x", 1, "y");
     expect(quads).toEqual([]);
+  });
+});
+
+describe("refHasSelector", () => {
+  it("is false for refs without below-region selectors (the unchanged region path)", () => {
+    expect(refHasSelector(undefined)).toBe(false);
+    expect(refHasSelector(null)).toBe(false);
+    expect(refHasSelector({ slug: "d", page: 2, region_id: "r1", bbox: [0, 0, 10, 10] })).toBe(false);
+    // A partial cell is not a selector — the resolver needs both row and col.
+    expect(refHasSelector({ page: 2, cell: { row: 1 } })).toBe(false);
+  });
+
+  it("is true for a cell selector or an item_id", () => {
+    expect(refHasSelector({ page: 2, cell: { row: 0, col: 1 } })).toBe(true);
+    expect(refHasSelector({ page: 2, item_id: "p2-i1" })).toBe(true);
+  });
+});
+
+describe("documents.resolveRef", () => {
+  it("requests resolve-ref with the ref's page/region/cell and returns the answer", async () => {
+    const resolved = {
+      slug: "alfa-laval-lkh",
+      page: 2,
+      bbox: [280, 120, 340, 132],
+      precision: "cell",
+      region_id: "r4",
+      cell: { row: 0, col: 1 },
+    };
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => resolved,
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const out = await documents.resolveRef("alfa-laval-lkh", {
+      page: 2,
+      region_id: "r4",
+      bbox: [50, 40, 550, 200],
+      cell: { row: 0, col: 1 },
+    });
+
+    expect(out).toEqual(resolved);
+    const url = (fetchMock.mock.calls[0] as unknown[] | undefined)?.[0] as string ?? "";
+    expect(url).toContain("/api/documents/alfa-laval-lkh/resolve-ref");
+    expect(url).toContain("page=2");
+    expect(url).toContain("region_id=r4");
+    expect(url).toContain("row=0");
+    expect(url).toContain("col=1");
+  });
+
+  it("passes an item_id selector through", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ slug: "d", page: 2, bbox: [1, 2, 3, 4], precision: "item" }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await documents.resolveRef("d", { page: 2, item_id: "p2-i1" });
+
+    const url = (fetchMock.mock.calls[0] as unknown[] | undefined)?.[0] as string ?? "";
+    expect(url).toContain("item_id=p2-i1");
+    expect(url).not.toContain("row=");
+  });
+
+  it("resolves to null (never throws) on 404 so callers fall back to the ref's own bbox", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      text: async () => "unresolvable ref",
+    })));
+
+    const out = await documents.resolveRef("d", { page: 2, cell: { row: 0, col: 1 } });
+    expect(out).toBeNull();
+  });
+
+  it("resolves to null when the answer has no usable bbox", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ slug: "d", page: 2, precision: "region" }),
+    })));
+
+    const out = await documents.resolveRef("d", { page: 2, cell: { row: 0, col: 1 } });
+    expect(out).toBeNull();
   });
 });
 

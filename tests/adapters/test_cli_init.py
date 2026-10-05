@@ -1,6 +1,8 @@
 """`anchor env create` — provider picker; `anchor init` — folder-based project."""
 from __future__ import annotations
 
+import os
+
 import pytest
 from typer.testing import CliRunner
 
@@ -126,6 +128,7 @@ def test_setup_api_key_writes_gitignored_env(tmp_path, monkeypatch):
     env_root.mkdir(parents=True)
     init_mod._setup_api_key(env_root, get_provider("azure"), interactive=True)
     assert "ANCHOR_OPENAI_API_KEY=az-secret-key" in (env_root / ".env").read_text()
+    assert "ANCHOR_OPENAI_API_KEY" not in os.environ
 
 
 # --------------------------------------------------------------------------- #

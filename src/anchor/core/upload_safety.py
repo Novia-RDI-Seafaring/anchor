@@ -20,6 +20,7 @@ Both raise :class:`UnsafeUploadError`; routes translate that to HTTP 400.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 
@@ -77,12 +78,13 @@ def assert_within(target: Path, root: Path) -> Path:
     use it directly (e.g. for ``write_bytes``). Raises
     :class:`UnsafeUploadError` if the resolved target is outside ``root``.
     """
-    resolved_root = root.resolve()
-    resolved = target.resolve()
-    try:
-        resolved.relative_to(resolved_root)
-    except ValueError as exc:
-        raise UnsafeUploadError(
-            f"path {target!s} escapes storage root {root!s}"
-        ) from exc
-    return resolved
+    # Normalise with os.path (realpath follows symlinks, normpath collapses
+    # `..`) and guard with a prefix check. This is the containment idiom
+    # static analysis recognises as a path-injection barrier; the pathlib
+    # `resolve()` + `relative_to()` form is equivalent at runtime but was
+    # still reported as tainted downstream.
+    resolved_root = os.path.realpath(os.fspath(root))
+    resolved = os.path.normpath(os.path.realpath(os.fspath(target)))
+    if resolved != resolved_root and not resolved.startswith(resolved_root + os.sep):
+        raise UnsafeUploadError(f"path {target!s} escapes storage root {root!s}")
+    return Path(resolved)

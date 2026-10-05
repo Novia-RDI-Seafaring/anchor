@@ -232,12 +232,32 @@ A submitted region names geometry by grouping, not by pixels:
 }
 ```
 
+A logical slice of one dense table uses cell indexes advertised on the table
+candidate:
+
+```json
+{
+  "kind": "table",
+  "title": "50 Hz operating limits",
+  "table_slice": {
+    "candidate_id": "p3-i2",
+    "rows": [0, 4, 5, 6],
+    "columns": [0, 1]
+  }
+}
+```
+
 Server-side validation (the trusted side enforces the contract):
 
 - `kind` must be in the documented enum.
 - `member_item_ids` must exist on that page of that session; the server
   computes `bbox = union_bbox(member bboxes)` (BOTTOMLEFT), so the agent
   never emits free-form coordinates.
+- `table_slice` must name one table candidate and valid cell row/column
+  indexes. The server stores only the selected cells, renders compact markdown,
+  and computes the bbox union from cell bboxes.
+- Exactly one geometry selector is accepted: `member_item_ids`, `table_slice`,
+  or `approx_bbox`.
 - Escape hatch: when docling missed a visual (a chart rendered as a
   single picture block, or nothing at all), the agent may send
   `approx_bbox` instead of members; the server snaps it with

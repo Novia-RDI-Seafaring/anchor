@@ -23,7 +23,7 @@ from pathlib import Path
 import aiofiles
 
 from anchor.core.intents.intent import Intent
-from anchor.core.upload_safety import UnsafeUploadError, assert_within
+from anchor.core.upload_safety import UnsafeUploadError
 
 #: An intent id is a server-generated uuid fragment; this guards the on-disk
 #: filename stem so a crafted id can never escape the intents directory.
@@ -38,9 +38,14 @@ class FsIntentStore:
     def _path(self, intent_id: str) -> Path:
         if not intent_id or not _ID_RE.fullmatch(intent_id):
             raise UnsafeUploadError(f"unsafe intent id: {intent_id!r}")
-        target = self.root / f"{intent_id}.json"
-        assert_within(target, self.root)
-        return target
+        # Inline normalise-then-prefix-check (not delegated): the analyzer only
+        # recognises the barrier in the function that builds the path, and every
+        # intent file path in this store comes from here.
+        base = os.path.realpath(os.fspath(self.root))
+        candidate = os.path.normpath(os.path.join(base, f"{intent_id}.json"))
+        if not candidate.startswith(base + os.sep):
+            raise UnsafeUploadError(f"unsafe intent id: {intent_id!r}")
+        return Path(candidate)
 
     async def add(self, intent: Intent) -> Intent:
         await self._write(intent)

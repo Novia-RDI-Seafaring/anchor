@@ -14,11 +14,58 @@ fails to navigate (so the CLI can map it to a 1-liner hint).
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 
-from anchor.core.ids import validate_workspace_slug
+from anchor.core.ids import InvalidWorkspaceSlugError, validate_workspace_slug
 from anchor.core.ports.snapshot import SnapshotResult
+
+#: CSS selector matched by every rendered React Flow node.
+NODE_SELECTOR = ".react-flow__node"
+
+
+def node_wait_selector(expect_nodes: int | None) -> str | None:
+    """Selector to await before screenshotting, or ``None`` to skip the wait.
+
+    The caller (``WorkspaceService.snapshot``) knows from the workspace state
+    how many nodes the canvas holds. When it says nodes exist, screenshotting
+    after only the ``.react-flow`` shell appeared can capture an empty grid —
+    the state fetch may still be in flight — so we additionally wait for at
+    least one node element. An empty canvas (0 nodes) or an unknown count
+    (``None``) keeps the old shell-plus-settle behaviour.
+    """
+    if expect_nodes is not None and expect_nodes > 0:
+        return NODE_SELECTOR
+    return None
+
+
+def node_wait_timeout_message(
+    slug: str, *, expect_nodes: int, url: str, timeout_ms: int
+) -> str:
+    """Error text for a node wait that timed out — names what was waited for."""
+    return (
+        f"snapshot of {slug!r} timed out after {timeout_ms} ms waiting for "
+        f"canvas nodes to render: the workspace state has {expect_nodes} "
+        f"node(s) but no {NODE_SELECTOR!r} element appeared at {url}. "
+        "Check that the serve at that URL hosts this project's data dir "
+        "(`anchor serve-info`) and that the canvas loads in a browser."
+    )
+
+
+def _is_connection_refused(exc: Exception) -> bool:
+    """True for a navigation failure that means "nothing is listening there".
+
+    Matched on the message rather than the type: Playwright raises its own
+    Error class for every navigation problem, and only the text distinguishes
+    a refused connection from a timeout or a bad URL.
+    """
+    text = str(exc)
+    return (
+        "ERR_CONNECTION_REFUSED" in text
+        or "ERR_CONNECTION_RESET" in text
+        or "ERR_ADDRESS_UNREACHABLE" in text
+    )
 
 
 class HeadlessChromiumSnapshotter:
@@ -54,6 +101,7 @@ class HeadlessChromiumSnapshotter:
         format: str = "png",
         viewport: tuple[int, int] | None = None,
         full_page: bool = True,
+        expect_nodes: int | None = None,
     ) -> SnapshotResult:
         # The slug is interpolated into both the navigation URL and the
         # output filename. Validate it here so the snapshotter is hardened
@@ -81,7 +129,14 @@ class HeadlessChromiumSnapshotter:
         w, h = viewport or self.default_viewport
 
         ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        slug_dir = self.output_dir / slug
+        # Inline normalise-then-prefix-check (not delegated): the regex above
+        # already rejects traversal, but the analyzer only recognises the
+        # barrier in the function that builds the path.
+        base = os.path.realpath(os.fspath(self.output_dir))
+        candidate = os.path.normpath(os.path.join(base, slug))
+        if not candidate.startswith(base + os.sep):
+            raise InvalidWorkspaceSlugError(f"workspace slug {slug!r} escapes the snapshot dir")
+        slug_dir = Path(candidate)
         slug_dir.mkdir(parents=True, exist_ok=True)
         target = slug_dir / f"{ts}.png"
 
@@ -96,7 +151,27 @@ class HeadlessChromiumSnapshotter:
                 # out at 30 s. `domcontentloaded` is enough — React Flow
                 # then needs a settle delay to finish layout, which the
                 # `settle_ms` knob already handles.
-                await page.goto(url, timeout=self.nav_timeout_ms, wait_until="domcontentloaded")
+                try:
+                    await page.goto(
+                        url, timeout=self.nav_timeout_ms, wait_until="domcontentloaded",
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    # A raw Playwright trace ("net::ERR_CONNECTION_REFUSED at
+                    # http://127.0.0.1:8031/c/x") tells the caller what failed
+                    # and nothing about the fix. The snapshotter drives a real
+                    # browser against a running `anchor serve`, which is a
+                    # precondition no other canvas tool has, so say so and name
+                    # the command.
+                    if _is_connection_refused(exc):
+                        raise RuntimeError(
+                            f"no Anchor server is answering at {self.base_url}, so the "
+                            f"canvas could not be rendered. canvas_snapshot drives a "
+                            f"browser against a running `anchor serve` -- start one for "
+                            f"this project and retry, or point the snapshotter at a "
+                            f"serve that is already up. `anchor serve-info` lists "
+                            f"running serves and the project each one is bound to."
+                        ) from exc
+                    raise
                 # Wait specifically for the React Flow root to appear in
                 # the DOM — covers the case where the bundle is still
                 # parsing JS when DOMContentLoaded fires.
@@ -109,6 +184,26 @@ class HeadlessChromiumSnapshotter:
                     # through to the settle delay and screenshot whatever
                     # rendered.
                     pass
+                # When the caller says the workspace has nodes, the shell
+                # alone is not proof the canvas rendered: the state fetch
+                # may still be in flight, and screenshotting now yields an
+                # empty grid with no error (#306). Wait for a node element
+                # and fail loudly, naming what we waited for.
+                node_selector = node_wait_selector(expect_nodes)
+                if node_selector is not None:
+                    try:
+                        await page.wait_for_selector(
+                            node_selector, timeout=self.nav_timeout_ms,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        raise RuntimeError(
+                            node_wait_timeout_message(
+                                slug,
+                                expect_nodes=expect_nodes or 0,
+                                url=url,
+                                timeout_ms=self.nav_timeout_ms,
+                            ),
+                        ) from exc
                 # Give React Flow a beat to finish its initial layout +
                 # fitView animation. Cheaper than waiting on a custom
                 # ready-flag the frontend would have to publish.

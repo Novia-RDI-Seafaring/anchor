@@ -58,6 +58,30 @@ type Options = {
    * compatibility — older callers pre-selection-gating still work.
    */
   canEdit?: boolean;
+  /**
+   * Claim the pending-focus stamp a freshly created element carries.
+   *
+   * By default only a `label` editor auto-focuses, because most elements
+   * are created with a heading to type. A text element has no label: its
+   * body IS the element, so it claims the stamp instead. Without this,
+   * placing a text element left nothing focused and typing went nowhere.
+   *
+   * Setting it explicitly wins over that default in both directions. A
+   * card with both a title and a body — a Markdown card, whose title is
+   * optional — passes `false` on the title so the body gets the caret
+   * instead of the two racing for it.
+   */
+  claimsPendingFocus?: boolean;
+  /**
+   * What a plain Enter does in a multi-line editor.
+   *
+   * `"commit"` (the default) is the sticky-note behaviour: Enter saves,
+   * Shift+Enter breaks the line. `"newline"` swaps them, because in a
+   * body where newlines are part of the syntax — Markdown lists, a
+   * paragraph break — reaching for Shift on every line is wrong. There,
+   * Cmd/Ctrl+Enter commits, and so does clicking away.
+   */
+  enterKey?: "commit" | "newline";
 };
 
 type SingleLineInputProps = {
@@ -103,6 +127,8 @@ export function useInlineField<M extends boolean = false>({
   field = "label",
   multiline,
   canEdit = true,
+  claimsPendingFocus,
+  enterKey = "commit",
 }: Options & { multiline?: M }): Result<M> {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(canonicalValue);
@@ -153,23 +179,37 @@ export function useInlineField<M extends boolean = false>({
   // select-all (selecting whole bodies is unexpected).
   useEffect(() => {
     if (!editing) return;
-    if (multiline) {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      // Place caret at end — feels closer to "click to edit" than overwrite.
-      const end = el.value.length;
-      try {
-        el.setSelectionRange(end, end);
-      } catch {
-        // Some browsers throw on hidden elements; ignore.
+    // Focus on the next frame, and once more the frame after.
+    // ReactFlow focuses the node wrapper itself when a node becomes
+    // selected, which lands just after this effect and stole the caret
+    // back: an element placed and put straight into edit mode looked
+    // ready to type into, and swallowed everything typed.
+    let frame = 0;
+    const focus = () => {
+      if (multiline) {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        // Place caret at end — closer to "click to edit" than overwrite.
+        const end = el.value.length;
+        try {
+          el.setSelectionRange(end, end);
+        } catch {
+          // Some browsers throw on hidden elements; ignore.
+        }
+      } else {
+        const el = inputRef.current;
+        if (!el) return;
+        el.focus();
+        el.select();
       }
-    } else {
-      const el = inputRef.current;
-      if (!el) return;
-      el.focus();
-      el.select();
-    }
+    };
+    focus();
+    frame = requestAnimationFrame(() => {
+      focus();
+      frame = requestAnimationFrame(focus);
+    });
+    return () => cancelAnimationFrame(frame);
   }, [editing, multiline]);
 
   const beginEdit = useCallback(() => {
@@ -186,18 +226,20 @@ export function useInlineField<M extends boolean = false>({
   // `useUiStore.pendingInlineRenameNodeId`. We're the natural consumer
   // because every shape primitive that owns a label mounts a
   // `useInlineField({ field: "label" })` — centralising the auto-focus
-  // here avoids editing each shape file. Gated on `field === "label"` so
-  // body-editor hooks on the same node don't race for focus.
+  // here avoids editing each shape file. Gated so body-editor hooks on
+  // the same node don't race for focus: the label editor claims the stamp
+  // unless the caller says otherwise (see `claimsPendingFocus`).
   const pendingRenameId = useUiStore((s) => s.pendingInlineRenameNodeId);
   useEffect(() => {
-    if (field !== "label") return;
+    // Explicit wins; otherwise the label editor is the default claimant.
+    if (!(claimsPendingFocus ?? field === "label")) return;
     if (!canEdit) return;
     if (pendingRenameId !== nodeId) return;
     const consumed = useUiStore.getState().consumeInlineRename(nodeId);
     if (!consumed) return;
     setValue(canonicalValue);
     setEditing(true);
-  }, [pendingRenameId, nodeId, field, canEdit, canonicalValue]);
+  }, [pendingRenameId, nodeId, field, canEdit, canonicalValue, claimsPendingFocus]);
 
   const cancel = useCallback(() => {
     setValue(canonicalValue);
@@ -229,7 +271,13 @@ export function useInlineField<M extends boolean = false>({
     if (event.key === "Enter") {
       // Multi-line: Shift+Enter inserts a newline, plain Enter commits.
       // Single-line: any Enter commits.
-      if (multiline && event.shiftKey) {
+      // With `enterKey: "newline"` the two swap, and Cmd/Ctrl+Enter is the
+      // deliberate save.
+      const newlineFirst = multiline && enterKey === "newline";
+      const wantsNewline = newlineFirst
+        ? !(event.metaKey || event.ctrlKey)
+        : multiline && event.shiftKey;
+      if (wantsNewline) {
         // Fall through to default — let the textarea insert the newline.
         event.stopPropagation();
         return;

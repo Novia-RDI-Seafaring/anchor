@@ -56,9 +56,13 @@ def begin(
         f"Preparing {pdf_path.name} ... bronze (layout + OCR) -> silver (pages, candidates)",
         err=True,
     )
-    order = asyncio.run(svc.ingest_begin(
-        pdf_path.read_bytes(), pdf_path.name, slug=slug, dpi=dpi, force=force,
-    ))
+    try:
+        order = asyncio.run(svc.ingest_begin(
+            pdf_path.read_bytes(), pdf_path.name, slug=slug, dpi=dpi, force=force,
+        ))
+    except ValueError as exc:
+        _exit_on_error({"error": str(exc)})
+        return
     _echo_json(order)
 
 

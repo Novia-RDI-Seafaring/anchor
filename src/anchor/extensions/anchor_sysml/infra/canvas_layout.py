@@ -22,7 +22,6 @@ from collections import defaultdict
 
 from anchor.extensions.anchor_sysml.core.schemas import CanvasBatch
 
-
 CELL_W = 280
 CELL_H = 220
 GUTTER_X = 60

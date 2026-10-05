@@ -11,7 +11,6 @@ from __future__ import annotations
 from urllib.parse import urlsplit
 
 import pytest
-from openai import OpenAIError
 
 from anchor.extensions.anchor_pdfs.infra.llm.openai_client import make_openai_client
 
@@ -30,26 +29,24 @@ def test_base_url_honored_with_key():
     assert parsed.hostname == "my-resource.openai.azure.com"
 
 
-def test_base_url_honored_without_key(monkeypatch):
-    # A stray public key in the env must NOT pull us back to api.openai.com when
-    # an endpoint is configured: the zone wins.
+def test_configured_endpoint_rejects_ambient_public_key(monkeypatch):
+    # A custom endpoint must not receive an ambient credential. Its credential
+    # must be passed explicitly by the environment-scoped egress policy.
     monkeypatch.setenv("OPENAI_API_KEY", "sk-personal-public")
-    client = make_openai_client(None, AZURE)
-    parsed = urlsplit(_base_url(client))
-    assert parsed.hostname is not None and parsed.hostname.endswith(".azure.com")
-    assert parsed.hostname != "api.openai.com"
+    with pytest.raises(ValueError, match="explicit API key"):
+        make_openai_client(None, AZURE)
 
 
-def test_no_base_url_uses_default(monkeypatch):
-    # provider=openai (no endpoint) keeps the public default -- intended.
+def test_client_factory_does_not_resolve_ambient_public_key(monkeypatch):
+    # The environment policy may deliberately select a personal public key,
+    # but the low-level client factory must never resolve ambient authority.
     monkeypatch.setenv("OPENAI_API_KEY", "sk-personal-public")
-    client = make_openai_client(None, None)
-    parsed = urlsplit(_base_url(client))
-    assert parsed.hostname == "api.openai.com"
+    with pytest.raises(ValueError, match="explicit API key"):
+        make_openai_client(None, None)
 
 
 def test_missing_key_and_no_env_raises_clearly(monkeypatch):
     # No key anywhere is a clear construction error, not a silent reroute.
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    with pytest.raises(OpenAIError):
+    with pytest.raises(ValueError, match="explicit API key"):
         make_openai_client(None, AZURE)

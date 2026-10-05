@@ -1,6 +1,8 @@
 """FastAPI app builder — wires services into routers."""
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -19,7 +21,9 @@ from anchor.adapters.http.routers import (
     whoami,
     workspaces,
 )
+from anchor.adapters.project_runtime import ProjectRuntime, bind_workspace_sources
 from anchor.core.clock import SystemClock
+from anchor.core.events.actor import Actor, actor_scope
 from anchor.core.ids import InvalidWorkspaceSlugError
 from anchor.core.ports.event_bus import EventBus
 from anchor.core.services.intent_service import IntentService
@@ -37,12 +41,33 @@ from anchor.extensions.anchor_sysml.core.services import SysmlService
 from anchor.infra.config import AnchorConfig
 
 
+class _ActorAttributionMiddleware:
+    """Attribute every HTTP write to ``{kind: human, label: browser}`` (#322).
+
+    Pure ASGI (no BaseHTTPMiddleware task hop) so the ``ContextVar`` set
+    here is visible inside route handlers and the service calls they await.
+    Routes whose request body carries an explicit ``actor`` override the
+    default for their own call.
+    """
+
+    def __init__(self, app) -> None:  # noqa: ANN001 -- ASGI app
+        self._app = app
+
+    async def __call__(self, scope, receive, send) -> None:  # noqa: ANN001
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+        with actor_scope(Actor(kind="human", label="browser")):
+            await self._app(scope, receive, send)
+
+
 def build_app(
+    runtime: ProjectRuntime | None = None,
     *,
-    workspace_service: WorkspaceService,
-    ingest_service: IngestService,
-    doc_store: DocStore,
-    bus: EventBus,
+    workspace_service: WorkspaceService | None = None,
+    ingest_service: IngestService | None = None,
+    doc_store: DocStore | None = None,
+    bus: EventBus | None = None,
     intent_service: IntentService | None = None,
     static_dir: Path | None = None,
     cad_service: CadService | None = None,
@@ -53,7 +78,58 @@ def build_app(
     canvases_dir: Path | None = None,
     config: AnchorConfig | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Anchor v2", version="0.2.0")
+    extension_status = {}
+    if runtime is not None:
+        workspace_service = runtime.workspace
+        ingest_service = runtime.require_ingest()
+        doc_store = runtime.doc_store
+        bus = runtime.bus
+        intent_service = runtime.intents
+        cad_service = runtime.cad
+        sysml_service = runtime.sysml
+        synopsis_service = runtime.synopsis
+        ingest_session_service = runtime.ingest_session
+        fmu_service = runtime.fmu
+        canvases_dir = runtime.config.canvases_dir
+        config = runtime.config
+        extension_status = runtime.extension_status
+
+    if (
+        workspace_service is None
+        or ingest_service is None
+        or doc_store is None
+        or bus is None
+    ):
+        raise ValueError("build_app requires a ProjectRuntime or explicit core services")
+
+    # Canvas presence (#322 follow-up): per-serve-process, in-memory roster
+    # of SSE viewers + recently-writing agents. The SSE router registers
+    # connections; this lifespan runs a bus-firehose feed that counts
+    # agent-actor writes as presence. Nothing is persisted — presence is
+    # ephemeral by definition, and a second serve process has its own
+    # separate roster.
+    from anchor.infra.presence import PresenceTracker
+
+    presence_tracker = PresenceTracker()
+    feed_bus = bus
+
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        async def feed() -> None:
+            async for evt in feed_bus.subscribe(None):
+                presence_tracker.note_event(evt)
+
+        task = asyncio.create_task(feed(), name="presence-feed")
+        try:
+            yield
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            presence_tracker.close()
+
+    app = FastAPI(title="Anchor v2", version="0.2.0", lifespan=_lifespan)
+    app.state.presence = presence_tracker
+    bind_workspace_sources(workspace_service, doc_store)
     app.state.workspace_service = workspace_service
     app.state.ingest_service = ingest_service
     app.state.doc_store = doc_store
@@ -66,7 +142,8 @@ def build_app(
         data_dir = canvases_dir.parent if canvases_dir is not None else None
         if data_dir is not None:
             intent_service = IntentService(
-                FsIntentStore(data_dir), bus, now=SystemClock().now
+                FsIntentStore(data_dir), bus, now=SystemClock().now,
+                workspace=workspace_service,
             )
     app.state.intent_service = intent_service
     app.state.cad_service = cad_service
@@ -74,6 +151,7 @@ def build_app(
     app.state.synopsis_service = synopsis_service
     app.state.ingest_session_service = ingest_session_service
     app.state.anchor_config = config
+    app.state.extension_status = extension_status
 
     # Bridge cross-process writes (CLI / MCP-stdio in another process) into
     # this app's bus by tailing each workspace's events.jsonl. SSE router
@@ -102,6 +180,10 @@ def build_app(
         "http://127.0.0.1:5173",
         *extra_origins,
     ]
+    # Default actor for every request (#322). Added after CORS so it wraps
+    # the routers directly; a request-body `actor` still overrides per-call.
+    app.add_middleware(_ActorAttributionMiddleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins,
