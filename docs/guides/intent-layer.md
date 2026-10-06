@@ -81,6 +81,9 @@ for a non-canvas host. They are opaque origin identifiers here. The router has
 the same response fields and error status rules as Anchor's existing endpoints.
 Body `actor` overrides the request's actor; body `author` never sets authorship.
 Use `default_actor` for a host-specific HTTP actor when no context is present.
+Every mounted route scopes that actor explicitly and restores the caller's
+context after a response, exception or cancellation, including ASGI hosts that
+invoke successive requests in the same task.
 
 For MCP, mount `tool_definitions(target_schema=..., op_schema=...)` and dispatch
 with `call_tool(service, name, arguments, actor=connected_actor)`. The generic

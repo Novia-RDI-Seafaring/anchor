@@ -181,3 +181,64 @@ async def test_anchor_signal_bridge_preserves_wire_scope_timestamp_and_filters()
     assert await asyncio.wait_for(next_signal, 1) == PendingSignal("cv", 4, 13.0)
     await stream.aclose()
     assert bus._subscribers == []
+
+
+@pytest.mark.parametrize("with_outer_actor", [False, True])
+async def test_http_restores_actor_across_sequential_same_task_requests_and_errors(tmp_path, with_outer_actor):
+    import httpx
+
+    from intent_layer.actor import actor_scope, current_actor
+
+    signals, host = MemoryPendingSignals(), FormHost()
+    service = IntentService(FsIntentStore(tmp_path), signals, host=host)
+    app = FastAPI()
+    app.include_router(create_router(lambda: service, lambda: signals,
+                                     prefix="/form/inbox", default_actor=READER))
+    outer = Actor(kind="human", id="host-context", label="host") if with_outer_actor else None
+    agent = Actor(kind="agent", id="first-body", label="body agent")
+    # ASGITransport invokes the app in the caller task. A ContextVar assignment
+    # without an explicit finally/reset would leak into the second request.
+    with actor_scope(outer):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://form.test") as client:
+            intent = (await client.post("/form/inbox", json={"kind": "user_request", "targets": ["email"]})).json()["intent"]
+            assert current_actor() is outer
+            endpoint = f"/form/inbox/{intent['id']}/items"
+            first = await client.post(endpoint, json={"type": "message", "text": "First",
+                                                       "actor": agent.model_dump()})
+            assert first.json()["item"]["author"] == agent.model_dump()
+            assert current_actor() is outer
+            second = await client.post(endpoint, json={"type": "message", "text": "Second"})
+            assert second.json()["item"]["author"] == (outer or READER).model_dump()
+            assert current_actor() is outer
+            failure = await client.post(endpoint, json={"type": "question", "text": "",
+                                                         "actor": agent.model_dump()})
+            assert failure.status_code == 400
+            assert current_actor() is outer
+
+
+@pytest.mark.parametrize("failure_type", [RuntimeError, asyncio.CancelledError])
+async def test_http_actor_scope_restores_on_unhandled_host_error_or_cancellation(tmp_path, failure_type):
+    import httpx
+
+    from intent_layer.actor import actor_scope, current_actor
+
+    host, signals = FormHost(), MemoryPendingSignals()
+    service = IntentService(FsIntentStore(tmp_path), signals, host=host)
+    intent = await service.enqueue("user_request", targets=["email"])
+    outer = Actor(kind="human", id="outer-host")
+    agent = Actor(kind="agent", id="body-agent")
+
+    def abort(_ops):
+        assert current_actor() == agent
+        raise failure_type()
+
+    host.validate_ops = abort
+    app = FastAPI()
+    app.include_router(create_router(lambda: service, lambda: signals))
+    with actor_scope(outer):
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://form.test") as client:
+            with pytest.raises(failure_type):
+                await client.post(f"/api/intents/{intent.id}/items", json={
+                    "type": "suggestion", "ops": CHANGE, "actor": agent.model_dump(),
+                })
+            assert current_actor() is outer

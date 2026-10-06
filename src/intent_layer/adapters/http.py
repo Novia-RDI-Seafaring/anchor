@@ -37,9 +37,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from sse_starlette.sse import EventSourceResponse
 
-from intent_layer.actor import Actor, current_actor, set_current_actor
+from intent_layer.actor import Actor, actor_scope, current_actor, set_current_actor
 from intent_layer.models import INTENT_KINDS
 from intent_layer.service import (
     IntentService,
@@ -55,7 +56,19 @@ def create_router(get_intent_service: Callable[..., IntentService],
                   prefix: str = "/api/intents",
                   default_actor: Actor | None = None) -> APIRouter:
     """Mount thread routes with host-provided service and count signals."""
-    router = APIRouter(prefix=prefix, tags=["intents"])
+
+    class ActorScopedRoute(APIRoute):
+        def get_route_handler(self):
+            handler = super().get_route_handler()
+
+            async def scoped_handler(request: Request):
+                actor = current_actor() or default_actor or Actor(kind="human", label="browser")
+                with actor_scope(actor):
+                    return await handler(request)
+
+            return scoped_handler
+
+    router = APIRouter(prefix=prefix, tags=["intents"], route_class=ActorScopedRoute)
 
 
     def _actor_override(body: dict[str, Any] | None) -> None:
