@@ -16,9 +16,8 @@ The project-level intent queue, exposed over HTTP for parity with MCP / CLI:
 The SSE stream carries the *count only*, never the payload: it is the push-half
 of the push-notify / pull-payload design. A client (the canvas UI, or a harness)
 learns that work is waiting and then pulls the payload via ``GET /api/intents``.
-The signal rides the existing event bus (``IntentPending`` domain events) - the
-same machinery the canvas SSE uses - so an enqueue in this process is delivered
-without a poll. Thread mutations re-fire the same signal so a panel refetches.
+The host supplies a count-signal source. Thread mutations re-fire the same
+signal so a panel refetches; the router does not require a canvas event bus.
 Fixed sub-paths (``/all``, ``/events``) are declared before ``/{intent_id}`` so
 nothing collides with an intent id segment.
 
@@ -112,9 +111,8 @@ def create_router(get_intent_service: Callable[..., IntentService],
     ):
         """Enqueue an intent. ``{kind, origin_canvas_id?, target?, payload?, targets?}``.
 
-        ``targets`` (``[{workspace_id, node_id}]``) anchors the ask to a canvas
-        selection (a thread, #343); the server records ``base_version`` from the
-        origin canvas itself.
+        ``targets`` contains opaque host identifiers. The service records
+        ``base_version`` from the host and preserves the legacy origin name.
         """
         try:
             intent = await intents.enqueue(
@@ -169,9 +167,7 @@ def create_router(get_intent_service: Callable[..., IntentService],
         bus = signals
 
         async def stream():
-            # Subscribe to the global firehose (count signals carry a project /
-            # canvas workspace id, not necessarily the viewing canvas) and filter
-            # to IntentPending here.
+            # Count signals are already filtered by the host's signal port.
             subscription = bus.subscribe()
             events_it = subscription.__aiter__()
             next_event = asyncio.create_task(anext(events_it))

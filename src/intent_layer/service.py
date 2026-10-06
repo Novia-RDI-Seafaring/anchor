@@ -123,7 +123,7 @@ class IntentService:
     ) -> Intent:
         """Add a pending intent and fire the ``IntentPending`` count signal.
 
-        ``targets`` (#343) anchors the intent to a canvas selection and makes
+        ``targets`` (#343) anchors the intent to a host selection and makes
         it a thread. When the origin canvas exists, its current version is
         recorded as ``base_version`` server-side (never client-supplied).
 
@@ -387,13 +387,12 @@ class IntentService:
     ) -> tuple[Intent, ThreadItem, dict[str, Any]]:
         """Approve a pending suggestion: apply its ops all-or-nothing.
 
-        The canvas is the thread's ``origin_canvas_id`` (or the first
-        target's ``workspace_id``). Actor = the suggestion's author,
-        ``causation_id`` = the item id, approver = the ambient actor. On
-        success the item becomes ``applied`` with ``applied_versions``; the
-        third return value is ``{versions, id_map, events}``. On failure a
-        :class:`SuggestionApplyError` names the failing op and nothing is
-        written; the item stays ``pending`` (the UI shows it as stale).
+        The host receives origin, decoded targets, the suggestion's author,
+        item ID and ambient approver. On success the item becomes ``applied``
+        with versions and undo; the third return value is host metadata.
+        A :class:`SuggestionApplyError` describes a host rejection without
+        application and leaves the item pending. Thread persistence happens
+        after host application and is not part of its transaction.
         """
         self._host.ensure_available("apply")
         intent = await self._require(intent_id)

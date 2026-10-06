@@ -95,12 +95,10 @@ _TRUTHY_SWITCHES = {"1", "true", "yes", "on"}
 
 
 def resolve_cli_actor(flag: str | None = None, env: str | None = None) -> Actor:
-    """Resolve the CLI's actor: ``--actor`` wins, then ``ANCHOR_AGENT``,
-    then the human-at-a-terminal default.
+    """Resolve an explicit CLI flag or host-supplied agent setting.
 
-    ``ANCHOR_AGENT=1`` (or any bare switch value) yields ``agent`` with no
-    label; a descriptive value (``ANCHOR_AGENT=claude-code``) becomes the
-    label.
+    A bare switch setting yields ``agent`` with no label; a descriptive
+    setting becomes the label. This helper does not read the environment.
     """
     if flag:
         return parse_actor(flag)

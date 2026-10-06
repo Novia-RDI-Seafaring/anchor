@@ -1,6 +1,6 @@
 """In-memory IntentStore - test double + ephemeral runtime (#148).
 
-Mirrors :class:`anchor.infra.stores.fs_intent_store.FsIntentStore` semantics
+Mirrors :class:`intent_layer.fs_store.FsIntentStore` semantics
 without touching disk: idempotent upsert keyed on ``intent.id`` and a flat
 project-level listing. Used by tests and any wiring that does not need the queue
 to survive a restart.
