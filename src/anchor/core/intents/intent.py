@@ -16,12 +16,14 @@ adapters (HTTP / MCP / CLI) wrap it.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue, field_validator
 
 from anchor.core.events.actor import Actor
 from anchor.core.ids import new_event_id
+from anchor.core.intents.target_json import copy_json_targets
 
 #: The kinds of request the queue understands.
 #:
@@ -228,9 +230,11 @@ class Intent(BaseModel):
     ``result`` is set when the intent is resolved.
 
     Thread fields (#343, additive; records written before them load with the
-    defaults): ``targets`` is the canvas selection the ask is anchored to
-    (``[{workspace_id, node_id}]``), ``base_version`` the origin canvas's
-    version when the ask was made, ``items`` the append-only conversation.
+    defaults): ``targets`` contains host-encoded JSON identifiers. Anchor keeps
+    ``[{workspace_id, node_id}]``; other hosts can use their own field IDs.
+    Targets must be finite JSON values, including optional legacy metadata.
+    ``base_version`` is the origin's version at ask time and ``items`` the
+    append-only conversation.
     """
 
     id: str = Field(default_factory=new_event_id)
@@ -242,9 +246,14 @@ class Intent(BaseModel):
     created_at: float = 0.0
     resolved_at: float | None = None
     result: dict[str, Any] | None = None
-    targets: list[dict[str, Any]] = Field(default_factory=list)
+    targets: list[JsonValue] = Field(default_factory=list)
     base_version: int | None = None
     items: list[ThreadItem] = Field(default_factory=list)
+
+    @field_validator("targets", mode="before")
+    @classmethod
+    def _json_targets(cls, raw: Any) -> list[JsonValue]:
+        return copy_json_targets(raw)
 
     def find_item(self, item_id: str) -> ThreadItem | None:
         return next((i for i in self.items if i.id == item_id), None)
@@ -258,7 +267,7 @@ class Intent(BaseModel):
             "payload": dict(self.payload),
             "status": self.status,
             "created_at": self.created_at,
-            "targets": [dict(t) for t in self.targets],
+            "targets": deepcopy(self.targets),
             "base_version": self.base_version,
             "items": [i.to_dict() for i in self.items],
         }
@@ -286,9 +295,7 @@ class Intent(BaseModel):
                 float(raw["resolved_at"]) if raw.get("resolved_at") is not None else None
             ),
             result=(dict(raw["result"]) if isinstance(raw.get("result"), dict) else None),
-            targets=[
-                dict(t) for t in (raw.get("targets") or []) if isinstance(t, dict)
-            ],
+            targets=deepcopy(raw.get("targets") or []),
             base_version=(
                 int(raw["base_version"]) if raw.get("base_version") is not None else None
             ),
