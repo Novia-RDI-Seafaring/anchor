@@ -35,11 +35,26 @@ class ThreadHost(Protocol):
     the thread after application is a separate operation.
     """
 
-    def ensure_available(self, operation: str) -> None: ...
-    def validate_targets(self, raw: Any) -> list[JsonValue]: ...
-    def encode_targets(self, targets: list[JsonValue]) -> list[JsonValue]: ...
-    def decode_targets(self, raw: list[JsonValue]) -> list[JsonValue]: ...
-    def validate_ops(self, raw: Any) -> list[dict[str, Any]]: ...
-    async def base_version(self, origin_id: str) -> int | None: ...
-    async def apply(self, context: ThreadContext, ops: list[dict[str, Any]]) -> AppliedSuggestion: ...
-    async def revert(self, context: ThreadContext, undo: list[dict[str, Any]]) -> dict[str, Any]: ...
+    def ensure_available(self, operation: str) -> None:
+        raise NotImplementedError
+
+    def validate_targets(self, raw: Any) -> list[JsonValue]:
+        raise NotImplementedError
+
+    def encode_targets(self, targets: list[JsonValue]) -> list[JsonValue]:
+        raise NotImplementedError
+
+    def decode_targets(self, raw: list[JsonValue]) -> list[JsonValue]:
+        raise NotImplementedError
+
+    def validate_ops(self, raw: Any) -> list[dict[str, Any]]:
+        raise NotImplementedError
+
+    async def base_version(self, origin_id: str) -> int | None:
+        raise NotImplementedError
+
+    async def apply(self, context: ThreadContext, ops: list[dict[str, Any]]) -> AppliedSuggestion:
+        raise NotImplementedError
+
+    async def revert(self, context: ThreadContext, undo: list[dict[str, Any]]) -> dict[str, Any]:
+        raise NotImplementedError
