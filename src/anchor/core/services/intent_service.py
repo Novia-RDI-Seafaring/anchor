@@ -11,13 +11,11 @@ the two halves of the push-notify / pull-payload transport:
   bus. Subscribers learn *that* something changed without paying for the
   payload on every turn.
 
-Threads (#343): an intent may carry ``targets`` (the canvas selection it is
-anchored to), ``base_version`` (the origin canvas's version at ask time) and
-``items`` (an append-only conversation of ``message`` / ``question`` /
-``suggestion`` / ``result`` entries). A ``suggestion`` is a staged batch of
-canvas ops; :meth:`apply_suggestion` hands it to
-``WorkspaceService.apply_batch`` which applies it all-or-nothing under the
-workspace lock. Item ``author`` is always the ambient actor (#322).
+Threads (#343): an intent carries host-encoded ``targets``, ``base_version``
+and append-only ``items``. The host validates suggestions and applies or
+reverts them. The default Anchor host retains canvas commands, attribution,
+inverse batches and the existing WorkspaceService apply path. Item ``author``
+is always the ambient actor (#322).
 
 Pure core: it depends on the store port, the event-bus port, a clock, and
 (optionally) the workspace service, never on a concrete adapter. The
@@ -28,10 +26,12 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
+from copy import deepcopy
 from typing import Any
 
 from anchor.core.events.actor import SYSTEM_ACTOR, Actor, current_actor
 from anchor.core.events.envelope import DomainEvent
+from anchor.core.intents.errors import SuggestionApplyError, ThreadError
 from anchor.core.intents.intent import (
     INTENT_KINDS,
     INTENT_PENDING_EVENT,
@@ -42,7 +42,6 @@ from anchor.core.intents.intent import (
     RESOLVED,
     SUGGESTION_APPLIED,
     SUGGESTION_DECLINED,
-    SUGGESTION_OP_TYPES,
     SUGGESTION_PENDING,
     SUGGESTION_REVERTED,
     SUGGESTION_SUPERSEDED,
@@ -52,9 +51,11 @@ from anchor.core.intents.intent import (
     ThreadItem,
     initial_item_state,
 )
+from anchor.core.intents.target_json import copy_json_targets
 from anchor.core.ports.event_bus import EventBus
 from anchor.core.ports.intent_store import IntentStore
-from anchor.core.services.workspace_batch import BatchApplyError
+from anchor.core.ports.thread_host import ThreadContext, ThreadHost
+from anchor.core.services.anchor_thread_host import AnchorThreadHost
 from anchor.core.services.workspace_service import WorkspaceService
 
 #: Bus ``workspace_id`` used for the count signal when an intent has no
@@ -65,157 +66,6 @@ PROJECT_SIGNAL_ID = "_project"
 
 class UnknownIntentKindError(ValueError):
     """Raised when an enqueue uses a kind the queue does not recognize."""
-
-
-class ThreadError(ValueError):
-    """A thread operation was rejected. ``code`` is a stable machine-readable
-    reason adapters surface verbatim (``invalid_targets``, ``invalid_item``,
-    ``invalid_ops``, ``item_not_found``, ``not_a_question``,
-    ``not_a_suggestion``, ``not_pending``, ``no_canvas``,
-    ``workspace_unavailable``)."""
-
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
-        # Adapters return this attribute, never str(exc): the text is a
-        # literal authored here, and keeping it separate from the exception's
-        # own rendering is what lets the analyzer see that no exception text
-        # (or stack trace) flows to a client.
-        self.message = message
-
-
-class SuggestionApplyError(ThreadError):
-    """A suggestion's ops failed validation; nothing was applied. Carries the
-    failing op index, the reason, and whether the op was stale."""
-
-    def __init__(self, cause: BatchApplyError) -> None:
-        super().__init__("apply_failed", "suggestion could not be applied; nothing was changed")
-        self.failing_index = cause.failing_index
-        self.reason = cause.reason
-        self.stale = cause.stale
-
-    def to_dict(self) -> dict[str, Any]:
-        # `failing_op_index` duplicates `failing_index` so both the spec's
-        # name and the web client's read the same value.
-        return {
-            "error": self.code,
-            "failing_index": self.failing_index,
-            "failing_op_index": self.failing_index,
-            "reason": self.reason,
-            "stale": self.stale,
-        }
-
-
-def _validate_targets(targets: Any) -> list[dict[str, Any]]:
-    if targets is None:
-        return []
-    if not isinstance(targets, list):
-        raise ThreadError("invalid_targets", "targets must be a list of {workspace_id, node_id}")
-    out: list[dict[str, Any]] = []
-    for t in targets:
-        if not isinstance(t, dict):
-            raise ThreadError("invalid_targets", "each target must be {workspace_id, node_id}")
-        ws = t.get("workspace_id")
-        node = t.get("node_id")
-        if not isinstance(ws, str) or not ws or not isinstance(node, str) or not node:
-            raise ThreadError(
-                "invalid_targets", "each target needs string workspace_id and node_id",
-            )
-        out.append({"workspace_id": ws, "node_id": node})
-    return out
-
-
-def _inverse_data(patch: Any, was: Any) -> Any:
-    """The data patch that undoes ``patch`` on data that was ``was``.
-
-    Node data is deep-merged, so writing the old dict back would leave any
-    key the change added in place. Every key the patch touched goes back to
-    its old value, and a key that did not exist before is deleted (``None``
-    is the merge's delete). Nested dicts are undone the same way.
-    """
-    if not isinstance(patch, dict) or not isinstance(was, dict):
-        return was
-    out: dict[str, Any] = {}
-    for key, value in patch.items():
-        if key not in was:
-            out[key] = None
-        elif isinstance(value, dict) and isinstance(was[key], dict):
-            out[key] = _inverse_data(value, was[key])
-        else:
-            out[key] = was[key]
-    return out
-
-
-def _undo_for(
-    before: dict[str, Any],
-    ops: list[dict[str, Any]],
-    id_map: dict[str, str],
-) -> list[dict[str, Any]]:
-    """The ops that put a canvas back to ``before`` after ``ops`` ran.
-
-    Each op's inverse, in reverse order. An add becomes a remove of the id it
-    was actually given; an update restores the fields it touched from the
-    node as it was; a removal re-adds the node as it was together with the
-    edges that cascaded away with it. Anything that cannot be inverted --
-    an update to a node that did not exist -- is simply not in the list, as
-    the batch would have refused it anyway.
-    """
-    nodes = {n["id"]: n for n in before.get("nodes", []) if isinstance(n, dict)}
-    edges = {e["id"]: e for e in before.get("edges", []) if isinstance(e, dict)}
-    real = lambda given: id_map.get(given, given)  # noqa: E731
-
-    def edge_payload(e: dict[str, Any]) -> dict[str, Any]:
-        # Handles under both spellings: the command model reads the alias.
-        out = dict(e)
-        if "sourceHandle" in out:
-            out["source_handle"] = out["sourceHandle"]
-        if "targetHandle" in out:
-            out["target_handle"] = out["targetHandle"]
-        return out
-
-    undo: list[dict[str, Any]] = []
-    for op in reversed(ops):
-        kind = op.get("type")
-        payload = op.get("payload") or {}
-        ident = str(payload.get("id") or "")
-        if kind == "NodeAdded":
-            undo.append({"type": "NodeRemoved", "payload": {"id": real(ident)}})
-        elif kind == "NodeUpdated":
-            was = nodes.get(ident)
-            if was is None:
-                continue
-            fields = payload.get("fields") or {}
-            undo.append({
-                "type": "NodeUpdated",
-                "payload": {"id": ident, "fields": {
-                    k: _inverse_data(fields[k], was.get(k)) if k == "data" else was.get(k)
-                    for k in fields
-                }},
-            })
-        elif kind == "NodeRemoved":
-            was = nodes.get(ident)
-            if was is None:
-                continue
-            undo.append({"type": "NodeAdded", "payload": dict(was)})
-            for e in edges.values():
-                if e.get("source") == ident or e.get("target") == ident:
-                    undo.append({"type": "EdgeAdded", "payload": edge_payload(e)})
-        elif kind == "EdgeAdded":
-            undo.append({"type": "EdgeRemoved", "payload": {"id": real(ident)}})
-        elif kind == "EdgeRemoved":
-            was = edges.get(ident)
-            if was is not None:
-                undo.append({"type": "EdgeAdded", "payload": edge_payload(was)})
-        elif kind == "EdgeUpdated":
-            was = edges.get(ident)
-            if was is None:
-                continue
-            fields = payload.get("fields") or {}
-            undo.append({
-                "type": "EdgeUpdated",
-                "payload": {"id": ident, "fields": {k: was.get(k) for k in fields}},
-            })
-    return undo
 
 
 def _validate_place(place: Any) -> dict[str, Any] | None:
@@ -242,32 +92,15 @@ def _validate_place(place: Any) -> dict[str, Any] | None:
     return out
 
 
-def _validate_ops(ops: Any) -> list[dict[str, Any]]:
-    """Shape-check a suggestion's ops at post time. Canvas-level validity
-    (does the node exist, is the payload complete) is checked at apply
-    time against the live state, so a suggestion can be staged against a
-    canvas that keeps moving."""
-    if not isinstance(ops, list) or not ops:
-        raise ThreadError("invalid_ops", "a suggestion needs a non-empty ops list")
-    out: list[dict[str, Any]] = []
-    for index, op in enumerate(ops):
-        if not isinstance(op, dict):
-            raise ThreadError("invalid_ops", f"op {index} must be an object {{type, payload}}")
-        op_type = op.get("type")
-        if op_type not in SUGGESTION_OP_TYPES:
-            raise ThreadError(
-                "invalid_ops",
-                f"op {index}: unknown type {op_type!r}; expected one of "
-                f"{', '.join(SUGGESTION_OP_TYPES)}",
-            )
-        payload = op.get("payload")
-        if not isinstance(payload, dict):
-            raise ThreadError("invalid_ops", f"op {index}: payload must be an object")
-        out.append({"type": op_type, "payload": dict(payload)})
-    return out
-
-
 class IntentService:
+    """Queue and thread transitions over a host's target and application contract.
+
+    ``workspace`` retains the existing constructor: without an explicit host,
+    an AnchorThreadHost is built even when workspace is None, so validation
+    remains available. An explicit ``host`` takes precedence over ``workspace``.
+    Host application and thread persistence are separate operations.
+    """
+
     def __init__(
         self,
         store: IntentStore,
@@ -275,11 +108,12 @@ class IntentService:
         *,
         now: Callable[[], float] | None = None,
         workspace: WorkspaceService | None = None,
+        host: ThreadHost | None = None,
     ) -> None:
         self._store = store
         self._bus = bus
         self._now = now
-        self._workspace = workspace
+        self._host = host if host is not None else AnchorThreadHost(workspace)
 
     def _ts(self) -> float:
         return self._now() if callable(self._now) else 0.0
@@ -296,7 +130,7 @@ class IntentService:
         origin_canvas_id: str | None = None,
         target: str | None = None,
         payload: dict[str, Any] | None = None,
-        targets: list[dict[str, Any]] | None = None,
+        targets: list[Any] | None = None,
     ) -> Intent:
         """Add a pending intent and fire the ``IntentPending`` count signal.
 
@@ -312,10 +146,12 @@ class IntentService:
             raise UnknownIntentKindError(
                 f"unknown intent kind {kind!r}; expected one of {sorted(INTENT_KINDS)}"
             )
-        clean_targets = _validate_targets(targets)
+        clean_targets = copy_json_targets(
+            self._host.encode_targets(self._host.validate_targets(targets)),
+        )
         base_version: int | None = None
-        if origin_canvas_id is not None and self._workspace is not None:
-            base_version = await self._workspace.version_of(origin_canvas_id)
+        if origin_canvas_id is not None:
+            base_version = await self._host.base_version(origin_canvas_id)
         intent = Intent(
             kind=kind,  # type: ignore[arg-type]
             origin_canvas_id=origin_canvas_id,
@@ -443,7 +279,7 @@ class IntentService:
             raise ThreadError("invalid_item", f"a {type} needs text")
         clean_ops: list[dict[str, Any]] | None = None
         if type == "suggestion":
-            clean_ops = _validate_ops(ops)
+            clean_ops = self._host.validate_ops(ops)
         elif ops:
             raise ThreadError("invalid_item", "only a suggestion carries ops")
         if supersedes is not None and type != "suggestion":
@@ -570,41 +406,20 @@ class IntentService:
         :class:`SuggestionApplyError` names the failing op and nothing is
         written; the item stays ``pending`` (the UI shows it as stale).
         """
-        if self._workspace is None:
-            raise ThreadError(
-                "workspace_unavailable", "no workspace service is wired for apply",
-            )
+        self._host.ensure_available("apply")
         intent = await self._require(intent_id)
         item = self._require_item(intent, item_id)
         if item.type != "suggestion":
             raise ThreadError("not_a_suggestion", f"item {item_id!r} is a {item.type}")
         if item.state != SUGGESTION_PENDING:
             raise ThreadError("not_pending", f"suggestion {item_id!r} is {item.state}")
-        slug = self._thread_canvas(intent)
-        # The canvas as it stands, so the way back can be written down before
-        # anything moves. Cheap here, impossible later.
-        before = await self._workspace.get_state(slug)
-        try:
-            _state, envelopes, id_map = await self._workspace.apply_batch(
-                slug,
-                list(item.ops or []),
-                actor=item.author,
-                causation_id=item.id,
-                approver=self._actor(),
-            )
-        except BatchApplyError as exc:
-            raise SuggestionApplyError(exc) from exc
+        application = await self._host.apply(self._context(intent, item), deepcopy(item.ops or []))
         item.state = SUGGESTION_APPLIED
-        item.applied_versions = [env.version for env in envelopes]
-        item.undo_ops = _undo_for(before, list(item.ops or []), dict(id_map))
+        item.applied_versions = list(application.versions)
+        item.undo_ops = deepcopy(application.undo)
         await self._store.replace(intent)
         await self._signal_pending(intent.origin_canvas_id)
-        return intent, item, {
-            "workspace_id": slug,
-            "versions": list(item.applied_versions),
-            "id_map": dict(id_map),
-            "events": [env.model_dump() for env in envelopes],
-        }
+        return intent, item, application.result
 
     async def revert_suggestion(
         self, intent_id: str, item_id: str,
@@ -618,10 +433,7 @@ class IntentService:
         applied before undo was recorded -- there is nothing honest to do
         with those but say so.
         """
-        if self._workspace is None:
-            raise ThreadError(
-                "workspace_unavailable", "no workspace service is wired for revert",
-            )
+        self._host.ensure_available("revert")
         intent = await self._require(intent_id)
         item = self._require_item(intent, item_id)
         if item.type != "suggestion":
@@ -632,28 +444,11 @@ class IntentService:
             raise ThreadError(
                 "no_undo", f"suggestion {item_id!r} was applied without a way back recorded",
             )
-        slug = self._thread_canvas(intent)
-        try:
-            _state, envelopes, _ids = await self._workspace.apply_batch(
-                slug,
-                list(item.undo_ops),
-                actor=self._actor(),
-                causation_id=item.id,
-                approver=self._actor(),
-                # Put things back as they were: the ids they had, and the
-                # checks and verdicts they carried before the change.
-                restore=True,
-            )
-        except BatchApplyError as exc:
-            raise SuggestionApplyError(exc) from exc
+        result = await self._host.revert(self._context(intent, item), deepcopy(item.undo_ops))
         item.state = SUGGESTION_REVERTED
         await self._store.replace(intent)
         await self._signal_pending(intent.origin_canvas_id)
-        return intent, item, {
-            "workspace_id": slug,
-            "versions": [env.version for env in envelopes],
-            "events": [env.model_dump() for env in envelopes],
-        }
+        return intent, item, result
 
     async def decline_suggestion(
         self, intent_id: str, item_id: str, *, comment: str | None = None,
@@ -688,15 +483,13 @@ class IntentService:
             raise ThreadError("item_not_found", f"no item {item_id!r} on intent {intent.id!r}")
         return item
 
-    @staticmethod
-    def _thread_canvas(intent: Intent) -> str:
-        if intent.origin_canvas_id:
-            return intent.origin_canvas_id
-        for t in intent.targets:
-            ws = t.get("workspace_id")
-            if isinstance(ws, str) and ws:
-                return ws
-        raise ThreadError("no_canvas", f"intent {intent.id!r} names no canvas to apply to")
+    def _context(self, intent: Intent, item: ThreadItem) -> ThreadContext:
+        return ThreadContext(
+            intent_id=intent.id, origin_id=intent.origin_canvas_id,
+            targets=copy_json_targets(self._host.decode_targets(deepcopy(intent.targets))),
+            item_id=item.id,
+            author=item.author, approver=self._actor(),
+        )
 
     async def pending_count(self) -> int:
         return len(await self.list_pending())
