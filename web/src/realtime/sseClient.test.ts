@@ -39,6 +39,12 @@ class FakeEventSource {
 }
 
 const latest = () => FakeEventSource.instances.at(-1)!;
+const clients: CanvasSse[] = [];
+const connect = (...args: ConstructorParameters<typeof CanvasSse>) => {
+  const client = new CanvasSse(...args);
+  clients.push(client);
+  client.connect();
+};
 
 beforeEach(() => {
   FakeEventSource.instances = [];
@@ -46,17 +52,22 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  for (const client of clients.splice(0)) client.disconnect();
   vi.unstubAllGlobals();
 });
 
 describe("CanvasSse presence", () => {
   it("omits the actor query params when no options are given", () => {
-    new CanvasSse("w1", {}).connect();
-    expect(latest().url).toMatch(/\/api\/workspaces\/w1\/events$/);
+    connect("w1", {});
+    const url = new URL(latest().url, "http://localhost");
+    expect(url.pathname).toBe("/api/events");
+    expect(url.searchParams.get("canvas")).toBe("w1");
+    expect(url.searchParams.has("actor_kind")).toBe(false);
+    expect(url.searchParams.has("actor_label")).toBe(false);
   });
 
   it("announces the caller's actor kind and label on the stream URL", () => {
-    new CanvasSse("w1", {}, { actorKind: "human", actorLabel: "monitor" }).connect();
+    connect("w1", {}, { actorKind: "human", actorLabel: "monitor" });
     const url = new URL(latest().url, "http://localhost");
     expect(url.searchParams.get("actor_kind")).toBe("human");
     expect(url.searchParams.get("actor_label")).toBe("monitor");
@@ -64,7 +75,7 @@ describe("CanvasSse presence", () => {
 
   it("delivers the full roster on each presence event", () => {
     const onPresence = vi.fn();
-    new CanvasSse("w1", { onPresence }).connect();
+    connect("w1", { onPresence });
     latest().emit(
       "presence",
       JSON.stringify({
@@ -83,7 +94,7 @@ describe("CanvasSse presence", () => {
     const onSnapshot = vi.fn();
     const onPatch = vi.fn();
     const onPresence = vi.fn();
-    new CanvasSse("w1", { onSnapshot, onPatch, onPresence }).connect();
+    connect("w1", { onSnapshot, onPatch, onPresence });
     const es = latest();
 
     es.emit("snapshot", JSON.stringify({ slug: "w1", version: 3, nodes: [], edges: [] }));
@@ -99,7 +110,7 @@ describe("CanvasSse presence", () => {
   it("ignores a malformed presence frame without disturbing later patches", () => {
     const onPatch = vi.fn();
     const onPresence = vi.fn();
-    new CanvasSse("w1", { onPatch, onPresence }).connect();
+    connect("w1", { onPatch, onPresence });
     const es = latest();
 
     expect(() => es.emit("presence", "not json")).not.toThrow();
