@@ -42,7 +42,7 @@ export function useFormHost(surface: RefObject<HTMLElement | null>, state: FormS
       window.removeEventListener("resize", measure);
       window.removeEventListener("scroll", measure, true);
     };
-  }, [measure, state.revision]);
+  }, [measure, state.revision, surface]);
   return {
     targets,
     host: {
