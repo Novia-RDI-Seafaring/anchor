@@ -77,7 +77,8 @@ anchor serve --env study --project pump-study
 Leave this terminal running. Open the URL printed by the server, normally
 <http://127.0.0.1:8002>, then open the `pump-selection` canvas. Its usual direct
 URL is <http://127.0.0.1:8002/c/pump-selection>. If port 8002 is occupied,
-ANCHOR selects another free port and prints that URL.
+the command fails with the bind reason. Choose another port with `--port N`,
+or add `--port-walk` to select a free port and print its URL.
 
 ## 5. Add your PDF
 

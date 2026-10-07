@@ -76,7 +76,8 @@ pnpm --dir web dev
 ```
 
 Open <http://localhost:5173>. The Vite server proxies API requests to the
-backend on port 8002; check the backend's printed URL if that port was occupied.
+backend on port 8002; stop the other listener if that port is occupied before
+starting the backend.
 Select the environment and project explicitly when serving your own corpus.
 
 ## Reinstall or upgrade
