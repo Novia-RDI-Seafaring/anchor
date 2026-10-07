@@ -19,6 +19,12 @@ class PdfRenderer(Protocol):
         fmt: CropFormat = "png",
         dpi: int = 200,
     ) -> bytes:
+        """Render a region in top-left page points, with axis order normalised.
+
+        PNG and SVG dimensions scale by ``dpi / 72``. SVG uses a region-sized
+        viewport with origin ``(0, 0)``. Paths outside that viewport may remain
+        in the SVG; this is a visual crop, not removal of source geometry.
+        """
         raise NotImplementedError
 
     async def locate_text(
