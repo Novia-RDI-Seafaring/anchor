@@ -1,527 +1,188 @@
 # ANCHOR
 
-**A**gent-**N**ative **C**anvas to **H**elp **O**rganize **R**esources<br>
-*Source-Grounded Knowledge Canvas for Traceable Engineering Document Extraction*
+**A**gent-**N**ative **C**anvas to **H**elp **O**rganize **R**esources.
 
 [![PyPI version](https://img.shields.io/pypi/v/anchor-kb.svg)](https://pypi.org/project/anchor-kb/)
 [![Python versions](https://img.shields.io/pypi/pyversions/anchor-kb.svg)](https://pypi.org/project/anchor-kb/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 
-ANCHOR is a tool that lets you and your agent work with engineering documents.
+ANCHOR is a local canvas for working with engineering documents alongside an
+external AI agent. Add a PDF, ask the agent for one specification table, and
+click each row's source anchor to inspect the cited page or region. Requests,
+clarifications, and proposed edits can remain attached to the work on the canvas.
 
-Drop a PDF onto a canvas. The agent reads it and pulls the values you need into a spec table. Every value links back to the page and bounding box it came from, so you can click and see the source.
+The browser, CLI, and MCP tools use the same project data. A project is a folder
+containing an `anchor.toml` marker and a hidden `.anchor_data/` directory. An
+environment selects the provider and data-handling policy for its projects.
+ANCHOR runs on your computer; a connected agent or configured model endpoint
+may receive document content.
 
-Drop FMU simulation models onto the same canvas and wire the extracted values into their parameters.
+## First project
 
-It runs on your laptop. A project is a folder: run `anchor init` in it, and its documents and canvases live in a hidden `.anchor_data/` right there. Agents talk to it over MCP, so it works with Claude Code, Cursor, Claude Desktop, or any MCP client. There's an HTTP API and a CLI too.
+You need Python 3.12+, [uv](https://docs.astral.sh/uv/), and an MCP-capable
+agent client. The published wheel includes the browser UI, so normal use does
+not require Node.js.
 
-First five minutes: [`docs/getting-started/tutorial.md`](./docs/getting-started/tutorial.md).
-
----
-
-## Install
-
-Two paths, depending on whether you want to *use* ANCHOR or *hack on it*.
-
-### Use it (from PyPI)
+This example uses the `harness` provider: your agent interprets PDF pages with
+its own model, with no ANCHOR API key. Use a PDF approved for that agent's data
+policy. Choose `--provider local` instead for local Docling extraction without
+model-assisted gold regions; the [Quickstart](./docs/getting-started/quickstart.md)
+explains both paths.
 
 ```bash
 uv tool install anchor-kb
+anchor env create study --provider harness --yes
+anchor models prefetch --env study
+anchor project create pump-study --env study
+anchor use study pump-study
+anchor canvas create pump-selection --title "Pump selection"
+anchor install codex --env study
+anchor serve --env study --project pump-study
 ```
 
-`anchor` and `anchor-mcp` are now on your PATH globally. The wheel
-includes the prebuilt frontend, so no Node toolchain is required to
-just run it.
+Use `claude-code`, `claude-desktop`, or `cursor` instead of `codex` for those
+clients. Restart or reconnect your agent after registration. Model prefetch
+needs network access and can take several minutes; later local processing can
+use the cache.
 
-The web UI ships prebuilt in the PyPI wheel. If you want the latest
-`main` and PyPI is behind, install from a local checkout. Installing
-directly from git source
-(`uv tool install "git+https://github.com/Novia-RDI-Seafaring/anchor@main"`)
-does not build the frontend and fails at the wheel build hook. Build the
-frontend first:
+Open the server's printed URL, normally <http://127.0.0.1:8002>, and open
+`pump-selection`. Drag a PDF onto the canvas. With `harness`, the card waits
+for your agent to handle its ingestion intent. Ask:
+
+> In ANCHOR project `pump-study`, process the pending PDF ingestion intent on
+> canvas `pump-selection`. Then create one spec table of the operating limits,
+> preserving units and product variant, with a source reference on every row.
+> Flag values that the document does not state.
+
+Inspect the resulting row anchors in the PDF dock. A page-only reference opens
+the page; a precise locator can highlight the cited cell, item, region, or box.
+Check the claim against the source before using it.
+
+For a request about existing canvas objects, use **mark up** (`i`), add words or
+drawings, and click **send to agent**. The agent can ask a question or stage a
+suggestion in that thread. Review the preview and approve, decline, or send
+feedback. An empty placeholder does not submit work by itself. ANCHOR provides
+the tools and request queue; your external agent must retrieve the requests.
+
+Follow the [Quickstart](./docs/getting-started/quickstart.md) for the complete
+setup and the [tutorial](./docs/getting-started/tutorial.md) for the review flow.
+
+## Pick a provider
+
+| Provider | Interpretation | Where content goes |
+| --- | --- | --- |
+| `local` | Local Docling extraction; no model-assisted gold regions | ANCHOR processing stays on this computer after local models are cached. |
+| `harness` | Your agent interprets pages | To the connected harness and potentially its model provider. No ANCHOR API key. |
+| `ollama` | Configured vision model | To your Ollama endpoint, on this computer or another host. |
+| `openai`, `azure`, `custom` | Configured vision endpoint | To that endpoint; credentials and model setup are required. |
+
+Gold-region semantic search needs gold regions and embeddings. Local-only
+extraction still supplies page text, viewing, and available layout geometry.
+An agent can retrieve that content even in a `local` environment, so select
+the agent's data policy as well as ANCHOR's provider. See
+[Provider setup](./docs/guides/provider-setup.md).
+
+## Where data lives
+
+For a managed project created with `anchor project create`:
+
+```text
+~/.anchor/envs/study/
+  env.toml
+  projects.toml
+  projects/pump-study/
+    anchor.toml
+    .anchor_data/
+      bronze/       original PDFs and metadata
+      silver/       page extraction, text, rendered pages, and geometry
+      gold/         interpreted regions, when produced
+      canvases/     saved canvases and event logs
+      intents/      persistent agent requests and threads
+```
+
+To use your own working folder, run `anchor init pump-study --env study` there
+instead of creating a managed project. Back up the whole project folder,
+including hidden `.anchor_data/`. Credentials belong to the environment and
+are separate from that project backup. See
+[Environments and projects](./docs/guides/environments-and-projects.md) and
+[On-disk substrate](./docs/concepts/on-disk-substrate.md).
+
+`anchor use` selects CLI defaults. MCP installers pin an environment; the agent
+selects a project with `open_project` or a per-call `project` argument. One
+browser server serves one project. If data looks empty, compare those selections
+using `anchor serve-info`, `list_projects`, and `anchor_status`.
+
+## Learn the application
+
+- [Install and upgrade](./docs/getting-started/installation.md)
+- [Documents and canvases](./docs/guides/documents-and-canvases.md)
+- [Connect an agent](./docs/guides/agent-setup.md)
+- [Manual agent configuration](./docs/guides/agent-configuration.md)
+- [CLI reference](./docs/reference/cli.md) and [MCP reference](./docs/reference/mcp.md)
+- [Claim and evidence states](./docs/concepts/claim-evidence.md)
+- [Architecture](./docs/concepts/architecture.md)
+
+## Extensions and limits
+
+The package includes PDF, CAD, SysML, and FMU extension code. CAD and SysML
+support is experimental. FMU simulation requires the optional runtime:
 
 ```bash
-git clone https://github.com/Novia-RDI-Seafaring/anchor && cd anchor
-pnpm --dir web install --frozen-lockfile
-pnpm --dir web build
-uv tool install --force .
+uv tool install --force 'anchor-kb[fmus]'
 ```
 
-See [Install from source](./docs/getting-started/installation.md#install-from-source)
-for pnpm-not-on-PATH fallbacks.
+Without that runtime, FMU simulation fails closed. `ANCHOR_FMU_DEMO=1`
+explicitly enables synthetic demo output, which is stamped `synthetic=true`.
+Inspect a model before wiring spec rows into simulation parameters.
 
-If you want LLM-backed gold region extraction on your first PDF upload,
-create a `.env` file before starting ANCHOR; see
-[Enable gold region extraction](#enable-gold-region-extraction). Installation
-itself does not require an API key.
+Producer manifests can be discovered and registered through `anchor extensions`.
+Registration alone does not launch or proxy an external producer's MCP server.
+See [Extensions and OIP](./docs/concepts/extensions-and-oip.md).
 
-```bash
-anchor serve              # -> http://127.0.0.1:8002
-```
+A source link supports review. Automated Verified status reflects a stored
+key/value evidence match, not engineering correctness. Changes can leave a row
+Unverified or Stale, and a reference may open a whole page rather than an exact
+value. Inspect the source and its operating conditions.
 
-Requires Python >= 3.12. CI tests Linux and runs CLI smoke checks on
-macOS and Windows; verify browser and PDF workflows on your target platform.
+The HTTP server is unauthenticated and binds to `127.0.0.1` by default. Keep it
+on loopback, or provide authentication through your own deployment layer before
+network exposure. Storage is file-based. Shared services provide the same domain
+behavior across adapters, while locks and event buses are process-local; avoid
+concurrent writes to the same canvas from separate processes.
 
-If you prefer plain pip:
+Run `anchor version` to identify your installation. See
+[Releases](./docs/reference/releases.md) and [CHANGELOG.md](./CHANGELOG.md) for
+version history.
 
-```bash
-pipx install anchor-kb
-# or, in a virtualenv:
-pip install anchor-kb
-```
-
-Optional extras:
-
-| Extra | Install | Adds |
-|---|---|---|
-| `fmus` | `uv tool install 'anchor-kb[fmus]'` | FMU simulation runtime (`fmpy`). Without it, FMU tools fail closed unless you opt into the synthetic demo with `ANCHOR_FMU_DEMO=1`. |
-
-### Hack on it (from source)
+## Develop from source
 
 ```bash
 git clone https://github.com/Novia-RDI-Seafaring/anchor
 cd anchor
-uv sync --extra dev          # adds pytest, ruff, import-linter
-pnpm --dir web install
+uv sync --extra dev
+pnpm --dir web install --frozen-lockfile
 ```
 
-Start the backend in one terminal:
+Run `uv run anchor serve` in one terminal and `pnpm --dir web dev` in another.
+Open <http://localhost:5173> for the development UI. For a global source install,
+build the frontend first with `pnpm --dir web build`, then run
+`uv tool install --force .`. Direct git installation does not build the frontend.
+See [Install](./docs/getting-started/installation.md#install-from-source).
+
+Checks for contributors:
 
 ```bash
-uv run anchor serve
+uv run --extra dev pytest
+uv run --extra dev lint-imports
+pnpm --dir web test
+pnpm --dir web exec tsc --noEmit
+uv run --extra docs mkdocs build --strict
 ```
 
-Start the frontend development server in a second terminal:
-
-```bash
-pnpm --dir web dev
-```
-
-Open `http://localhost:5173` for the development UI. The backend remains on
-`http://127.0.0.1:8002`.
-
-Source development requires Node.js 20+ and pnpm 10. If `pnpm` is not installed
-globally, use the Corepack form instead: `corepack pnpm@10 --dir web install`
-and `corepack pnpm@10 --dir web dev`. If Corepack is blocked but Node.js and
-npm are available, use `npx pnpm@10 --dir web install` and
-`npx pnpm@10 --dir web dev`.
-
-For normal use, run `anchor init` in a project folder. It writes an
-`anchor.toml` marker and a hidden `.anchor_data/` there, and binds the project
-to an environment (the provider and data zone). Commands run inside the folder
-then resolve it automatically. Configuration precedence is: explicit flags,
-`ANCHOR_*` environment variables, the project `anchor.toml`, the environment
-`env.toml`, then built-in defaults.
-
-Releases are tag-driven: pushing a `v*` tag triggers the
-[release workflow](./.github/workflows/release.yml), which publishes
-to PyPI via OIDC trusted publishing (no token sits in the repo). See
-[`PUBLISHING.md`](./PUBLISHING.md) for the full release process.
-
----
-
-## Quick start
-
-Nothing to a source-grounded value in about five minutes, no API key:
-
-```bash
-uv tool install anchor-kb
-anchor env create home --provider harness --yes   # no-key, no-egress data zone
-anchor install claude-desktop --env home          # or claude-code / cursor
-# restart your harness, drag a PDF into the chat, ask it to ingest
-anchor serve                                       # http://127.0.0.1:8002
-```
-
-On the `harness` provider your agent reads the pages, so you get gold regions
-(values with page + bbox provenance) with no key and nothing leaving your
-machine. Full walkthrough, provider decision table, and troubleshooting:
-**[Quickstart](./docs/getting-started/quickstart.md)**.
-
-Then [`docs/getting-started/tutorial.md`](./docs/getting-started/tutorial.md)
-walks the `anchor demo` -> "agent fills the placeholders" tour.
-
-### Drag-drop, CLI ingest, and harness ingest
-
-There are two PDF ingestion modes:
-
-| Mode | How it starts | Who extracts gold regions | When to use it |
-|---|---|---|---|
-| Built-in ingest | Canvas drag-drop, HTTP upload, MCP `ingest_pdf`, or CLI `anchor ingest` | ANCHOR's configured extractor | Normal uploads, scripted ingest, and projects with a configured vision endpoint |
-| Harness-driven ingest | MCP `ingest_begin` -> `ingest_get_page` -> `ingest_submit_page` -> `ingest_finalize` | The connected agent harness, page by page | Provider `harness`, no-key workflows, or difficult PDFs where extraction quality matters more than speed |
-
-Both modes publish to the same project data layout: `bronze/`, `silver/`,
-`gold/`, and canvas state under `.anchor_data/`. A document ingested without a
-vision endpoint may have silver data but no gold regions. Configure a provider
-and re-ingest with `--force`, or use harness-driven ingest.
-
-That's the whole loop. Every PDF you ingest becomes a structured set of regions on disk; every canvas you create is a folder you can zip and email.
-
----
-
-## Using ANCHOR with an AI agent
-
-ANCHOR exposes its tools over **MCP** (Model Context Protocol). For Claude
-Code, the quickest path is the plugin marketplace. It needs no prior
-install of the `anchor` CLI, only [uv](https://docs.astral.sh/uv/):
-
-```text
-/plugin marketplace add Novia-RDI-Seafaring/anchor
-/plugin install anchor@anchor
-```
-
-The plugin registers the MCP server (via `uvx --from anchor-kb anchor-mcp`)
-and the anchor skill in one step. See the
-[Claude Code plugin guide](./docs/guides/claude-plugin.md) for details.
-
-Alternatively, with the CLI already installed, register the local stdio
-server with:
-
-```bash
-anchor install claude-code
-```
-
-Pick one of the two paths, not both.
-
-Open Claude Code inside a folder configured with `anchor init`. In any
-conversation, run `/mcp` and you should see `anchor` listed with its available
-tools. The exact list depends on optional extensions such as FMU support. Then
-talk normally:
-
-> "Ingest the PDF at ~/Downloads/lkh-pump.pdf and create a canvas called pump-analysis with a document node for it."
->
-> "What does the document say about max inlet pressure for the LKH-5 at 50 Hz? Place the answer as a fact card on the pump-analysis canvas, with an evidence edge back to the source page."
-
-Claude calls the MCP tools directly. Your browser tab on `localhost:8002/c/pump-analysis`, if open, sees nodes appear live via SSE. Multi-client real-time sync between agents and humans is the default.
-
-For Cursor:
-
-```bash
-anchor install cursor
-```
-
-`anchor install claude-code` / `cursor` wire the MCP server for the default
-environment. For Claude Desktop, or to serve a specific environment, use
-`anchor install claude-desktop --env <name>`; it writes a named entry, echoes
-the data zone before wiring, and is collision-safe. See the
-[agent setup guide](./docs/guides/agent-setup.md).
-
-See the [agent configuration guide](./docs/guides/agent-configuration.md) for
-Codex, OpenCode, Cursor, Claude Code, and generic stdio examples.
-
----
-
-## Where data lives
-
-A project is a folder. Its corpus and canvases live in a hidden `.anchor_data/`
-beside an `anchor.toml` marker. Everything is plain files: `tar` it, mail it,
-diff it in git.
-
-```
-your-project/
-├── anchor.toml             # binds this folder to an environment (provider + data zone)
-└── .anchor_data/
-    ├── bronze/<original>.pdf   # raw PDFs, flat (original filename)
-    ├── silver/<slug>/          # Docling extraction + per-page markdown + page PNGs
-    ├── gold/<slug>/            # structured regions with page + bbox provenance
-    └── canvases/<slug>/        # meta.json, state.json, events.jsonl (append-only log)
-```
-
-This layout is **the contract**. You can hand-edit the JSON, copy a canvas
-folder to another machine, or version-control the whole project. The file-level
-detail is in [On-disk substrate](./docs/concepts/on-disk-substrate.md).
-
-A project created by an agent (no working folder) is *managed* under its
-environment at `~/.anchor/envs/<env>/projects/<name>/`, with the same
-`.anchor_data/` inside. A pre-existing `~/anchor-data` from older versions keeps
-working until you run `anchor migrate`.
-
----
-
-## Configuration
-
-Provider, model, and data-zone settings live in an environment's `env.toml`,
-created with `anchor env create <name>`. Run `anchor init` in a folder to start
-a project bound to an environment; it writes an `anchor.toml` marker (and a
-hidden `.anchor_data/`) there, with any per-project overrides going in that
-marker. The first time, if no environment exists yet, `anchor init` asks you to
-pick a provider (your data zone), or you pass `--provider`. It never picks a
-trust boundary for you silently. See
-[Environments and projects](./docs/guides/environments-and-projects.md) for the
-full model. Select the server bind address with the CLI flags `--host` and
-`--port`. The following `ANCHOR_` environment variables override the resolved
-settings:
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `ANCHOR_OPENAI_API_KEY` | (unset) | Optional: enables LLM polish + region extraction in the gold layer. Required for Azure and custom endpoints. |
-| `ANCHOR_OPENAI_BASE_URL` | (unset) | Override the OpenAI-compatible endpoint. For Azure OpenAI v1 use `https://<resource>.openai.azure.com/openai/v1/`; for Ollama use `http://localhost:11434/v1`. |
-| `ANCHOR_POLISH_MODEL` | `gpt-5.4` | Model name for page-MD polishing |
-| `ANCHOR_REGION_MODEL` | `gpt-5.4` | Model name for region extraction |
-| `ANCHOR_EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | Local sentence-transformer model used by default for semantic search. Recorded in every `embeddings.json` so cross-model search refuses to mix vectors. |
-| `ANCHOR_DPI` | `150` | Render DPI for page images |
-| `ANCHOR_CORS_ORIGINS` | (unset) | Comma-separated additional origins permitted by the HTTP server |
-
-If no usable vision key is configured, ingest still produces silver
-(deterministic Docling extraction + per-page markdown). Gold extraction
-(LLM-driven structured regions) is skipped. The system stays useful without an
-API key: silver is the workable substrate; gold is the polish.
-
-### Enable gold region extraction
-
-Gold regions are created during PDF ingestion only. Configure a vision-capable
-LLM endpoint before uploading a document or running `anchor ingest`. Documents
-already ingested as silver-only are not backfilled automatically; ingest them
-again after enabling a provider.
-
-ANCHOR reads `.env` from the project folder where you run `anchor init`, then
-start `anchor serve`, `anchor demo`, or `anchor ingest`. For users installed
-with `uv tool install anchor-kb`, create that `.env` file in your chosen
-project directory before the first upload.
-
-For OpenAI, create `.env` containing:
-
-```dotenv
-ANCHOR_OPENAI_API_KEY=<your-openai-api-key>
-ANCHOR_POLISH_MODEL=gpt-5.4
-ANCHOR_REGION_MODEL=gpt-5.4
-```
-
-For Azure OpenAI, ANCHOR currently supports the Azure OpenAI **v1** endpoint
-through the standard OpenAI-compatible client using API-key authentication.
-The key must be the Azure resource key. A personal `OPENAI_API_KEY` in your
-shell is not proof that the Azure project is configured.
-
-```dotenv
-ANCHOR_OPENAI_API_KEY=<your-azure-openai-key>
-ANCHOR_OPENAI_BASE_URL=https://<resource-name>.openai.azure.com/openai/v1/
-ANCHOR_POLISH_MODEL=<vision-capable-deployment-name>
-ANCHOR_REGION_MODEL=<vision-capable-deployment-name>
-```
-
-The Azure deployment name is used as `model`, not the base model name, and must
-support image input and JSON-formatted chat completion output. Azure Entra ID
-authentication and the older Azure deployment/API-version endpoint shape are
-not configured by ANCHOR environment variables today. See Microsoft's
-[Azure OpenAI v1 API documentation](https://learn.microsoft.com/en-us/azure/ai-foundry/openai/api-version-lifecycle?tabs=python)
-for endpoint details.
-
-You can let ANCHOR write the non-secret environment settings for you. Create an
-environment for the zone, drop the key into its gitignored `.env`, then bind a
-project folder to it:
-
-```bash
-anchor env create azure --provider azure \
-  --base-url https://<resource-name>.openai.azure.com/ \
-  --vision-model <vision-capable-deployment-name>
-echo 'ANCHOR_OPENAI_API_KEY=<your-azure-openai-key>' >> ~/.anchor/envs/azure/.env
-anchor check --env azure --probe       # confirm the deployment + key, sends no documents
-
-cd your-project && anchor init --env azure
-```
-
-From the same directory as `.env`, start ANCHOR and upload the PDF in the UI:
-
-```powershell
-anchor serve
-```
-
-Alternatively, ingest a file directly from the same directory:
-
-```powershell
-anchor ingest "C:\path\to\datasheet.pdf" --force
-```
-
-Successful gold extraction writes structured regions under the project's
-`.anchor_data/gold/<doc-slug>/` and returns a non-zero `region_count` when
-regions are identified. Verify with:
-
-```bash
-anchor list
-anchor gold-map <doc-slug>
-```
-
-In `anchor list`, the document should show `"has_gold": true`. If it does not,
-check `ANCHOR_OPENAI_API_KEY`, the `/openai/v1/` base URL, and that
-`ANCHOR_REGION_MODEL` is the Azure deployment name.
-
-For Ollama / local-LLM recipes, see [`docs/guides/agent-setup.md`](./docs/guides/agent-setup.md).
-
-### Local-only / no-egress mode (confidential documents)
-
-For confidential documents that must never leave the host, run the `local`
-provider. It ingests (docling layout + OCR) and embeds (local bge-small) with no
-external network calls at all: no OpenAI client is built for any stage,
-regardless of any key in your environment, and model loading is pinned offline.
-Gold region extraction is skipped (that needs a vision model); bronze + silver +
-local-embedding search still work.
-
-```bash
-# One-time: warm the local model cache while you still have network.
-anchor models prefetch                  # downloads bge-small + docling models
-
-# Create a no-egress environment and bind a project to it.
-anchor env create vault --yes --provider local
-cd confidential-project && anchor init --env vault
-
-# Verify the posture before feeding sensitive input.
-anchor check --env vault                # shows "local-only: ON - no external egress"
-
-# Ingest with no outbound connections.
-anchor ingest "C:\path\to\datasheet.pdf"
-```
-
-The `local` provider records `local_only = true` in the environment's
-`env.toml`, which the runtime honors identically across the CLI, HTTP and MCP
-adapters (so an agent-launched `anchor-mcp` gets the same no-egress posture). On
-a fully locked-down host, also export the HuggingFace offline switches so a
-cache miss fails fast instead of attempting a download:
-
-```bash
-export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1
-```
-
-`anchor models list` reports the exact model set a local-only ingest needs;
-`anchor check` echoes it and whether the offline env is active.
-
----
-
-## Commands
-
-Run most commands from inside a project folder and they resolve it automatically
-(via the `anchor.toml` marker). Full reference: [docs/reference/cli.md](./docs/reference/cli.md).
-
-```
-# Environments (the provider / data-zone profile = the trust boundary)
-anchor env create NAME [--provider local|ollama|openai|azure|custom] [--base-url ...] [--vision-model ...]
-anchor env list | show NAME | default NAME | set-description NAME "..."
-
-# Projects (a folder = a corpus + its canvases)
-anchor init [NAME] [--env NAME] [--provider ...]  # start a project in this folder
-anchor project create NAME [--env NAME]          # a managed project under the env
-anchor project list | set-description | move NAME --to ENV
-anchor use ENV [PROJECT]                          # session default so you can omit --env
-anchor migrate                                    # fold a legacy ~/anchor-data in
-anchor check [--env NAME] [--probe] [--fix]       # audit the data zone before ingesting
-
-# Local models (offline / no-egress provisioning)
-anchor models list [--env NAME]                   # the local model set an ingest needs
-anchor models prefetch [--env NAME] [--embed-model M]  # cache them while you have network
-
-# Documents + search
-anchor ingest PDF_PATH [--skip-polish] [--skip-regions] [--force]
-anchor list | index SLUG | regions SLUG [--page N] | page-text SLUG PAGE
-anchor embed [SLUG] [--overwrite] | search "<query>" [--k N]
-
-# Canvas + server
-anchor serve [--env NAME] [--project NAME] [--host HOST] [--port PORT]
-anchor demo  [--no-serve]
-anchor canvas list | create SLUG [--title TITLE] | placeholders SLUG | snapshot SLUG
-
-# Agents (write a named MCP pointer for an environment)
-anchor install claude-desktop --env NAME [--name ENTRY] [--create]
-anchor install claude-code [--env NAME] | cursor [--env NAME] | print
-
-# Extensions (OIP producers) + misc
-anchor extensions list | info NAME | add MANIFEST | remove NAME | discover | schema
-anchor version
-```
-
-`anchor-mcp --env NAME` runs the MCP server over stdio for one environment (used
-by an agent's MCP harness; you don't normally invoke it yourself). `--data-dir`
-is still accepted on the document/canvas commands to point at a raw storage dir,
-but the project folder is the usual way in.
-
----
-
-## Architecture (one paragraph)
-
-ANCHOR is a **hexagonal modular monolith**. Pure domain code in `core/` (no I/O, no framework imports - enforced by `lint-imports`). Concrete protocol implementations in `infra/`. Transport adapters in `adapters/` (HTTP, MCP, CLI, SSE). The Python wheel ships the React frontend bundle inside it (`anchor/_web_dist/`) so one process serves both the API and the UI. State changes are events, persisted to `events.jsonl` per canvas, broadcast to subscribers (agents on MCP, browsers on SSE). See the [architecture docs](./docs/concepts/architecture.md).
-
----
-
-## Extensions and the Open Ingestion Protocol
-
-ANCHOR's canvas is one **OIP consumer**. PDF ingestion is one **OIP producer**, bundled with this build. The protocol, specified at [github.com/Novia-RDI-Seafaring/OIP](https://github.com/Novia-RDI-Seafaring/OIP), is governance-neutral: any tool that produces ingested knowledge in OIP shape can plug in, and any OIP-aware consumer can read its output. A transcription tool, a code-region extractor, a web crawler, or your own ingestion logic does not need to import ANCHOR. It only needs to ship an OIP manifest at a known location.
-
-The CLI surfaces this:
-
-```bash
-anchor extensions list                        # what producers can this ANCHOR see?
-anchor extensions discover                    # where does it look for manifests?
-anchor extensions add <path-to-manifest.json> # register a new producer (system-wide)
-anchor extensions schema                      # print a starter manifest to edit
-anchor extensions info anchor-pdfs            # full manifest for one producer
-```
-
-Discovery, in priority order:
-1. **Per-data-dir**: `<data-dir>/.oip/producers.d/*.json` (highest priority; bound to a specific workspace tree)
-2. **System-wide**: `~/.config/oip/producers.d/*.json` (any installer can drop a manifest here; visible to every OIP consumer on the machine)
-3. **Bundled**: compiled into this ANCHOR wheel (`anchor-pdfs`, `anchor-fmus`,
-   and `anchor-cad`; SysML tools are also exposed by the bundled MCP server)
-
-For implementation status: today, an OIP-registered producer is *visible* in `extensions list` but ANCHOR doesn't yet *spawn* external producer MCP servers and proxy their tools. That's the next engineering lift. See the [OIP repo](https://github.com/Novia-RDI-Seafaring/OIP) for the spec and `EXTENSIONS.md` for ANCHOR's host-side roadmap.
-
----
-
-## Tests
-
-```bash
-uv sync --extra dev                       # one-time: install pytest/ruff/import-linter
-uv run pytest                             # ~570 backend tests
-uv run lint-imports                       # 6 dependency-rule contracts
-pnpm --dir web test                       # ~180 web tests (Vitest)
-pnpm --dir web exec tsc --noEmit          # web typecheck
-```
-
-The test seam is function-based pytest with in-memory implementations of every port. Real I/O tests use `tmp_path`. The frontend tests cover canvas primitives, the SSE event store, and the inline-edit hooks.
-
----
-
-## Status & roadmap
-
-**v0.2 (current):** canvas primitive + PDF ingestion in one package, real-time SSE sync, MCP integration, folder-based projects under named environments (the data-zone / trust boundary), skill + pointer installers for Claude Code / Cursor / Claude Desktop, backend and web test suites, hexagonal contracts enforced.
-
-**Near-term:** complete remaining node renderer and asset workflows, then stabilise the extension registration surface.
-
-**Mid-term:** split the canvas primitive (`anchor-canvas`) and PDF extension (`anchor-canvas-pdfs`) into separately-publishable packages, and stabilise the extension contract for third-party authors.
-
-**Longer term:** other ingestion extensions (audio/video transcription, code, web), shared org docs / personal canvases topology, optional Postgres event store for very large workspaces.
-
----
-
-## Security model: read before exposing
-
-ANCHOR's HTTP server is **unauthenticated by design**. It edits local
-engineering data (workspaces, documents, FMU files) and is meant to run
-on your own machine.
-
-- Default bind is `127.0.0.1` (loopback). Nothing else on the LAN can
-  reach it unless you pass `--host 0.0.0.0`.
-- CORS is restricted to the dev Vite origin (`localhost:5173`); set
-  `ANCHOR_CORS_ORIGINS=https://your-host` for explicit overrides.
-- Workspace slugs and upload filenames are policy-checked and
-  containment-asserted before they hit disk. The v2 codebase does not
-  trust client-supplied paths.
-
-If you want to share an ANCHOR instance on a network, **add your own
-reverse proxy with auth in front of it** (Tailscale, OAuth proxy,
-basic-auth nginx, ...). Don't expose the unauthenticated port directly.
-
-## Limitations (v0.2)
-
-These extensions are intentionally rough; we ship them so you can see
-the shape and contribute, not as finished features:
-
-- **`anchor_cad`**: parametric-CAD producer (jscad/openSCAD) ships as a
-  proof of concept; full feature parity with STEP/STL viewing is on the
-  roadmap. SVG export still has a known font-handling bug.
-- **`anchor_sysml`**: SysML import (BSD-3-Clause fixtures from the OMG
-  reference) and export to SVG/markdown are experimental; we'll swap
-  the hand-rolled IR for the official Pydantic model when that lands.
-- **`anchor_fmus`**: FMU simulation requires `fmpy` (install via
-  `uv tool install 'anchor-kb[fmus]'`). Without it the extension fails
-  closed; set `ANCHOR_FMU_DEMO=1` to use the synthetic-output runtime
-  (every result is stamped `synthetic=true` so the UI can warn you).
+The backend follows ports-and-adapters layering. Pure domain code lives in
+`src/anchor/core`, I/O in `infra`, protocols in `adapters`, and producer-specific
+code in `extensions`. The React UI lives in `web`. Changes go through a branch
+and pull request; see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## License
 

@@ -70,8 +70,17 @@ async def test_base_single_project_advertises_core_not_full_surface(tmp_path):
     names = await _advertised(server)
     # The full dispatchable surface is ~45+; the tiered default stays a small
     # curated slice (~20, the 90% path + extract_pointed from #132 +
-    # server_info from #177/#179).
-    assert len(names) <= 22
+    # server_info from #177/#179 + inspect_region / get_region_content, the
+    # search -> inspect -> answer pair from #242 + canvas_propose_set, which
+    # the skill mandates on every multi-element write and so cannot be gated,
+    # + list_entities, which is how an agent learns what a document covers
+    # instead of inferring it from the title).
+    #
+    # Raise this only for a tool the agent cannot do without: the point of the
+    # cap is that the default list stays a curated slice of a ~45-tool surface.
+    # +1 for intent_update_item: an agent narrating its own progress on the
+    # canvas cannot be asked to enable a capability first.
+    assert len(names) <= 29  # canvas_list_workspaces enables canvas discovery.
     assert set(names) == set(tiering.CORE_NAMES) - tiering.CORE_LIFECYCLE_NAMES
     # No lifecycle tools in single-project mode.
     assert "create_environment" not in names
@@ -81,10 +90,8 @@ async def test_base_multiproject_advertises_core_plus_lifecycle(tmp_path):
     create_env("local")
     server, _ = _multiproject_server()
     names = await _advertised(server)
-    # Multiproject advertises the full core including the two lifecycle tools
-    # (create_project, list_projects), so the cap is one higher than the
-    # single-project slice: 21 curated + 2 lifecycle = 23 with server_info.
-    assert len(names) <= 23
+    # Multiproject includes list/create/open project and canvas discovery.
+    assert len(names) <= 32
     assert tiering.CORE_NAMES.issubset(set(names))
     # The long tail is gated out by default.
     for gated in ("fmu_inspect", "inspect", "sysml_render", "create_environment",
@@ -98,9 +105,82 @@ async def test_core_includes_the_ninety_percent_path():
         "get_page_text", "get_crop", "search_documents", "extract_pointed",
         "canvas_create_workspace", "canvas_get_state", "canvas_add_node",
         "canvas_update_node", "canvas_add_edge", "canvas_snapshot",
-        "anchor_list_capabilities",
+        "anchor_list_capabilities", "anchor_extension_status",
     }
     assert expected.issubset(tiering.CORE_NAMES)
+
+
+async def test_discovery_tools_work_from_the_initial_multiproject_tool_list(tmp_path):
+    create_env("local")
+    env = env_mod.resolve_environment("local")
+    create_project(env, "alpha")
+    create_project(env, "beta")
+    server, router = _multiproject_server()
+    await router.bundle_for("alpha").workspace.create_workspace("alpha-board")
+    await router.bundle_for("beta").workspace.create_workspace("beta-board")
+
+    # A strict host builds its callable functions from this initial list.
+    names = await _advertised(server)
+    assert {"open_project", "canvas_list_workspaces"}.issubset(names)
+
+    opened = json.loads(await _call(server, "open_project", {"name": "beta"}))
+    assert opened == {"session_default": "beta"}
+    workspaces = json.loads(await _call(server, "canvas_list_workspaces"))
+    assert [workspace["slug"] for workspace in workspaces] == ["beta-board"]
+
+    explicit = json.loads(await _call(server, "canvas_list_workspaces", project="alpha"))
+    assert [workspace["slug"] for workspace in explicit] == ["alpha-board"]
+
+    catalog = json.loads(await _call(server, "anchor_list_capabilities"))
+    gated = {tool["name"] for group in catalog["capabilities"] for tool in group["tools"]}
+    assert not {"open_project", "canvas_list_workspaces"} & gated
+
+
+async def test_canvas_discovery_is_advertised_in_single_project_mode(tmp_path):
+    server, bundle = _single_project_server(tmp_path)
+    await bundle.workspace.create_workspace("board")
+
+    names = await _advertised(server)
+    assert "canvas_list_workspaces" in names
+    assert "open_project" not in names
+    workspaces = json.loads(await _call(server, "canvas_list_workspaces"))
+    assert [workspace["slug"] for workspace in workspaces] == ["board"]
+
+
+async def test_extension_status_dispatches_shared_payload(tmp_path):
+    server, bundle = _single_project_server(tmp_path)
+
+    payload = json.loads(await _call(server, "anchor_extension_status"))
+
+    assert {item["name"] for item in payload["extensions"]} == set(
+        bundle.extension_status
+    )
+    summary = payload["summary"]
+    assert summary["available"] + summary["unavailable"] == 3
+
+
+async def test_extension_status_lists_discovered_producers(tmp_path, monkeypatch):
+    """#308 parity: MCP serves the same discovered-producers section as CLI/HTTP."""
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "home" / ".config"))
+    data_dir = tmp_path / "data"
+    project_dir = data_dir / ".oip" / "producers.d"
+    project_dir.mkdir(parents=True)
+    (project_dir / "tracer.json").write_text(json.dumps({
+        "oip_version": "0.1",
+        "producer": {"name": "tracer", "version": "1.0.0"},
+        "invocation": {"kind": "mcp-stdio", "command": "no-such-binary-xyz"},
+    }))
+    server, _bundle = _single_project_server(tmp_path)
+
+    payload = json.loads(await _call(server, "anchor_extension_status"))
+
+    producers = payload["producers"]
+    assert "never started by Anchor" in producers["note"]
+    items = {item["name"]: item for item in producers["items"]}
+    assert items["tracer"]["command_found"] is False
+    assert items["tracer"]["check"] == "command not found on PATH"
+    assert items["tracer"]["started"] is False
 
 
 # -- gated reachability ------------------------------------------------------ #
@@ -225,3 +305,46 @@ async def test_single_project_autoexposes_fmu_with_data(tmp_path, monkeypatch):
     await bundle.fmu.upload_and_inspect(b"dummy-fmu", "pump.fmu")
     names = await _advertised(server)
     assert "fmu_inspect" in names
+
+
+async def test_sysml_legacy_alias_routes_to_sysml_handler(tmp_path):
+    # `sysml.render`/`sysml.export` used to fall through to the catch-all
+    # handler ("unknown tool") because the module exported no
+    # LEGACY_TOOL_NAMES; the fmu aliases always routed. anchor parity audit.
+    create_env("local")
+    create_project(env_mod.resolve_environment("local"), "pumps")
+    server, _ = _multiproject_server()
+    out = json.loads(
+        await _call(server, "sysml.export", project="pumps", workspace_slug="ghost")
+    )
+    # Routed to the sysml handler: its Phase-1 export answers with `text`.
+    # The old failure mode was the catch-all's {"error": "unknown tool: ..."}.
+    assert "text" in out, out
+    assert "unknown tool" not in json.dumps(out).lower()
+
+
+async def test_sysml_autoexposed_when_canvas_has_sysml_nodes(tmp_path):
+    # SysML has no model store; its per-project data is sysml:* canvas nodes.
+    # Before this activation existed the sysml group could never go active.
+    create_env("local")
+    router = ProjectRouter(env_arg="local")
+    create_project(router.environment(), "pumps")
+    server = build_mcp_server(router=router)
+    router.open_project("pumps")
+
+    before = await _advertised(server)
+    assert "sysml_render" not in before
+    payload = json.loads(await _call(server, "anchor_list_capabilities", project="pumps"))
+    sysml = next(g for g in payload["capabilities"] if g["capability"] == "sysml")
+    assert sysml["active"] is False
+
+    bundle = router.bundle_for("pumps")
+    await bundle.workspace.create_workspace("model")
+    await bundle.workspace.add_node("model", node_type="sysml:block", label="Pump", x=0, y=0)
+
+    after = await _advertised(server)
+    assert "sysml_render" in after
+    assert "sysml_export" in after
+    payload = json.loads(await _call(server, "anchor_list_capabilities", project="pumps"))
+    sysml = next(g for g in payload["capabilities"] if g["capability"] == "sysml")
+    assert sysml["active"] is True

@@ -2,9 +2,9 @@
  * pdfHighlight geometry tests (#110a).
  *
  * These pin the PDF-point-space -> rendered-pixel-space mapping the deep-zoom
- * bbox highlight relies on. The mapping must be order-independent in the bbox
- * tuple (Docling emits both `[l, t, r, b]` and `[l, b, r, t]`) and must honour
- * the bottom-left PDF origin (larger PDF-y maps to the top of the page).
+ * bbox highlight relies on. Bboxes are top-left PDF points (#281), so the
+ * mapping is a pure scale; it must still be order-independent in the bbox
+ * tuple so a legacy `[l, b, r, t]` box can never collapse.
  */
 import { describe, expect, it } from "vitest";
 
@@ -23,8 +23,8 @@ describe("bboxToViewportRect", () => {
     // scale = 2 on both axes.
     expect(rect!.left).toBe(100); // 50 * 2
     expect(rect!.width).toBe(200); // (150-50) * 2
-    // top = (pageH - yHigh) * sy = (400 - 350) * 2 = 100
-    expect(rect!.top).toBe(100);
+    // top = yLow * sy = 300 * 2 = 600 (top-left origin: smaller y is higher)
+    expect(rect!.top).toBe(600);
     expect(rect!.height).toBe(100); // (350-300) * 2
   });
 
@@ -34,9 +34,9 @@ describe("bboxToViewportRect", () => {
     expect(ltrb).toEqual(lbrt);
   });
 
-  it("places higher PDF-y nearer the top edge (bottom-left origin)", () => {
-    const high = bboxToViewportRect([10, 380, 20, 390], pageW, pageH, viewport)!;
-    const low = bboxToViewportRect([10, 10, 20, 20], pageW, pageH, viewport)!;
+  it("places smaller PDF-y nearer the top edge (top-left origin)", () => {
+    const high = bboxToViewportRect([10, 10, 20, 20], pageW, pageH, viewport)!;
+    const low = bboxToViewportRect([10, 380, 20, 390], pageW, pageH, viewport)!;
     expect(high.top).toBeLessThan(low.top);
   });
 

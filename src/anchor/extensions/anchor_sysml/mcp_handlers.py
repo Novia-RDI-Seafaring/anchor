@@ -15,6 +15,9 @@ LEGACY_TOOL_ALIASES = {
     "sysml.render": "sysml_render",
     "sysml.export": "sysml_export",
 }
+# The server's dispatcher routes by this set; without it a dotted call falls
+# through to the catch-all handler and reports "unknown tool".
+LEGACY_TOOL_NAMES = set(LEGACY_TOOL_ALIASES)
 
 
 def tool_definitions() -> list[dict[str, Any]]:
@@ -85,4 +88,4 @@ async def call_tool(svc: SysmlService, name: str, args: dict[str, Any]) -> str:
     return json.dumps({"error": f"unknown tool: {name}"})
 
 
-__all__ = ["tool_definitions", "call_tool"]
+__all__ = ["tool_definitions", "call_tool", "LEGACY_TOOL_NAMES"]

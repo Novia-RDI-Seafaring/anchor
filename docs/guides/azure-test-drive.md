@@ -9,13 +9,14 @@ anything sensitive.
 
 With the Azure provider and the default **local** embedding model:
 
-- **Never leaves the host:** the raw PDFs (`bronze/`), per-page text and PNGs
-  (`silver/`), the structured regions (`gold/`), and the embedding vectors.
+- **Stored locally:** original PDFs (`bronze/`), page extraction (`silver/`),
+  structured regions (`gold/`), and local embedding vectors. Local storage
+  does not imply that the content is processed only on this computer.
 - **Sent only to your Azure endpoint:** rendered page images + text, for the
   gold region-extraction and polish stages.
 
-If you pick a **remote** embedding model (`text-embedding-3-small/large`), page
-text is also sent to your Azure endpoint for embeddings. Keep the default
+If you pick a **remote** embedding model, region embedding input text is
+also sent to the configured endpoint. Keep the default
 `bge-small` (local) to avoid that.
 
 ## Prerequisite: create and note your deployment(s)
@@ -85,13 +86,14 @@ client's `api_key`. This is Microsoft's documented pattern for the v1 API.
 If `anchor env create` did not capture it:
 
 ```bash
-echo 'ANCHOR_OPENAI_API_KEY=<your-azure-key>' >> .env
+echo 'ANCHOR_OPENAI_API_KEY=<your-azure-key>' >> ~/.anchor/envs/work/.env
 ```
 
 A personal `OPENAI_API_KEY` in your shell is **not** the right credential for
 Azure. Use `ANCHOR_OPENAI_API_KEY` for Azure projects. If you already have a
 personal `OPENAI_API_KEY` in your shell, do not treat that as proof the Azure
-project is configured.
+project is configured. The environment `.env` is loaded only after `work` has
+a valid `env.toml`; the key does not select the provider by itself.
 
 ## 4. Verify before ingesting
 

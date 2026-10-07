@@ -15,13 +15,19 @@ plus the shared colour / placeholder helpers (``web/src/canvas/colors.ts``,
 ``placeholder.ts``). Keep the two sides in sync: a key a renderer reads
 must appear here, or agents get a false "won't render" warning.
 
-Producer node types (``spec``, ``document``, ``model3d``, ``sysml:*`` …)
-are intentionally NOT enumerated here — they carry rich, producer-defined
-``data`` shapes (rows, source_ref, region ids) and registering a closed
-field list for them would warn on legitimate keys. They stay open (no
-warning), which matches the v1 behaviour. The structural shapes and cards
-an agent scaffolds by hand are where the dead-field footgun bites, so those
-are the ones we pin down.
+The structural shapes and cards an agent scaffolds by hand carry a *closed*
+field list (``data_fields``), so a body packed into the wrong key raises the
+"won't render" warning.
+
+Producer node types (``spec``, ``document``, ``model3d`` / ``cad:model`` …)
+carry rich, producer-defined ``data`` shapes (rows, source_ref, region ids,
+model slugs). A closed field list would false-warn on those legitimate keys,
+so they are registered *open* (``data_fields=None`` — no unknown-key warning,
+matching v1). But they are still enumerated here, with a ``description`` that
+names the keys that matter, so ``node-types <type>`` DESCRIBES them instead of
+returning "unknown" — the discoverability an agent needs to learn that a CAD
+node's slug key is ``cad_slug`` (not ``slug``) without reading the React
+source. ``sysml:*`` and other extension types register themselves.
 """
 from __future__ import annotations
 
@@ -42,8 +48,18 @@ _COMMON_FIELDS: tuple[str, ...] = (
     "text_align",
     "text_family",
     "text_size",
+    "font_px",
     "placeholder",
     "placeholder_hint",
+    # Review-state convention (#324): rendered by the shared review badge /
+    # dimming helpers (web/src/canvas/review.ts), same cross-cutting status
+    # as the placeholder pair above.
+    "review",
+    # The part this card plays in an argument: question / criterion / option
+    # / evidence / assumption / decision / rejected / open. See
+    # anchor.core.workspace.roles. Same cross-cutting shape as `review`: a
+    # small closed vocabulary on any element, rendered as a badge.
+    "role",
 )
 
 
@@ -54,6 +70,13 @@ def _shape(name: str, description: str, *extra: str, body_field: str | None = No
         data_fields=_COMMON_FIELDS + extra,
         body_field=body_field,
     )
+
+
+def _producer(name: str, description: str) -> NodeType:
+    """An open producer type: no closed field list (``data_fields=None`` →
+    no unknown-key warning on its rich shape) but still queryable via
+    ``node-types`` so agents can discover its key names from ``description``."""
+    return NodeType(name=name, description=description, data_fields=None)
 
 
 BUILTIN_NODE_TYPES: list[NodeType] = [
@@ -75,9 +98,32 @@ BUILTIN_NODE_TYPES: list[NodeType] = [
         body_field="subtitle",
     ),
     _shape(
+        "text",
+        "Words on the canvas with no box around them. Renders data.text "
+        "alone at the element's text_size, no border and no background. "
+        "Use it for a title, a caption, or a paragraph of explanation: a "
+        "heading is a text element at text_size '2xl', a caption one at "
+        "'sm'. data.label is accepted as a fallback body. Resizing one on "
+        "the canvas scales the words and writes data.font_px.",
+        "text",
+        body_field="text",
+    ),
+    _shape(
         "note",
         "Free-form sticky note. Renders data.label (heading) and data.text "
         "(multi-line body).",
+        "text",
+        body_field="text",
+    ),
+    _shape(
+        "markdown",
+        "Card whose body is Markdown, rendered as rich text: headings, "
+        "lists, tables, code blocks, links, blockquotes (GitHub-flavoured). "
+        "Renders data.label (optional card title) and data.text (the "
+        "Markdown source). Use it when what you are saying has structure — "
+        "a short list of findings, a comparison table, a snippet — instead "
+        "of packing that into a note's plain body. Raw HTML in the source "
+        "is escaped, not rendered.",
         "text",
         body_field="text",
     ),
@@ -98,6 +144,32 @@ BUILTIN_NODE_TYPES: list[NodeType] = [
         "subtitle",
         "tone",
         body_field="subtitle",
+    ),
+    # Producer types: open shapes (no unknown-key warning) documented for
+    # discoverability. Descriptions name the keys that matter.
+    _producer(
+        "spec",
+        "Spec / dimension table (open shape). data.rows = list of "
+        "{key, value, source_ref{slug,page,region_id,bbox}} rows; optional "
+        "node-level data.source_ref. Extra keys allowed (no warning).",
+    ),
+    _producer(
+        "document",
+        "Ingested-PDF document card (open shape). data.slug = the document "
+        "slug, data.page = current page. Extra keys allowed (no warning).",
+    ),
+    _producer(
+        "model3d",
+        "3D CAD viewport (open shape). data.cad_slug = slug of an uploaded "
+        "CAD model (see `anchor cad`); data.kind = stl | obj | gltf | glb. "
+        "NOTE: the slug key is cad_slug, NOT slug. Extra keys allowed.",
+    ),
+    _producer(
+        "cad:model",
+        "3D CAD viewport (open shape, alias of model3d). data.cad_slug = slug "
+        "of an uploaded CAD model (see `anchor cad`); data.kind = "
+        "stl | obj | gltf | glb. NOTE: the slug key is cad_slug, NOT slug. "
+        "Extra keys allowed (no warning).",
     ),
 ]
 

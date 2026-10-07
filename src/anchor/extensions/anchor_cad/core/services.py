@@ -11,13 +11,12 @@ from anchor.core.events.envelope import DomainEvent
 from anchor.core.ids import new_event_id, slugify
 from anchor.core.ports.event_bus import EventBus
 from anchor.extensions.anchor_cad.core.events import (
-    CadIngestFailed,
     CadIngested,
+    CadIngestFailed,
     CadParameterChanged,
 )
 from anchor.extensions.anchor_cad.core.ports import CadInspector, CadStore
 from anchor.extensions.anchor_cad.core.schemas import CadModel
-
 
 _KIND_FROM_EXT: dict[str, str] = {
     ".stl": "stl",

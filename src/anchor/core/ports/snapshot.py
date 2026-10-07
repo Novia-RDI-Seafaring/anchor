@@ -47,6 +47,7 @@ class SnapshotPort(Protocol):
         format: str = "png",
         viewport: tuple[int, int] | None = None,
         full_page: bool = True,
+        expect_nodes: int | None = None,
     ) -> SnapshotResult:
         """Render the workspace `slug` to an image.
 
@@ -54,5 +55,9 @@ class SnapshotPort(Protocol):
         - `viewport`: `(width, height)` in CSS pixels. None = implementation
           default (the canvas at its natural size).
         - `full_page`: capture the whole document, not just the viewport.
+        - `expect_nodes`: how many nodes the workspace state holds, or None
+          if the caller doesn't know. Lets a browser-driving implementation
+          wait for the canvas to actually render its nodes (and error
+          clearly on timeout) instead of screenshotting an empty grid.
         """
         raise NotImplementedError

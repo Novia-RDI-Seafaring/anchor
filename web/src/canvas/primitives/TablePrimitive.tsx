@@ -1,18 +1,24 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
-import { Anchor as AnchorIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { canvases } from "@/api/canvases";
-import { documents } from "@/api/documents";
+import { documents, type ResolvableRef } from "@/api/documents";
+import { PictureHighlightBoxes, usePictureHighlights } from "@/canvas/PictureHighlights";
+import { placesFromAlso } from "@/canvas/sourceHighlight";
+import { evidenceLabels, evidenceState, type EvidenceRow } from "@/canvas/evidence";
+import { refReview } from "@/canvas/refReview";
+import { RefReviewChip, refVerdict } from "@/canvas/RefReviewChip";
+import { SourceAnchorButton } from "@/canvas/SourceAnchorButton";
+import { resolveText } from "@/canvas/colors";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
 import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
+import { ReviewBadge } from "@/canvas/ReviewBadge";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
-import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
-type Row = {
+type Row = EvidenceRow & {
   key: string;
   value: string;
   // Per-row provenance back to the source document. `region_id` is the link
@@ -28,6 +34,8 @@ type Row = {
     region_id?: string;
     source_region_id?: string;
     bbox?: number[];
+    item_id?: string;
+    cell?: { row?: number; col?: number };
   };
 };
 
@@ -38,6 +46,10 @@ type SourceRef = {
   region_id?: string;
   source_region_id?: string;
   bbox?: number[];
+  // Below-region selectors (#242 P2): enriched spec rows record the matched
+  // table cell; agents may name a single silver item.
+  item_id?: string;
+  cell?: { row?: number; col?: number };
 };
 
 /**
@@ -83,7 +95,6 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   const borderStyle = ph.active || d.dashed ? "border-dashed" : "border-solid";
   const setHoveredSourceRef = useUiStore((s) => s.setHoveredSourceRef);
   const clearHoveredSourceRef = useUiStore((s) => s.clearHoveredSourceRef);
-  const openPdf = useUiStore((s) => s.openPdf);
   const { id: workspaceSlug } = useParams<{ id: string }>();
 
   // Local working copy of rows so cell edits feel snappy. Replaced when
@@ -137,6 +148,8 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         page: d.source_ref.page,
         region_id: d.source_ref.region_id ?? d.source_region_id ?? d.source_ref.source_region_id,
         bbox: d.source_ref.bbox,
+        item_id: d.source_ref.item_id,
+        cell: d.source_ref.cell,
       });
     }
   };
@@ -154,9 +167,17 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       page: ref.page,
       region_id: ref.region_id ?? row.source_region_id ?? ref.source_region_id ?? d.source_region_id,
       bbox: ref.bbox,
+      item_id: ref.item_id,
+      cell: ref.cell,
       // Carry the cell value so the document node can draw the value-precise
       // highlight inside the region, not just the region rectangle (#197).
       query: row.value || undefined,
+      // And the other places it points at, so a picture of the drawing on
+      // the canvas can light the letter as well as the viewer does.
+      ...(() => {
+        const places = placesFromAlso((ref as { also?: unknown }).also, ref.page);
+        return places.length > 0 ? { places } : {};
+      })(),
     });
   };
 
@@ -166,39 +187,26 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   const rowHandleId = (i: number, row: Row): string =>
     `row:${i}:${(row.key || "").trim()}`;
 
-  // Click → open the PDF viewer at this spec's source page with the bbox
-  // highlighted. The viewer also wants a documentNodeId so its "send region
-  // to canvas" sidebar can wire evidence edges back to the same source
-  // document; resolve it either from the spec's stored source_doc_node_id
-  // or, as a fallback for older nodes that don't carry it, by looking up
-  // the matching document node in the canvas store by slug.
-  const openSourceRef = (ref?: SourceRef, query?: string) => {
+  /** A row's or the card's stored ref, filled in from the card where the row
+   *  is terse: older rows carry a page but no slug, and the region id may
+   *  only exist at card level. Returns null when there is nothing to open.
+   *
+   *  Opening and previewing are both SourceAnchorButton's job now, so this
+   *  only has to produce the ref. The button resolves the tightest box
+   *  (cell > item > region > bbox) through useOpenSourceRef, and passes
+   *  `documentNodeId` on so the viewer's "send region to canvas" sidebar can
+   *  wire evidence edges back to the same source card. */
+  const normalizeRef = (ref?: SourceRef): ResolvableRef | null => {
     const slug = ref?.slug ?? d.source_doc_slug;
-    if (!slug || !ref?.page) return;
-    let docNodeId = d.source_doc_node_id;
-    if (!docNodeId) {
-      const nodes = useCanvasStore.getState().nodes;
-      for (const n of Object.values(nodes)) {
-        const nd = n.data as { slug?: string } | undefined;
-        if (n.node_type === "document" && nd?.slug === slug) {
-          docNodeId = n.id;
-          break;
-        }
-      }
-    }
-    openPdf(slug, {
+    if (!slug || !ref?.page) return null;
+    return {
+      ...ref,
+      slug,
       page: ref.page,
-      workspaceSlug,
-      documentNodeId: docNodeId,
-      highlightRegionId: ref.region_id ?? d.source_region_id ?? ref.source_region_id,
-      highlightBbox: ref.bbox,
-      // Value-precise highlight in the PDF viewer modal (#197): the viewer
-      // locates this text inside the region and highlights it over the
-      // region rectangle, falling back to the region when not found.
-      highlightQuery: query,
-    });
+      region_id: ref.region_id ?? d.source_region_id ?? ref.source_region_id,
+    };
   };
-  const openSource = () => openSourceRef(d.source_ref);
+  const headerRef = normalizeRef(d.source_ref);
 
   const cropRel = d.crops?.png ?? d.crops?.svg ?? null;
   const storedCropUrl = d.source_doc_slug && cropRel ? documents.cropUrl(d.source_doc_slug, cropRel) : null;
@@ -206,6 +214,19 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
     ? documents.pageCropUrl(d.source_doc_slug, d.source_ref.page, d.source_ref.bbox)
     : null;
   const previewUrl = renderedCropUrl ?? storedCropUrl;
+  // The section's picture is the page cut to the section's bbox, so a
+  // hovered reference into that section -- a value's cell, a letter on a
+  // drawing -- is lit on it, the same as on a picture element.
+  const litOnPreview = usePictureHighlights(
+    renderedCropUrl && d.source_ref
+      ? {
+          slug: d.source_doc_slug,
+          page: d.source_ref.page,
+          bbox: d.source_ref.bbox,
+          region_id: d.source_ref.region_id ?? d.source_region_id,
+        }
+      : null,
+  );
 
   const canEdit = selected ?? false;
   // Inline title rename — wires the spec table's `label` field to the same
@@ -229,6 +250,10 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
     d.height,
   );
   const sized = liveW !== undefined || liveH !== undefined;
+  // A spec table is read as much as any card, so it honours the same text
+  // scale the shapes do: `data.text_size` drives the rows, and the heading
+  // tracks it rather than staying pinned at 10px.
+  const text = resolveText(d as Record<string, unknown>);
   // Spec content is row-driven: an explicit `height` from a previous
   // resize forces empty space below the last row and visually disconnects
   // the resize box from the visible card. Use `minHeight` instead so the
@@ -245,8 +270,8 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   }
   return (
     <div
-      className={`relative rounded-lg border ${borderStyle} ${ph.active ? "" : "border-neutral-400 bg-white"} text-sm shadow-sm ${sized ? "" : "w-72"} ${selected ? "cursor-move" : "cursor-pointer"}`}
-      style={wrapperStyle}
+      className={`relative rounded-lg border ${borderStyle} ${ph.active ? "" : "border-neutral-400 bg-white"} shadow-sm ${sized ? "" : "w-72"} ${selected ? "cursor-move" : "cursor-pointer"}`}
+      style={{ ...wrapperStyle, fontSize: text.fontSize, fontFamily: text.fontFamily }}
       onMouseEnter={broadcastHover}
       onMouseLeave={clearHoveredSourceRef}
     >
@@ -258,13 +283,22 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         {...resizeHandlers}
       />
       {ph.active ? <PlaceholderChip hint={ph.hint} /> : null}
+      <ReviewBadge data={data as Record<string, unknown>} nodeId={id} />
       <Handle type="target" position={Position.Left} className="canvas-node-socket" />
       <div
         className="flex items-center justify-between border-b border-neutral-200 px-3 py-2 gap-2"
       >
         <div className="min-w-0">
-          <div className="text-[10px] uppercase tracking-wide text-neutral-500">spec</div>
-          <div className="truncate font-medium text-neutral-900">
+          <div
+            className="uppercase tracking-wide text-neutral-500"
+            style={{ fontSize: `calc(${text.headingFontSize} * 0.85)` }}
+          >
+            spec
+          </div>
+          <div
+            className="truncate font-medium text-neutral-900"
+            style={{ fontSize: text.fontSize, fontFamily: text.fontFamily }}
+          >
             {titleEdit.editing ? (
               <input
                 {...titleEdit.inputProps}
@@ -285,32 +319,34 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
             )}
           </div>
         </div>
-        {d.source_ref?.page ? (
-          <button
-            type="button"
-            className="nodrag nopan grid h-6 w-6 shrink-0 place-items-center rounded border border-sky-300 bg-sky-50 text-sky-700 hover:bg-sky-100"
-            title={`Open page ${d.source_ref.page} in viewer`}
-            aria-label={`Open source page ${d.source_ref.page}`}
-            onMouseDown={(e) => e.stopPropagation()}
-            onDoubleClick={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              // Stop bubbling here so the surrounding header onClick (which
-              // would fire `openSource` a second time) doesn't double-trigger.
-              e.stopPropagation();
-              openSource();
-            }}
-          >
-            <AnchorIcon size={12} strokeWidth={2.2} aria-hidden="true" />
-          </button>
+        {/* The header anchor is the fallback for rows without their own
+            reference. When every row is grounded, each row's anchor already
+            opens its source, so a card-level anchor would be redundant. */}
+        {headerRef && !(rows.length > 0 && rows.every((r) => r.source_ref?.page)) ? (
+          <SourceAnchorButton
+            workspaceSlug={workspaceSlug}
+            documentNodeId={d.source_doc_node_id}
+            refValue={headerRef}
+            title={`Open page ${headerRef.page} in viewer`}
+            ariaLabel={`Open source page ${headerRef.page}`}
+            size={12}
+            className="h-6 w-6 shrink-0 border border-sky-300 bg-sky-50"
+          />
         ) : null}
       </div>
 
       {previewUrl ? (
         <div className="border-b border-neutral-200 bg-neutral-50">
+          {/* Shrink-wrapped round the picture, so the lit boxes, placed in
+              percent, land on the picture and not on the letterbox. */}
+          <div className="relative mx-auto w-fit max-w-full">
           <img
             src={previewUrl}
             alt={d.label ?? "region"}
-            className="block max-h-32 w-full object-contain"
+            title={d.description}
+            // Up to a readable height: capped at 128 px, a table's rows
+            // shrank to a grey strip whatever the card's width.
+            className="block h-auto max-h-80 w-auto max-w-full"
             loading="lazy"
             draggable={false}
             onError={(e) => {
@@ -327,14 +363,29 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
               }
             }}
           />
+          <PictureHighlightBoxes boxes={litOnPreview} />
+          </div>
         </div>
       ) : null}
 
+      {/* Fixed layout: with `auto`, a long key or value sets the table's
+          min-content width and the rows spill past the card's right edge
+          (the wrapper has a fixed width). Fixed layout keeps the table at
+          the card width and lets the cells' `truncate` do the clipping;
+          the last column reserves room for evidence status and source actions. */}
       {rows.length > 0 || !d.description ? (
-        <table className="w-full">
+        <table className="w-full table-fixed">
+          <colgroup>
+            <col style={{ width: "45%" }} />
+            <col />
+            <col style={{ width: "5rem" }} />
+          </colgroup>
           <tbody>
             {rows.map((r, i) => {
               const hid = rowHandleId(i, r);
+              const status = evidenceState(r);
+              const evidenceLabel = evidenceLabels[status];
+              const rowRef = normalizeRef(r.source_ref);
               return (
                 <tr
                   key={`row-${i}`}
@@ -346,7 +397,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                   // would flicker when sliding between adjacent rows.
                   onMouseEnter={() => broadcastRowHover(r)}
                 >
-                  <td className="px-3 py-1 text-neutral-600">
+                  <td className="min-w-0 px-3 py-1 text-neutral-600">
                     <RowCell
                       rowIndex={i}
                       col="key"
@@ -359,7 +410,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                       onAppendRow={() => appendRow("key")}
                     />
                   </td>
-                  <td className={`px-3 py-1 text-neutral-900 ${r.source_ref ? "bg-emerald-50/80" : ""}`}>
+                  <td className={`min-w-0 px-3 py-1 text-neutral-900 ${status === "verified" ? "bg-emerald-50/80" : ""}`}>
                     <RowCell
                       rowIndex={i}
                       col="value"
@@ -369,37 +420,70 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                       // Grounded values get a yellow "marker pen" highlight on
                       // row hover, so the eye lands on the exact value while the
                       // source node highlights where it came from (issue #145).
-                      marker={!!r.source_ref}
+                      marker={status === "verified"}
                       pendingFocus={pendingFocus}
                       setPendingFocus={setPendingFocus}
                       onCommit={(v) => commitRow(i, "value", v)}
                       onAppendRow={() => appendRow("key")}
                     />
                   </td>
-                  <td className="relative px-2 text-xs text-neutral-400">
-                    {r.source_ref?.page ? (
-                      <button
-                        type="button"
-                        className="nodrag nopan inline-grid h-5 w-5 place-items-center rounded text-sky-700 hover:bg-sky-100 hover:text-sky-900"
-                        title={`Open page ${r.source_ref.page} in viewer`}
-                        aria-label={`Open source page ${r.source_ref.page}`}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onDoubleClick={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openSourceRef(r.source_ref, r.value || undefined);
-                        }}
+                  <td className="relative w-20 px-2 text-xs text-neutral-400">
+                    {/* Only a status worth acting on earns a word. "Unverified"
+                        and "No evidence" were printed on every ungrounded row,
+                        which is most of them while a spec is being built: a
+                        column of grey labels that say nothing happened. The
+                        state is still readable -- verified rows are tinted and
+                        carry a tick, everything else is plain -- and the full
+                        wording stays in the tooltip. */}
+                    <span
+                      aria-label={`Evidence: ${evidenceLabel}`}
+                      title={status === "verified" ? "Validated for this claim at the recorded source generation" :
+                        status === "stale" ? "Claim or evidence changed. Revalidate before relying on this citation." :
+                          status === "unverified" ? "Source link exists; this claim has not been verified." : "No source evidence"}
+                      data-evidence-status={status}
+                      className={`block text-[10px] ${status === "verified" ? "text-emerald-700" : "text-amber-800"}`}
+                    >{status === "verified" ? "✓" : status === "stale" ? evidenceLabel : ""}</span>
+                    {/* The chip wraps the anchor: hovering the anchor opens
+                        the source AND the verdict menu, and the verdict sits
+                        in the icon's corner, so the mark and the thing it
+                        judges read as one object. */}
+                    {rowRef ? (
+                      <RefReviewChip
+                        label={r.key || `row ${i + 1}`}
+                        review={refReview(r)}
+                        onRevalidate={
+                          canEdit && status !== "verified"
+                            ? () =>
+                                persistRows(
+                                  rows.map((row, j) =>
+                                    j === i ? { ...row, revalidate_evidence: true } : row,
+                                  ),
+                                )
+                            : undefined
+                        }
+                        onChange={(state, note) =>
+                          persistRows(
+                            rows.map((row, j) =>
+                              j === i ? { ...row, ...refVerdict(state, note) } : row,
+                            ),
+                          )
+                        }
                       >
-                        <AnchorIcon size={11} strokeWidth={2.2} aria-hidden="true" />
-                      </button>
+                        <SourceAnchorButton
+                          workspaceSlug={workspaceSlug}
+                          documentNodeId={d.source_doc_node_id}
+                          refValue={rowRef}
+                          query={status === "verified" ? r.value || undefined : undefined}
+                          title={`Open page ${rowRef.page} in viewer`}
+                          ariaLabel={`Open source page ${rowRef.page}`}
+                          className="h-5 w-5"
+                        />
+                      </RefReviewChip>
                     ) : null}
-                    {/* Per-row source handle. Default state is a 2px grey
-                        dot tucked against the row's right edge — visible
-                        on hover, hit-target stays clickable for drag-to-
-                        connect via ReactFlow's onConnect.
-                        We pin the handle inside the row's last <td> so the
-                        top offset comes from layout flow (no absolute Y
-                        math) and the X is right at the table's right edge. */}
+                    {/* Per-row source handle. Never visible or grabbable
+                        (see the handle rule in index.css): it only gives an
+                        anchored evidence edge a slot to pin to while its row
+                        is hovered. */}
                     <Handle
                       type="source"
                       position={Position.Right}
@@ -413,10 +497,10 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
             })}
           </tbody>
         </table>
-      ) : (
-        <div className="px-3 py-2 text-[12px] text-neutral-700 leading-snug">
-          {d.description}
-        </div>
+      ) : previewUrl ? null : (
+        // Beside the section's picture the description is the section again,
+        // flattened into a paragraph; it stays as the picture's tooltip.
+        <div className="px-3 py-2 text-neutral-700 leading-snug">{d.description}</div>
       )}
 
       {canEdit ? (

@@ -1,6 +1,11 @@
 import { create } from "zustand";
 
-import type { CanvasEvent } from "@/realtime/sseClient";
+import type {
+  CanvasEvent,
+  EventActor,
+  PresenceEntry,
+  PresencePayload,
+} from "@/realtime/sseClient";
 
 type Node = {
   id: string;
@@ -8,6 +13,8 @@ type Node = {
   label: string;
   x: number;
   y: number;
+  width?: number | null;
+  height?: number | null;
   /**
    * Parent node id (for area/container nesting). When set, ReactFlow
    * treats this node as a child of `parent`. Moving the parent moves the child,
@@ -15,6 +22,10 @@ type Node = {
    * Mirrors the backend `Node.parent` top-level field.
    */
   parent?: string | null;
+  locked?: boolean;
+  visible?: boolean;
+  layer?: "background" | "content" | "annotation";
+  opacity?: number | null;
   data?: Record<string, unknown>;
 };
 type Edge = {
@@ -28,6 +39,33 @@ type Edge = {
   data?: Record<string, unknown>;
 };
 
+export const CANVAS_NODE_WIRE_FIELDS = [
+  "id",
+  "node_type",
+  "label",
+  "x",
+  "y",
+  "width",
+  "height",
+  "parent",
+  "locked",
+  "visible",
+  "layer",
+  "opacity",
+  "data",
+] as const;
+
+export const CANVAS_EDGE_WIRE_FIELDS = [
+  "id",
+  "source",
+  "target",
+  "label",
+  "edge_type",
+  "sourceHandle",
+  "targetHandle",
+  "data",
+] as const;
+
 /**
  * A locator into a source document (mirrors the backend `SourceRef`).
  * `slug` + `page` are the minimal locator; the rest refine it. `detail`
@@ -37,6 +75,7 @@ type Edge = {
 export type SourceRef = {
   slug: string;
   page: number;
+  coord_origin?: string | null;
   bbox?: number[];
   region_id?: string;
   detail?: {
@@ -134,7 +173,13 @@ function asNode(row: WireRow): Node {
     label: (row.label as string) ?? "",
     x: (row.x as number) ?? 0,
     y: (row.y as number) ?? 0,
+    width: (row.width as number | null | undefined) ?? null,
+    height: (row.height as number | null | undefined) ?? null,
     parent: (row.parent as string | null | undefined) ?? null,
+    locked: (row.locked as boolean | undefined) ?? false,
+    visible: (row.visible as boolean | undefined) ?? true,
+    layer: (row.layer as Node["layer"] | undefined) ?? "content",
+    opacity: (row.opacity as number | null | undefined) ?? null,
     data: (row.data as Record<string, unknown>) ?? {},
   };
 }
@@ -161,7 +206,50 @@ export type Activity = {
   type: string;
   text: string;
   at: number;
+  /** Display name of who caused the event (#322): actor label, or kind. */
+  by?: string;
 };
+
+/** Human-readable name for an event's actor ("browser", "claude-code", ...). */
+export function actorLabel(actor?: EventActor | null): string | undefined {
+  if (!actor) return undefined;
+  return actor.label || actor.kind;
+}
+
+const NODE_TOUCHING_EVENTS = new Set([
+  "NodeAdded",
+  "NodeMoved",
+  "NodeResized",
+  "NodeUpdated",
+  "NodeReparented",
+]);
+
+/**
+ * Merge a `data` patch the way the backend does (#192): nested objects
+ * merge recursively and a `null` value deletes its key. The canvas store
+ * has to agree with the server, or a patch that touches one field looks
+ * locally like it erased the rest.
+ */
+function mergeData(
+  base: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null) {
+      delete out[k];
+      continue;
+    }
+    const prev = out[k];
+    const bothObjects =
+      v && typeof v === "object" && !Array.isArray(v)
+      && prev && typeof prev === "object" && !Array.isArray(prev);
+    out[k] = bothObjects
+      ? mergeData(prev as Record<string, unknown>, v as Record<string, unknown>)
+      : v;
+  }
+  return out;
+}
 
 function describeEvent(
   evt: CanvasEvent,
@@ -219,8 +307,24 @@ type State = {
   nodes: Record<string, Node>;
   edges: Record<string, Edge>;
   activity: Activity[];
+  /**
+   * Latest actor to touch each node, from live SSE events only (#322).
+   * The snapshot carries no attribution, so this covers edits seen during
+   * this session; persisted per-node attribution is the fuller #325 slice.
+   */
+  lastEditors: Record<string, EventActor>;
+  /**
+   * Live presence roster (who is on this canvas right now), replaced
+   * wholesale by every `presence` SSE event — the server always sends the
+   * full roster, so no client-side reconciliation is needed. Per-serve,
+   * in-memory server state: empty until the first presence event lands.
+   */
+  presence: PresenceEntry[];
+  /** This connection's own roster entry (`you` on the initial event). */
+  presenceSelfId: string | null;
   setSnapshot: (snap: Snapshot) => void;
   applyEvent: (evt: CanvasEvent) => void;
+  applyPresence: (payload: PresencePayload) => void;
   reset: () => void;
 };
 
@@ -230,6 +334,9 @@ export const useCanvasStore = create<State>((set) => ({
   nodes: {},
   edges: {},
   activity: [],
+  lastEditors: {},
+  presence: [],
+  presenceSelfId: null,
   setSnapshot: (snap) => set({
     slug: snap.slug,
     version: snap.version,
@@ -242,6 +349,7 @@ export const useCanvasStore = create<State>((set) => ({
       return [e.id, e];
     })),
     activity: [],
+    lastEditors: {},
   }),
   applyEvent: (evt) => set((state) => {
     if (evt.type === "IngestProgress") {
@@ -336,9 +444,19 @@ export const useCanvasStore = create<State>((set) => ({
     }
     if (state.version >= evt.version) return state;
     const text = describeEvent(evt, state.nodes, state.edges);
+    const by = actorLabel(evt.actor);
     const nodes = { ...state.nodes };
     const edges = { ...state.edges };
     const p = evt.payload as Record<string, unknown>;
+    // Track the latest actor per node from the live stream (#322).
+    const lastEditors = { ...state.lastEditors };
+    const touchedNodeId = p.id as string | undefined;
+    if (touchedNodeId && evt.actor && NODE_TOUCHING_EVENTS.has(evt.type)) {
+      lastEditors[touchedNodeId] = evt.actor;
+    }
+    if (evt.type === "NodeRemoved" && touchedNodeId) {
+      delete lastEditors[touchedNodeId];
+    }
     switch (evt.type) {
       case "NodeAdded":
         nodes[p.id as string] = {
@@ -347,7 +465,13 @@ export const useCanvasStore = create<State>((set) => ({
           label: (p.label as string) ?? "",
           x: (p.x as number) ?? 0,
           y: (p.y as number) ?? 0,
+          width: (p.width as number | null | undefined) ?? null,
+          height: (p.height as number | null | undefined) ?? null,
           parent: (p.parent as string | null | undefined) ?? null,
+          locked: (p.locked as boolean | undefined) ?? false,
+          visible: (p.visible as boolean | undefined) ?? true,
+          layer: (p.layer as Node["layer"] | undefined) ?? "content",
+          opacity: (p.opacity as number | null | undefined) ?? null,
           data: (p.data as Record<string, unknown>) ?? {},
         };
         break;
@@ -377,12 +501,32 @@ export const useCanvasStore = create<State>((set) => ({
         if (nodes[id]) {
           const cur = nodes[id];
           const fields = (p.fields as Record<string, unknown>) ?? {};
-          const known = new Set(["node_type", "label", "x", "y", "parent", "data"]);
+          const known = new Set([
+            "node_type",
+            "label",
+            "x",
+            "y",
+            "width",
+            "height",
+            "parent",
+            "locked",
+            "visible",
+            "layer",
+            "opacity",
+            "data",
+          ]);
           const next: Node = { ...cur };
           const data: Record<string, unknown> = { ...(cur.data ?? {}) };
           for (const [k, v] of Object.entries(fields)) {
             if (k === "data" && v && typeof v === "object") {
-              Object.assign(next, { data: { ...(v as Record<string, unknown>) } });
+              // Merge, do not replace. The backend merges a `data` patch
+              // into the stored data (null deletes a key); replacing it
+              // here meant any partial write, for example one that only
+              // sets a font size, wiped every other field locally until the
+              // page was reloaded.
+              Object.assign(next, {
+                data: mergeData(cur.data ?? {}, v as Record<string, unknown>),
+              });
             } else if (known.has(k)) {
               Object.assign(next, { [k]: v });
             } else {
@@ -448,8 +592,9 @@ export const useCanvasStore = create<State>((set) => ({
           nodes: {},
           edges: {},
           version: evt.version,
+          lastEditors: {},
           activity: [
-            { id: evt.id, type: evt.type, text, at: Date.now() },
+            { id: evt.id, type: evt.type, text, at: Date.now(), by },
             ...state.activity,
           ].slice(0, 8),
         };
@@ -459,11 +604,21 @@ export const useCanvasStore = create<State>((set) => ({
       nodes,
       edges,
       version: evt.version,
+      lastEditors,
       activity: [
-        { id: evt.id, type: evt.type, text, at: Date.now() },
+        { id: evt.id, type: evt.type, text, at: Date.now(), by },
         ...state.activity,
       ].slice(0, 8),
     };
   }),
-  reset: () => set({ slug: null, version: 0, nodes: {}, edges: {}, activity: [] }),
+  applyPresence: (payload) => set((state) => ({
+    presence: Array.isArray(payload.present) ? payload.present : [],
+    // `you` only rides the initial roster after (re)connect; keep the
+    // known self id on later broadcasts.
+    presenceSelfId: payload.you ?? state.presenceSelfId,
+  })),
+  reset: () => set({
+    slug: null, version: 0, nodes: {}, edges: {}, activity: [], lastEditors: {},
+    presence: [], presenceSelfId: null,
+  }),
 }));

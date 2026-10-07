@@ -2,14 +2,132 @@
 from __future__ import annotations
 
 import json
+import sys
+from pathlib import Path
+from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
 from anchor.adapters.cli.extensions import extensions_app
+from anchor.adapters.extension_host import ExtensionRuntimeStatus
 
 
 def _runner():
     return CliRunner()
+
+
+def test_status_emits_shared_runtime_diagnostics(tmp_path, monkeypatch):
+    from anchor.adapters import project_runtime
+
+    runtime = SimpleNamespace(
+        extension_status={
+            "anchor-fmus": ExtensionRuntimeStatus(
+                name="anchor-fmus",
+                source="bundled",
+                available=False,
+                reason="FMPy missing",
+                error_type="RuntimeError",
+            )
+        }
+    )
+    monkeypatch.setattr(
+        project_runtime,
+        "build_project_runtime_for_data_dir",
+        lambda *_args, **_kwargs: runtime,
+    )
+
+    result = _runner().invoke(
+        extensions_app,
+        ["status", "--data-dir", str(tmp_path / "data")],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["summary"] == {
+        "available": 0,
+        "unavailable": 1,
+    }
+
+
+def _producer_manifest(name: str, command: str) -> dict:
+    return {
+        "oip_version": "0.1",
+        "producer": {"name": name, "version": "0.2.0"},
+        "produces": {"source_kinds": ["application/pdf"]},
+        "invocation": {"kind": "mcp-stdio", "command": command, "tools_namespace": name},
+    }
+
+
+def test_status_lists_discovered_producers_with_path_check(tmp_path, monkeypatch):
+    """#308: discovered producers appear with a resolvability check, not-started."""
+    from anchor.adapters import project_runtime
+
+    monkeypatch.setattr(
+        project_runtime,
+        "build_project_runtime_for_data_dir",
+        lambda *_args, **_kwargs: SimpleNamespace(extension_status={}),
+    )
+    # Isolate discovery + PATH: one resolvable command, one missing.
+    home = tmp_path / "home"
+    system_dir = home / ".config" / "oip" / "producers.d"
+    system_dir.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    tool = bin_dir / ("graph-tracer-mcp.cmd" if sys.platform == "win32" else "graph-tracer-mcp")
+    tool.write_text("@echo off\n" if sys.platform == "win32" else "#!/bin/sh\n", encoding="utf-8")
+    tool.chmod(0o755)
+    monkeypatch.setenv("PATH", str(bin_dir))
+    (system_dir / "graph-tracer.json").write_text(
+        json.dumps(_producer_manifest("graph-tracer", "graph-tracer-mcp --serve"))
+    )
+    data_dir = tmp_path / "data"
+    project_dir = data_dir / ".oip" / "producers.d"
+    project_dir.mkdir(parents=True)
+    (project_dir / "ghost.json").write_text(
+        json.dumps(_producer_manifest("ghost", "no-such-binary-xyz"))
+    )
+
+    result = _runner().invoke(extensions_app, ["status", "--data-dir", str(data_dir)])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    producers = payload["producers"]
+    assert "never started by Anchor" in producers["note"]
+    by_name = {item["name"]: item for item in producers["items"]}
+    tracer = by_name["graph-tracer"]
+    assert tracer["source"] == "system"
+    assert tracer["command_found"] is True
+    assert tracer["check"] == "command found on PATH"
+    assert Path(tracer["command_path"]) == tool
+    assert tracer["started"] is False
+    ghost = by_name["ghost"]
+    assert ghost["source"] == "project"
+    assert ghost["command_found"] is False
+    assert ghost["check"] == "command not found on PATH"
+    assert ghost["started"] is False
+    assert producers["summary"] == {"discovered": 2, "command_found": 1}
+
+
+def test_status_with_no_discovered_producers_keeps_empty_section(tmp_path, monkeypatch):
+    from anchor.adapters import project_runtime
+
+    monkeypatch.setattr(
+        project_runtime,
+        "build_project_runtime_for_data_dir",
+        lambda *_args, **_kwargs: SimpleNamespace(extension_status={}),
+    )
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "home" / ".config"))
+
+    result = _runner().invoke(
+        extensions_app, ["status", "--data-dir", str(tmp_path / "data")]
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["producers"]["items"] == []
+    assert payload["producers"]["summary"] == {"discovered": 0, "command_found": 0}
 
 
 def test_list_shows_bundled_pdf_producer(tmp_path, monkeypatch):
@@ -71,6 +189,47 @@ def test_add_refuses_invalid_manifest(tmp_path, monkeypatch):
     assert "missing oip_version" in result.output or "failed validation" in result.output
 
 
+def test_add_refuses_producer_name_path_traversal(tmp_path, monkeypatch):
+    config_home = tmp_path / "config"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps({
+            "oip_version": "0.1",
+            "producer": {"name": "../../outside", "version": "0.1.0"},
+        }),
+        encoding="utf-8",
+    )
+
+    result = _runner().invoke(extensions_app, ["add", str(manifest)])
+
+    assert result.exit_code != 0
+    assert "producer.name" in result.output
+    assert not (config_home / "outside.json").exists()
+
+
+def test_add_refuses_unknown_registration_scope(tmp_path, monkeypatch):
+    config_home = tmp_path / "config"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps({
+            "oip_version": "0.1",
+            "producer": {"name": "safe-name", "version": "0.1.0"},
+        }),
+        encoding="utf-8",
+    )
+
+    result = _runner().invoke(
+        extensions_app,
+        ["add", str(manifest), "--scope", "somewhere"],
+    )
+
+    assert result.exit_code != 0
+    assert "scope must be 'system' or 'project'" in result.output
+    assert not (config_home / "oip" / "producers.d").exists()
+
+
 def test_add_dedupes_by_default(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
@@ -115,6 +274,20 @@ def test_remove(tmp_path, monkeypatch):
     result = runner.invoke(extensions_app, ["remove", "x"])
     assert result.exit_code == 0, result.output
     assert "removed" in result.output
+
+
+def test_remove_refuses_producer_name_path_traversal(tmp_path, monkeypatch):
+    config_home = tmp_path / "config"
+    victim = config_home / "victim.json"
+    victim.parent.mkdir(parents=True)
+    victim.write_text("keep", encoding="utf-8")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+
+    result = _runner().invoke(extensions_app, ["remove", "../../victim"])
+
+    assert result.exit_code != 0
+    assert "producer.name" in result.output
+    assert victim.read_text(encoding="utf-8") == "keep"
 
 
 def test_discover_prints_paths(tmp_path, monkeypatch):

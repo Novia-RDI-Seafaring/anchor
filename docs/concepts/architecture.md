@@ -1,166 +1,124 @@
 # Architecture
 
-## Thesis
+ANCHOR is a file-backed modular monolith with ports-and-adapters boundaries.
+The shared domain model describes canvases, nodes, edges, intents, and review
+operations. Extensions add PDF processing, CAD, SysML, and optional FMU services.
 
-ANCHOR is a **canvas primitive** with **swappable extensions**. The
-canvas is a small, domain-agnostic piece of software that knows about
-nodes, edges, workspaces, and events. Everything that turns a PDF into
-something you can drag onto that canvas — Docling extraction, vision-LM
-region detection, region cropping, FMU inspection — lives in an
-**extension**, sits behind a stable contract, and can be replaced
-without touching the canvas.
+For application use, start with the [Quickstart](../getting-started/quickstart.md).
+This page explains how the interfaces reach the same project state.
 
-The contract has a name: the **Open Ingestion Protocol** (OIP). It's
-versioned separately and lives in its own
-[repository](https://github.com/Novia-RDI-Seafaring/OIP).
+## Environment, project, and runtime
 
-A canvas with no extensions is empty but functional. A canvas with two
-extensions (PDFs, FMUs) is what we ship today. A canvas with someone
-else's extension (audio transcripts, code regions, video frames) is
-why OIP exists.
+An environment selects the provider and model-egress policy. A project binds
+one document corpus and its canvases to that environment. Project files live
+under `.anchor_data/`; the environment registry maps a project name to its folder.
 
-The runtime, durable stores, event bus, consumers, and ports-and-adapters
-layers are shown together in [The hexagon](#the-hexagon).
+`ProjectRuntime` composes services for one resolved project. It supplies the
+workspace service, stores, event bus, intent service, and relevant extension
+services. Runtime profiles (`canvas`, `ingest`, `extensions`, and `full`) allow
+short-lived commands to avoid loading unused processing dependencies.
 
----
+HTTP, MCP, and CLI use the same service implementations and persistence format.
+They are separate processes when launched separately; they do not share one
+Python service object, event bus, or lock across process boundaries.
 
-## The three substrates
+## Service boundaries
 
-| Substrate     | Lifetime                | Where it lives             | Owned by             |
-| ------------- | ----------------------- | -------------------------- | -------------------- |
-| **Documents** | durable, shared         | `data/<producer>/...`      | producer extensions  |
-| **Canvases**  | durable, per-workspace  | `data/canvases/<slug>/`    | canvas core          |
-| **Session**   | ephemeral, per-process  | in-memory event bus        | canvas core          |
+| Layer | Location | Responsibility |
+| --- | --- | --- |
+| Domain | `src/anchor/core/` | Models, commands, reducers, service rules, and port protocols |
+| Infrastructure | `src/anchor/infra/` | Filesystem stores, configuration, event transport, and other port implementations |
+| Adapters | `src/anchor/adapters/` | HTTP routes, MCP tool dispatch, CLI commands, and runtime composition |
+| Extensions | `src/anchor/extensions/` | PDF, CAD, SysML, and FMU-specific models and services |
+| Browser | `web/` | React canvas, PDF source dock, editing tools, and request/review views |
 
-Documents and canvases are **independent**. The same PDF can appear on
-many canvases; deleting a canvas doesn't delete the PDF; a fresh
-clone of `data/` on another machine yields the same canvases and the
-same documents because everything is plain files.
-
-The session substrate is the live wire — every mutation publishes a
-`DomainEvent`, and the HTTP, MCP, and SSE adapters all subscribe to it.
-That's how a node-move in one browser tab shows up in a second tab and
-in an agent's MCP view within ~50ms, with no separate sync layer.
-
----
-
-## The hexagon
-
-ANCHOR's Python package follows ports-and-adapters layering, enforced
-in CI by `import-linter`. The contracts (verbatim from `.importlinter`):
-
-```
-adapters → infra → core              (one direction only)
-
-core MUST NOT import:                fastapi, openai, mcp, pymupdf,
-                                     docling, uvicorn, starlette,
-                                     typer, aiofiles, sse_starlette
-
-infra MUST NOT import:               fastapi, mcp, uvicorn, starlette,
-                                     typer, sse_starlette
-
-core, infra MUST NOT import:         anchor.extensions.*
-```
-
-In English: **the canvas core is pure**. It knows the shape of a
-workspace and how to apply an event to one; it cannot open a file, hit
-a URL, or call an LLM. Concrete I/O lives in `infra/`. Transport — HTTP
-routes, MCP tool definitions, CLI subcommands — lives in `adapters/`.
-Anything PDF- or FMU-specific lives in `extensions/` and the canvas
-itself does not import it.
+Domain code has no transport, document-processing, or vendor SDK imports.
+Import-linter enforces the dependency rules declared in `.importlinter`.
+Extensions repeat domain/infrastructure boundaries where appropriate.
 
 ![ANCHOR runtime and hexagonal architecture](../assets/diagrams/hexagon-architecture.svg)
 
-*The runtime separates source producers, durable document and canvas
-stores, ports-and-adapters layers, and consumers. The core is pure
-domain; `.importlinter` fails the build if code reaches across a
-boundary or pulls a transport or vendor SDK into a place it does not
-belong.*
+The diagram summarizes the layers and producer/consumer roles. The runtime
+implementation and bundled extension list define the current supported services.
 
-### What lives in each layer
+## Canvas state and live updates
 
-| Layer        | Path                              | Examples |
-| ------------ | --------------------------------- | -------- |
-| `core`       | `src/anchor/core/`                | `Workspace`, `DomainEvent`, `WorkspaceService`, port protocols |
-| `infra`      | `src/anchor/infra/`               | `MemoryEventBus`, `FsWorkspaceStore`, `MemoryWorkspaceStore` |
-| `adapters`   | `src/anchor/adapters/`            | FastAPI routers, MCP tool handlers, Typer CLI |
-| `extensions` | `src/anchor/extensions/anchor_*/` | PDF medallion pipeline, FMU inspector |
+`WorkspaceService` validates a mutation, writes its event and current state,
+and publishes the event. Each canvas has metadata, a state snapshot, and an
+append-only event log. The browser writes through HTTP and subscribes to SSE.
+SSE starts with a snapshot and then carries patches and presence updates.
 
-Extensions repeat the same shape inside their own boundary — every
-extension has its own `core/`, `infra/`, and (optionally) `adapters/`.
-The fifth import-linter contract enforces this for `anchor_pdfs`.
+The HTTP process also tails persisted canvas events so CLI and MCP writes can
+reach open browser views. Cross-process propagation is based on the event log,
+not a shared in-memory bus. Browser reconciliation and reloads can recover the
+persisted state; there is no fixed latency guarantee.
 
----
+Workspace mutation locks serialize operations within a runtime process. They
+do not coordinate independent writers across operating-system processes.
+Avoid simultaneous writes to the same canvas from separate processes. File
+tailing distributes updates; it does not provide a distributed transaction lock.
 
-## Two services
+See [Data and events](data-and-events.md) and [Canvas](canvas.md).
 
-The whole canvas behaviour fits into one service plus extensions can
-add their own. Today there are two:
+## Requests and review
 
-- **`WorkspaceService`** *(core)* — the only thing allowed to mutate a
-  workspace. Validates a command against current state, applies the
-  event reducer, persists, publishes. Methods: `add_node`, `move_node`,
-  `update_node`, `remove_node` (cascades to edges), `add_edge`,
-  `remove_edge`, `clear`, `create_workspace`, `list_workspaces`,
-  `get_state`. ~13 public methods, every one of them async, every one
-  of them returning the new state plus the event(s) that produced it.
+Canvas markup can submit a durable project-level intent with text, drawing
+information, and target elements. An agent pulls the pending queue, reads the
+targeted state and evidence, and replies in the intent thread. It can request
+clarification or stage a suggestion for human approval. Empty placeholder
+objects are targets, not submitted instructions.
 
-- **`IngestService`** *(extension: anchor_pdfs)* — runs a PDF through
-  bronze (raw) → silver (Docling extraction) → gold (VLM-polished
-  markdown + region detection). Emits progress events on the same bus.
+The thread persists with the work. Applying or reverting a thread change uses
+the same domain services as other canvas operations. Canvas proposal sets and
+review mode also support review of agent-added elements. They are distinct from
+the thread's staged suggestions. ANCHOR supplies these mechanisms; an external
+harness supplies the agent execution and polling behavior.
 
-`anchor_fmus` has its own `FmuService` (`upload_and_inspect`,
-`simulate`, `list_simulations`, ...). ANCHOR's canvas core never
-imports either.
+## PDF extension
 
----
+The PDF extension retains the original PDF in bronze storage, derives local
+page extraction and layout geometry in silver, and publishes interpreted regions
+in gold when a provider or harness produces them. A local-only environment does
+not run the model-assisted gold stage.
 
-## Four ways to talk to it
+Built-in ingestion runs the configured processing pipeline. In a harness project,
+browser upload instead saves the PDF and queues a `drop_to_ingest` intent. The
+agent runs the ingestion session page by page. ANCHOR validates submitted regions
+and reconstructs their content from stored items or selected table cells.
 
-| Protocol        | Use case                  | Entry point                    |
-| --------------- | ------------------------- | ------------------------------ |
-| **HTTP REST**   | the React web UI          | `GET/POST /api/workspaces/...` |
-| **SSE**         | live updates to clients   | `GET /api/workspaces/{slug}/events` |
-| **MCP (stdio)** | agents (Claude, Cursor)   | `anchor-mcp` binary            |
-| **CLI**         | scripts, headless ingest  | `anchor` binary                |
+A table row's source reference resolves against that document view. Cell, item,
+region, and explicit-box references offer different precision. A page-only
+reference opens a page. Automated evidence binding checks a claim against stored
+validated evidence; a citation alone does not establish a Verified row.
 
-All four end up calling the same `WorkspaceService` methods. There is
-no second copy of the business logic. An agent moving a node and a
-human dragging a node go through the same code path, hit the same
-event log, and notify the same SSE subscribers.
+See [Document generations](document-generations.md),
+[Page geometry](document-page-geometry.md),
+[Source resolution](spec-source-resolution.md), and
+[Claim and evidence](claim-evidence.md).
 
-The MCP server hosts both canvas tools (`canvas_get_state`,
-`canvas_add_node`, ...) and extension tools for PDFs, FMUs, CAD and
-SysML. Extension tool names use safe prefixes such as `ingest_pdf`,
-`fmu_simulate` and `sysml_render` so they can coexist with other tools
-and pass MCP client name validation.
+## Provider boundary
 
----
+The environment owns the provider, endpoint, and local-only policy. A project
+cannot redirect its endpoint or weaken that policy. `local` and `harness` do
+not construct ANCHOR-side remote model clients. Default region embeddings use
+a local model, with weights cached separately from the package.
 
-## What ships in v2
+With `harness`, the agent receives page work items and may send them to its
+model provider. Even with `local`, an agent can retrieve document content through
+MCP. Local storage and ANCHOR model policy do not constrain the harness's own
+data handling. See [Provider setup](../guides/provider-setup.md).
 
-- **Python package** `anchor` — one wheel, three binaries: `anchor`
-  (CLI), `anchor-mcp` (stdio MCP server), `python -m anchor` (module
-  entry).
-- **React frontend** in `web/` — Vite + React 19 + Tailwind v4 +
-  ReactFlow + Zustand + TanStack Query. Compiled into the same wheel
-  via `web/dist/`. Same-origin in production, no separate API server.
-- **Two extensions in-tree** — `anchor_pdfs`, `anchor_fmus`. Both ship
-  OIP manifests. Both are reachable through the same MCP server.
-- **Hexagonal layering enforced in CI** — `uv run lint-imports` passes
-  five contracts on every push.
+## Packaging and extension discovery
 
----
+The `anchor-kb` wheel ships the Python package and a prebuilt browser bundle.
+`anchor serve` serves the UI and HTTP API from one process. `anchor-mcp` runs
+stdio MCP separately. Source editable installs use `web/dist` or the Vite
+development server for the UI.
 
-## What's intentionally not here
+PDF, CAD, and FMU producers have bundled manifests; SysML services are also
+included. FMU simulation requires the optional runtime. Discovering or registering
+an OIP manifest makes its metadata available; it does not automatically launch
+an external producer server or proxy its tools. See [Extensions and OIP](extensions-and-oip.md).
 
-- **No auth.** Single-tenant, runs on your laptop. Multi-tenant is on
-  the roadmap (see memory note `project_multitenancy_roadmap`).
-- **No managed service.** No DB. No Redis. No queue. The substrate is
-  the filesystem; the bus is in-process. Two browser tabs sync via SSE
-  on a single Python process.
-- **No vendor SDK in the canvas.** OpenAI imports live in
-  `anchor_pdfs.infra.llm`. Swap them; the canvas doesn't notice.
-- **No "knowledge graph" abstraction.** The graph is just nodes and
-  edges. Provenance lives in the regions on disk, not in a separate
-  triplestore.
+The HTTP server is unauthenticated and defaults to loopback. There is no managed
+cloud service or database required by the application.

@@ -13,13 +13,13 @@ to group/filter by model before calling.
 """
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
 
 def cosine(a: list[float], b: list[float]) -> float:
     if len(a) != len(b):
         return 0.0
-    return sum(x * y for x, y in zip(a, b))
+    return sum(x * y for x, y in zip(a, b, strict=True))
 
 
 def search(

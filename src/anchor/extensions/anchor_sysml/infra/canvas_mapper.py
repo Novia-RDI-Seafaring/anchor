@@ -35,7 +35,6 @@ from anchor.extensions.anchor_sysml.infra.canvas_resolver import (
     resolve_subject_edges,
 )
 
-
 # ── Layout constants ─────────────────────────────────────────────────────
 
 GRID_COLS = 4

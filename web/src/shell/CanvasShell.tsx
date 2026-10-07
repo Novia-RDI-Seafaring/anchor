@@ -7,27 +7,25 @@
  *
  * Layout:
  *   - Slim left tool rail (draw.io style) pinned to the left edge, holds
- *     Shapes / Cards / a producer-add menu / Library button.
- *   - Right-side Library drawer (shadcn Sheet) opens from the Library
- *     button on the rail or via the `]` shortcut.
- *   - Right-side Properties panel opens when a node is selected
- *     (mutually exclusive with the Library drawer — see uiStore).
+ *     Shapes / Cards / a producer-add menu.
+ *   - Ingested files live in the left files explorer (SourceCluster, owned
+ *     by CanvasPage) — the old right-side Library drawer is retired (#220).
+ *   - Right-side Properties panel (inspector) opens when a node is selected.
  *   - ActivityToast lives in the bottom-right.
  *
  * Future-proofing: an opt-in bottom-middle floating chat input has been
- * flagged. The rail pins to the left, the drawer slides in from the right,
- * ActivityToast sits in the bottom-right — none of those will fight a
- * future bottom-centre input. Keep new floating UI off the centre-bottom
- * axis until that feature lands.
+ * flagged. The rail pins to the left, ActivityToast sits in the bottom-right
+ * — neither will fight a future bottom-centre input. Keep new floating UI
+ * off the centre-bottom axis until that feature lands.
  */
 import { ReactFlowProvider } from "@xyflow/react";
 
 import { ActivityToast } from "@/canvas/ActivityToast";
 import { DirectionalConnectors } from "@/canvas/DirectionalConnectors";
 
+import { CatchUpPanel } from "./CatchUpPanel";
 import { IngestActivityPill } from "./IngestActivityPill";
 import { LeftToolRail } from "./LeftToolRail";
-import { LibraryDrawer } from "./LibraryDrawer";
 import { PropertiesPanel } from "./PropertiesPanel";
 
 type Props = {
@@ -51,9 +49,13 @@ export function CanvasShell({ workspaceSlug, children }: Props) {
           {/* Project-level ingestion-activity pill (issue #51): bottom-left,
               live for every in-flight ingest regardless of trigger. */}
           <IngestActivityPill />
+          {/* "While you were away" catch-up summary (#325): top-right,
+              shown only when this canvas moved past the viewer's stored
+              last-seen version. Mounted inside the provider so entry
+              clicks can center via useReactFlow. */}
+          <CatchUpPanel workspaceSlug={workspaceSlug} />
           <ActivityToast />
         </div>
-        <LibraryDrawer workspaceSlug={workspaceSlug} />
         <PropertiesPanel />
       </div>
     </ReactFlowProvider>

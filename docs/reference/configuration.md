@@ -1,188 +1,145 @@
 # Configuration
 
-ANCHOR resolves configuration from, in priority order: explicit command-line
-flags, `ANCHOR_*` environment variables, the project `anchor.toml` marker, the
-environment `env.toml`, then built-in defaults. The API key is the exception:
-it stays in `ANCHOR_OPENAI_API_KEY` or a gitignored `.env`, never in a profile.
+Choose an environment before processing a PDF. The environment records the
+provider, endpoint, and model policy; the project records its own corpus and
+canvases. Start with [Provider setup](../guides/provider-setup.md) for recipes.
 
-## Environments: `anchor env create`
+## Supported configuration files
 
-The way to configure ANCHOR is `anchor env create`, which creates an
-**environment** (a named profile that is the data zone) and its `default`
-project:
+| Location | Purpose |
+| --- | --- |
+| `~/.anchor/envs/<name>/env.toml` | Environment provider, endpoint, model settings, and metadata |
+| `~/.anchor/envs/<name>/.env` | Optional environment-scoped endpoint credential |
+| `~/.anchor/envs/<name>/projects.toml` | Project-name to folder registry |
+| `<project>/anchor.toml` | Project name, environment binding, and permitted overrides |
+| `<project>/.anchor_data/` | Project documents, canvases, and intent data |
+
+Create profiles with `anchor env create`. Bind a working folder with
+`anchor init --env NAME`, or create a managed project with
+`anchor project create NAME --env ENV`. Do not put credentials in TOML profiles.
+
+## Select a project
+
+Inside an initialized working folder, CLI commands resolve the nearest
+`anchor.toml` unless explicitly overridden. Outside that folder, selection uses
+explicit `--env` / `--project` where supported, `ANCHOR_ENV` / `ANCHOR_PROJECT`,
+the saved `anchor use` selection, and then the default environment and project.
+An explicit `--data-dir` selects a raw storage directory for commands that
+support it. Use command help for the available selectors.
 
 ```bash
-anchor env create local         # create an environment named "local"
-anchor env create work          # a named environment
+anchor use study pump-study
+anchor check --env study --project pump-study
+anchor serve --env study --project pump-study
 ```
 
-`anchor env create` asks where document content may go (the **AI provider**,
-which is also a **data zone**) and writes a non-secret `env.toml` under
-`~/.anchor/envs/<name>/`:
+MCP selection is separate: an installed `anchor-mcp --env study` serves that
+environment, and the agent chooses a project per call or with `open_project`.
+CLI `anchor use` does not change the MCP server. A browser server serves one
+project. `anchor serve-info` helps identify running servers.
 
-| Provider | Data zone |
-| --- | --- |
-| `local` | on-host; nothing leaves the network (no gold regions) |
-| `ollama` | your machine / LAN; no internet egress (offline gold regions) |
-| `openai` | public cloud |
-| `azure` | your Azure tenant / region |
-| `custom` | any OpenAI-compatible endpoint; you label the zone |
+## Environment-owned model policy
 
-It also picks the embedding model (local `bge-small`, or a remote
-`text-embedding-3-*` when an endpoint is configured). Storage is structural:
-each project keeps its corpus in a hidden `.anchor_data/` folder, so there is no
-data directory to set. A managed project lives under
-`~/.anchor/envs/<name>/projects/<project>/`; a project you start with `anchor
-init` lives in your own folder. Either way the environment's `projects.toml`
-maps the project name to its folder.
+Provider, endpoint, and local-only settings belong to the environment. Project
+overrides cannot redirect the endpoint or weaken local-only mode. Process
+variables do not silently retarget a named environment's provider/endpoint.
+Create another environment when the processing destination changes.
 
-To start a project in a working folder, run `anchor init` there. It drops an
-`anchor.toml` marker plus a `.anchor_data/`, binds the folder to an environment,
-and registers it by name. Run Anchor anywhere inside that folder afterwards and
-it resolves to the project with no flags.
-
-Every adapter resolves the same way, selecting the environment and project by
-name: `--env` / `--project`, `ANCHOR_ENV` / `ANCHOR_PROJECT`, or the `anchor
-use` session selection, else the default environment and its `default` project.
-
-!!! warning "Secrets stay out of the profile"
-    The API key is never written to `env.toml`. Put it in
-    `ANCHOR_OPENAI_API_KEY` (environment or a gitignored `.env` next to the
-    profile), so a committed config never carries credentials.
-
-### `env.toml` keys
-
-| Key | Default | Description |
+| Provider | Model-assisted gold | Model destination |
 | --- | --- | --- |
-| `provider` | — | The chosen provider; records the data zone. |
-| `embed_model` | `BAAI/bge-small-en-v1.5` | Embedding model. A `text-embedding-*` id routes embeddings to the configured endpoint. |
-| `openai_base_url` | (unset) | OpenAI-compatible endpoint for polish / region extraction. |
-| `polish_model` / `region_model` | `gpt-5.4` | Vision model or deployment names. |
-| `docling_device` | `auto` | Bronze-stage accelerator (see below). |
+| `local` | Skipped | No ANCHOR-side remote model client |
+| `harness` | Agent ingestion session | Connected agent and its chosen model provider |
+| `ollama` | Configured vision model | Configured Ollama endpoint |
+| `openai` | Configured vision model | Public OpenAI endpoint |
+| `azure` | Configured deployment | Configured Azure OpenAI endpoint |
+| `custom` | Configured model | Configured OpenAI-compatible endpoint |
 
-A project usually has no settings of its own and inherits the environment's. A
-project overrides a value by adding it to its own `anchor.toml` marker (alongside
-the `env` and `name` keys). A malformed config is ignored with a warning. It
-never crashes the CLI.
+Local storage does not constrain what an external harness can retrieve or send
+to its own model. A local-only pipeline may still require downloading local
+weights before offline use; run `anchor models prefetch --env NAME` while online.
 
-## Command-line settings
+## Credentials
 
-| Setting | Default | Description |
+For `openai`, `azure`, and `custom`, interactive `anchor env create` can prompt
+for the key with hidden input and save it to the environment's `.env`. With
+`--yes`, there is no credential prompt; provision the key separately.
+
+The environment credential file uses:
+
+```dotenv
+ANCHOR_OPENAI_API_KEY=<credential-for-this-environment>
+```
+
+The file is loaded only when the environment has a valid `env.toml`. An orphan
+key file neither selects a provider nor enables model traffic. The scoped loader
+accepts `ANCHOR_` names; a bare `OPENAI_API_KEY` in that file is ignored.
+A process-level `OPENAI_API_KEY` is a fallback only for the public `openai`
+provider with no custom base URL. Azure and custom endpoints require the explicit
+credential for that environment. Ollama needs no user key.
+
+## Model and extraction settings
+
+| Setting | Default | Purpose |
 | --- | --- | --- |
-| `--data-dir DIR` | the selected project's `.anchor_data/` | Storage-root override for a single command. Omit it to use the selected environment + project. |
-| `--env NAME` / `--project NAME` | the default env / `default` | Select the environment and project for the command. |
-| `--host HOST` | `127.0.0.1` | HTTP bind address for `anchor serve`. |
-| `--port PORT` | `8002` | Preferred HTTP port. If it is in use, `anchor serve` binds the next free port and prints the chosen URL. |
+| `embed_model` | `BAAI/bge-small-en-v1.5` | Local gold-region embeddings; configured `text-embedding-*` models use an allowed endpoint instead |
+| `polish_model` / `region_model` | `gpt-5.4` | Model or deployment names used when an endpoint-backed stage is enabled |
+| `openai_base_url` | Unset | Environment-owned OpenAI-compatible endpoint |
+| `docling_device` | `auto` | Local extraction accelerator selection |
+| `local_only` | Provider-dependent | Offline/no-remote-client policy; `local` environments enable it |
 
-Use loopback unless you provide authentication and TLS through your own
-deployment layer.
+### Azure OpenAI
 
-## Supported environment variables
+Defaults are configuration values, not a claim that every provider accepts that
+model name. Use a vision-capable model supported by your endpoint. For Azure,
+use the deployment name and a base URL ending in `/openai/v1/`.
+See [Azure test-drive](../guides/azure-test-drive.md).
+
+Gold-region embeddings are local by default. Configuring remote embeddings sends
+embedding text to the permitted endpoint; remote embeddings are rejected for
+providers whose policy disallows server model egress. Without gold regions there
+are no gold-region vectors to search.
+
+`docling_device` accepts `auto`, `cpu`, `cuda`, and `mps`. The default extraction
+path selects CUDA when available, otherwise CPU; accelerator failures may fall
+back to CPU. See the current runtime output when diagnosing a device issue.
+
+## Process variables and command flags
+
+These variables are recognized by runtime configuration. Named environment
+policy remains authoritative for security settings; they are not a way to
+redirect a configured data boundary.
 
 | Variable | Purpose |
 | --- | --- |
-| `ANCHOR_ENV` | Environment NAME to use; overrides the default environment. |
-| `ANCHOR_PROJECT` | Project NAME to use; overrides the `default` project. |
-| `ANCHOR_OPENAI_API_KEY` | Credential for an OpenAI-compatible endpoint used by LLM-backed extraction. |
-| `ANCHOR_OPENAI_BASE_URL` | OpenAI-compatible endpoint base URL, including local services. |
-| `ANCHOR_POLISH_MODEL` | Vision-capable model used for markdown polishing. |
-| `ANCHOR_REGION_MODEL` | Vision-capable model used for region extraction. |
-| `ANCHOR_EMBED_MODEL` | Embedding model id (local sentence-transformer, or `text-embedding-*` for remote). |
-| `ANCHOR_DOCLING_DEVICE` | Bronze-stage accelerator: `auto`, `cpu`, `cuda`, `mps`. |
-| `ANCHOR_DPI` | PDF rendering DPI for silver pages and region crops. |
-| `ANCHOR_CORS_ORIGINS` | Additional browser origins allowed by the HTTP server. |
-| `ANCHOR_FMU_DEMO` | Enables synthetic FMU demo behavior when explicitly set. |
+| `ANCHOR_ENV` / `ANCHOR_PROJECT` | CLI selection by name |
+| `ANCHOR_DATA_DIR` | Raw storage-root selection when that resolution path is used |
+| `ANCHOR_OPENAI_API_KEY` | Explicit endpoint credential |
+| `ANCHOR_OPENAI_BASE_URL` | Endpoint setting for configuration paths that permit it |
+| `ANCHOR_POLISH_MODEL` / `ANCHOR_REGION_MODEL` | Model or deployment settings |
+| `ANCHOR_EMBED_MODEL` | Embedding model setting |
+| `ANCHOR_DOCLING_DEVICE` | Local extraction accelerator |
+| `ANCHOR_DPI` | PDF rendering DPI |
+| `ANCHOR_CORS_ORIGINS` | Browser-origin configuration for the HTTP server |
+| `ANCHOR_FMU_DEMO` | Explicit opt-in to synthetic FMU demo output |
 
-## Data zones and egress
+`anchor serve` defaults to host `127.0.0.1` and preferred port `8002`. If the
+port is occupied it chooses another free port and prints the actual URL.
+The server is unauthenticated; provide an authenticated deployment layer before
+network exposure. MCP snapshot configuration needs the actual server URL in
+`--base-url` if it differs from the default.
 
-The provider you pick determines where document content may go:
-
-- **`local` / `ollama`**: bronze, silver, and embeddings run on your machine;
-  no document content leaves the network. `ollama` adds offline gold regions via
-  a local vision model.
-- **`openai`**: page images and extracted text are sent to OpenAI for polish
-  and region extraction.
-- **`azure` / `custom`**: the same content is sent only to the endpoint you
-  configure (your tenant / region, or a self-hosted gateway).
-
-Embeddings stay **local** (`bge-small`) by default, so text never leaves the
-host even when the vision model is remote. Choosing a `text-embedding-*` model
-sends embedding text to the configured endpoint.
-
-## Accelerator (docling)
-
-`docling_device` / `ANCHOR_DOCLING_DEVICE` selects the bronze extraction
-backend. `auto` (the default) uses CUDA when present, otherwise CPU. It does not
-use MPS: docling's layout model requires float64, which Apple's MPS backend
-cannot provide, so MPS fails on every document on Apple Silicon. Set `cuda` or
-`mps` explicitly to force a backend; an explicitly-pinned GPU still falls back
-to CPU on an accelerator error.
-
-## Azure OpenAI
-
-Azure OpenAI works through its **v1 (OpenAI-compatible)** surface — point ANCHOR
-at it like any OpenAI-compatible endpoint. In `anchor env create`, choose
-`azure` (or `custom`) and paste your `/openai/v1/` URL when prompted; the
-resulting `env.toml`:
-
-```toml
-provider        = "azure"
-openai_base_url = "https://<resource-name>.openai.azure.com/openai/v1/"
-polish_model    = "<vision-capable-deployment-name>"
-region_model    = "<vision-capable-deployment-name>"
-```
+## Check and recover
 
 ```bash
-export ANCHOR_OPENAI_API_KEY=<your-azure-key>   # never written to env.toml
+anchor check --env study --project pump-study
+anchor check --env study --project pump-study --probe
 ```
 
-Use the **deployment name** (not the base model name) as `polish_model` /
-`region_model`. For Azure, do not rely on a personal `OPENAI_API_KEY`; set
-`ANCHOR_OPENAI_API_KEY` to the Azure resource key, ideally in the project
-folder's gitignored `.env`:
+`--probe` makes a minimal live endpoint call when the provider allows it. It
+checks reachability, not extraction quality. Test a representative nonsensitive
+PDF before relying on model output.
 
-```bash
-echo 'ANCHOR_OPENAI_API_KEY=<your-azure-key>' >> .env
-```
-
-PowerShell:
-
-```powershell
-Add-Content .env "ANCHOR_OPENAI_API_KEY=<your-azure-key>"
-```
-
-Gold extraction through `anchor ingest` needs this keyed vision setup. If the
-key is missing, bronze and silver are still written locally, but no
-`OpenAIRegionExtractor` is wired and `has_gold` stays false. If the endpoint,
-key, or deployment name is wrong, the Azure call fails during ingest.
-
-Check the setup before ingesting sensitive documents:
-
-```bash
-anchor check --probe
-```
-
-Then verify an ingest:
-
-```bash
-anchor ingest path/to/file.pdf --force
-anchor list
-anchor gold-map <slug>
-```
-
-`anchor list` should show `"has_gold": true` and a non-zero region count.
-Content stays inside your Azure tenant / region. Validate with a one-page PDF
-before relying on extracted values; if your resource does not expose the v1
-surface, front it with an OpenAI-compatible proxy (for example LiteLLM) and use
-that URL with the `custom` provider.
-
-## Example: OpenAI-compatible extraction
-
-```bash
-export ANCHOR_OPENAI_API_KEY=<your-key>
-export ANCHOR_OPENAI_BASE_URL=https://api.openai.com/v1
-```
-
-`anchor env create` writes the matching `env.toml` for you. Without an API key,
-local document storage, page rendering, search, and canvas operations still
-work; gold-region extraction is the only step that needs the vision endpoint.
+Restart the canvas server and reconnect the MCP process after changing provider
+settings. Existing silver-only documents are not automatically backfilled. Use
+the appropriate harness session or deliberate `anchor ingest PDF --force` with
+a configured endpoint. Forced ingestion can repeat paid processing.

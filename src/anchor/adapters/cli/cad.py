@@ -9,6 +9,7 @@ from pathlib import Path
 import typer
 
 from anchor.adapters.cli.common import DEFAULT_DATA_DIR, _emit_bytes
+from anchor.adapters.extension_host import ExtensionHost
 
 cad_app = typer.Typer(help="Inspect and parameter-tweak CAD models.")
 
@@ -20,10 +21,9 @@ cad_app = typer.Typer(help="Inspect and parameter-tweak CAD models.")
 
 def _build_cad_service(data_dir: Path):
     """Build a CadService with a fresh MemoryEventBus for one-shot CLI calls."""
-    from anchor.extensions.anchor_cad import extension as cad_ext
     from anchor.infra.bus.memory_bus import MemoryEventBus
 
-    return cad_ext.build_service(data_dir, MemoryEventBus())
+    return ExtensionHost(data_dir).start("cad", bus=MemoryEventBus())
 
 
 @cad_app.command("inspect")

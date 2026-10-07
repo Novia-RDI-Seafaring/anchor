@@ -73,6 +73,10 @@ async def upload(
     queued_at = time.time()
     harness = _is_harness_project(request)
 
+    if harness:
+        # A rejected original must not publish a placeholder or an intent.
+        await ingest.store.stash_bronze(pdf_bytes, filename, slug=doc_slug)
+
     await workspace.add_node(
         slug,
         id=node_id,
@@ -101,10 +105,6 @@ async def upload(
         # a project-level drop_to_ingest intent is enqueued (firing the
         # IntentPending signal). The agent pulls it and runs ingest_begin ->
         # submit_page -> finalize, then resolve_intent. (Issue #148.)
-        try:
-            await ingest.store.stash_bronze(pdf_bytes, filename)
-        except Exception:  # noqa: BLE001 - enqueue even if stash is unavailable
-            log.exception("drop-to-ingest: bronze stash failed (continuing to enqueue)")
         intent = await intents.enqueue(
             "drop_to_ingest",
             origin_canvas_id=slug,

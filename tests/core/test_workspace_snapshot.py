@@ -57,8 +57,24 @@ def test_snapshot_delegates_with_kwargs():
         assert result.content_type == "image/png"
         assert result.bytes_ is not None
         assert snap.calls == [
-            {"slug": "w1", "format": "png", "viewport": (800, 600), "full_page": False}
+            {"slug": "w1", "format": "png", "viewport": (800, 600), "full_page": False,
+             "expect_nodes": 0}
         ]
+    asyncio.run(run())
+
+
+def test_snapshot_passes_node_count_to_port():
+    # The service tells the snapshotter how many nodes the state holds so a
+    # browser-driving implementation can wait for them to render instead of
+    # screenshotting an empty grid (#306).
+    async def run():
+        snap = FakeSnapshotter(mode="bytes")
+        svc, _ = _ws_with_snapshotter(snap)
+        await svc.create_workspace("w1")
+        await svc.add_node("w1", id="n1", node_type="fact")
+        await svc.add_node("w1", id="n2", node_type="fact")
+        await svc.snapshot("w1")
+        assert snap.calls[-1]["expect_nodes"] == 2
     asyncio.run(run())
 
 

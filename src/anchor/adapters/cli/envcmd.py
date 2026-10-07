@@ -1,4 +1,4 @@
-"""``anchor env`` — manage environments (named configuration profiles).
+"""``anchor env`` manages named configuration profiles.
 
 An environment is a reusable profile (provider / models / data **zone**) and
 the trust boundary that holds projects. Environments live under
@@ -65,11 +65,11 @@ def env_create(
 ) -> None:
     """Create an environment (provider / data-zone) and its default project.
 
-    This is the provider picker — it stands up the named environment (the trust
+    This is the provider picker. It creates the named environment (the trust
     boundary) and scaffolds its default project. To create a project in a
     folder, use `anchor init` instead.
     """
-    from anchor.adapters.cli.init import create_environment
+    from anchor.adapters.cli.environment_setup import create_environment
 
     create_environment(
         name=name,
@@ -106,7 +106,7 @@ def env_list() -> None:
     names = list_env_names()
     default = default_env_name()
     if not names:
-        typer.echo("(no environments yet — create one with `anchor env create <name>`)")
+        typer.echo("(no environments yet; create one with `anchor env create <name>`)")
         return
     for name in names:
         marker = " *" if name == default else "  "

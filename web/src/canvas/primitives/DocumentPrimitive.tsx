@@ -2,10 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
+import { regionDropPayload } from "@/canvas/regionDrop";
 import { BACKEND_URL } from "@/api/client";
-import { documents, type DocumentIndex, type Region } from "@/api/documents";
+import { documents, refHasSelector, type Region } from "@/api/documents";
+import { useDocumentIndex } from "@/api/useDocumentIndex";
 import { bboxToImageRect, sameBbox } from "@/lib/bbox";
+import { parseDocumentPageGeometry, type DocumentPageGeometry } from "@/lib/documentPageGeometry";
 import { useUiStore } from "@/stores/uiStore";
+import { SourceMark } from "@/canvas/SourceMark";
 
 const STATUS_STYLES: Record<string, string> = {
   pending: "border-amber-400 bg-amber-50",
@@ -45,14 +49,7 @@ function numericSeconds(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-type PageMeta = { width: number; height: number };
 type RegionHighlight = { regionId?: string; bbox?: number[] };
-
-// Default DPI used by anchor_pdfs when rendering page PNGs. Matches
-// AnchorConfig.dpi. If the producer is reconfigured to a different DPI,
-// gold-map should expose it explicitly; for now we assume the default.
-const RENDER_DPI = 150;
-const POINTS_PER_INCH = 72;
 
 function matchesExternalHighlight(
   highlight: RegionHighlight | null,
@@ -118,9 +115,10 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   // source ref broadcast by a selected referencing node (#187). A transient
   // hover flip never touches it, so hover-out always reverts here.
   const restingPage = useRef(1);
-  const [index, setIndex] = useState<DocumentIndex | null>(null);
+  const index = useDocumentIndex(slug, isReady);
+  const generation = index?.document.generation?.id;
   const [regions, setRegions] = useState<Region[]>([]);
-  const [pageMeta, setPageMeta] = useState<Record<number, PageMeta>>({});
+  const [pageMeta, setPageMeta] = useState<Record<number, DocumentPageGeometry>>({});
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [hoveredLocal, setHoveredLocal] = useState<string | null>(null);
   const [valueQuads, setValueQuads] = useState<number[][]>([]);
@@ -133,27 +131,22 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     return () => window.clearInterval(timer);
   }, [isReady]);
 
-  // Fetch index + page metadata once per slug.
+  // Refresh page metadata when authoritative membership changes.
   useEffect(() => {
     if (!isReady || !slug) return;
     let cancelled = false;
-    documents.index(slug).then((idx) => { if (!cancelled) setIndex(idx); }).catch(() => {});
+    setPageMeta({});
     fetch(
       `${(import.meta.env.VITE_BACKEND_URL as string | undefined) ?? ""}/api/documents/${slug}/gold-map`,
     )
       .then((r) => (r.ok ? r.json() : null))
       .then((map) => {
         if (cancelled || !map) return;
-        const meta = map.pages_meta as Record<string, PageMeta> | undefined;
-        if (meta) {
-          const numeric: Record<number, PageMeta> = {};
-          for (const k of Object.keys(meta)) numeric[Number(k)] = meta[k]!;
-          setPageMeta(numeric);
-        }
+        setPageMeta(parseDocumentPageGeometry(map.pages_meta));
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [slug, isReady]);
+  }, [slug, isReady, generation]);
 
   // Fetch regions whenever the page changes.
   useEffect(() => {
@@ -165,7 +158,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
       if (!cancelled) setRegions(rs);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [slug, page, isReady]);
+  }, [slug, page, isReady, generation]);
 
   // Phase B: react to a cross-component hover. If something else broadcasts
   // a source_ref pointing into this document, flip to the right page. The
@@ -193,17 +186,20 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   }, [pointsHere, hoveredSourceRef, slug]);
 
   const total = index?.document?.page_count ?? d.page_count ?? 0;
-  // Prefer explicit page dimensions when the producer exposes them; otherwise
-  // derive from the PNG's natural size and the known render DPI (the producer
-  // defaults to 150 DPI, so 1 PDF point = 150/72 image pixels).
-  const explicitW = pageMeta[page]?.width ?? 0;
-  const explicitH = pageMeta[page]?.height ?? 0;
-  const derivedW = imgSize ? imgSize.w * POINTS_PER_INCH / RENDER_DPI : 0;
-  const derivedH = imgSize ? imgSize.h * POINTS_PER_INCH / RENDER_DPI : 0;
-  const pageW = explicitW > 0 ? explicitW : derivedW;
-  const pageH = explicitH > 0 ? explicitH : derivedH;
+  useEffect(() => {
+    if (total > 0 && page > total) {
+      restingPage.current = total;
+      setPage(total);
+    }
+  }, [page, total]);
+  // Source dimensions are declared in PDF points; image DPI is irrelevant.
+  const pageW = pageMeta[page]?.width ?? 0;
+  const pageH = pageMeta[page]?.height ?? 0;
   const canScale = imgSize && pageW > 0 && pageH > 0;
-  const coverUrl = isReady && slug ? documents.pageImageUrl(slug, page) : null;
+  // The page is served as soon as the PDF is on disk, long before ingestion
+  // finishes, and the explorer already shows it. Only the regions and marks
+  // drawn over it wait for ingestion.
+  const coverUrl = slug ? documents.pageImageUrl(slug, page, generation) : null;
   const ingestProgress = typeof d.ingest_progress === "number"
     ? Math.max(0, Math.min(100, Math.round(d.ingest_progress)))
     : status === "pending"
@@ -225,12 +221,49 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     ? status === "pending" ? "waiting" : "running"
     : `elapsed ${formatElapsed(elapsedSeconds)}`;
 
+  // A ref that points below the region (one silver item, one table cell)
+  // resolves to a tighter bbox than the region rectangle. The click path
+  // already does this, which is why the source dock lands on the cell while
+  // this preview drew a box around the whole section. Resolve it here too so
+  // the two surfaces agree about what the ref points at.
+  const [resolvedBbox, setResolvedBbox] = useState<number[] | null>(null);
+  const hoverSelectorKey = hoveredSourceRef && hoveredSourceRef.slug === slug
+    ? JSON.stringify([
+        hoveredSourceRef.page,
+        hoveredSourceRef.region_id ?? null,
+        hoveredSourceRef.item_id ?? null,
+        hoveredSourceRef.cell ?? null,
+      ])
+    : null;
+  useEffect(() => {
+    if (!slug || !hoveredSourceRef || hoveredSourceRef.slug !== slug) {
+      setResolvedBbox(null);
+      return;
+    }
+    if (!refHasSelector(hoveredSourceRef)) {
+      setResolvedBbox(null);
+      return;
+    }
+    let cancelled = false;
+    documents
+      .resolveRef(slug, hoveredSourceRef)
+      .then((r) => { if (!cancelled) setResolvedBbox(r?.bbox ?? null); })
+      // Region rectangle stays the graceful fallback: never show nothing.
+      .catch(() => { if (!cancelled) setResolvedBbox(null); });
+    return () => { cancelled = true; };
+    // hoverSelectorKey collapses the ref to the parts that change the answer,
+    // so a re-render with an equal-but-new object does not refetch.
+  }, [slug, hoverSelectorKey]);  // eslint-disable-line react-hooks/exhaustive-deps
+
   const externalHighlight = useMemo<RegionHighlight | null>(() => {
     if (!hoveredSourceRef || !slug) return null;
     if (hoveredSourceRef.slug !== slug) return null;
     if (hoveredSourceRef.page !== page) return null;
-    return { regionId: hoveredSourceRef.region_id, bbox: hoveredSourceRef.bbox };
-  }, [hoveredSourceRef, slug, page]);
+    return {
+      regionId: resolvedBbox ? undefined : hoveredSourceRef.region_id,
+      bbox: resolvedBbox ?? hoveredSourceRef.bbox,
+    };
+  }, [hoveredSourceRef, slug, page, resolvedBbox]);
 
   // Value-precise highlight (#197): when the hovered ref carries the cell value
   // (`query`), locate that text inside the region and draw a finer yellow quad
@@ -249,6 +282,24 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     }).catch(() => { if (!cancelled) setValueQuads([]); });
     return () => { cancelled = true; };
   }, [slug, page, valueQuery, valueBbox, isReady]);
+
+  const sourceMarks = [];
+  if (canScale && imgSize) {
+    const mainBbox = externalHighlight?.bbox ?? (externalHighlight?.regionId
+      ? regions.find((r, idx) => ((r as { id?: string }).id ?? `r${idx}`) === externalHighlight.regionId)?.bbox
+      : undefined);
+    const candidates = [
+      ...(mainBbox ? [{ key: "main", testId: "external-highlight", bbox: mainBbox }] : []),
+      ...valueQuads.map((bbox, i) => ({ key: `value-${i}`, testId: "value-quad", bbox })),
+      ...(hoveredSourceRef && hoveredSourceRef.slug === slug ? (hoveredSourceRef.places ?? [])
+        .map((place, i) => ({ key: `also-${i}`, testId: "also-place", ...place }))
+        .filter((place) => place.page === page) : []),
+    ];
+    for (const { key, testId, bbox } of candidates) {
+      const rect = bboxToImageRect(bbox, pageW, pageH, 100, 100);
+      if (rect) sourceMarks.push({ key, testId, rect });
+    }
+  }
 
   return (
     <div
@@ -273,6 +324,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
       {coverUrl ? (
         <div className="relative overflow-hidden rounded-t-md bg-neutral-100 cursor-move">
           <img
+            key={coverUrl}
             ref={imgRef}
             src={coverUrl}
             alt={d.filename ?? "document"}
@@ -299,12 +351,10 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                 // Order-independent bbox → image rect (see lib/bbox). The
                 // gold extractor's 4-tuple ordering is not guaranteed, so we
                 // never assume bbox[1] is the top edge.
-                const rect = bboxToImageRect(r.bbox, pageW, pageH, imgSize.w, imgSize.h);
+                // A 100-by-100 target expresses the shared scale as percentages.
+                const rect = bboxToImageRect(r.bbox, pageW, pageH, 100, 100);
                 if (!rect) return null;
-                const xpc = (rect.x / imgSize.w) * 100;
-                const ypc = (rect.y / imgSize.h) * 100;
-                const wpc = (rect.w / imgSize.w) * 100;
-                const hpc = (rect.h / imgSize.h) * 100;
+                const { x: xpc, y: ypc, w: wpc, h: hpc } = rect;
                 // rect is non-null only when bbox has ≥4 valid numbers.
                 const bbox = r.bbox as number[];
                 const rid = (r as { id?: string }).id ?? `r${idx}`;
@@ -327,13 +377,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                       top: `${ypc}%`,
                       width: `${wpc}%`,
                       height: `${hpc}%`,
-                      background: active
-                        ? "rgba(16, 185, 129, 0.18)"
-                        : "transparent",
-                      outline: active
-                        ? "2px solid #059669"
-                        : "1px solid transparent",
-                      outlineOffset: "-1px",
+                      background: "transparent",
                     }}
                     data-region-handle-id={`region:${rid}`}
                     title={r.title ?? r.kind ?? rid}
@@ -360,23 +404,10 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                     }}
                     onDragStart={(e) => {
                       e.stopPropagation();
-                      const payload = {
-                        node_type: "spec",
-                        label: r.title ?? r.kind ?? rid,
-                        data: {
-                          source_doc_slug: slug,
-                          source_doc_node_id: id,
-                          source_region_id: rid,
-                          crops: r.crops,
-                          description: (r as { description?: string }).description,
-                          tags: (r as { tags?: string[] }).tags ?? [],
-                          source_ref: {
-                            kind: "pdf-page-bbox",
-                            page,
-                            bbox,
-                          },
-                        },
-                      };
+                      // Same rule as the source dock: a diagram drops as a
+                      // picture, anything else as a spec card.
+                      const payload = regionDropPayload({ slug, page, region: r, documentNodeId: id });
+                      if (!payload) return;
                       e.dataTransfer.effectAllowed = "copy";
                       e.dataTransfer.setData(
                         "application/x-anchor-node",
@@ -384,6 +415,9 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                       );
                     }}
                   >
+                    {isLocal && !isExternal ? (
+                      <SourceMark box={{ left: 0, top: 0, width: "100%", height: "100%" }} />
+                    ) : null}
                     {overlayUrl ? (
                       <img
                         src={overlayUrl}
@@ -418,63 +452,13 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                 );
               })
             : null}
-          {canScale && imgSize && externalHighlight?.bbox
-            ? (() => {
-                const parent = externalHighlight.regionId
-                  ? regions.find((r, idx) => ((r as { id?: string }).id ?? `r${idx}`) === externalHighlight.regionId)
-                  : undefined;
-                if (parent?.bbox && sameBbox(externalHighlight.bbox, parent.bbox)) return null;
-                const rect = bboxToImageRect(externalHighlight.bbox, pageW, pageH, imgSize.w, imgSize.h);
-                if (!rect) return null;
-                const xpc = (rect.x / imgSize.w) * 100;
-                const ypc = (rect.y / imgSize.h) * 100;
-                const wpc = (rect.w / imgSize.w) * 100;
-                const hpc = (rect.h / imgSize.h) * 100;
-                return (
-                  <div
-                    className="pointer-events-none absolute"
-                    style={{
-                      left: `${xpc}%`,
-                      top: `${ypc}%`,
-                      width: `${wpc}%`,
-                      height: `${hpc}%`,
-                      background: "rgba(16, 185, 129, 0.22)",
-                      outline: "2px solid #059669",
-                      outlineOffset: "-1px",
-                    }}
-                  />
-                );
-              })()
-            : null}
-          {/* Value-precise highlight (#197): finer yellow marker-pen quads
-              over the region rectangle, marking the exact text the grounded
-              value came from. Empty -> region-level highlight is the fallback. */}
-          {canScale && imgSize && valueQuads.length > 0
-            ? valueQuads.map((quad, qi) => {
-                const rect = bboxToImageRect(quad, pageW, pageH, imgSize.w, imgSize.h);
-                if (!rect) return null;
-                const xpc = (rect.x / imgSize.w) * 100;
-                const ypc = (rect.y / imgSize.h) * 100;
-                const wpc = (rect.w / imgSize.w) * 100;
-                const hpc = (rect.h / imgSize.h) * 100;
-                return (
-                  <div
-                    key={`value-quad-${qi}`}
-                    data-testid="value-quad"
-                    className="pointer-events-none absolute"
-                    style={{
-                      left: `${xpc}%`,
-                      top: `${ypc}%`,
-                      width: `${wpc}%`,
-                      height: `${hpc}%`,
-                      background: "rgba(250, 204, 21, 0.45)",
-                      outline: "1.5px solid #CA8A04",
-                      outlineOffset: "-1px",
-                    }}
-                  />
-                );
-              })
-            : null}
+          {sourceMarks.map(({ key, testId, rect }) => (
+            <SourceMark
+              key={key}
+              data-testid={testId}
+              box={{ left: `${rect.x}%`, top: `${rect.y}%`, width: `${rect.w}%`, height: `${rect.h}%` }}
+            />
+          ))}
         </div>
       ) : (
         <div className="flex h-24 w-full items-center justify-center rounded-t-md bg-neutral-100 text-3xl text-neutral-400">
@@ -533,6 +517,11 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
 
       {/* Body label + status + open viewer */}
       <div className="space-y-1 px-3 py-2">
+        {imgSize && !canScale ? (
+          <div role="status" className="text-[10px] text-neutral-600">
+            Source overlays unavailable: page dimensions unknown.
+          </div>
+        ) : null}
         <div className="text-[10px] uppercase tracking-wide text-neutral-500">
           document
         </div>

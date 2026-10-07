@@ -9,6 +9,7 @@ from pathlib import Path
 import typer
 
 from anchor.adapters.cli.common import DEFAULT_DATA_DIR
+from anchor.adapters.extension_host import ExtensionHost
 
 fmu_app = typer.Typer(help="Inspect and simulate FMU models.")
 
@@ -27,15 +28,14 @@ def _build_fmu_service(data_dir: Path):
     if they want the synthetic offline demo).
     """
     try:
-        from anchor.extensions.anchor_fmus import extension as fmu_ext
         from anchor.infra.bus.memory_bus import MemoryEventBus
     except ImportError as e:  # pragma: no cover
         typer.echo(f"FMU extension not available: {e}", err=True)
         raise typer.Exit(code=1) from e
     bus = MemoryEventBus()
     try:
-        return fmu_ext.build_service(data_dir, bus)
-    except fmu_ext.FmuRuntimeUnavailableError as exc:
+        return ExtensionHost(data_dir).start("fmu", bus=bus)
+    except RuntimeError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 

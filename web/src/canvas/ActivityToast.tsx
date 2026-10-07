@@ -29,6 +29,13 @@ export function ActivityToast() {
             className="rounded-md border border-neutral-200 bg-white/95 px-3 py-1.5 text-xs font-medium text-neutral-700 shadow-sm backdrop-blur"
           >
             {a.text}
+            {/* Actor attribution (#322). "browser" is (until presence
+                identity lands, #325) almost always the viewer's own edit,
+                so only foreign actors — agents, system cascades, CLI —
+                get called out. */}
+            {a.by && a.by !== "browser" ? (
+              <span className="ml-1.5 text-neutral-400">by {a.by}</span>
+            ) : null}
           </div>
         );
       })}

@@ -1,7 +1,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Canvas, useLoader } from "@react-three/fiber";
-import { OrbitControls, Bounds } from "@react-three/drei";
+import { OrbitControls, Bounds, Html } from "@react-three/drei";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -76,12 +76,21 @@ export function Model3DPrimitive({ data }: NodeProps) {
         ) : null}
       </div>
 
-      <div className="h-48 w-full bg-neutral-100">
+      {/* `nodrag` stops React Flow from moving the node while OrbitControls
+          rotates/pans the model; `nowheel` lets scroll zoom the model instead
+          of the canvas. Without them, a rotate-drag also drags the node. */}
+      <div className="nodrag nowheel h-48 w-full bg-neutral-100">
         {url ? (
           <Canvas camera={{ position: [3, 3, 3], fov: 45 }} dpr={[1, 2]}>
             <ambientLight intensity={0.4} />
             <directionalLight position={[5, 5, 5]} intensity={0.8} />
-            <Suspense fallback={null}>
+            <Suspense
+              fallback={
+                <Html center className="whitespace-nowrap text-[10px] text-neutral-500">
+                  loading model…
+                </Html>
+              }
+            >
               <Bounds fit clip observe margin={1.2}>
                 <ModelMesh url={url} kind={kind} />
               </Bounds>

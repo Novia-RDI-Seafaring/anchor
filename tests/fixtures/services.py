@@ -68,7 +68,7 @@ def make_in_memory_services(*, page_count: int = 1) -> Services:
         clock=clock,
     )
     intent_store = MemoryIntentStore()
-    intents = IntentService(intent_store, bus, now=clock.now)
+    intents = IntentService(intent_store, bus, now=clock.now, workspace=workspace)
     return Services(
         workspace_store=workspace_store, doc_store=doc_store, bus=bus,
         workspace=workspace, ingest=ingest,

@@ -6,7 +6,10 @@
  *   - Shapes   · Rectangle / Circle / Diamond / Container (dashed)
  *   - Cards    · Fact / Note
  *   - Add (+)  · producer upload menu — PDF / CAD / FMU / SysML
- *   - Library  · toggles the right-side Library drawer (`]` shortcut also)
+ *
+ * Ingested files now live in the left files explorer (SourceCluster); the
+ * old Library drawer + its `]` shortcut are retired (#220). The `[` shortcut
+ * toggles the source cluster (explorer + viewer) so it can yield full width.
  *
  * Two complementary gestures per shape/card icon:
  *
@@ -22,20 +25,20 @@
  * Producers (Document / CAD model / FMU / SysML model) don't arm — they
  * need real content. The `+` button opens a popover; picking a type
  * opens a file-input Dialog that POSTs to the matching ingest endpoint.
- *
- * The drawer keeps tabbed sub-sections per source type if the existing
- * `<Library>` component already does. As of this PR it doesn't — that's
- * a separate task.
+ * On success the left files explorer (SourceCluster) is expanded so the new
+ * artefact is visible.
  */
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
-import { Library as LibraryIcon, Plus, X } from "lucide-react";
+import { Plus, WandSparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { cad } from "@/api/cad";
 import { canvases } from "@/api/canvases";
 import { fmu } from "@/api/fmu";
-import { canDragFromToolbar, paletteEntries, type PaletteMeta } from "@/canvas/registry";
+import { canDragFromToolbar, CONNECT_TOOL, INTENT_TOOL, paletteEntries, type PaletteMeta } from "@/canvas/registry";
+
+import { KEY_FOR_TOOL, TOOL_KEYS } from "@/canvas/toolKeys";
 import {
   Tooltip,
   TooltipContent,
@@ -64,9 +67,8 @@ const PRODUCER_ACCEPT: Record<ProducerKind, string> = {
 };
 
 export function LeftToolRail({ workspaceSlug }: Props) {
-  const setLibraryDrawerOpen = useUiStore((s) => s.setLibraryDrawerOpen);
-  const toggleLibraryDrawer = useUiStore((s) => s.toggleLibraryDrawer);
-  const libraryDrawerOpen = useUiStore((s) => s.libraryDrawerOpen);
+  const toggleSourceCluster = useUiStore((s) => s.toggleSourceCluster);
+  const setSourceClusterCollapsed = useUiStore((s) => s.setSourceClusterCollapsed);
   const armedTool = useUiStore((s) => s.armedTool);
   const armTool = useUiStore((s) => s.armTool);
   const disarmTool = useUiStore((s) => s.disarmTool);
@@ -77,7 +79,8 @@ export function LeftToolRail({ workspaceSlug }: Props) {
   const [activeProducer, setActiveProducer] = useState<ProducerKind | null>(null);
 
   // Keyboard shortcuts:
-  //   `]` toggles the Library drawer (preserved from the previous Toolbar).
+  //   `[` toggles the source cluster (files explorer + viewer) so the canvas
+  //       can go full width. (The old `]` Library-drawer shortcut is gone.)
   //   `Esc` disarms whatever tool is armed.
   // Ignore both when the user is typing into an input/textarea — rename
   // fields use the same keys.
@@ -89,16 +92,33 @@ export function LeftToolRail({ workspaceSlug }: Props) {
         (target.tagName === "INPUT" ||
           target.tagName === "TEXTAREA" ||
           target.isContentEditable);
-      if (event.key === "]" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      if (event.key === "[" && !event.metaKey && !event.ctrlKey && !event.altKey) {
         if (typing) return;
         event.preventDefault();
-        toggleLibraryDrawer();
-      } else if (event.key === "Escape") {
+        toggleSourceCluster();
+      } else if (!typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        // Single-key tool shortcuts, the way every drawing tool does it.
+        // Only when the user is not typing and holds no modifier.
+        const tool = TOOL_KEYS[event.key.toLowerCase()];
+        // While marking up, letters are not tool keys: the pens have the
+        // numbers and `i` puts the pen down. Reaching for `t` to type and
+        // landing in the text tool would drop the whole mark-up.
+        if (tool && (armedTool !== INTENT_TOOL || tool === INTENT_TOOL)) {
+          event.preventDefault();
+          armTool(tool);
+          return;
+        }
+      }
+      if (event.key === "Escape") {
         // Disarming on Esc is the most "draw.io expected" behaviour. Don't
         // preventDefault — other components may also want a chance at Esc.
         // Also deselect the active node so the selection ring + in-flight
         // edits clear. The hook's `canEdit` flip drives the commit.
         if (typing) return; // typing inside an input — let the input own Esc
+        // Marking up owns its own escape: it backs out a layer at a time
+        // (field, selection, then the mode) and disarms itself at the end.
+        // Disarming here as well would drop the mode on the first press.
+        if (armedTool === INTENT_TOOL) return;
         if (armedTool) disarmTool();
         setSelectedNodeId(null);
         setPropertiesOpen(false);
@@ -106,7 +126,7 @@ export function LeftToolRail({ workspaceSlug }: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleLibraryDrawer, armedTool, disarmTool, setSelectedNodeId, setPropertiesOpen]);
+  }, [toggleSourceCluster, armedTool, armTool, disarmTool, setSelectedNodeId, setPropertiesOpen]);
 
   const shapes = paletteEntries("shapes");
   const cards = paletteEntries("cards");
@@ -143,15 +163,59 @@ export function LeftToolRail({ workspaceSlug }: Props) {
 
   return (
     <TooltipProvider delayDuration={250}>
+      {/* While marking up the rail stands aside and the pens take its
+          place, same spot, dark: one bar for one mode, and its first tile
+          is the way back. The tools cannot be used mid-mark-up anyway. */}
+      {armedTool !== INTENT_TOOL ? (
       <div
-        // Vertical rail along the left edge. Sits at ~52px wide; floats on
-        // top of the canvas (the canvas itself fills the full viewport).
-        // Background is white with a subtle shadow so it reads as a card.
-        className="pointer-events-auto absolute left-3 top-3 z-20 flex w-[44px] flex-col items-center gap-1 rounded-xl border border-neutral-200 bg-white/95 px-1 py-2 shadow-md backdrop-blur"
+        // A vertical rail down the left edge. A horizontal bar across the top
+        // competes with the canvas title and the page's own chrome, and it
+        // pushes the tools away from the hand that is already at the left of
+        // the board. Vertical also scales: adding a producer adds a row rather
+        // than eating the width the canvas needs.
+        className="pointer-events-auto absolute left-3 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-1 rounded-xl border border-neutral-200 bg-white/95 px-1 py-1.5 shadow-md backdrop-blur"
         role="toolbar"
         aria-orientation="vertical"
         aria-label="Canvas tools"
       >
+        {/* Mark up. Armed, the canvas takes ink: rings, lines, words, filed
+            as intents for the agent. First on the rail because it is the
+            tool the reader reaches for most while reviewing, and because its
+            pens and its queue dock to the right of it, so everything about
+            marking up sits in one place. */}
+        <RailGroup label="Mark up">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                data-testid="comment-mode-toggle"
+                aria-label="Mark up"
+                aria-pressed={armedTool === INTENT_TOOL}
+                onClick={() => armTool(INTENT_TOOL)}
+                className={`relative grid h-9 w-9 place-items-center rounded-lg border text-neutral-600 transition ${
+                  armedTool === INTENT_TOOL
+                    ? "border-violet-400 bg-violet-50 text-violet-700"
+                    : "border-transparent hover:border-neutral-300 hover:bg-neutral-50"
+                }`}
+              >
+                <WandSparkles size={16} strokeWidth={1.75} aria-hidden />
+                <span
+                  className="pointer-events-none absolute bottom-0 right-0.5 text-[8px] leading-none text-neutral-400"
+                  aria-hidden
+                >
+                  I
+                </span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <div className="font-medium">Mark up</div>
+              <div className="text-neutral-300">draw across or around things, then queue it for the agent</div>
+            </TooltipContent>
+          </Tooltip>
+        </RailGroup>
+
+        <RailDivider />
+
         <RailGroup label="Shapes">
           {shapes.map((e) => (
             <RailTile
@@ -163,6 +227,42 @@ export function LeftToolRail({ workspaceSlug }: Props) {
               dropPayload={dropPayload}
             />
           ))}
+        </RailGroup>
+
+        <RailDivider />
+
+        {/* Connector. Not a shape: arming it lets the user click one element
+            then another to join them. Connections attach to whole elements,
+            so there is nothing to aim at but the element itself. */}
+        <RailGroup label="Connector">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                data-testid="rail-connector"
+                aria-label="Connector"
+                aria-pressed={armedTool === CONNECT_TOOL}
+                onClick={() => armTool(CONNECT_TOOL)}
+                className={`relative grid h-9 w-9 place-items-center rounded-lg border text-neutral-600 transition ${
+                  armedTool === CONNECT_TOOL
+                    ? "border-sky-400 bg-sky-50 text-sky-700"
+                    : "border-transparent hover:border-neutral-300 hover:bg-neutral-50"
+                }`}
+              >
+                <ConnectorIcon />
+                <span
+                  className="pointer-events-none absolute bottom-0 right-0.5 text-[8px] leading-none text-neutral-400"
+                  aria-hidden
+                >
+                  A
+                </span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <div className="font-medium">Connector</div>
+              <div className="text-neutral-300">click one element, then another</div>
+            </TooltipContent>
+          </Tooltip>
         </RailGroup>
 
         <RailDivider />
@@ -243,33 +343,17 @@ export function LeftToolRail({ workspaceSlug }: Props) {
             </PopoverPrimitive.Content>
           </PopoverPrimitive.Portal>
         </PopoverPrimitive.Root>
-
-        <RailDivider />
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={toggleLibraryDrawer}
-              aria-label="Library"
-              aria-pressed={libraryDrawerOpen}
-              className={cn(
-                "flex h-9 w-9 items-center justify-center rounded-md text-neutral-700 transition hover:bg-neutral-100",
-                libraryDrawerOpen && "bg-neutral-200 text-neutral-900",
-              )}
-            >
-              <LibraryIcon className="size-4" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="right">
-            Library · <kbd className="font-mono">]</kbd>
-          </TooltipContent>
-        </Tooltip>
       </div>
+      ) : null}
 
-      {/* Top-of-canvas hint strip when a tool is armed. */}
-      {armedTool ? (
-        <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
+      {/* Hint while a tool is armed. It sits along the bottom now that the
+          rail runs down the left: beside the rail it would cover the canvas
+          the user is about to click, and under a top bar it no longer has a
+          bar to sit under. */}
+      {/* Not for marking up: nothing is placed, and the mode has its own
+          panel beside the pens that says what to do. */}
+      {armedTool && armedTool !== INTENT_TOOL ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center">
           <div className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white/95 px-3 py-1 text-[11px] text-neutral-600 shadow-sm backdrop-blur">
             <span className="font-medium text-neutral-800">{labelFor(armedTool)}</span>
             <span>· Click to place, drag to size · </span>
@@ -286,9 +370,10 @@ export function LeftToolRail({ workspaceSlug }: Props) {
           workspaceSlug={workspaceSlug}
           onClose={() => {
             setActiveProducer(null);
-            // Library is the natural place to confirm a successful upload —
-            // open it so the user sees the new doc / CAD / FMU appear.
-            setLibraryDrawerOpen(true);
+            // The left files explorer is where a successful upload shows up —
+            // make sure the source cluster is expanded so the user sees the
+            // new doc / CAD / FMU appear in the list.
+            setSourceClusterCollapsed(false);
           }}
         />
       ) : null}
@@ -306,7 +391,8 @@ function labelFor(nodeType: string): string {
 }
 
 function RailDivider() {
-  return <div className="my-0.5 h-px w-6 bg-neutral-200" aria-hidden />;
+  // Separates stacked groups, so it runs across the rail rather than down it.
+  return <div className="my-1 h-px w-7 bg-neutral-300" aria-hidden />;
 }
 
 function RailGroup({ label, children }: { label: string; children: React.ReactNode }) {
@@ -352,12 +438,20 @@ function RailTile({
           aria-label={meta.label}
           aria-pressed={armed}
           className={cn(
-            "flex h-9 w-9 items-center justify-center rounded-md text-neutral-700 transition hover:bg-neutral-100",
+            "relative flex h-9 w-9 items-center justify-center rounded-md text-neutral-700 transition hover:bg-neutral-100",
             armed && "bg-sky-100 text-sky-800 ring-1 ring-sky-300",
             draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
           )}
         >
           <Glyph glyph={meta.glyph} />
+          {KEY_FOR_TOOL[name] ? (
+            <span
+              className="pointer-events-none absolute bottom-0 right-0.5 text-[8px] leading-none text-neutral-400"
+              aria-hidden
+            >
+              {KEY_FOR_TOOL[name]}
+            </span>
+          ) : null}
         </button>
       </TooltipTrigger>
       <TooltipContent side="right">
@@ -400,11 +494,34 @@ function Glyph({ glyph }: { glyph: PaletteMeta["glyph"] }) {
           <rect x="3" y="5" width="18" height="14" rx="2" />
         </svg>
       );
+    case "image":
+      return (
+        <svg viewBox="0 0 24 24" className={cls} fill="none" strokeWidth={1.5}>
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <circle cx="9" cy="10" r="1.6" />
+          <path d="M4 18l5-5 4 4 3-3 4 4" />
+        </svg>
+      );
+    case "text":
+      return (
+        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+          <path d="M4 5h12M10 5v11" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+      );
     case "note":
       return (
         <svg viewBox="0 0 24 24" className={cls} fill="none" strokeWidth={1.5}>
           <path d="M5 5h14v10l-4 4H5z" />
           <path d="M15 19v-4h4" />
+        </svg>
+      );
+    case "markdown":
+      // The Markdown mark: a rounded frame around the familiar M + caret.
+      return (
+        <svg viewBox="0 0 24 24" className={cls} fill="none" strokeWidth={1.5}>
+          <rect x="3" y="6" width="18" height="12" rx="2" />
+          <path d="M6.5 15V9l2.5 3 2.5-3v6" />
+          <path d="M16 9v4.5M14 12.5l2 2 2-2" />
         </svg>
       );
     case "fact":
@@ -592,5 +709,16 @@ function ProducerUploadDialog({
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
+  );
+}
+
+/** Two dots joined by a line: the connector tool's face in the rail. */
+function ConnectorIcon() {
+  return (
+    <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+      <line x1="6.5" y1="13.5" x2="13.5" y2="6.5" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="5" cy="15" r="2.4" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="15" cy="5" r="2.4" fill="none" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
   );
 }

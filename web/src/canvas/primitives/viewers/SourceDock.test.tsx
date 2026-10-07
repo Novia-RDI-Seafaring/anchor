@@ -7,18 +7,22 @@
  * returns to canvas-full. The real PdfSourceView is stubbed so these tests run
  * without PDF.js in jsdom.
  */
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { documents } from "@/api/documents";
+import { documents, type DocumentIndex } from "@/api/documents";
+import { TRANSIENT_CLOSE_MS } from "@/canvas/transientViewer";
 import { useUiStore } from "@/stores/uiStore";
 
 import { SourceDock } from "./SourceDock";
 
+const navigation = vi.hoisted(() => ({ onPageChange: (_page: number) => {} }));
+
 vi.mock("./PdfSourceView", () => ({
-  PdfSourceView: ({ slug, page }: { slug: string; page: number }) => (
-    <div data-testid="pdf-source-view" data-slug={slug} data-page={page} />
-  ),
+  PdfSourceView: ({ slug, page, total, generation, index, onPageChange }: { slug: string; page: number; total: number; generation?: string; index?: DocumentIndex | null; onPageChange: (page: number) => void }) => {
+    navigation.onPageChange = onPageChange;
+    return <div data-testid="pdf-source-view" data-slug={slug} data-page={page} data-total={total} data-generation={generation} data-outline={index?.outline?.map((entry) => entry.title).join(",")} />;
+  },
 }));
 
 beforeEach(() => {
@@ -31,6 +35,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   useUiStore.setState({ pdfViewer: null });
   vi.restoreAllMocks();
 });
@@ -42,6 +47,72 @@ async function renderDock() {
 }
 
 describe("SourceDock", () => {
+  it("keeps the mounted reader and ignores its navigation after switching to full screen", async () => {
+    vi.useFakeTimers();
+    useUiStore.getState().openPdf("fullscreen-manual", { page: 1, mode: "dock" });
+    await renderDock();
+    const reader = screen.getByTestId("pdf-source-view");
+    const dockNavigation = navigation.onPageChange;
+    act(() => dockNavigation(4));
+    expect(useUiStore.getState().pdfViewer?.page).toBe(4);
+
+    fireEvent.click(screen.getByTitle("Open as full-screen quick-look"));
+    // DOM identity detects even an unmount/remount hidden inside an act flush.
+    expect(screen.getByTestId("pdf-source-view")).toBe(reader);
+    expect(screen.getByTestId("source-dock").className).toContain("anchor-source-out");
+    expect(useUiStore.getState().pdfViewer).toMatchObject({ mode: "modal", page: 4 });
+    act(() => {
+      dockNavigation(1);
+      navigation.onPageChange(2);
+    });
+    expect(useUiStore.getState().pdfViewer?.page).toBe(4);
+    // Quick-look can navigate during the fade without cancelling its timer.
+    act(() => useUiStore.getState().setPdfPage(5));
+    act(() => vi.advanceTimersByTime(120));
+    expect(screen.queryByTestId("source-dock")).toBeNull();
+    expect(useUiStore.getState().pdfViewer?.page).toBe(5);
+  });
+
+  it("ignores a previous dock navigation callback after opening another document", async () => {
+    useUiStore.getState().openPdf("previous-manual", { mode: "dock" });
+    await renderDock();
+    const previousNavigation = navigation.onPageChange;
+    await act(async () => useUiStore.getState().openPdf("next-manual", { page: 3 }));
+    act(() => previousNavigation(1));
+    expect(useUiStore.getState().pdfViewer).toMatchObject({ slug: "next-manual", page: 3 });
+    act(() => navigation.onPageChange(4));
+    expect(useUiStore.getState().pdfViewer?.page).toBe(4);
+  });
+
+  it("passes the fetched outline into the shared PDF view", async () => {
+    vi.mocked(documents.index).mockResolvedValue({
+      document: { title: "Manual", filename: "manual.pdf", page_count: 5 },
+      outline: [{ title: "Operating limits", level: 1, page: 3, bbox: [10, 40, 80, 50] }],
+    });
+    useUiStore.getState().openPdf("manual", { mode: "dock" });
+    await renderDock();
+    expect(screen.getByTestId("pdf-source-view").getAttribute("data-outline")).toBe("Operating limits");
+  });
+
+  it("refreshes an open LKH viewer from four pages to its published one-page generation", async () => {
+    vi.useFakeTimers();
+    vi.mocked(documents.index).mockResolvedValue({
+      document: { page_count: 4, title: "Alfa Laval LKH", filename: "Alfa Laval LKH.pdf" }, outline: [],
+    });
+    await act(async () => { useUiStore.getState().openPdf("lkh-g4-shrink", { page: 2 }); });
+    await renderDock();
+    expect(screen.getByTestId("pdf-source-view").getAttribute("data-total")).toBe("4");
+    vi.mocked(documents.index).mockResolvedValue({
+      document: { page_count: 1, title: "Alfa Laval LKH", filename: "Alfa Laval LKH.pdf",
+        generation: { id: "replacement-b", pages: [1] } }, outline: [],
+    } as Awaited<ReturnType<typeof documents.index>>);
+    await act(async () => { await vi.advanceTimersByTimeAsync(8000); });
+    const view = screen.getByTestId("pdf-source-view");
+    expect(view.getAttribute("data-total")).toBe("1");
+    expect(view.getAttribute("data-generation")).toBe("replacement-b");
+    expect(view.getAttribute("data-page")).toBe("1");
+  });
+
   it("renders nothing when no document is open", async () => {
     await renderDock();
     expect(screen.queryByTestId("source-dock")).toBeNull();
@@ -82,14 +153,33 @@ describe("SourceDock", () => {
     expect(views[0]!.getAttribute("data-page")).toBe("4");
   });
 
-  it("applies the dock ratio as the pane width", async () => {
+  it("sizes the pane as a fraction of the viewport, not of the space beside the explorer", async () => {
     useUiStore.getState().setSourceDockRatio(0.6);
     await renderDock();
     await act(async () => {
       useUiStore.getState().openPdf("doc-a", { page: 1 });
     });
     const dock = screen.getByTestId("source-dock");
-    expect(dock.style.width).toBe("60%");
+    // The pane overlays the page instead of sharing the row, so its width no
+    // longer depends on the explorer. That is what gives the pages room: they
+    // used to get whatever was left between the explorer and the canvas.
+    // Normalised by the CSS parser: 0.6 * 100vw -> 60vw. The point is that it
+    // is a share of the VIEWPORT, with no explorer term in it at all.
+    expect(dock.style.width).toBe("calc(60vw)");
+    expect(dock.style.maxWidth).toBe("85vw");
+    expect(dock.style.width).not.toContain("px");
+  });
+
+  it("overlays the page rather than taking part in its layout", async () => {
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    const dock = screen.getByTestId("source-dock");
+    // Fixed + left-anchored: the canvas underneath never reflows when the
+    // viewer opens or closes, and the pane can cover the files explorer.
+    expect(dock.className).toContain("fixed");
+    expect(dock.className).toContain("left-0");
   });
 
   it("closing the dock returns to canvas-full (unmounts the pane)", async () => {
@@ -101,6 +191,179 @@ describe("SourceDock", () => {
     await act(async () => {
       useUiStore.getState().closePdf();
     });
-    expect(screen.queryByTestId("source-dock")).toBeNull();
+    // Held for the length of the fade, then gone. An instant disappearance is
+    // fine for a click-to-close and jarring when a pointer drifting off a link
+    // takes half the screen with it.
+    await waitFor(() => expect(screen.queryByTestId("source-dock")).toBeNull());
+  });
+
+  it("fades out rather than vanishing, and stops taking clicks while it goes", async () => {
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    await act(async () => {
+      useUiStore.getState().closePdf();
+    });
+    // Still there for the moment, marked as leaving.
+    const leaving = screen.queryByTestId("source-dock");
+    expect(leaving?.className).toContain("anchor-source-out");
+    expect(leaving?.className).not.toContain("anchor-source-in");
+  });
+
+  it("does not slide, because that would drag the pages across the screen", async () => {
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    const dock = screen.getByTestId("source-dock");
+    expect(dock.className).toContain("anchor-source-in");
+    expect(dock.className).not.toContain("slide-in");
+  });
+
+  it("does not take the pointer until the reader moves", async () => {
+    // The pane opens on the left edge, sometimes exactly under the link that
+    // opened it. If it grabbed the pointer on arrival, the link would get a
+    // mouseleave nobody performed, close the pane, get a mouseenter, reopen:
+    // the viewer strobed while the hand was still.
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1, transient: true });
+      useUiStore.setState({ pdfViewerPinned: false });
+    });
+    expect(screen.getByTestId("source-dock").style.pointerEvents).toBe("none");
+
+    await act(async () => {
+      // jsdom has no PointerEvent constructor; a MouseEvent of the same type
+      // reaches the same listeners.
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX: 10, clientY: 10 }));
+      window.dispatchEvent(new MouseEvent("pointermove", { clientX: 200, clientY: 200 }));
+    });
+    expect(screen.getByTestId("source-dock").style.pointerEvents).toBe("");
+  });
+
+  it("takes the pointer straight away when it was clicked open", async () => {
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    expect(useUiStore.getState().pdfViewerPinned).toBe(true);
+    expect(screen.getByTestId("source-dock").style.pointerEvents).toBe("");
+  });
+
+  it("closes when the reader clicks past it", async () => {
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    await act(async () => {
+      document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    });
+    expect(useUiStore.getState().pdfViewer).toBeNull();
+  });
+
+  it("stays open when the click was on something that opens a ref", async () => {
+    // Otherwise the same gesture closes the pane and reopens it: a flash.
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    const link = document.createElement("button");
+    link.setAttribute("data-source-trigger", "");
+    document.body.appendChild(link);
+    await act(async () => {
+      link.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    });
+    expect(useUiStore.getState().pdfViewer).not.toBeNull();
+    link.remove();
+  });
+
+  it("stays open when the click lands inside the pane", async () => {
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    await act(async () => {
+      screen.getByTestId("pdf-source-view")
+        .dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    });
+    expect(useUiStore.getState().pdfViewer).not.toBeNull();
+  });
+
+  it("survives a resize drag that wanders outside it", async () => {
+    // Narrowing walks the pointer off the pane's edge. A hover-opened pane
+    // would close underneath the hand resizing it, having just been told by
+    // the resize that it is wanted.
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1, transient: true });
+      useUiStore.setState({ pdfViewerPinned: false, hoverPreviewMode: "viewer" });
+    });
+    await act(async () => {
+      screen.getByTestId("source-dock-divider")
+        .dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    });
+    await act(async () => {
+      screen.getByTestId("source-dock")
+        .dispatchEvent(new MouseEvent("pointerleave", { bubbles: false }));
+      await new Promise((r) => setTimeout(r, TRANSIENT_CLOSE_MS + 120));
+    });
+    expect(useUiStore.getState().pdfViewer).not.toBeNull();
+  });
+
+  it("is not closed by a click that lands outside while resizing", async () => {
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    await act(async () => {
+      screen.getByTestId("source-dock-divider")
+        .dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    });
+    await act(async () => {
+      document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    });
+    expect(useUiStore.getState().pdfViewer).not.toBeNull();
+  });
+
+  it("is not closed by judging a reference", async () => {
+    // The verdict menu is portalled to the body, so it lands outside the pane
+    // and looked like a click away: recording a verdict took the evidence off
+    // the screen at the very moment of recording it.
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 1 });
+    });
+    const menu = document.createElement("div");
+    menu.setAttribute("data-ref-review", "");
+    const button = document.createElement("button");
+    menu.appendChild(button);
+    document.body.appendChild(menu);
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    });
+    expect(useUiStore.getState().pdfViewer).not.toBeNull();
+    menu.remove();
+  });
+
+  it("keeps the page it was showing all the way through the fade", async () => {
+    // The document index is dropped the instant the viewer state clears, which
+    // took the generation and the page count with it -- remounting the reader
+    // on a blank page 1 while it faded. The pane blinked on its way out.
+    await renderDock();
+    await act(async () => {
+      useUiStore.getState().openPdf("doc-a", { page: 4 });
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("pdf-source-view").getAttribute("data-page")).toBe("4"),
+    );
+    const before = screen.getByTestId("pdf-source-view").getAttribute("data-total");
+
+    await act(async () => {
+      useUiStore.getState().closePdf();
+    });
+    const leaving = screen.getByTestId("pdf-source-view");
+    expect(leaving.getAttribute("data-page")).toBe("4");
+    expect(leaving.getAttribute("data-total")).toBe(before);
   });
 });

@@ -4,6 +4,7 @@ Only the *canvas* events live here (NodeAdded, NodeMoved, EdgeAdded, etc.)
 plus the generic DomainEvent envelope. Extension-specific events live
 inside their owning extension (`anchor.extensions.<ext>.core.events`).
 """
+from anchor.core.events.actor import Actor
 from anchor.core.events.canvas import (
     CanvasCleared,
     CanvasSnapshot,
@@ -20,10 +21,12 @@ from anchor.core.events.canvas import (
     ReferenceCreated,
     ReferenceRemoved,
     ReferenceUpdated,
+    WorkspaceMetadataUpdated,
 )
 from anchor.core.events.envelope import DomainEvent
 
 __all__ = [
+    "Actor",
     "DomainEvent",
     "NodeAdded", "NodeRemoved", "NodeMoved", "NodeResized",
     "NodeUpdated", "NodeReparented",
@@ -31,4 +34,5 @@ __all__ = [
     "CanvasCleared", "CanvasSnapshot",
     "ReferenceCreated", "ReferenceAttached",
     "ReferenceRemoved", "ReferenceUpdated",
+    "WorkspaceMetadataUpdated",
 ]

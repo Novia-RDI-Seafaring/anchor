@@ -17,6 +17,10 @@ copyright: Copyright &copy; 2026 Novia University of Applied Sciences. MIT licen
 
 docs_dir: docs
 
+validation:
+  links:
+    anchors: warn
+
 # Files that live under docs/ for editor convenience but aren't part of
 # the published site: internal design proposals, drafts, etc.
 exclude_docs: |
@@ -107,10 +111,13 @@ nav:
   - Get started:
     - Quickstart: getting-started/quickstart.md
     - Install: getting-started/installation.md
-    - Tutorial: getting-started/tutorial.md
+    - Canvas workflow tutorial: getting-started/tutorial.md
   - Guides:
+    - Choose a provider and enable gold: guides/provider-setup.md
     - Environments and projects: guides/environments-and-projects.md
     - Working with documents and canvases: guides/documents-and-canvases.md
+    - Table topology: guides/table-topology.md
+    - Chart ingestion: guides/chart-ingestion.md
     - Agent setup: guides/agent-setup.md
     - Agent configuration: guides/agent-configuration.md
     - Claude Code plugin: guides/claude-plugin.md
@@ -123,6 +130,11 @@ nav:
     - Extensions and OIP: concepts/extensions-and-oip.md
     - On-disk substrate: concepts/on-disk-substrate.md
     - Canvas: concepts/canvas.md
+    - Claim and evidence: concepts/claim-evidence.md
+    - Source resolution: concepts/spec-source-resolution.md
+    - PDF page geometry: concepts/document-page-geometry.md
+    - Document generations: concepts/document-generations.md
+    - Derived regions: concepts/derived-regions.md
     - Many interfaces: concepts/interfaces.md
   - Reference:
     - CLI: reference/cli.md

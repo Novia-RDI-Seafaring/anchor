@@ -1,23 +1,36 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { documents, type DocumentIndex } from "@/api/documents";
+import { useDocumentIndex } from "@/api/useDocumentIndex";
+import type { DocumentIndex } from "@/api/documents";
+import { cancelTransientClose, scheduleTransientClose } from "@/canvas/transientViewer";
 import { useUiStore } from "@/stores/uiStore";
 
 import { PdfSourceView } from "./PdfSourceView";
-import { ReferencesPanel } from "./ReferencesPanel";
 
 /**
- * SourceDock — the left-docked split-screen source pane (#110a).
+ * SourceDock — the source pane that slides in over the page (#110a).
  *
- * Renders ONLY the left source pane + the draggable divider; the canvas keeps
- * filling the remaining space to the right. The dock is a single shared pane:
- * opening a different document/region swaps `pdfViewer` content in place (no
- * per-document instance). The divider drags to resize and the ratio persists
- * in the uiStore for the session. Closing the dock returns to canvas-full.
+ * It used to be an in-flow flex sibling between the files explorer and the
+ * canvas, so opening it squeezed BOTH: the canvas reflowed and the PDF got
+ * whatever was left between the explorer and the board. On a laptop that left
+ * the pages too narrow to read, which is the whole point of opening them.
  *
- * This component renders nothing unless the shared viewer is open in "dock"
- * mode, so the legacy modal quick-look path (PageWithBboxViewer) is untouched.
+ * Now it is an overlay anchored to the left edge of the page. It takes its
+ * width from the viewport rather than from the space left over, so it can
+ * cover the explorer and give the pages room, and the canvas underneath never
+ * reflows -- nothing moves when the viewer opens or closes, which also means
+ * no re-layout cost on every open.
+ *
+ * Still a single shared pane: opening a different document or region swaps
+ * `pdfViewer` content in place. The divider drags to resize, the ratio
+ * persists in uiStore, and Escape closes.
+ *
+ * Renders nothing unless the shared viewer is open in "dock" mode, so the
+ * full-screen quick-look path (PageWithBboxViewer) is untouched.
  */
+/** Keep in step with `.anchor-source-out` in index.css. */
+const FADE_OUT_MS = 120;
+
 export function SourceDock() {
   const viewer = useUiStore((s) => s.pdfViewer);
   const ratio = useUiStore((s) => s.sourceDockRatio);
@@ -25,37 +38,56 @@ export function SourceDock() {
   const setPage = useUiStore((s) => s.setPdfPage);
   const setMode = useUiStore((s) => s.setPdfViewerMode);
   const close = useUiStore((s) => s.closePdf);
+  const pinned = useUiStore((s) => s.pdfViewerPinned);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [index, setIndex] = useState<DocumentIndex | null>(null);
 
   const slug = viewer?.slug;
   const isDock = viewer?.mode === "dock";
-
-  useEffect(() => {
-    if (!slug) {
-      setIndex(null);
-      return;
+  const index = useDocumentIndex(slug, isDock);
+  const generation = index?.document.generation?.id;
+  const open = Boolean(viewer && slug && isDock);
+  const nonce = viewer?.nonce;
+  const contentsHighlight = useRef<{
+    slug: string; nonce?: number; generation?: string; page: number; bbox: number[];
+  } | null>(null);
+  const onContentsHighlightChange = useCallback((highlight: { page: number; bbox: number[] } | null) => {
+    const active = useUiStore.getState().pdfViewer;
+    if (active?.mode === "dock" && active.slug === slug && active.nonce === nonce) {
+      contentsHighlight.current = highlight ? { ...highlight, slug: active.slug, nonce, generation } : null;
     }
-    let cancel = false;
-    documents.index(slug).then((idx) => {
-      if (!cancel) setIndex(idx);
-    }).catch(() => {
-      if (!cancel) setIndex(null);
-    });
-    return () => {
-      cancel = true;
-    };
-  }, [slug]);
+  }, [slug, nonce, generation]);
+  const openFullscreen = () => {
+    const active = useUiStore.getState().pdfViewer;
+    const highlight = contentsHighlight.current;
+    if (active?.mode !== "dock") return;
+    if (highlight && highlight.slug === active.slug && highlight.nonce === active.nonce
+      && highlight.generation === generation && highlight.page === active.page) {
+      useUiStore.getState().openPdf(active.slug, {
+        page: active.page, mode: "modal", highlightBbox: highlight.bbox,
+        workspaceSlug: active.workspaceSlug, documentNodeId: active.documentNodeId,
+      });
+    } else {
+      setMode("modal");
+    }
+  };
+  const onPageChange = useCallback((page: number) => {
+    const active = useUiStore.getState().pdfViewer;
+    // Scroll effects can arrive after the dock hands navigation to quick-look.
+    if (active?.mode === "dock" && active.slug === slug && active.nonce === nonce) {
+      setPage(page);
+    }
+  }, [setPage, slug, nonce]);
 
   const onPointerMove = useCallback(
     (e: PointerEvent) => {
-      const el = containerRef.current?.parentElement;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      if (rect.width <= 0) return;
-      setRatio((e.clientX - rect.left) / rect.width);
+      // The overlay is anchored to the left edge of the window, so the drag
+      // maps straight onto the viewport. (It used to measure the parent flex
+      // row, which no longer describes where the pane sits.)
+      const width = window.innerWidth;
+      if (width <= 0) return;
+      setRatio(e.clientX / width);
     },
     [setRatio],
   );
@@ -80,30 +112,176 @@ export function SourceDock() {
     };
   }, [dragging, onPointerMove, stopDrag]);
 
-  if (!viewer || !slug || !isDock) return null;
+  // Exit animation bookkeeping. `exiting` keeps the pane rendered for the
+  // length of the fade after the viewer state clears.
+  const lastShown = useRef<{
+    viewer: NonNullable<typeof viewer>;
+    slug: string;
+    generation: string | undefined;
+    total: number;
+    title: string;
+    index: DocumentIndex | null;
+  } | null>(null);
+  const [exiting, setExiting] = useState(false);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open) {
+      // Reopened (or opened at a different ref): cancel any pending fade.
+      wasOpen.current = true;
+      setExiting(false);
+      return undefined;
+    }
+    if (!wasOpen.current) return undefined;
+    wasOpen.current = false;
+    setExiting(true);
+    const id = window.setTimeout(() => setExiting(false), FADE_OUT_MS);
+    return () => window.clearTimeout(id);
+    // `exiting` is deliberately NOT a dependency: including it re-ran this
+    // effect the instant it was set, and the cleanup then cancelled the very
+    // timer that ends the fade, so the pane never unmounted.
+  }, [open]);
 
-  const total = index?.document?.page_count ?? 0;
-  const docTitle = index?.document?.title ?? slug;
+  // Escape closes the dock — but let the floating "Make reference" menu (and an
+  // active text selection) consume the first Escape, so it takes two presses to
+  // go from "menu open" to "viewer closed" rather than closing everything at once.
+  useEffect(() => {
+    if (!isDock) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (document.querySelector('[data-testid="make-reference-action"]')) return;
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) return;
+      close();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isDock, close]);
+
+  // The pane opens on the LEFT EDGE, which is sometimes exactly where the link
+  // that opened it is sitting. Appearing under a stationary pointer gave the
+  // link a `mouseleave` the reader never performed, which scheduled the close,
+  // which faded the pane out, which gave the link a `mouseenter` again: the
+  // viewer strobed while the hand held still.
+  //
+  // So a hover-opened pane does not take the pointer until the reader moves.
+  // Until then it is `pointer-events: none` and the hover stays on the link
+  // underneath, where it belongs. The first real movement arms it, and from
+  // then on it behaves normally: entering cancels the close, leaving starts
+  // it. A pane that was clicked open is armed immediately -- a click is
+  // already a deliberate move.
+  const [pointerArmed, setPointerArmed] = useState(true);
+  useEffect(() => {
+    if (!open) return undefined;
+    if (pinned) {
+      setPointerArmed(true);
+      return undefined;
+    }
+    setPointerArmed(false);
+    let origin: { x: number; y: number } | null = null;
+    const onMove = (e: PointerEvent) => {
+      if (!origin) {
+        origin = { x: e.clientX, y: e.clientY };
+        return;
+      }
+      // A few pixels of tremor is not a decision to go somewhere.
+      if (Math.hypot(e.clientX - origin.x, e.clientY - origin.y) < 6) return;
+      setPointerArmed(true);
+    };
+    window.addEventListener("pointermove", onMove, true);
+    return () => window.removeEventListener("pointermove", onMove, true);
+  }, [open, pinned, slug, nonce]);
+
+  // Click away to close. The pane covers half the screen; reaching past it for
+  // the canvas and having it stay put makes it feel stuck rather than open.
+  // A click on something that OPENS a ref is not a click away -- otherwise the
+  // same gesture would close the pane and reopen it.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e: PointerEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) return;
+      // Resizing is a statement that the pane is wanted, so a drag that
+      // wanders outside it is not a click away from it.
+      if (dragging) return;
+      if (containerRef.current?.contains(target)) return;
+      if (target.closest?.("[data-source-trigger]")) return;
+      if (target.closest?.('[data-testid="ref-hover-preview"]')) return;
+      // Judging a reference is done WITH the source, not instead of it. The
+      // verdict menu is portalled to the body, so it lands outside the pane
+      // and read as a click away -- recording a verdict took the evidence
+      // off the screen at the moment of recording it.
+      if (target.closest?.("[data-ref-review]")) return;
+      close();
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [open, close, dragging]);
+
+  // Keep the pane mounted through its fade-out. React unmounts the moment the
+  // viewer state clears, which gives an instant disappearance -- fine for a
+  // click-to-close, jarring when a pointer drifting off a link takes half the
+  // screen with it. Hold the last payload for the length of the fade.
+  if (open) {
+    // The index goes with it. `useDocumentIndex` is disabled the moment the
+    // viewer state clears, so during the fade the generation went undefined
+    // and the page count went to zero -- which changed PdfSourceView's `key`
+    // and snapped the page back to 1. The reader saw the pane blink to a
+    // blank first page on its way out. Hold the whole payload, not half of it.
+    lastShown.current = {
+      viewer: viewer!,
+      slug: slug!,
+      generation,
+      total: index?.document?.page_count ?? lastShown.current?.total ?? 0,
+      title: index?.document?.title ?? slug!,
+      index,
+    };
+  }
+  const shown = lastShown.current;
+  // The first closed render precedes the exit effect. Keep the same inner
+  // viewer mounted on that render too, so its scroll position survives.
+  if (!shown || (!open && !exiting && !wasOpen.current)) return null;
+
+  const { viewer: shownViewer, slug: shownSlug, total, title: docTitle } = shown;
+  const shownGeneration = shown.generation;
 
   return (
     <div
       ref={containerRef}
-      className="flex h-full min-h-0 shrink-0 flex-col border-r border-neutral-300 bg-white"
-      style={{ width: `${ratio * 100}%` }}
+      // Opacity only, in and out. Sliding would drag the PAGES across the
+      // screen, and a reader watching a page travel is reading nothing.
+      // Above everything the canvas lays over itself -- the mark-up pens,
+      // labels and handles sit at z-40 -- and below dialogs at z-50. The
+      // pen bar used to show through the open source.
+      className={`${exiting ? "anchor-source-out" : "anchor-source-in"} fixed inset-y-0 left-0 z-[45] flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-neutral-300 bg-white shadow-2xl`}
+      // Width is a fraction of the VIEWPORT, not of the space left over beside
+      // the explorer, so the pages get real room and the pane can cover the
+      // explorer. min/max keep it usable and keep some canvas reachable.
+      style={{
+        width: `calc(${ratio} * 100vw)`,
+        minWidth: "20rem",
+        maxWidth: "85vw",
+        pointerEvents: pointerArmed ? undefined : "none",
+      }}
+      data-pointer-armed={pointerArmed ? "" : undefined}
       data-testid="source-dock"
+      // A hover-opened pane must survive the trip to it. Arriving cancels the
+      // pending close; leaving starts it again.
+      onPointerEnter={cancelTransientClose}
+      // Except mid-drag. Narrowing the pane walks the pointer off its edge,
+      // and a hover-opened pane would then close underneath the hand that was
+      // resizing it -- having just been told, by the resize, that it is wanted.
+      onPointerLeave={() => {
+        if (!dragging) scheduleTransientClose();
+      }}
     >
-      {/* References bibliography sits above the PDF source pane (#147 slice 3).
-          Both share the LEFT dock so the canvas's citations live next to the
-          source they point at. Rendered only when we know the canvas slug. */}
-      {viewer.workspaceSlug ? (
-        <ReferencesPanel canvasSlug={viewer.workspaceSlug} />
-      ) : null}
+      {/* References now live inside the viewer's left rail as a tab next to
+          Pages (see PdfSourceView), so a long citation can't stretch the dock. */}
       <div className="flex items-center justify-between border-b border-neutral-200 bg-neutral-50 px-2 py-1 text-xs text-neutral-600">
         <span className="font-medium uppercase tracking-wide">Source</span>
         <div className="flex items-center gap-1">
           <button
             type="button"
-            onClick={() => setMode("modal")}
+            onClick={openFullscreen}
             className="rounded px-1.5 py-0.5 hover:bg-neutral-200"
             title="Open as full-screen quick-look"
           >
@@ -122,14 +300,20 @@ export function SourceDock() {
       </div>
       <div className="relative min-h-0 flex-1">
         <PdfSourceView
-          slug={slug}
-          page={viewer.page}
+          key={`${shownSlug}:${shownGeneration ?? "legacy"}`}
+          slug={shownSlug}
+          generation={shownGeneration}
+          page={Math.min(shownViewer.page, total || 1)}
           total={total}
-          highlightBbox={viewer.highlightBbox}
-          highlightPage={viewer.highlightPage}
+          index={shown.index}
+          highlightBbox={shownViewer.highlightBbox}
+          highlightAlso={shownViewer.highlightAlso}
+          highlightPage={shownViewer.highlightPage}
+          highlightNonce={shownViewer.nonce}
           title={docTitle}
-          onPageChange={setPage}
-          canvasSlug={viewer.workspaceSlug}
+          onPageChange={onPageChange}
+          onContentsHighlightChange={onContentsHighlightChange}
+          canvasSlug={shownViewer.workspaceSlug}
         />
         {/* Draggable divider, pinned to the dock's right edge. */}
         <div
@@ -139,6 +323,8 @@ export function SourceDock() {
           className="absolute -right-1.5 top-0 z-10 h-full w-3 cursor-col-resize"
           onPointerDown={(e) => {
             e.preventDefault();
+            // Grabbing the divider keeps the pane, however it was opened.
+            cancelTransientClose();
             setDragging(true);
           }}
           data-testid="source-dock-divider"

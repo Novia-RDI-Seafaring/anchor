@@ -13,10 +13,10 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
-log = logging.getLogger(__name__)
-
 from anchor.core.upload_safety import UnsafeUploadError, safe_upload_name
 from anchor.extensions.anchor_cad.core.services import CadService
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/cad", tags=["cad"])
 
@@ -83,17 +83,17 @@ async def inspect(
     try:
         filename = safe_upload_name(file.filename, allowed_extensions=_ALLOWED_CAD_EXTENSIONS)
     except UnsafeUploadError as exc:
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
     body = await file.read()
     if len(body) > _MAX_CAD_BYTES:
         raise HTTPException(413, f"CAD file exceeds {_MAX_CAD_BYTES // (1024 * 1024)} MB cap")
     try:
         model = await service.upload_and_inspect(body, filename)
-    except ValueError:
-        raise HTTPException(400, "could not parse CAD file")
-    except Exception:
+    except ValueError as exc:
+        raise HTTPException(400, "could not parse CAD file") from exc
+    except Exception as exc:
         log.exception("CAD upload-and-inspect failed")
-        raise HTTPException(400, "could not parse CAD file")
+        raise HTTPException(400, "could not parse CAD file") from exc
     return JSONResponse(model.model_dump())
 
 
@@ -114,5 +114,5 @@ async def set_parameter(
     try:
         model = await service.set_parameter(slug, parameter_name, body["value"])
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(400, str(exc))
+        raise HTTPException(400, str(exc)) from exc
     return JSONResponse(model.model_dump())

@@ -66,6 +66,7 @@ import { useUiStore } from "@/stores/uiStore";
 
 import { DEFAULT_BG, resolveColors } from "./colors";
 import { FillPicker } from "./FillPicker";
+import { ReviewActions } from "./ReviewActions";
 import { StrokePicker } from "./StrokePicker";
 import { TextPicker } from "./TextPicker";
 
@@ -80,6 +81,12 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
   // Read ReactFlow's own selection state and viewport transform.
   const rfNodes = useStore((s) => s.nodes);
   const transform = useStore((s) => s.transform);
+  // Pane dimensions: when the source dock opens/closes the canvas resizes but
+  // the transform does not change, so without these the toolbar would keep its
+  // stale screen position (floating over the PDF viewer). Re-anchoring on a
+  // resize moves it back above its node.
+  const rfWidth = useStore((s) => s.width);
+  const rfHeight = useStore((s) => s.height);
   const { flowToScreenPosition } = useReactFlow();
 
   const selectedNodeIds = useMemo(
@@ -122,7 +129,7 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
     // dep on `transform` is what does it. flowToScreenPosition itself is
     // stable across the lifetime of the provider.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedNodeIds, nodes, transform]);
+  }, [selectedNodeIds, nodes, transform, rfWidth, rfHeight]);
 
   const setPropertiesOpen = useUiStore((s) => s.setPropertiesOpen);
 
@@ -156,6 +163,11 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
   useEffect(() => { setConfirmingDelete(false); }, [selectedNodeIds.join(",")]);
 
   if (!screenBox || selectedNodeIds.length === 0) return null;
+  // With one element selected the SelectionPanel carries the same controls,
+  // open on the left. Two sets of colour chips for one element is clutter,
+  // so the floating toolbar steps aside and stays for multi-select, where
+  // the panel does not apply.
+  if (selectedNodeIds.length === 1) return null;
 
   const isMulti = selectedNodeIds.length > 1;
   const isTriPlus = selectedNodeIds.length >= 3;
@@ -305,6 +317,15 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
             <span className="text-[11px]">Open viewer</span>
           </Button>
         ) : null}
+
+        {/* Review verdicts (#324) — Accept / Reject, shown only when the
+            selection contains a proposed (or rejected) node. One click
+            writes the verdict via a plain update-node data patch. */}
+        <ReviewActions
+          workspaceSlug={workspaceSlug}
+          nodeIds={selectedNodeIds}
+          getNodeData={getNodeData}
+        />
 
         {/* ────── Style chips ────── */}
         {/* Fill chip — square swatch tinted with current bg, falls back to
