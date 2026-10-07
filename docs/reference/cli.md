@@ -13,7 +13,7 @@ The `anchor` command exposes the user-facing local application surface.
 | `anchor use <env> [project]` | Set CLI session defaults. This does not select a project for an MCP server. |
 | `anchor migrate` | Fold a pre-existing `~/anchor-data` into `envs/local/projects/default/.anchor_data/`. |
 | `anchor check --env <name>` | Verify the resolved data zone: provider / endpoint / project dir / models / key, repair a malformed endpoint (`--fix`), and with `--probe` confirm the deployment + key. Exits non-zero when something would break. |
-| `anchor serve` | Serve one project; use `--env NAME --project NAME` explicitly when needed. The preferred port is 8002; an occupied port falls through to a free one. |
+| `anchor serve` | Serve one project; use `--env NAME --project NAME` explicitly when needed. Port 8002 is the default; an unavailable port fails with the bind reason. Use `--port N` to choose a port or `--port-walk` to try up to 20 ports and print the actual URL. |
 | `anchor serve-info` | List running canvas servers and their resolved projects/URLs. |
 | `anchor models list / prefetch --env NAME` | Inspect or download the local model set before offline ingestion. Prefetch requires network access. |
 
