@@ -82,7 +82,7 @@ def _pid_alive(pid: int) -> bool:
 
 def _windows_pid_alive(pid: int) -> bool:
     import ctypes
-    from ctypes import wintypes
+    import ctypes.wintypes as wintypes
 
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
