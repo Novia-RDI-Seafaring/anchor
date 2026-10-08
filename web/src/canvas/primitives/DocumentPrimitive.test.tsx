@@ -114,9 +114,12 @@ describe("DocumentPrimitive click isolation", () => {
     const tops = marks.map((mark) => mark.style.top);
     await act(async () => { pointAt(160); });
     marks.forEach((mark, i) => {
-      expect(screen.getByTestId(["external-highlight", "value-quad", "also-place"][i]!)).toBe(mark);
-      expect(mark.classList.contains("anchor-mark-flying")).toBe(true);
-      expect(mark.style.top).not.toBe(tops[i]);
+      const current = screen.getByTestId(["external-highlight", "value-quad", "also-place"][i]!);
+      // An exact text result is hidden while the next lookup is pending.
+      // Geometry-only marks keep travelling without preserving stale evidence.
+      if (i !== 1) expect(current).toBe(mark);
+      expect(current.classList.contains("anchor-mark-flying")).toBe(true);
+      expect(current.style.top).not.toBe(tops[i]);
     });
   });
 
@@ -191,7 +194,7 @@ describe("DocumentPrimitive click isolation", () => {
     Object.defineProperties(image, { naturalWidth: { value: 600 }, naturalHeight: { value: 800 } });
     await act(async () => {
       fireEvent.load(image);
-      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 1, bbox, region_id: "review", query: "value" });
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 1, bbox, query: "value" });
     });
     const quad = screen.getByTestId("value-quad");
     expect(quad.style.left).toBe("12%");
@@ -271,11 +274,10 @@ describe("DocumentPrimitive click isolation", () => {
     expect(onParentDblClick).not.toHaveBeenCalled();
   });
 
-  it("locates the value text when a hovered ref carries a query, scoped to the region bbox (#197)", async () => {
+  it("keeps a historical region reference coarse despite a matching value", async () => {
     await renderDoc({ ...READY_DOC, slug: "alfa-laval-lkh" });
-    // A spec row broadcasts its hover with the cell value (`query`) and the
-    // region bbox. The document node must locate that text inside the region
-    // for the value-precise highlight.
+    // A region and value do not identify the claim's cell, even if text search
+    // could find that value somewhere within the section.
     await act(async () => {
       useUiStore.getState().setHoveredSourceRef({
         slug: "alfa-laval-lkh",
@@ -285,12 +287,8 @@ describe("DocumentPrimitive click isolation", () => {
         query: "600 kPa",
       });
     });
-    expect(documents.locate).toHaveBeenCalledWith(
-      "alfa-laval-lkh",
-      1,
-      "600 kPa",
-      [50, 480, 550, 410],
-    );
+    expect(documents.locate).not.toHaveBeenCalled();
+    expect(screen.getByRole("status").textContent).toContain("Coarse source");
   });
 
   it("does not locate when the hovered ref carries no query (region-only highlight)", async () => {
@@ -328,6 +326,92 @@ describe("DocumentPrimitive click isolation", () => {
  * pinned/sticky reference (a selected referencing node) survive that revert.
  */
 describe("DocumentPrimitive selector precision", () => {
+  async function loadSourceImage() {
+    const image = screen.getByRole("img") as HTMLImageElement;
+    Object.defineProperties(image, { naturalWidth: { value: 600 }, naturalHeight: { value: 800 } });
+    await act(async () => { fireEvent.load(image); });
+  }
+
+  it("keeps equal motor-size values tied to their certified frequency cells", async () => {
+    const cells = [[304, 229, 348, 238], [304, 240, 348, 249]];
+    vi.spyOn(documents, "resolveRef").mockImplementation(async (_slug, ref) => ({
+      slug: "pump", page: 1, precision: "cell", bbox: cells[ref.cell!.row!]!,
+    }));
+    vi.mocked(documents.locate).mockImplementation(async (_slug, _page, _query, bbox) => [bbox!]);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => geometryFixture.gold_map }));
+    await renderDoc(READY_DOC);
+    await loadSourceImage();
+    for (const row of [0, 1]) {
+      await act(async () => {
+        useUiStore.getState().setHoveredSourceRef({
+          slug: "pump", page: 1, region_id: "motors", cell: { row, col: 1 }, query: "0.75 - 110 kW",
+        });
+      });
+      await waitFor(() => expect(documents.locate).toHaveBeenLastCalledWith("pump", 1, "0.75 - 110 kW", cells[row]));
+      await waitFor(() => expect(screen.getAllByTestId("value-quad")).toHaveLength(1));
+      expect(parseFloat(screen.getByTestId("value-quad").style.top)).toBeCloseTo(cells[row]![1]! / 800 * 100);
+    }
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 1, region_id: "motors", query: "0.75 - 110 kW" });
+    });
+    expect(screen.queryByTestId("value-quad")).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain("Coarse source");
+  });
+
+  it("never uses stale geometry while another cell is pending or resolution fails", async () => {
+    let complete!: (value: null) => void;
+    const pending = new Promise<null>((resolve) => { complete = resolve; });
+    const resolver = vi.spyOn(documents, "resolveRef")
+      .mockResolvedValueOnce({ slug: "pump", page: 1, precision: "cell", bbox: [10, 20, 30, 40] })
+      .mockReturnValueOnce(pending)
+      .mockRejectedValueOnce(new Error("unavailable"));
+    vi.mocked(documents.locate).mockImplementation(async (_slug, _page, _query, bbox) => [bbox!]);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => geometryFixture.gold_map }));
+    await renderDoc(READY_DOC);
+    await loadSourceImage();
+    const hover = (row: number) => useUiStore.getState().setHoveredSourceRef({
+      slug: "pump", page: 1, region_id: "motors", bbox: [0, 0, 500, 500], cell: { row, col: 1 }, query: "same value",
+    });
+    await act(async () => { hover(0); });
+    await waitFor(() => expect(screen.getByTestId("value-quad")).toBeTruthy());
+    await act(async () => { hover(1); });
+    expect(screen.queryByTestId("value-quad")).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain("Resolving source");
+    expect(documents.locate).toHaveBeenCalledTimes(1);
+    await act(async () => { hover(2); });
+    await waitFor(() => expect(resolver).toHaveBeenCalledTimes(3));
+    expect(screen.getByRole("status").textContent).toContain("Coarse source");
+    await act(async () => { complete(null); });
+    expect(screen.queryByTestId("value-quad")).toBeNull();
+    expect(documents.locate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not choose the first identical value within an explicit box", async () => {
+    vi.mocked(documents.locate).mockResolvedValue([[10, 20, 30, 40], [10, 50, 30, 70]]);
+    await renderDoc(READY_DOC);
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 1, bbox: [0, 0, 100, 100], query: "same value" });
+    });
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Ambiguous source"));
+    expect(screen.queryByTestId("value-quad")).toBeNull();
+  });
+
+  it("ignores a late text lookup after switching to a coarse reference", async () => {
+    let complete!: (value: number[][]) => void;
+    vi.mocked(documents.locate).mockReturnValue(new Promise((resolve) => { complete = resolve; }));
+    await renderDoc(READY_DOC);
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 1, bbox: [10, 20, 30, 40], query: "same value" });
+    });
+    await waitFor(() => expect(documents.locate).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 1, region_id: "motors", query: "same value" });
+      complete([[10, 20, 30, 40]]);
+    });
+    expect(screen.queryByTestId("value-quad")).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain("Coarse source");
+  });
+
   it("resolves a cell ref so the preview boxes the cell, not the whole section", async () => {
     // The dock already lands on the cell; hover used to drop the selector, so
     // this preview drew a box around the whole Temperature section while the
