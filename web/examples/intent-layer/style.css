@@ -1,0 +1,18 @@
+body { margin: 0; background: #f2f4f7; color: #203046; font-family: system-ui, sans-serif; }
+.example { max-width: 1200px; margin: 0 auto; padding: 28px; }
+.example header { max-width: 850px; }
+.example h1 { font-size: 32px; margin: 8px 0; }
+.example header p { line-height: 1.5; }
+.eyebrow { color: #566c87; font-size: 12px; text-transform: uppercase; letter-spacing: .12em; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.actions button { padding: 9px 14px; border: 1px solid #a8bbd2; background: white; border-radius: 7px; color: #203046; cursor: pointer; }
+.actions button:disabled { opacity: .5; cursor: default; }
+.disclosure, .revision { color: #63758a; font-size: 12px; }
+.surface { position: relative; min-height: 740px; border: 1px solid #c7d3e2; border-radius: 12px; background: white; overflow: hidden; }
+.fields { margin: 95px auto 0; width: min(440px, calc(100% - 200px)); }
+.field { display: block; padding: 16px; margin-bottom: 20px; background: #f6f9fd; border: 1px solid #cbd9e8; border-radius: 8px; }
+.field span { display: block; font-size: 13px; margin-bottom: 9px; }
+.field input { width: 100%; box-sizing: border-box; padding: 10px; background: white; color: #23374e; border: 1px solid #b9cada; border-radius: 4px; font: inherit; }
+.evidence { margin-top: 20px; padding: 16px; border: 1px solid #cbd9e8; border-radius: 8px; background: white; }
+.evidence img { display: block; max-width: 100%; border: 1px solid #cbd9e8; }
+.evidence pre { overflow: auto; max-height: 250px; font-size: 11px; }

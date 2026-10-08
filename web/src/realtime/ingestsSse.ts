@@ -1,4 +1,4 @@
-import { BACKEND_URL } from "@/api/client";
+import { projectSse } from "./projectSse";
 
 /** One in-flight (or just-resolved) ingest, as the activity surface sees it.
  *  Mirrors the server's `IngestActivity.to_dict()` (issue #51). */
@@ -24,11 +24,10 @@ export type IngestsHandlers = {
  * Subscribes to the project-level ingestion-activity SSE stream. The server
  * re-reads the durable activity records on a short cadence, so this sees every
  * ingest regardless of trigger (web drop, CLI `anchor ingest`, an MCP agent).
- * Mirrors the reconnect shape of `CanvasSse`.
+ * Shares one connection and reconnect loop with the canvas and intents panel.
  */
 export class IngestsSse {
-  private es: EventSource | null = null;
-  private retryMs = 1000;
+  private unsubscribe: (() => void) | null = null;
   private handlers: IngestsHandlers;
 
   constructor(handlers: IngestsHandlers) {
@@ -36,27 +35,15 @@ export class IngestsSse {
   }
 
   connect(): void {
-    if (this.es) return;
-    this.es = new EventSource(`${BACKEND_URL}/api/ingests/_stream/events`);
-    this.es.addEventListener("ingests", (ev) => {
-      try {
-        this.handlers.onIngests?.(JSON.parse((ev as MessageEvent).data));
-        this.retryMs = 1000;
-      } catch (_err) {
-        // ignore malformed payload
-      }
+    if (this.unsubscribe) return;
+    this.unsubscribe = projectSse.subscribe({
+      ingests: (payload) => this.handlers.onIngests?.(payload as IngestActivity[]),
+      onError: this.handlers.onError,
     });
-    this.es.onerror = (err) => {
-      this.handlers.onError?.(err);
-      this.disconnect();
-      const next = Math.min(this.retryMs * 2, 30000);
-      setTimeout(() => this.connect(), this.retryMs);
-      this.retryMs = next;
-    };
   }
 
   disconnect(): void {
-    this.es?.close();
-    this.es = null;
+    this.unsubscribe?.();
+    this.unsubscribe = null;
   }
 }
