@@ -3,6 +3,24 @@
 `anchor-mcp` exposes local ANCHOR tools over MCP stdio. It is launched by your
 agent client and operates on the same project files as the CLI and browser.
 
+## Process lifecycle
+
+Your client owns the `anchor-mcp` process. On disconnect it should close the
+server's stdin, wait for exit, then terminate its own child if shutdown stalls.
+On Windows this requires process termination or a client-owned Job Object,
+rather than POSIX signals. See the [MCP shutdown rules](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle#shutdown).
+
+ANCHOR's stdio transport already ends the session on stdin EOF, including after
+initialization on Windows. It has no idle timeout or parent-process watchdog.
+A parent exiting does not deliver EOF if another process retains a pipe writer.
+Canceling a request also cannot stop native work already running in a background
+thread; that worker can delay process exit. The EOF regression covers an idle,
+initialized session, not shutdown of a blocked native worker.
+
+`anchor serve` is a separate browser server. Closing an agent client does not
+stop a server you started in another terminal. See
+[leftover-process troubleshooting](../guides/agent-configuration.md#leftover-server-processes).
+
 ## Environment and project selection
 
 ```bash
