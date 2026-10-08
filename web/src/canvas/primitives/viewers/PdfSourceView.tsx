@@ -267,6 +267,7 @@ export function PdfSourceView({
       })
       .catch((err: unknown) => {
         if (!cancelled) {
+          console.error("Could not load PDF", err);
           setLoadError(err instanceof Error ? err.message : "Failed to load PDF");
         }
       });
@@ -1032,7 +1033,7 @@ export function PdfSourceView({
           data-testid="pdf-scroller"
         >
           {loadError ? (
-            <div className="p-6 text-sm text-red-600">Could not load PDF: {loadError}</div>
+            <div role="alert" className="p-6 text-sm text-red-600">Could not load PDF: {loadError}</div>
           ) : (
             <div ref={contentRef} className="relative mx-auto" style={{ height: totalHeight, width: contentWidth || undefined }}>
               {strokePlacements.map(({ key, left, top, points }) => (
@@ -1151,6 +1152,7 @@ function PageSlot(props: SlotProps) {
   // Overlays size to the page box at the current zoom, even while the raster
   // underneath is still the CSS-scaled one from the previous zoom.
   const viewportSize = rendered ? { w: item.width, h: item.height } : null;
+  const displayedZoom = rendered?.zoom ?? renderZoom;
   const confirmRect = bboxToRect(confirmBbox);
 
   // Right-click inside a section -> capture it for a reference. The region
@@ -1211,7 +1213,7 @@ function PageSlot(props: SlotProps) {
       {shouldRender && doc ? (
         <div
           className="absolute left-0 top-0 origin-top-left"
-          style={renderZoom === zoom ? undefined : { transform: `scale(${zoom / renderZoom})` }}
+          style={displayedZoom === zoom ? undefined : { transform: `scale(${zoom / displayedZoom})` }}
         >
           <PdfPageCanvas doc={doc} page={item.page} zoom={renderZoom} onRendered={onRendered} />
         </div>

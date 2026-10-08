@@ -7,21 +7,28 @@
  * worker asset so it loads from our own origin (no CDN), which keeps the
  * viewer working offline / behind the `anchor serve` proxy.
  */
-import * as pdfjs from "pdfjs-dist";
+import type * as pdfjs from "pdfjs-dist";
 // Vite resolves `?url` to the bundled worker asset (served from our origin).
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 let configured = false;
+let library: Promise<typeof import("pdfjs-dist")> | null = null;
 
-function ensureWorker(): void {
+/** Module initialization failures belong to the viewer's load-error path. */
+export function getPdfLibrary(): Promise<typeof import("pdfjs-dist")> {
+  return library ??= import("pdfjs-dist");
+}
+
+function ensureWorker(api: typeof import("pdfjs-dist")): void {
   if (configured) return;
-  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+  api.GlobalWorkerOptions.workerSrc = workerUrl;
   configured = true;
 }
 
 export type PdfDoc = pdfjs.PDFDocumentProxy;
 export type PdfPage = pdfjs.PDFPageProxy;
 export type PdfViewport = pdfjs.PageViewport;
+export type PdfTextLayer = pdfjs.TextLayer;
 
 export type LoadedPdf = {
   doc: PdfDoc;
@@ -31,10 +38,16 @@ export type LoadedPdf = {
 
 /** Load a PDF document from a URL. */
 export async function loadPdf(url: string): Promise<LoadedPdf> {
-  ensureWorker();
-  const task = pdfjs.getDocument({ url });
-  const doc = await task.promise;
-  return { doc, destroy: () => task.destroy() };
+  const api = await getPdfLibrary();
+  ensureWorker(api);
+  const task = api.getDocument({ url });
+  try {
+    const doc = await task.promise;
+    return { doc, destroy: () => task.destroy() };
+  } catch (error) {
+    await task.destroy().catch(() => {});
+    throw error;
+  }
 }
 
 /**
@@ -55,5 +68,3 @@ export async function pageSizes(
   }
   return out;
 }
-
-export { pdfjs };
