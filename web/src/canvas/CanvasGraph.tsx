@@ -46,6 +46,7 @@ import {
 import { connectClick } from "@/canvas/connect";
 import { CONNECT_TOOL, INTENT_TOOL, nodeTypes, paletteEntries } from "@/canvas/registry";
 import { refreshWorkspaces } from "@/canvas/useWorkspacesList";
+import { useCanvasClipboard } from "@/canvas/useCanvasClipboard";
 import { CanvasSse, type CanvasEvent } from "@/realtime/sseClient";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -314,6 +315,23 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   // frame (the region hit-test reads measured sizes during a drag).
   const rfNodesRef = useRef<RfNode[]>([]);
   const [rfEdges, setRfEdges] = useState<RfEdge[]>([]);
+  const canvasClipboard = useCanvasClipboard({
+    slug, active: !readOnly && !commentMode,
+    nodes: () => rfNodesRef.current, edges: () => rfEdges,
+    toFlow: screenToFlowPosition,
+    restore: () => {
+      const current = useCanvasStore.getState().nodes;
+      setRfNodes((prev) => Object.values(current).map((n) => ({
+        ...toRfNode(n, current), selected: prev.some((p) => p.id === n.id && p.selected),
+      })));
+      useUiStore.getState().setDropTargetAreaId(null);
+    },
+    select: (ids) => {
+      const current = useCanvasStore.getState().nodes;
+      setRfNodes(Object.values(current).map((n) => ({ ...toRfNode(n, current), selected: ids.includes(n.id) })));
+      useUiStore.getState().setSelectedNodeId(ids[0] ?? null);
+    },
+  });
   // Right-click menu target. Null when no context menu is open. Set by
   // `onNodeContextMenu` and cleared by selection / outside-click / Esc.
   const [contextMenuTarget, setContextMenuTarget] = useState<ContextMenuTarget | null>(null);
@@ -1290,6 +1308,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
             onPointerUp,
           })}
     >
+      {canvasClipboard.error ? <div role="alert" className="absolute left-3 top-3 z-50 rounded border border-red-300 bg-white p-2 text-sm text-red-800">{canvasClipboard.error}</div> : null}
       {/* Mount custom <marker> defs once per canvas. Edge components
           reference them by URL fragment (`url(#anchor-mk-...)`); SVG
           marker IDs resolve document-wide so a sibling defs SVG works. */}
@@ -1447,16 +1466,18 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
                   navigate(`/c/${target}`);
                 }
               },
-              onNodeDragStart: () => {
+              onNodeDragStart: (event, node, draggedNodes) => {
+                canvasClipboard.startDrag(event, draggedNodes.length ? draggedNodes.map((n) => n.id) : [node.id]);
                 // Tell DirectionalConnectors to hide its dots — otherwise
                 // the 20px hit-boxes fight the node-drag gesture.
                 useUiStore.getState().setIsDraggingNode(true);
               },
               onNodeDrag,
-              onNodeDragStop: (_event, node) => {
+              onNodeDragStop: (event, node) => {
                 // Clear the connector-overlay drag flag first thing so a
                 // bail-out anywhere below still re-enables the dots.
                 useUiStore.getState().setIsDraggingNode(false);
+                if (canvasClipboard.finishDrag(event)) return;
                 // Commit the post-drag position both locally (instant) and to
                 // the server (eventually consistent via SSE echo, idempotent
                 // by event id). Convert ReactFlow's parent-relative
@@ -1519,11 +1540,13 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
                   }
                 }
               },
-              onSelectionDragStart: () => {
+              onSelectionDragStart: (event, draggedNodes) => {
+                canvasClipboard.startDrag(event, draggedNodes.map((n) => n.id));
                 useUiStore.getState().setIsDraggingNode(true);
               },
-              onSelectionDragStop: (_event, draggedNodes) => {
+              onSelectionDragStop: (event, draggedNodes) => {
                 useUiStore.getState().setIsDraggingNode(false);
+                if (canvasClipboard.finishDrag(event)) return;
                 // Multi-select drag: ReactFlow moves every selected node
                 // visually during the gesture, but `onNodeDragStop` only
                 // fires for the primary. Persist each. Convert each one's
