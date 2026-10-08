@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import socket
+import sys
 from collections import Counter
 from pathlib import Path
+from typing import Annotated
 
 import typer
 
@@ -16,14 +18,25 @@ from anchor.adapters.project_runtime import (
 
 def _find_free_port(host: str, start: int, *, limit: int = 20) -> int:
     """First bindable port at or after `start`. Raises OSError if none in range."""
+    last_error = None
     for candidate in range(start, start + limit):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
             try:
+                if sys.platform == "win32":
+                    # Windows SO_REUSEADDR can share a live listener's port.
+                    probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+                else:
+                    # Match Uvicorn so TIME_WAIT does not force a port change.
+                    probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 probe.bind((host, candidate))
+                probe.listen()
                 return candidate
-            except OSError:
+            except OSError as exc:
+                if limit == 1:
+                    raise
+                last_error = exc
                 continue
-    raise OSError(f"no free port in {start}..{start + limit - 1}")
+    raise OSError(f"no free port in {start}..{start + limit - 1}: {last_error}")
 
 
 def _migrate_bbox_origin(runtime) -> None:
@@ -99,8 +112,12 @@ def serve(
         ),
     ),
     port: int = typer.Option(
-        8002, "--port", "-p", help="Preferred port; if taken, the next free port is used."
+        8002, "--port", "-p", help="Port to bind; fail if unavailable unless --port-walk is set."
     ),
+    port_walk: Annotated[
+        bool,
+        typer.Option("--port-walk", help="Try up to 20 ports starting at --port if unavailable."),
+    ] = False,
 ) -> None:
     """Run the HTTP adapter (FastAPI + SSE) and serve the frontend bundle."""
     import uvicorn
@@ -117,15 +134,15 @@ def serve(
         data_dir = rp.data_dir
         typer.echo(f"[anchor serve] env={rp.environment.name} project={rp.name}", err=True)
 
-    # If the requested port is taken (e.g. another `anchor serve` for a
-    # different project), fall through to the next free one rather than failing
-    # to bind. Resolve before base_url so the snapshotter loops back to *this*
-    # server's actual port.
+    # Resolve before base_url so the snapshotter uses this server's actual
+    # port. Port changes must be explicit because clients retain the URL.
     requested_port = port
     try:
-        port = _find_free_port(host, port)
+        port = _find_free_port(host, port, limit=20 if port_walk else 1)
     except OSError as exc:
-        typer.echo(f"[anchor serve] {exc}", err=True)
+        typer.echo(f"[anchor serve] cannot bind {host}:{requested_port}: {exc}", err=True)
+        if not port_walk:
+            typer.echo("Choose another --port or pass --port-walk to try the next port.", err=True)
         raise typer.Exit(code=1) from None
 
     # The snapshotter points at the same server we're about to start so
@@ -181,7 +198,8 @@ def serve(
 
     if port != requested_port:
         typer.echo(
-            f"[anchor serve] port {requested_port} is in use -- serving on {port} instead.",
+            f"[anchor serve] Warning: port {requested_port} is unavailable -- "
+            f"serving on {port} instead (--port-walk).",
             err=True,
         )
     typer.echo(f"[anchor serve] data_dir={data_dir}  ->  http://{host}:{port}")

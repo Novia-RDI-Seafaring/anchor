@@ -122,8 +122,10 @@ redirect a configured data boundary.
 | `ANCHOR_CORS_ORIGINS` | Browser-origin configuration for the HTTP server |
 | `ANCHOR_FMU_DEMO` | Explicit opt-in to synthetic FMU demo output |
 
-`anchor serve` defaults to host `127.0.0.1` and preferred port `8002`. If the
-port is occupied it chooses another free port and prints the actual URL.
+`anchor serve` defaults to host `127.0.0.1` and port `8002`. If the port cannot
+bind, the command fails with the reason. Choose another port with `--port N`,
+or opt into trying up to 20 ports with `--port-walk`. A changed port is reported
+on stderr, and the server prints its actual URL.
 The server is unauthenticated; provide an authenticated deployment layer before
 network exposure. MCP snapshot configuration needs the actual server URL in
 `--base-url` if it differs from the default.

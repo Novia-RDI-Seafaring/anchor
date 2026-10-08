@@ -70,10 +70,19 @@ include referenced documents and intent threads.
 
 ## Browser synchronization
 
-`GET /api/workspaces/<slug>/events` opens SSE. The server sends a `snapshot`,
-then `patch` events with domain changes and `presence` updates. The browser
-reconciles optimistic edits with persisted state and can re-read a snapshot
-after reconnecting or detecting a version gap.
+The browser shares one SSE connection per tab at `GET /api/events?canvas=<slug>`.
+It receives a canvas `snapshot`, then `patch` events with domain changes and
+`presence` updates. The same stream carries project-wide `intent_pending` count
+signals and `ingests` activity lists, including their initial snapshots. A
+project-only subscriber can omit `canvas`. Presence uses the `actor_kind` and
+`actor_label` query parameters, including the monitor's display label.
+
+One connection keeps two open tabs from filling the browser's HTTP/1 connection
+pool and blocking other API requests. Consumers share reconnect and cleanup;
+switching canvases replaces the stream and receives a fresh snapshot. The
+browser reconciles optimistic edits with persisted state and can re-read a
+snapshot after reconnecting or detecting a version gap. The separate workspace,
+intent, and ingest SSE endpoints remain available for existing clients.
 
 The HTTP process tails persisted canvas events so writes from CLI and MCP
 processes can reach browser subscribers. This bridges file changes into its
