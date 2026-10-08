@@ -96,6 +96,14 @@ function stubScroller(target: number | null = null): { lastTop: () => number | n
       return this.getAttribute?.("data-testid") === "pdf-scroller" ? 300 : 0;
     },
   });
+  Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+    configurable: true,
+    get() { return 10000; },
+  });
+  Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+    configurable: true,
+    get() { return 10000; },
+  });
   HTMLElement.prototype.scrollTo = function scrollTo(opts: ScrollToOptions | number) {
     if (typeof opts === "object" && opts.top != null) lastTop = opts.top;
   } as typeof HTMLElement.prototype.scrollTo;
@@ -127,6 +135,58 @@ async function renderViewer(props?: Partial<Parameters<typeof PdfSourceView>[0]>
   };
   return { onPageChange, rerender };
 }
+
+describe("source navigation at high zoom", () => {
+  afterEach(() => { useUiStore.setState({ pdfZoom: 1 }); });
+
+  it.each([
+    { bbox: [82, 40, 92, 45], initialLeft: 0, expectedLeft: 112 },
+    { bbox: [10, 40, 20, 45], initialLeft: 110, expectedLeft: 0 },
+  ])("reveals an offscreen cell without moving its visible vertical position: $initialLeft", async ({ bbox, initialLeft, expectedLeft }) => {
+    stubScroller();
+    useUiStore.setState({ pdfZoom: 3.8 });
+    const { rerender } = await renderViewer();
+    const el = screen.getByTestId("pdf-scroller");
+    const content = el.firstElementChild as HTMLElement;
+    Object.defineProperties(content, {
+      offsetLeft: { configurable: true, value: 16 },
+      offsetTop: { configurable: true, value: 16 },
+    });
+    Object.defineProperties(el, {
+      scrollWidth: { configurable: true, value: 412 },
+      scrollHeight: { configurable: true, value: 4700 },
+    });
+    el.scrollLeft = initialLeft;
+    el.scrollTop = 0;
+    const scroll = vi.fn();
+    el.scrollTo = scroll;
+    await rerender({ highlightPage: 1, highlightBbox: bbox, highlightNonce: 1 });
+    await waitFor(() => expect(scroll).toHaveBeenCalledWith({
+      top: 0, left: expectedLeft, behavior: "smooth",
+    }));
+    expect(screen.getByLabelText("Reset zoom").textContent).toBe("380%");
+    const visibleLeft = 16 + bbox[0]! * 3.8 - expectedLeft;
+    const visibleRight = 16 + bbox[2]! * 3.8 - expectedLeft;
+    expect(visibleLeft).toBeGreaterThanOrEqual(0);
+    expect(visibleRight).toBeLessThanOrEqual(300);
+  });
+
+  it("keeps both scroll axes when the source is already visible", async () => {
+    stubScroller();
+    useUiStore.setState({ pdfZoom: 3.8 });
+    const { rerender } = await renderViewer({
+      highlightPage: 1, highlightBbox: [40, 40, 50, 45], highlightNonce: 1,
+    });
+    const el = screen.getByTestId("pdf-scroller");
+    el.scrollLeft = 40;
+    el.scrollTop = 0;
+    const scroll = vi.fn();
+    el.scrollTo = scroll;
+    await rerender({ highlightPage: 1, highlightBbox: [40, 40, 50, 45], highlightNonce: 2 });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 450)); });
+    expect(scroll).not.toHaveBeenCalled();
+  });
+});
 
 describe("dock Contents to fullscreen", () => {
   beforeEach(() => {
