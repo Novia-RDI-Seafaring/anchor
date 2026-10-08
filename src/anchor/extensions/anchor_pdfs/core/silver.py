@@ -456,12 +456,15 @@ def render_pages_md(docling: dict[str, Any]) -> dict[int, str]:
 
 
 def _render_page_md(items: list[dict[str, Any]]) -> str:
-    def sort_key(it: dict[str, Any]) -> tuple[float, float]:
-        # Reading order: top-left origin, so a smaller y is higher on the page.
+    def sort_key(it: dict[str, Any]) -> tuple[int, float, float]:
+        order = _reading_order(it)
+        if order is not None:
+            return (0, float(order), 0)
+        # Legacy items lack canonical order; retain their geometric fallback.
         bbox = it.get("bbox") or [0, 0, 0, 0]
         top = min(bbox[1], bbox[3]) if len(bbox) == 4 else 0
         left = bbox[0] if len(bbox) == 4 else 0
-        return (float(top), float(left))
+        return (1, float(top), float(left))
 
     ordered = sorted(items, key=sort_key)
     lines: list[str] = []
@@ -617,6 +620,11 @@ _CANDIDATE_TEXT_MAX = 800
 _REGION_CONTENT_MAX = 6000
 
 
+def _reading_order(item: dict[str, Any]) -> int | None:
+    order = item.get("reading_order")
+    return order if isinstance(order, int) and not isinstance(order, bool) and order >= 0 else None
+
+
 def region_content_from_items(
     items: Any,
     indexes: list[int] | None = None,
@@ -672,8 +680,10 @@ def build_page_candidates(docling: dict[str, Any]) -> dict[int, list[dict[str, A
     """Per-page docling candidate items: `{page: [{id, label, bbox, text}]}`.
 
     Ids reuse the stable `p{page}-i{idx}` scheme `build_pages_meta` mints,
-    with `idx` being the item's position within its page (docling order),
-    so the two artifacts always agree. Table items additionally carry a
+    with `idx` being the item's stored position within its page, so existing
+    references stay stable. New Docling extractions use canonical tree order;
+    `reading_order` makes that order explicit without renumbering legacy items.
+    Table items additionally carry a
     `cells_preview` so an agent can group a table without reading cells.
     """
     items = docling.get("items")
@@ -700,6 +710,8 @@ def build_page_candidates(docling: dict[str, Any]) -> dict[int, list[dict[str, A
                 "bbox": _clean_bbox(it.get("bbox")),
                 "text": text[:_CANDIDATE_TEXT_MAX],
             }
+            if (order := _reading_order(it)) is not None:
+                candidate["reading_order"] = order
             if it.get("label") == "table":
                 header_row, _, shape = _summarize_table_cells(it.get("cells"))
                 candidate["cells_preview"] = {"shape": shape, "header_row": header_row}
