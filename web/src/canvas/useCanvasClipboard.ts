@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Node, Edge } from "@xyflow/react";
 import { canvases } from "@/api/canvases";
 import { useCanvasStore } from "@/stores/canvasStore";
@@ -16,12 +16,12 @@ export function useCanvasClipboard(args: Args) {
   const busy = useRef(false);
   const drag = useRef<{ fragment: CanvasFragment; start: Point; completed: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const sync = async (slug: string) => {
+  const sync = useCallback(async (slug: string) => {
     const snapshot = await canvases.state(slug);
     if (latest.current.slug === slug) useCanvasStore.getState().setSnapshot(snapshot);
-  };
+  }, []);
 
-  const paste = async (fragment: CanvasFragment, offset: Point) => {
+  const paste = useCallback(async (fragment: CanvasFragment, offset: Point) => {
     if (busy.current) return;
     busy.current = true; setError(null);
     const { slug } = latest.current;
@@ -46,7 +46,7 @@ export function useCanvasClipboard(args: Args) {
       setError(`Paste failed: ${cause instanceof Error ? cause.message : String(cause)}`);
       if (latest.current.slug === slug) await sync(slug).catch(() => {});
     } finally { busy.current = false; }
-  };
+  }, [sync]);
 
   useEffect(() => {
     if (!args.active) return;
@@ -82,7 +82,7 @@ export function useCanvasClipboard(args: Args) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [args.active]);
+  }, [args.active, paste, sync]);
 
   const startDrag = (event: { altKey: boolean; clientX: number; clientY: number }, ids: string[]) => {
     drag.current = event.altKey && !busy.current ? {
