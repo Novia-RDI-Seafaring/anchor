@@ -127,6 +127,11 @@ Click a spec row's source anchor to open its PDF page. The dock highlights a
 resolvable region, item, cell, or explicit bounding box; a page-only reference
 opens the page. Select source text to add a more precise citation when needed.
 
+A highlighted box also opens a small 2.5x magnifier beside it, so a value stays
+readable when the page is zoomed out. For a reference with several boxes, move
+the pointer over a box to magnify that place. Escape dismisses the highlight
+and magnifier together.
+
 | Row state | Meaning |
 | --- | --- |
 | Verified | The key/value claim matches stored validated evidence within the cited scope. |
