@@ -860,23 +860,38 @@ export function PdfSourceView({
         { width: size.w * zoom, height: size.h * zoom },
       );
       if (!rect) return;
-      const top = item.top + rect.top;
+      const content = contentRef.current;
+      if (!content) return;
+      const top = content.offsetTop + item.top + rect.top;
       const bottom = top + rect.height;
+      const left = content.offsetLeft + Math.max(0, (contentWidth - item.width) / 2) + rect.left;
+      const right = left + rect.width;
       const viewTop = el.scrollTop;
       const viewBottom = viewTop + el.clientHeight;
+      const viewLeft = el.scrollLeft;
+      const viewRight = viewLeft + el.clientWidth;
+      const verticallyVisible = top >= viewTop + MARK_MARGIN_PX
+        && bottom <= viewBottom - MARK_MARGIN_PX;
+      const horizontallyVisible = left >= viewLeft + MARK_MARGIN_PX
+        && right <= viewRight - MARK_MARGIN_PX;
       // Comfortably in view, margin and all: leave the page alone.
-      if (top >= viewTop + MARK_MARGIN_PX && bottom <= viewBottom - MARK_MARGIN_PX) return;
+      if (verticallyVisible && horizontallyVisible) return;
       el.scrollTo({
-        top: scrollTopForPageRect(
-          items, highlightPage, rect.top, rect.height, el.clientHeight, totalHeight,
-        ),
+        top: verticallyVisible ? viewTop : Math.max(0, Math.min(
+          top + rect.height / 2 - el.clientHeight / 2,
+          el.scrollHeight - el.clientHeight,
+        )),
+        left: horizontallyVisible ? viewLeft : Math.max(0, Math.min(
+          left + rect.width / 2 - el.clientWidth / 2,
+          el.scrollWidth - el.clientWidth,
+        )),
         behavior: "smooth",
       });
     }, MARK_FLIGHT_MS);
     return () => window.clearTimeout(id);
   }, [
     highlightNonce, highlightPage, highlightBbox, markBounds,
-    items, pdfPageSizes, zoom, totalHeight,
+    items, pdfPageSizes, zoom, totalHeight, contentWidth,
   ]);
 
   // Put the mark back under the reader's eye after a zoom they asked for.
