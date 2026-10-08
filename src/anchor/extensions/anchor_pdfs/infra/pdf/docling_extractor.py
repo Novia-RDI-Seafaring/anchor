@@ -245,7 +245,7 @@ def _convert(
 
 
 def _flatten(doc: Any) -> dict[str, Any]:
-    """Mirrors the v1 anchor_ingest.bronze._flatten_docling logic.
+    """Flatten a new extraction in Docling's canonical tree reading order.
 
     Emits the silver contract (#281): every bbox converted to top-left PDF
     points using the page size Docling reports, plus ``pages`` sizes and a
@@ -313,6 +313,12 @@ def _flatten(doc: Any) -> dict[str, Any]:
             "label": "picture", "text": "", "page": page, "bbox": bbox,
         })
 
+    # Order once at extraction, before page-local IDs and positional gold
+    # references are minted. Items outside the tree follow in collection order;
+    # an extractor without traversal metadata keeps its previous order entirely.
+    items.sort(key=lambda item: item.get("reading_order", float("inf")))
+    tables.sort(key=lambda table: table.get("reading_order", float("inf")))
+
     return {
         "items": items,
         "groups": groups,
@@ -323,7 +329,7 @@ def _flatten(doc: Any) -> dict[str, Any]:
 
 
 def _index_structure(doc: Any) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
-    """Keep tree order and relationships without changing durable item indexes."""
+    """Record canonical tree positions and relationships for a new extraction."""
     if not callable(getattr(doc, "iterate_items", None)):
         return {}, []
     metadata: dict[str, dict[str, Any]] = {}
