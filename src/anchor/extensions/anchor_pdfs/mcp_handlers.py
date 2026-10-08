@@ -187,6 +187,7 @@ async def call_tool(
             regions=want_regions,
             force=args.get("force", False),
             full_page_ocr=args.get("full_page_ocr", False),
+            profile=args.get("profile", "keyed"),
         )
         # Gold silently skips when the caller wanted regions but no vision
         # provider/key is wired (region_extractor is None). Attach an actionable
@@ -194,6 +195,7 @@ async def call_tool(
         # applied to an idempotent skip (already-ingested) or a forced re-run.
         if (
             want_regions
+            and args.get("profile", "keyed") != "text"
             and ingest.region_extractor is None
             and not summary.get("skipped")
         ):
