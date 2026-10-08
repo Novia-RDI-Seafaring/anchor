@@ -46,7 +46,8 @@ implementation and bundled extension list define the current supported services.
 `WorkspaceService` validates a mutation, writes its event and current state,
 and publishes the event. Each canvas has metadata, a state snapshot, and an
 append-only event log. The browser writes through HTTP and subscribes to SSE.
-SSE starts with a snapshot and then carries patches and presence updates.
+Each browser tab shares one SSE stream for canvas snapshots, patches, and
+presence, plus project-level intent counts and ingest activity.
 
 The HTTP process also tails persisted canvas events so CLI and MCP writes can
 reach open browser views. Cross-process propagation is based on the event log,

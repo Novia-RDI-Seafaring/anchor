@@ -16,6 +16,7 @@ def _home(monkeypatch, tmp_path):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(env_mod, "ANCHOR_HOME", tmp_path / ".anchor")
     monkeypatch.setattr(env_mod, "LEGACY_DATA_DIR", tmp_path / "_legacy_unused")
+    monkeypatch.setattr(sr, "_pid_alive", lambda pid: True)
 
 
 def test_server_info_is_a_core_advertised_tool():

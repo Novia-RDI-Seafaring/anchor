@@ -191,6 +191,14 @@ data/silver/alfa-laval-lkh/
         ...
 ```
 
+New Docling extractions interleave text, tables, and pictures in the document
+tree's reading order. Candidate IDs (`p<page>-i<index>`) and `pages.meta.json`
+item IDs follow that sequence; raw Markdown uses the same order. Candidates
+also retain the Docling traversal ordinal as `reading_order`, which can have
+gaps between items. Existing stored IDs are not renumbered. Items without
+traversal metadata keep their collection order, and Markdown without that
+metadata retains its geometric fallback.
+
 ### Gold
 
 Gold stores structured regions, crops, and embeddings under a per-slug directory.
