@@ -1,5 +1,9 @@
 """MCP get_crop / get_page_image: lazy crop generation + dpi plumbing.
 
+These ask for format="path" explicitly: the tools default to an inline image
+now, and what is under test here is which file gets rendered, not how the
+bytes are handed back.
+
 Parity with the CLI (`anchor crop` / `anchor page-image --dpi`) and the HTTP
 crops / page-image routes: the same core read-op backs all three adapters.
 """
@@ -55,7 +59,7 @@ def wired(tmp_path):
 def test_get_crop_generates_lazily_and_returns_path(wired):
     ingest, store, renderer = wired
     out = json.loads(asyncio.run(
-        call_tool(ingest, store, "get_crop", {"slug": "demo", "rel_path": "1/r1.png"})
+        call_tool(ingest, store, "get_crop", {"slug": "demo", "rel_path": "1/r1.png", "format": "path"})
     ))
     assert out["format"] == "path"
     assert out["value"] == str(store.gold / "demo" / "pages" / "1" / "r1.png")
@@ -66,7 +70,7 @@ def test_get_crop_generates_lazily_and_returns_path(wired):
 def test_get_crop_accepts_inspect_region_token_and_dpi(wired):
     ingest, store, renderer = wired
     out = json.loads(asyncio.run(
-        call_tool(ingest, store, "get_crop", {"slug": "demo", "rel_path": "p1/r1", "dpi": 600})
+        call_tool(ingest, store, "get_crop", {"slug": "demo", "rel_path": "p1/r1", "dpi": 600, "format": "path"})
     ))
     assert out["format"] == "path"
     assert renderer.crop_calls[-1]["dpi"] == 600
@@ -84,13 +88,13 @@ def test_get_crop_unknown_region_reports_valid_form(wired):
 def test_get_page_image_dpi_renders_variant(wired):
     ingest, store, renderer = wired
     out = json.loads(asyncio.run(
-        call_tool(ingest, store, "get_page_image", {"slug": "demo", "page": 1, "dpi": 600})
+        call_tool(ingest, store, "get_page_image", {"slug": "demo", "page": 1, "dpi": 600, "format": "path"})
     ))
     assert out["value"] == str(store.silver / "demo" / "pages" / "1@600dpi.png")
     assert renderer.crop_calls[-1]["dpi"] == 600
     # Without dpi the stored silver image is served, no render.
     out = json.loads(asyncio.run(
-        call_tool(ingest, store, "get_page_image", {"slug": "demo", "page": 1})
+        call_tool(ingest, store, "get_page_image", {"slug": "demo", "page": 1, "format": "path"})
     ))
     assert out["value"] == str(store.silver / "demo" / "pages" / "1.png")
     assert len(renderer.crop_calls) == 1

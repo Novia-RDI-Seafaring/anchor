@@ -1,246 +1,104 @@
 # The canvas
 
-The canvas is the surface humans and agents share. Everything else in
-v2 — the workspace aggregate, the event bus, the OIP producers, the
-on-disk substrate — exists to make this one screen behave correctly.
+The canvas holds the objects you and your agent work on: document cards,
+specification tables, notes, shapes, and engineering objects. It belongs to a
+project and uses that project's document corpus.
 
-## What you see
+## Open and navigate
 
-A blank canvas opens to a grid background, a small toolbar on the
-left, and a status line at the bottom. There's no chrome around the
-canvas itself — the workspace fills the viewport. Nodes are drawn as
-cards or shapes; edges are lines between them. A node is dragged with
-the mouse, resized with a corner handle, double-clicked to edit its
-label, and connected to another node by dragging from a handle on its
-border to a handle on another node's border.
+Start `anchor serve` for the desired environment and project, open the printed
+URL, and choose a canvas. A canvas URL ends with `/c/<slug>`. One server serves
+one project; the same canvas slug can exist in another project.
 
-The interaction vocabulary is small and deliberate. There is no
-modal-mode, no tool palette to switch into, no context menu hierarchy
-to memorise. A node is created by dragging from the left rail onto the
-canvas; deleted with `Backspace`; selected with click; multi-selected
-with shift-click or rubber-band drag. That is the whole input system.
+Use the left rail to place cards and shapes, add producer files, or enter the
+mark-up tool. The files explorer and source dock sit beside the canvas and can
+be toggled with `[` when you are not typing. Select a node for its context
+toolbar and properties, drag to move it, and use handles where supported for
+resizing or connections. Shift-click or a selection box selects several objects.
 
-## The workspace list
+## Common objects
 
-The first page is `CanvasListPage`. It shows every workspace as a card
-with title, slug, last-modified time, and (eventually) a thumbnail
-rendered server-side. Click one to open it; the URL becomes
-`/c/<slug>` and React Router mounts `CanvasPage`, which mounts
-`CanvasGraph(slug=...)`.
+| Node type | Purpose |
+| --- | --- |
+| `document` | Card for a PDF in the project corpus |
+| `spec` | Related parameters or specifications, with one source reference per row |
+| `markdown` | Structured prose, lists, tables, and code |
+| `fact`, `concept`, `entity` | General knowledge cards or shapes |
+| `area` | Container for related canvas objects |
+| `canvas` | Tile linking to another canvas |
+| `cad:model` | CAD model view and supported parameter operations |
+| `fmu` | FMU model with variables and simulation controls when its runtime is available |
 
-A canvas is a board inside a project. Each canvas lives under the
-project's `.anchor_data/canvases/<slug>/`, and that folder is the
-entire state of one canvas. Copy that folder into another project's
-`.anchor_data/canvases/`, open that project, and the same canvas opens
-with the same nodes and edges. Documents referenced from those nodes
-need to come along too. They live in the project's `.anchor_data/`
-bronze, silver, and gold stages, not in the canvas folder. The two
-substrates are independently transferable.
+Other shapes and producer objects are registered by the browser and bundled
+extensions. Renderers live under `web/src/canvas/primitives/` and
+`web/src/canvas/shapes/`; `web/src/canvas/registry.ts` maps node types to them.
+Use `anchor canvas node-types` or MCP `canvas_node_types` for the live data-field
+contract rather than inventing a field the renderer does not use.
 
-## Node types
+## Tables and source evidence
 
-The frontend ships **seven built-in node types** in
-`web/src/canvas/nodes/`. They are intentionally generic. Anything more
-specific (PDF documents with cover pages, FMU models with simulate
-buttons, Recharts plots) is registered by an extension at runtime, not
-baked in here.
+Keep related extracted values in one spec table. Each row has a `key`, `value`,
+and optional `source_ref`. A PDF source can name the document slug, one-based
+page, region/item/cell selectors, or an explicit bounding box. Boxes use PDF
+points, a top-left origin, and `[left, top, right, bottom]`.
 
-| Type        | Shape          | Used for                                       |
-| ----------- | -------------- | ---------------------------------------------- |
-| `concept`   | rounded card   | the default — anything textual                 |
-| `entity`    | circle         | a thing-of-substance — a product, a system     |
-| `fact`      | small card     | a single assertion or observation              |
-| `document`  | tall card with cover | an ingested source (PDF, audio, video, ...) |
-| `spec`      | wide table     | a structured table of named values             |
-| `area`      | dashed outline | a region that contains other nodes             |
-| `note`      | sticky-note    | freeform markdown                              |
+Click a row's source anchor to open the PDF dock. It highlights a precise
+locator when one resolves, or opens the cited page otherwise. Selecting source
+text can attach a more precise box. A source link makes the claim inspectable;
+it does not confer Verified status by itself.
 
-Each renderer is a separate `.tsx` file under `nodes/`; each registers
-itself into a `registerCardType(name, component)` map at module load
-time. A new renderer is one new file plus one `registerCardType` call.
-The registry is a `Proxy`, so ReactFlow's `nodeTypes` lookup just
-asks the registry without recompilation.
+Rows distinguish Verified, Unverified, Stale, and No evidence. Editing a claim
+can preserve the link while making its binding stale. Use **Check** to request
+revalidation against stored evidence. See [Claim and evidence](claim-evidence.md)
+and [Source resolution](spec-source-resolution.md).
 
-This is what makes extensions composable on the frontend. An OIP
-producer's manifest can declare `pdf:document` as a node type with
-`renders: "document with cover image and region overlay"`; the ANCHOR
-extension that ships alongside that manifest registers a real React
-component under the name `pdf:document`; the canvas core never has to
-know about it.
+## Requests and review
 
-### Node data field contract
+Use **mark up** (`i`) to add text and drawings about visible objects. Click
+**send to agent** to create a persistent project-level intent. A connected
+external agent must retrieve and handle it; an empty placeholder does not submit
+an ask. The remark stays on the board with its request thread.
 
-A node's `data` is an open JSON object, but each renderer only reads a
-fixed set of keys. Put a body in the wrong key and it is stored but never
-shown. The body key differs per type:
+The agent can ask a question or stage a suggested edit. Inspect the preview and
+approve, decline, or send feedback. Applied small changes may offer keep/revert
+controls. These are scoped to the thread change, not a general undo history.
+Canvas review mode and proposal sets support review of agent-added elements
+separately. See the [tutorial](../getting-started/tutorial.md).
 
-| Type      | Body key       | Other rendered `data` keys                 |
-| --------- | -------------- | ------------------------------------------ |
-| `fact`    | `text`         | `label`, `pictogram`                        |
-| `concept` | `subtitle`     | `label`, `pictogram`                        |
-| `note`    | `text`         | `label`                                     |
-| `entity`  | (none)         | `label`, `pictogram`                        |
-| `funnel`  | (none)         | `label`, `pictogram`                        |
-| `area`    | `subtitle`     | `label`, `tone`                             |
+## PDF upload
 
-There is **no generic `data.body`**. Every type also honours the shared
-styling keys (`bg_color`, `stroke_color`, `text_color`, `text_bold`,
-`text_align`, `text_family`, `text_size`, `dashed`, `width`, `height`),
-the placeholder keys (`placeholder`, `placeholder_hint`), and the review
-key (`review`).
+Drop a PDF on the canvas or use **+ > PDF datasheet**. A card shows its processing
+status. With `local` or an endpoint-backed provider, the server runs the built-in
+pipeline. With `harness`, it saves the PDF and queues a `drop_to_ingest` intent;
+the card stays **awaiting agent** until the harness completes the session.
 
-This contract is queryable so an agent never has to read the `.tsx`
-source: `anchor canvas node-types [TYPE]`, `GET /api/node-types[/TYPE]`,
-and the `canvas_node_types` MCP tool all return
-`{name, description, data_fields, body_field}`. When you `add-node` /
-`update-node` with a `data` key the type does not render, the adapter
-response carries a non-blocking `warning` listing the ignored keys.
-Producer types (`spec`, `document`, …) carry rich producer-defined data
-and stay open — no warning.
+CLI ingestion writes the corpus without adding a canvas card. Drag a document
+from the files explorer onto the canvas to place it. See
+[Documents and canvases](../guides/documents-and-canvases.md).
 
-### Write-API conventions
+## Edges and organization
 
-- **Canonical field names.** Canvas state JSON exposes `node_type` and
-  `edge_type`. Those are the canonical names on the write surfaces too;
-  `type` is accepted as an alias everywhere (CLI, HTTP, MCP) so a record
-  you read back can be written straight through.
-- **`data` patches merge.** `update-node` / `update-edge` deep-merge the
-  given `data` into the existing data: unmentioned keys (e.g. a node's
-  `source_ref`) survive, nested dicts merge recursively, and a key set to
-  `null` is deleted. You no longer read-modify-write the whole dict to
-  change one field.
-- **Server auto-placement.** Omit `x`/`y` (or pass `place="auto"`) on
-  `add-node` and the server picks a non-overlapping position and returns
-  it under `position`. Pass explicit coordinates to place exactly there.
+Floating edges connect nodes. Anchored edges name explicit handles, allowing
+row-level wiring and evidence connections. Area nodes can contain child nodes;
+sub-canvas tiles link to another workspace. Layout operations include alignment,
+distribution, and subtree organization. CLI/MCP add operations can auto-place
+nodes when coordinates are omitted; explicit coordinates preserve a chosen layout.
 
-### Review states
+FMU nodes remain separate from extracted knowledge. Inspect a model and wire
+table rows to appropriate parameters deliberately. Simulation needs the optional
+runtime; explicitly enabled demo output is synthetic.
 
-A node may carry `data.review = {state, by?, at?}` with `state` one of
-`proposed`, `accepted`, `rejected` — a documented convention (like the
-placeholder pair), not an enforced schema. It gives the human half of the
-delegation loop an object to act on: a workspace opts in with
-`metadata.review_mode` (`anchor canvas review-mode <slug> --on`,
-`PATCH /api/workspaces/{slug}` with `review_mode`, or the
-`canvas_set_review_mode` MCP tool; default off — nothing changes for
-existing flows). While it is on, every node created by an `agent` actor
-is stamped `{state: "proposed", by: <actor>, at: <ts>}` server-side.
-The web UI badges proposed nodes and offers one-click Accept / Reject in
-the selection toolbar; a verdict is a plain `update-node` data patch, so
-agents read it from state like any other key. Rejected nodes render
-dimmed with their badge — never hidden, because a rejection is feedback.
-A malformed `review` object surfaces the same non-blocking `warning` as
-an unrenderable data key; the write always succeeds.
+## Persistence and live updates
 
-## Edge types
+Each canvas has metadata, state, and an append-only event log under
+`.anchor_data/canvases/<slug>/`. Documents remain in the project's separate
+corpus folders. Deleting a canvas does not delete those documents. Copy the whole
+project for a backup that includes its source evidence and intent threads.
 
-Two:
+The browser sends writes through HTTP and receives snapshots and patches over
+SSE. The HTTP process also tails canvas events persisted by CLI and MCP writers.
+Local optimistic edits are reconciled against server state. If views disagree,
+check project selection and re-read or reload the persisted state.
 
-- **`floating`** — automatic edge routing. The edge connects two nodes
-  abstractly; ReactFlow picks the prettiest path. Use for loose
-  associations, "X is related to Y."
-- **`anchored`** — explicit handle-to-handle. The edge starts on a
-  specific handle of node A and ends on a specific handle of node B.
-  Used for row-level wiring (a spec-table row → an FMU parameter) and
-  for evidence edges (a value on a card → its source region).
-
-An anchored edge that carries a `source_ref` in its `data` field is an
-**evidence edge** — it says "this value is grounded in this region of
-this document." Today they render as straight lines; a future visual
-treatment is to render those edges with an anchor glyph at the source endpoint
-and a chain-link pattern along the stroke. The metaphor is already in
-the code; the visual just doesn't lean into it yet.
-
-## Live multi-client
-
-The canvas is server-authoritative and optimistic-local. When you drag
-a node, the local store updates the position immediately and renders
-the next frame; in parallel the browser issues
-`PATCH /api/workspaces/{slug}/nodes/{id}` with the new x,y; the server
-emits a `NodeMoved` event; SSE delivers it back; the local
-`applyEvent` runs idempotently because the event id matches a request
-the client already issued. On a 4xx/5xx the optimistic write rolls
-back and a toast surfaces.
-
-Two tabs of the same workspace open in two browsers, an agent
-connected over MCP, and the CLI all see each other's mutations within
-~50ms. There's no separate sync layer — they all subscribe to the
-same `EventBus` via SSE or MCP `notifications/resources/updated`.
-
-If the network blips, `EventSource` reconnects automatically; the
-client requests a snapshot, compares versions, and resumes streaming.
-The reconnection is invisible to the user.
-
-## Drop-to-ingest
-
-Drag a PDF (or any file whose MIME type is claimed by an OIP
-producer) onto the canvas. A placeholder `document` node appears at
-the drop position with a status diamond on its corner. The browser
-POSTs the file to `/api/workspaces/{slug}/upload`; the server routes
-it to the producer that claims its source kind (`anchor_pdfs` for
-PDFs); the producer streams `IngestProgress` events back over SSE;
-the placeholder updates as the pipeline moves through bronze →
-silver → gold. When `DocIngested` fires, the placeholder is replaced
-with a real document node — cover image rendered, region overlay
-ready, evidence edges available.
-
-The same mechanism works for FMU files (the `anchor_fmus` producer
-claims `application/x-fmu`) and will work for any future producer
-that declares the MIME type in its OIP manifest. The canvas core
-doesn't change; the dropped file just lands at a producer that knows
-what to do with it.
-
-## Selection, parenting, areas
-
-A selected node has a thin border and a small toolbar above it
-(rename, duplicate, delete). Multi-selection works with shift-click
-and rubber-band; multi-selected nodes drag together.
-
-`area` nodes are **containers**. Drop a node onto an area and the
-node's `parent` field updates to the area's id; the move is
-constrained to the area's bounds (or the area grows). Removing a node
-from an area is a drag out of its bounds. This is the only nesting
-the canvas supports.
-
-There is no z-order management. The canvas is structurally flat
-except for parenting; `area` nodes always render below their
-children.
-
-## Layouts
-
-`Cmd-Shift-L` runs a one-shot dagre layout over the current selection
-(or the whole canvas if nothing is selected). It's deliberately a
-one-shot, not a continuous force-directed simulation — the user moves
-nodes deliberately and a continuous layout would fight them. There's
-also no auto-layout on add. New nodes land where they were dropped or
-where the toolbar inserts them.
-
-## Why the canvas is small
-
-`CanvasGraph.tsx` is 131 lines. `CanvasPage.tsx` is 22. `CanvasListPage.tsx`
-is 79. The state lives in a Zustand store; server data lives in
-TanStack Query; ReactFlow handles the rendering. The canvas component
-itself is a wiring layer — it subscribes to SSE, applies events to the
-store, hands ReactFlow a `nodes[]` and `edges[]` derived from the
-store, and forwards `onNodesChange` / `onConnect` callbacks back to
-HTTP mutations.
-
-The old pre-refactor `CanvasGraph.tsx` was 1751 lines. The shrinkage
-isn't because we removed features — it's because the features that
-*were* in `CanvasGraph` belonged elsewhere. Node-specific rendering
-moved into `nodes/`; layout moved into a utility module; the PDF
-viewer moved into its own component; sync moved out into the SSE
-client. What's left is the wiring.
-
-## What it isn't
-
-- **Not a whiteboard.** There are no freehand strokes, no images on
-  the background, no comment threads. Things on the canvas are
-  structured nodes with provenance.
-- **Not a presentation tool.** No slides, no animations, no zoom
-  paths.
-- **Not a graph database UI.** The canvas doesn't render the entire
-  knowledge graph; it renders one workspace's chosen view of it. A
-  document can appear on a hundred canvases or none.
-- **Not committed to ReactFlow forever.** The renderer is one
-  dependency; the workspace state, events, and sync don't know about
-  it. Swapping in a different rendering layer is a contained change.
+There is no fixed latency guarantee. Write locks and event buses are process-local;
+avoid simultaneous mutations to the same canvas from separate processes.

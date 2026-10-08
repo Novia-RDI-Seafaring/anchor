@@ -117,6 +117,7 @@ describe("buildTextSourceRef", () => {
       regions: [],
     });
     expect(ref).toEqual({
+      coord_origin: "top-left",
       slug: "doc-a",
       page: 7,
       bbox: [100, 200, 300, 220],
@@ -151,6 +152,7 @@ describe("buildRegionSourceRef", () => {
       region: { id: "tbl-1", page: 4, bbox: [10, 20, 110, 220], kind: "table" },
     });
     expect(ref).toEqual({
+      coord_origin: "top-left",
       slug: "doc-a",
       page: 4,
       bbox: [10, 20, 110, 220],

@@ -54,6 +54,7 @@ def test_inspect_region_returns_full_record_and_source_ref():
     assert out["title"] == "Specifications"
     assert out["entities"] == ["LKH-5"]
     assert out["source_ref"] == {
+        "coord_origin": "top-left",
         "slug": "lkh",
         "page": 2,
         "region_id": "r4",
@@ -109,16 +110,16 @@ def _store_with_derived_region() -> MemoryDocStore:
     return store
 
 
-def test_inspect_region_returns_stored_provenance_for_derived_region():
-    # A derived region's stored source_ref points at its parent; the read
-    # view must return it (not a synthesized self-ref) plus derived_from
-    # and the producer payload (#242 P2a; found live by an AX session).
+def test_inspect_region_keeps_canonical_locator_and_producer_payload():
+    # G8 keeps the resolved region locator authoritative. The historical
+    # parent citation remains inspectable separately from that locator.
     store = _store_with_derived_region()
     out = asyncio.run(inspect_region(store, "lkh", "p4/r9"))
     assert out is not None
     assert out["derived_from"] == "r1"
-    assert out["source_ref"]["region_id"] == "r1"
-    assert out["source_ref"]["bbox"] == [56, 58, 252, 223]
+    assert out["source_ref"]["region_id"] == "r9"
+    assert out["source_ref"]["bbox"] is None
+    assert out["stored_source_ref"]["bbox"] == [56, 58, 252, 223]
     assert out["source_ref"]["slug"] == "lkh"  # defaulted in
     assert out["data"]["series"][0]["label"] == "LKH-5"
     assert out["data"]["axes"]["x_label"] == "Q"
@@ -129,7 +130,7 @@ def test_get_region_content_carries_derived_provenance_and_payload():
     out = asyncio.run(get_region_content(store, "lkh", "p4/r9"))
     assert out is not None
     assert out["derived_from"] == "r1"
-    assert out["source_ref"]["region_id"] == "r1"
+    assert out["source_ref"]["region_id"] == "r9"
     assert out["data"]["series"][0]["points"][0] == [0, 21.7]
 
 
@@ -138,7 +139,7 @@ def test_inspect_region_plain_region_keeps_synthesized_ref_shape():
     store = _store_with_region()
     out = asyncio.run(inspect_region(store, "lkh", "p2/r4"))
     assert out["source_ref"] == {
-        "slug": "lkh", "page": 2, "region_id": "r4", "bbox": [50, 480, 550, 410],
+        "slug": "lkh", "page": 2, "region_id": "r4", "bbox": [50, 480, 550, 410], "coord_origin": "top-left",
     }
     assert out["derived_from"] is None
     assert out["data"] is None

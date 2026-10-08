@@ -139,6 +139,8 @@ def test_flatten_emits_top_left_boxes_page_sizes_and_origin_stamp():
                     SimpleNamespace(
                         start_row_offset_idx=1,
                         start_col_offset_idx=1,
+                        end_row_offset_idx=2,
+                        end_col_offset_idx=2,
                         text="cell value",
                         # Cell boxes are already TOPLEFT in docling.
                         bbox=_Box(10, 20, 30, 40, "TOPLEFT"),
@@ -157,6 +159,8 @@ def test_flatten_emits_top_left_boxes_page_sizes_and_origin_stamp():
     assert out["tables"][0]["cells"][0] == {
         "row": 1,
         "col": 1,
+        "row_end": 2, "col_end": 2, "row_span": 1, "col_span": 1,
+        "column_header": False, "row_header": False, "row_section": False,
         "text": "cell value",
         "bbox": [10.0, 20.0, 30.0, 40.0],
     }
@@ -200,3 +204,36 @@ def test_flatten_fails_closed_without_a_page_height():
         pictures=[], pages={}, tables=[],
     )
     assert dx._flatten(doc)["items"][0]["bbox"] == []
+
+
+def test_flatten_retains_docling_tree_and_caption_references():
+    from docling_core.types.doc import (
+        BoundingBox,
+        CoordOrigin,
+        DocItemLabel,
+        DoclingDocument,
+        GroupLabel,
+    )
+    from docling_core.types.doc.document import ProvenanceItem, RefItem
+
+    doc = DoclingDocument(name="pump")
+    chapter = doc.add_group(label=GroupLabel.CHAPTER, name="Pump")
+    section = doc.add_group(label=GroupLabel.SECTION, name="Limits", parent=chapter)
+    provenance = ProvenanceItem(page_no=1, charspan=(0, 6), bbox=BoundingBox(
+        l=10, t=10, r=100, b=30, coord_origin=CoordOrigin.TOPLEFT,
+    ))
+    heading = doc.add_heading(text="Limits", level=3, parent=section, prov=provenance)
+    from docling_core.types.doc import TableData
+    table = doc.add_table(data=TableData(num_rows=0, num_cols=0), parent=section, prov=provenance)
+    caption = doc.add_text(label=DocItemLabel.CAPTION, text="Table 1. Speed", parent=section, prov=provenance)
+    table.captions = [RefItem(cref=caption.self_ref)]
+    doc.add_heading(text="Review note", parent=section, prov=provenance)
+    flattened = dx._flatten(doc)
+    from anchor.extensions.anchor_pdfs.core.silver import build_index
+    index = build_index(flattened)
+    assert index["tables"][0]["caption"] == "Table 1. Speed"
+    assert index["tables"][0]["captions"][0]["id"] == caption.self_ref
+    assert index["outline"][0]["level"] == heading.level
+    assert index["outline"][0]["group_path"] == [chapter.self_ref, section.self_ref]
+    assert index["groups"][1]["parent"] == chapter.self_ref
+    assert index["groups"][1]["page"] == 1

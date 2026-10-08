@@ -6,6 +6,7 @@ import json
 
 from anchor.adapters.mcp import handlers_canvas
 from anchor.adapters.mcp.server import _error_result
+from anchor.core.events.actor import Actor, actor_scope
 from tests.fixtures.services import make_in_memory_services
 
 
@@ -583,7 +584,7 @@ def test_canvas_update_node_data_merges_via_mcp():
         out = json.loads(body)
         node = next(n for n in out["state"]["nodes"] if n["id"] == "a")
         assert node["data"]["text"] == "y"
-        assert node["data"]["source_ref"] == {"page": 1}
+        assert node["data"]["source_ref"] == {"page": 1, "coord_origin": "top-left"}
 
     asyncio.run(run())
 
@@ -603,6 +604,7 @@ def test_canvas_reference_create_list_attach_roundtrip():
         ))
         ref = created["reference"]
         assert ref["id"]
+        assert ref["source_ref"]["coord_origin"] == "top-left"
         assert ref["created_by"] == "agent"  # MCP default
         listed = json.loads(await handlers_canvas.call_tool(
             s.workspace, "canvas_list_references", {"workspace_slug": "w1"},
@@ -742,5 +744,139 @@ def test_canvas_add_node_malformed_review_warns_but_writes():
         ))
         assert body["node_id"] == "a"
         assert "review" in body["warning"]
+
+    asyncio.run(run())
+
+
+def test_canvas_changes_tool_is_registered():
+    names = {t["name"] for t in handlers_canvas.tool_definitions()}
+    assert "canvas_changes" in names
+
+
+def test_canvas_changes_folds_since_version_with_mcp_actor():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await handlers_canvas.call_tool(s.workspace, "canvas_add_node", {
+            "workspace_slug": "w1", "id": "a", "label": "A",
+        })
+        await handlers_canvas.call_tool(s.workspace, "canvas_update_node", {
+            "workspace_slug": "w1", "id": "a", "label": "A2",
+        })
+        body = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_changes",
+            {"workspace_slug": "w1", "since_version": 0},
+        ))
+        assert body["from_version"] == 0
+        assert body["to_version"] == 2
+        # Both writes carried the MCP fallback agent actor; the add +
+        # update collapse to one added entry with the final label.
+        group = next(
+            g for g in body["groups"]
+            if g["actor"] and g["actor"]["label"] == "mcp-agent"
+        )
+        assert [e["id"] for e in group["nodes_added"]] == ["a"]
+        assert group["nodes_added"][0]["label"] == "A2"
+        assert body["touched"]["a"]["label"] == "mcp-agent"
+
+    asyncio.run(run())
+
+
+def test_canvas_changes_caught_up_window_is_empty():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        await handlers_canvas.call_tool(s.workspace, "canvas_add_node", {
+            "workspace_slug": "w1", "id": "a",
+        })
+        body = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_changes",
+            {"workspace_slug": "w1", "since_version": 1},
+        ))
+        assert body["groups"] == []
+        assert "touched" not in body
+
+    asyncio.run(run())
+
+
+def test_canvas_changes_rejects_both_boundaries():
+    async def run():
+        s = make_in_memory_services()
+        await s.workspace.create_workspace("w1")
+        body = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_changes",
+            {"workspace_slug": "w1", "since_version": 0, "since_ts": 0.0},
+        ))
+        assert "error" in body
+
+    asyncio.run(run())
+
+
+# ── Proposal sets (#359) ────────────────────────────────────────────────────
+
+async def _canvas_with_agent_nodes(s):
+    await s.workspace.create_workspace("w1")
+    await s.workspace.set_review_mode("w1", enabled=True)
+    with actor_scope(Actor(kind="agent", label="claude-code")):
+        await s.workspace.add_node("w1", id="a", x=0, y=0)
+        await s.workspace.add_node("w1", id="b", x=200, y=0)
+    return s
+
+
+def test_canvas_propose_set_groups_and_reviews():
+    async def run():
+        s = await _canvas_with_agent_nodes(make_in_memory_services())
+        opened = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_propose_set",
+            {"workspace_slug": "w1", "reason": "mindmap", "members": ["a", "b"]},
+        ))
+        set_id = opened["proposal_set"]["id"]
+        assert opened["proposal_set"]["state"] == "open"
+
+        listed = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_list_proposal_sets",
+            {"workspace_slug": "w1", "state": "open"},
+        ))
+        assert [r["id"] for r in listed["proposal_sets"]] == [set_id]
+
+        reviewed = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_review_proposal_set",
+            {"workspace_slug": "w1", "set_id": set_id, "verdict": "accepted",
+             "except_ids": ["b"]},
+        ))
+        assert reviewed["proposal_set"]["state"] == "accepted"
+        state = await s.workspace.store.load("w1")
+        assert state.nodes["a"].data["review"]["state"] == "accepted"
+        assert state.nodes["b"].data["review"]["state"] == "proposed"
+
+    asyncio.run(run())
+
+
+def test_canvas_propose_set_reports_errors_as_text():
+    async def run():
+        s = await _canvas_with_agent_nodes(make_in_memory_services())
+        out = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_propose_set",
+            {"workspace_slug": "w1", "reason": "r", "members": ["ghost"]},
+        ))
+        assert "ghost" in out["error"]
+
+    asyncio.run(run())
+
+
+def test_canvas_add_to_proposal_set_is_idempotent():
+    async def run():
+        s = await _canvas_with_agent_nodes(make_in_memory_services())
+        opened = json.loads(await handlers_canvas.call_tool(
+            s.workspace, "canvas_propose_set",
+            {"workspace_slug": "w1", "reason": "r", "members": ["a"]},
+        ))
+        set_id = opened["proposal_set"]["id"]
+        for _ in range(2):
+            out = json.loads(await handlers_canvas.call_tool(
+                s.workspace, "canvas_add_to_proposal_set",
+                {"workspace_slug": "w1", "set_id": set_id, "members": ["b"]},
+            ))
+        assert [m["id"] for m in out["proposal_set"]["members"]] == ["a", "b"]
 
     asyncio.run(run())

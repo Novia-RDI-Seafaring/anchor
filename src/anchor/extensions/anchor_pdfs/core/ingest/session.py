@@ -33,6 +33,7 @@ from anchor.core.clock import Clock, SystemClock
 from anchor.core.events.envelope import DomainEvent
 from anchor.core.ids import new_event_id, slugify
 from anchor.core.ports.event_bus import EventBus
+from anchor.core.upload_safety import safe_upload_name
 from anchor.extensions.anchor_pdfs.core.events import (
     DocBronzed,
     DocGoldExtracted,
@@ -40,11 +41,13 @@ from anchor.extensions.anchor_pdfs.core.events import (
     DocPolished,
     DocSilvered,
 )
+from anchor.extensions.anchor_pdfs.core.generation import complete_pages
 from anchor.extensions.anchor_pdfs.core.ingest.coverage import synthesize_coverage_regions
 from anchor.extensions.anchor_pdfs.core.ingest.region_resolution import (
     PAGE_INSTRUCTIONS,
     resolve_regions,
 )
+from anchor.extensions.anchor_pdfs.core.ingest.validation import region_id_errors
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.ports.embedder import Embedder
 from anchor.extensions.anchor_pdfs.core.ports.pdf_extractor import PdfExtractor
@@ -59,6 +62,7 @@ from anchor.extensions.anchor_pdfs.core.silver import (
     region_search_text,
     render_pages_md,
 )
+from anchor.extensions.anchor_pdfs.core.source_identity import original_source
 
 PROTOCOL_VERSION = 2
 
@@ -208,6 +212,8 @@ class IngestSessionService:
         """Mechanical front half + open (or resume) a session for `slug`."""
         dpi = self.default_dpi if dpi is None else dpi
         slug = slug or slugify(Path(filename).stem)
+        filename = safe_upload_name(filename, allowed_extensions={".pdf"})
+        source = original_source(pdf_bytes, slug)
 
         # Same idempotency contract as the keyed pipeline: published gold
         # short-circuits unless forced.
@@ -225,30 +231,42 @@ class IngestSessionService:
         if existing is not None:
             if not force:
                 return self._work_order(existing, resumed=True)
-            await self.ingest_abort(existing["session_id"])
 
-        bronze_path = await self.doc_store.stash_bronze(pdf_bytes, filename)
+        store = self.doc_store.snapshot(slug)
+        previous_index = await store.get_index(slug)
+        generation = None
+        bronze_path = await self.doc_store.stash_bronze(pdf_bytes, filename, slug=slug)
+        if existing is not None:
+            await self.ingest_abort(existing["session_id"])
         await self._publish(DocBronzed(slug=slug, bronze_path=str(bronze_path)))
 
         # Boundary normaliser (#281): top-left PDF points regardless of extractor.
         docling = normalize_items(await self.extractor.extract(bronze_path))
         index = build_index(docling, filename=filename)
+        index["document"]["source"] = source
         pages_md = render_pages_md(docling)
         pages_meta = build_pages_meta(docling)
         page_candidates = build_page_candidates(docling)
-        await self.doc_store.write_silver_artifact(slug, "index.json", json.dumps(index))
-        await self.doc_store.write_silver_artifact(slug, "pages.meta.json", json.dumps(pages_meta))
+        replacement_pngs = None
+        if previous_index is not None:
+            replacement_pngs = await self.renderer.render_pages(bronze_path, dpi=dpi)
+            complete_pages(index, pages_meta, pages_md, page_candidates, replacement_pngs)
+        if previous_index is not None:
+            generation = await self.doc_store.begin_replacement(slug, sorted(page_candidates))
+            store = self.doc_store.replacement(slug, generation)
+        await store.write_silver_artifact(slug, "index.json", json.dumps(index))
+        await store.write_silver_artifact(slug, "pages.meta.json", json.dumps(pages_meta))
         for page, md in pages_md.items():
-            await self.doc_store.write_silver_artifact(slug, f"pages/{page}.raw.md", md)
+            await store.write_silver_artifact(slug, f"pages/{page}.raw.md", md)
         for page, candidates in page_candidates.items():
-            await self.doc_store.write_silver_artifact(
+            await store.write_silver_artifact(
                 slug, f"pages/{page}.candidates.json", json.dumps(candidates),
             )
         page_count = max(page_candidates, default=0)
         if page_count:
-            page_pngs = await self.renderer.render_pages(bronze_path, dpi=dpi)
+            page_pngs = replacement_pngs if replacement_pngs is not None else await self.renderer.render_pages(bronze_path, dpi=dpi)
             for page, png in page_pngs.items():
-                await self.doc_store.write_silver_artifact(slug, f"pages/{page}.png", png)
+                await store.write_silver_artifact(slug, f"pages/{page}.png", png)
         await self._publish(DocSilvered(slug=slug, page_count=page_count))
 
         now = self.clock.now()
@@ -257,6 +275,8 @@ class IngestSessionService:
             "slug": slug,
             "filename": filename,
             "state": "open",
+            "generation": generation,
+            "source": source,
             "protocol_version": PROTOCOL_VERSION,
             "dpi": dpi,
             "page_count": page_count,
@@ -279,6 +299,16 @@ class IngestSessionService:
         )
         return self._work_order(session, resumed=False)
 
+    async def _session_documents(self, session: dict[str, Any]) -> DocStore:
+        if session.get("generation"):
+            return self.doc_store.replacement(session["slug"], session["generation"])
+        store = self.doc_store.snapshot(session["slug"])
+        index = await store.get_index(session["slug"])
+        document = (index or {}).get("document", {})
+        if document.get("generation") or (session.get("source") and document.get("source") != session["source"]):
+            raise ValueError("session source was superseded; begin a fresh ingest")
+        return store
+
     async def ingest_get_page(self, session_id: str, page: int) -> dict[str, Any]:
         """Work item for one page: image path, raw markdown, candidate boxes."""
         session = await self._load_session(session_id)
@@ -290,9 +320,10 @@ class IngestSessionService:
         if page_info is None:
             return {"error": f"page {page} not in session (1..{session.get('page_count')})"}
         slug = session["slug"]
-        image_path = await self.doc_store.get_page_image_path(slug, page)
-        raw_md = await self.doc_store.get_page_text(slug, page)
-        candidates = await self.doc_store.get_page_candidates(slug, page) or []
+        store = await self._session_documents(session)
+        image_path = await store.get_page_image_path(slug, page)
+        raw_md = await store.get_page_text(slug, page)
+        candidates = await store.get_page_candidates(slug, page) or []
         return {
             "session_id": session_id,
             "slug": slug,
@@ -314,6 +345,15 @@ class IngestSessionService:
         regions: list[dict[str, Any]],
         polished_md: str | None = None,
         protocol_version: int | None = None,
+    ) -> dict[str, Any]:
+        async with self.doc_store.ingest_lock(session_id):
+            return await self._submit_page_locked(
+                session_id, page, regions=regions, polished_md=polished_md, protocol_version=protocol_version,
+            )
+
+    async def _submit_page_locked(
+        self, session_id: str, page: int, *, regions: list[dict[str, Any]],
+        polished_md: str | None, protocol_version: int | None,
     ) -> dict[str, Any]:
         """Validate + stage one page. Idempotent: resubmitting replaces it."""
         session = await self._load_session(session_id)
@@ -338,7 +378,8 @@ class IngestSessionService:
             )]}
 
         slug = session["slug"]
-        candidates = await self.doc_store.get_page_candidates(slug, page) or []
+        store = await self._session_documents(session)
+        candidates = await store.get_page_candidates(slug, page) or []
         resolved, errors = resolve_regions(regions, page=page, candidates=candidates)
 
         if polished_md is not None:
@@ -416,6 +457,16 @@ class IngestSessionService:
         allow_missing_pages: list[int] | None = None,
         declared_model: str | None = None,
     ) -> dict[str, Any]:
+        """Serialize finalizers, including recovery after a committed publish."""
+        async with self.doc_store.ingest_lock(session_id):
+            return await self._finalize_locked(
+                session_id, allow_missing_pages=allow_missing_pages, declared_model=declared_model,
+            )
+
+    async def _finalize_locked(
+        self, session_id: str, *, allow_missing_pages: list[int] | None,
+        declared_model: str | None,
+    ) -> dict[str, Any]:
         """Completeness check, embeddings, atomic publish to gold."""
         session = await self._load_session(session_id)
         if session is None:
@@ -424,6 +475,14 @@ class IngestSessionService:
             return {"finalized": False, "error": "session already published"}
         if session.get("state") == "aborted":
             return {"finalized": False, "error": "session was aborted; re-run ingest_begin"}
+
+        if session.get("generation"):
+            current = await self.doc_store.get_index(session["slug"])
+            current_id = ((current or {}).get("document", {}).get("generation") or {}).get("id")
+            if current_id == session["generation"]:
+                session["state"] = "published"
+                await self._save_session(session)
+                return session["publication"]
 
         allowed_missing = {int(p) for p in (allow_missing_pages or [])}
         remaining = self._remaining_pages(session)
@@ -437,14 +496,8 @@ class IngestSessionService:
             }
 
         slug = session["slug"]
+        store = await self._session_documents(session)
         started_at = self.clock.now()
-        session["state"] = "finalizing"
-        await self._save_session(session)
-        await self._journal(session_id, "finalize_start", declared_model=declared_model)
-
-        # The marker is the commit point: flip it off first so a crash
-        # mid-publish leaves the doc invisible-as-gold, never blended.
-        await self.doc_store.clear_gold_complete(slug)
 
         submitted_pages = sorted(
             int(p) for p, info in (session.get("pages") or {}).items()
@@ -454,26 +507,42 @@ class IngestSessionService:
         coverage_fallback_count = 0
         polished_pages: list[int] = []
         staged_regions: dict[int, list[dict[str, Any]]] = {}
+        identity_errors: list[dict[str, Any]] = []
         for page in submitted_pages:
             raw = await self.sessions.read_text(session_id, f"gold/pages/{page}.regions.json")
             if raw is None:
-                continue
+                raise ValueError("submitted page artifacts are missing; restore or restart the session")
             payload = json.loads(raw)
             regions = payload.get("regions", []) if isinstance(payload, dict) else []
             # Coverage invariant (#242): synthesize additive chunks for the
             # meaningful silver candidates the agent left uncovered, so they
             # stay searchable. Authored regions are untouched.
-            candidates = await self.doc_store.get_page_candidates(slug, page) or []
+            candidates = await store.get_page_candidates(slug, page) or []
             extra = synthesize_coverage_regions(page, candidates, regions)
             if extra:
                 regions = [*regions, *extra]
                 coverage_fallback_count += len(extra)
             staged_regions[page] = regions
-            await self.doc_store.write_gold_region_file(slug, page, regions)
+            identity_errors.extend(region_id_errors(regions, page=page))
             region_count += len(regions)
+
+        if identity_errors:
+            return {
+                "finalized": False,
+                "error": "; ".join(error["message"] for error in identity_errors),
+                "errors": identity_errors,
+            }
+        session["state"] = "finalizing"
+        await self._save_session(session)
+        await self._journal(session_id, "finalize_start", declared_model=declared_model)
+        # Validate all pages before writing gold or starting embeddings.
+        # Replacement writes still stay private until G4 publication.
+        await store.clear_gold_complete(slug)
+        for page, regions in staged_regions.items():
+            await store.write_gold_region_file(slug, page, regions)
             md = await self.sessions.read_text(session_id, f"silver/pages/{page}.md")
             if md is not None:
-                await self.doc_store.write_silver_artifact(slug, f"pages/{page}.md", md)
+                await store.write_silver_artifact(slug, f"pages/{page}.md", md)
                 polished_pages.append(page)
 
         # Local embeddings include trusted server-derived region content and
@@ -489,7 +558,7 @@ class IngestSessionService:
                         items.append((page, rid, text))
             if items:
                 vectors = await self.embedder.embed([t for _, _, t in items])
-                await self.doc_store.write_embeddings(slug, {
+                await store.write_embeddings(slug, {
                     "embed_model": self.embed_model_id or "unknown",
                     "dim": len(vectors[0]) if vectors else 0,
                     "embedded_at": self.clock.now(),
@@ -514,27 +583,24 @@ class IngestSessionService:
             "finalize_duration_seconds": round(max(0.0, finished_at - started_at), 3),
             "page_count": session.get("page_count", 0),
             "polished_page_count": len(polished_pages),
+            "polished_pages": polished_pages,
             "region_count": region_count,
             "coverage_fallback_count": coverage_fallback_count,
             "embedded_count": embedded_count,
             "missing_pages": missing_pages,
             "options": {"dpi": session.get("dpi"), "embed_model": self.embed_model_id if embedded_count else None},
         }
-        await self.doc_store.write_silver_artifact(
+        await store.write_silver_artifact(
             slug, "ingest-report.json", json.dumps(report, indent=2),
         )
 
-        await self.doc_store.mark_gold_complete(slug, {
+        await store.mark_gold_complete(slug, {
             "mode": "harness",
             "declared_model": declared_model,
             "region_count": region_count,
             "session_id": session_id,
             "completed_at": finished_at,
         })
-
-        session["state"] = "published"
-        await self._save_session(session)
-        await self._journal(session_id, "finalize_done", region_count=region_count)
 
         summary = {
             "finalized": True,
@@ -549,6 +615,18 @@ class IngestSessionService:
             "embedded_count": embedded_count,
             "missing_pages": missing_pages,
         }
+        session["publication"] = summary
+        await self._save_session(session)
+
+        if session.get("generation"):
+            await self.doc_store.publish_replacement(
+                slug, session["generation"], sorted(int(p) for p in session["pages"]),
+            )
+
+        session["state"] = "published"
+        await self._save_session(session)
+        await self._journal(session_id, "finalize_done", region_count=region_count)
+
         if polished_pages:
             await self._publish(DocPolished(slug=slug, polished_pages=polished_pages))
         await self._publish(DocGoldExtracted(slug=slug, region_count=region_count))
@@ -556,6 +634,10 @@ class IngestSessionService:
         return summary
 
     async def ingest_abort(self, session_id: str) -> dict[str, Any]:
+        async with self.doc_store.ingest_lock(session_id):
+            return await self._abort_locked(session_id)
+
+    async def _abort_locked(self, session_id: str) -> dict[str, Any]:
         """Discard staging. Bronze/silver stay (deterministic, cheap)."""
         session = await self._load_session(session_id)
         if session is None:

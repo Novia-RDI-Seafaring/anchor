@@ -8,7 +8,10 @@ from typing import Any, Protocol
 from anchor.core.clock import Clock
 from anchor.extensions.anchor_pdfs.core.events import DocGoldExtracted, IngestProgress
 from anchor.extensions.anchor_pdfs.core.ingest.coverage import synthesize_coverage_regions
-from anchor.extensions.anchor_pdfs.core.ingest.validation import validate_regions
+from anchor.extensions.anchor_pdfs.core.ingest.validation import (
+    require_unique_region_ids,
+    validate_regions,
+)
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.ports.region_extractor import RegionExtractor
 from anchor.extensions.anchor_pdfs.core.silver import (
@@ -16,7 +19,7 @@ from anchor.extensions.anchor_pdfs.core.silver import (
     region_content_from_items,
     snap_to_docling_items,
     table_bbox_from_items,
-    table_cells_from_items,
+    table_data_from_items,
 )
 
 GOLD_EMPTY_MAX_ATTEMPTS = 2
@@ -117,6 +120,7 @@ class GoldIngest:
                         model=model,
                     )
                     snapped = self._snap_regions(docling, page, raw_regions)
+                    require_unique_region_ids(snapped, page=page)
                     valid, page_errors = validate_regions(snapped)
                     if page_errors:
                         invalid_count += len(snapped) - len(valid)
@@ -124,7 +128,6 @@ class GoldIngest:
                             {**error, "page": page}
                             for error in page_errors
                         )
-                    await self.store.write_gold_region_file(slug, page, valid)
                     pages_valid[page] = valid
                     region_count += len(valid)
                     page_finished_at = self.clock.now()
@@ -188,7 +191,7 @@ class GoldIngest:
             else:
                 # Coverage invariant (#242): every meaningful silver item lands
                 # in at least one chunk. Additive post-pass over the final
-                # authored gold; rewrites only pages that gained chunks.
+                # authored gold, validated before any page is written.
                 page_candidates = build_page_candidates(docling)
                 items_by_page_full = _items_by_page(docling)
                 for page, valid in pages_valid.items():
@@ -199,8 +202,12 @@ class GoldIngest:
                         full_items=items_by_page_full.get(page),
                     )
                     if extra:
-                        await self.store.write_gold_region_file(slug, page, valid + extra)
                         fallback_count += len(extra)
+                    pages_valid[page] = valid + extra
+                    require_unique_region_ids(pages_valid[page], page=page)
+                # Validate every page before exposing any page's gold.
+                for page, valid in pages_valid.items():
+                    await self.store.write_gold_region_file(slug, page, valid)
                 region_count += fallback_count
                 await self.store.mark_gold_complete(slug, {
                     "mode": "keyed",
@@ -260,13 +267,13 @@ class GoldIngest:
                     content = region_content_from_items(items, item_indexes)
                     if content:
                         region = {**region, "content": content}
-                    cells = table_cells_from_items(
+                    table_data = table_data_from_items(
                         items,
                         item_indexes,
                         region_bbox=bbox,
                     )
-                    if cells and region.get("kind") in {"table", "spec_block"}:
-                        region = {**region, "cells": cells}
+                    if table_data and region.get("kind") in {"table", "spec_block"}:
+                        region = {**region, **table_data}
                     table_bbox = table_bbox_from_items(
                         items,
                         item_indexes,

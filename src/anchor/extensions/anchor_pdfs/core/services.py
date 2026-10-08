@@ -10,6 +10,7 @@ from anchor.core.clock import Clock, SystemClock
 from anchor.core.events.envelope import DomainEvent
 from anchor.core.ids import new_event_id, slugify
 from anchor.core.ports.event_bus import EventBus
+from anchor.core.upload_safety import safe_upload_name
 from anchor.extensions.anchor_pdfs.core.document_retrieval import DocumentRetrieval
 from anchor.extensions.anchor_pdfs.core.events import (
     DocBronzed,
@@ -19,6 +20,7 @@ from anchor.extensions.anchor_pdfs.core.events import (
     DocSilvered,
     IngestProgress,
 )
+from anchor.extensions.anchor_pdfs.core.generation import complete_pages
 from anchor.extensions.anchor_pdfs.core.gold_ingest import (
     GOLD_EMPTY_MAX_ATTEMPTS as _GOLD_EMPTY_MAX_ATTEMPTS,
 )
@@ -29,9 +31,6 @@ from anchor.extensions.anchor_pdfs.core.gold_ingest import (
     GoldIngest,
 )
 from anchor.extensions.anchor_pdfs.core.pointed_extraction import (
-    _parse_region_token,
-)
-from anchor.extensions.anchor_pdfs.core.pointed_extraction import (
     extract_pointed as _extract_pointed,
 )
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
@@ -40,6 +39,12 @@ from anchor.extensions.anchor_pdfs.core.ports.md_polisher import PageMdPolisher
 from anchor.extensions.anchor_pdfs.core.ports.pdf_extractor import PdfExtractor
 from anchor.extensions.anchor_pdfs.core.ports.pdf_renderer import PdfRenderer
 from anchor.extensions.anchor_pdfs.core.ports.region_extractor import RegionExtractor
+from anchor.extensions.anchor_pdfs.core.region_inspect import (
+    AmbiguousRegionError as _AmbiguousRegionError,
+)
+from anchor.extensions.anchor_pdfs.core.region_inspect import (
+    inspect_region,
+)
 from anchor.extensions.anchor_pdfs.core.silver import (
     build_index,
     build_page_candidates,
@@ -49,6 +54,7 @@ from anchor.extensions.anchor_pdfs.core.silver import (
     normalize_items,
     render_pages_md,
 )
+from anchor.extensions.anchor_pdfs.core.source_identity import original_source
 from anchor.extensions.anchor_pdfs.core.synopsis_service import (
     SynopsisService as _SynopsisService,
 )
@@ -56,6 +62,7 @@ from anchor.extensions.anchor_pdfs.core.synopsis_service import (
 GOLD_EMPTY_MAX_ATTEMPTS = _GOLD_EMPTY_MAX_ATTEMPTS
 INGEST_LOCK_WAIT_SECONDS = _INGEST_LOCK_WAIT_SECONDS
 SynopsisService = _SynopsisService
+AmbiguousRegionError = _AmbiguousRegionError
 
 #: Matches the trailing r-number of a gold region id: plain ``r4`` as well as
 #: producer-prefixed forms like ``lkh:p4-r1``. Used to mint the next free id.
@@ -68,22 +75,6 @@ class RegionNotRemovableError(ValueError):
     Model-extracted gold is the ground truth of an ingest pass and is never
     deletable through the region API; only OIP-derived records may be removed.
     """
-
-
-class AmbiguousRegionError(ValueError):
-    """A bare region id matched regions on more than one page (#287).
-
-    Region ids are only unique per page (``r1`` exists on page 1 *and*
-    page 4), so silently picking the first match binds provenance to the
-    wrong region. Carries the colliding ``region_id`` and the sorted
-    candidate ``pages`` so adapters can render a structured error; the
-    message tells the caller to qualify the page (``p<page>/<id>``).
-    """
-
-    def __init__(self, message: str, *, region_id: str, pages: list[int]) -> None:
-        super().__init__(message)
-        self.region_id = region_id
-        self.pages = pages
 
 
 def _next_region_id(page_regions: list[dict[str, Any]]) -> str:
@@ -159,6 +150,8 @@ class IngestService:
         region_model = region_model or self.default_region_model
         dpi = self.default_dpi if dpi is None else dpi
         slug = slug or slugify(Path(filename).stem)
+        filename = safe_upload_name(filename, allowed_extensions={".pdf"})
+        source = original_source(pdf_bytes, slug)
 
         # Idempotent by contract: if this slug is already gold-extracted, skip the
         # whole (billed, overwriting) pipeline unless the caller forces a fresh
@@ -174,8 +167,13 @@ class IngestService:
                 "reason": "already ingested (gold exists); pass force=True / --force to "
                 "re-ingest and overwrite",
             }
+        store = self.store.snapshot(slug)
+        previous_index = await store.get_index(slug)
+        generation = None
         publish_workspace_id = workspace_id or self._gid
         ingest_started_at = self.clock.now()
+        # Reject identity conflicts before publishing even an activity record.
+        bronze_path = await self.store.stash_bronze(pdf_bytes, filename, slug=slug)
         # Live activity record (issue #51): updated through the store as each
         # stage advances so the project-level "what is ingesting" surface sees
         # this run cross-process and after a restart. Bookkeeping only; a
@@ -223,10 +221,8 @@ class IngestService:
                 **fields,
             })
 
-        bronze_path: Path | None = None
         try:
-            stage_started_at = self.clock.now()
-            bronze_path = await self.store.stash_bronze(pdf_bytes, filename)
+            stage_started_at = ingest_started_at
             finish_stage("bronze", stage_started_at, output_path=str(bronze_path))
             await self._publish(DocBronzed(slug=slug, bronze_path=str(bronze_path)), publish_workspace_id)
 
@@ -269,19 +265,29 @@ class IngestService:
             current_stage = "silver_index"
             stage_started_at = self.clock.now()
             index = build_index(docling, filename=filename)
+            index["document"]["source"] = source
             pages_md = render_pages_md(docling)
             pages_meta = build_pages_meta(docling)
             page_candidates = build_page_candidates(docling)
-            await self.store.write_silver_artifact(slug, "index.json", json.dumps(index))
-            await self.store.write_silver_artifact(slug, "pages.meta.json", json.dumps(pages_meta))
+            replacement_pngs = None
+            if previous_index is not None:
+                current_stage = "silver_render_pages"
+                replacement_pngs = await self.renderer.render_pages(bronze_path, dpi=dpi)
+                page_count = len(complete_pages(index, pages_meta, pages_md, page_candidates, replacement_pngs))
+                current_stage = "silver_index"
+            if previous_index is not None:
+                generation = await self.store.begin_replacement(slug, sorted(page_candidates))
+                store = self.store.replacement(slug, generation)
+            await store.write_silver_artifact(slug, "index.json", json.dumps(index))
+            await store.write_silver_artifact(slug, "pages.meta.json", json.dumps(pages_meta))
             for page, md in pages_md.items():
-                await self.store.write_silver_artifact(slug, f"pages/{page}.raw.md", md)
+                await store.write_silver_artifact(slug, f"pages/{page}.raw.md", md)
             # Persist the per-page docling candidate items (id, label, bbox,
             # text). They power region grouping in the harness protocol and
             # make a session survivable across a crash; until now they only
             # existed in memory during this call.
             for page, candidates in page_candidates.items():
-                await self.store.write_silver_artifact(
+                await store.write_silver_artifact(
                     slug, f"pages/{page}.candidates.json", json.dumps(candidates),
                 )
             finish_stage(
@@ -296,9 +302,9 @@ class IngestService:
             if page_count:
                 current_stage = "silver_render_pages"
                 stage_started_at = self.clock.now()
-                page_pngs = await self.renderer.render_pages(bronze_path, dpi=dpi)
+                page_pngs = replacement_pngs if replacement_pngs is not None else await self.renderer.render_pages(bronze_path, dpi=dpi)
                 for page, png in page_pngs.items():
-                    await self.store.write_silver_artifact(slug, f"pages/{page}.png", png)
+                    await store.write_silver_artifact(slug, f"pages/{page}.png", png)
                 for it in docling.get("items", []):
                     if isinstance(it.get("page"), (int, float)):
                         items_by_page.setdefault(int(it["page"]), []).append(it)
@@ -324,7 +330,7 @@ class IngestService:
                         docling_items=items_by_page.get(page, []),
                         model=polish_model,
                     )
-                    await self.store.write_silver_artifact(slug, f"pages/{page}.md", polished)
+                    await store.write_silver_artifact(slug, f"pages/{page}.md", polished)
                     polished_pages.append(page)
                     page_finished_at = self.clock.now()
                     page_timings.append({
@@ -356,7 +362,7 @@ class IngestService:
             if regions and self.region_extractor and page_count:
                 current_stage = "gold_regions"
                 gold = await GoldIngest(
-                    self.store,
+                    store,
                     self.region_extractor,
                     self.clock,
                     self._publish,
@@ -385,9 +391,10 @@ class IngestService:
                 current_stage = "embed"
                 await record_activity("embed")
                 stage_started_at = self.clock.now()
-                embedded_count = await self.embed_document(
-                    slug, publish_workspace_id=publish_workspace_id,
-                )
+                embedded_count = await DocumentRetrieval(
+                    store, embedder=self.embedder, embed_model_id=self.embed_model_id,
+                    clock=self.clock, publish=self._publish,
+                ).embed_document(slug, publish_workspace_id=publish_workspace_id)
                 finish_stage(
                     "embed",
                     stage_started_at,
@@ -417,6 +424,7 @@ class IngestService:
                 "duration_seconds": round(max(0.0, ingest_finished_at - ingest_started_at), 3),
                 "page_count": page_count,
                 "polished_page_count": len(polished_pages),
+                "polished_pages": polished_pages,
                 "region_count": region_count,
                 "invalid_region_count": invalid_region_count,
                 "coverage_fallback_count": coverage_fallback_count,
@@ -439,11 +447,14 @@ class IngestService:
                 timing_report["reason"] = empty_gold_reason
             if low_text_warning:
                 timing_report["warnings"] = [low_text_warning]
-            timing_report_path = await self.store.write_silver_artifact(
+            timing_report_path = await store.write_silver_artifact(
                 slug,
                 "ingest-report.json",
                 json.dumps(timing_report, indent=2),
             )
+
+            if generation is not None and not empty_gold:
+                await self.store.publish_replacement(slug, generation, sorted(page_pngs or page_candidates))
 
             summary = {
                 "slug": slug,
@@ -477,14 +488,15 @@ class IngestService:
             # list_documents instead of silently absent. Bookkeeping is
             # wrapped so a write hiccup can never mask the original error.
             try:
-                await self.store.write_ingest_failure(
-                    slug,
-                    filename=filename,
-                    stage=current_stage,
-                    error=str(exc),
-                    bronze_path=str(bronze_path) if bronze_path is not None else None,
-                    failed_at=self.clock.now(),
-                )
+                if previous_index is None:
+                    await store.write_ingest_failure(
+                        slug,
+                        filename=filename,
+                        stage=current_stage,
+                        error=str(exc),
+                        bronze_path=str(bronze_path) if bronze_path is not None else None,
+                        failed_at=self.clock.now(),
+                    )
             except Exception:  # noqa: BLE001 - never let bookkeeping mask the real failure
                 pass
             await record_activity(current_stage, status="failed", error=str(exc))
@@ -525,94 +537,53 @@ class IngestService:
 
         The generic consumer side of an OIP region producer: a producer
         (e.g. the chart digitizer) hands back a new region derived from one
-        it consumed; this links it to its parent and stores it durably. The
-        derived region keeps the parent's ``source_ref`` (so provenance
-        points at the same page and bbox) and records ``derived_from``.
+        it consumed; this links it to its parent and stores it durably.
+        Inspect resolves the parent's current page, geometry and source
+        identity. The child inherits that source and records a qualified
+        ``derived_from`` locator. Explicit source conflicts are rejected.
         Producer-agnostic: the only chart-specific knowledge lives in the
         producer, not here.
 
         Visible immediately via ``get_regions`` / ``get_gold_map``;
         searchable after the next ``embed`` pass. Raises ``ValueError`` if
-        the parent region does not exist.
-
-        A region without an ``id`` gets the next free ``r<n>`` on its page
-        minted here (#304) — a stored region must always be addressable
-        (inspect_region, evidence-edge source_refs), so the consumer never
-        persists an id-less record.
-
-        ``parent_region_id`` accepts the same tokens ``inspect_region`` does:
-        ``p4/r1`` (page 4, region r1), ``4/r1``, or a bare ``r1``. Region ids
-        are only unique per page (#287), so a page-qualified token binds to
-        that page's region, and a *bare* id that matches regions on multiple
-        pages raises ``AmbiguousRegionError`` (listing the candidate pages)
-        instead of silently picking the first.
+        the parent locator is missing/ambiguous or source metadata conflicts.
         """
-        page_hint, parent_id = _parse_region_token(parent_region_id)
-        regions = await self.store.get_regions(slug)
-        matches: list[tuple[int, dict[str, Any]]] = []
-        for _page, regs in (regions.get("pages") or {}).items():
-            for r in regs:
-                if isinstance(r, dict) and r.get("id") == parent_id:
-                    matches.append((int(_page), r))
-        if page_hint is not None:
-            matches = [(p, r) for p, r in matches if p == page_hint]
-        if not matches:
+        store = self.store.snapshot(slug)
+        parent = await inspect_region(store, slug, parent_region_id, raise_ambiguous=True)
+        if parent is None:
             raise ValueError(
-                f"derive_region: parent region {parent_region_id!r} not found in {slug!r}"
+                f"derive_region: parent region {parent_region_id!r} not found or ambiguous in {slug!r}"
             )
-        if len(matches) > 1:
-            pages = sorted({p for p, _r in matches})
-            raise AmbiguousRegionError(
-                f"derive_region: parent region id {parent_id!r} exists on "
-                f"pages {pages} of {slug!r}; qualify the page, e.g. "
-                f"'p{pages[0]}/{parent_id}'",
-                region_id=parent_id,
-                pages=pages,
-            )
-        parent_page, parent = matches[0]
-
+        source = parent["source_ref"]
+        supplied = region.get("source_ref")
+        if supplied is not None and not isinstance(supplied, dict):
+            raise ValueError("derive_region: source_ref must be an object")
+        supplied = supplied or {}
+        # Source fields are constraints, never replacements for resolved identity.
+        for key in (*source, "source_sha256", "generation_id"):
+            if key in supplied and supplied[key] != source.get(key):
+                raise ValueError(f"derive_region: source_ref.{key} conflicts with parent source")
+        for key in ("slug", "page", "source_sha256", "generation_id", "coord_origin"):
+            if key in region and region[key] != source.get(key):
+                raise ValueError(f"derive_region: source {key} conflicts with parent source")
         derived = dict(region)
-        derived["derived_from"] = parent_id
-        # Inherit the parent's provenance unless the producer set its own.
-        # Ordinary gold regions store no source_ref, so synthesize the
-        # parent's — otherwise the docstring's promise (provenance points at
-        # the same page and bbox) silently fails for the common case.
-        if not derived.get("source_ref"):
-            parent_ref = parent.get("source_ref")
-            if not isinstance(parent_ref, dict) or not parent_ref:
-                parent_ref = {
-                    "slug": slug,
-                    "page": parent_page,
-                    "region_id": parent_id,
-                    "bbox": parent.get("bbox") or parent.get("approx_bbox"),
-                }
-            derived["source_ref"] = parent_ref
+        derived["derived_from"] = f"p{parent['page']}/{parent['region_id']}"
+        derived["source_ref"] = {**supplied, **source}
+        derived["page"] = parent["page"]
+        derived["coord_origin"] = source["coord_origin"]
+        derived.setdefault("bbox", parent["bbox"])
+        derived.setdefault("geometry", parent["geometry"])
 
         if not derived.get("id"):
-            # Mint the next free `r<n>` on the page the region will land on
-            # (#304): scan that page's stored ids for the highest r-number.
-            # Explicit producer ids pass through untouched.
-            sref = derived.get("source_ref")
-            dest_page = (
-                sref["page"]
-                if isinstance(sref, dict) and isinstance(sref.get("page"), int)
-                else derived.get("page")
-                if isinstance(derived.get("page"), int)
-                else parent_page
-            )
-            page_regions: list[dict[str, Any]] = []
-            for _page, regs in (regions.get("pages") or {}).items():
-                if int(_page) == dest_page:
-                    page_regions = [r for r in regs if isinstance(r, dict)]
-                    break
-            derived["id"] = _next_region_id(page_regions)
+            regions = await store.get_regions(slug, parent["page"])
+            derived["id"] = _next_region_id(regions["pages"].get(parent["page"], []))
 
-        path = await self.store.add_derived_region(slug, derived)
+        path = await store.add_derived_region(slug, derived)
         return {
             "slug": slug,
             "region_id": derived.get("id"),
             "kind": derived.get("kind"),
-            "derived_from": parent_id,
+            "derived_from": derived["derived_from"],
             "path": str(path),
         }
 
@@ -623,7 +594,7 @@ class IngestService:
         ``derived_from`` may be removed — model-extracted gold is the ground
         truth of an ingest pass and stays. The region id accepts the same
         tokens ``inspect_region`` does (``p4/r2``, ``4/r2``, or a bare
-        ``r2``, first match across pages).
+        ``r2`` that uniquely identifies a region).
 
         Rewrites the region's page file without the record and drops its
         vector from ``embeddings.json`` when one exists, so search never
@@ -633,7 +604,8 @@ class IngestService:
         """
         from anchor.extensions.anchor_pdfs.core.region_inspect import find_region
 
-        found = await find_region(self.store, slug, region_id)
+        store = self.store.snapshot(slug)
+        found = await find_region(store, slug, region_id)
         if found is None:
             raise ValueError(
                 f"remove_region: region {region_id!r} not found in {slug!r}"
@@ -646,19 +618,19 @@ class IngestService:
                 "gold (no derived_from) and cannot be removed; only regions "
                 "created by derive_region are deletable"
             )
-        regions = await self.store.get_regions(slug, page)
+        regions = await store.get_regions(slug, page)
         page_regions: list[dict[str, Any]] = []
         for _page, regs in (regions.get("pages") or {}).items():
             if int(_page) == page:
                 page_regions = [r for r in regs if isinstance(r, dict)]
                 break
         kept = [r for r in page_regions if r.get("id") != rid]
-        await self.store.write_gold_region_file(slug, page, kept)
+        await store.write_gold_region_file(slug, page, kept)
 
         # Keep the embedding index consistent: drop the removed region's
         # vector so a search hit can never point at a record that is gone.
         embeddings_removed = 0
-        payload = await self.store.get_embeddings(slug)
+        payload = await store.get_embeddings(slug)
         if payload is not None:
             vectors = payload.get("vectors", [])
             kept_vectors = [
@@ -673,7 +645,7 @@ class IngestService:
             embeddings_removed = len(vectors) - len(kept_vectors)
             if embeddings_removed:
                 payload["vectors"] = kept_vectors
-                await self.store.write_embeddings(slug, payload)
+                await store.write_embeddings(slug, payload)
 
         return {
             "slug": slug,

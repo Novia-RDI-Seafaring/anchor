@@ -344,8 +344,7 @@ def test_ingest_lock_serializes_concurrent_passes_in_memory():
 
 
 def test_concurrent_force_ingests_do_not_desync_marker_on_fs(tmp_path):
-    """Two concurrent ingest_pdf(force=True) on one slug serialize via the lock;
-    the marker ends consistent with the real gold (the #175 desync is gone)."""
+    """Concurrent candidates publish coherently; a superseded candidate rejects."""
 
     async def run():
         store = FsDocStore(tmp_path)
@@ -366,8 +365,17 @@ def test_concurrent_force_ingests_do_not_desync_marker_on_fs(tmp_path):
         results = await asyncio.gather(
             make_ingest().ingest_pdf(b"%PDF-fake", "doc.pdf", force=True),
             make_ingest().ingest_pdf(b"%PDF-fake", "doc.pdf", force=True),
+            return_exceptions=True,
         )
-        slug = results[0]["slug"]
+        successes = [r for r in results if isinstance(r, dict)]
+        assert successes
+        from anchor.extensions.anchor_pdfs.core.source_identity import SourceIdentityError
+
+        for result in results:
+            if isinstance(result, Exception):
+                assert isinstance(result, SourceIdentityError)
+                assert "superseded" in str(result)
+        slug = successes[0]["slug"]
         # Whichever ran last, the marker reads complete and matches real gold.
         assert await store.has_gold(slug) is True
         docs = await store.list_documents()

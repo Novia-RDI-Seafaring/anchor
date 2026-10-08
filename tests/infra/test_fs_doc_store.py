@@ -16,9 +16,9 @@ def store(tmp_path):
 
 def test_stash_bronze_writes_pdf(store, tmp_path):
     async def run():
-        path = await store.stash_bronze(b"%PDF-fake", "demo.pdf")
+        path = await store.stash_bronze(b"%PDF-fake", "demo.pdf", slug="demo")
         assert path.read_bytes() == b"%PDF-fake"
-        assert path.parent.name == "bronze"
+        assert path.parent == tmp_path / "bronze" / "demo"
 
     asyncio.run(run())
 
@@ -134,7 +134,7 @@ def test_stash_bronze_rejects_traversal_filename(store):
     async def run():
         for bad in ["../../evil.pdf", "..\\evil.pdf", "/abs/evil.pdf", "evil.exe"]:
             try:
-                await store.stash_bronze(b"%PDF-fake", bad)
+                await store.stash_bronze(b"%PDF-fake", bad, slug="demo")
             except UnsafeUploadError:
                 continue
             raise AssertionError(f"stash_bronze accepted {bad!r}")

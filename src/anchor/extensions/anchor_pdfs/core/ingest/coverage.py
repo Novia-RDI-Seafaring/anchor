@@ -31,7 +31,7 @@ from typing import Any
 
 from anchor.extensions.anchor_pdfs.core.silver import (
     region_content_from_items,
-    table_cells_from_items,
+    table_data_from_items,
     union_bbox,
 )
 
@@ -143,9 +143,7 @@ def _make_region(
     if content:
         region["content"] = content
     if kind == "table":
-        cells = table_cells_from_items(content_items)
-        if cells:
-            region["cells"] = cells
+        region.update(table_data_from_items(content_items))
     return region
 
 

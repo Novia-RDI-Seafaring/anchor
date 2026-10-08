@@ -232,6 +232,21 @@ describe("uiStore split-screen source dock (#110a)", () => {
     });
   });
 
+  it("opening a document in the dock reveals a collapsed source cluster", () => {
+    // The dock is not rendered while the cluster is collapsed, so a click on
+    // a row anchor or a region used to set state and show nothing.
+    useUiStore.getState().setSourceClusterCollapsed(true);
+    useUiStore.getState().openPdf("lkh", { page: 2 });
+    expect(useUiStore.getState().sourceClusterCollapsed).toBe(false);
+    expect(useUiStore.getState().pdfViewer?.slug).toBe("lkh");
+  });
+
+  it("opening in the modal quick-look leaves the cluster collapsed", () => {
+    useUiStore.getState().setSourceClusterCollapsed(true);
+    useUiStore.getState().openPdf("lkh", { page: 2, mode: "modal" });
+    expect(useUiStore.getState().sourceClusterCollapsed).toBe(true);
+  });
+
   it("openPdf can pin the modal quick-look mode", () => {
     useUiStore.getState().openPdf("lkh", { page: 1, mode: "modal" });
     expect(useUiStore.getState().pdfViewer?.mode).toBe("modal");

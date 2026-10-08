@@ -1,6 +1,11 @@
 import { create } from "zustand";
 
-import type { CanvasEvent, EventActor } from "@/realtime/sseClient";
+import type {
+  CanvasEvent,
+  EventActor,
+  PresenceEntry,
+  PresencePayload,
+} from "@/realtime/sseClient";
 
 type Node = {
   id: string;
@@ -70,6 +75,7 @@ export const CANVAS_EDGE_WIRE_FIELDS = [
 export type SourceRef = {
   slug: string;
   page: number;
+  coord_origin?: string | null;
   bbox?: number[];
   region_id?: string;
   detail?: {
@@ -218,6 +224,33 @@ const NODE_TOUCHING_EVENTS = new Set([
   "NodeReparented",
 ]);
 
+/**
+ * Merge a `data` patch the way the backend does (#192): nested objects
+ * merge recursively and a `null` value deletes its key. The canvas store
+ * has to agree with the server, or a patch that touches one field looks
+ * locally like it erased the rest.
+ */
+function mergeData(
+  base: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...base };
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === null) {
+      delete out[k];
+      continue;
+    }
+    const prev = out[k];
+    const bothObjects =
+      v && typeof v === "object" && !Array.isArray(v)
+      && prev && typeof prev === "object" && !Array.isArray(prev);
+    out[k] = bothObjects
+      ? mergeData(prev as Record<string, unknown>, v as Record<string, unknown>)
+      : v;
+  }
+  return out;
+}
+
 function describeEvent(
   evt: CanvasEvent,
   prevNodes: Record<string, Node>,
@@ -280,8 +313,18 @@ type State = {
    * this session; persisted per-node attribution is the fuller #325 slice.
    */
   lastEditors: Record<string, EventActor>;
+  /**
+   * Live presence roster (who is on this canvas right now), replaced
+   * wholesale by every `presence` SSE event — the server always sends the
+   * full roster, so no client-side reconciliation is needed. Per-serve,
+   * in-memory server state: empty until the first presence event lands.
+   */
+  presence: PresenceEntry[];
+  /** This connection's own roster entry (`you` on the initial event). */
+  presenceSelfId: string | null;
   setSnapshot: (snap: Snapshot) => void;
   applyEvent: (evt: CanvasEvent) => void;
+  applyPresence: (payload: PresencePayload) => void;
   reset: () => void;
 };
 
@@ -292,6 +335,8 @@ export const useCanvasStore = create<State>((set) => ({
   edges: {},
   activity: [],
   lastEditors: {},
+  presence: [],
+  presenceSelfId: null,
   setSnapshot: (snap) => set({
     slug: snap.slug,
     version: snap.version,
@@ -474,7 +519,14 @@ export const useCanvasStore = create<State>((set) => ({
           const data: Record<string, unknown> = { ...(cur.data ?? {}) };
           for (const [k, v] of Object.entries(fields)) {
             if (k === "data" && v && typeof v === "object") {
-              Object.assign(next, { data: { ...(v as Record<string, unknown>) } });
+              // Merge, do not replace. The backend merges a `data` patch
+              // into the stored data (null deletes a key); replacing it
+              // here meant any partial write, for example one that only
+              // sets a font size, wiped every other field locally until the
+              // page was reloaded.
+              Object.assign(next, {
+                data: mergeData(cur.data ?? {}, v as Record<string, unknown>),
+              });
             } else if (known.has(k)) {
               Object.assign(next, { [k]: v });
             } else {
@@ -559,7 +611,14 @@ export const useCanvasStore = create<State>((set) => ({
       ].slice(0, 8),
     };
   }),
+  applyPresence: (payload) => set((state) => ({
+    presence: Array.isArray(payload.present) ? payload.present : [],
+    // `you` only rides the initial roster after (re)connect; keep the
+    // known self id on later broadcasts.
+    presenceSelfId: payload.you ?? state.presenceSelfId,
+  })),
   reset: () => set({
     slug: null, version: 0, nodes: {}, edges: {}, activity: [], lastEditors: {},
+    presence: [], presenceSelfId: null,
   }),
 }));

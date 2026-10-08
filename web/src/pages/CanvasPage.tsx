@@ -2,9 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { CanvasGraph } from "@/canvas/CanvasGraph";
+import { PresenceStrip } from "@/canvas/PresenceStrip";
 import { breadcrumb } from "@/canvas/breadcrumb";
 import { PageWithBboxViewer } from "@/canvas/primitives/viewers/PageWithBboxViewer";
 import { CanvasShell } from "@/shell/CanvasShell";
+import { SourceDock } from "@/canvas/primitives/viewers/SourceDock";
+import { HoverPreviewToggle } from "@/shell/HoverPreviewToggle";
 import { SourceCluster } from "@/shell/SourceCluster";
 
 /**
@@ -108,6 +111,8 @@ export function CanvasPage() {
         </nav>
         <div className="text-sm font-semibold">{id}</div>
         <div className="flex items-center gap-3 text-xs text-neutral-500">
+          <PresenceStrip />
+          <HoverPreviewToggle />
           <span>drag from the palette · drop a PDF · click a file to open it</span>
           <a
             href={`/m/${id}`}
@@ -120,11 +125,10 @@ export function CanvasPage() {
           </a>
         </div>
       </header>
-      {/* Left-to-right source cluster + canvas + inspector (#220).
-          SourceCluster hosts the files explorer and the PDF viewer
-          (SourceDock); it is resizable and collapses so the canvas can go
-          full width. The inspector (PropertiesPanel) lives inside CanvasShell
-          on the far right. */}
+      {/* Left-to-right: files explorer + canvas + inspector (#220).
+          SourceCluster hosts the explorer; it is resizable and collapses so
+          the canvas can go full width. The inspector (PropertiesPanel) lives
+          inside CanvasShell on the far right. */}
       <main className="flex flex-1 overflow-hidden">
         <SourceCluster workspaceSlug={id} />
         <div className="min-w-0 flex-1">
@@ -133,6 +137,11 @@ export function CanvasPage() {
           </CanvasShell>
         </div>
       </main>
+      {/* The source viewer slides in OVER this row rather than sitting inside
+          it, so opening a document never reflows the canvas and the pages are
+          not limited to whatever width is left beside the explorer. Mounted
+          here, outside <main>, so it can cover the explorer too. */}
+      <SourceDock />
       {/* Legacy modal quick-look (renders only in "modal" mode). */}
       <PageWithBboxViewer />
     </div>

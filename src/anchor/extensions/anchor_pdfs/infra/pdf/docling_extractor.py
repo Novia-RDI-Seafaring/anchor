@@ -245,13 +245,14 @@ def _convert(
 
 
 def _flatten(doc: Any) -> dict[str, Any]:
-    """Mirrors the v1 anchor_ingest.bronze._flatten_docling logic.
+    """Flatten a new extraction in Docling's canonical tree reading order.
 
     Emits the silver contract (#281): every bbox converted to top-left PDF
     points using the page size Docling reports, plus ``pages`` sizes and a
     ``coord_origin`` stamp."""
     items: list[dict[str, Any]] = []
     tables: list[dict[str, Any]] = []
+    metadata, groups = _index_structure(doc)
     page_sizes = _page_sizes(doc)
     page_heights = {p: s[1] for p, s in page_sizes.items()}
 
@@ -260,6 +261,7 @@ def _flatten(doc: Any) -> dict[str, Any]:
             page = getattr(prov, "page_no", 0) if prov else 0
             bbox = _bbox_from_prov(prov, page_heights.get(page))
             items.append({
+                **metadata.get(getattr(it, "self_ref", ""), {}),
                 "label": getattr(it, "label", "text"),
                 "text": _text_for_prov(getattr(it, "text", ""), prov),
                 "page": page,
@@ -276,33 +278,99 @@ def _flatten(doc: Any) -> dict[str, Any]:
                 cell_data = {
                     "row": getattr(cell, "start_row_offset_idx", None),
                     "col": getattr(cell, "start_col_offset_idx", None),
+                    "row_end": getattr(cell, "end_row_offset_idx", None),
+                    "col_end": getattr(cell, "end_col_offset_idx", None),
+                    "row_span": getattr(cell, "row_span", 1),
+                    "col_span": getattr(cell, "col_span", 1),
+                    "column_header": getattr(cell, "column_header", False),
+                    "row_header": getattr(cell, "row_header", False),
+                    "row_section": getattr(cell, "row_section", False),
                     "text": getattr(cell, "text", ""),
                 }
                 cell_bbox = _bbox_from_cell(cell, page_heights.get(page))
                 if cell_bbox:
                     cell_data["bbox"] = cell_bbox
                 cells.append(cell_data)
+        table_data = {
+            **metadata.get(getattr(tbl, "self_ref", ""), {}),
+            "page": page, "bbox": bbox, "cells": cells,
+            "num_rows": getattr(getattr(tbl, "data", None), "num_rows", None),
+            "num_cols": getattr(getattr(tbl, "data", None), "num_cols", None),
+        }
         items.append({
             "label": "table",
             "text": "",
-            "page": page,
-            "bbox": bbox,
-            "cells": cells,
+            **table_data,
         })
-        tables.append({"page": page, "bbox": bbox, "cells": cells})
+        tables.append(table_data)
 
     for pic in getattr(doc, "pictures", []) or []:
         prov = (pic.prov or [None])[0] if hasattr(pic, "prov") else None
         page = getattr(prov, "page_no", 0) if prov else 0
         bbox = _bbox_from_prov(prov, page_heights.get(page))
-        items.append({"label": "picture", "text": "", "page": page, "bbox": bbox})
+        items.append({
+            **metadata.get(getattr(pic, "self_ref", ""), {}),
+            "label": "picture", "text": "", "page": page, "bbox": bbox,
+        })
+
+    # Order once at extraction, before page-local IDs and positional gold
+    # references are minted. Items outside the tree follow in collection order;
+    # an extractor without traversal metadata keeps its previous order entirely.
+    items.sort(key=lambda item: item.get("reading_order", float("inf")))
+    tables.sort(key=lambda table: table.get("reading_order", float("inf")))
 
     return {
         "items": items,
+        "groups": groups,
         "tables": tables,
         "pages": {p: {"width": w, "height": h} for p, (w, h) in page_sizes.items()},
         "coord_origin": "top-left",
     }
+
+
+def _index_structure(doc: Any) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+    """Record canonical tree positions and relationships for a new extraction."""
+    if not callable(getattr(doc, "iterate_items", None)):
+        return {}, []
+    metadata: dict[str, dict[str, Any]] = {}
+    groups: list[dict[str, Any]] = []
+    ancestors: list[tuple[int, dict[str, Any]]] = []
+    for order, (node, depth) in enumerate(doc.iterate_items(with_groups=True)):
+        while ancestors and ancestors[-1][0] >= depth:
+            ancestors.pop()
+        ref = getattr(node, "self_ref", "")
+        label = getattr(node, "label", "")
+        label = getattr(label, "value", label)
+        if ref.startswith("#/groups/"):
+            group = {
+                "id": ref, "label": label, "name": getattr(node, "name", ""),
+                "parent": ancestors[-1][1]["id"] if ancestors else None,
+                "level": len(ancestors) + 1, "reading_order": order,
+            }
+            groups.append(group)
+            ancestors.append((depth, group))
+            continue
+        entry: dict[str, Any] = {
+            "reading_order": order,
+            "group_path": [group["id"] for _, group in ancestors],
+        }
+        level = getattr(node, "level", None)
+        if isinstance(level, int):
+            entry["level"] = level
+        for field in ("captions", "references", "footnotes"):
+            links = getattr(node, field, []) or []
+            if links:
+                entry[field] = [
+                    {"id": link.cref, "text": getattr(link.resolve(doc), "text", "")}
+                    for link in links
+                ]
+        metadata[ref] = entry
+        prov = (getattr(node, "prov", []) or [None])[0]
+        page = getattr(prov, "page_no", None)
+        if page is not None:
+            for _, group in ancestors:
+                group.setdefault("page", page)
+    return metadata, groups
 
 
 def _bbox_top_left(bb: Any, page_height: float | None) -> list[float]:

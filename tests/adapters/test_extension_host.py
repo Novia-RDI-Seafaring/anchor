@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -159,8 +161,8 @@ def test_discovered_producer_statuses_checks_command_on_path(tmp_path, monkeypat
     monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    tool = bin_dir / "tracer-mcp"
-    tool.write_text("#!/bin/sh\n")
+    tool = bin_dir / ("tracer-mcp.cmd" if sys.platform == "win32" else "tracer-mcp")
+    tool.write_text("@echo off\n" if sys.platform == "win32" else "#!/bin/sh\n", encoding="utf-8")
     tool.chmod(0o755)
     monkeypatch.setenv("PATH", str(bin_dir))
     (system_dir / "tracer.json").write_text(json.dumps({
@@ -186,7 +188,7 @@ def test_discovered_producer_statuses_checks_command_on_path(tmp_path, monkeypat
     assert producers["tracer"]["source"] == "system"
     assert producers["tracer"]["command"] == "tracer-mcp --serve"
     assert producers["tracer"]["command_found"] is True
-    assert producers["tracer"]["command_path"] == str(tool)
+    assert Path(producers["tracer"]["command_path"]) == tool
     assert producers["tracer"]["check"] == "command found on PATH"
     assert producers["ghost"]["source"] == "project"
     assert producers["ghost"]["command_found"] is False

@@ -160,6 +160,38 @@ class CreateReferenceRequest(BaseModel):
     created_by: str = "human"
 
 
+class OpenProposalSetRequest(BaseModel):
+    """Body for ``POST /api/workspaces/{slug}/proposal-sets`` (#359).
+
+    ``reason`` says why these elements were proposed together and is
+    required. ``members`` are element ids (``"n1"`` is shorthand for a
+    node) or ``{kind, id}`` objects; they may also be added later."""
+
+    reason: str
+    members: list[Any] | None = None
+    actor: Actor | None = None
+
+
+class AddProposalSetMembersRequest(BaseModel):
+    """Body for ``POST /api/workspaces/{slug}/proposal-sets/{id}/members``."""
+
+    members: list[Any]
+    actor: Actor | None = None
+
+
+class ReviewProposalSetRequest(BaseModel):
+    """Body for ``POST /api/workspaces/{slug}/proposal-sets/{id}/review``.
+
+    ``verdict`` is ``"accepted"`` or ``"rejected"``. ``discard`` (rejections
+    only) removes the members instead of stamping them, cascading their
+    edges. ``except_ids`` leaves those members untouched."""
+
+    verdict: str
+    discard: bool = False
+    except_ids: list[str] | None = None
+    actor: Actor | None = None
+
+
 class AttachReferenceRequest(BaseModel):
     """Body for ``POST /api/workspaces/{slug}/references/{id}/attach``.
 

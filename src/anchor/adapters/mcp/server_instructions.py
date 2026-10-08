@@ -8,7 +8,9 @@ What it is:
   holds PROJECTS; each project is a corpus (documents) plus its canvases.
 - Project-scoped tools take an optional `project` argument. Omit it to use the
   default project. Use `list_projects` to see the options, `create_project` to
-  make one. A missing/unknown project returns a self-correcting error.
+  make one, or `open_project` to select one for this session. Use
+  `canvas_list_workspaces` to find its canvases. A missing/unknown project
+  returns a self-correcting error.
 - You have HTTP/MCP/CLI parity for every operation. Pick MCP from here.
 
 Source-grounding (load-bearing):
@@ -29,13 +31,29 @@ When the user asks you to populate placeholders:
 If you're producing a snapshot of the canvas, use `canvas_snapshot(...,
 format: "inline")` so the host renders the image inline.
 
+Scoped asks (your inbox, load-bearing):
+- At the start of any Anchor task and whenever idle, call
+  `list_pending_intents`. Take one. Its `targets` name the canvas
+  elements the ask is about; read them with `canvas_get_state` (filter by
+  id) and `canvas_snapshot` if you want the picture.
+- Reply in the thread with `intent_add_item`. Ask a `question` when the
+  ask is ambiguous and wait (poll `get_intent` for the answer). Never edit
+  the targeted elements directly: propose a `suggestion` (staged ops plus
+  a rationale). Group dependent ops into one suggestion; keep independent
+  changes separate so partial approval is safe. A revision after feedback
+  is a new suggestion with `supersedes`.
+- `intent_apply` / `intent_answer` / `intent_decline` are the human's
+  verbs. Do not call them on your own asks.
+- Post a `result` item when done, then `resolve_intent`.
+
 Tool surface (load-bearing):
 - A small core is advertised by default (ingest/list/read/search docs,
-  the common canvas verbs, project list/create). The long tail (FMU, CAD,
-  SysML, the harness ingest sub-protocol, advanced canvas + doc ops) is
-  reachable but not advertised until needed. Call `anchor_list_capabilities`
-  to see it; every listed tool is callable by name straight away. Extension
-  tools also auto-appear once the open project has data for them.
+  the common canvas verbs, canvas listing, project list/create/open).
+  The long tail (FMU, CAD, SysML, harness ingest, advanced canvas + doc ops)
+  is cataloged by `anchor_list_capabilities`. The server can dispatch those
+  tools, but clients that only expose `tools/list` cannot call omitted tools.
+  This server sends no `tools/list_changed` notification. Extension tools
+  appear when `tools/list` is refreshed and the open project has their data.
 
 Stuck? Read the `anchor://help` resource for the deeper tour.
 
@@ -64,9 +82,20 @@ Canvas tools:
 
 Agent intent queue (your inbox, issue #148):
 - list_pending_intents / next_intent - user canvas actions waiting for you
-  (e.g. a doc dropped onto the canvas in a harness-ingest project). Pull on the
-  IntentPending signal or your own cadence.
+  (e.g. a doc dropped onto the canvas in a harness-ingest project, or an ask
+  about a canvas selection). Pull on the IntentPending signal or your own
+  cadence. Each record carries `targets`, `base_version`, and `items`.
 - resolve_intent(id, result) - mark one done after you handle it.
+
+Scoped-ask threads (#343):
+- intent_add_item(id, type, text, ops?, supersedes?) - reply in a thread:
+  message / question / suggestion (staged canvas ops the human approves) /
+  result. Ops: {type: NodeAdded|NodeUpdated|NodeRemoved|EdgeAdded|
+  EdgeUpdated|EdgeRemoved, payload}. A NodeAdded/EdgeAdded `id` is a client
+  id later ops in the batch may reference.
+- get_intent(id) - read one thread in full (states, answers).
+- intent_answer / intent_apply / intent_decline - the human's verbs
+  (gated under `intent_threads`); intent_ask opens a thread on a selection.
 
 Status tools:
 - anchor_status: show cwd, config path, data dir, and document/canvas counts
@@ -110,7 +139,7 @@ Each project is a folder with a hidden `.anchor_data/` holding its corpus.
 A project you create here is managed under the environment:
 
 ~/.anchor/envs/<env>/projects/<project>/.anchor_data/
-  bronze/<filename>.pdf
+  bronze/<slug>/<sha256>.pdf
   silver/<slug>/{index.json, pages/}
   gold/<slug>/{pages/<n>.regions.json, pages/<n>/<region-id>.png}
   canvases/<slug>/{meta.json, state.json, events.jsonl}

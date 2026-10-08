@@ -16,6 +16,30 @@ class IngestLockHeld(RuntimeError):
 
 
 class DocStore(Protocol):
+    def snapshot(self, slug: str) -> DocStore:
+        """Pin one document's current derived generation across compound reads."""
+        raise NotImplementedError
+
+    async def begin_replacement(self, slug: str, pages: list[int]) -> str:
+        """Create an isolated replacement without inherited page artifacts.
+
+        Raw and polished text, gold, crops and embeddings start empty.
+        Optional polished output must be produced for this candidate.
+        """
+        raise NotImplementedError
+
+    def replacement(self, slug: str, generation: str) -> DocStore:
+        """Reopen a durable candidate view, including across harness restarts."""
+        raise NotImplementedError
+
+    async def publish_replacement(self, slug: str, generation: str, pages: list[int]) -> None:
+        """Publish the complete set, rejecting a superseded candidate.
+
+        Source index, silver, gold and embeddings switch together. No prior
+        member is inherited implicitly; failed publication keeps current data.
+        """
+        raise NotImplementedError
+
     def ingest_lock(
         self, slug: str, *, wait: bool = True, timeout: float | None = None,
     ) -> AbstractAsyncContextManager[None]:
@@ -36,13 +60,26 @@ class DocStore(Protocol):
     async def list_documents(self) -> list[dict[str, Any]]:
         raise NotImplementedError
 
-    async def get_index(self, slug: str) -> dict[str, Any] | None:
+    async def get_index(self, slug: str, *, include_content: bool = False) -> dict[str, Any] | None:
+        """Silver index for one document: outline plus table and figure entries.
+
+        Table entries carry their full ``cells`` content only when
+        ``include_content`` is true. The default is the map form: identifying
+        fields (caption, shape, header_row, first_column_values) and the
+        address (page, bbox) without the content. When available, ``pages_meta``
+        carries silver page sizes and the coordinate-origin stamp from the
+        same document generation, without per-page item content."""
         raise NotImplementedError
 
     async def get_pages_meta(self, slug: str) -> dict[str, Any] | None:
         raise NotImplementedError
 
     async def get_page_text(self, slug: str, page: int) -> str | None:
+        """Prefer proven current-generation polish, otherwise current raw.
+
+        Published polish membership comes from the selected generation's
+        successful producer report, never from inherited file presence.
+        """
         raise NotImplementedError
 
     async def get_page_image_path(
@@ -103,16 +140,21 @@ class DocStore(Protocol):
         document's gold pages directory."""
         raise NotImplementedError
 
-    async def get_raw_pdf_path(self, slug: str) -> Path | None:
+    async def get_raw_pdf_path(self, slug: str, *, page: int | None = None) -> Path | None:
         """Return the bronze-layer raw PDF for a document, if available.
         Stores that don't keep the raw bytes addressable (in-memory test
         doubles, S3-backed stores without a local mirror, ...) may return
         ``None``; callers must handle that case rather than reach into
-        store internals."""
+        store internals. A page outside authoritative replacement membership
+        is unavailable even if an old original contained it."""
         raise NotImplementedError
 
-    async def stash_bronze(self, pdf_bytes: bytes, filename: str) -> Path:
-        """Write a raw PDF into bronze/. Returns path."""
+    async def stash_bronze(self, pdf_bytes: bytes, filename: str, *, slug: str) -> Path:
+        """Store document-owned original bytes; filename is display metadata.
+
+        Returns an immutable source path for extraction. Ownership conflicts
+        raise SourceIdentityError before any source or derived publication.
+        """
         raise NotImplementedError
 
     async def write_silver_artifact(self, slug: str, name: str, payload: bytes | str) -> Path:

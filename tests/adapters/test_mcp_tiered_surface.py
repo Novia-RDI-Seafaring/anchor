@@ -71,8 +71,16 @@ async def test_base_single_project_advertises_core_not_full_surface(tmp_path):
     # The full dispatchable surface is ~45+; the tiered default stays a small
     # curated slice (~20, the 90% path + extract_pointed from #132 +
     # server_info from #177/#179 + inspect_region / get_region_content, the
-    # search -> inspect -> answer pair from #242).
-    assert len(names) <= 25
+    # search -> inspect -> answer pair from #242 + canvas_propose_set, which
+    # the skill mandates on every multi-element write and so cannot be gated,
+    # + list_entities, which is how an agent learns what a document covers
+    # instead of inferring it from the title).
+    #
+    # Raise this only for a tool the agent cannot do without: the point of the
+    # cap is that the default list stays a curated slice of a ~45-tool surface.
+    # +1 for intent_update_item: an agent narrating its own progress on the
+    # canvas cannot be asked to enable a capability first.
+    assert len(names) <= 29  # canvas_list_workspaces enables canvas discovery.
     assert set(names) == set(tiering.CORE_NAMES) - tiering.CORE_LIFECYCLE_NAMES
     # No lifecycle tools in single-project mode.
     assert "create_environment" not in names
@@ -82,10 +90,8 @@ async def test_base_multiproject_advertises_core_plus_lifecycle(tmp_path):
     create_env("local")
     server, _ = _multiproject_server()
     names = await _advertised(server)
-    # Multiproject advertises the full core including the two lifecycle tools
-    # (create_project, list_projects), so the cap is one higher than the
-    # single-project slice: 23 curated + 2 lifecycle = 25 with server_info.
-    assert len(names) <= 26
+    # Multiproject includes list/create/open project and canvas discovery.
+    assert len(names) <= 32
     assert tiering.CORE_NAMES.issubset(set(names))
     # The long tail is gated out by default.
     for gated in ("fmu_inspect", "inspect", "sysml_render", "create_environment",
@@ -102,6 +108,43 @@ async def test_core_includes_the_ninety_percent_path():
         "anchor_list_capabilities", "anchor_extension_status",
     }
     assert expected.issubset(tiering.CORE_NAMES)
+
+
+async def test_discovery_tools_work_from_the_initial_multiproject_tool_list(tmp_path):
+    create_env("local")
+    env = env_mod.resolve_environment("local")
+    create_project(env, "alpha")
+    create_project(env, "beta")
+    server, router = _multiproject_server()
+    await router.bundle_for("alpha").workspace.create_workspace("alpha-board")
+    await router.bundle_for("beta").workspace.create_workspace("beta-board")
+
+    # A strict host builds its callable functions from this initial list.
+    names = await _advertised(server)
+    assert {"open_project", "canvas_list_workspaces"}.issubset(names)
+
+    opened = json.loads(await _call(server, "open_project", {"name": "beta"}))
+    assert opened == {"session_default": "beta"}
+    workspaces = json.loads(await _call(server, "canvas_list_workspaces"))
+    assert [workspace["slug"] for workspace in workspaces] == ["beta-board"]
+
+    explicit = json.loads(await _call(server, "canvas_list_workspaces", project="alpha"))
+    assert [workspace["slug"] for workspace in explicit] == ["alpha-board"]
+
+    catalog = json.loads(await _call(server, "anchor_list_capabilities"))
+    gated = {tool["name"] for group in catalog["capabilities"] for tool in group["tools"]}
+    assert not {"open_project", "canvas_list_workspaces"} & gated
+
+
+async def test_canvas_discovery_is_advertised_in_single_project_mode(tmp_path):
+    server, bundle = _single_project_server(tmp_path)
+    await bundle.workspace.create_workspace("board")
+
+    names = await _advertised(server)
+    assert "canvas_list_workspaces" in names
+    assert "open_project" not in names
+    workspaces = json.loads(await _call(server, "canvas_list_workspaces"))
+    assert [workspace["slug"] for workspace in workspaces] == ["board"]
 
 
 async def test_extension_status_dispatches_shared_payload(tmp_path):

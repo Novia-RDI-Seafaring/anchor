@@ -5,16 +5,18 @@ to work; every tool now takes `workspace_slug` as its first arg.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
-from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
 from anchor.adapters.mcp import canvas_tool_definitions
 from anchor.core.events.actor import Actor, actor_scope
 from anchor.core.services.workspace_service import WorkspaceService
+from anchor.core.workspace.proposals import ProposalSetError
 from anchor.core.workspace.review import review_warning
+from anchor.core.workspace.roles import role_warning
 from anchor.core.workspace.workspace import CommandError
 
 
@@ -76,6 +78,42 @@ _SPEC_ROWS_HINT = (
 )
 
 
+# Non-fatal nudge for the composition failure mode: an agent answers a
+# question by dropping every card it made onto an empty board, so the human
+# opens a pile and has to reconstruct the argument. Enclosure is the strongest
+# grouping cue there is, and `area` is the primitive for it. Like the spec
+# nudge this never blocks the write; it steers the next call.
+_COMPOSITION_HINT = (
+    "This set has {n} members and no `area` among them, so a reviewer opens a "
+    "flat pile of cards. Put the parts of your answer inside `area` nodes that "
+    "name the steps a reader walks through (for example what was asked, what "
+    "the options are, what you picked, what is still open), add a `text` "
+    "element at text_size 'xl' or larger as the title, and use `data.bg_color` "
+    "consistently so state reads at a glance. Call canvas_node_types for the "
+    "fields each type renders."
+)
+#: Below this a flat set still reads fine, so stay quiet.
+_COMPOSITION_HINT_MIN_MEMBERS = 8
+
+
+def _composition_hint(record: dict[str, Any] | None, state: dict[str, Any] | None) -> str | None:
+    """Nudge when a large proposal set groups nothing (see _COMPOSITION_HINT)."""
+    if not isinstance(record, dict) or not isinstance(state, dict):
+        return None
+    members = record.get("members")
+    if not isinstance(members, list) or len(members) < _COMPOSITION_HINT_MIN_MEMBERS:
+        return None
+    member_ids = {m.get("id") if isinstance(m, dict) else m for m in members}
+    nodes = state.get("nodes")
+    nodes = list(nodes.values()) if isinstance(nodes, dict) else (nodes or [])
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        if node.get("id") in member_ids and node.get("node_type") == "area":
+            return None
+    return _COMPOSITION_HINT.format(n=len(members))
+
+
 def _alias_type(args: dict[str, Any], canonical: str) -> None:
     """Accept ``type`` as an alias for ``node_type`` / ``edge_type`` (#186).
 
@@ -111,6 +149,9 @@ def _data_warning(
     rw = review_warning(data, partial=partial)
     if rw is not None:
         parts.append(rw)
+    rolew = role_warning(data, partial=partial)
+    if rolew is not None:
+        parts.append(rolew)
     return " ".join(parts) or None
 
 
@@ -125,38 +166,54 @@ def _spec_rows_hint(node_type: str | None, data: dict[str, Any] | None) -> str |
     return None
 
 
-NodeFieldsEnricher = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
-
-
 async def call_tool(
     svc: WorkspaceService,
     name: str,
     args: dict[str, Any],
     *,
-    enrich_node_fields: NodeFieldsEnricher | None = None,
     actor: Actor | None = None,
+    data_dir: Path | None = None,
 ) -> str:
     """Dispatch one canvas MCP tool call.
 
     Every write is attributed to ``actor`` (#322); when the server layer
     can't name the connected MCP client it falls back to the generic
     ``{kind: "agent", label: "mcp-agent"}`` so agent edits are never
-    mistaken for human ones.
+    mistaken for human ones. ``data_dir`` locates the project so
+    ``canvas_presence`` can ask the running ``anchor serve`` (presence is
+    that process's in-memory state, not something this process holds).
     """
     if actor is None:
         actor = Actor(kind="agent", label="mcp-agent")
+    if name == "canvas_presence":
+        return await _presence(data_dir, args)
     with actor_scope(actor):
         return await _dispatch_tool(
-            svc, name, args, enrich_node_fields=enrich_node_fields,
+            svc, name, args,
         )
+
+
+async def _presence(data_dir: Path | None, args: dict[str, Any]) -> str:
+    if data_dir is None:
+        return json.dumps({
+            "error": "canvas_presence needs a project data dir to locate the running serve",
+        })
+    # Imported here, not at module scope: the parity test swaps
+    # `presence.fetch_presence`, which a top-level `from ... import` would
+    # have already bound.
+    from anchor.infra.presence import fetch_presence
+
+    # fetch_presence blocks on an HTTP call to the running serve.
+    result = await asyncio.to_thread(
+        fetch_presence, Path(data_dir), args["workspace_slug"],
+    )
+    return json.dumps(result)
 
 
 async def _dispatch_tool(
     svc: WorkspaceService,
     name: str,
     args: dict[str, Any],
-    *,
-    enrich_node_fields: NodeFieldsEnricher | None = None,
 ) -> str:
     try:
         if name == "canvas_get_state":
@@ -175,6 +232,46 @@ async def _dispatch_tool(
                 "review_mode": state.metadata.get("review_mode", False) is True,
                 "event": env.model_dump(),
             })
+        if name == "canvas_propose_set":
+            try:
+                record = await svc.open_proposal_set(
+                    args["workspace_slug"],
+                    reason=args["reason"],
+                    members=args.get("members"),
+                )
+            except ProposalSetError as exc:
+                return json.dumps({"error": exc.message})
+            result: dict[str, Any] = {"proposal_set": record}
+            hint = _composition_hint(record, await svc.get_state(args["workspace_slug"]))
+            if hint is not None:
+                result["hint"] = hint
+            return json.dumps(result)
+        if name == "canvas_add_to_proposal_set":
+            try:
+                record = await svc.add_proposal_set_members(
+                    args["workspace_slug"], args["set_id"], members=args["members"],
+                )
+            except ProposalSetError as exc:
+                return json.dumps({"error": exc.message})
+            return json.dumps({"proposal_set": record})
+        if name == "canvas_list_proposal_sets":
+            return json.dumps({
+                "proposal_sets": await svc.list_proposal_sets(
+                    args["workspace_slug"], state=args.get("state"),
+                ),
+            })
+        if name == "canvas_review_proposal_set":
+            try:
+                _state, envelopes, record = await svc.review_proposal_set(
+                    args["workspace_slug"],
+                    args["set_id"],
+                    verdict=args["verdict"],
+                    discard=bool(args.get("discard", False)),
+                    except_ids=args.get("except_ids"),
+                )
+            except ProposalSetError as exc:
+                return json.dumps({"error": exc.message})
+            return json.dumps({"proposal_set": record, "events": len(envelopes)})
         if name == "canvas_add_node":
             slug = args.pop("workspace_slug")
             _alias_type(args, "node_type")
@@ -216,15 +313,11 @@ async def _dispatch_tool(
                 state, env = await svc.reparent_node(slug, node_id, parent_val)
             else:
                 if parent_present:
-                    if enrich_node_fields:
-                        fields = await enrich_node_fields(fields)
                     await svc.update_node(slug, node_id, fields)
                     state, env = await svc.reparent_node(slug, node_id, parent_val)
                 else:
                     if not fields:
                         return json.dumps({"error": "nothing to update"})
-                    if enrich_node_fields:
-                        fields = await enrich_node_fields(fields)
                     state, env = await svc.update_node(slug, node_id, fields)
             result = {"event": env.model_dump(), "state": state.get_state()}
             if data_patch is not None:
@@ -319,6 +412,14 @@ async def _dispatch_tool(
                 title=args.get("title", ""),
                 x=float(args.get("x", 0.0)),
                 y=float(args.get("y", 0.0)),
+            ))
+        if name == "canvas_changes":
+            since_version = args.get("since_version")
+            since_ts = args.get("since_ts")
+            return json.dumps(await svc.canvas_changes(
+                args["workspace_slug"],
+                since_version=int(since_version) if since_version is not None else None,
+                since_ts=float(since_ts) if since_ts is not None else None,
             ))
         if name == "canvas_list_placeholders":
             return json.dumps(await svc.list_placeholders(args["workspace_slug"]))

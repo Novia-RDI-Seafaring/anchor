@@ -9,13 +9,14 @@ anything sensitive.
 
 With the Azure provider and the default **local** embedding model:
 
-- **Never leaves the host:** the raw PDFs (`bronze/`), per-page text and PNGs
-  (`silver/`), the structured regions (`gold/`), and the embedding vectors.
+- **Stored locally:** original PDFs (`bronze/`), page extraction (`silver/`),
+  structured regions (`gold/`), and local embedding vectors. Local storage
+  does not imply that the content is processed only on this computer.
 - **Sent only to your Azure endpoint:** rendered page images + text, for the
   gold region-extraction and polish stages.
 
-If you pick a **remote** embedding model (`text-embedding-3-small/large`), page
-text is also sent to your Azure endpoint for embeddings. Keep the default
+If you pick a **remote** embedding model, region embedding input text is
+also sent to the configured endpoint. Keep the default
 `bge-small` (local) to avoid that.
 
 ## Prerequisite: create and note your deployment(s)

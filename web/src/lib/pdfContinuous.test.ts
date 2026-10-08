@@ -9,11 +9,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   PAGE_GAP,
+  anchorAt,
   buildPageLayout,
   pageInView,
+  pointForAnchor,
   scrollTopForPage,
   scrollTopForPageRect,
   visiblePageRange,
+  wheelZoom,
 } from "./pdfContinuous";
 
 const fallback = { w: 100, h: 200 };
@@ -105,5 +108,56 @@ describe("scrollTopForPageRect", () => {
   it("clamps to the content bounds", () => {
     const off = scrollTopForPageRect(items, 5, 180, 10, 100, totalHeight);
     expect(off).toBeLessThanOrEqual(Math.max(0, totalHeight - 100));
+  });
+});
+
+describe("wheelZoom", () => {
+  it("zooms in on wheel up and out on wheel down, about 15% per mouse notch", () => {
+    const up = wheelZoom(1, -100, 0, false, 0.4, 4);
+    const down = wheelZoom(1, 100, 0, false, 0.4, 4);
+    expect(up).toBeGreaterThan(1.1);
+    expect(up).toBeLessThan(1.2);
+    expect(down).toBeLessThan(0.9);
+    expect(down).toBeGreaterThan(0.8);
+  });
+
+  it("is symmetric: in then out by the same delta returns to the start", () => {
+    expect(wheelZoom(wheelZoom(1, -40, 0, false, 0.4, 4), 40, 0, false, 0.4, 4)).toBeCloseTo(1, 2);
+  });
+
+  it("boosts small pinch deltas so a trackpad pinch is not sluggish", () => {
+    expect(wheelZoom(1, -5, 0, true, 0.4, 4)).toBeCloseTo(wheelZoom(1, -50, 0, false, 0.4, 4), 3);
+  });
+
+  it("treats line-mode deltas as larger steps", () => {
+    expect(wheelZoom(1, -3, 1, false, 0.4, 4)).toBeGreaterThan(1.1);
+  });
+
+  it("clamps to the min and max", () => {
+    expect(wheelZoom(3.9, -1000, 0, false, 0.4, 4)).toBe(4);
+    expect(wheelZoom(0.45, 1000, 0, false, 0.4, 4)).toBe(0.4);
+  });
+});
+
+describe("zoom anchor", () => {
+  it("keeps the same spot on the same page across a zoom change", () => {
+    const sizes = { 1: { w: 100, h: 200 }, 2: { w: 100, h: 200 }, 3: { w: 100, h: 200 } };
+    const before = buildPageLayout(3, sizes, 1, fallback);
+    // A point a quarter of the way down page 2, halfway across.
+    const y = before.items[1]!.top + 50;
+    const anchor = anchorAt(before.items, 100, 50, y)!;
+    expect(anchor).toEqual({ page: 2, fy: 0.25, fx: 0.5 });
+
+    const after = buildPageLayout(3, sizes, 2, fallback);
+    const pt = pointForAnchor(after.items, 200, anchor)!;
+    expect(pt.x).toBe(100);
+    expect(pt.y).toBe(after.items[1]!.top + 100);
+  });
+
+  it("assigns a point in the gap below a page to that page", () => {
+    const { items } = buildPageLayout(2, {}, 1, fallback);
+    const anchor = anchorAt(items, 100, 0, items[0]!.height + PAGE_GAP / 2)!;
+    expect(anchor.page).toBe(1);
+    expect(anchor.fy).toBeGreaterThan(1);
   });
 });

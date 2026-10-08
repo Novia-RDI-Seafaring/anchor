@@ -17,8 +17,8 @@ This is the deterministic core of pointed extraction:
 2. **Filling** (``fill_shape``) walks the caller's ``shape`` (by-example or a
    JSON Schema) leaf by leaf. Each leaf maps to a *label* (the last JSON
    Pointer segment, humanised). The label is matched against the key cells of
-   the selected regions' ``cells`` tables; the value cell on the same row is
-   the answer. The match is deterministic — no model call — and every filled
+   the selected regions' validated table associations; the certified value
+   cell is the answer. The match is deterministic, with no model call, and every filled
    leaf carries a ``source_ref`` ``{page, region_id, bbox, quote}`` keyed by
    its JSON Pointer.
 
@@ -26,9 +26,9 @@ This is the deterministic core of pointed extraction:
    never invented: a leaf is either filled from a real cell (with provenance)
    or reported as unfilled.
 
-The cell-matching mechanics (normalise text, find the value cell on the same
-table row as the label cell) mirror ``value_provenance.py`` so a pointed
-extraction is grounded the same way value-level grounding (#145) is.
+Table association belongs to the silver normalization boundary. This module
+consumes its content-bound verdict and cell pairs. Unvalidated older gold
+requires regeneration; it is never repaired or trusted during extraction.
 
 Stays pure core: only the ``DocStore`` port is touched; no I/O library, no
 HTTP, no model. Fuzzy LLM-assisted mapping (for labels that do not match a
@@ -46,6 +46,7 @@ from anchor.extensions.anchor_pdfs.core.synopsis import (
     compose_synopsis,
     default_filter,
 )
+from anchor.extensions.anchor_pdfs.core.table_topology import topology_status, validated_pairs
 
 _LEAF_TYPES = {"string", "number", "quantity", "bool", "boolean", "int", "integer", "float"}
 
@@ -90,6 +91,7 @@ async def resolve_selection(
     it). Regions are unioned across the ``regions`` / ``pages`` / ``entity``
     selectors; an empty / absent ``select`` selects every gold region.
     """
+    store = store.snapshot(slug)
     gold = await store.get_gold_map(slug)
     if gold is None:
         raise PointedExtractionError(f"no gold data for slug {slug!r}")
@@ -363,10 +365,9 @@ def _parse_number(text: str) -> float | int | None:
 class _CellIndex:
     """Label -> (value, source_ref) lookup over the selected regions' cells.
 
-    Builds, once, the set of (key cell, value cell) pairs from every region's
-    ``cells`` table: for each row, the first cell is treated as the key and a
-    following cell on the same row as the value. ``lookup`` then matches a
-    humanised shape label against the normalised key text.
+    Reads the key/value associations certified at the silver boundary.
+    ``lookup`` matches a humanised shape label against their key text;
+    this consumer does not repair rows or choose among value columns.
     """
 
     def __init__(self, regions: list[dict[str, Any]], *, slug: str) -> None:
@@ -377,50 +378,33 @@ class _CellIndex:
             self._index_region(region)
 
     def _index_region(self, region: dict[str, Any]) -> None:
-        cells = region.get("cells")
-        if not isinstance(cells, list):
-            return
         page = region.get("page")
         region_id = region.get("id")
-        rows: dict[int, list[dict[str, Any]]] = {}
-        for cell in cells:
-            if not isinstance(cell, dict):
-                continue
-            row_no = cell.get("row")
-            if not isinstance(row_no, int):
-                continue
-            rows.setdefault(row_no, []).append(cell)
-        for row_cells in rows.values():
-            ordered = sorted(
-                row_cells,
-                key=lambda c: c.get("col") if isinstance(c.get("col"), int) else 0,
-            )
-            if len(ordered) < 2:
-                continue
-            key_cell = ordered[0]
+        verdict = topology_status(region)
+        pair_bases = {(p["key"], p["value"]): p.get("basis", "validated_row") for p in verdict.get("pairs", [])}
+        for key_cell, value_cell in validated_pairs(region):
             key_norm = _norm(key_cell.get("text"))
             if not key_norm:
                 continue
-            for value_cell in ordered[1:]:
-                value_text = value_cell.get("text")
-                if not isinstance(value_text, str) or not value_text.strip():
-                    continue
-                source_ref: dict[str, Any] = {
-                    "slug": self._slug,
-                    "quote": value_text.strip(),
-                }
-                if isinstance(page, int):
-                    source_ref["page"] = page
-                if region_id is not None:
-                    source_ref["region_id"] = region_id
-                bbox = _clean_bbox(value_cell.get("bbox"))
-                if bbox:
-                    source_ref["bbox"] = bbox
-                self._by_label.setdefault(key_norm, []).append(
-                    (value_text.strip(), source_ref)
-                )
-                # Only the first value cell on a row is the canonical answer.
-                break
+            value_text = value_cell["text"].strip()
+            source_ref: dict[str, Any] = {
+                "coord_origin": "top-left",
+                "slug": self._slug, "quote": value_text,
+                "bbox": _clean_bbox(value_cell["bbox"]),
+                "detail": {"table_topology": {
+                    "version": verdict["version"], "status": verdict["status"],
+                    "digest": verdict["digest"],
+                    "key_cell_id": key_cell["cell_id"], "value_cell_id": value_cell["cell_id"],
+                    "key_text": key_cell["text"], "key_bbox": key_cell["bbox"],
+                    "row": key_cell["row"],
+                    "association_basis": pair_bases[(key_cell["cell_id"], value_cell["cell_id"])],
+                }},
+            }
+            if isinstance(page, int):
+                source_ref["page"] = page
+            if region_id is not None:
+                source_ref["region_id"] = region_id
+            self._by_label.setdefault(key_norm, []).append((value_text, source_ref))
 
     def lookup(self, label: str) -> tuple[str, dict[str, Any]] | None:
         label_norm = _norm(label)
@@ -435,11 +419,9 @@ class _CellIndex:
                     break
         if not candidates:
             return None
-        # Deterministic: a label that resolves to exactly one value is filled;
-        # an ambiguous label (the same key in several selected regions with
-        # differing values) is left unfilled rather than guessed.
-        first_value = candidates[0][0]
-        if all(v == first_value for v, _ in candidates):
+        # Equal-looking values in different physical rows are still distinct
+        # associations. Only an identical source repeated by selection dedupes.
+        if all(candidate == candidates[0] for candidate in candidates):
             return candidates[0]
         return None
 
@@ -501,12 +483,24 @@ async def extract_pointed(
         store=store, slug=slug, select=select, filter_rows=filter_rows,
     )
     data, provenance, unfilled = fill_shape(shape, regions, slug=slug)
-    return {
+    result = {
         "doc_slug": slug,
         "data": data,
         "provenance": provenance,
         "unfilled": unfilled,
     }
+    warnings = []
+    for region in regions:
+        if region.get("cells"):
+            verdict = topology_status(region)
+            if verdict["status"] not in {"valid", "reconciled"}:
+                warnings.append({
+                    "page": region.get("page"), "region_id": region.get("id"),
+                    "status": verdict["status"], "reason": verdict["reason"],
+                })
+    if warnings:
+        result["table_warnings"] = warnings
+    return result
 
 
 __all__ = [

@@ -90,6 +90,27 @@ Three fields do most of the work:
 producer suggests, or substitute its own components. The producer
 isn't shipping React; it's shipping intent.
 
+### Page source-reference coordinates
+
+Current page/bbox authoring uses PDF points, top-left origin,
+`[left, top, right, bottom]`. Writers explicitly emit
+`coord_origin: "top-left"`. HTTP, MCP and CLI share the same authoring
+contract for node, row, edge and bibliography references. Geometry supplied
+as a new write without an origin uses that current contract; explicitly
+declared origins are preserved. Copying existing geometry must preserve
+its origin too. Use `coord_origin: null` when importing geometry whose
+origin has not been established. Loading or replaying stored data never
+assigns an origin based on its absence.
+
+Startup source-reference migration converts only an explicit
+`coord_origin: "bottom-left"` with usable page dimensions. An unstamped
+reference is ambiguous, even when its document is canonical or was just
+migrated. Such references are preserved and reported. Stamped top-left
+references are preserved too; the stamp does not prove that an older
+migration did not corrupt them. Repair requires separate authoritative
+provenance, not another blanket flip. Non-page producer locators retain
+their own conventions.
+
 ---
 
 ## On-disk shape

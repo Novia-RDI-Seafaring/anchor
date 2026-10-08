@@ -173,7 +173,44 @@ def tool_definitions() -> list[dict[str, Any]]:
         },
         {
             "name": "get_document_index",
-            "description": "Silver index for a document (outline, tables, figures).",
+            "description": (
+                "Silver index for a document (outline, tables, figures): a map "
+                "of what the document contains. Each table entry carries its "
+                "caption, shape, header row and first-column values to identify "
+                "it, plus page + bbox to address it. Table cell content is left "
+                "out by default because it dominates the payload; read a table "
+                "with get_page_text(slug, page) or, for gold documents, "
+                "inspect_region. Pass include_content=true only when you need "
+                "every cell of every table in one result."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "slug": {"type": "string"},
+                    "include_content": {
+                        "type": "boolean",
+                        "description": (
+                            "Include full table cell content. Default false. "
+                            "The full form can be very large: on a four-page "
+                            "datasheet it is roughly eight times the map form."
+                        ),
+                    },
+                },
+                "required": ["slug"],
+            },
+        },
+        {
+            "name": "list_entities",
+            "description": (
+                "What a document is ABOUT: every entity named in its gold "
+                "regions, with how often each appears and on which pages. "
+                "list_documents gives you a title and a page count, which does "
+                "not tell you that a four-page leaflet covers thirteen product "
+                "models. Call this before concluding what a document does or "
+                "does not contain, and before saying a corpus holds only one of "
+                "something. Sorted by frequency; use an entity name with "
+                "compose_synopsis or search_documents to go deeper."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {"slug": {"type": "string"}},
@@ -276,9 +313,11 @@ def tool_definitions() -> list[dict[str, Any]]:
         {
             "name": "get_page_image",
             "description": (
-                "Page screenshot as a path (default) or base64. Use format='base64' from off-machine agents. "
-                "Pass dpi to re-render from the bronze PDF at higher resolution "
-                "(clamped to 72-600; the stored default is ~150 dpi, too coarse for e.g. chart tracing)."
+                "Look at a whole page: its screenshot, returned inline by default so you can read it "
+                "by eye rather than opening the file from disk yourself. 'path' and 'base64' are "
+                "available for callers that want the file or the raw bytes. Pass dpi to re-render "
+                "from the bronze PDF at higher resolution (clamped to 72-600; the stored default is "
+                "~150 dpi, too coarse for e.g. chart tracing)."
             ),
             "inputSchema": {
                 "type": "object",
@@ -286,7 +325,16 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "slug": {"type": "string"},
                     "page": {"type": "integer"},
                     "dpi": {"type": "integer", "description": "Optional re-render DPI (72-600); cached per DPI."},
-                    "format": {"type": "string", "enum": ["path", "base64"], "default": "path"},
+                    "format": {
+                        "type": "string",
+                        "enum": ["inline", "path", "base64"],
+                        "default": "inline",
+                        "description": (
+                            "'inline' (default) returns an MCP image the harness displays. 'path' "
+                            "returns the file path on this machine; 'base64' returns the bytes in "
+                            "the JSON envelope for off-machine callers."
+                        ),
+                    },
                 },
                 "required": ["slug", "page"],
             },
@@ -294,9 +342,12 @@ def tool_definitions() -> list[dict[str, Any]]:
         {
             "name": "get_crop",
             "description": (
-                "One gold region's crop PNG, addressed as '<page>/<region_id>.png' (e.g. '4/r1.png'). "
-                "Rendered lazily from the bronze PDF on first request (region bbox + margin, 300 dpi) "
-                "and cached; pass dpi to re-render at another resolution. Path or base64."
+                "Look at one gold region: its crop PNG, addressed as '<page>/<region_id>.png' "
+                "(e.g. '4/r1.png'; 'p4/r1' also accepted). Returns the image inline by default, so "
+                "you can read a chart, diagram or table by eye -- use this instead of opening the "
+                "file from disk yourself. Rendered lazily from the bronze PDF on first request "
+                "(region bbox + margin, 300 dpi) and cached; pass dpi to re-render at another "
+                "resolution."
             ),
             "inputSchema": {
                 "type": "object",
@@ -304,7 +355,16 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "slug": {"type": "string"},
                     "rel_path": {"type": "string", "description": "'<page>/<region_id>.png' like '4/r1.png' ('p4/r1' also accepted)."},
                     "dpi": {"type": "integer", "description": "Optional render DPI (72-600, default 300); an explicit value re-renders the cached crop."},
-                    "format": {"type": "string", "enum": ["path", "base64"], "default": "path"},
+                    "format": {
+                        "type": "string",
+                        "enum": ["inline", "path", "base64"],
+                        "default": "inline",
+                        "description": (
+                            "'inline' (default) returns an MCP image the harness displays, so you can "
+                            "see the region. 'path' returns the file path on this machine; 'base64' "
+                            "returns the bytes in the JSON envelope for off-machine callers."
+                        ),
+                    },
                 },
                 "required": ["slug", "rel_path"],
             },
@@ -361,8 +421,8 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": (
                 "Persist a region derived from an existing gold region - the "
                 "consumer side of an OIP region producer. Give the parent "
-                "region id and the new region; it inherits the parent's "
-                "source_ref (so provenance points at the same page and bbox) "
+                "qualified region id (p2/r1) and the new region; it inherits "
+                "the source resolved by inspect in the current generation "
                 "and records derived_from, then stores it durably. Example: a "
                 "chart digitizer returns a chart_series; derive_region files it "
                 "beside the chart region it came from. Re-run `embed` to make "
@@ -370,6 +430,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "bare 'r1'; region ids are only unique per page, so a bare id "
                 "matching regions on multiple pages fails with the candidate "
                 "pages instead of silently picking the first."
+                " Conflicting source overrides are rejected."
             ),
             "inputSchema": {
                 "type": "object",
@@ -419,7 +480,14 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "{slug, page, bbox, precision} where precision names the "
                 "layer that answered, so a viewer or citation can trust the "
                 "geometry. A selector without stored geometry falls through "
-                "to the next layer; a legacy ref resolves exactly as before."
+                "to the next layer; a legacy ref resolves exactly as before. "
+                "A ref may name more than one place: put the extras under "
+                "'also' and each comes back resolved, with its own precision, "
+                "in the answer's 'also'. Use it when one claim is evidenced in "
+                "two spots at once, such as a value in a specification table "
+                "and the callout naming that dimension on the drawing beside "
+                "it. The ref's own selectors stay the primary place, which is "
+                "where a viewer scrolls; 'also' does not nest."
             ),
             "inputSchema": {
                 "type": "object",
@@ -429,7 +497,9 @@ def tool_definitions() -> list[dict[str, Any]]:
                         "type": "object",
                         "description": (
                             "The source_ref: {page?, region_id?, item_id?, "
-                            "cell?: {row, col}, bbox?}"
+                            "cell?: {row, col}, bbox?, also?}. 'also' is a "
+                            "list of extra places, each the same shape, or "
+                            "the compact string form 'p3/r1/item:p3-i6'."
                         ),
                     },
                 },

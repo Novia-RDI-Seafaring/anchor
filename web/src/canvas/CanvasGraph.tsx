@@ -29,6 +29,11 @@ import { EdgeContextMenu, type EdgeContextMenuTarget } from "@/canvas/EdgeContex
 import { EdgeContextToolbar } from "@/canvas/EdgeContextToolbar";
 import { NodeContextMenu, type ContextMenuTarget } from "@/canvas/NodeContextMenu";
 import { NodeContextToolbar } from "@/canvas/NodeContextToolbar";
+import { CommentLasso } from "@/canvas/CommentLasso";
+import { proposalSets } from "@/api/proposalSets";
+import { ProposalReview } from "@/canvas/ProposalReview";
+import type { Box as LassoBox } from "@/canvas/lasso";
+import { SelectionPanel } from "@/canvas/SelectionPanel";
 import { WaypointEditor } from "@/canvas/WaypointEditor";
 import {
   PAINT_DRAG_THRESHOLD_PX,
@@ -38,8 +43,8 @@ import {
   maybeSquareRect,
   paintRectFrom,
 } from "@/canvas/PaintGhost";
-import { nodeTypes, paletteEntries } from "@/canvas/registry";
-import { REVIEW_REJECTED_OPACITY, reviewState } from "@/canvas/review";
+import { connectClick } from "@/canvas/connect";
+import { CONNECT_TOOL, INTENT_TOOL, nodeTypes, paletteEntries } from "@/canvas/registry";
 import { refreshWorkspaces } from "@/canvas/useWorkspacesList";
 import { CanvasSse, type CanvasEvent } from "@/realtime/sseClient";
 import { useCanvasStore } from "@/stores/canvasStore";
@@ -77,6 +82,13 @@ type Props = {
    * drops) instantiate nodes via the HTTP API.
    */
   readOnly?: boolean;
+  /**
+   * How this viewer announces itself in the presence roster (#322
+   * follow-up). Defaults to the server's human/"browser"; the monitor
+   * route passes "monitor" so wall displays are distinguishable from
+   * editing sessions.
+   */
+  presenceLabel?: string;
 };
 
 type StoreNode = {
@@ -144,6 +156,10 @@ function ancestorOffset(nodeId: string, allNodes: Record<string, StoreNode>): { 
   return acc;
 }
 
+/** Default size of a region, matching the palette entry that places one.
+ *  The drop hit-test falls back to this when nothing better is known. */
+const AREA_DEFAULT = { width: 360, height: 220 };
+
 function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
   // Areas render behind other nodes (zIndex: -1) so the empty interior
   // doesn't trap clicks meant for whatever sits on top. `selectable: true`
@@ -152,17 +168,18 @@ function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
   // interior fall through to the nodes inside.
   const isArea = n.node_type === "area";
   // Parent/child wiring — when this node has a `parent` AND that parent
-  // node currently exists, hand ReactFlow the standard `parentId` +
-  // `extent: "parent"` pair. ReactFlow then:
+  // node currently exists, hand ReactFlow `parentId`. ReactFlow then:
   //   - moves the child along when the parent (Area) is dragged,
-  //   - clamps the child's position inside the parent's bounds,
   //   - converts the position to parent-relative coordinates internally.
   // Defensive: a `parent` that points at a missing node is silently
   // ignored (otherwise ReactFlow logs a warning every render).
   const parentExists = n.parent != null && allNodes[n.parent] != null;
-  const parentProps = parentExists
-    ? ({ parentId: n.parent as string, extent: "parent" as const })
-    : {};
+  // `parentId` alone: the child moves with its region, but is NOT clamped
+  // to it. `extent: "parent"` trapped elements inside whichever region owned
+  // them, so dragging one to a neighbouring region snapped it back and it
+  // looked like the element had jumped into the wrong region. Leaving a
+  // region is a drag out of it, and the drop decides the new owner.
+  const parentProps = parentExists ? ({ parentId: n.parent as string }) : {};
   // Convention: the store stores positions in ABSOLUTE flow coords (no
   // notion of nesting). ReactFlow, however, interprets `position` as
   // PARENT-RELATIVE when `parentId` is set. Subtract the parent chain's
@@ -177,10 +194,6 @@ function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
   // mounting NodeResizer when the prop is read at render time. The flag
   // is forward-compatible: producers / consumers can ignore it today.
   const locked = (n.data as { locked?: boolean } | undefined)?.locked === true;
-  // Review states (#324): a rejected node stays on the canvas as visible
-  // feedback for the proposing agent, but renders dimmed. Applied here at
-  // the wrapper level so every node type gets it without per-shape wiring.
-  const rejected = reviewState(n.data).state === "rejected";
   return {
     id: n.id,
     position: { x: relX, y: relY },
@@ -189,26 +202,26 @@ function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
     ...parentProps,
     ...(isArea ? { zIndex: -1, draggable: true } : {}),
     ...(locked ? { draggable: false } : {}),
-    ...(rejected ? { style: { opacity: REVIEW_REJECTED_OPACITY } } : {}),
   };
 }
 
-export function CanvasGraph({ slug, readOnly = false }: Props) {
+export function CanvasGraph({ slug, readOnly = false, presenceLabel }: Props) {
   // ReactFlowProvider is mounted by CanvasShell when present. For bare uses
   // (e.g. the monitor route at /m/:id), wrap in a provider here.
   if (readOnly) {
     return (
       <ReactFlowProvider>
-        <CanvasGraphInner slug={slug} readOnly />
+        <CanvasGraphInner slug={slug} readOnly presenceLabel={presenceLabel} />
       </ReactFlowProvider>
     );
   }
-  return <CanvasGraphInner slug={slug} readOnly={false} />;
+  return <CanvasGraphInner slug={slug} readOnly={false} presenceLabel={presenceLabel} />;
 }
 
-function CanvasGraphInner({ slug, readOnly }: Props) {
+function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   const setSnapshot = useCanvasStore((s) => s.setSnapshot);
   const applyEvent = useCanvasStore((s) => s.applyEvent);
+  const applyPresence = useCanvasStore((s) => s.applyPresence);
   const reset = useCanvasStore((s) => s.reset);
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
@@ -227,12 +240,57 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   // the row-level `hoveredSourceRef` swap above — both feed the same per-edge
   // active/dimmed flags the evidence renderers already understand.
   const hoveredNodeId = useUiStore((s) => s.hoveredNodeId);
+  // Marking up is a tool on the rail (`i`, like the others): armed, the
+  // canvas takes ink. Deriving the mode from the armed tool rather than
+  // keeping its own flag is what puts its pens and its queue beside the
+  // rail with the tool, and what lets any other tool, or escape, put the
+  // pen down the same way it would drop a shape.
+  const armedTool = useUiStore((s) => s.armedTool);
+  const armTool = useUiStore((s) => s.armTool);
+  const disarmTool = useUiStore((s) => s.disarmTool);
+  const commentMode = armedTool === INTENT_TOOL;
+  const setCommentMode = useCallback(
+    (on: boolean) => {
+      if (on && armedTool !== INTENT_TOOL) armTool(INTENT_TOOL);
+      if (!on && armedTool === INTENT_TOOL) disarmTool();
+    },
+    [armedTool, armTool, disarmTool],
+  );
+  const [reviewingSet, setReviewingSet] = useState<string | null>(null);
+  // Sets still waiting on a verdict, so the canvas can offer to show the
+  // change rather than only ringing what was touched. A ring says something
+  // was edited; it cannot say whether to accept it.
+  const [openSets, setOpenSets] = useState<{ id: string; reason: string }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      void proposalSets
+        .list(slug, { state: "open" })
+        .then((sets) => {
+          if (!cancelled) setOpenSets(sets.map((x) => ({ id: x.id, reason: x.reason })));
+        })
+        .catch(() => undefined);
+    load();
+    const id = window.setInterval(load, 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [slug]);
   const setSelectedNodeId = useUiStore((s) => s.setSelectedNodeId);
   const setSelectedEdgeId = useUiStore((s) => s.setSelectedEdgeId);
   const selectedEdgeId = useUiStore((s) => s.selectedEdgeId);
   const setPropertiesOpen = useUiStore((s) => s.setPropertiesOpen);
-  const armedTool = useUiStore((s) => s.armedTool);
-  const disarmTool = useUiStore((s) => s.disarmTool);
+  const pendingRenameId = useUiStore((s) => s.pendingInlineRenameNodeId);
+  // Connector tool: the element a connector starts from, once picked.
+  const connectSourceId = useUiStore((s) => s.connectSourceId);
+  const setConnectSourceId = useUiStore((s) => s.setConnectSourceId);
+  // In-flight connector drag: where the pointer went down, and where it is
+  // now, both in screen space. Drawn as a preview line. The ref holds the
+  // element the drag started on so a drag that ends on another element can
+  // join the two without waiting for a second click.
+  const connectDownRef = useRef<{ id: string; x: number; y: number } | null>(null);
+  const [connectLine, setConnectLine] = useState<{ ax: number; ay: number; bx: number; by: number } | null>(null);
   const navigate = useNavigate();
   const rootRef = useRef<HTMLDivElement | null>(null);
   // Pointer-down origin for armed-tool drag-to-size. Lives in a ref so
@@ -252,6 +310,9 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   // (snapshot, SSE patch, etc.). `onNodesChange` lets ReactFlow update its
   // own state during drag/select/etc.
   const [rfNodes, setRfNodes] = useState<RfNode[]>([]);
+  // Mirror of the above for callbacks that must not re-create on every
+  // frame (the region hit-test reads measured sizes during a drag).
+  const rfNodesRef = useRef<RfNode[]>([]);
   const [rfEdges, setRfEdges] = useState<RfEdge[]>([]);
   // Right-click menu target. Null when no context menu is open. Set by
   // `onNodeContextMenu` and cleared by selection / outside-click / Esc.
@@ -259,6 +320,20 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   // Edge right-click menu target. Set by `onEdgeContextMenu`. Same
   // dismissal contract as the node menu (Esc / outside / item-pick).
   const [edgeContextTarget, setEdgeContextTarget] = useState<EdgeContextMenuTarget | null>(null);
+
+  // Picking up the pen puts the selection down, as a click on empty canvas
+  // would. A node left selected keeps its connectors out, and a stroke that
+  // started on one dragged a new edge off it instead of marking it.
+  useEffect(() => {
+    if (!commentMode) return;
+    setRfNodes((prev) => (prev.some((n) => n.selected) ? prev.map((n) => (n.selected ? { ...n, selected: false } : n)) : prev));
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+    setConnectSourceId(null);
+    setPropertiesOpen(false);
+    setContextMenuTarget(null);
+    setEdgeContextTarget(null);
+  }, [commentMode, setSelectedNodeId, setSelectedEdgeId, setConnectSourceId, setPropertiesOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -277,13 +352,16 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
           refreshWorkspaces().catch(() => {});
         }
       },
-    });
+      onPresence: (payload) => {
+        if (!cancelled) applyPresence(payload);
+      },
+    }, presenceLabel ? { actorLabel: presenceLabel } : {});
     sse.connect();
     return () => {
       cancelled = true;
       sse.disconnect();
     };
-  }, [slug, applyEvent, reset, setSnapshot]);
+  }, [slug, applyEvent, applyPresence, reset, setSnapshot, presenceLabel]);
 
   // Reflect store → ReactFlow. Only updates when the store reference changes;
   // ReactFlow's internal drag state isn't disturbed unless a relevant node
@@ -304,7 +382,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
       // with the pending id alone when one is set. The pending id is
       // cleared the moment `useInlineField` consumes it, so subsequent
       // SSE patches don't keep re-asserting selection.
-      const pendingId = useUiStore.getState().pendingInlineRenameNodeId;
+      const pendingId = pendingRenameId ?? useUiStore.getState().pendingInlineRenameNodeId;
       const selectedSet = pendingId ? new Set([pendingId]) : wasSelected;
       // Pass the full node map so `toRfNode` can resolve `parent` → `parentId`
       // only when the parent actually exists in this snapshot.
@@ -313,7 +391,11 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         selected: selectedSet.has(n.id),
       }));
     });
-  }, [nodes]);
+    // Depends on the pending id as well as the node map: a freshly placed
+    // element often lands in the store (via SSE) BEFORE the code that asks
+    // for it to be focused runs, and then this effect never re-ran, so the
+    // element sat there unselected and typing went nowhere.
+  }, [nodes, pendingRenameId]);
 
   useEffect(() => {
     // pickEdgeMode resolves every edge to its ReactFlow renderer type. For
@@ -446,6 +528,11 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
       // slipped through and any SSE reconciliation re-firing).
       const existing = useCanvasStore.getState().nodes[change.id];
       if (!existing) continue;
+      // A text element owns its own resize write: resizing it scales the
+      // font, so width, height and the new font size have to land in ONE
+      // patch. Two writes raced here and the one without the font size won
+      // locally, so the words snapped back to their old size until reload.
+      if (existing.node_type === "text") continue;
       const prevW = (existing.data?.width as number | undefined) ?? null;
       const prevH = (existing.data?.height as number | undefined) ?? null;
       if (prevW === dim.width && prevH === dim.height) continue;
@@ -520,8 +607,8 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
       const regionId = targetHandle!.slice("region:".length);
       const rowData = sourceNode.data as {
         source_doc_slug?: string;
-        source_ref?: { page?: number; bbox?: number[] };
-        rows?: Array<{ key?: string; source_ref?: { page?: number; bbox?: number[] } }>;
+        source_ref?: { page?: number; bbox?: number[]; coord_origin?: string | null };
+        rows?: Array<{ key?: string; source_ref?: { page?: number; bbox?: number[]; coord_origin?: string | null } }>;
       } | undefined;
       // Parse "row:<i>:<key>"  — index is authoritative since keys can repeat.
       const parts = sourceHandle!.split(":");
@@ -529,6 +616,10 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
       const row = rowData?.rows?.[rowIndex];
       const page = row?.source_ref?.page ?? rowData?.source_ref?.page;
       const bbox = row?.source_ref?.bbox ?? rowData?.source_ref?.bbox;
+      // This copies existing geometry. Preserve unknown historical origins
+      // explicitly so the write boundary does not treat the copy as new.
+      const bboxRef = row?.source_ref?.bbox ? row.source_ref : rowData?.source_ref;
+      const coordOrigin = bboxRef?.coord_origin ?? null;
       const targetData = targetNode.data as { slug?: string } | undefined;
       void canvases
         .addEdge(slug, {
@@ -542,7 +633,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
             ...(targetData?.slug ? { source_doc_slug: targetData.slug } : {}),
             source_region_id: regionId,
             ...(page !== undefined ? {
-              source_ref: { kind: "pdf-page-bbox", page, region_id: regionId, bbox },
+              source_ref: { kind: "pdf-page-bbox", page, region_id: regionId, bbox, coord_origin: coordOrigin },
             } : {}),
           },
         })
@@ -558,7 +649,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
           if (i !== rowIndex) return r;
           return {
             ...r,
-            source_ref: { page, region_id: regionId, bbox },
+            source_ref: { page, region_id: regionId, bbox, coord_origin: coordOrigin },
           };
         });
         void canvases
@@ -623,8 +714,15 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         if (n.node_type !== "area") continue;
         if (n.id === draggedId) continue;
         if (descendants.has(n.id)) continue;
-        const w = (n.data?.width as number | undefined) ?? 320;
-        const h = (n.data?.height as number | undefined) ?? 200;
+        // Prefer the size ReactFlow measured (what the user sees) over the
+        // stored one, and fall back to the palette default for a region
+        // rather than an unrelated 320x200, which made a freshly placed
+        // region miss drops near its edges.
+        const rf = rfNodesRef.current.find((r) => r.id === n.id) as
+          | { measured?: { width?: number; height?: number } }
+          | undefined;
+        const w = rf?.measured?.width ?? (n.data?.width as number | undefined) ?? AREA_DEFAULT.width;
+        const h = rf?.measured?.height ?? (n.data?.height as number | undefined) ?? AREA_DEFAULT.height;
         // Area position in flow coords is its own (x, y) when it has no
         // parent; when nested, ReactFlow stores parent-relative — but the
         // canvas store mirrors the wire `x`, `y` which the backend keeps
@@ -657,18 +755,25 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
    * Areas themselves don't trigger highlights when dragged — we don't
    * want a moved Area to highlight the Area it happens to pass over.
    */
+  rfNodesRef.current = rfNodes;
+
   const onNodeDrag = useCallback(
     (_event: React.MouseEvent, draggedNode: RfNode) => {
       if (readOnly) return;
       if (draggedNode.type === "area") return;
-      // Use the node's own bounding box centre. ReactFlow gives us
-      // `position` (top-left in flow coords) and the measured `width` /
-      // `height` once the node has been rendered.
-      const w = draggedNode.width ?? 0;
-      const h = draggedNode.height ?? 0;
+      // The node's bounding-box centre, in ABSOLUTE flow coordinates.
+      // ReactFlow reports `position` relative to the parent once a node is
+      // nested, while regions are hit-tested against the store's absolute
+      // coordinates: without the ancestor offset, dragging an element that
+      // already sits in a region tested a point somewhere else entirely and
+      // dropped it into a different region.
+      const measured = (draggedNode as { measured?: { width?: number; height?: number } }).measured;
+      const w = measured?.width ?? draggedNode.width ?? 0;
+      const h = measured?.height ?? draggedNode.height ?? 0;
+      const off = ancestorOffset(draggedNode.id, useCanvasStore.getState().nodes);
       const centre = {
-        x: draggedNode.position.x + w / 2,
-        y: draggedNode.position.y + h / 2,
+        x: draggedNode.position.x + off.x + w / 2,
+        y: draggedNode.position.y + off.y + h / 2,
       };
       const target = findAreaAtPoint(centre, draggedNode.id);
       const current = useUiStore.getState().dropTargetAreaId;
@@ -687,6 +792,32 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
     event.preventDefault();
     event.dataTransfer.dropEffect = "copy";
   }, []);
+
+  /**
+   * Join a freshly created element to the region it was placed in.
+   *
+   * Placing or dropping an element inside a region used to leave it
+   * unowned: it looked like it was in the region, but it did not travel
+   * with it and the region did not consider it a member. The region under
+   * the element's centre becomes its parent.
+   */
+  const adoptIntoRegion = useCallback(
+    async (nodeId: string, centre: { x: number; y: number }) => {
+      const target = findAreaAtPoint(centre, nodeId);
+      if (!target) return;
+      useCanvasStore.setState((state) => {
+        const cur = state.nodes[nodeId];
+        if (!cur) return state;
+        return { ...state, nodes: { ...state.nodes, [nodeId]: { ...cur, parent: target } } };
+      });
+      try {
+        await canvases.patchNode(slug, nodeId, { parent: target });
+      } catch {
+        // SSE reconciles.
+      }
+    },
+    [findAreaAtPoint, slug],
+  );
 
   const onDrop = useCallback(async (event: React.DragEvent) => {
     const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
@@ -758,6 +889,14 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
           y: flowPos.y,
         })) as { event?: { payload?: { id?: string } } } | null;
         const newId = res?.event?.payload?.id;
+        // Dropped inside a region: the region adopts it, so it travels
+        // with the region afterwards. A region dropped on a region does not
+        // nest (side-by-side groups are the common case).
+        if (newId && spec.node_type !== "area") {
+          const w = (spec.data?.width as number | undefined) ?? 200;
+          const h = (spec.data?.height as number | undefined) ?? 80;
+          await adoptIntoRegion(newId, { x: flowPos.x + w / 2, y: flowPos.y + h / 2 });
+        }
 
         // Evidence edge: if the dropped payload carries a source_doc_node_id
         // (e.g. dragging a region out of a document node), connect the new
@@ -872,7 +1011,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         }
       }));
     }
-  }, [slug, screenToFlowPosition]);
+  }, [slug, screenToFlowPosition, adoptIntoRegion]);
 
   // Armed-tool placement gesture. When `armedTool` is set, a click on the
   // pane places the shape at default size; a click-and-drag places it with
@@ -892,12 +1031,20 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
     area: true,
   };
 
+  /** The canvas element under a screen point, if any. Connections attach to
+   *  whole elements, so this is all the aiming there is. */
+  const elementIdAt = (clientX: number, clientY: number): string | null => {
+    const el = document.elementFromPoint(clientX, clientY) as HTMLElement | null;
+    const node = el?.closest(".react-flow__node") as HTMLElement | null;
+    return node?.dataset.id ?? null;
+  };
+
   const placeArmedNode = async (
     flowX: number,
     flowY: number,
     sizeOverride?: { width: number; height: number },
   ) => {
-    if (!armedTool) return;
+    if (!armedTool || armedTool === CONNECT_TOOL || armedTool === INTENT_TOOL) return;
     // Special path: sub-canvas placement goes through the composite
     // `createSubCanvas` endpoint so the child workspace + linking node
     // land atomically. The slug is generated client-side; the backend
@@ -931,7 +1078,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
     const width = sizeOverride?.width ?? meta?.width;
     const height = sizeOverride?.height ?? meta?.height;
     try {
-      await canvases.addNode(slug, {
+      const placed = (await canvases.addNode(slug, {
         node_type: armedTool,
         label,
         x: flowX,
@@ -939,7 +1086,23 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         ...(width !== undefined ? { width } : {}),
         ...(height !== undefined ? { height } : {}),
         data: { ...(meta?.data ?? {}), ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) },
-      });
+      })) as { event?: { payload?: { id?: string } } } | null;
+      // A region is not placed into another region: dropping one on top of
+      // another is how people draw side-by-side groups, not nesting.
+      const placedId = placed?.event?.payload?.id;
+      if (placedId) {
+        // Place it and type: select the new element and ask its inline
+        // editor to open. Without this a placed text element sat there with
+        // nothing focused, so typing went nowhere.
+        setSelectedNodeId(placedId);
+        useUiStore.getState().requestInlineRename(placedId);
+      }
+      if (placedId && armedTool !== "area") {
+        await adoptIntoRegion(placedId, {
+          x: flowX + (width ?? 160) / 2,
+          y: flowY + (height ?? 60) / 2,
+        });
+      }
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error("armed-tool placement failed", err);
@@ -951,12 +1114,28 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   };
 
   const onPointerDown = (event: React.PointerEvent) => {
-    if (!armedTool) return;
-    // Ignore clicks on existing nodes — the user might be trying to select
-    // a node mid-arm. ReactFlow tags nodes with `.react-flow__node` so we
-    // can sniff the event target.
+    if (!armedTool || armedTool === INTENT_TOOL) return;
     const target = event.target as HTMLElement;
-    if (target.closest(".react-flow__node")) return;
+    // Connector tool: a press on an element starts a connector. Dragging to
+    // another element joins them on release; a press and release on the same
+    // element is a click, and the next click picks the other end. Node
+    // dragging is off while this tool is armed, so the box stays put.
+    if (armedTool === CONNECT_TOOL) {
+      const id = (target.closest(".react-flow__node") as HTMLElement | null)?.dataset.id;
+      if (!id) return;
+      connectDownRef.current = { id, x: event.clientX, y: event.clientY };
+      setConnectLine({ ax: event.clientX, ay: event.clientY, bx: event.clientX, by: event.clientY });
+      return;
+    }
+    // Ignore presses on existing elements — the user might be trying to
+    // select one mid-arm. A region is the exception: its body is the space
+    // you draw into, so placing inside one has to work, and the new element
+    // joins that region.
+    const overId = (target.closest(".react-flow__node") as HTMLElement | null)?.dataset.id;
+    if (overId) {
+      const over = useCanvasStore.getState().nodes[overId];
+      if (over?.node_type !== "area") return;
+    }
     // Record screen-space origin only. Flow-space conversion happens at
     // pointer-up using the SAME endpoints the ghost rect uses, so the
     // WYSIWYG contract (ghost rect == dropped node rect) holds.
@@ -968,6 +1147,16 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   };
 
   const onPointerMove = (event: React.PointerEvent) => {
+    const connectDown = connectDownRef.current;
+    if (connectDown) {
+      setConnectLine({
+        ax: connectDown.x,
+        ay: connectDown.y,
+        bx: event.clientX,
+        by: event.clientY,
+      });
+      return;
+    }
     const down = armDownRef.current;
     if (!down || !armedTool) return;
     // Only sizeable shapes render the ghost — cards drop at default size
@@ -986,6 +1175,48 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   };
 
   const onPointerUp = (event: React.PointerEvent) => {
+    const connectDown = connectDownRef.current;
+    if (connectDown) {
+      connectDownRef.current = null;
+      setConnectLine(null);
+      const overId = elementIdAt(event.clientX, event.clientY);
+      if (overId && overId !== connectDown.id) {
+        // Dragged onto another element: join them and clear any pending
+        // click-started connector.
+        setConnectSourceId(null);
+        void canvases
+          .addEdge(slug, {
+            source: connectDown.id,
+            target: overId,
+            edge_type: "floating",
+            data: {},
+          })
+          .catch(() => {
+            // A refused edge leaves the tool armed; the canvas does not change.
+          });
+        return;
+      }
+      // Released on the element it started from: treat it as a click, so
+      // click-then-click still works for people who prefer it.
+      const action = connectClick(connectSourceId, connectDown.id);
+      if (action.type === "start") {
+        setConnectSourceId(action.source);
+        setSelectedNodeId(action.source);
+      } else if (action.type === "cancel") {
+        setConnectSourceId(null);
+      } else {
+        setConnectSourceId(null);
+        void canvases
+          .addEdge(slug, {
+            source: action.source,
+            target: action.target,
+            edge_type: "floating",
+            data: {},
+          })
+          .catch(() => {});
+      }
+      return;
+    }
     if (!armedTool) return;
     const down = armDownRef.current;
     armDownRef.current = null;
@@ -1043,7 +1274,12 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
   return (
     <div
       ref={rootRef}
-      className={`relative h-full w-full ${armedTool ? "cursor-crosshair" : ""}`}
+      // The crosshair is forced through every descendant while a placing
+      // tool is armed. Not for the pen: its surface sets its own cursor -- a
+      // crosshair to draw, a hand over drawn ink -- and its buttons theirs.
+      className={`relative h-full w-full ${
+        armedTool && armedTool !== INTENT_TOOL ? "cursor-crosshair" : ""
+      }`}
       {...(readOnly
         ? {}
         : {
@@ -1067,7 +1303,12 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         fitView
-        nodesDraggable={!readOnly}
+        nodesDraggable={!readOnly && armedTool !== CONNECT_TOOL}
+        // ReactFlow lifts a selected node above every other by default. A
+        // region is a container drawn behind its contents (zIndex -1), so
+        // selecting one used to raise it over the elements inside and hide
+        // them. Layer order is ours to decide, not selection's.
+        elevateNodesOnSelect={false}
         nodesConnectable={!readOnly}
         elementsSelectable={!readOnly}
         zoomOnScroll
@@ -1110,7 +1351,12 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
               // (Miro-style mini-toolbar is the default affordance; the
               // panel is reachable via the toolbar's ⋮ More or the
               // context menu's "Edit properties…").
-              onNodeClick: (_event, node) => { setSelectedNodeId(node.id); },
+              // The connector tool owns clicks on elements while it is armed
+              // (see onPointerUp), so selection stays out of its way.
+              onNodeClick: (_event, node) => {
+                if (armedTool === CONNECT_TOOL) return;
+                setSelectedNodeId(node.id);
+              },
               // Hover state is no longer consumed by DirectionalConnectors
               // (the dots are selection-only now), but other UI may still
               // want to know which node the cursor is over. Plain
@@ -1147,6 +1393,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
                 setEdgeContextTarget({ x: event.clientX, y: event.clientY, edgeId: edge.id });
               },
               onPaneClick: () => {
+                setConnectSourceId(null);
                 setSelectedNodeId(null);
                 setSelectedEdgeId(null);
                 setPropertiesOpen(false);
@@ -1307,6 +1554,54 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
         <Controls showInteractive={!readOnly} />
         <MiniMap pannable zoomable />
       </ReactFlow>
+      {/* Reviewer mark-up, prototype: the pointing half only. Draw across or
+          around things, cmd-click to correct what the stroke caught. The
+          selection is inert -- it cannot drag, delete or rewire anything, so
+          it is safe to scribble across a board you care about. */}
+      {/* Open proposals, offered where the work is rather than only in a
+          side panel: the reader is looking at the canvas. */}
+      {openSets.length > 0 && !reviewingSet ? (
+        <div className="absolute left-1/2 top-3 z-30 -translate-x-1/2">
+          {openSets.map((set) => (
+            <button
+              key={set.id}
+              type="button"
+              data-testid="proposal-review-open"
+              onClick={() => setReviewingSet(set.id)}
+              title={set.reason}
+              className="mb-1 block max-w-[28rem] truncate rounded-full border border-violet-300 bg-white/95 px-3 py-1 text-[11px] text-violet-800 shadow-sm hover:bg-violet-50"
+            >
+              review proposal · {set.reason}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {reviewingSet ? (
+        <ProposalReview
+          workspaceSlug={slug}
+          setId={reviewingSet}
+          onClose={() => setReviewingSet(null)}
+        />
+      ) : null}
+      <CommentLasso
+        active={commentMode}
+        onExit={() => setCommentMode(false)}
+        workspaceSlug={slug}
+        boxes={Object.values(nodes).map((n): LassoBox => {
+          // The size ReactFlow measured is what the reader actually sees, so
+          // it is what the stroke should be judged against.
+          const rf = rfNodesRef.current.find((r) => r.id === n.id) as
+            | { measured?: { width?: number; height?: number } }
+            | undefined;
+          return {
+            id: n.id,
+            x: n.x,
+            y: n.y,
+            width: rf?.measured?.width ?? n.width ?? 180,
+            height: rf?.measured?.height ?? n.height ?? 80,
+          };
+        })}
+      />
       {Object.values(uploadJobs).map((job) => {
         const isFailed = job.status === "failed";
         const label = job.status === "starting_ingest"
@@ -1343,6 +1638,7 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
       {readOnly ? null : (
         <>
           <NodeContextToolbar workspaceSlug={slug} />
+          <SelectionPanel />
           <NodeContextMenu
             workspaceSlug={slug}
             target={contextMenuTarget}
@@ -1365,6 +1661,47 @@ function CanvasGraphInner({ slug, readOnly }: Props) {
           <PaintGhost rect={paintRect} nodeType={armedTool} />
         </>
       )}
+      {/* Connector preview. A line from where the press landed to the
+          pointer, drawn over the viewport and transparent to pointer events
+          so the drag keeps receiving moves. */}
+      {connectLine ? (
+        <svg
+          data-testid="connector-drag-line"
+          aria-hidden
+          style={{
+            position: "fixed",
+            inset: 0,
+            width: "100vw",
+            height: "100vh",
+            pointerEvents: "none",
+            zIndex: 27,
+          }}
+        >
+          <defs>
+            <marker
+              id="connector-arrowhead"
+              viewBox="0 0 10 10"
+              refX="8"
+              refY="5"
+              markerWidth="8"
+              markerHeight="8"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,0 L10,5 L0,10 z" fill="#0ea5e9" />
+            </marker>
+          </defs>
+          <line
+            x1={connectLine.ax}
+            y1={connectLine.ay}
+            x2={connectLine.bx}
+            y2={connectLine.by}
+            stroke="#0ea5e9"
+            strokeWidth={2}
+            strokeDasharray="6 4"
+            markerEnd="url(#connector-arrowhead)"
+          />
+        </svg>
+      ) : null}
     </div>
   );
 }

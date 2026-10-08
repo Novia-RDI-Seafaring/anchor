@@ -34,8 +34,57 @@ export type CanvasState = {
   metadata: Record<string, unknown>;
 };
 
+/**
+ * The catch-up diff from `GET /api/workspaces/{slug}/changes` (#325): a
+ * server-side fold over the event log after `since_version`. One net entry
+ * per element (repeated updates collapse), grouped by the responsible
+ * actor; `actor: null` groups events recorded before attribution existed
+ * (#322) — render those as "earlier". A whole-log fold (`since_version=0`)
+ * also carries `touched`: per surviving node, the last actor to touch it
+ * (`null` = last touch predates attribution).
+ */
+export type ChangeActor = {
+  kind: "human" | "agent" | "system";
+  label?: string | null;
+};
+
+export type NodeChangeEntry = { id: string; label: string; node_type: string };
+export type EdgeChangeEntry = {
+  id: string;
+  label: string;
+  source: string;
+  target: string;
+};
+
+export type ChangeGroup = {
+  actor: ChangeActor | null;
+  nodes_added: NodeChangeEntry[];
+  nodes_updated: NodeChangeEntry[];
+  nodes_removed: NodeChangeEntry[];
+  edges_added: EdgeChangeEntry[];
+  edges_updated: EdgeChangeEntry[];
+  edges_removed: EdgeChangeEntry[];
+  canvas_cleared?: boolean;
+};
+
+export type CanvasChanges = {
+  from_version: number;
+  to_version: number;
+  groups: ChangeGroup[];
+  touched?: Record<string, ChangeActor | null>;
+};
+
 export const canvases = {
   list: () => api.get<WorkspaceListEntry[]>("/api/workspaces"),
+  /**
+   * What changed after `sinceVersion` — the "While you were away" fold.
+   * `sinceVersion=0` folds the whole log and includes the `touched`
+   * per-node attribution map the inspector's persisted chip reads.
+   */
+  changes: (slug: string, sinceVersion: number) =>
+    api.get<CanvasChanges>(
+      `/api/workspaces/${slug}/changes?since_version=${sinceVersion}`,
+    ),
   create: (slug: string, title = "") =>
     api.post<WorkspaceMeta>("/api/workspaces", { slug, title }),
   delete: (slug: string) =>

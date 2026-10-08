@@ -20,6 +20,9 @@ from anchor.core.events.canvas import (
     NodeReparented,
     NodeResized,
     NodeUpdated,
+    ProposalSetMembersAdded,
+    ProposalSetOpened,
+    ProposalSetReviewed,
     ReferenceAttached,
     ReferenceCreated,
     ReferenceRemoved,
@@ -46,6 +49,9 @@ _EVENT_TYPES = {
     "ReferenceRemoved": ReferenceRemoved,
     "ReferenceUpdated": ReferenceUpdated,
     "WorkspaceMetadataUpdated": WorkspaceMetadataUpdated,
+    "ProposalSetOpened": ProposalSetOpened,
+    "ProposalSetMembersAdded": ProposalSetMembersAdded,
+    "ProposalSetReviewed": ProposalSetReviewed,
 }
 
 

@@ -32,6 +32,9 @@ CanvasEventType = Literal[
     "ReferenceRemoved",
     "ReferenceUpdated",
     "WorkspaceMetadataUpdated",
+    "ProposalSetOpened",
+    "ProposalSetMembersAdded",
+    "ProposalSetReviewed",
 ]
 
 
@@ -191,3 +194,43 @@ class ReferenceUpdated(BaseModel):
     type: Literal["ReferenceUpdated"] = "ReferenceUpdated"
     reference_id: str
     label: str | None = None
+
+
+class ProposalSetOpened(BaseModel):
+    """An agent grouped elements it added into one reviewable set (#359).
+
+    ``proposal_set`` is the full stored record (id already assigned). The
+    reducer appends it to ``metadata['proposal_sets']``. Membership lives
+    here rather than on each element, so grouping costs one event.
+    """
+
+    type: Literal["ProposalSetOpened"] = "ProposalSetOpened"
+    proposal_set: dict[str, Any]
+
+
+class ProposalSetMembersAdded(BaseModel):
+    """More elements joined an open set (#359).
+
+    Members already in the set are ignored, so re-sending is harmless.
+    """
+
+    type: Literal["ProposalSetMembersAdded"] = "ProposalSetMembersAdded"
+    set_id: str
+    members: list[dict[str, str]]
+
+
+class ProposalSetReviewed(BaseModel):
+    """A human accepted or rejected a whole set (#359).
+
+    Records the verdict on the set record itself. The per-element review
+    stamps (or, when ``discarded``, the removals) travel as their own
+    ordinary events in the same batch, so every reader that already
+    understands review states needs no change.
+    """
+
+    type: Literal["ProposalSetReviewed"] = "ProposalSetReviewed"
+    set_id: str
+    state: Literal["accepted", "rejected"]
+    by: dict[str, Any] = Field(default_factory=dict)
+    at: float = 0.0
+    discarded: bool = False

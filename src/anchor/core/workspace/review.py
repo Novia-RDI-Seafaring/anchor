@@ -35,12 +35,23 @@ REVIEW_STATES: tuple[str, ...] = ("proposed", "accepted", "rejected")
 REVIEW_MODE_KEY = "review_mode"
 
 
-def proposed_review(actor: Actor, at: float) -> dict[str, Any]:
-    """The ``data.review`` object stamped on an agent-created node."""
+def _by(actor: Actor) -> dict[str, Any]:
     by: dict[str, Any] = {"kind": actor.kind}
     if actor.label:
         by["label"] = actor.label
-    return {"state": "proposed", "by": by, "at": at}
+    return by
+
+
+def proposed_review(actor: Actor, at: float) -> dict[str, Any]:
+    """The ``data.review`` object stamped on an agent-created node."""
+    return {"state": "proposed", "by": _by(actor), "at": at}
+
+
+def accepted_review(actor: Actor, at: float) -> dict[str, Any]:
+    """The ``data.review`` object stamped on an element a thread suggestion
+    created once a human approved it (#343): approval *is* the review, so
+    the element lands already ``accepted`` with the approver in ``by``."""
+    return {"state": "accepted", "by": _by(actor), "at": at}
 
 
 def review_warning(

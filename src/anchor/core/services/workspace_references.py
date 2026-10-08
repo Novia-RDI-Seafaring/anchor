@@ -21,6 +21,7 @@ from anchor.core.ports.workspace_store import WorkspaceStore
 from anchor.core.workspace.references import (
     Reference,
     ReferenceError,
+    stamp_authored_source_refs,
     validate_source_ref,
 )
 from anchor.core.workspace.workspace import CommandError, Workspace
@@ -55,7 +56,8 @@ class WorkspaceReferenceOperations:
         created_by: str = "human",
     ) -> dict[str, Any]:
         try:
-            validated = validate_source_ref(source_ref)
+            authored = stamp_authored_source_refs({"source_ref": source_ref})["source_ref"]
+            validated = validate_source_ref(authored)
         except ReferenceError as exc:
             raise CommandError(str(exc)) from exc
         if created_by not in ("human", "agent"):

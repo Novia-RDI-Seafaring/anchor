@@ -114,7 +114,7 @@ def test_cli_update_node_data_merges(tmp_path):
     state = json.loads(upd.output)["state"]
     node = next(n for n in state["nodes"] if n["id"] == node_id)
     assert node["data"]["text"] == "y"
-    assert node["data"]["source_ref"] == {"page": 1}
+    assert node["data"]["source_ref"] == {"page": 1, "coord_origin": "top-left"}
 
 
 def test_cli_node_types_command(tmp_path):
@@ -146,6 +146,7 @@ def test_cli_reference_create_list_attach_roundtrip(tmp_path):
     assert created.exit_code == 0, created.output
     ref = json.loads(created.output)
     assert ref["id"]
+    assert ref["source_ref"]["coord_origin"] == "top-left"
     assert ref["created_by"] == "human"  # CLI default
 
     listed = runner.invoke(app, ["canvas", "reference", "list", "w1", "--data-dir", str(data_dir)])
@@ -318,7 +319,7 @@ def test_cli_update_node_data_accepts_at_path_and_merges(tmp_path):
     node = next(n for n in state["nodes"] if n["id"] == node_id)
     assert node["data"]["text"] == "y"
     # Deep-merge semantics unchanged: unmentioned keys survive.
-    assert node["data"]["source_ref"] == {"page": 1}
+    assert node["data"]["source_ref"] == {"page": 1, "coord_origin": "top-left"}
 
 
 def test_cli_add_edge_and_update_edge_data_accept_at_path(tmp_path):
@@ -436,3 +437,146 @@ def test_cli_update_node_malformed_review_warns_but_writes(tmp_path):
     assert "review" in out["warning"]
     node = next(n for n in out["state"]["nodes"] if n["id"] == node_id)
     assert node["data"]["review"] == {"state": "maybe"}
+
+
+def test_cli_canvas_changes_folds_and_groups_by_actor(tmp_path):
+    """Mirrors GET /api/workspaces/{slug}/changes + the canvas_changes MCP
+    tool (adapter parity, #325)."""
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    added = runner.invoke(app, [
+        "canvas", "--actor", "agent:claude", "add-node", "w1", "concept",
+        "--label", "A", "--data-dir", str(data_dir),
+    ])
+    assert added.exit_code == 0, added.output
+    node_id = json.loads(added.output)["node_id"]
+    updated = runner.invoke(app, [
+        "canvas", "--actor", "agent:claude", "update-node", "w1", node_id,
+        "--label", "A2", "--data-dir", str(data_dir),
+    ])
+    assert updated.exit_code == 0, updated.output
+
+    r = runner.invoke(app, [
+        "canvas", "changes", "w1", "--since-version", "0",
+        "--format", "json", "--data-dir", str(data_dir),
+    ])
+    assert r.exit_code == 0, r.output
+    out = json.loads(r.output)
+    assert out["from_version"] == 0
+    assert out["to_version"] == 2
+    group = next(
+        g for g in out["groups"]
+        if g["actor"] and g["actor"]["label"] == "claude"
+    )
+    # Add + update collapse to one added entry carrying the final label.
+    assert [e["id"] for e in group["nodes_added"]] == [node_id]
+    assert group["nodes_added"][0]["label"] == "A2"
+    # The whole-log fold carries the persisted attribution map.
+    assert out["touched"][node_id] == {"kind": "agent", "label": "claude"}
+
+    text = runner.invoke(app, [
+        "canvas", "changes", "w1", "--since-version", "0",
+        "--data-dir", str(data_dir),
+    ])
+    assert text.exit_code == 0, text.output
+    assert "claude:" in text.output
+    assert "+ A2 [concept]" in text.output
+
+    caught_up = runner.invoke(app, [
+        "canvas", "changes", "w1", "--since-version", "2",
+        "--data-dir", str(data_dir),
+    ])
+    assert caught_up.exit_code == 0, caught_up.output
+    assert "(no changes)" in caught_up.output
+
+
+def test_cli_canvas_changes_rejects_both_boundaries(tmp_path):
+    data_dir = tmp_path / "anchor-data"
+    runner = CliRunner()
+    runner.invoke(app, ["canvas", "create", "w1", "--data-dir", str(data_dir)])
+    r = runner.invoke(app, [
+        "canvas", "changes", "w1", "--since-version", "0",
+        "--since-ts", "0", "--data-dir", str(data_dir),
+    ])
+    assert r.exit_code == 2
+
+
+# ── Proposal sets (#359) ────────────────────────────────────────────────────
+
+def _canvas_with_agent_nodes(runner, data_dir):
+    """A review-mode canvas with two agent nodes and an edge; ids come back
+    from the CLI (node ids are server-assigned)."""
+    d = ["--data-dir", str(data_dir)]
+    runner.invoke(app, ["canvas", "create", "w1", *d])
+    runner.invoke(app, ["canvas", "review-mode", "w1", "--on", *d])
+    agent = ["--actor", "agent:claude-code"]
+    ids = []
+    for label in ("A", "B"):
+        out = runner.invoke(
+            app, ["canvas", *agent, "add-node", "w1", "concept", "--label", label, *d],
+        )
+        assert out.exit_code == 0, out.output
+        ids.append(json.loads(out.output)["event"]["payload"]["id"])
+    edge = runner.invoke(
+        app, ["canvas", *agent, "add-edge", "w1", ids[0], ids[1], *d],
+    )
+    assert edge.exit_code == 0, edge.output
+    edge_id = json.loads(edge.output)["event"]["payload"]["id"]
+    return d, ids, edge_id
+
+
+def test_cli_propose_and_review_a_set(tmp_path):
+    runner = CliRunner()
+    d, (a, b), edge_id = _canvas_with_agent_nodes(runner, tmp_path / "anchor-data")
+
+    opened = runner.invoke(
+        app,
+        ["canvas", "propose-set", "w1", "--reason", "mindmap",
+         "-m", a, "-m", b, "-m", f"edge:{edge_id}", *d],
+    )
+    assert opened.exit_code == 0, opened.output
+    record = json.loads(opened.output)
+    assert [m["kind"] for m in record["members"]] == ["node", "node", "edge"]
+
+    listed = json.loads(
+        runner.invoke(app, ["canvas", "proposal-sets", "w1", "--state", "open", *d]).output,
+    )
+    assert [r["id"] for r in listed["proposal_sets"]] == [record["id"]]
+
+    reviewed = runner.invoke(
+        app, ["canvas", "review-set", "w1", record["id"], "accepted", *d],
+    )
+    assert reviewed.exit_code == 0, reviewed.output
+    assert json.loads(reviewed.output)["proposal_set"]["state"] == "accepted"
+
+    state = json.loads(runner.invoke(app, ["canvas", "state", "w1", *d]).output)
+    node_a = next(n for n in state["nodes"] if n["id"] == a)
+    assert node_a["data"]["review"]["state"] == "accepted"
+
+
+def test_cli_discard_removes_the_elements(tmp_path):
+    runner = CliRunner()
+    d, (a, b), _edge_id = _canvas_with_agent_nodes(runner, tmp_path / "anchor-data")
+    record = json.loads(
+        runner.invoke(
+            app, ["canvas", "propose-set", "w1", "--reason", "no", "-m", a, "-m", b, *d],
+        ).output,
+    )
+    out = runner.invoke(
+        app, ["canvas", "review-set", "w1", record["id"], "rejected", "--discard", *d],
+    )
+    assert out.exit_code == 0, out.output
+    state = json.loads(runner.invoke(app, ["canvas", "state", "w1", *d]).output)
+    assert state["nodes"] == []
+    assert state["edges"] == []
+
+
+def test_cli_propose_set_reports_a_bad_member(tmp_path):
+    runner = CliRunner()
+    d, _ids, _edge_id = _canvas_with_agent_nodes(runner, tmp_path / "anchor-data")
+    out = runner.invoke(
+        app, ["canvas", "propose-set", "w1", "--reason", "r", "-m", "ghost", *d],
+    )
+    assert out.exit_code == 1
+    assert "ghost" in out.output

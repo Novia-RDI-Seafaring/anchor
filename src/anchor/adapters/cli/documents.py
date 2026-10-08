@@ -220,6 +220,12 @@ def resolve_ref(
     Precedence: cell {row, col} > item_id (silver item 'p<page>-i<n>') >
     region_id > the ref's own bbox. The answer carries `precision` naming
     the layer that resolved.
+
+    A ref may name more than one place. Put the extras under `also`, either
+    as whole ref objects or in the compact form 'p3/r1/item:p3-i6', and each
+    comes back resolved under `also` in the answer. The ref's own selectors
+    stay the primary place. Use it when one claim is evidenced twice over,
+    such as a value in a table and the callout naming it on the drawing.
     """
     raw = read_json_arg(ref)
     try:
@@ -357,15 +363,37 @@ def embed(
 
 def index(
     slug: str,
+    include_content: bool = typer.Option(
+        False,
+        "--include-content",
+        help="Include full table cell content (much larger output).",
+    ),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
-    """Print the silver index for a document."""
+    """Print the silver index for a document.
+
+    Table cell content is left out unless --include-content is given; read a
+    table with `anchor page-text <slug> <page>` instead."""
     _, _, _, _, doc_store = _build_real_services(data_dir)
-    out = asyncio.run(doc_store.get_index(slug))
+    out = asyncio.run(doc_store.get_index(slug, include_content=include_content))
     if out is None:
         typer.echo(f"no index for {slug!r}", err=True)
         raise typer.Exit(code=1)
     typer.echo(json.dumps(out, indent=2))
+
+
+def entities(
+    slug: str,
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Print what a document is about: entities named in its gold regions.
+
+    A title and a page count do not say that a four-page leaflet covers
+    thirteen product models. This does."""
+    from anchor.extensions.anchor_pdfs.core.entities import list_entities
+
+    _, _, _, _, doc_store = _build_real_services(data_dir)
+    typer.echo(json.dumps(asyncio.run(list_entities(doc_store, slug)), indent=2))
 
 
 def regions(
@@ -517,7 +545,7 @@ def locate_text(
     _, _, _, ingest_svc, doc_store = _build_real_services(data_dir)
 
     async def run() -> dict:
-        path = await doc_store.get_raw_pdf_path(slug)
+        path = await doc_store.get_raw_pdf_path(slug, page=page)
         if path is None or str(path).startswith("memory://"):
             raise FileNotFoundError(f"raw PDF not available for slug: {slug}")
         quads = await ingest_svc.renderer.locate_text(path, page, query, within_bbox)
@@ -648,7 +676,11 @@ def pdf(
 ) -> None:
     """The original bronze-layer PDF for a document."""
     _, _, _, _, doc_store = _build_real_services(data_dir)
-    path = asyncio.run(doc_store.get_raw_pdf_path(slug))
+    try:
+        path = asyncio.run(doc_store.get_raw_pdf_path(slug))
+    except ValueError as exc:
+        typer.echo(f"error: {exc}", err=True)
+        raise typer.Exit(code=2) from None
     _emit_bytes(path, copy_to=copy_to, out=out, label=f"{slug} pdf")
 
 
@@ -665,6 +697,7 @@ def register_document_commands(app: typer.Typer) -> None:
     app.command()(extract)
     app.command()(embed)
     app.command()(index)
+    app.command()(entities)
     app.command()(regions)
     app.command("inspect-region")(inspect_region_cmd)
     app.command("region-content")(region_content_cmd)

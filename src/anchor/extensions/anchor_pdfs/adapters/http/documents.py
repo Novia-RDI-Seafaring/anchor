@@ -53,11 +53,22 @@ async def list_documents(store: DocStore = Depends(get_doc_store)):
 
 
 @router.get("/{slug}/index")
-async def get_index(slug: str, store: DocStore = Depends(get_doc_store)):
-    out = await store.get_index(slug)
+async def get_index(
+    slug: str,
+    include_content: bool = False,
+    store: DocStore = Depends(get_doc_store),
+):
+    out = await store.get_index(slug, include_content=include_content)
     if out is None:
         raise HTTPException(404)
     return out
+
+
+@router.get("/{slug}/entities")
+async def entities(slug: str, store: DocStore = Depends(get_doc_store)):
+    from anchor.extensions.anchor_pdfs.core.entities import list_entities
+
+    return await list_entities(store, slug)
 
 
 @router.get("/{slug}/regions")
@@ -114,6 +125,7 @@ async def resolve_ref_route(
     item_id: str | None = None,
     row: int | None = None,
     col: int | None = None,
+    also: list[str] | None = Query(default=None),
     store: DocStore = Depends(get_doc_store),
 ):
     """Resolve a source_ref to the most precise stored evidence bbox.
@@ -121,6 +133,12 @@ async def resolve_ref_route(
     Precedence: cell (row+col) > item_id > region_id > nothing (404).
     The viewer's highlight calls this instead of re-implementing the
     precedence rules client-side.
+
+    Repeat ``also`` to name extra places in the compact form, e.g.
+    ``?page=3&region_id=r2&row=1&col=2&also=p3/r1/item:p3-i6``. They come
+    back under ``also`` in the answer, each with its own precision. Query
+    parameters have no room for nested objects, which is what the compact
+    form is for; MCP and the CLI pass whole ref objects instead.
     """
     ref: dict[str, Any] = {}
     if page is not None:
@@ -131,6 +149,8 @@ async def resolve_ref_route(
         ref["item_id"] = item_id
     if row is not None and col is not None:
         ref["cell"] = {"row": row, "col": col}
+    if also:
+        ref["also"] = list(also)
     out = await resolve_source_ref(store, slug, ref)
     if out is None:
         raise HTTPException(404, "unresolvable ref")
@@ -183,7 +203,7 @@ async def page_crop(
     store: DocStore = Depends(get_doc_store),
     ingest: IngestService = Depends(get_ingest_service),
 ):
-    path = await store.get_raw_pdf_path(slug)
+    path = await store.get_raw_pdf_path(slug, page=page)
     if path is None:
         raise HTTPException(404, f"raw PDF not available for slug: {slug}")
     if str(path).startswith("memory://"):
@@ -229,7 +249,7 @@ async def locate_text(
     an empty ``quads`` list when the text is not found; the caller then falls
     back to the region-level highlight.
     """
-    path = await store.get_raw_pdf_path(slug)
+    path = await store.get_raw_pdf_path(slug, page=page)
     if path is None:
         raise HTTPException(404, f"raw PDF not available for slug: {slug}")
     if str(path).startswith("memory://"):
@@ -301,7 +321,8 @@ async def raw_pdf(slug: str, store: DocStore = Depends(get_doc_store)):
     # `format=base64` instead.
     if str(path).startswith("memory://"):
         raise HTTPException(501, "in-memory store cannot serve raw PDF over HTTP; use MCP get_pdf with format=base64")
-    filename = path.name
+    index = await store.get_index(slug)
+    filename = ((index or {}).get("document") or {}).get("filename") or f"{slug}.pdf"
     return FileResponse(path, media_type="application/pdf", filename=filename)
 
 

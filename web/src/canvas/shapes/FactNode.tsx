@@ -1,11 +1,14 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
+import { AnchoredText } from "@/canvas/AnchoredText";
 import { resolveColors, resolveText } from "@/canvas/colors";
 import { Pictogram } from "@/canvas/icons";
+import { NodeSourceBadge } from "@/canvas/NodeSourceBadge";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
 import { placeholderState, PLACEHOLDER_BG, PLACEHOLDER_STROKE } from "@/canvas/placeholder";
 import { ReviewBadge } from "@/canvas/ReviewBadge";
+import { RoleBadge } from "@/canvas/RoleBadge";
 import { useInlineField } from "@/canvas/useInlineField";
 import { useLiveResize } from "@/canvas/useLiveResize";
 
@@ -52,7 +55,11 @@ export function FactNode({ id, data, selected }: NodeProps) {
     <div
       className={`relative rounded-lg border ${borderStyle} px-3 py-2 text-sm shadow-sm ${opacityClass} ${wrapCursor}`}
       style={{
-        ...(liveW && liveH ? { width: liveW, height: liveH } : { maxWidth: "20rem" }),
+        // Width and height are independent: an element set wide but not
+        // tall (the usual case for prose at a large text size) used to be
+        // ignored, because the style only applied when BOTH were present.
+        ...(liveW ? { width: liveW } : { maxWidth: "20rem" }),
+        ...(liveH ? { height: liveH } : {}),
         background: bg,
         borderColor: stroke,
         color: stroke,
@@ -66,7 +73,8 @@ export function FactNode({ id, data, selected }: NodeProps) {
         {...resizeHandlers}
       />
       {ph.active ? <PlaceholderChip hint={ph.hint} /> : null}
-      <ReviewBadge data={d} />
+      <ReviewBadge data={d} nodeId={id} />
+      <RoleBadge data={data} />
       <Handle type="target" position={Position.Left} />
       {/* Display label / body / pictogram inherit `color` from the wrapper
           (resolveColors → stroke). The edit-mode <input> keeps the
@@ -89,7 +97,9 @@ export function FactNode({ id, data, selected }: NodeProps) {
                 fontWeight: Math.max(t.fontWeight, 600),
                 textAlign: t.textAlign,
                 fontFamily: t.fontFamily,
-                fontSize: "11px",
+                // Tracks the body size (see resolveText): a card set large
+                // kept an 11px heading nobody could read from a step back.
+                fontSize: t.headingFontSize,
               }}
               onDoubleClick={(e) => {
                 e.stopPropagation();
@@ -111,12 +121,13 @@ export function FactNode({ id, data, selected }: NodeProps) {
                 fontSize: t.fontSize,
               }}
             >
-              {d.text}
+              <AnchoredText text={d.text} />
             </div>
           ) : null}
         </div>
       </div>
       <Handle type="source" position={Position.Right} />
+      <NodeSourceBadge data={data} workspaceSlug={workspaceSlug} />
     </div>
   );
 }

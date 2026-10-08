@@ -21,6 +21,8 @@ import * as docsApi from "@/api/documents";
 import type { DocumentSummary } from "@/api/documents";
 import * as intentsApi from "@/api/intents";
 import type { Intent } from "@/api/intents";
+import * as proposalSetsApi from "@/api/proposalSets";
+import type { ProposalSet } from "@/api/proposalSets";
 import { DEFAULT_EXPLORER_WIDTH, DEFAULT_SOURCE_DOCK_RATIO, useUiStore } from "@/stores/uiStore";
 
 import { CANVAS_LINK_MIME } from "./CanvasesPanel";
@@ -62,12 +64,26 @@ function makeWorkspace(overrides: Partial<WorkspaceListEntry> = {}): WorkspaceLi
   } as WorkspaceListEntry;
 }
 
+function makeProposalSet(overrides: Partial<ProposalSet> = {}): ProposalSet {
+  return {
+    id: "ps1",
+    reason: "mindmap of the author guide",
+    by: { kind: "agent", label: "claude-code" },
+    at: 100,
+    members: [{ kind: "node", id: "n1" }],
+    state: "open",
+    ...overrides,
+  };
+}
+
 function resetUi() {
   useUiStore.setState({
     pdfViewer: null,
     sourceDockRatio: DEFAULT_SOURCE_DOCK_RATIO,
     explorerWidth: DEFAULT_EXPLORER_WIDTH,
     sourceClusterCollapsed: false,
+    proposalMemberIds: [],
+    proposalHighlightIds: [],
   });
 }
 
@@ -76,6 +92,8 @@ beforeEach(() => {
   // The explorer mounts the intents feed for the tab badge; keep it quiet by
   // default (individual tests re-mock to seed the queue).
   vi.spyOn(intentsApi.intents, "listAll").mockResolvedValue([]);
+  // Same for the proposal-sets feed, which also feeds the canvas marker.
+  vi.spyOn(proposalSetsApi.proposalSets, "list").mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -259,5 +277,65 @@ describe("FilesExplorer intents tab (#323)", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Intents" }));
     expect(await screen.findByTestId("intents-panel")).toBeTruthy();
+  });
+});
+
+describe("FilesExplorer proposals tab (#359)", () => {
+  it("badges the tab with the open sets only", async () => {
+    vi.spyOn(docsApi.documents, "list").mockResolvedValue([]);
+    vi.spyOn(cadApi.cad, "list").mockResolvedValue([]);
+    vi.spyOn(canvasesApi.canvases, "list").mockResolvedValue([]);
+    vi.spyOn(proposalSetsApi.proposalSets, "list").mockResolvedValue([
+      makeProposalSet(),
+      makeProposalSet({ id: "ps2" }),
+      makeProposalSet({ id: "ps3", state: "accepted" }),
+      makeProposalSet({ id: "ps4", state: "rejected" }),
+    ]);
+
+    render(<FilesExplorer workspaceSlug="plant" />);
+
+    const badge = await screen.findByTestId("tab-badge-proposals");
+    expect(badge.textContent).toBe("2");
+  });
+
+  it("hides the badge at zero and opens the panel from the tab", async () => {
+    vi.spyOn(docsApi.documents, "list").mockResolvedValue([]);
+    vi.spyOn(cadApi.cad, "list").mockResolvedValue([]);
+    vi.spyOn(canvasesApi.canvases, "list").mockResolvedValue([]);
+
+    render(<FilesExplorer workspaceSlug="plant" />);
+    await waitFor(() =>
+      expect(proposalSetsApi.proposalSets.list).toHaveBeenCalledWith("plant"),
+    );
+    expect(screen.queryByTestId("tab-badge-proposals")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Proposals" }));
+    expect(await screen.findByTestId("proposals-panel")).toBeTruthy();
+  });
+
+  it("publishes the open sets' members so the canvas can mark them", async () => {
+    vi.spyOn(docsApi.documents, "list").mockResolvedValue([]);
+    vi.spyOn(cadApi.cad, "list").mockResolvedValue([]);
+    vi.spyOn(canvasesApi.canvases, "list").mockResolvedValue([]);
+    vi.spyOn(proposalSetsApi.proposalSets, "list").mockResolvedValue([
+      makeProposalSet({
+        members: [
+          { kind: "node", id: "n1" },
+          { kind: "edge", id: "e1" },
+        ],
+      }),
+      // Reviewed sets are done; their members carry no marker.
+      makeProposalSet({
+        id: "ps2",
+        state: "accepted",
+        members: [{ kind: "node", id: "n9" }],
+      }),
+    ]);
+
+    render(<FilesExplorer workspaceSlug="plant" />);
+
+    await waitFor(() => {
+      expect(useUiStore.getState().proposalMemberIds).toEqual(["n1", "e1"]);
+    });
   });
 });

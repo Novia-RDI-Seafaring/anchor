@@ -410,14 +410,15 @@ def move_project(from_env: Environment, name: str, to_env: Environment) -> dict[
 def _count_documents(data_dir: Path) -> int:
     """Count ingested documents in a project's data dir.
 
-    A document is one ingested PDF (its ``bronze/<file>``); ``silver``/``gold``
-    are derived. Counted from the filesystem so this stays in ``infra`` and does
+    A document owns a bronze directory; legacy originals are flat files.
+    Count either form so pending or damaged originals also prevent deletion.
+    Counted from the filesystem so this stays in ``infra`` and does
     not import the ``anchor_pdfs`` extension (the canvas/infra layering rule).
     """
     bronze = _expand(data_dir) / "bronze"
     if not bronze.is_dir():
         return 0
-    return sum(1 for child in bronze.iterdir() if child.is_file())
+    return sum(1 for child in bronze.iterdir() if child.is_file() or child.is_dir())
 
 
 def _count_canvases(data_dir: Path) -> int:

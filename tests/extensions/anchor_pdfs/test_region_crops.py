@@ -22,7 +22,31 @@ from anchor.extensions.anchor_pdfs.core.region_crops import (
 )
 from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
 from anchor.extensions.anchor_pdfs.infra.memory_doc_store import MemoryDocStore
+from tests.extensions.anchor_pdfs.test_replacement_generations import pipeline
 from tests.fixtures.fakes import FakePdfRenderer
+
+
+@pytest.mark.parametrize("operation", ["crop", "page"])
+async def test_lazy_render_remains_in_its_source_generation(tmp_path, operation):
+    store = FsDocStore(tmp_path)
+    await pipeline(store, [["old"]]).ingest_pdf(b"old source", "doc.pdf")
+    old = store.snapshot("doc")
+
+    class ReplacingRenderer(FakePdfRenderer):
+        async def page_sizes(self, path):
+            assert path.read_bytes() == b"old source"
+            await pipeline(store, [["new"]]).ingest_pdf(b"new source", "doc.pdf", force=True)
+            return await super().page_sizes(path)
+
+    renderer = ReplacingRenderer(page_count=1)
+    if operation == "crop":
+        path = await get_region_crop(store, renderer, "doc", "1/r1.png")
+        assert path == await old.get_crop_path("doc", "1/r1.png")
+        assert await store.get_crop_path("doc", "1/r1.png") is None
+    else:
+        path = await get_page_image(store, renderer, "doc", 1, dpi=300)
+        assert path == await old.get_page_image_path("doc", 1, dpi=300)
+        assert await store.get_page_image_path("doc", 1, dpi=300) is None
 
 
 @pytest.fixture()

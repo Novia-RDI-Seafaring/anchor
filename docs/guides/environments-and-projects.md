@@ -98,7 +98,10 @@ stays in `ANCHOR_OPENAI_API_KEY` or the gitignored `.env`, never in the profile.
 ## Configuration layering
 
 ```
-built-in defaults  <  env.toml  <  project anchor.toml  <  environment .env  <  process ANCHOR_* / flags
+Non-security settings: defaults < environment < permitted project overrides
+Selection: explicit CLI flags / ANCHOR_ENV / ANCHOR_PROJECT / CLI session defaults
+Security policy: selected environment owns provider, endpoint, and local-only mode
+Credentials: selected environment .env or permitted explicit process credential
 ```
 
 Settings live in the environment's `env.toml`. A project usually has none and

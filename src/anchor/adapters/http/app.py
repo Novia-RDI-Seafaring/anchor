@@ -1,6 +1,8 @@
 """FastAPI app builder — wires services into routers."""
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -14,12 +16,13 @@ from anchor.adapters.http.routers import (
     intents,
     nodes,
     projects,
+    realtime,
     sse,
     status,
     whoami,
     workspaces,
 )
-from anchor.adapters.project_runtime import ProjectRuntime
+from anchor.adapters.project_runtime import ProjectRuntime, bind_workspace_sources
 from anchor.core.clock import SystemClock
 from anchor.core.events.actor import Actor, actor_scope
 from anchor.core.ids import InvalidWorkspaceSlugError
@@ -100,7 +103,34 @@ def build_app(
     ):
         raise ValueError("build_app requires a ProjectRuntime or explicit core services")
 
-    app = FastAPI(title="Anchor v2", version="0.2.0")
+    # Canvas presence (#322 follow-up): per-serve-process, in-memory roster
+    # of SSE viewers + recently-writing agents. The SSE router registers
+    # connections; this lifespan runs a bus-firehose feed that counts
+    # agent-actor writes as presence. Nothing is persisted — presence is
+    # ephemeral by definition, and a second serve process has its own
+    # separate roster.
+    from anchor.infra.presence import PresenceTracker
+
+    presence_tracker = PresenceTracker()
+    feed_bus = bus
+
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        async def feed() -> None:
+            async for evt in feed_bus.subscribe(None):
+                presence_tracker.note_event(evt)
+
+        task = asyncio.create_task(feed(), name="presence-feed")
+        try:
+            yield
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            presence_tracker.close()
+
+    app = FastAPI(title="Anchor v2", version="0.2.0", lifespan=_lifespan)
+    app.state.presence = presence_tracker
+    bind_workspace_sources(workspace_service, doc_store)
     app.state.workspace_service = workspace_service
     app.state.ingest_service = ingest_service
     app.state.doc_store = doc_store
@@ -113,7 +143,8 @@ def build_app(
         data_dir = canvases_dir.parent if canvases_dir is not None else None
         if data_dir is not None:
             intent_service = IntentService(
-                FsIntentStore(data_dir), bus, now=SystemClock().now
+                FsIntentStore(data_dir), bus, now=SystemClock().now,
+                workspace=workspace_service,
             )
     app.state.intent_service = intent_service
     app.state.cad_service = cad_service
@@ -180,6 +211,7 @@ def build_app(
     app.include_router(ingest_sessions.router)
     app.include_router(upload.router)
     app.include_router(sse.router)
+    app.include_router(realtime.router)
     app.include_router(ingests.router)
     app.include_router(intents.router)
     app.include_router(status.router)

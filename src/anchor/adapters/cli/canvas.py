@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Coroutine
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -18,7 +19,6 @@ from anchor.adapters.cli.common import DEFAULT_DATA_DIR
 from anchor.adapters.cli.services import _build_canvas_runtime
 from anchor.core.events.actor import parse_actor, resolve_cli_actor, set_current_actor
 from anchor.core.workspace.review import review_warning
-from anchor.extensions.anchor_pdfs.core.value_provenance import enrich_spec_row_source_refs
 
 canvas_app = typer.Typer(help="Manage workspaces (canvases).")
 
@@ -45,6 +45,21 @@ def canvas_main(
     # asyncio.run copies the current context, so events built inside the
     # command's coroutine see this actor.
     set_current_actor(resolve_cli_actor(actor))
+
+
+def _members(values: list[str]) -> list[dict[str, str]]:
+    """CLI member shorthand -> the service's {kind, id} shape.
+
+    ``n1`` is a node (the common case); ``edge:e1`` (or ``node:n1``) names
+    the kind explicitly.
+    """
+    out: list[dict[str, str]] = []
+    for raw in values:
+        kind, _, ident = raw.partition(":")
+        if not ident:
+            kind, ident = "node", raw
+        out.append({"kind": kind, "id": ident})
+    return out
 
 
 def _run(coro: Coroutine[Any, Any, Any]) -> Any:
@@ -210,6 +225,98 @@ def canvas_review_mode(
     typer.echo(json.dumps(_run(run()), indent=2))
 
 
+@canvas_app.command("propose-set")
+def canvas_propose_set(
+    slug: str,
+    reason: str = typer.Option(..., "--reason", help="Why these elements were proposed."),
+    member: list[str] = typer.Option(
+        [],
+        "--member",
+        "-m",
+        help="Element id to include. Repeatable. Prefix an edge with 'edge:'.",
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Group elements into one reviewable proposal set (#359).
+
+    A human then accepts or rejects the batch with `anchor canvas
+    review-set` instead of ruling on each element. Mirrors
+    `POST /api/workspaces/{slug}/proposal-sets` and the
+    `canvas_propose_set` MCP tool (adapter parity).
+    """
+    ws = _build_canvas_runtime(data_dir).workspace
+    record = _run(
+        ws.open_proposal_set(slug, reason=reason, members=_members(member)),
+    )
+    typer.echo(json.dumps(record, indent=2))
+
+
+@canvas_app.command("add-to-set")
+def canvas_add_to_proposal_set(
+    slug: str,
+    set_id: str,
+    member: list[str] = typer.Option(
+        ..., "--member", "-m", help="Element id to add. Repeatable.",
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Add elements to an open proposal set (#359). Re-adding is a no-op."""
+    ws = _build_canvas_runtime(data_dir).workspace
+    record = _run(ws.add_proposal_set_members(slug, set_id, members=_members(member)))
+    typer.echo(json.dumps(record, indent=2))
+
+
+@canvas_app.command("proposal-sets")
+def canvas_proposal_sets(
+    slug: str,
+    state: str | None = typer.Option(
+        None, "--state", help="Filter: open, accepted, or rejected.",
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """List this canvas's proposal sets, oldest first (#359)."""
+    ws = _build_canvas_runtime(data_dir).workspace
+    sets = _run(ws.list_proposal_sets(slug, state=state))
+    typer.echo(json.dumps({"proposal_sets": sets}, indent=2))
+
+
+@canvas_app.command("review-set")
+def canvas_review_proposal_set(
+    slug: str,
+    set_id: str,
+    verdict: str = typer.Argument(..., help="accepted or rejected."),
+    discard: bool = typer.Option(
+        False,
+        "--discard",
+        help="Rejections only: remove the members instead of marking them.",
+    ),
+    except_id: list[str] = typer.Option(
+        [], "--except", help="Leave this member untouched. Repeatable.",
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Accept or reject a whole proposal set in one write (#359).
+
+    `--discard` is the clean undo for a batch nobody wants: the members are
+    removed and their edges go with them. Mirrors
+    `POST /api/workspaces/{slug}/proposal-sets/{id}/review` and the
+    `canvas_review_proposal_set` MCP tool.
+    """
+    ws = _build_canvas_runtime(data_dir).workspace
+
+    async def run():
+        _state, envelopes, record = await ws.review_proposal_set(
+            slug,
+            set_id,
+            verdict=verdict,
+            discard=discard,
+            except_ids=list(except_id) or None,
+        )
+        return {"proposal_set": record, "events": len(envelopes)}
+
+    typer.echo(json.dumps(_run(run()), indent=2))
+
+
 @canvas_app.command("url")
 def canvas_url(
     slug: str,
@@ -233,6 +340,50 @@ def canvas_url(
             err=True,
         )
     typer.echo(_canvas_url(slug, data_dir))
+
+
+@canvas_app.command("presence")
+def canvas_presence(
+    slug: str,
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+    format: str = typer.Option(
+        "text", "--format", "-f", help="'text' (one per line) or 'json'."
+    ),
+) -> None:
+    """Who is on this canvas right now.
+
+    Lists live SSE viewers (web UI, monitors) plus agents whose writes landed
+    in the last ~90s. Presence is in-memory state of the running ``anchor
+    serve`` bound to this project, so this asks that server over HTTP; with
+    no serve up the roster is empty (nobody is watching a UI). Same roster as
+    ``GET /api/workspaces/{slug}/presence`` and the ``canvas_presence`` MCP
+    tool.
+    """
+    from anchor.infra.presence import fetch_presence
+
+    result = fetch_presence(data_dir, slug)
+    if format == "json":
+        typer.echo(json.dumps(result, indent=2))
+        if "error" in result:
+            raise typer.Exit(code=1)
+        return
+    if format != "text":
+        typer.echo(f"unknown --format {format!r} (use 'text' or 'json')", err=True)
+        raise typer.Exit(code=2)
+    if "error" in result:
+        typer.echo(result["error"], err=True)
+        raise typer.Exit(code=1)
+    if note := result.get("note"):
+        typer.echo(note, err=True)
+    present = result.get("present", [])
+    if not present:
+        typer.echo("(nobody on this canvas)")
+        return
+    for entry in present:
+        label = entry.get("label") or entry.get("kind")
+        since = datetime.fromtimestamp(entry["connected_at"]).strftime("%H:%M:%S")
+        via = "watching" if entry.get("via") == "sse" else "writing"
+        typer.echo(f"{entry['kind']} \"{label}\" - {via} since {since}")
 
 
 @canvas_app.command("delete")
@@ -289,6 +440,69 @@ def canvas_state(
     """Print the full workspace state (nodes + edges + metadata)."""
     ws = _build_canvas_runtime(data_dir).workspace
     typer.echo(json.dumps(_run(ws.get_state(slug)), indent=2))
+
+
+@canvas_app.command("changes")
+def canvas_changes(
+    slug: str,
+    since_version: int | None = typer.Option(
+        None,
+        "--since-version",
+        help="Fold events with version > this (e.g. your last-seen version).",
+    ),
+    since_ts: float | None = typer.Option(
+        None,
+        "--since-ts",
+        help="Fold events with ts > this unix timestamp. Mutually exclusive with --since-version.",
+    ),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+    format: str = typer.Option(
+        "text",
+        "--format",
+        "-f",
+        help="'text' for a grouped one-per-line summary, 'json' for the full envelope.",
+    ),
+) -> None:
+    """What changed on a canvas after a point in its history (#325).
+
+    Server-side fold over the event log: one net entry per element
+    (repeated updates collapse), grouped by the responsible actor. With
+    neither --since-version nor --since-ts the whole log is folded and the
+    JSON envelope also carries `touched` (per surviving node, the last
+    actor to touch it). Mirrors `GET /api/workspaces/{slug}/changes` and
+    the `canvas_changes` MCP tool (adapter parity).
+    """
+    if since_version is not None and since_ts is not None:
+        typer.echo("--since-version and --since-ts are mutually exclusive", err=True)
+        raise typer.Exit(code=2)
+    ws = _build_canvas_runtime(data_dir).workspace
+    out = _run(ws.canvas_changes(slug, since_version=since_version, since_ts=since_ts))
+    if format == "json":
+        typer.echo(json.dumps(out, indent=2))
+        return
+    if format != "text":
+        typer.echo(f"unknown --format {format!r} (use 'text' or 'json')", err=True)
+        raise typer.Exit(code=2)
+    typer.echo(f"v{out['from_version']} -> v{out['to_version']}")
+    if not out["groups"]:
+        typer.echo("(no changes)")
+        return
+    for group in out["groups"]:
+        actor = group.get("actor")
+        who = (actor.get("label") or actor.get("kind")) if actor else "earlier"
+        typer.echo(f"{who}:")
+        if group.get("canvas_cleared"):
+            typer.echo("  cleared the canvas")
+        for key, sign in (
+            ("nodes_added", "+"), ("nodes_updated", "~"), ("nodes_removed", "-"),
+            ("edges_added", "+"), ("edges_updated", "~"), ("edges_removed", "-"),
+        ):
+            noun = "edge " if key.startswith("edges") else ""
+            for entry in group.get(key, []):
+                name = entry.get("label") or entry.get("id")
+                kind = entry.get("node_type")
+                suffix = f" [{kind}]" if kind else ""
+                typer.echo(f"  {sign} {noun}{name}{suffix}")
 
 
 @canvas_app.command("add-node")
@@ -463,7 +677,6 @@ def canvas_update_node(
         raise typer.Exit(code=2)
     runtime = _build_canvas_runtime(data_dir)
     ws = runtime.workspace
-    doc_store = runtime.doc_store
     fields: dict = {}
     if label is not None:
         fields["label"] = label
@@ -507,8 +720,6 @@ def canvas_update_node(
             state, env = await ws.reparent_node(slug, node_id, parent_val)
         else:
             if fields:
-                if "data" in fields:
-                    fields["data"] = await enrich_spec_row_source_refs(fields["data"], doc_store)
                 state, env = await ws.update_node(slug, node_id, fields)
             if parent_op:
                 state, env = await ws.reparent_node(slug, node_id, parent_val)

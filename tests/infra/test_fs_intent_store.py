@@ -58,3 +58,11 @@ async def test_unsafe_id_does_not_escape(tmp_path):
 
 async def test_empty_dir_lists_nothing(tmp_path):
     assert await FsIntentStore(tmp_path).list() == []
+
+
+async def test_traversal_intent_id_is_refused(tmp_path):
+    secret = tmp_path / "secret.json"
+    secret.write_text("{}", encoding="utf-8")
+    store = FsIntentStore(tmp_path)
+    for bad in ("../secret", "..", "a/b", ""):
+        assert await store.get(bad) is None

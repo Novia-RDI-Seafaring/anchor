@@ -427,7 +427,7 @@ def test_http_update_node_data_merges():
     assert rsp.status_code == 200, rsp.text
     node = next(n for n in rsp.json()["state"]["nodes"] if n["id"] == "a")
     assert node["data"]["text"] == "y"
-    assert node["data"]["source_ref"] == {"page": 1}
+    assert node["data"]["source_ref"] == {"page": 1, "coord_origin": "top-left"}
 
 
 def test_http_node_types_route():
@@ -473,6 +473,7 @@ def test_http_reference_create_list_attach_roundtrip():
     assert created.status_code == 201, created.text
     ref = created.json()
     assert ref["id"]
+    assert ref["source_ref"]["coord_origin"] == "top-left"
     assert ref["label"] == "Max inlet pressure"
     # list
     listed = client.get("/api/workspaces/w1/references")
@@ -604,3 +605,136 @@ def test_http_malformed_review_object_warns_but_writes():
         "/api/workspaces/w1/nodes/a", json={"data": {"review": {"state": "nope"}}},
     )
     assert "review" in bad.json()["warning"]
+
+
+def test_http_canvas_changes_folds_since_version():
+    """Mirrors the canvas_changes MCP tool + CLI. Adapter parity rule (#325)."""
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.post(
+        "/api/workspaces/w1/nodes",
+        json={"id": "a", "label": "A", "actor": {"kind": "agent", "label": "copilot"}},
+    )
+    client.patch(
+        "/api/workspaces/w1/nodes/a",
+        json={"label": "A2", "actor": {"kind": "agent", "label": "copilot"}},
+    )
+    rsp = client.get("/api/workspaces/w1/changes", params={"since_version": 0})
+    assert rsp.status_code == 200
+    body = rsp.json()
+    assert body["from_version"] == 0
+    assert body["to_version"] == 2
+    group = next(
+        g for g in body["groups"]
+        if g["actor"] and g["actor"]["label"] == "copilot"
+    )
+    # Add + update collapse to one added entry with the final label.
+    assert [e["id"] for e in group["nodes_added"]] == ["a"]
+    assert group["nodes_added"][0]["label"] == "A2"
+    # Whole-log fold carries the persisted attribution map.
+    assert body["touched"]["a"] == {"kind": "agent", "label": "copilot"}
+    # A caught-up client sees no groups and no touched map.
+    caught_up = client.get(
+        "/api/workspaces/w1/changes", params={"since_version": 2},
+    ).json()
+    assert caught_up["groups"] == []
+    assert "touched" not in caught_up
+
+
+def test_http_canvas_changes_rejects_both_boundaries():
+    client, _ = _client()
+    client.post("/api/workspaces", json={"slug": "w1"})
+    rsp = client.get(
+        "/api/workspaces/w1/changes",
+        params={"since_version": 0, "since_ts": 0.0},
+    )
+    assert rsp.status_code == 400
+
+
+def test_http_canvas_changes_unknown_workspace_is_404():
+    """A read-only catch-up reports an unknown canvas rather than
+    auto-creating one the way a plain state load would (#325)."""
+    client, _ = _client()
+    rsp = client.get("/api/workspaces/ghost/changes", params={"since_version": 0})
+    assert rsp.status_code == 404
+    assert client.get("/api/workspaces").json() == []
+
+
+# ── Proposal sets (#359) ────────────────────────────────────────────────────
+
+def _canvas_with_agent_nodes(client):
+    client.post("/api/workspaces", json={"slug": "w1"})
+    client.patch("/api/workspaces/w1", json={"review_mode": True})
+    agent = {"kind": "agent", "label": "claude-code"}
+    for node_id in ("a", "b"):
+        client.post("/api/workspaces/w1/nodes", json={"id": node_id, "actor": agent})
+    client.post(
+        "/api/workspaces/w1/edges",
+        json={"id": "e1", "source": "a", "target": "b", "actor": agent},
+    )
+
+
+def test_http_proposal_set_round_trip():
+    client, _ = _client()
+    _canvas_with_agent_nodes(client)
+    opened = client.post(
+        "/api/workspaces/w1/proposal-sets",
+        json={
+            "reason": "mindmap of the guide",
+            "members": ["a", "b", {"kind": "edge", "id": "e1"}],
+            "actor": {"kind": "agent", "label": "claude-code"},
+        },
+    )
+    assert opened.status_code == 201, opened.text
+    record = opened.json()
+    assert record["by"] == {"kind": "agent", "label": "claude-code"}
+    assert record["state"] == "open"
+
+    listed = client.get("/api/workspaces/w1/proposal-sets?state=open").json()
+    assert [s["id"] for s in listed["proposal_sets"]] == [record["id"]]
+    assert client.get(f"/api/workspaces/w1/proposal-sets/{record['id']}").json()["reason"] == (
+        "mindmap of the guide"
+    )
+
+    reviewed = client.post(
+        f"/api/workspaces/w1/proposal-sets/{record['id']}/review",
+        json={"verdict": "accepted"},
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["proposal_set"]["state"] == "accepted"
+    state = client.get("/api/workspaces/w1/state").json()
+    node_a = next(n for n in state["nodes"] if n["id"] == "a")
+    assert node_a["data"]["review"]["state"] == "accepted"
+    # The browser's default actor is the reviewer.
+    assert node_a["data"]["review"]["by"]["kind"] == "human"
+
+
+def test_http_discarding_a_set_removes_its_elements():
+    client, _ = _client()
+    _canvas_with_agent_nodes(client)
+    record = client.post(
+        "/api/workspaces/w1/proposal-sets",
+        json={"reason": "wrong shape", "members": ["a", "b"]},
+    ).json()
+    rsp = client.post(
+        f"/api/workspaces/w1/proposal-sets/{record['id']}/review",
+        json={"verdict": "rejected", "discard": True},
+    )
+    assert rsp.status_code == 200, rsp.text
+    state = client.get("/api/workspaces/w1/state").json()
+    assert state["nodes"] == []
+    assert state["edges"] == []  # the edge went with the nodes
+
+
+def test_http_proposal_set_errors_are_authored_messages():
+    client, _ = _client()
+    _canvas_with_agent_nodes(client)
+    missing = client.post(
+        "/api/workspaces/w1/proposal-sets",
+        json={"reason": "r", "members": ["ghost"]},
+    )
+    assert missing.status_code == 400
+    assert "ghost" in missing.json()["detail"]
+    unknown = client.get("/api/workspaces/w1/proposal-sets/nope")
+    assert unknown.status_code == 404
+    assert "nope" in unknown.json()["detail"]

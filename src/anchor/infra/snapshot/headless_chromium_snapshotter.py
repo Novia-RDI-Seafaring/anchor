@@ -14,10 +14,11 @@ fails to navigate (so the CLI can map it to a 1-liner hint).
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 
-from anchor.core.ids import validate_workspace_slug
+from anchor.core.ids import InvalidWorkspaceSlugError, validate_workspace_slug
 from anchor.core.ports.snapshot import SnapshotResult
 
 #: CSS selector matched by every rendered React Flow node.
@@ -49,6 +50,21 @@ def node_wait_timeout_message(
         f"node(s) but no {NODE_SELECTOR!r} element appeared at {url}. "
         "Check that the serve at that URL hosts this project's data dir "
         "(`anchor serve-info`) and that the canvas loads in a browser."
+    )
+
+
+def _is_connection_refused(exc: Exception) -> bool:
+    """True for a navigation failure that means "nothing is listening there".
+
+    Matched on the message rather than the type: Playwright raises its own
+    Error class for every navigation problem, and only the text distinguishes
+    a refused connection from a timeout or a bad URL.
+    """
+    text = str(exc)
+    return (
+        "ERR_CONNECTION_REFUSED" in text
+        or "ERR_CONNECTION_RESET" in text
+        or "ERR_ADDRESS_UNREACHABLE" in text
     )
 
 
@@ -113,7 +129,14 @@ class HeadlessChromiumSnapshotter:
         w, h = viewport or self.default_viewport
 
         ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
-        slug_dir = self.output_dir / slug
+        # Inline normalise-then-prefix-check (not delegated): the regex above
+        # already rejects traversal, but the analyzer only recognises the
+        # barrier in the function that builds the path.
+        base = os.path.realpath(os.fspath(self.output_dir))
+        candidate = os.path.normpath(os.path.join(base, slug))
+        if not candidate.startswith(base + os.sep):
+            raise InvalidWorkspaceSlugError(f"workspace slug {slug!r} escapes the snapshot dir")
+        slug_dir = Path(candidate)
         slug_dir.mkdir(parents=True, exist_ok=True)
         target = slug_dir / f"{ts}.png"
 
@@ -128,7 +151,27 @@ class HeadlessChromiumSnapshotter:
                 # out at 30 s. `domcontentloaded` is enough — React Flow
                 # then needs a settle delay to finish layout, which the
                 # `settle_ms` knob already handles.
-                await page.goto(url, timeout=self.nav_timeout_ms, wait_until="domcontentloaded")
+                try:
+                    await page.goto(
+                        url, timeout=self.nav_timeout_ms, wait_until="domcontentloaded",
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    # A raw Playwright trace ("net::ERR_CONNECTION_REFUSED at
+                    # http://127.0.0.1:8031/c/x") tells the caller what failed
+                    # and nothing about the fix. The snapshotter drives a real
+                    # browser against a running `anchor serve`, which is a
+                    # precondition no other canvas tool has, so say so and name
+                    # the command.
+                    if _is_connection_refused(exc):
+                        raise RuntimeError(
+                            f"no Anchor server is answering at {self.base_url}, so the "
+                            f"canvas could not be rendered. canvas_snapshot drives a "
+                            f"browser against a running `anchor serve` -- start one for "
+                            f"this project and retry, or point the snapshotter at a "
+                            f"serve that is already up. `anchor serve-info` lists "
+                            f"running serves and the project each one is bound to."
+                        ) from exc
+                    raise
                 # Wait specifically for the React Flow root to appear in
                 # the DOM — covers the case where the bundle is still
                 # parsing JS when DOMContentLoaded fires.

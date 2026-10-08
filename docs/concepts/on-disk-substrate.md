@@ -6,8 +6,9 @@
    `anchor serve --data-dir ./received`. Same canvases, same documents.
 2. **Inspectable.** Plain `.json` and `.md`. `cat` works. `jq` works.
    `git log` of the data folder tells a coherent story.
-3. **Independently lifecycled.** Documents and canvases don't depend
-   on each other. Add or remove either without orphaning the other.
+3. **Separate lifecycles.** Deleting a canvas does not delete its source
+   documents. Removing a source document can leave unresolved references
+   on canvases that cited it.
 4. **Producer-extensible.** Every extension owns a top-level folder.
    Adding a new extension doesn't change paths owned by existing ones.
 
@@ -28,11 +29,14 @@ data/  ( = the project's .anchor_data/ )
 |       +-- state.json              cached fold of events at the current version
 |
 +-- bronze/                         (anchor_pdfs)
-|   +-- <original-filename>.pdf     raw PDF bytes, flat (no per-slug subfolder)
+|   +-- <slug>/
+|       +-- <sha256>.pdf            immutable original bytes owned by this document
+|       +-- original.json           slug, filename, sha256, retained legacy ownership
+|   +-- <original-filename>.pdf     legacy originals only, never overwritten by new ingest
 |
 +-- silver/                         (anchor_pdfs)
 |   +-- <slug>/
-|       +-- index.json              document record: title, filename, page_count, outline
+|       +-- index.json              document record: title, filename, source, page_count, outline
 |       +-- pages.meta.json         per-page metadata (dimensions, word counts, ...)
 |       +-- ingest-report.json      pipeline outcome: status, stage, region_count, ...
 |       +-- pages/
@@ -117,14 +121,56 @@ the log grows monotonically.
 
 ### Bronze
 
-Bronze stores the raw PDF flat, keyed by the original filename (not the slug).
-The silver `index.json` carries the filename so the store can recover the path.
+New originals belong to a document slug. The uploaded filename is display
+metadata, never the address of a new source. Ingest writes immutable bytes to
+`bronze/<slug>/<sha256>.pdf` and records `{slug, sha256}` in
+`silver/<slug>/index.json` under `document.source`. Extraction and rendering
+read that exact stored file. Original retrieval verifies the indexed hash;
+missing or inconsistent authoritative data never falls back to a filename.
+
+`original.json` records the latest accepted stash, its display filename, and
+any `legacy_sources` claims preserved before replacing an old index. It lets
+a harness fetch an uploaded original before silver exists. Once an index
+exists, its source binding wins over this pending receipt.
+
+Two slugs may upload the same basename with equal or different bytes: each
+keeps its own original. Repeating the same bytes reuses that document's hash
+file. Existing gold-skip and open-session-resume behavior is unchanged unless
+`force` is requested. Replacing one slug retains earlier hash files; it does
+not update another slug's original.
+
+Flat filename originals remain read-only legacy data. Fallback requires one
+unambiguous owner, or recorded `document.source_sha256` fingerprints matching
+the file for every competing owner. Those fingerprints must come from
+independent source evidence, not be invented from the currently surviving
+file. Multiple unproven claims raise an explicit ownership error. Missing
+originals return unavailable; malformed metadata and fingerprint mismatches
+raise an error. No automatic migration or repair runs.
+
+Legacy checks conservatively include current filename claims and retained
+historical claims. Re-ingesting or renaming one owner cannot erase a known
+conflict. A new document with the same display filename can therefore make
+an un-fingerprinted legacy original unavailable until its ownership is
+resolved. Document-owned originals remain available independently.
+
+Existing upload-name and slug validators apply. Unicode filenames are
+preserved as metadata; path components are rejected. Case variants of existing
+slugs, trailing-dot aliases, reserved filesystem names, and unsafe source
+paths are rejected. Identity conflicts fail before activity, silver, gold,
+embeddings, or harness placeholder/intent publication.
+
+This binds originals, not complete ingestion generations. Forced replacement
+of one slug can still leave stale pages, gold, embeddings, or polished text.
+Generation publication and cleanup require separate lifecycle work.
 
 ```
 data/bronze/
-    alfa-laval-lkh.pdf
-    grundfos-tp.pdf
-    ...
+    alfa-laval-lkh/
+        original.json
+        <sha256>.pdf
+    grundfos-tp/
+        original.json
+        <sha256>.pdf
 ```
 
 ### Silver
@@ -133,7 +179,7 @@ Silver stores the Docling extraction for each document under a per-slug director
 
 ```
 data/silver/alfa-laval-lkh/
-    index.json           document record: slug, title, filename, page_count, outline
+    index.json           document record: title, filename, source, page_count, outline
     pages.meta.json      per-page metadata (dimensions, word counts, rotation flags)
     ingest-report.json   outcome written at the end of ingest: status, stage, region_count
     pages/
@@ -144,6 +190,14 @@ data/silver/alfa-laval-lkh/
         2.md
         ...
 ```
+
+New Docling extractions interleave text, tables, and pictures in the document
+tree's reading order. Candidate IDs (`p<page>-i<index>`) and `pages.meta.json`
+item IDs follow that sequence; raw Markdown uses the same order. Candidates
+also retain the Docling traversal ordinal as `reading_order`, which can have
+gaps between items. Existing stored IDs are not renumbered. Items without
+traversal metadata keep their collection order, and Markdown without that
+metadata retains its geometric fallback.
 
 ### Gold
 
