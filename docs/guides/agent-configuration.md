@@ -291,6 +291,26 @@ If a client cannot find `anchor-mcp`, locate the installed executable:
 Replace `"anchor-mcp"` with the returned absolute path in the relevant client
 configuration.
 
+## Leftover server processes
+
+If `anchor-mcp` processes remain after closing your client, record the client
+and ANCHOR versions (`anchor version`) and check the client's shutdown logs.
+The client must close every stdin pipe writer and reap or terminate its own
+server process if it stays alive. An inherited writer can keep an otherwise
+idle server waiting for requests after its original parent exits.
+
+If the last request timed out during embedding or another native operation,
+the transport can close while a background worker still prevents exit. Include
+that request and its errors in a report; an idle timeout would not stop a stuck
+native thread. [The lifecycle investigation](https://github.com/Novia-RDI-Seafaring/anchor/issues/336)
+confirmed prompt exit for initialized Windows sessions with normal pipe closure,
+and reproduced delayed exit with a retained writer or finite background work.
+It did not establish which condition caused the historical process accumulation.
+
+Identify the client session before stopping a leftover process; another open
+client may still use it. Stop a separately launched `anchor serve` with `Ctrl+C`
+in its own terminal. See [MCP process lifecycle](../reference/mcp.md#process-lifecycle).
+
 ## Client references
 
 - [Claude Code MCP setup](https://code.claude.com/docs/en/mcp)
