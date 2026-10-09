@@ -89,6 +89,13 @@ does not enqueue a task.
 An upload in a `harness` project creates a `drop_to_ingest` intent. Process its
 page-by-page session, update the document card, and resolve the intent. Built-in
 `ingest_pdf` alone does not perform the harness's interpretation stage.
+For native-text PDFs, `ingest_pdf(profile="text")` instead creates grounded gold
+chunks from silver text and tables without polishing or vision calls. Configured
+embeddings still run. This also works without a vision provider. It does not
+interpret figures. The default profile is `keyed`; `text` cannot be combined
+with `skip_regions`. Use `force=true` to change the profile of existing gold.
+An HTTP upload with `profile=text` runs this path directly, including in a
+harness project, so it does not enqueue a `drop_to_ingest` intent.
 
 ## Write source-linked tables
 
