@@ -137,7 +137,6 @@ export function NodeDetailPanel({ workspaceSlug, nodeId, onClose, readOnly = fal
               <p className="whitespace-pre-wrap"><AnchoredText text={item.text} workspaceSlug={workspaceSlug} /></p>
               {item.answer ? <p className="whitespace-pre-wrap">Answer: {item.answer}</p> : null}
               <details className="mt-1"><summary className="cursor-pointer text-xs text-neutral-500">Full thread item</summary><JsonValue value={item} /></details>
-              <details><summary className="cursor-pointer text-xs text-neutral-500">Thread item details</summary><JsonValue value={item} /></details>
             </div>)}
           </article>)}
         </section>
