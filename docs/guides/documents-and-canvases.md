@@ -37,8 +37,9 @@ anchor ingest "/path/to/datasheet.pdf"
 anchor list
 ```
 
-This writes the document corpus, without adding a canvas card. Drag an existing
-document from the files explorer onto a canvas to place it. The CLI and MCP
+This writes the document corpus, without adding a canvas card. A card is optional:
+drag an existing document from **Files** onto a canvas when you want it there.
+The CLI and MCP
 `ingest_pdf` run built-in ingestion; in a harness environment they do not replace
 the page-by-page session performed by the agent.
 
@@ -74,6 +75,23 @@ previous complete document generation. See
 [Document generations](../concepts/document-generations.md).
 
 ## Navigate a PDF
+
+The explorer opens on **Sources**, the documents used by this canvas. It derives
+that list from node and spec-row `source_ref` values, explicit edge references,
+and existing document cards. Each document appears once, with a page-1 thumbnail,
+title, page count, and gold status. Missing project documents remain visible so
+you can identify broken citations. **Files** lists the whole project corpus.
+
+Click a fact's source anchor or a spec row's citation to open the shared viewer
+at its source page and region. The active document appears larger in Sources,
+with the current page shown. Clicking that active item keeps the page and
+highlight. Browsing a project document does not add it to the canvas's sources.
+
+Keep provenance on the node or row itself. Neither a document card nor an edge
+to a document hub is needed to open or review that citation. Explicit anchored
+evidence edges remain available when the line is useful, such as a connection
+from a spec row to a crop image. A source citation still needs validated claim
+evidence to earn a Verified row state.
 
 Open a document in the source dock and choose **Contents** beside **Pages**.
 Headings are nested by level; extracted tables and figures have separate lists.

@@ -71,10 +71,12 @@ provider as needed; `anchor check` reports what the resolved config accepts.
 
 - **Always pass a `workspace_slug`.** ANCHOR is multi-canvas; create one
   per question or project (`canvas_create_workspace`) and reuse it.
-- **Provenance is the contract.** When you place a spec value or quote a
-  number, anchor it to its source via an edge carrying
-  `data.kind = "evidence"` and `data.source_ref = {page, bbox}`. The
-  system enforces this on `anchored` evidence edges.
+- **Provenance is the contract.** Put `source_ref = {slug, page, bbox?}`
+  on each spec row or on the node's `data` when quoting a source. The
+  Sources dock lists the referenced documents and opens their evidence.
+  Document cards and evidence edges are optional presentation. An explicit
+  `anchored` evidence edge still requires `data.kind = "evidence"` and
+  `data.source_ref`; a citation alone does not grant Verified status.
 - **Slug naming.** Document slugs are filename-derived (lowercase,
   hyphenated). Canvas slugs are user-chosen, e.g. `pump-analysis`.
 - **Don't re-ingest.** `list_documents()` first; if the slug exists with
