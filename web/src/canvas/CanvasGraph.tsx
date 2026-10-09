@@ -14,7 +14,7 @@ import {
   type NodeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { canvases } from "@/api/canvases";
@@ -34,6 +34,9 @@ import { proposalSets } from "@/api/proposalSets";
 import { ProposalReview } from "@/canvas/ProposalReview";
 import type { Box as LassoBox } from "@/canvas/lasso";
 import { SelectionPanel } from "@/canvas/SelectionPanel";
+import { NodeDetailPanel } from "@/canvas/NodeDetailPanel";
+import { CanvasStructureContext, structuredNodeTypes } from "@/canvas/StructuredNode";
+import { foldedGraph, structureSignature } from "@/canvas/subtrees";
 import { WaypointEditor } from "@/canvas/WaypointEditor";
 import {
   PAINT_DRAG_THRESHOLD_PX,
@@ -68,6 +71,7 @@ const edgeTypes = {
   step: StepEdge,
   straight: StraightEdge,
 };
+const structuredTypes = structuredNodeTypes(nodeTypes);
 
 type Props = {
   slug: string;
@@ -141,11 +145,12 @@ function workspaceListMayChange(evt: CanvasEvent): boolean {
  *  the store's absolute flow coords and ReactFlow's parent-relative
  *  expectation when a node is nested. Returns (0, 0) when there's no
  *  ancestry or the chain is broken. Safe against cycles via a visited set. */
-function ancestorOffset(nodeId: string, allNodes: Record<string, StoreNode>): { x: number; y: number } {
+function ancestorOffset(nodeId: string, allNodes: Record<string, StoreNode>, hidden?: Set<string>): { x: number; y: number } {
   const acc = { x: 0, y: 0 };
   const visited = new Set<string>();
   let cur = allNodes[nodeId]?.parent ?? null;
   while (cur != null) {
+    if (hidden?.has(cur)) break;
     if (visited.has(cur)) break;
     visited.add(cur);
     const p = allNodes[cur];
@@ -161,7 +166,7 @@ function ancestorOffset(nodeId: string, allNodes: Record<string, StoreNode>): { 
  *  The drop hit-test falls back to this when nothing better is known. */
 const AREA_DEFAULT = { width: 360, height: 220 };
 
-function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
+export function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>, hidden?: Set<string>): RfNode {
   // Areas render behind other nodes (zIndex: -1) so the empty interior
   // doesn't trap clicks meant for whatever sits on top. `selectable: true`
   // still lets the user click the dashed border or header to select the
@@ -174,7 +179,7 @@ function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
   //   - converts the position to parent-relative coordinates internally.
   // Defensive: a `parent` that points at a missing node is silently
   // ignored (otherwise ReactFlow logs a warning every render).
-  const parentExists = n.parent != null && allNodes[n.parent] != null;
+  const parentExists = n.parent != null && allNodes[n.parent] != null && !hidden?.has(n.parent);
   // `parentId` alone: the child moves with its region, but is NOT clamped
   // to it. `extent: "parent"` trapped elements inside whichever region owned
   // them, so dragging one to a neighbouring region snapped it back and it
@@ -187,7 +192,7 @@ function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>): RfNode {
   // accumulated offset so the rendered position matches the absolute
   // coords. `onNodeDragStop` does the inverse: adds the offset back
   // before persisting so the store stays purely absolute.
-  const off = parentExists ? ancestorOffset(n.id, allNodes) : { x: 0, y: 0 };
+  const off = parentExists ? ancestorOffset(n.id, allNodes, hidden) : { x: 0, y: 0 };
   const relX = n.x - off.x;
   const relY = n.y - off.y;
   // Lock support: `data.locked === true` freezes the node in place
@@ -226,6 +231,26 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   const reset = useCanvasStore((s) => s.reset);
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
+  const structureKey = structureSignature(nodes, Object.values(edges));
+  // This key includes every input the topology projection reads. Ordinary
+  // moves and text edits retain the cached traversal.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const structure = useMemo(() => foldedGraph(nodes, Object.values(edges)), [structureKey]);
+  const [detailNodeId, setDetailNodeId] = useState<string | null>(null);
+  const [structureError, setStructureError] = useState<string | null>(null);
+  const closeDetail = useCallback(() => setDetailNodeId(null), []);
+  const toggleSubtree = useCallback((id: string) => {
+    const collapsed = useCanvasStore.getState().nodes[id]?.data?.collapsed === true;
+    void canvases.patchNode(slug, id, { data: { collapsed: !collapsed } })
+      .then(() => setStructureError(null))
+      .catch((error: unknown) => setStructureError(error instanceof Error ? error.message : String(error)));
+  }, [slug]);
+  useEffect(() => {
+    if (detailNodeId && (!nodes[detailNodeId] || structure.hidden.has(detailNodeId))) setDetailNodeId(null);
+    const selected = useUiStore.getState().selectedNodeId;
+    if (selected && structure.hidden.has(selected)) useUiStore.getState().setSelectedNodeId(null);
+  }, [detailNodeId, nodes, structure]);
+  useEffect(() => { setDetailNodeId(null); setStructureError(null); }, [slug]);
   const { screenToFlowPosition } = useReactFlow();
   const openPdf = useUiStore((s) => s.openPdf);
   const setHoveredSourceRef = useUiStore((s) => s.setHoveredSourceRef);
@@ -321,14 +346,16 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     toFlow: screenToFlowPosition,
     restore: () => {
       const current = useCanvasStore.getState().nodes;
-      setRfNodes((prev) => Object.values(current).map((n) => ({
-        ...toRfNode(n, current), selected: prev.some((p) => p.id === n.id && p.selected),
+      const folded = foldedGraph(current, Object.values(useCanvasStore.getState().edges));
+      setRfNodes((prev) => Object.values(current).filter((n) => !folded.hidden.has(n.id)).map((n) => ({
+        ...toRfNode(n, current, folded.hidden), selected: prev.some((p) => p.id === n.id && p.selected),
       })));
       useUiStore.getState().setDropTargetAreaId(null);
     },
     select: (ids) => {
       const current = useCanvasStore.getState().nodes;
-      setRfNodes(Object.values(current).map((n) => ({ ...toRfNode(n, current), selected: ids.includes(n.id) })));
+      const folded = foldedGraph(current, Object.values(useCanvasStore.getState().edges));
+      setRfNodes(Object.values(current).filter((n) => !folded.hidden.has(n.id)).map((n) => ({ ...toRfNode(n, current, folded.hidden), selected: ids.includes(n.id) })));
       useUiStore.getState().setSelectedNodeId(ids[0] ?? null);
     },
   });
@@ -404,8 +431,8 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       const selectedSet = pendingId ? new Set([pendingId]) : wasSelected;
       // Pass the full node map so `toRfNode` can resolve `parent` → `parentId`
       // only when the parent actually exists in this snapshot.
-      return Object.values(nodes).map((n) => ({
-        ...toRfNode(n, nodes),
+      return Object.values(nodes).filter((n) => !structure.hidden.has(n.id)).map((n) => ({
+        ...toRfNode(n, nodes, structure.hidden),
         selected: selectedSet.has(n.id),
       }));
     });
@@ -413,7 +440,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     // element often lands in the store (via SSE) BEFORE the code that asks
     // for it to be focused runs, and then this effect never re-ran, so the
     // element sat there unselected and typing went nowhere.
-  }, [nodes, pendingRenameId]);
+  }, [nodes, pendingRenameId, structure]);
 
   useEffect(() => {
     // pickEdgeMode resolves every edge to its ReactFlow renderer type. For
@@ -485,7 +512,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       }
     }
 
-    setRfEdges(Object.values(edges).map((e) => {
+    setRfEdges(Object.values(edges).filter((e) => !structure.hidden.has(e.source) && !structure.hidden.has(e.target)).map((e) => {
       const type = typePicks[e.id] ?? "floating";
       // Path membership lights up the edge; the row→region swap keeps its
       // own single active edge. A path edge is never also dimmed.
@@ -506,7 +533,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         selected: isSelected,
       } satisfies RfEdge;
     }));
-  }, [edges, nodes, hoveredSourceRef, hoveredNodeId, selectedEdgeId]);
+  }, [edges, nodes, hoveredSourceRef, hoveredNodeId, selectedEdgeId, structure]);
 
   const onNodesChange = useCallback((changes: NodeChange<RfNode>[]) => {
     setRfNodes((curr) => applyNodeChanges(changes, curr));
@@ -788,7 +815,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       const measured = (draggedNode as { measured?: { width?: number; height?: number } }).measured;
       const w = measured?.width ?? draggedNode.width ?? 0;
       const h = measured?.height ?? draggedNode.height ?? 0;
-      const off = ancestorOffset(draggedNode.id, useCanvasStore.getState().nodes);
+      const off = ancestorOffset(draggedNode.id, useCanvasStore.getState().nodes, structure.hidden);
       const centre = {
         x: draggedNode.position.x + off.x + w / 2,
         y: draggedNode.position.y + off.y + h / 2,
@@ -797,7 +824,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       const current = useUiStore.getState().dropTargetAreaId;
       if (current !== target) useUiStore.getState().setDropTargetAreaId(target);
     },
-    [readOnly, findAreaAtPoint],
+    [readOnly, findAreaAtPoint, structure],
   );
 
   const onDragOver = useCallback((event: React.DragEvent) => {
@@ -1097,7 +1124,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     const height = sizeOverride?.height ?? meta?.height;
     try {
       const placed = (await canvases.addNode(slug, {
-        node_type: armedTool,
+        node_type: meta?.nodeType ?? armedTool,
         label,
         x: flowX,
         y: flowY,
@@ -1313,10 +1340,16 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
           reference them by URL fragment (`url(#anchor-mk-...)`); SVG
           marker IDs resolve document-wide so a sibling defs SVG works. */}
       <EdgeMarkerDefs />
+      {structureError ? <p role="alert" className="absolute left-3 top-3 z-50 rounded border border-red-300 bg-white p-2 text-sm text-red-800">Save failed: {structureError}</p> : null}
+      <CanvasStructureContext.Provider value={{
+        counts: new Map([...structure.descendants].map(([id, children]) => [id, nodes[id]?.data?.collapsed === true
+          ? [...children].filter((child) => structure.hidden.has(child)).length : children.size])),
+        readOnly, toggle: toggleSubtree, inspect: setDetailNodeId,
+      }}>
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
-        nodeTypes={nodeTypes}
+        nodeTypes={structuredTypes}
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
@@ -1485,7 +1518,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
                 // store is always absolute, ReactFlow is parent-relative when
                 // `parentId` is set.
                 const id = node.id;
-                const off = ancestorOffset(id, useCanvasStore.getState().nodes);
+                const off = ancestorOffset(id, useCanvasStore.getState().nodes, structure.hidden);
                 const x = node.position.x + off.x;
                 const y = node.position.y + off.y;
                 useCanvasStore.setState((state) => {
@@ -1557,13 +1590,13 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
                   for (const n of draggedNodes) {
                     const cur = next[n.id];
                     if (!cur) continue;
-                    const off = ancestorOffset(n.id, next);
+                    const off = ancestorOffset(n.id, next, structure.hidden);
                     next[n.id] = { ...cur, x: n.position.x + off.x, y: n.position.y + off.y };
                   }
                   return { ...state, nodes: next };
                 });
                 for (const n of draggedNodes) {
-                  const off = ancestorOffset(n.id, useCanvasStore.getState().nodes);
+                  const off = ancestorOffset(n.id, useCanvasStore.getState().nodes, structure.hidden);
                   canvases
                     .patchNode(slug, n.id, { x: n.position.x + off.x, y: n.position.y + off.y })
                     .catch(() => {
@@ -1577,6 +1610,8 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         <Controls showInteractive={!readOnly} />
         <MiniMap pannable zoomable />
       </ReactFlow>
+      </CanvasStructureContext.Provider>
+      {detailNodeId ? <NodeDetailPanel workspaceSlug={slug} nodeId={detailNodeId} onClose={closeDetail} readOnly={readOnly} /> : null}
       {/* Reviewer mark-up, prototype: the pointing half only. Draw across or
           around things, cmd-click to correct what the stroke caught. The
           selection is inert -- it cannot drag, delete or rewire anything, so
@@ -1610,7 +1645,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         active={commentMode}
         onExit={() => setCommentMode(false)}
         workspaceSlug={slug}
-        boxes={Object.values(nodes).map((n): LassoBox => {
+        boxes={Object.values(nodes).filter((n) => !structure.hidden.has(n.id)).map((n): LassoBox => {
           // The size ReactFlow measured is what the reader actually sees, so
           // it is what the stroke should be judged against.
           const rf = rfNodesRef.current.find((r) => r.id === n.id) as

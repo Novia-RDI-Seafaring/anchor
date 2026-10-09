@@ -1,0 +1,20 @@
+[
+  {
+    "name": "cycle and shared child",
+    "nodes": ["root", "a", "b", "c", "other"],
+    "edges": [{"source":"root","target":"b"},{"source":"root","target":"a"},{"source":"a","target":"c"},{"source":"b","target":"c"},{"source":"c","target":"root"},{"source":"other","target":"a"}],
+    "root": "root",
+    "outgoing": ["a", "b", "c"],
+    "incoming": ["a", "b", "c", "other"],
+    "any": ["a", "b", "c", "other"]
+  },
+  {
+    "name": "reports to",
+    "nodes": ["boss", "staff", "intern", "separate"],
+    "edges": [{"source":"staff","target":"boss"},{"source":"intern","target":"staff"}],
+    "root": "boss",
+    "outgoing": [],
+    "incoming": ["intern", "staff"],
+    "any": ["intern", "staff"]
+  }
+]

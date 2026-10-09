@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getNodeRenderer,
   nodeTypes,
+  paletteEntries,
   primeRendersTokenMap,
   registerNodeRenderer,
   resetRendersTokenMapForTests,
@@ -21,6 +22,12 @@ import {
 
 const chartRenderer = getNodeRenderer("chart");
 if (!chartRenderer) throw new Error("chart renderer must be registered");
+
+it("offers a heading palette variant without adding a backend node type", () => {
+  const heading = paletteEntries("shapes").find((entry) => entry.meta.label === "Heading");
+  expect(heading?.meta).toMatchObject({ nodeType: "concept", data: { role: "heading" } });
+  expect(getNodeRenderer("__heading__")).toBeUndefined();
+});
 
 afterEach(() => {
   resetRendersTokenMapForTests();
