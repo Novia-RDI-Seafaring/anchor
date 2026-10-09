@@ -51,6 +51,12 @@ class FakePdfRenderer:
         # US Letter in points, for every page.
         return {p: (612.0, 792.0) for p in range(1, self.page_count + 1)}
 
+    async def render_candidate_overlay(
+        self, page_image: bytes, candidates: list[dict[str, Any]],
+        *, page_size: tuple[float, float] | None,
+    ) -> bytes:
+        return b"CANDIDATE-OVERLAY-" + page_image
+
     async def crop_region(
         self, pdf_path: Path, page: int, bbox: list[float], fmt: CropFormat = "png", dpi: int = 200,
     ) -> bytes:

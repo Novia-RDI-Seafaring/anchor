@@ -31,6 +31,7 @@ from anchor.extensions.anchor_pdfs.core.gold_ingest import (
 from anchor.extensions.anchor_pdfs.core.gold_ingest import (
     GoldIngest,
 )
+from anchor.extensions.anchor_pdfs.core.ingest.page_images import write_page_images
 from anchor.extensions.anchor_pdfs.core.pointed_extraction import (
     extract_pointed as _extract_pointed,
 )
@@ -315,8 +316,9 @@ class IngestService:
                 current_stage = "silver_render_pages"
                 stage_started_at = self.clock.now()
                 page_pngs = replacement_pngs if replacement_pngs is not None else await self.renderer.render_pages(bronze_path, dpi=dpi)
-                for page, png in page_pngs.items():
-                    await store.write_silver_artifact(slug, f"pages/{page}.png", png)
+                await write_page_images(
+                    store, self.renderer, slug, page_pngs, page_candidates, pages_meta,
+                )
                 for it in docling.get("items", []):
                     if isinstance(it.get("page"), (int, float)):
                         items_by_page.setdefault(int(it["page"]), []).append(it)
