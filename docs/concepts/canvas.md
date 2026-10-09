@@ -52,6 +52,57 @@ can preserve the link while making its binding stale. Use **Check** to request
 revalidation against stored evidence. See [Claim and evidence](claim-evidence.md)
 and [Source resolution](spec-source-resolution.md).
 
+## Headings, folding, and details
+
+Choose **Heading** from the shape palette to place a section label. It creates
+a `concept` with `data.role: "heading"`: a large label and optional subtitle,
+without the card border or body. Select an existing concept and choose
+**Appearance > Heading** in its properties to give it the same presentation.
+
+A node with children has a collapse button above it. Folding hides descendants
+and every edge touching a hidden node. The folded root stays visible, including
+its own evidence link, and its `+4` badge counts the descendants currently hidden.
+Expand to restore their saved positions. A shared child stays visible if another
+visible, expanded parent reaches it. Cycles are visited once, and a cyclic
+component keeps an expand affordance.
+
+Folding follows structural edges and area containment. **Child direction** in
+properties uses the organizer's outgoing, incoming, or any direction convention;
+the default is outgoing. Edge labels such as `contains` and `part_of` do not
+change that direction. Evidence edges never make the source document a child
+of a fact. A document card additionally treats incoming evidence dependents as
+children, so it can fold its sourced claims.
+
+Fact, note, Markdown, and spec cards default to **Compact**: the label and first
+line or row count. Double-click a compact card, or select any node and choose
+**Details**, to read the complete content, rows, source references and crops,
+evidence links, stored review record, and requests that target it. Source actions
+open the document viewer at the resolved page. Region/item references without a
+page are resolved before opening; an unavailable source keeps its reference
+visible. Document cards retain double-click to open the PDF, and sub-canvas
+tiles retain double-click to navigate. Their **Details** action is separate.
+
+Choose **Display > Full** to keep one important card or table expanded on the
+canvas. Full tables retain their inline row editing and source anchors. The
+detail view also offers **Edit properties** for the existing editing panel.
+Read-only canvases allow detail reading and source opening without editing.
+
+These settings are ordinary persisted node data. HTTP node patches, MCP
+`canvas_add_node` / `canvas_update_node`, and CLI `anchor canvas add-node` /
+`anchor canvas update-node` all use the same fields:
+
+```json
+{
+  "collapsed": true,
+  "collapse_direction": "outgoing",
+  "role": "heading"
+}
+```
+
+Use `data.display_mode: "compact"` or `"full"` on a card. Every viewer reads
+the same persisted fold. `canvas_get_state` and CLI canvas state still return
+all nodes, edges, source data, and positions; folding only filters rendering.
+
 ## Requests and review
 
 Use **mark up** (`i`) to add text and drawings about visible objects. Click

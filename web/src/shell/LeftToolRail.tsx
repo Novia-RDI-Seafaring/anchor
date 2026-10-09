@@ -141,7 +141,7 @@ export function LeftToolRail({ workspaceSlug }: Props) {
   const dropPayload = (name: string, meta: PaletteMeta) => {
     const label = meta.noDefaultLabel ? "" : meta.label;
     return {
-      node_type: name,
+      node_type: meta.nodeType ?? name,
       label,
       ...(meta.width !== undefined ? { width: meta.width } : {}),
       ...(meta.height !== undefined ? { height: meta.height } : {}),

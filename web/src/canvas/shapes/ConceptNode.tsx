@@ -28,8 +28,10 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
     height?: number;
     bg_color?: string;
     stroke_color?: string;
+    role?: string;
   };
   const label = d.label ?? "";
+  const heading = d.role === "heading";
   const ph = placeholderState(d);
   // Placeholder overrides dashed/solid + bg/stroke regardless of user style.
   // The dashed sky outline is the load-bearing "needs filling" signal.
@@ -60,15 +62,16 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
   const wrapCursor = selected ? "cursor-move" : "cursor-pointer";
   return (
     <div
-      className={`relative rounded-lg border ${borderStyle} px-3 py-2 text-sm shadow-sm ${opacityClass} ${wrapCursor}`}
+      data-testid={heading ? "heading-node" : undefined}
+      className={heading ? `relative px-1 py-2 ${wrapCursor}` : `relative rounded-lg border ${borderStyle} px-3 py-2 text-sm shadow-sm ${opacityClass} ${wrapCursor}`}
       style={{
         // Width and height are independent: an element set wide but not
         // tall (the usual case for prose at a large text size) used to be
         // ignored, because the style only applied when BOTH were present.
         ...(liveW ? { width: liveW } : {}),
-        ...(liveH ? { height: liveH } : {}),
-        background: bg,
-        borderColor: stroke,
+        ...(!heading && liveH ? { height: liveH } : {}),
+        background: heading ? "transparent" : bg,
+        borderColor: heading ? "transparent" : stroke,
         color: stroke,
       }}
     >
@@ -81,7 +84,7 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
       />
       {ph.active ? <PlaceholderChip hint={ph.hint} /> : null}
       <ReviewBadge data={d} nodeId={id} />
-      <RoleBadge data={data} />
+      {heading ? null : <RoleBadge data={data} />}
 
       <Handle type="target" position={Position.Left} />
       {/* Label / pictogram inherit `color` from the wrapper above (resolveColors
@@ -101,10 +104,10 @@ export function ConceptNode({ id, data, selected }: NodeProps) {
               className={`truncate leading-tight ${selected ? "cursor-text" : "cursor-pointer"}`}
               style={{
                 color: t.color,
-                fontWeight: t.fontWeight,
+                fontWeight: heading ? Math.max(600, t.fontWeight) : t.fontWeight,
                 textAlign: t.textAlign,
                 fontFamily: t.fontFamily,
-                fontSize: t.fontSize,
+                fontSize: heading ? `max(28px, ${t.fontSize})` : t.fontSize,
               }}
               onDoubleClick={(e) => {
                 e.stopPropagation();

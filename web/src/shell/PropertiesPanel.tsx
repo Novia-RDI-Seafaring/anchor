@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/sheet";
 import { actorLabel, useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
+import { NodePresentationEditor } from "@/canvas/NodePresentationEditor";
 
 import { OrganizeEditor } from "./editors/OrganizeEditor";
 import { getTouchedMap } from "./persistedAttribution";
@@ -123,6 +124,7 @@ export function PropertiesPanel() {
         <div className="flex-1 overflow-y-auto p-3">
           {node && Editor ? (
             <>
+              <NodePresentationEditor workspaceSlug={workspaceSlug} node={node} />
               <Editor workspaceSlug={workspaceSlug} node={node} />
               <OrganizeEditor
                 workspaceSlug={workspaceSlug}
