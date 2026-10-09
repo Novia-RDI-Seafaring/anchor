@@ -63,6 +63,13 @@ def test_text_profile_preserves_grounding_and_searches_without_vision(vision, tm
 @pytest.mark.parametrize("docling", [
     {"items": []},
     {"items": [{"label": "picture", "text": "", "page": 1, "bbox": [0, 0, 100, 100]}]},
+    {"items": [{"label": "text", "text": "  ", "page": 1, "bbox": [0, 0, 100, 100]}]},
+    {"items": [{"label": "table", "text": "", "page": 1, "bbox": [0, 0, 100, 100],
+                "cells": [{"row": 0, "col": 0, "text": "  "}]}]},
+    {"items": [
+        {"label": "section_header", "text": "Heading alone", "page": 1, "bbox": [0, 0, 100, 20]},
+        {"label": "text", "text": "", "page": 1, "bbox": [0, 20, 100, 100]},
+    ]},
 ])
 def test_text_profile_does_not_mark_visual_or_empty_documents_complete(docling):
     async def run():
@@ -85,16 +92,42 @@ def test_invalid_profile_options_fail_before_writing(options):
     asyncio.run(run())
 
 
-def test_empty_text_replacement_preserves_previously_published_gold(tmp_path):
+@pytest.mark.parametrize("items", [
+    [],
+    [{"label": "text", "text": "", "page": 1, "bbox": [0, 0, 100, 100]}],
+    [{"label": "table", "text": "", "page": 1, "bbox": [0, 0, 100, 100]}],
+])
+def test_empty_text_replacement_preserves_previously_published_gold(tmp_path, items):
     async def run():
         service, store = pipeline(store=FsDocStore(tmp_path))
         await service.ingest_pdf(b"%PDF-fake", "text.pdf", profile="text")
         previous = await store.get_gold_map("text")
-        service.extractor.docling = {"items": []}
+        service.extractor.docling = {"items": items}
         result = await service.ingest_pdf(b"%PDF-fake", "text.pdf", profile="text", force=True)
         assert result["status"] == "empty_gold"
         assert await store.has_gold("text")
         assert await store.get_gold_map("text") == previous
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("label", ["paragraph", "caption", "code", "formula", "table"])
+def test_text_profile_keeps_full_source_text_and_original_item_ids(label):
+    text = "Context " + "a" * 180 + " terminal-pressure-17-bar"
+
+    async def run():
+        service, store = pipeline(docling={"items": [
+            {"label": "table", "text": "", "page": 1, "bbox": [0, 0, 100, 20]},
+            {"label": label, "text": text, "page": 1, "bbox": [0, 20, 100, 80]},
+            {"label": "table", "text": "", "page": 1, "bbox": [0, 80, 100, 100]},
+        ]})
+        result = await service.ingest_pdf(b"%PDF-fake", "source.pdf", profile="text")
+        assert result["region_count"] == result["embedded_count"] == 1
+        region = (await store.get_gold_map("source"))["pages"][1][0]
+        assert region["member_item_ids"] == ["p1-i1"]
+        assert region["bbox"] == [0, 20, 100, 80]
+        assert region["content"] == text
+        embedding = (await store.get_embeddings("source"))["vectors"][0]
+        assert "terminal-pressure-17-bar" in embedding["text"]
     asyncio.run(run())
 
 
