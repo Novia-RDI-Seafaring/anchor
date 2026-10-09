@@ -15,6 +15,7 @@ from anchor.extensions.anchor_pdfs.core.region_inspect import (
     get_region_content,
     inspect_region,
 )
+from anchor.extensions.anchor_pdfs.core.services import IngestProfile
 
 
 def ingest(
@@ -22,6 +23,11 @@ def ingest(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
     skip_polish: bool = typer.Option(False, "--skip-polish"),
     skip_regions: bool = typer.Option(False, "--skip-regions"),
+    profile: IngestProfile = typer.Option(
+        IngestProfile.keyed, "--profile",
+        help="Gold path: keyed uses vision; text builds grounded chunks from silver "
+        "without polishing or vision. Configured embeddings still run.",
+    ),
     full_page_ocr: bool = typer.Option(
         False,
         "--full-page-ocr",
@@ -57,6 +63,7 @@ def ingest(
             regions=not skip_regions,
             force=force,
             full_page_ocr=full_page_ocr,
+            profile=profile,
             polish_model=config.polish_model,
             region_model=config.region_model,
             dpi=config.dpi,
