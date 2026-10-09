@@ -66,9 +66,13 @@ When the user drops a PDF and asks for specs on the canvas:
 2. `ingest_pdf(pdf_path="/abs/path/to/datasheet.pdf")` only if needed.
 3. `search_documents("flow rate")` to locate the right region(s), or
    `get_gold_regions(slug=..., page=2)` when you already know the page.
-4. Place a `document` node on the canvas via `canvas_add_node`.
-5. Place a `spec` node whose `data.rows` reference the regions, and an
-   `anchored` evidence edge from each row to the document node.
+4. Place one `spec` node whose `data.rows` each carry a `source_ref` naming
+   the document slug, page, and available region/item/cell/bbox locator.
+   For a fact, put the reference in the node's `data.source_ref`.
+5. The Sources dock shows those documents automatically. Place a `document`
+   card or an explicit `anchored` evidence edge only when useful for the
+   presentation; neither is required for a source citation. A citation alone
+   does not establish a validated claim binding or Verified row status.
 
 ### Common errors
 
