@@ -25,7 +25,7 @@ from anchor.core.ids import new_event_id, new_id, slugify
 from anchor.core.services.intent_service import IntentService
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.core.upload_safety import UnsafeUploadError, safe_upload_name
-from anchor.extensions.anchor_pdfs.core.services import IngestService
+from anchor.extensions.anchor_pdfs.core.services import IngestProfile, IngestService
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/workspaces", tags=["upload"])
@@ -56,6 +56,7 @@ async def upload(
     x: float = Form(0.0),
     y: float = Form(0.0),
     full_page_ocr: bool = Form(False),
+    profile: IngestProfile = Form(IngestProfile.keyed),
     ingest: IngestService = Depends(get_ingest_service),
     workspace: WorkspaceService = Depends(get_workspace_service),
     intents: IntentService = Depends(get_intent_service),
@@ -71,7 +72,7 @@ async def upload(
     job_id = new_event_id()
     node_id = new_id()
     queued_at = time.time()
-    harness = _is_harness_project(request)
+    harness = _is_harness_project(request) and profile != IngestProfile.text
 
     if harness:
         # A rejected original must not publish a placeholder or an intent.
@@ -134,6 +135,7 @@ async def upload(
             summary = await ingest.ingest_pdf(
                 pdf_bytes, filename, slug=doc_slug, workspace_id=slug,
                 full_page_ocr=full_page_ocr,
+                profile=profile,
             )
             finished_at = time.time()
             # A gold pass that produced 0 regions on a non-empty document is a
