@@ -74,10 +74,12 @@ provider as needed; `anchor check` reports what the resolved config accepts.
 
 - **Always pass a `workspace_slug`.** ANCHOR is multi-canvas; create one
   per question or project (`canvas_create_workspace`) and reuse it.
-- **Provenance is the contract.** When you place a spec value or quote a
-  number, anchor it to its source via an edge carrying
-  `data.kind = "evidence"` and `data.source_ref = {page, bbox}`. The
-  system enforces this on `anchored` evidence edges.
+- **Provenance is the contract.** Put `source_ref = {slug, page, bbox?}`
+  on each spec row or on the node's `data` when quoting a source. The
+  Sources dock lists the referenced documents and opens their evidence.
+  Document cards and evidence edges are optional presentation. An explicit
+  `anchored` evidence edge still requires `data.kind = "evidence"` and
+  `data.source_ref`; a citation alone does not grant Verified status.
 - **Slug naming.** Document slugs are filename-derived (lowercase,
   hyphenated). Canvas slugs are user-chosen, e.g. `pump-analysis`.
 - **Don't re-ingest.** `list_documents()` first; if the slug exists with
@@ -232,7 +234,7 @@ real time on every connected client via SSE.
 
 | Node type | When to use |
 | --- | --- |
-| `document` | A whole PDF as a card on the canvas. |
+| `document` | An optional PDF card for a reading list or presentation. |
 | `spec` | A table of rows with values. Each row carries a `source_ref`. |
 | `fact` | A free-form note tied to a source. |
 | `image` | A region crop or screenshot. |
@@ -244,6 +246,13 @@ real time on every connected client via SSE.
 
 The full list and the data shapes live in the on-disk substrate docs;
 this is the shortlist of the ones agents touch most.
+
+Put a citation in a node's `data.source_ref` or in each spec row's
+`source_ref`. The Sources dock derives its document list from those references
+and opens the shared viewer at the cited page and region. A document card or
+an evidence edge to a hub card is not required. Existing cards still render,
+and an explicit anchored evidence edge remains useful when the line itself
+communicates something. A citation does not grant Verified status by itself.
 
 ### Say it in Markdown when it has structure
 
@@ -292,12 +301,11 @@ not render the rest of Markdown -- `**bold**` stays asterisks in a
 card you like when it just needs to point at its source. There is no
 element where a claim has to go unanchored.
 
-An inline ref is a pointer for whoever reads the card. It is **not** an
-evidence edge. The edge is the reviewable claim that a value came from a
-region, and rows of values still belong in a `spec` node where each row
-carries its own `source_ref`. Use the link for prose that mentions a
-source in passing; use an edge, or a spec row, when the relation itself
-is the point. Doing both is fine.
+An inline ref is a pointer for whoever reads the card. Rows of values still
+belong in a `spec` node where each row carries its own `source_ref`. An
+explicit evidence edge can show a useful visual relation, but neither that
+edge nor a document card is required to review a citation. The server's claim
+binding determines a row's evidence state.
 
 ### Review states
 
@@ -307,8 +315,8 @@ those, every node you create is stamped `data.review = {state:
 set or change a node's `review` state unless the user asks you to. A
 node with `review.state == "rejected"` is feedback: the human turned it
 down, so revise or replace it rather than ignoring or deleting the
-verdict. `accepted` means the human signed off. Evidence edges and
-`source_ref` remain how a value is checked; `review` only records the
+verdict. `accepted` means the human signed off. `source_ref` and stored
+claim evidence remain how a value is checked; `review` only records the
 outcome of that check. A whole proposal set carries one verdict for every
 element in it (see below).
 
@@ -502,8 +510,7 @@ top-left corner of each element; children sit inside their area's box.
 ]
 ```
 
-Then edges: evidence edges from each `spec` back to the document card,
-and labelled edges between the areas' key cards carrying the reasoning
+Then labelled edges between the areas' key cards carrying the reasoning
 ("fails at 5 m", "passes with margin"). Finish with
 `canvas_propose_set` so the human rules on the answer as one thing.
 
@@ -613,9 +620,13 @@ When the user drops a PDF and asks for specs on the canvas:
 2. `ingest_pdf(pdf_path="/abs/path/to/datasheet.pdf")` only if needed.
 3. `search_documents("flow rate")` to locate the right region(s), or
    `get_gold_regions(slug=..., page=2)` when you already know the page.
-4. Place a `document` node on the canvas via `canvas_add_node`.
-5. Place a `spec` node whose `data.rows` reference the regions, and an
-   `anchored` evidence edge from each row to the document node.
+4. Place one `spec` node whose `data.rows` each carry a `source_ref` naming
+   the document slug, page, and available region/item/cell/bbox locator.
+   For a fact, put the reference in the node's `data.source_ref`.
+5. The Sources dock shows those documents automatically. Place a `document`
+   card or an explicit `anchored` evidence edge only when useful for the
+   presentation; neither is required for a source citation. A citation alone
+   does not establish a validated claim binding or Verified row status.
 
 ### Common errors
 
