@@ -24,7 +24,9 @@ regions tagged with the page number and bounding box they came from.
   text, score`. This is how you "find stuff" in the documents by meaning,
   not by guessing a page. CLI `anchor search "<query>"`, HTTP
   `GET /api/search?q=…`. Embeddings are created during `ingest_pdf`; if a
-  doc was ingested without them, run `embed` first (`anchor embed`).
+  doc was ingested without them, run `embed` first (`anchor embed`). Search
+  text includes title, description, tags, entities and source content. Run
+  `anchor embed <slug>` again to include metadata in an existing index.
 - `list_documents()` — every document and its current status.
 - `list_entities(slug)` - what a document is ABOUT: every entity its gold
   regions name, with counts and pages. A title and a page count do not tell
@@ -39,6 +41,13 @@ regions tagged with the page number and bounding box they came from.
   result and is much larger, so reach for it only when you truly need
   the whole document at once.
 - `get_gold_regions(slug, page?)` — structured regions with `page + bbox`.
+- `inspect_region(slug, region_id)` - one region's metadata, stable silver
+  membership, source content, table cells and `source_ref`. Qualify a search
+  hit with its page: hit `page=2, region_id="r1"` becomes `"p2/r1"`.
+  CLI `anchor inspect-region <slug> p2/r1`.
+- `get_region_content(slug, region_id)` - the region's stored or reconstructed
+  source markdown and cells. Use the same page-qualified locator when
+  inspection has no stored content. CLI `anchor region-content <slug> p2/r1`.
 - `get_page_text(slug, page)` — polished or raw page markdown.
 - `get_crop(slug, "<page>/<region_id>.png")` - LOOK at one region: the crop
   comes back as an image the harness displays, so you can read a chart,
@@ -47,16 +56,23 @@ regions tagged with the page number and bounding box they came from.
   `.anchor_data/` yourself; reading the store directly bypasses the tool
   surface and may not even be permitted.
 
-### Finding content — search first, then retrieve
+### Finding content - search, inspect, answer
 
 To answer "what does this document say about X" or "find the pricing /
-the flow rate / the warranty", **start with `search_documents(query)`** —
-it ranks gold regions across all documents by meaning. Each hit already
-carries its `slug, page, region_id`, so follow up with
-`get_gold_regions(slug, page=…)` or `get_page_text(slug, page)` to read
-the full context and cite the page + bbox. Do not page through every
-region by hand or re-read whole documents when search points you at the
-right region directly.
+the flow rate / the warranty", **start with `search_documents(query)`**.
+It ranks gold regions across all documents by meaning. For each relevant
+hit, call `inspect_region(hit.slug, "p<page>/<region_id>")` using the hit's
+page and region id. Page qualification prevents selecting a different
+page's region with the same local id.
+
+Read the inspected source content and cells before answering. A title,
+description, tag or entity explains why a hit ranked; it is not evidence
+for a value. If stored content is absent, call `get_region_content` with
+the same locator. Cite the returned `source_ref`, using the silver item
+or cell locator when available, or the region/page/bbox otherwise.
+Use `get_page_text` for adjacent context and `get_crop` for visual evidence
+when needed. If you already know the exact region locator, inspect it
+directly. Search and inspection avoid re-reading whole documents.
 
 ### Typical flow
 
@@ -64,12 +80,14 @@ When the user drops a PDF and asks for specs on the canvas:
 
 1. `list_documents()` first — skip ingest if the slug is already golded.
 2. `ingest_pdf(pdf_path="/abs/path/to/datasheet.pdf")` only if needed.
-3. `search_documents("flow rate")` to locate the right region(s), or
-   `get_gold_regions(slug=..., page=2)` when you already know the page.
-4. Place one `spec` node whose `data.rows` each carry a `source_ref` naming
+3. `search_documents("flow rate")` to locate the right region(s).
+4. Inspect each hit with `inspect_region(slug, "p<page>/<region_id>")`.
+   Read its source content/cells, using `get_region_content` if needed,
+   before extracting values or answering.
+5. Place one `spec` node whose `data.rows` each carry a `source_ref` naming
    the document slug, page, and available region/item/cell/bbox locator.
    For a fact, put the reference in the node's `data.source_ref`.
-5. The Sources dock shows those documents automatically. Place a `document`
+6. The Sources dock shows those documents automatically. Place a `document`
    card or an explicit `anchored` evidence edge only when useful for the
    presentation; neither is required for a source citation. A citation alone
    does not establish a validated claim binding or Verified row status.
