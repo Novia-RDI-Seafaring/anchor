@@ -43,6 +43,7 @@ export function SourceMagnifier({
         ? placeMagnifier(sourceRect, intersectRects(pageRect, visible))
           ?? placeMagnifier(sourceRect, visible)
         : null;
+      if (!next) setResult(null);
       setPlacement((old) => old?.left === next?.left && old?.top === next?.top
         && old?.width === next?.width && old?.height === next?.height ? old : next);
     };
@@ -56,7 +57,7 @@ export function SourceMagnifier({
 
   const width = placement?.width ?? 0;
   const height = placement?.height ?? 0;
-  const renderKey = `${page}:${x0}:${y0}:${x1}:${y1}:${zoom}:${width}:${height}`;
+  const renderKey = `${page}:${x0}:${y0}:${x1}:${y1}:${zoom}:${pageSize.w}:${pageSize.h}:${width}:${height}`;
   const status = result?.doc === doc && result.key === renderKey ? result.status : "loading";
   useEffect(() => {
     if (!width || !height || page < 1 || page > doc.numPages

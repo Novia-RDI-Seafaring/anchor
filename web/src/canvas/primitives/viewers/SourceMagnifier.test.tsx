@@ -136,17 +136,25 @@ describe("SourceMagnifier rendering", () => {
     expect(drawImage).not.toHaveBeenCalled();
   });
 
-  it("removes the lens when the highlight scrolls out of view", async () => {
+  it("removes the lens offscreen and renders a fresh crop when it returns", async () => {
     const pdf = fakeDoc();
     const refs = geometry();
     render(<SourceMagnifier doc={pdf.doc} page={1} bbox={[100, 100, 120, 120]}
       zoom={1} pageSize={{ w: 600, h: 800 }} {...refs} />);
     expect(screen.getByTestId("source-magnifier")).toBeTruthy();
+    await settle();
+    await act(async () => { pdf.completions[0]!.resolve(); });
     refs.scroller.scrollTop = 500;
     fireEvent.scroll(refs.scroller);
     expect(screen.queryByTestId("source-magnifier")).toBeNull();
     await settle();
-    expect(pdf.getPage).not.toHaveBeenCalled();
+    expect(pdf.getPage).toHaveBeenCalledOnce();
+    refs.scroller.scrollTop = 0;
+    fireEvent.scroll(refs.scroller);
+    expect(screen.getByTestId("source-magnifier").querySelector("canvas")!.style.visibility).toBe("hidden");
+    await settle();
+    await act(async () => { pdf.completions[1]!.resolve(); });
+    expect(screen.getByTestId("source-magnifier").querySelector("canvas")!.style.visibility).toBe("visible");
   });
 
   it("shows an unavailable state without committing a failed render", async () => {
