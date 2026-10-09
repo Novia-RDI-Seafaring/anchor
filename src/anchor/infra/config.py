@@ -161,7 +161,7 @@ class AnchorConfig(BaseSettings):
     # project's anchor.toml. Run ``anchor models prefetch`` once first so the
     # required weights are cached before an offline run.
     local_only: bool = False
-    embed_model: str = "BAAI/bge-small-en-v1.5"
+    embed_model: str = "hotchpotch/bekko-embedding-v1-a8m"
     polish_model: str = "gpt-5.4"
     region_model: str = "gpt-5.4"
     dpi: int = 150

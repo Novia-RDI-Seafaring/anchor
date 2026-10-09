@@ -166,12 +166,21 @@ class EmbedOption:
     remote: bool
 
 
-# Local stays a single bge model on purpose: the in-browser query embedder is
-# fixed to bge-small, so a different local model would silently break browser
-# search (vector-space mismatch — see #41). The meaningful choice is local-vs-
-# remote, surfaced only when an endpoint exists.
+# The first entry is the default. Search embeds queries on the server with the
+# configured model and skips documents embedded with another one, so switching
+# models means re-embedding (`anchor embed --overwrite`).
 LOCAL_EMBED_OPTIONS: tuple[EmbedOption, ...] = (
-    EmbedOption("BAAI/bge-small-en-v1.5", "bge-small · 384d · local, no egress", remote=False),
+    EmbedOption(
+        "hotchpotch/bekko-embedding-v1-a8m",
+        "bekko-a8m · 384d · multilingual, 2k-token regions · local, no egress",
+        remote=False,
+    ),
+    EmbedOption(
+        "hotchpotch/bekko-embedding-v1-a25m",
+        "bekko-a25m · 384d · multilingual, larger and slower · local, no egress",
+        remote=False,
+    ),
+    EmbedOption("BAAI/bge-small-en-v1.5", "bge-small · 384d · English, 512 tokens · local, no egress", remote=False),
 )
 
 REMOTE_EMBED_OPTIONS: tuple[EmbedOption, ...] = (
@@ -183,7 +192,7 @@ REMOTE_EMBED_OPTIONS: tuple[EmbedOption, ...] = (
 def embed_options_for(provider: Provider) -> tuple[EmbedOption, ...]:
     """Embedding choices for a provider.
 
-    The local sentence-transformer model always applies (no egress). Remote
+    The local sentence-transformer models always apply (no egress). Remote
     embeddings are offered only when there is an OpenAI-compatible endpoint to
     send vectors to; ``local``/``ollama`` keep embeddings on the host.
     """

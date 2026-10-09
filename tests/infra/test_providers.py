@@ -83,11 +83,13 @@ def test_registry_invariants():
 
 
 def test_embed_options_depend_on_provider():
-    # Local/Ollama: only the on-host model, no remote egress offered.
+    # Local/Ollama: only on-host models, no remote egress offered; bekko is
+    # the default and bge-small stays available to switch back to.
     for key in ("local", "ollama"):
         opts = embed_options_for(get_provider(key))
-        assert len(opts) == 1
         assert all(not o.remote for o in opts)
+        assert opts[0].model == "hotchpotch/bekko-embedding-v1-a8m"
+        assert "BAAI/bge-small-en-v1.5" in {o.model for o in opts}
     # Endpoint providers also offer remote embeddings.
     for key in ("openai", "azure", "custom"):
         opts = embed_options_for(get_provider(key))

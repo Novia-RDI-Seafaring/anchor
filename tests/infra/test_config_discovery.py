@@ -63,7 +63,7 @@ def test_malformed_toml_is_ignored_not_fatal(tmp_path, monkeypatch):
     (tmp_path / "anchor.toml").write_text('embed_model = "bad\x1bvalue"\n')
     monkeypatch.chdir(tmp_path)
     cfg = AnchorConfig()  # must not raise
-    assert cfg.embed_model == "BAAI/bge-small-en-v1.5"  # fell back to default
+    assert cfg.embed_model == "hotchpotch/bekko-embedding-v1-a8m"  # fell back to default
 
 
 def test_missing_config_falls_back_to_defaults(tmp_path, monkeypatch):

@@ -81,11 +81,35 @@ credential for that environment. Ollama needs no user key.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `embed_model` | `BAAI/bge-small-en-v1.5` | Local gold-region embeddings; configured `text-embedding-*` models use an allowed endpoint instead |
+| `embed_model` | `hotchpotch/bekko-embedding-v1-a8m` | Local gold-region embeddings; configured `text-embedding-*` models use an allowed endpoint instead |
 | `polish_model` / `region_model` | `gpt-5.4` | Model or deployment names used when an endpoint-backed stage is enabled |
 | `openai_base_url` | Unset | Environment-owned OpenAI-compatible endpoint |
 | `docling_device` | `auto` | Local extraction accelerator selection |
 | `local_only` | Provider-dependent | Offline/no-remote-client policy; `local` environments enable it |
+
+### Local embedding models
+
+Three local models run on-host with onnxruntime. None sends text anywhere.
+
+| Model | Notes |
+| --- | --- |
+| `hotchpotch/bekko-embedding-v1-a8m` | Default. Multilingual, reads up to 2,048 tokens per region. |
+| `hotchpotch/bekko-embedding-v1-a25m` | Same family, larger. Slightly better retrieval, about 2.5x slower. |
+| `BAAI/bge-small-en-v1.5` | English only, reads 512 tokens per region. The default before bekko. |
+
+Vectors from different models cannot be compared. Search skips any document
+embedded with a model other than the active one and lists it under `skipped`.
+To switch models, set `embed_model` in the environment's `env.toml` and
+re-embed:
+
+```bash
+anchor embed --overwrite
+```
+
+To go back to bge, set `embed_model = "BAAI/bge-small-en-v1.5"` and run the same
+command. Environments created before bekko became the default keep bge until
+you change them. For an offline (`local_only`) environment, run
+`anchor models prefetch` first so the new weights are cached.
 
 ### Azure OpenAI
 

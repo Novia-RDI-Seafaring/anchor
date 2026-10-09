@@ -24,7 +24,7 @@ def test_models_list_reports_required_set(monkeypatch, tmp_path):
     result = runner.invoke(app, ["models", "list"])
     assert result.exit_code == 0, result.output
     payload = json.loads(result.stdout)
-    assert payload["embed_model"] == "BAAI/bge-small-en-v1.5"
+    assert payload["embed_model"] == "hotchpotch/bekko-embedding-v1-a8m"
     kinds = {m["kind"] for m in payload["models"]}
     assert kinds == {"embed", "docling"}
 
