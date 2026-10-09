@@ -2,13 +2,27 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 CropFormat = Literal["png", "svg", "pdf"]
 
 
 class PdfRenderer(Protocol):
     async def render_pages(self, pdf_path: Path, dpi: int = 150) -> dict[int, bytes]:
+        raise NotImplementedError
+
+    async def render_candidate_overlay(
+        self,
+        page_image: bytes,
+        candidates: list[dict[str, Any]],
+        *,
+        page_size: tuple[float, float] | None,
+    ) -> bytes:
+        """Debug PNG with candidate IDs, types, order and top-left boxes.
+
+        Map source PDF points to the supplied raster's actual dimensions.
+        Unknown page size must be visible rather than guessed from DPI.
+        """
         raise NotImplementedError
 
     async def crop_region(
