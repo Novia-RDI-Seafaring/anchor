@@ -9,7 +9,7 @@ def tool_definitions() -> list[dict[str, Any]]:
     return [
         {
             "name": "canvas_get_state",
-            "description": "Return the full canvas state (version, nodes, edges, metadata).",
+            "description": "Return the full canvas state (version, nodes, edges, metadata), including descendants hidden by data.collapsed in browser views.",
             "inputSchema": {
                 "type": "object",
                 "properties": {"workspace_slug": {"type": "string"}},
@@ -96,7 +96,14 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "unmentioned keys (e.g. source_ref) are preserved, nested dicts "
                 "merge recursively, and a key set to null is deleted. You no "
                 "longer need to read-modify-write the whole dict to patch one "
-                "field. Shape / "
+                "field. "
+                "View fields: data.collapsed=true folds descendants without "
+                "removing them; data.collapse_direction='outgoing' (default), "
+                "'incoming', or 'any' follows structural edges. Evidence links "
+                "do not make a source document a claim's child. Set "
+                "data.role='heading' on concept for a section heading; set "
+                "data.display_mode='compact' (default) or 'full' on fact, "
+                "note, markdown, and spec cards. Shape / "
                 "card primitives honour `data.bg_color` and `data.stroke_color` "
                 "(CSS colour strings, e.g. `#fef3c7`, `rgb(...)`); these tint "
                 "the background and the border + label colour respectively. "

@@ -73,7 +73,7 @@ export function QuickAddPopover({
       const width = meta?.width;
       const height = meta?.height;
       const res = (await canvases.addNode(workspaceSlug, {
-        node_type: nodeType,
+        node_type: meta?.nodeType ?? nodeType,
         label,
         x: flowDrop.x,
         y: flowDrop.y,
