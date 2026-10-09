@@ -100,6 +100,25 @@ left rail, drag them into place, and use a spec table for related parameters.
 The files explorer and PDF source dock can be toggled with `[` while you are
 not typing. Canvas state is saved to the project as you work.
 
+Select an element, or Shift-select several, and hold **Alt** (Option on Mac)
+while dragging to place a duplicate. **Ctrl+C/X/V** (Cmd on Mac) copies, cuts,
+and pastes the selection. Each paste moves the copy 24 canvas units farther
+down and right. Containers include their contents; connectors between copied
+elements keep their handles and connect the new IDs. Copy both endpoints when
+moving a connector to another canvas.
+
+The canvas clipboard is shared between canvases in the same open project and
+lasts until the page reloads. Source citations are preserved, while copied human
+reviews and evidence verdicts are cleared. The server can independently validate
+the new citations and supply fresh evidence. Cutting removes the originals as
+soon as the server accepts the delete operations.
+
+In **mark up** mode, the same shortcuts copy drawn shapes and labels with their
+leaders. Pasted ink determines its targets again at its new location. Alt-drag
+clones a shape or label; **Alt+Shift-drag** deforms a drawn line. The markup
+clipboard is separate from the canvas clipboard. Clipboard shortcuts keep their
+usual text-editing behavior inside input fields and editable labels.
+
 Deleting a canvas does not delete its source documents. Removing a document is
 a separate corpus operation; existing source links may then fail to resolve.
 
@@ -126,6 +145,11 @@ do not submit work on their own. See the
 Click a spec row's source anchor to open its PDF page. The dock highlights a
 resolvable region, item, cell, or explicit bounding box; a page-only reference
 opens the page. Select source text to add a more precise citation when needed.
+
+A highlighted box also opens a small 2.5x magnifier beside it, so a value stays
+readable when the page is zoomed out. For a reference with several boxes, move
+the pointer over a box to magnify that place. Escape dismisses the highlight
+and magnifier together.
 
 | Row state | Meaning |
 | --- | --- |
