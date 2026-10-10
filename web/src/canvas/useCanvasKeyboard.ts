@@ -60,6 +60,12 @@ export function useCanvasKeyboard(args: Args) {
       if (!action) return;
       const current = latest.current;
       const ids = current.selectedIds();
+      if (action.type === "nudge") {
+        // Never fall through to ReactFlow's unsaved move, including a focus
+        // and controlled-selection update that reach us in different frames.
+        event.preventDefault(); event.stopPropagation();
+        if (!ids.includes(action.nodeId)) return;
+      }
       if (action.type === "duplicate" ? !ids.length && !current.selectedEdgeIds?.().length : !ids.includes(action.nodeId)) return;
       if (action.type === "rename" && !supportsInlineRename(useCanvasStore.getState().nodes[action.nodeId]?.node_type ?? "")) return;
       event.preventDefault(); event.stopPropagation();

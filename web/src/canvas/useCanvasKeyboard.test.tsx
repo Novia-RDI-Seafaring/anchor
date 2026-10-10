@@ -81,6 +81,15 @@ describe("saved canvas shortcuts", () => {
     expect(key(view.getByTestId("child"), "d", { ctrlKey: true }).defaultPrevented).toBe(false);
     expect(useUiStore.getState().pendingInlineRenameNodeId).toBeNull();
   });
+  it("blocks native unsaved arrow movement from a focused unselected wrapper", () => {
+    const view = render(<Probe ids={["parent"]} />);
+    expect(key(view.getByTestId("child"), "ArrowRight").defaultPrevented).toBe(true);
+    expect(canvases.patchNode).not.toHaveBeenCalled();
+    expect(useCanvasStore.getState().nodes.parent!.x).toBe(100);
+    view.rerender(<Probe ids={[]} />);
+    expect(key(view.getByTestId("child"), "ArrowRight").defaultPrevented).toBe(true);
+    expect(canvases.patchNode).not.toHaveBeenCalled();
+  });
   it("routes a selected connector alone through the existing safe duplicate path", () => {
     const view = render(<Probe ids={[]} edgeIds={["join"]} />);
     expect(key(view.getByTestId("child"), "d", { ctrlKey: true }).defaultPrevented).toBe(true);
