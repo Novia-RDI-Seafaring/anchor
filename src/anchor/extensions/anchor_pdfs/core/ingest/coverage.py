@@ -64,7 +64,7 @@ def covered_item_ids(regions: list[dict[str, Any]]) -> set[str]:
     ``table_slice.candidate_id`` (cell-granular table selections, #270)."""
     covered: set[str] = set()
     for region in regions:
-        if not isinstance(region, dict):
+        if not isinstance(region, dict) or region.get("derived_from"):
             continue
         members = region.get("member_item_ids")
         if isinstance(members, list):
