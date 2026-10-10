@@ -37,6 +37,7 @@ import { SelectionPanel } from "@/canvas/SelectionPanel";
 import { NodeDetailPanel } from "@/canvas/NodeDetailPanel";
 import { CanvasStructureContext, structuredNodeTypes } from "@/canvas/StructuredNode";
 import { foldedGraph, structureSignature } from "@/canvas/subtrees";
+import { CANVAS_EDGE_Z_INDEX, canvasNodeLayers } from "@/canvas/layering";
 import { WaypointEditor } from "@/canvas/WaypointEditor";
 import {
   PAINT_DRAG_THRESHOLD_PX,
@@ -166,13 +167,14 @@ function ancestorOffset(nodeId: string, allNodes: Record<string, StoreNode>, hid
  *  The drop hit-test falls back to this when nothing better is known. */
 const AREA_DEFAULT = { width: 360, height: 220 };
 
-export function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>, hidden?: Set<string>): RfNode {
-  // Areas render behind other nodes (zIndex: -1) so the empty interior
-  // doesn't trap clicks meant for whatever sits on top. `selectable: true`
-  // still lets the user click the dashed border or header to select the
-  // area itself (and resize it via NodeResizer); clicks on the transparent
-  // interior fall through to the nodes inside.
+export function toRfNode(
+  n: StoreNode,
+  allNodes: Record<string, StoreNode>,
+  hidden?: Set<string>,
+  layers: Record<string, number> = canvasNodeLayers(allNodes),
+): RfNode {
   const isArea = n.node_type === "area";
+  const zIndex = layers[n.id];
   // Parent/child wiring — when this node has a `parent` AND that parent
   // node currently exists, hand ReactFlow `parentId`. ReactFlow then:
   //   - moves the child along when the parent (Area) is dragged,
@@ -206,7 +208,12 @@ export function toRfNode(n: StoreNode, allNodes: Record<string, StoreNode>, hidd
     data: { label: n.label, ...(n.data ?? {}) },
     type: n.node_type,
     ...parentProps,
-    ...(isArea ? { zIndex: -1, draggable: true } : {}),
+    zIndex,
+    // ReactFlow promotes children above their parent's internal layer even
+    // in manual mode. The visual layer must also be explicit; parentId still
+    // controls movement and the position conversion above stays unchanged.
+    style: { zIndex },
+    ...(isArea ? { draggable: true } : {}),
     ...(locked ? { draggable: false } : {}),
   };
 }
@@ -231,6 +238,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   const reset = useCanvasStore((s) => s.reset);
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
+  const nodeLayers = useMemo(() => canvasNodeLayers(nodes), [nodes]);
   const structureKey = structureSignature(nodes, Object.values(edges));
   // This key includes every input the topology projection reads. Ordinary
   // moves and text edits retain the cached traversal.
@@ -347,15 +355,17 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     restore: () => {
       const current = useCanvasStore.getState().nodes;
       const folded = foldedGraph(current, Object.values(useCanvasStore.getState().edges));
+      const layers = canvasNodeLayers(current);
       setRfNodes((prev) => Object.values(current).filter((n) => !folded.hidden.has(n.id)).map((n) => ({
-        ...toRfNode(n, current, folded.hidden), selected: prev.some((p) => p.id === n.id && p.selected),
+        ...toRfNode(n, current, folded.hidden, layers), selected: prev.some((p) => p.id === n.id && p.selected),
       })));
       useUiStore.getState().setDropTargetAreaId(null);
     },
     select: (ids) => {
       const current = useCanvasStore.getState().nodes;
       const folded = foldedGraph(current, Object.values(useCanvasStore.getState().edges));
-      setRfNodes(Object.values(current).filter((n) => !folded.hidden.has(n.id)).map((n) => ({ ...toRfNode(n, current, folded.hidden), selected: ids.includes(n.id) })));
+      const layers = canvasNodeLayers(current);
+      setRfNodes(Object.values(current).filter((n) => !folded.hidden.has(n.id)).map((n) => ({ ...toRfNode(n, current, folded.hidden, layers), selected: ids.includes(n.id) })));
       useUiStore.getState().setSelectedNodeId(ids[0] ?? null);
     },
   });
@@ -432,7 +442,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       // Pass the full node map so `toRfNode` can resolve `parent` → `parentId`
       // only when the parent actually exists in this snapshot.
       return Object.values(nodes).filter((n) => !structure.hidden.has(n.id)).map((n) => ({
-        ...toRfNode(n, nodes, structure.hidden),
+        ...toRfNode(n, nodes, structure.hidden, nodeLayers),
         selected: selectedSet.has(n.id),
       }));
     });
@@ -440,7 +450,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     // element often lands in the store (via SSE) BEFORE the code that asks
     // for it to be focused runs, and then this effect never re-ran, so the
     // element sat there unselected and typing went nowhere.
-  }, [nodes, pendingRenameId, structure]);
+  }, [nodes, pendingRenameId, structure, nodeLayers]);
 
   useEffect(() => {
     // pickEdgeMode resolves every edge to its ReactFlow renderer type. For
@@ -528,6 +538,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         targetHandle: e.targetHandle ?? undefined,
         label: e.label,
         type,
+        zIndex: CANVAS_EDGE_Z_INDEX,
         data: { ...(e.data ?? {}), label: e.label || undefined, active, dimmed },
         style: dimmed ? { opacity: 0.25 } : undefined,
         selected: isSelected,
@@ -1356,11 +1367,11 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         onConnect={onConnect}
         fitView
         nodesDraggable={!readOnly && armedTool !== CONNECT_TOOL}
-        // ReactFlow lifts a selected node above every other by default. A
-        // region is a container drawn behind its contents (zIndex -1), so
-        // selecting one used to raise it over the elements inside and hide
-        // them. Layer order is ours to decide, not selection's.
+        // Keep containers below edges and every ordinary card above them,
+        // including selected edges and edges attached to parented nodes.
+        zIndexMode="manual"
         elevateNodesOnSelect={false}
+        elevateEdgesOnSelect={false}
         nodesConnectable={!readOnly}
         elementsSelectable={!readOnly}
         zoomOnScroll
