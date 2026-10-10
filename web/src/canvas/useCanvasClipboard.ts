@@ -101,5 +101,13 @@ export function useCanvasClipboard(args: Args) {
     }
     return true;
   };
-  return { startDrag, finishDrag, error };
+  const duplicate = () => {
+    const current = latest.current;
+    if (!current.active || busy.current) return;
+    const fragment = captureCanvas(useCanvasStore.getState(), current.slug,
+      current.nodes().filter((node) => node.selected).map((node) => node.id), current.edges().filter((edge) => edge.selected).map((edge) => edge.id));
+    if (!fragment.nodes.length && !fragment.edges.length) return;
+    void paste(fragment, { x: 24, y: 24 });
+  };
+  return { startDrag, finishDrag, duplicate, error };
 }

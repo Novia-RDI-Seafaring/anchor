@@ -10,7 +10,7 @@ export function copyData(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(copyData);
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(Object.entries(value).filter(([key]) =>
-    !["review", "evidence", "revalidate_evidence"].includes(key),
+    !["review", "review_history", "evidence", "revalidate_evidence"].includes(key),
   ).map(([key, item]) => [key, key === "source_ref" ? structuredClone(item) : copyData(item)]));
 }
 

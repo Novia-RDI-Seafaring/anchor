@@ -52,6 +52,7 @@ import { connectClick } from "@/canvas/connect";
 import { CONNECT_TOOL, INTENT_TOOL, nodeTypes, paletteEntries } from "@/canvas/registry";
 import { refreshWorkspaces } from "@/canvas/useWorkspacesList";
 import { useCanvasClipboard } from "@/canvas/useCanvasClipboard";
+import { useCanvasKeyboard } from "@/canvas/useCanvasKeyboard";
 import { CanvasSse, type CanvasEvent } from "@/realtime/sseClient";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -346,6 +347,12 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       setRfNodes(Object.values(current).filter((n) => !folded.hidden.has(n.id)).map((n) => ({ ...toRfNode(n, current, folded.hidden, layers), selected: ids.includes(n.id) })));
       useUiStore.getState().setSelectedNodeId(ids[0] ?? null);
     },
+  });
+  const canvasKeyboard = useCanvasKeyboard({
+    rootRef, slug, active: !readOnly && !commentMode,
+    selectedIds: () => rfNodesRef.current.filter((node) => node.selected).map((node) => node.id),
+    selectedEdgeIds: () => rfEdges.filter((edge) => edge.selected).map((edge) => edge.id),
+    duplicate: canvasClipboard.duplicate,
   });
   // Right-click menu target. Null when no context menu is open. Set by
   // `onNodeContextMenu` and cleared by selection / outside-click / Esc.
@@ -1343,6 +1350,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
           })}
     >
       {canvasClipboard.error ? <div role="alert" className="absolute left-3 top-3 z-50 rounded border border-red-300 bg-white p-2 text-sm text-red-800">{canvasClipboard.error}</div> : null}
+      {canvasKeyboard.error ? <div role="alert" className="absolute left-3 top-3 z-50 rounded border border-red-300 bg-white p-2 text-sm text-red-800">{canvasKeyboard.error}</div> : null}
       {/* Mount custom <marker> defs once per canvas. Edge components
           reference them by URL fragment (`url(#anchor-mk-...)`); SVG
           marker IDs resolve document-wide so a sibling defs SVG works. */}
