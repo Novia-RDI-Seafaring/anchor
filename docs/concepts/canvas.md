@@ -129,11 +129,22 @@ from the files explorer onto the canvas to place it. See
 
 ## Edges and organization
 
-Floating edges connect nodes. Anchored edges name explicit handles, allowing
-row-level wiring and evidence connections. Area nodes can contain child nodes;
-sub-canvas tiles link to another workspace. Layout operations include alignment,
-distribution, and subtree organization. CLI/MCP add operations can auto-place
-nodes when coordinates are omitted; explicit coordinates preserve a chosen layout.
+Connect plain shapes with a floating edge, the default, using only the source
+and target node IDs. Leave `sourceHandle` and `targetHandle` unset in HTTP/MCP,
+or omit `--source-handle` and `--target-handle` in the CLI. Floating routing
+chooses the facing sides of each node; plain shapes have no named left or right
+ports to guess. The connector tool and selected-node quick-connect dots create
+these node-to-node connections.
+
+Use anchored edges when a position carries meaning, such as a specification
+row, document region, or model port. Supply the exact handle IDs exposed by
+that feature. When updating an edge, omitting a handle field keeps its current
+value unchanged.
+
+Area nodes can contain child nodes; sub-canvas tiles link to another workspace.
+Layout operations include alignment, distribution, and subtree organization.
+CLI/MCP add operations can auto-place nodes when coordinates are omitted;
+explicit coordinates preserve a chosen layout.
 
 Edges draw above areas and nodes in the background layer, and below ordinary
 cards and annotations. Selecting an edge or nesting an endpoint keeps that

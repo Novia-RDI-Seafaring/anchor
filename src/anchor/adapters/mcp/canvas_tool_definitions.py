@@ -157,7 +157,9 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "Explicitly wire two nodes. Use only when the user's main intent is "
                 "to change wiring, relationships, provenance visualization, layout "
                 "connections, or graph structure. Do not use for ordinary content "
-                "updates; source_ref data is enough for grounding."
+                "updates; source_ref data is enough for grounding. For plain shapes, "
+                "use floating (the default) and omit handle fields. Use anchored "
+                "with exact named handles for card or model ports."
             ),
             "inputSchema": {
                 "type": "object",
@@ -168,8 +170,14 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "label": {"type": "string"},
                     "edge_type": {"type": "string", "enum": ["floating", "anchored"]},
                     "type": {"type": "string", "enum": ["floating", "anchored"], "description": "Alias for edge_type (back-compat with canvas-state JSON keys)."},
-                    "sourceHandle": {"type": "string"},
-                    "targetHandle": {"type": "string"},
+                    "sourceHandle": {
+                        "type": "string",
+                        "description": "Exact source handle ID for an anchored edge from a named card or model port, such as a spec row. Omit for plain shapes and floating node-to-node wiring.",
+                    },
+                    "targetHandle": {
+                        "type": "string",
+                        "description": "Exact target handle ID for an anchored edge to a named card or model port, such as a document region. Omit for plain shapes and floating node-to-node wiring.",
+                    },
                     "data": {"type": "object"},
                 },
                 "required": ["workspace_slug", "source", "target"],
@@ -192,7 +200,8 @@ def tool_definitions() -> list[dict[str, Any]]:
             "description": (
                 "Patch an existing edge's fields. Use only when the user's main "
                 "intent is a wiring, routing, relationship, provenance-visualization, "
-                "or graph-structure change."
+                "or graph-structure change. Plain shapes use floating node-to-node "
+                "wiring; named card or model ports use anchored edges with exact handle IDs."
             ),
             "inputSchema": {
                 "type": "object",
@@ -202,8 +211,14 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "label": {"type": "string"},
                     "edge_type": {"type": "string", "enum": ["floating", "anchored"]},
                     "type": {"type": "string", "enum": ["floating", "anchored"], "description": "Alias for edge_type (back-compat with canvas-state JSON keys)."},
-                    "sourceHandle": {"type": "string"},
-                    "targetHandle": {"type": "string"},
+                    "sourceHandle": {
+                        "type": "string",
+                        "description": "Exact source handle ID for an anchored edge from a named card or model port, such as a spec row. Omit to keep the current handle unchanged.",
+                    },
+                    "targetHandle": {
+                        "type": "string",
+                        "description": "Exact target handle ID for an anchored edge to a named card or model port, such as a document region. Omit to keep the current handle unchanged.",
+                    },
                     "data": {"type": "object"},
                 },
                 "required": ["workspace_slug", "id"],
