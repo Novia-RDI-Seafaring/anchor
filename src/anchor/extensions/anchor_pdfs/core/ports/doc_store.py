@@ -33,7 +33,7 @@ class DocStore(Protocol):
     async def begin_replacement(self, slug: str, pages: list[int]) -> str:
         """Create an isolated replacement without inherited page artifacts.
 
-        Raw and polished text, gold, crops and embeddings start empty.
+        Raw and polished text, gold, knowledge, crops and embeddings start empty.
         Optional polished output must be produced for this candidate.
         """
         raise NotImplementedError
@@ -101,10 +101,16 @@ class DocStore(Protocol):
         raise NotImplementedError
 
     async def get_regions(self, slug: str, page: int | None = None) -> dict[str, Any]:
+        """Compatibility view of source gold and derived knowledge regions."""
+        raise NotImplementedError
+
+    async def get_source_regions(self, slug: str) -> dict[str, Any]:
+        """Original gold only, for ingest coverage and publication checks."""
         raise NotImplementedError
 
     async def get_gold_map(self, slug: str) -> dict[str, Any] | None:
-        """Full gold extraction for a document, or None when the document
+        """Compatibility extraction for a document, including derived knowledge,
+        or None when the document
         has no *complete* gold layer. Keyed on the completeness marker, so
         a crash-interrupted (partial) gold pass is reported as absent
         rather than as a truncated map."""
@@ -219,17 +225,26 @@ class DocStore(Protocol):
         raise NotImplementedError
 
     async def add_derived_region(self, slug: str, region: dict[str, Any]) -> Path:
-        """Append one derived region to an existing document's gold.
+        """Persist derived knowledge in the selected document generation.
 
         A region producer (e.g. a chart digitizer) enriches an already-gold
-        document: it consumes one region and writes a new one back into the
-        same gold tree. The page is taken from ``region['source_ref']['page']``
+        document: it consumes one region and writes a new knowledge record.
+        Existing legacy derived gold is updated in place. The page comes from
+        ``region['source_ref']['page']``
         (a derived region inherits its parent's source_ref) or
         ``region['page']``. Replaces an existing derived region with the same
         ``id`` on that page so re-deriving is idempotent. An original region
         with that id raises ``RegionIdConflictError`` before any write.
         Search picks the new region up on the
         next ``embed`` pass; this method does not embed.
+        """
+        raise NotImplementedError
+
+    async def remove_derived_region(self, slug: str, page: int, region_id: str) -> bool:
+        """Remove a derived record from its original collection.
+
+        Source gold is protected. Return false when no derived record matches.
+        The caller handles embedding cleanup in the same pinned generation.
         """
         raise NotImplementedError
 

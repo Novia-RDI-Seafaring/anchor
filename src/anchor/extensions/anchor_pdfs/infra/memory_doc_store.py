@@ -40,6 +40,7 @@ class MemoryDocStore:
         self._published_polished: frozenset[int] | None = None
         self._page_images: dict[tuple[str, int], bytes] = {}
         self._regions: dict[tuple[str, int], list[dict[str, Any]]] = {}
+        self._knowledge: dict[tuple[str, int], list[dict[str, Any]]] = {}
         self._gold_maps: dict[str, dict[str, Any]] = {}
         self._crops: dict[tuple[str, str], bytes] = {}
         self._bronze: dict[tuple[str, str], bytes] = {}
@@ -111,7 +112,7 @@ class MemoryDocStore:
         polished = polished_membership(candidate._reports[slug])
         if not set(polished).issubset(pages) or any((slug, p) not in candidate._polished for p in polished):
             raise SourceIdentityError("replacement polished page is incomplete or outside current membership")
-        gold = (await candidate.get_regions(slug))["pages"]
+        gold = (await candidate.get_source_regions(slug))["pages"]
         if not set(gold).issubset(pages):
             raise SourceIdentityError("replacement gold is outside current page membership")
         for page, regions in gold.items():
@@ -243,13 +244,18 @@ class MemoryDocStore:
     @document_view
     async def get_regions(self, slug: str, page: int | None = None) -> dict[str, Any]:
         pages: dict[int, list[dict[str, Any]]] = {}
-        for (s, p), regions in self._regions.items():
-            if s != slug:
-                continue
-            if page is not None and p != page:
-                continue
-            pages[p] = _normalise_regions(regions)
-        return {"slug": slug, "pages": pages}
+        for collection in (self._regions, self._knowledge):
+            for (s, p), regions in collection.items():
+                if s == slug and (page is None or p == page):
+                    pages.setdefault(p, []).extend(_normalise_regions(regions))
+        return {"slug": slug, "pages": dict(sorted(pages.items()))}
+
+    @document_view
+    async def get_source_regions(self, slug: str) -> dict[str, Any]:
+        return {"slug": slug, "pages": {
+            p: _normalise_regions([r for r in regions if not r.get("derived_from")])
+            for (s, p), regions in self._regions.items() if s == slug
+        }}
 
     @document_view
     async def get_gold_map(self, slug: str) -> dict[str, Any] | None:
@@ -275,7 +281,7 @@ class MemoryDocStore:
     def _count_gold_regions(self, slug: str) -> int:
         """Regions actually held for ``slug`` across all pages."""
         return sum(
-            len(regions)
+            sum(1 for r in regions if not r.get("derived_from"))
             for (s, _p), regions in self._regions.items()
             if s == slug
         )
@@ -463,14 +469,28 @@ class MemoryDocStore:
                 "or region.page"
             )
         async with self._lock:
-            existing = list(self._regions.get((slug, page), []))
+            gold = self._regions.get((slug, page), [])
             rid = region.get("id")
-            if rid and any(r.get("id") == rid and not r.get("derived_from") for r in existing):
+            if rid and any(r.get("id") == rid and not r.get("derived_from") for r in gold):
                 raise RegionIdConflictError(rid, page)
+            legacy = rid and any(r.get("id") == rid for r in gold)
+            collection = self._regions if legacy else self._knowledge
+            existing = collection.get((slug, page), [])
             kept = [r for r in existing if r.get("id") != rid] if rid else existing
             kept.append(region)
-            self._regions[(slug, page)] = _normalise_regions(kept)
-        return Path(f"memory://gold/{slug}/{page}.regions.json")
+            collection[(slug, page)] = _normalise_regions(kept)
+        layer = "gold" if legacy else "knowledge"
+        return Path(f"memory://{layer}/{slug}/{page}.regions.json")
+
+    @document_view
+    async def remove_derived_region(self, slug: str, page: int, region_id: str) -> bool:
+        async with self._lock:
+            for collection in (self._regions, self._knowledge):
+                regions = collection.get((slug, page), [])
+                if any(r.get("id") == region_id and r.get("derived_from") for r in regions):
+                    collection[(slug, page)] = [r for r in regions if r.get("id") != region_id]
+                    return True
+        return False
 
     @document_view
     async def write_embeddings(self, slug: str, payload: dict[str, Any]) -> Path:

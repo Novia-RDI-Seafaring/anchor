@@ -68,6 +68,61 @@ def test_gold_document_link_cannot_read_outside_storage(tmp_path):
         asyncio.run(store.get_regions("doc"))
 
 
+@pytest.mark.parametrize("slug", ["../etc", "..", ".", "a/b", "a\\b", "", "C:/outside"])
+def test_knowledge_operations_reject_traversal_slugs(tmp_path, slug):
+    store = FsDocStore(tmp_path)
+
+    async def run():
+        for call in (
+            lambda: store.get_regions(slug),
+            lambda: store.get_source_regions(slug),
+            lambda: store.add_derived_region(slug, {"id": "child", "page": 1, "derived_from": "p1/r1"}),
+            lambda: store.remove_derived_region(slug, 1, "child"),
+        ):
+            with pytest.raises(UnsafeUploadError):
+                await call()
+
+    asyncio.run(run())
+    assert not list(store.knowledge.glob("**/*.regions.json"))
+
+
+@pytest.mark.parametrize("link_kind", ["document", "pages", "file"])
+def test_knowledge_links_cannot_read_write_or_remove_outside_storage(tmp_path, link_kind):
+    store = FsDocStore(tmp_path / "store")
+    outside = tmp_path / "outside"
+    (outside / "pages").mkdir(parents=True)
+    payload = json.dumps({"page": 1, "regions": [{
+        "id": "child", "content": "outside", "derived_from": "p1/r1",
+    }]})
+    outside_file = outside / "pages/1.regions.json"
+    outside_file.write_text(payload, encoding="utf-8")
+    store.knowledge.mkdir()
+    doc = store.knowledge / "doc"
+    try:
+        if link_kind == "document":
+            doc.symlink_to(outside, target_is_directory=True)
+        elif link_kind == "pages":
+            doc.mkdir()
+            (doc / "pages").symlink_to(outside / "pages", target_is_directory=True)
+        else:
+            (doc / "pages").mkdir(parents=True)
+            (doc / "pages/1.regions.json").symlink_to(outside_file)
+    except OSError:
+        pytest.skip("symlinks are unavailable")
+
+    async def run():
+        for call in (
+            lambda: store.get_regions("doc"),
+            lambda: store.add_derived_region("doc", {"id": "child", "page": 1, "derived_from": "p1/r1"}),
+            lambda: store.remove_derived_region("doc", 1, "child"),
+        ):
+            with pytest.raises(UnsafeUploadError):
+                await call()
+
+    asyncio.run(run())
+    assert outside_file.read_text(encoding="utf-8") == payload
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows cannot create a directory with a literal backslash")
 def test_list_documents_skips_a_directory_that_is_not_a_valid_slug(tmp_path):
     # list_documents feeds each silver directory name through the slug guard.
