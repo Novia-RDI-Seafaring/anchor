@@ -125,6 +125,17 @@ down and right. Containers include their contents; connectors between copied
 elements keep their handles and connect the new IDs. Copy both endpoints when
 moving a connector to another canvas.
 
+With a selected node focused, **Enter** edits its label. Arrow keys move the
+selection 5 canvas units; **Shift+Arrow** moves it 20. Container contents move
+with the container, and the positions are saved. **Ctrl+D** (Cmd on Mac)
+duplicates the selection 24 units down and right using the same citation and
+review rules as paste. These keys leave text fields and PDF navigation alone.
+
+Single keys choose tools: **T** text, **R** rectangle, **O** ellipse, **D**
+diamond, **F** container, **N** note, **M** Markdown, **A/C** connector, and
+**I** mark up. **Escape** clears the tool and selection. **Delete/Backspace**
+removes the selection. Tool keys stay inactive while you type.
+
 The canvas clipboard is shared between canvases in the same open project and
 lasts until the page reloads. Source citations are preserved, while copied human
 reviews and evidence verdicts are cleared. The server can independently validate

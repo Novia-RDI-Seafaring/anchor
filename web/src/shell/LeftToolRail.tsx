@@ -46,6 +46,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
+import { isTextEditing } from "@/shared/clipboard";
 import { useUiStore } from "@/stores/uiStore";
 
 type Props = { workspaceSlug: string };
@@ -86,12 +87,7 @@ export function LeftToolRail({ workspaceSlug }: Props) {
   // fields use the same keys.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const typing =
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable);
+      const typing = isTextEditing(event.target);
       if (event.key === "[" && !event.metaKey && !event.ctrlKey && !event.altKey) {
         if (typing) return;
         event.preventDefault();

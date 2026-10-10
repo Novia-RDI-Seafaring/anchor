@@ -39,6 +39,17 @@ afterEach(cleanup);
 const key = (key: string, target: Window | Element = window, modifiers: { ctrlKey?: boolean; metaKey?: boolean } = { ctrlKey: true }) => fireEvent.keyDown(target, { key, ...modifiers });
 
 describe("canvas clipboard gestures", () => {
+  it("duplicates with fresh IDs and strips prior review records while retaining provenance", async () => {
+    server.child!.data = { review: { state: "approved" }, review_history: [{ state: "approved" }], source_ref: { slug: "pdf", page: 1 } };
+    useCanvasStore.setState({ nodes: structuredClone(server) });
+    render(<Probe />);
+    act(() => gestures.duplicate());
+    await waitFor(() => expect(selected).toHaveBeenCalledOnce());
+    expect(canvases.addNode).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(canvases.addNode).mock.calls[1]![1]).toMatchObject({ x: 54, y: 64, data: { source_ref: { slug: "pdf", page: 1 } } });
+    expect(vi.mocked(canvases.addNode).mock.calls[1]![1].data).not.toHaveProperty("review_history");
+    expect(vi.mocked(canvases.addNode).mock.calls[1]![1].data).not.toHaveProperty("review");
+  });
   it("copies with Cmd+C and pastes with Ctrl+V using fresh IDs and repeated offsets", async () => {
     render(<Probe />);
     key("c", window, { metaKey: true });
