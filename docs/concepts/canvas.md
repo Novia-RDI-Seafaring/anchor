@@ -135,6 +135,12 @@ sub-canvas tiles link to another workspace. Layout operations include alignment,
 distribution, and subtree organization. CLI/MCP add operations can auto-place
 nodes when coordinates are omitted; explicit coordinates preserve a chosen layout.
 
+Edges draw above areas and nodes in the background layer, and below ordinary
+cards and annotations. Selecting an edge or nesting an endpoint keeps that
+order. A crossing disappears behind an opaque card; transparent objects can
+still show the line beneath them. This does not change edge routes or bundle
+shared endpoints.
+
 FMU nodes remain separate from extracted knowledge. Inspect a model and wire
 table rows to appropriate parameters deliberately. Simulation needs the optional
 runtime; explicitly enabled demo output is synthetic.
