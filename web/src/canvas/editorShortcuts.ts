@@ -1,5 +1,6 @@
 import { isTextEditing } from "@/shared/clipboard";
 import type { ClipboardNode } from "./clipboard";
+import { parentedNodeIds, type NodeMove } from "./geometry";
 
 export type EditorAction = { type: "rename"; nodeId: string } | { type: "duplicate" }
   | { type: "nudge"; nodeId: string; dx: number; dy: number };
@@ -24,26 +25,11 @@ export function editorAction(event: KeyboardEvent): EditorAction | null {
   return { type: "nudge", nodeId, dx: direction[0] * step, dy: direction[1] * step };
 }
 
-export type NodeMove = { id: string; x: number; y: number };
-
 const INLINE_RENAME_TYPES = new Set(["concept", "entity", "funnel", "area", "text", "fact", "note", "markdown", "spec", "image", "canvas"]);
 export function supportsInlineRename(type: string) { return INLINE_RENAME_TYPES.has(type); }
 
 /** Stored coordinates are absolute. Moving a container moves each descendant once. */
 export function planNudge(nodes: Record<string, ClipboardNode>, selected: string[], dx: number, dy: number): NodeMove[] {
-  const moved = new Set(selected.filter((id) => nodes[id] && nodes[id].locked !== true && nodes[id].data?.locked !== true));
-  const children = new Map<string, string[]>();
-  for (const node of Object.values(nodes)) {
-    if (!node.parent) continue;
-    const ids = children.get(node.parent) ?? [];
-    ids.push(node.id); children.set(node.parent, ids);
-  }
-  const queue = [...moved];
-  for (let at = 0; at < queue.length; at++) {
-    for (const id of children.get(queue[at]!) ?? []) {
-      if (moved.has(id)) continue;
-      moved.add(id); queue.push(id);
-    }
-  }
-  return [...moved].map((id) => ({ id, x: nodes[id]!.x + dx, y: nodes[id]!.y + dy }));
+  const roots = selected.filter((id) => nodes[id] && nodes[id].locked !== true && nodes[id].data?.locked !== true);
+  return parentedNodeIds(nodes, roots).map((id) => ({ id, x: nodes[id]!.x + dx, y: nodes[id]!.y + dy }));
 }
