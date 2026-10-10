@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, useUpdateNodeInternals, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
 import { regionDropPayload } from "@/canvas/regionDrop";
@@ -124,6 +124,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   const [hoveredLocal, setHoveredLocal] = useState<string | null>(null);
   const [nowSeconds, setNowSeconds] = useState(() => Date.now() / 1000);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const updateNodeInternals = useUpdateNodeInternals();
 
   useEffect(() => {
     if (isReady) return;
@@ -153,7 +154,6 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     if (!isReady || !slug) return;
     let cancelled = false;
     setRegions([]);
-    setImgSize(null);
     documents.regions(slug, page).then((rs) => {
       if (!cancelled) setRegions(rs);
     }).catch(() => {});
@@ -200,6 +200,21 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   // finishes, and the explorer already shows it. Only the regions and marks
   // drawn over it wait for ingestion.
   const coverUrl = slug ? documents.pageImageUrl(slug, page, generation) : null;
+  useEffect(() => {
+    const image = imgRef.current;
+    // A cached image can finish before this effect, or remain loaded while
+    // regions refresh. Do not wait for another load event in either case.
+    setImgSize(image?.complete && image.naturalWidth > 0 && image.naturalHeight > 0
+      ? { w: image.naturalWidth, h: image.naturalHeight }
+      : null);
+  }, [coverUrl]);
+
+  useEffect(() => {
+    // Region handles mount asynchronously without changing the node's size.
+    // Refresh after their DOM commit so ReactFlow registers and retires them.
+    updateNodeInternals(id);
+  }, [id, regions, imgSize, pageW, pageH, updateNodeInternals]);
+
   const ingestProgress = typeof d.ingest_progress === "number"
     ? Math.max(0, Math.min(100, Math.round(d.ingest_progress)))
     : status === "pending"
