@@ -37,6 +37,7 @@ import { SelectionPanel } from "@/canvas/SelectionPanel";
 import { NodeDetailPanel } from "@/canvas/NodeDetailPanel";
 import { CanvasStructureContext, structuredNodeTypes } from "@/canvas/StructuredNode";
 import { foldedGraph, structureSignature } from "@/canvas/subtrees";
+import { absolutePosition, planDragMoves, visibleParentId, visibleParentOffset } from "@/canvas/geometry";
 import { CANVAS_EDGE_Z_INDEX, canvasNodeLayers } from "@/canvas/layering";
 import { WaypointEditor } from "@/canvas/WaypointEditor";
 import {
@@ -142,27 +143,6 @@ function workspaceListMayChange(evt: CanvasEvent): boolean {
   }
 }
 
-/** Walk up the parent chain summing positions so we can convert between
- *  the store's absolute flow coords and ReactFlow's parent-relative
- *  expectation when a node is nested. Returns (0, 0) when there's no
- *  ancestry or the chain is broken. Safe against cycles via a visited set. */
-function ancestorOffset(nodeId: string, allNodes: Record<string, StoreNode>, hidden?: Set<string>): { x: number; y: number } {
-  const acc = { x: 0, y: 0 };
-  const visited = new Set<string>();
-  let cur = allNodes[nodeId]?.parent ?? null;
-  while (cur != null) {
-    if (hidden?.has(cur)) break;
-    if (visited.has(cur)) break;
-    visited.add(cur);
-    const p = allNodes[cur];
-    if (!p) break;
-    acc.x += p.x;
-    acc.y += p.y;
-    cur = p.parent ?? null;
-  }
-  return acc;
-}
-
 /** Default size of a region, matching the palette entry that places one.
  *  The drop hit-test falls back to this when nothing better is known. */
 const AREA_DEFAULT = { width: 360, height: 220 };
@@ -181,20 +161,18 @@ export function toRfNode(
   //   - converts the position to parent-relative coordinates internally.
   // Defensive: a `parent` that points at a missing node is silently
   // ignored (otherwise ReactFlow logs a warning every render).
-  const parentExists = n.parent != null && allNodes[n.parent] != null && !hidden?.has(n.parent);
+  const parentId = visibleParentId(n.id, allNodes, hidden);
   // `parentId` alone: the child moves with its region, but is NOT clamped
   // to it. `extent: "parent"` trapped elements inside whichever region owned
   // them, so dragging one to a neighbouring region snapped it back and it
   // looked like the element had jumped into the wrong region. Leaving a
   // region is a drag out of it, and the drop decides the new owner.
-  const parentProps = parentExists ? ({ parentId: n.parent as string }) : {};
+  const parentProps = parentId ? { parentId } : {};
   // Convention: the store stores positions in ABSOLUTE flow coords (no
   // notion of nesting). ReactFlow, however, interprets `position` as
-  // PARENT-RELATIVE when `parentId` is set. Subtract the parent chain's
-  // accumulated offset so the rendered position matches the absolute
-  // coords. `onNodeDragStop` does the inverse: adds the offset back
-  // before persisting so the store stays purely absolute.
-  const off = parentExists ? ancestorOffset(n.id, allNodes, hidden) : { x: 0, y: 0 };
+  // PARENT-RELATIVE when `parentId` is set. The immediate parent's stored
+  // position is already absolute, even in a deeply nested hierarchy.
+  const off = visibleParentOffset(n.id, allNodes, hidden);
   const relX = n.x - off.x;
   const relY = n.y - off.y;
   // Lock support: `data.locked === true` freezes the node in place
@@ -813,6 +791,24 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
    */
   rfNodesRef.current = rfNodes;
 
+  const persistDragPositions = useCallback((dragged: RfNode[]) => {
+    const moves = planDragMoves(useCanvasStore.getState().nodes, dragged, structure.hidden);
+    if (!moves.length) return;
+    useCanvasStore.setState((state) => {
+      const next = { ...state.nodes };
+      for (const move of moves) {
+        const node = next[move.id];
+        if (node) next[move.id] = { ...node, x: move.x, y: move.y };
+      }
+      return { nodes: next };
+    });
+    for (const { id, x, y } of moves) {
+      canvases.patchNode(slug, id, { x, y }).catch(() => {
+        // The next snapshot or patch reconciles a failed write.
+      });
+    }
+  }, [slug, structure]);
+
   const onNodeDrag = useCallback(
     (_event: React.MouseEvent, draggedNode: RfNode) => {
       if (readOnly) return;
@@ -820,16 +816,16 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       // The node's bounding-box centre, in ABSOLUTE flow coordinates.
       // ReactFlow reports `position` relative to the parent once a node is
       // nested, while regions are hit-tested against the store's absolute
-      // coordinates: without the ancestor offset, dragging an element that
+      // coordinates: without the parent offset, dragging an element that
       // already sits in a region tested a point somewhere else entirely and
       // dropped it into a different region.
       const measured = (draggedNode as { measured?: { width?: number; height?: number } }).measured;
       const w = measured?.width ?? draggedNode.width ?? 0;
       const h = measured?.height ?? draggedNode.height ?? 0;
-      const off = ancestorOffset(draggedNode.id, useCanvasStore.getState().nodes, structure.hidden);
+      const world = absolutePosition(draggedNode.id, draggedNode.position, useCanvasStore.getState().nodes, structure.hidden);
       const centre = {
-        x: draggedNode.position.x + off.x + w / 2,
-        y: draggedNode.position.y + off.y + h / 2,
+        x: world.x + w / 2,
+        y: world.y + h / 2,
       };
       const target = findAreaAtPoint(centre, draggedNode.id);
       const current = useUiStore.getState().dropTargetAreaId;
@@ -1517,32 +1513,15 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
                 useUiStore.getState().setIsDraggingNode(true);
               },
               onNodeDrag,
-              onNodeDragStop: (event, node) => {
+              onNodeDragStop: (event, node, draggedNodes) => {
                 // Clear the connector-overlay drag flag first thing so a
                 // bail-out anywhere below still re-enables the dots.
                 useUiStore.getState().setIsDraggingNode(false);
                 if (canvasClipboard.finishDrag(event)) return;
-                // Commit the post-drag position both locally (instant) and to
-                // the server (eventually consistent via SSE echo, idempotent
-                // by event id). Convert ReactFlow's parent-relative
-                // `node.position` back to absolute flow coords before saving:
-                // store is always absolute, ReactFlow is parent-relative when
-                // `parentId` is set.
+                // Resolve all selected nodes and canonical descendants before
+                // saving, so a parent and child share one world translation.
                 const id = node.id;
-                const off = ancestorOffset(id, useCanvasStore.getState().nodes, structure.hidden);
-                const x = node.position.x + off.x;
-                const y = node.position.y + off.y;
-                useCanvasStore.setState((state) => {
-                  const existing = state.nodes[id];
-                  if (!existing) return state;
-                  return {
-                    ...state,
-                    nodes: { ...state.nodes, [id]: { ...existing, x, y } },
-                  };
-                });
-                canvases.patchNode(slug, id, { x, y }).catch(() => {
-                  // Network failure: the next snapshot/patch will reconcile.
-                });
+                persistDragPositions(draggedNodes.length ? draggedNodes : [node]);
                 // Area drop-target handling — consume + clear the in-flight
                 // hover id, then persist the reparent if it actually changes.
                 // The backend HTTP/MCP/CLI patch route detects a `parent`
@@ -1591,29 +1570,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
               onSelectionDragStop: (event, draggedNodes) => {
                 useUiStore.getState().setIsDraggingNode(false);
                 if (canvasClipboard.finishDrag(event)) return;
-                // Multi-select drag: ReactFlow moves every selected node
-                // visually during the gesture, but `onNodeDragStop` only
-                // fires for the primary. Persist each. Convert each one's
-                // parent-relative `node.position` back to absolute before
-                // saving (mirrors single-drag).
-                useCanvasStore.setState((state) => {
-                  const next = { ...state.nodes };
-                  for (const n of draggedNodes) {
-                    const cur = next[n.id];
-                    if (!cur) continue;
-                    const off = ancestorOffset(n.id, next, structure.hidden);
-                    next[n.id] = { ...cur, x: n.position.x + off.x, y: n.position.y + off.y };
-                  }
-                  return { ...state, nodes: next };
-                });
-                for (const n of draggedNodes) {
-                  const off = ancestorOffset(n.id, useCanvasStore.getState().nodes, structure.hidden);
-                  canvases
-                    .patchNode(slug, n.id, { x: n.position.x + off.x, y: n.position.y + off.y })
-                    .catch(() => {
-                      // SSE reconciles next snapshot.
-                    });
-                }
+                persistDragPositions(draggedNodes);
               },
             })}
       >
