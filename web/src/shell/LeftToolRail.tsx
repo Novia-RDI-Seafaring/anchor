@@ -30,13 +30,14 @@
  */
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
-import { Plus, WandSparkles, X } from "lucide-react";
+import { Hand, MousePointer2, Plus, WandSparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { cad } from "@/api/cad";
 import { canvases } from "@/api/canvases";
 import { fmu } from "@/api/fmu";
 import { canDragFromToolbar, CONNECT_TOOL, INTENT_TOOL, paletteEntries, type PaletteMeta } from "@/canvas/registry";
+import { navigationKey } from "@/canvas/canvasNavigation";
 
 import { KEY_FOR_TOOL, TOOL_KEYS } from "@/canvas/toolKeys";
 import {
@@ -73,11 +74,15 @@ export function LeftToolRail({ workspaceSlug }: Props) {
   const armedTool = useUiStore((s) => s.armedTool);
   const armTool = useUiStore((s) => s.armTool);
   const disarmTool = useUiStore((s) => s.disarmTool);
+  const navigationMode = useUiStore((s) => s.navigationMode);
+  const setNavigationMode = useUiStore((s) => s.setNavigationMode);
   const setSelectedNodeId = useUiStore((s) => s.setSelectedNodeId);
   const setPropertiesOpen = useUiStore((s) => s.setPropertiesOpen);
 
   const [producerOpen, setProducerOpen] = useState(false);
   const [activeProducer, setActiveProducer] = useState<ProducerKind | null>(null);
+
+  useEffect(() => setNavigationMode("select"), [workspaceSlug, setNavigationMode]);
 
   // Keyboard shortcuts:
   //   `[` toggles the source cluster (files explorer + viewer) so the canvas
@@ -87,7 +92,14 @@ export function LeftToolRail({ workspaceSlug }: Props) {
   // fields use the same keys.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
       const typing = isTextEditing(event.target);
+      const navigation = armedTool !== INTENT_TOOL ? navigationKey(event) : null;
+      if (navigation) {
+        event.preventDefault();
+        setNavigationMode(navigation);
+        return;
+      }
       if (event.key === "[" && !event.metaKey && !event.ctrlKey && !event.altKey) {
         if (typing) return;
         event.preventDefault();
@@ -115,14 +127,14 @@ export function LeftToolRail({ workspaceSlug }: Props) {
         // (field, selection, then the mode) and disarms itself at the end.
         // Disarming here as well would drop the mode on the first press.
         if (armedTool === INTENT_TOOL) return;
-        if (armedTool) disarmTool();
+        disarmTool();
         setSelectedNodeId(null);
         setPropertiesOpen(false);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleSourceCluster, armedTool, armTool, disarmTool, setSelectedNodeId, setPropertiesOpen]);
+  }, [toggleSourceCluster, armedTool, armTool, disarmTool, setNavigationMode, setSelectedNodeId, setPropertiesOpen]);
 
   const shapes = paletteEntries("shapes");
   const cards = paletteEntries("cards");
@@ -169,11 +181,38 @@ export function LeftToolRail({ workspaceSlug }: Props) {
         // pushes the tools away from the hand that is already at the left of
         // the board. Vertical also scales: adding a producer adds a row rather
         // than eating the width the canvas needs.
-        className="pointer-events-auto absolute left-3 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-1 rounded-xl border border-neutral-200 bg-white/95 px-1 py-1.5 shadow-md backdrop-blur"
+        className="pointer-events-auto absolute left-3 top-1/2 z-20 flex max-h-[calc(100%_-_1.5rem)] -translate-y-1/2 flex-col items-center gap-1 overflow-y-auto rounded-xl border border-neutral-200 bg-white/95 px-1 py-1.5 shadow-md backdrop-blur"
         role="toolbar"
         aria-orientation="vertical"
         aria-label="Canvas tools"
       >
+        <RailGroup label="Navigation">
+          {([
+            { mode: "select", label: "Select", key: "V", Icon: MousePointer2, hint: "select or move elements; drag empty canvas to select" },
+            { mode: "hand", label: "Hand", key: "H", Icon: Hand, hint: "drag to pan the canvas" },
+          ] as const).map(({ mode, label, key, Icon, hint }) => (
+            <Tooltip key={mode}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={label}
+                  aria-pressed={!armedTool && navigationMode === mode}
+                  onClick={() => setNavigationMode(mode)}
+                  className={`relative grid h-9 w-9 place-items-center rounded-lg border text-neutral-600 transition ${
+                    !armedTool && navigationMode === mode
+                      ? "border-sky-400 bg-sky-50 text-sky-700"
+                      : "border-transparent hover:border-neutral-300 hover:bg-neutral-50"
+                  }`}
+                >
+                  <Icon size={16} strokeWidth={1.75} aria-hidden />
+                  <span className="pointer-events-none absolute bottom-0 right-0.5 text-[8px] leading-none text-neutral-400" aria-hidden>{key}</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right"><div className="font-medium">{label}</div><div className="text-neutral-300">{hint}</div></TooltipContent>
+            </Tooltip>
+          ))}
+        </RailGroup>
+        <RailDivider />
         {/* Mark up. Armed, the canvas takes ink: rings, lines, words, filed
             as intents for the agent. First on the rail because it is the
             tool the reader reaches for most while reviewing, and because its
