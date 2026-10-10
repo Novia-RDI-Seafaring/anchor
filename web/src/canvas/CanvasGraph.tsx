@@ -50,6 +50,8 @@ import {
 } from "@/canvas/PaintGhost";
 import { connectClick } from "@/canvas/connect";
 import { CONNECT_TOOL, INTENT_TOOL, nodeTypes, paletteEntries } from "@/canvas/registry";
+import { canvasNavigation } from "@/canvas/canvasNavigation";
+import "./canvasNavigation.css";
 import { refreshWorkspaces } from "@/canvas/useWorkspacesList";
 import { useCanvasClipboard } from "@/canvas/useCanvasClipboard";
 import { useCanvasKeyboard } from "@/canvas/useCanvasKeyboard";
@@ -259,6 +261,9 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   // rail with the tool, and what lets any other tool, or escape, put the
   // pen down the same way it would drop a shape.
   const armedTool = useUiStore((s) => s.armedTool);
+  const navigationMode = useUiStore((s) => s.navigationMode);
+  const navigation = canvasNavigation(navigationMode, readOnly ?? false, armedTool);
+  const handMode = navigation.hand;
   const armTool = useUiStore((s) => s.armTool);
   const disarmTool = useUiStore((s) => s.disarmTool);
   const commentMode = armedTool === INTENT_TOOL;
@@ -328,7 +333,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   const rfNodesRef = useRef<RfNode[]>([]);
   const [rfEdges, setRfEdges] = useState<RfEdge[]>([]);
   const canvasClipboard = useCanvasClipboard({
-    slug, active: !readOnly && !commentMode,
+    slug, active: !readOnly && !commentMode && !handMode,
     nodes: () => rfNodesRef.current, edges: () => rfEdges,
     toFlow: screenToFlowPosition,
     restore: () => {
@@ -349,7 +354,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     },
   });
   const canvasKeyboard = useCanvasKeyboard({
-    rootRef, slug, active: !readOnly && !commentMode,
+    rootRef, slug, active: !readOnly && !commentMode && !handMode,
     selectedIds: () => rfNodesRef.current.filter((node) => node.selected).map((node) => node.id),
     selectedEdgeIds: () => rfEdges.filter((edge) => edge.selected).map((edge) => edge.id),
     duplicate: canvasClipboard.duplicate,
@@ -361,11 +366,9 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   // dismissal contract as the node menu (Esc / outside / item-pick).
   const [edgeContextTarget, setEdgeContextTarget] = useState<EdgeContextMenuTarget | null>(null);
 
-  // Picking up the pen puts the selection down, as a click on empty canvas
-  // would. A node left selected keeps its connectors out, and a stroke that
-  // started on one dragged a new edge off it instead of marking it.
+  // Navigation and markup put editing gestures and the selection down.
   useEffect(() => {
-    if (!commentMode) return;
+    if (!commentMode && !handMode) return;
     setRfNodes((prev) => (prev.some((n) => n.selected) ? prev.map((n) => (n.selected ? { ...n, selected: false } : n)) : prev));
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
@@ -373,7 +376,13 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     setPropertiesOpen(false);
     setContextMenuTarget(null);
     setEdgeContextTarget(null);
-  }, [commentMode, setSelectedNodeId, setSelectedEdgeId, setConnectSourceId, setPropertiesOpen]);
+    armDownRef.current = null;
+    connectDownRef.current = null;
+    setPaintRect(null);
+    setConnectLine(null);
+    useUiStore.getState().setDropTargetAreaId(null);
+    useUiStore.getState().setIsDraggingNode(false);
+  }, [commentMode, handMode, setSelectedNodeId, setSelectedEdgeId, setConnectSourceId, setPropertiesOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -532,6 +541,10 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   }, [edges, nodes, hoveredSourceRef, hoveredNodeId, selectedEdgeId, structure]);
 
   const onNodesChange = useCallback((changes: NodeChange<RfNode>[]) => {
+    if (handMode) {
+      setRfNodes((curr) => applyNodeChanges(changes.filter((change) => change.type === "dimensions" && change.resizing === undefined), curr));
+      return;
+    }
     setRfNodes((curr) => applyNodeChanges(changes, curr));
     if (readOnly) return;
     for (const change of changes) {
@@ -602,9 +615,10 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
           // SSE will reconcile.
         });
     }
-  }, [readOnly, slug]);
+  }, [readOnly, handMode, slug]);
 
   const onEdgesChange = useCallback((changes: EdgeChange<RfEdge>[]) => {
+    if (handMode) return;
     setRfEdges((curr) => applyEdgeChanges(changes, curr));
     if (readOnly) return;
     for (const change of changes) {
@@ -620,7 +634,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         // SSE will reconcile if the server rejected.
       });
     }
-  }, [readOnly, slug]);
+  }, [readOnly, handMode, slug]);
 
   /**
    * ReactFlow fires `onConnect` when the user finishes a connect drag — for
@@ -632,7 +646,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
    * region).
    */
   const onConnect = useCallback((conn: Connection) => {
-    if (readOnly) return;
+    if (readOnly || handMode) return;
     const { source, target, sourceHandle, targetHandle } = conn;
     if (!source || !target) return;
     const isRow = sourceHandle?.startsWith("row:");
@@ -717,7 +731,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         // eslint-disable-next-line no-console
         console.error("generic connect failed", err);
       });
-  }, [readOnly, slug]);
+  }, [readOnly, handMode, slug]);
 
   /**
    * Find the topmost Area whose body contains the given canvas point.
@@ -799,6 +813,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   rfNodesRef.current = rfNodes;
 
   const persistDragPositions = useCallback((dragged: RfNode[]) => {
+    if (readOnly || handMode) return;
     const moves = planDragMoves(useCanvasStore.getState().nodes, dragged, structure.hidden);
     if (!moves.length) return;
     useCanvasStore.setState((state) => {
@@ -814,7 +829,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         // The next snapshot or patch reconciles a failed write.
       });
     }
-  }, [slug, structure]);
+  }, [readOnly, handMode, slug, structure]);
 
   const onNodeDrag = useCallback(
     (_event: React.MouseEvent, draggedNode: RfNode) => {
@@ -879,6 +894,8 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   );
 
   const onDrop = useCallback(async (event: React.DragEvent) => {
+    event.preventDefault();
+    if (readOnly || handMode) return;
     const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
 
     // Path 0 — existing-canvas link: the Canvases tab in the Library
@@ -1070,7 +1087,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         }
       }));
     }
-  }, [slug, screenToFlowPosition, adoptIntoRegion]);
+  }, [readOnly, handMode, slug, screenToFlowPosition, adoptIntoRegion]);
 
   // Armed-tool placement gesture. When `armedTool` is set, a click on the
   // pane places the shape at default size; a click-and-drag places it with
@@ -1336,14 +1353,19 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       // The crosshair is forced through every descendant while a placing
       // tool is armed. Not for the pen: its surface sets its own cursor -- a
       // crosshair to draw, a hand over drawn ink -- and its buttons theirs.
+      data-canvas-read-only={readOnly ? "true" : undefined}
+      onDragStartCapture={handMode ? (event) => event.preventDefault() : undefined}
+      onDragOver={readOnly ? undefined : handMode ? (event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "none";
+      } : onDragOver}
+      onDrop={readOnly ? undefined : onDrop}
       className={`relative h-full w-full ${
-        armedTool && armedTool !== INTENT_TOOL ? "cursor-crosshair" : ""
+        handMode ? "canvas-hand-mode" : armedTool && armedTool !== INTENT_TOOL ? "cursor-crosshair" : ""
       }`}
-      {...(readOnly
+      {...(readOnly || handMode
         ? {}
         : {
-            onDragOver,
-            onDrop,
             onPointerDown,
             onPointerMove,
             onPointerUp,
@@ -1359,37 +1381,38 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       <CanvasStructureContext.Provider value={{
         counts: new Map([...structure.descendants].map(([id, children]) => [id, nodes[id]?.data?.collapsed === true
           ? [...children].filter((child) => structure.hidden.has(child)).length : children.size])),
-        readOnly, toggle: toggleSubtree, inspect: setDetailNodeId,
+        readOnly: readOnly || handMode, toggle: toggleSubtree, inspect: setDetailNodeId,
       }}>
       <ReactFlow
-        nodes={rfNodes}
-        edges={rfEdges}
+        nodes={handMode ? rfNodes.map((node) => ({ ...node, selected: false, draggable: false, selectable: false, connectable: false, deletable: false })) : rfNodes}
+        edges={handMode ? rfEdges.map((edge) => ({ ...edge, selected: false, selectable: false, deletable: false })) : rfEdges}
         nodeTypes={structuredTypes}
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         fitView
-        nodesDraggable={!readOnly && armedTool !== CONNECT_TOOL}
+        nodesDraggable={!readOnly && !handMode && armedTool !== CONNECT_TOOL}
         // Keep containers below edges and every ordinary card above them,
         // including selected edges and edges attached to parented nodes.
         zIndexMode="manual"
         elevateNodesOnSelect={false}
         elevateEdgesOnSelect={false}
-        nodesConnectable={!readOnly}
-        elementsSelectable={!readOnly}
+        nodesConnectable={!readOnly && !handMode}
+        elementsSelectable={!readOnly && !handMode}
         zoomOnScroll
         // When a paint tool is armed, disable pan-on-drag so the user's
         // drag draws the shape instead of moving the viewport. We still
         // permit middle-click pan (`[1]`) and right-click pan (`[2]`) so
         // the user can reposition the canvas without disarming the tool.
-        panOnDrag={armedTool ? [1, 2] : true}
+        panOnDrag={navigation.panOnDrag}
+        selectionOnDrag={navigation.selectionOnDrag}
         // Shift+click adds to selection. Shift+drag still does rubber-band
         // selection — ReactFlow distinguishes the two gestures even when
         // they share a modifier.
         multiSelectionKeyCode="Shift"
         selectionKeyCode="Shift"
-        deleteKeyCode={readOnly ? null : ["Backspace", "Delete"]}
+        deleteKeyCode={readOnly || handMode ? null : ["Backspace", "Delete"]}
         // Edge hover broadcasts the edge's source_ref so the corresponding
         // document node can highlight the region. Used by evidence edges
         // (spec node → document node).
@@ -1411,7 +1434,40 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
           }
         }}
         onEdgeMouseLeave={() => clearHoveredSourceRef()}
-        {...(readOnly
+        // Hand keeps source viewing and sub-canvas navigation available.
+        onEdgeDoubleClick={readOnly ? undefined : (_event, edge) => {
+          const ref = (edge.data as
+            | { source_ref?: { slug?: string; page?: number; region_id?: string; bbox?: number[] } }
+            | undefined)?.source_ref;
+          if (!ref?.page) return;
+          const tgt = useCanvasStore.getState().nodes[edge.target];
+          const docSlug = ref.slug ?? (tgt?.data as { slug?: string } | undefined)?.slug;
+          if (!docSlug) return;
+          openPdf(docSlug, {
+            page: ref.page,
+            mode: "dock",
+            workspaceSlug: slug,
+            highlightRegionId: ref.region_id,
+            highlightBbox: ref.bbox,
+          });
+        }}
+        onNodeDoubleClick={readOnly ? undefined : (_event, node) => {
+          if (node.type === "document") {
+            const data = node.data as { slug?: string; status?: string } | undefined;
+            const status = data?.status ?? "ready";
+            if (data?.slug && (status === "ready" || status === "found")) {
+              openPdf(data.slug, { workspaceSlug: slug, documentNodeId: node.id });
+            }
+            return;
+          }
+          if (node.type === "canvas") {
+            const target = (node.data as { canvas_slug?: string } | undefined)?.canvas_slug;
+            if (!target || breadcrumb.includes(target)) return;
+            breadcrumb.enter(target);
+            navigate(`/c/${target}`);
+          }
+        }}
+        {...(readOnly || handMode
           ? {}
           : {
               // Selection no longer auto-opens the right Properties Panel
@@ -1435,25 +1491,6 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
                 useUiStore.getState().setHoveredNodeId(null);
               },
               onEdgeClick: (_event, edge) => { setSelectedEdgeId(edge.id); },
-              // Double-click an anchored evidence edge to open its source region
-              // in the viewer. The doc slug comes from the ref, else the target
-              // document node (mirrors onEdgeMouseEnter's resolution).
-              onEdgeDoubleClick: (_event, edge) => {
-                const ref = (edge.data as
-                  | { source_ref?: { slug?: string; page?: number; region_id?: string; bbox?: number[] } }
-                  | undefined)?.source_ref;
-                if (!ref?.page) return;
-                const tgt = useCanvasStore.getState().nodes[edge.target];
-                const docSlug = ref.slug ?? (tgt?.data as { slug?: string } | undefined)?.slug;
-                if (!docSlug) return;
-                openPdf(docSlug, {
-                  page: ref.page,
-                  mode: "dock",
-                  workspaceSlug: slug,
-                  highlightRegionId: ref.region_id,
-                  highlightBbox: ref.bbox,
-                });
-              },
               onEdgeContextMenu: (event, edge) => {
                 event.preventDefault();
                 setSelectedEdgeId(edge.id);
@@ -1488,32 +1525,6 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
                 // from the menu scopes the panel correctly.
                 setSelectedNodeId(node.id);
               },
-              onNodeDoubleClick: (_event, node) => {
-                if (node.type === "document") {
-                  const data = node.data as { slug?: string; status?: string } | undefined;
-                  const status = data?.status ?? "ready";
-                  if (data?.slug && (status === "ready" || status === "found")) {
-                    openPdf(data.slug, {
-                      workspaceSlug: slug,
-                      documentNodeId: node.id,
-                    });
-                  }
-                  return;
-                }
-                // Sub-canvas drill-down. The breadcrumb chain is updated by
-                // CanvasPage on mount of the destination route; we just
-                // navigate. Cycle prevention: if the target slug is already
-                // in the chain, refuse to drill — the SubCanvasPrimitive
-                // shows an "↩ already visiting" badge for visual feedback.
-                if (node.type === "canvas") {
-                  const data = node.data as { canvas_slug?: string } | undefined;
-                  const target = data?.canvas_slug;
-                  if (!target) return;
-                  if (breadcrumb.includes(target)) return;
-                  breadcrumb.enter(target);
-                  navigate(`/c/${target}`);
-                }
-              },
               onNodeDragStart: (event, node, draggedNodes) => {
                 canvasClipboard.startDrag(event, draggedNodes.length ? draggedNodes.map((n) => n.id) : [node.id]);
                 // Tell DirectionalConnectors to hide its dots — otherwise
@@ -1525,6 +1536,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
                 // Clear the connector-overlay drag flag first thing so a
                 // bail-out anywhere below still re-enables the dots.
                 useUiStore.getState().setIsDraggingNode(false);
+                if (useUiStore.getState().navigationMode === "hand") return;
                 if (canvasClipboard.finishDrag(event)) return;
                 // Resolve all selected nodes and canonical descendants before
                 // saving, so a parent and child share one world translation.
@@ -1576,6 +1588,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
                 useUiStore.getState().setIsDraggingNode(true);
               },
               onSelectionDragStop: (event, draggedNodes) => {
+                if (useUiStore.getState().navigationMode === "hand") return;
                 useUiStore.getState().setIsDraggingNode(false);
                 if (canvasClipboard.finishDrag(event)) return;
                 persistDragPositions(draggedNodes);
@@ -1583,11 +1596,11 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
             })}
       >
         <Background />
-        <Controls showInteractive={!readOnly} />
+        <Controls showInteractive={!readOnly && !handMode} />
         <MiniMap pannable zoomable />
       </ReactFlow>
       </CanvasStructureContext.Provider>
-      {detailNodeId ? <NodeDetailPanel workspaceSlug={slug} nodeId={detailNodeId} onClose={closeDetail} readOnly={readOnly} /> : null}
+      {detailNodeId ? <NodeDetailPanel workspaceSlug={slug} nodeId={detailNodeId} onClose={closeDetail} readOnly={readOnly || handMode} /> : null}
       {/* Reviewer mark-up, prototype: the pointing half only. Draw across or
           around things, cmd-click to correct what the stroke caught. The
           selection is inert -- it cannot drag, delete or rewire anything, so
@@ -1669,7 +1682,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
           Hidden in readOnly canvases (snapshotter, monitor route). Both
           read selection from ReactFlow's per-node `selected` flag via
           xyflow's useStore. */}
-      {readOnly ? null : (
+      {readOnly || handMode ? null : (
         <>
           <NodeContextToolbar workspaceSlug={slug} />
           <SelectionPanel />
