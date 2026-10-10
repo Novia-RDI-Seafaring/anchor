@@ -37,6 +37,10 @@ from anchor.core.workspace.node_types import NodeType, NodeTypeRegistry
 # colour + placeholder + resize helpers. Promoted to a constant so each
 # type's field list reads as "common + its own".
 _COMMON_FIELDS: tuple[str, ...] = (
+    "collapsed",
+    "collapse_direction",
+    "display_mode",
+    "review_history",
     "label",
     "dashed",
     "width",
@@ -91,6 +95,7 @@ BUILTIN_NODE_TYPES: list[NodeType] = [
     _shape(
         "concept",
         "Rounded-rectangle shape. Renders data.label and data.subtitle "
+        "(data.role='heading' removes card chrome and enlarges the label). "
         "(short, truncated). There is no long-body field — use data.subtitle "
         "for a one-liner; data.body is NOT rendered.",
         "subtitle",

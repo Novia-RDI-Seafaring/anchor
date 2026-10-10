@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from anchor.core.events.actor import Actor
 
@@ -85,10 +85,20 @@ class AddEdgeRequest(BaseModel):
     # `edge_type` is canonical; `type` accepted as an alias (#186).
     edge_type: str | None = None
     type: str | None = None
-    # Optional ReactFlow handle ids. When set, pin the edge to that specific
-    # handle on the source/target node (e.g. spec-row → document-region).
-    sourceHandle: str | None = None
-    targetHandle: str | None = None
+    sourceHandle: str | None = Field(
+        default=None,
+        description=(
+            "Exact source handle ID for an anchored edge from a named card or model port, "
+            "such as a spec row. Omit for plain shapes and floating node-to-node wiring."
+        ),
+    )
+    targetHandle: str | None = Field(
+        default=None,
+        description=(
+            "Exact target handle ID for an anchored edge to a named card or model port, "
+            "such as a document region. Omit for plain shapes and floating node-to-node wiring."
+        ),
+    )
     data: dict[str, Any] = {}
     # Explicit actor attribution override (#322).
     actor: Actor | None = None
@@ -102,8 +112,20 @@ class UpdateEdgeRequest(BaseModel):
     label: str | None = None
     edge_type: str | None = None
     type: str | None = None  # alias for edge_type (#186)
-    sourceHandle: str | None = None
-    targetHandle: str | None = None
+    sourceHandle: str | None = Field(
+        default=None,
+        description=(
+            "Exact source handle ID for an anchored edge from a named card or model port, "
+            "such as a spec row. Omit to keep the current handle unchanged."
+        ),
+    )
+    targetHandle: str | None = Field(
+        default=None,
+        description=(
+            "Exact target handle ID for an anchored edge to a named card or model port, "
+            "such as a document region. Omit to keep the current handle unchanged."
+        ),
+    )
     data: dict[str, Any] | None = None
     # Explicit actor attribution override (#322).
     actor: Actor | None = None

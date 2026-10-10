@@ -120,8 +120,9 @@ Built and verified:
   (bbox + 3 pt margin, 300 dpi default, `dpi` up to 600) and caches it.
   Reachable on all three adapters (CLI `anchor crop`, MCP `get_crop`, HTTP
   `GET /api/documents/{slug}/crops/{page}/{region_id}.png`).
-- Durable persistence: `derive_region` stores the `chart_series` beside the
-  chart region it came from, inheriting the parent's `source_ref` and
+- Durable persistence: `derive_region` stores new `chart_series` records in
+  `knowledge/<slug>/pages/`, or that document generation's knowledge pages,
+  inheriting the parent's `source_ref` and
   recording `derived_from`. Reachable on all three adapters (MCP
   `derive_region`, CLI `anchor derive-region`, HTTP
   `POST /api/documents/{slug}/derived-regions`). Run `anchor embed <slug>`
@@ -140,4 +141,4 @@ Next:
 
 - Canvas point-collection for the human-click path.
 - Auto-place a `chart` canvas node from a stored `chart_series` (today the
-  agent adds the node; the data already lives in gold).
+  agent adds the node; new derived data lives in knowledge).

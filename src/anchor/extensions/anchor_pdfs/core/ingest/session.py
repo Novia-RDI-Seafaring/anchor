@@ -43,6 +43,7 @@ from anchor.extensions.anchor_pdfs.core.events import (
 )
 from anchor.extensions.anchor_pdfs.core.generation import complete_pages
 from anchor.extensions.anchor_pdfs.core.ingest.coverage import synthesize_coverage_regions
+from anchor.extensions.anchor_pdfs.core.ingest.page_images import write_page_images
 from anchor.extensions.anchor_pdfs.core.ingest.region_resolution import (
     PAGE_INSTRUCTIONS,
     resolve_regions,
@@ -265,8 +266,9 @@ class IngestSessionService:
         page_count = max(page_candidates, default=0)
         if page_count:
             page_pngs = replacement_pngs if replacement_pngs is not None else await self.renderer.render_pages(bronze_path, dpi=dpi)
-            for page, png in page_pngs.items():
-                await store.write_silver_artifact(slug, f"pages/{page}.png", png)
+            await write_page_images(
+                store, self.renderer, slug, page_pngs, page_candidates, pages_meta,
+            )
         await self._publish(DocSilvered(slug=slug, page_count=page_count))
 
         now = self.clock.now()

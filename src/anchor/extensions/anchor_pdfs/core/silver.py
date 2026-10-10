@@ -646,13 +646,12 @@ def region_content_from_items(
 def region_search_text(region: dict[str, Any]) -> str:
     """Combine unique region fields for embedding and retrieval.
 
-    #242 embedding fallback: the default text is ``title`` + ``description`` +
-    ``content``. When the model authored no ``description``, a caption-less
-    table (issue #231) would otherwise embed as just its title — and its cell
-    values, the only searchable content it has, are invisible. In that case we
-    fall back to the reconstructed table-cell text so the values stay findable.
-    Deduped so a well-described table whose ``content`` already renders the grid
-    is not double-counted.
+    Include the semantic metadata (title, description, tags and entities)
+    alongside source content so metadata-only queries and source values both
+    remain findable. When the model authored no description, also fall back to
+    reconstructed table-cell text for legacy regions with no stored content.
+    Deduplicate repeated fields and metadata entries without changing the
+    original title, description and content prefix.
     """
     parts: list[str] = []
     seen: set[str] = set()
@@ -668,6 +667,12 @@ def region_search_text(region: dict[str, Any]) -> str:
 
     for key in ("title", "description", "content"):
         add(region.get(key))
+
+    for key in ("tags", "entities"):
+        values = region.get(key)
+        if isinstance(values, list):
+            for value in values:
+                add(value)
 
     description = region.get("description")
     if not (isinstance(description, str) and description.strip()):

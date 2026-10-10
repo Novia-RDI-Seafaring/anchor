@@ -67,6 +67,15 @@ def test_real_docling_text_profile_produces_grounded_gold(known_pdf: Path, tmp_p
         assert result["region_count"] > 0
         assert result["polished_pages"] == []
         assert await store.has_gold("known")
+        base = pymupdf.Pixmap((tmp_path / "text-store/silver/known/pages/1.png").read_bytes())
+        overlay = pymupdf.Pixmap((tmp_path / "text-store/silver/known/pages/1.candidates.png").read_bytes())
+        assert (overlay.width, overlay.height) == (base.width, base.height)
+        candidates = await store.get_page_candidates("known", 1)
+        for candidate in candidates:
+            left, top, _, bottom = candidate["bbox"]
+            x = round(left * base.width / PAGE_W)
+            y = round((top + bottom) / 2 * base.height / PAGE_H)
+            assert overlay.pixel(x, y) != base.pixel(x, y)
         regions = (await store.get_gold_map("known"))["pages"][1]
         for token, _ in LINES:
             containing = [region for region in regions if token in region.get("content", "")]

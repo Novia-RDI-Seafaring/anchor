@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Any
 
 from anchor.extensions.anchor_pdfs.core.ports.pdf_renderer import CropFormat
+from anchor.extensions.anchor_pdfs.infra.pdf.candidate_overlay import render_candidate_overlay
 
 
 class PymupdfPdfRenderer:
@@ -13,6 +15,17 @@ class PymupdfPdfRenderer:
 
     async def page_sizes(self, pdf_path: Path) -> dict[int, tuple[float, float]]:
         return await asyncio.to_thread(_page_sizes_sync, pdf_path)
+
+    async def render_candidate_overlay(
+        self,
+        page_image: bytes,
+        candidates: list[dict[str, Any]],
+        *,
+        page_size: tuple[float, float] | None,
+    ) -> bytes:
+        return await asyncio.to_thread(
+            render_candidate_overlay, page_image, candidates, page_size=page_size,
+        )
 
     async def crop_region(
         self,

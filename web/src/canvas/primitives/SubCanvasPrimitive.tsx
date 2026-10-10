@@ -96,6 +96,7 @@ export function SubCanvasPrimitive({ id, data, selected }: NodeProps) {
     value: title,
     field: "title",
     canEdit: selected ?? false,
+    claimsPendingFocus: true,
   });
 
   // Cascade-rename: whenever the tile's `data.title` differs from the

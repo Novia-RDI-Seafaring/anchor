@@ -31,6 +31,7 @@ from anchor.extensions.anchor_pdfs.core.gold_ingest import (
 from anchor.extensions.anchor_pdfs.core.gold_ingest import (
     GoldIngest,
 )
+from anchor.extensions.anchor_pdfs.core.ingest.page_images import write_page_images
 from anchor.extensions.anchor_pdfs.core.pointed_extraction import (
     extract_pointed as _extract_pointed,
 )
@@ -315,8 +316,9 @@ class IngestService:
                 current_stage = "silver_render_pages"
                 stage_started_at = self.clock.now()
                 page_pngs = replacement_pngs if replacement_pngs is not None else await self.renderer.render_pages(bronze_path, dpi=dpi)
-                for page, png in page_pngs.items():
-                    await store.write_silver_artifact(slug, f"pages/{page}.png", png)
+                await write_page_images(
+                    store, self.renderer, slug, page_pngs, page_candidates, pages_meta,
+                )
                 for it in docling.get("items", []):
                     if isinstance(it.get("page"), (int, float)):
                         items_by_page.setdefault(int(it["page"]), []).append(it)
@@ -558,7 +560,7 @@ class IngestService:
     async def derive_region(
         self, slug: str, parent_region_id: str, region: dict[str, Any]
     ) -> dict[str, Any]:
-        """Persist a region derived from an existing gold region.
+        """Persist knowledge derived from a stored region.
 
         The generic consumer side of an OIP region producer: a producer
         (e.g. the chart digitizer) hands back a new region derived from one
@@ -613,7 +615,7 @@ class IngestService:
         }
 
     async def remove_region(self, slug: str, region_id: str) -> dict[str, Any]:
-        """Remove one OIP-derived gold region (#304).
+        """Remove one OIP-derived region from its original collection (#304).
 
         The cleanup half of ``derive_region``: only regions carrying
         ``derived_from`` may be removed — model-extracted gold is the ground
@@ -621,7 +623,7 @@ class IngestService:
         tokens ``inspect_region`` does (``p4/r2``, ``4/r2``, or a bare
         ``r2`` that uniquely identifies a region).
 
-        Rewrites the region's page file without the record and drops its
+        Rewrites the original collection's page file and drops the record's
         vector from ``embeddings.json`` when one exists, so search never
         returns a region that no longer resolves. Raises ``ValueError`` when
         the region does not exist and ``RegionNotRemovableError`` when it is
@@ -643,14 +645,8 @@ class IngestService:
                 "gold (no derived_from) and cannot be removed; only regions "
                 "created by derive_region are deletable"
             )
-        regions = await store.get_regions(slug, page)
-        page_regions: list[dict[str, Any]] = []
-        for _page, regs in (regions.get("pages") or {}).items():
-            if int(_page) == page:
-                page_regions = [r for r in regs if isinstance(r, dict)]
-                break
-        kept = [r for r in page_regions if r.get("id") != rid]
-        await store.write_gold_region_file(slug, page, kept)
+        if not await store.remove_derived_region(slug, page, rid):
+            raise ValueError(f"remove_region: region {rid!r} not found in {slug!r}")
 
         # Keep the embedding index consistent: drop the removed region's
         # vector so a search hit can never point at a record that is gone.
