@@ -54,6 +54,11 @@ data/  ( = the project's .anchor_data/ )
 |           +-- <n>/
 |               +-- <region-id>.png cropped screenshot of the region bbox
 |
++-- knowledge/                      (anchor_pdfs, derived producer records)
+|   +-- <slug>/
+|       +-- pages/
+|           +-- <n>.regions.json    chart series, normalized specs, calculated artifacts
+|
 +-- ingest_status/                  (anchor_pdfs, written during active ingestion)
 |   +-- <slug>.json                 live activity record: stage, progress, started_at, ...
 |
@@ -198,6 +203,21 @@ also retain the Docling traversal ordinal as `reading_order`, which can have
 gaps between items. Existing stored IDs are not renumbered. Items without
 traversal metadata keep their collection order, and Markdown without that
 metadata retains its geometric fallback.
+
+### Knowledge
+
+New `derive_region` records live in `knowledge/<slug>/pages/<n>.regions.json`.
+A selected replacement uses
+`knowledge/<slug>/generations/<id>/pages/<n>.regions.json`. The same document
+generation pointer selects silver, gold and knowledge. A replacement starts
+with empty knowledge, and pinned operations can finish in the retained old
+generation without writing to the current one.
+
+Derived records retain their producer payload and provenance. Existing derived
+gold records with a truthy `derived_from` are read, updated and removed in
+place. Compatibility region and gold-map reads combine both collections;
+source coverage and completeness checks exclude derived records. Crops and
+the combined embedding cache retain their existing gold paths.
 
 ### Gold
 
