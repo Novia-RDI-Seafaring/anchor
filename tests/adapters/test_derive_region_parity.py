@@ -22,7 +22,7 @@ from anchor.infra.config import AnchorConfig
 from tests.fixtures.services import make_in_memory_services
 
 
-def derive_via(transport, config, slug, locator, region, *, success=True):
+def derive_via(transport, config, slug, locator, region, *, success=True, http_status=None):
     if transport == "cli":
         result = CliRunner().invoke(cli_app, ["derive-region", slug, locator,
             "--region", json.dumps(region), "--data-dir", str(config.data_dir)])
@@ -38,6 +38,8 @@ def derive_via(transport, config, slug, locator, region, *, success=True):
                 "parent_region_id": locator, "region": region,
             })
         assert (result.status_code == 200) == success, result.text
+        if http_status is not None:
+            assert result.status_code == http_status, result.text
         return result.json()
     server = build_mcp_server(bundle=runtime)
 
@@ -74,6 +76,54 @@ def test_derive_and_read_preserve_exact_parent_across_adapters(tmp_path, transpo
     }
     assert child["derived_from"] == "p2/r1"
     assert asyncio.run(inspect_region(store, "doc", "p1/child")) is None
+
+
+@pytest.mark.parametrize("transport", ["http", "mcp", "cli"])
+@pytest.mark.parametrize("child_id", ["r1", "r2"])
+def test_derive_source_id_collision_is_actionable_and_preserves_gold(
+    tmp_path, transport, child_id,
+):
+    store = FsDocStore(tmp_path)
+    asyncio.run(store.write_gold_region_file("doc", 1, [
+        {"id": "r1", "kind": "chart", "bbox": [20, 30, 200, 100]},
+        {"id": "r2", "kind": "table", "title": "Original table"},
+    ]))
+    gold_path = tmp_path / "gold/doc/pages/1.regions.json"
+    before = gold_path.read_bytes()
+    result = derive_via(transport, AnchorConfig(data_dir=tmp_path), "doc", "p1/r1", {
+        "id": child_id, "kind": "chart_series",
+    }, success=False, http_status=409)
+
+    error = result if transport == "cli" else result["detail" if transport == "http" else "error"]
+    assert "belongs to original gold" in error
+    assert "choose a different id" in error
+    assert "Traceback" not in error
+    assert gold_path.read_bytes() == before
+    regions = asyncio.run(FsDocStore(tmp_path).get_regions("doc", 1))["pages"][1]
+    assert [(r["id"], r["kind"]) for r in regions] == [("r1", "chart"), ("r2", "table")]
+
+
+@pytest.mark.parametrize("transport", ["http", "mcp", "cli"])
+def test_derive_updates_existing_child_without_touching_same_id_on_other_page(tmp_path, transport):
+    store = FsDocStore(tmp_path)
+    asyncio.run(store.write_gold_region_file("doc", 1, [
+        {"id": "r1", "kind": "chart", "bbox": [20, 30, 200, 100]},
+    ]))
+    asyncio.run(store.write_gold_region_file("doc", 2, [
+        {"id": "child", "kind": "table", "title": "Other page"},
+    ]))
+    other_path = tmp_path / "gold/doc/pages/2.regions.json"
+    before = other_path.read_bytes()
+    config = AnchorConfig(data_dir=tmp_path)
+    child = {"id": "child", "kind": "chart_series", "title": "First"}
+    derive_via(transport, config, "doc", "p1/r1", child)
+    derive_via(transport, config, "doc", "p1/r1", {**child, "title": "Updated"})
+
+    restored = FsDocStore(tmp_path)
+    regions = asyncio.run(restored.get_regions("doc", 1))["pages"][1]
+    assert [(r["id"], r.get("title")) for r in regions] == [("r1", None), ("child", "Updated")]
+    assert asyncio.run(inspect_region(restored, "doc", "p1/child"))["derived_from"] == "p1/r1"
+    assert other_path.read_bytes() == before
 
 
 

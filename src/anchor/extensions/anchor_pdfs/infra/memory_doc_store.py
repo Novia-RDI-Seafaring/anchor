@@ -13,7 +13,7 @@ from uuid import uuid4
 from anchor.core.upload_safety import safe_upload_name
 from anchor.extensions.anchor_pdfs.core.generation import polished_membership
 from anchor.extensions.anchor_pdfs.core.ingest.validation import require_unique_region_ids
-from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
+from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld, RegionIdConflictError
 from anchor.extensions.anchor_pdfs.core.silver import project_index
 from anchor.extensions.anchor_pdfs.core.source_identity import SourceIdentityError, original_source
 from anchor.extensions.anchor_pdfs.infra._generation import document_view
@@ -465,6 +465,8 @@ class MemoryDocStore:
         async with self._lock:
             existing = list(self._regions.get((slug, page), []))
             rid = region.get("id")
+            if rid and any(r.get("id") == rid and not r.get("derived_from") for r in existing):
+                raise RegionIdConflictError(rid, page)
             kept = [r for r in existing if r.get("id") != rid] if rid else existing
             kept.append(region)
             self._regions[(slug, page)] = _normalise_regions(kept)
