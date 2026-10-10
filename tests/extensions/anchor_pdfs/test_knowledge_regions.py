@@ -184,7 +184,9 @@ async def test_publication_during_knowledge_mutation_keeps_selected_generation(
         await pipeline(store, [["New source"]]).ingest_pdf(b"new", "doc.pdf", force=True)
     finally:
         release.set()
-    await work
+    result = await asyncio.wait_for(work, timeout=3)
+    assert result["region_id"] == ("late" if operation == "derive" else "child")
+    assert result["derived_from"] == "p1/r1"
     assert await inspect_region(store, "doc", "p1/late") is None
     assert await inspect_region(store, "doc", "p1/child") is None
     assert (await inspect_region(old, "doc", "p1/late") is not None) == (operation == "derive")
