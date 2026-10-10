@@ -90,6 +90,58 @@ async def test_derive_region_unknown_parent_raises():
         await svc.derive_region("lkh", "lkh:p9-nope", dict(CHART_SERIES))
 
 
+@pytest.mark.parametrize("store_kind", ["memory", "fs"])
+@pytest.mark.parametrize("child_id", ["r1", "r2"])
+@pytest.mark.parametrize("via_service", [False, True])
+async def test_derived_id_cannot_replace_original_gold(
+    tmp_path, store_kind, child_id, via_service,
+):
+    store = MemoryDocStore() if store_kind == "memory" else FsDocStore(tmp_path)
+    await store.write_gold_region_file("doc", 1, [
+        {"id": "r1", "kind": "chart", "title": "Parent", "bbox": [1, 2, 30, 40]},
+        {"id": "r2", "kind": "table", "title": "Source table", "derived_from": ""},
+    ])
+    before = await store.get_regions("doc", 1)
+    gold_path = tmp_path / "gold/doc/pages/1.regions.json"
+    gold_bytes = gold_path.read_bytes() if store_kind == "fs" else None
+    child = {"id": child_id, "kind": "chart_series", "title": "Derived"}
+
+    with pytest.raises(ValueError, match="belongs to original gold"):
+        if via_service:
+            await _service(store).derive_region("doc", "p1/r1", child)
+        else:
+            await store.add_derived_region("doc", {
+                **child, "page": 1, "derived_from": "p1/r1",
+            })
+
+    assert await store.get_regions("doc", 1) == before
+    if gold_bytes is not None:
+        assert gold_path.read_bytes() == gold_bytes
+
+
+@pytest.mark.parametrize("store_kind", ["memory", "fs"])
+async def test_derived_upsert_keeps_page_qualified_identity(tmp_path, store_kind):
+    store = MemoryDocStore() if store_kind == "memory" else FsDocStore(tmp_path)
+    await store.write_gold_region_file("doc", 1, [
+        {"id": "r1", "kind": "chart", "title": "Parent", "bbox": [1, 2, 30, 40]},
+    ])
+    await store.write_gold_region_file("doc", 2, [
+        {"id": "child", "kind": "table", "title": "Other page"},
+    ])
+    other_page = await store.get_regions("doc", 2)
+    service = _service(store)
+    child = {"id": "child", "kind": "chart_series", "title": "First"}
+    await service.derive_region("doc", "p1/r1", child)
+    await service.derive_region("doc", "p1/r1", {**child, "title": "Updated"})
+
+    regions = (await store.get_regions("doc", 1))["pages"][1]
+    assert [(r["id"], r["title"]) for r in regions] == [
+        ("r1", "Parent"), ("child", "Updated"),
+    ]
+    assert regions[1]["derived_from"] == "p1/r1"
+    assert await store.get_regions("doc", 2) == other_page
+
+
 @pytest.mark.parametrize("kind", ["chart", "table", "text"])
 async def test_ordinary_parent_uses_inspect_locator(kind):
     store = MemoryDocStore()

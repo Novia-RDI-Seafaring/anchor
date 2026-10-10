@@ -15,6 +15,16 @@ class IngestLockHeld(RuntimeError):
     gold-complete marker (issue #175)."""
 
 
+class RegionIdConflictError(ValueError):
+    """A derived record would replace an original source region."""
+
+    def __init__(self, region_id: str, page: int) -> None:
+        super().__init__(
+            f"derive_region: region id {region_id!r} on page {page} belongs to "
+            "original gold; choose a different id"
+        )
+
+
 class DocStore(Protocol):
     def snapshot(self, slug: str) -> DocStore:
         """Pin one document's current derived generation across compound reads."""
@@ -215,8 +225,10 @@ class DocStore(Protocol):
         document: it consumes one region and writes a new one back into the
         same gold tree. The page is taken from ``region['source_ref']['page']``
         (a derived region inherits its parent's source_ref) or
-        ``region['page']``. Replaces any existing region with the same ``id``
-        so re-deriving is idempotent. Search picks the new region up on the
+        ``region['page']``. Replaces an existing derived region with the same
+        ``id`` on that page so re-deriving is idempotent. An original region
+        with that id raises ``RegionIdConflictError`` before any write.
+        Search picks the new region up on the
         next ``embed`` pass; this method does not embed.
         """
         raise NotImplementedError

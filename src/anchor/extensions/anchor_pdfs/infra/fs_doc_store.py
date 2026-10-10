@@ -34,7 +34,7 @@ from anchor.core.ids import validate_workspace_slug
 from anchor.core.upload_safety import UnsafeUploadError, assert_within, safe_upload_name
 from anchor.extensions.anchor_pdfs.core.generation import polished_membership
 from anchor.extensions.anchor_pdfs.core.ingest.validation import require_unique_region_ids
-from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
+from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld, RegionIdConflictError
 from anchor.extensions.anchor_pdfs.core.silver import project_index
 from anchor.extensions.anchor_pdfs.core.source_identity import SourceIdentityError, original_source
 from anchor.extensions.anchor_pdfs.infra._generation import document_view
@@ -957,6 +957,8 @@ class FsDocStore:
                 if isinstance(raw, list):
                     existing = [r for r in raw if isinstance(r, dict)]
             rid = region.get("id")
+            if rid and any(r.get("id") == rid and not r.get("derived_from") for r in existing):
+                raise RegionIdConflictError(rid, page)
             kept = [r for r in existing if r.get("id") != rid] if rid else existing
             kept.append(region)
             return await self.write_gold_region_file(slug, page, kept)
