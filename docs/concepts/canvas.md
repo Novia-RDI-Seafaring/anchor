@@ -16,6 +16,13 @@ be toggled with `[` when you are not typing. Select a node for its context
 toolbar and properties, drag to move it, and use handles where supported for
 resizing or connections. Shift-click or a selection box selects several objects.
 
+Select (`V`) lets you move objects or drag empty canvas to select several.
+Hand (`H`) pans the view when you drag the canvas or an object. Hand does not
+move, edit, paste, or delete objects. Press `V` or Escape to return to Select,
+or choose a drawing tool. Middle-button and right-button dragging pan the view
+while another tool is active. Navigation keys leave text editors, source controls,
+and mark-up alone.
+
 ## Common objects
 
 | Node type | Purpose |

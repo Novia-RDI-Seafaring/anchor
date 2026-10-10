@@ -145,6 +145,8 @@ type UiState = {
    *     `+` menu opens a Dialog instead. Arming is for shapes/cards only.
    */
   armedTool: string | null;
+  navigationMode: "select" | "hand";
+  setNavigationMode: (mode: "select" | "hand") => void;
   /** While the connector tool is armed, the element a connector will start
    *  from once the user has clicked it. Null between connectors. */
   connectSourceId: string | null;
@@ -379,6 +381,7 @@ export const useUiStore = create<UiState>((set) => ({
   pdfViewerPinned: false,
   hoveredSourceRef: null,
   armedTool: null,
+  navigationMode: "select",
   connectSourceId: null,
   selectedNodeId: null,
   propertiesOpen: false,
@@ -467,10 +470,12 @@ export const useUiStore = create<UiState>((set) => ({
     set((state) => ({
       // Clicking the same icon a second time toggles the tool off.
       armedTool: state.armedTool === type ? null : type,
+      navigationMode: "select",
       // Switching tools abandons a half-drawn connector.
       connectSourceId: null,
     })),
-  disarmTool: () => set({ armedTool: null, connectSourceId: null }),
+  disarmTool: () => set({ armedTool: null, connectSourceId: null, navigationMode: "select" }),
+  setNavigationMode: (mode) => set({ navigationMode: mode, armedTool: null, connectSourceId: null }),
   // --- Properties panel actions (appended) ------------------------------
   // Mutual exclusion with selectedEdgeId — selecting a node deselects any
   // currently-selected edge so the EdgeContextToolbar never shows up at
