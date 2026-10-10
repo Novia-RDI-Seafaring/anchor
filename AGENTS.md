@@ -285,14 +285,22 @@ changelog entries by these prefixes.
   or updating a PR, check for them and fix the real cause (do not dismiss):
 
   ```bash
-  # alerts on the PR's branch (authoritative)
-  gh api "repos/Novia-RDI-Seafaring/anchor/code-scanning/alerts?ref=refs/heads/<branch>&state=open" \
+  # check open alerts on both refs; a scan can report only on the PR merge ref
+  gh api --paginate "repos/Novia-RDI-Seafaring/anchor/code-scanning/alerts?ref=refs/heads/<branch>&state=open" \
     --jq '.[] | "#\(.number) [\(.rule.severity)] \(.rule.id): \(.most_recent_instance.location.path):\(.most_recent_instance.location.start_line) -> \(.most_recent_instance.message.text)"'
 
-  # or the bot's inline PR comments
-  gh api repos/Novia-RDI-Seafaring/anchor/pulls/<n>/comments \
+  gh api --paginate "repos/Novia-RDI-Seafaring/anchor/code-scanning/alerts?ref=refs/pull/<n>/merge&state=open" \
+    --jq '.[] | "#\(.number) [\(.rule.severity)] \(.rule.id): \(.most_recent_instance.location.path):\(.most_recent_instance.location.start_line) -> \(.most_recent_instance.message.text)"'
+
+  # also inspect the bot's inline PR comments
+  gh api --paginate repos/Novia-RDI-Seafaring/anchor/pulls/<n>/comments \
     --jq '.[] | select(.user.login=="github-advanced-security[bot]") | "\(.path):\(.line)  \(.body)"'
   ```
+
+  An empty branch-ref result alone does not establish that the PR has no
+  findings. Wait for the updated scan, check both refs, and resolve a bot
+  review thread only after verifying that its cause is fixed. Historical
+  inline comments can remain after the corresponding alert clears.
 
   Fix at the source, push a normal commit, and the scan re-runs and clears
   the alert. Common findings in this codebase: cyclic imports between
