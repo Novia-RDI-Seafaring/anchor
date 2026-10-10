@@ -21,6 +21,7 @@ from anchor.core.events.envelope import DomainEvent
 from anchor.core.ids import validate_workspace_slug
 from anchor.core.upload_safety import UnsafeUploadError, assert_within
 from anchor.core.workspace.workspace import Workspace, WorkspaceMeta
+from anchor.infra.atomic_file import replace_file
 
 
 class FsWorkspaceStore:
@@ -179,9 +180,12 @@ class FsWorkspaceStore:
     async def _atomic_write_text(self, path: Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")
-        async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
-            await f.write(content)
-        os.replace(tmp, path)
+        try:
+            async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
+                await f.write(content)
+            await replace_file(tmp, path)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     async def _read_version(self, slug: str) -> int:
         events_path = self._slug_dir(slug) / "events.jsonl"
