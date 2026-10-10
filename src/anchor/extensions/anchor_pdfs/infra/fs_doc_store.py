@@ -34,11 +34,12 @@ from anchor.core.ids import validate_workspace_slug
 from anchor.core.upload_safety import UnsafeUploadError, assert_within, safe_upload_name
 from anchor.extensions.anchor_pdfs.core.generation import polished_membership
 from anchor.extensions.anchor_pdfs.core.ingest.validation import require_unique_region_ids
-from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
+from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld, RegionIdConflictError
 from anchor.extensions.anchor_pdfs.core.silver import project_index
 from anchor.extensions.anchor_pdfs.core.source_identity import SourceIdentityError, original_source
 from anchor.extensions.anchor_pdfs.infra._generation import document_view
 from anchor.extensions.anchor_pdfs.infra._region_normalize import _normalise_regions
+from anchor.infra.atomic_file import replace_file
 
 #: How long a stale ingest lock file may sit before another writer reclaims it.
 #: A lock is freed in a ``finally`` on normal exit and on a handled crash, but a
@@ -193,7 +194,7 @@ class FsDocStore:
             tmp = target.with_name(f"{uuid4().hex}.tmp")
             try:
                 tmp.write_text(json.dumps(manifest), encoding="utf-8")
-                os.replace(tmp, target)
+                await replace_file(tmp, target)
             finally:
                 tmp.unlink(missing_ok=True)
 
@@ -465,9 +466,12 @@ class FsDocStore:
         # Atomic commit: write a sibling temp file, then rename over the
         # marker. A crash leaves either the old marker or the new one.
         tmp = target.with_name(GOLD_COMPLETE_MARKER + ".tmp")
-        async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
-            await f.write(payload)
-        os.replace(tmp, target)
+        try:
+            async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
+                await f.write(payload)
+            await replace_file(tmp, target)
+        finally:
+            tmp.unlink(missing_ok=True)
         return target
 
     async def clear_gold_complete(self, slug: str) -> None:
@@ -476,9 +480,12 @@ class FsDocStore:
             return
         payload = json.dumps({"complete": False})
         tmp = target.with_name(GOLD_COMPLETE_MARKER + ".tmp")
-        async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
-            await f.write(payload)
-        os.replace(tmp, target)
+        try:
+            async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
+                await f.write(payload)
+            await replace_file(tmp, target)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     @document_view
     async def get_index(self, slug: str, *, include_content: bool = False) -> dict[str, Any] | None:
@@ -781,13 +788,13 @@ class FsDocStore:
                     tmp = base / f"{uuid4().hex}.tmp"
                     try:
                         tmp.write_bytes(pdf_bytes)
-                        os.replace(tmp, target)
+                        await replace_file(tmp, target)
                     finally:
                         tmp.unlink(missing_ok=True)
                 tmp = base / f"{uuid4().hex}.tmp"
                 try:
                     tmp.write_text(json.dumps({**source, "filename": clean, "legacy_sources": legacy_sources}), encoding="utf-8")
-                    os.replace(tmp, record_path)
+                    await replace_file(tmp, record_path)
                 finally:
                     tmp.unlink(missing_ok=True)
             except (OSError, ValueError) as exc:
@@ -867,9 +874,12 @@ class FsDocStore:
         payload = json.dumps({**record, "slug": slug})
         # Atomic upsert so a concurrent reader never sees a half-written file.
         tmp = target.with_suffix(".json.tmp")
-        async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
-            await f.write(payload)
-        os.replace(tmp, target)
+        try:
+            async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
+                await f.write(payload)
+            await replace_file(tmp, target)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     async def read_ingest_activity(self, slug: str) -> dict[str, Any] | None:
         try:
@@ -947,6 +957,8 @@ class FsDocStore:
                 if isinstance(raw, list):
                     existing = [r for r in raw if isinstance(r, dict)]
             rid = region.get("id")
+            if rid and any(r.get("id") == rid and not r.get("derived_from") for r in existing):
+                raise RegionIdConflictError(rid, page)
             kept = [r for r in existing if r.get("id") != rid] if rid else existing
             kept.append(region)
             return await self.write_gold_region_file(slug, page, kept)
@@ -964,7 +976,7 @@ class FsDocStore:
         try:
             async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
                 await f.write(json.dumps(payload))
-            os.replace(tmp, target)
+            await replace_file(tmp, target)
         finally:
             tmp.unlink(missing_ok=True)
         return target

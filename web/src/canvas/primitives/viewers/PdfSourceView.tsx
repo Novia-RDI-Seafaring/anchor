@@ -32,6 +32,7 @@ import {
 } from "./makeReference";
 import { PdfPageCanvas } from "./PdfPageCanvas";
 import { PdfNavigationRail } from "./PdfNavigationRail";
+import { SourceMagnifier } from "./SourceMagnifier";
 import type { ContentsEntry } from "./pdfContents";
 import { loadPdf, pageSizes as readPageSizes, type PdfDoc } from "./pdfjs";
 
@@ -179,6 +180,8 @@ export function PdfSourceView({
   // The blue "jump-to" highlight is a transient pulse, not a permanent mark: it
   // fades a few seconds after opening a reference so it does not linger.
   const [highlightVisible, setHighlightVisible] = useState(true);
+  const [magnifierTarget, setMagnifierTarget] = useState<string | null>(null);
+  useEffect(() => { setMagnifierTarget(null); }, [highlightPage, highlightBbox, highlightAlso, highlightNonce]);
   // Set after a programmatic scroll-to-highlight so we only do it once per target.
   const lastHighlightRef = useRef<string | null>(null);
   /** The page the last highlight was on, so a move within it does not scroll. */
@@ -267,6 +270,7 @@ export function PdfSourceView({
       })
       .catch((err: unknown) => {
         if (!cancelled) {
+          console.error("Could not load PDF", err);
           setLoadError(err instanceof Error ? err.message : "Failed to load PDF");
         }
       });
@@ -504,6 +508,7 @@ export function PdfSourceView({
       // being wrong rather than small.
       return {
         key: `${kind}#${n}`,
+        source: { page, bbox },
         left: pageLeft + rect.left,
         top: item.top + rect.top,
         width: rect.width,
@@ -533,6 +538,19 @@ export function PdfSourceView({
     contentWidth,
     bboxToRectOnPage,
   ]);
+
+  const magnifierMark = markPlacements.find((mark) => mark.key === magnifierTarget) ?? markPlacements[0];
+  const magnifierPage = magnifierMark ? items.find((item) => item.page === magnifierMark.source.page) : undefined;
+  const onMagnifierPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const content = contentRef.current;
+    if (!content || event.buttons) return;
+    const bounds = content.getBoundingClientRect();
+    const x = event.clientX - bounds.left;
+    const y = event.clientY - bounds.top;
+    const target = markPlacements.find((mark) => x >= mark.left && x <= mark.left + mark.width
+      && y >= mark.top && y <= mark.top + mark.height);
+    setMagnifierTarget(target?.key ?? null);
+  };
 
   // Strokes. A dimension on an engineering drawing is a span between two
   // witness lines, and a box around it would cover the very part being
@@ -1026,13 +1044,15 @@ export function PdfSourceView({
         <div
           ref={scrollRef}
           onScroll={onScroll}
+          onPointerMove={onMagnifierPointerMove}
+          onPointerLeave={() => setMagnifierTarget(null)}
           onKeyDown={onViewerKeyDown}
           tabIndex={-1}
           className="relative flex-1 overflow-auto p-4 outline-none"
           data-testid="pdf-scroller"
         >
           {loadError ? (
-            <div className="p-6 text-sm text-red-600">Could not load PDF: {loadError}</div>
+            <div role="alert" className="p-6 text-sm text-red-600">Could not load PDF: {loadError}</div>
           ) : (
             <div ref={contentRef} className="relative mx-auto" style={{ height: totalHeight, width: contentWidth || undefined }}>
               {strokePlacements.map(({ key, left, top, points }) => (
@@ -1046,7 +1066,7 @@ export function PdfSourceView({
                   <polyline points={points} />
                 </svg>
               ))}
-              {markPlacements.map(({ key, ...box }) => (
+              {markPlacements.map(({ key, source, ...box }) => (
                 <SourceMark
                   // Stable, so every mark travels rather than blinking out and
                   // in. The key is the KIND, so a move pairs like with like:
@@ -1056,11 +1076,22 @@ export function PdfSourceView({
                   key={key}
                   data-testid="pdf-highlight"
                   data-mark-kind={key}
+                  data-source-page={source.page}
                   className="z-10"
                   flying={markFlying}
                   box={box}
                 />
               ))}
+              {doc && magnifierMark && magnifierPage && pdfPageSizes[magnifierPage.page] ? (
+                <SourceMagnifier
+                  doc={doc} page={magnifierPage.page} bbox={magnifierMark.source.bbox}
+                  zoom={zoom} pageSize={pdfPageSizes[magnifierPage.page]!}
+                  sourceRect={magnifierMark}
+                  pageRect={{ left: Math.max(0, (contentWidth - magnifierPage.width) / 2),
+                    top: magnifierPage.top, width: magnifierPage.width, height: magnifierPage.height }}
+                  contentRef={contentRef} scrollRef={scrollRef}
+                />
+              ) : null}
               {items.map((it) => (
                 <PageSlot
                   key={it.page}
@@ -1151,6 +1182,7 @@ function PageSlot(props: SlotProps) {
   // Overlays size to the page box at the current zoom, even while the raster
   // underneath is still the CSS-scaled one from the previous zoom.
   const viewportSize = rendered ? { w: item.width, h: item.height } : null;
+  const displayedZoom = rendered?.zoom ?? renderZoom;
   const confirmRect = bboxToRect(confirmBbox);
 
   // Right-click inside a section -> capture it for a reference. The region
@@ -1211,7 +1243,7 @@ function PageSlot(props: SlotProps) {
       {shouldRender && doc ? (
         <div
           className="absolute left-0 top-0 origin-top-left"
-          style={renderZoom === zoom ? undefined : { transform: `scale(${zoom / renderZoom})` }}
+          style={displayedZoom === zoom ? undefined : { transform: `scale(${zoom / displayedZoom})` }}
         >
           <PdfPageCanvas doc={doc} page={item.page} zoom={renderZoom} onRendered={onRendered} />
         </div>

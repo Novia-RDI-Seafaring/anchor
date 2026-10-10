@@ -112,6 +112,21 @@ def _table_title(candidate: dict[str, Any], heading: str | None) -> str:
     return "Table"
 
 
+def _has_cell_text(item: dict[str, Any]) -> bool:
+    cells = item.get("cells")
+    return isinstance(cells, list) and any(
+        isinstance(cell, dict)
+        and isinstance(cell.get("text"), str)
+        and cell["text"].strip()
+        for cell in cells
+    )
+
+
+def _has_source_content(item: dict[str, Any]) -> bool:
+    text = item.get("text")
+    return (isinstance(text, str) and bool(text.strip())) or _has_cell_text(item)
+
+
 def _make_region(
     *,
     index: int,
@@ -121,6 +136,11 @@ def _make_region(
     members: list[dict[str, Any]],
     content_items: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
+    if not any(
+        item.get("label") in MEANINGFUL_LABELS and _has_source_content(item)
+        for item in content_items
+    ):
+        return None
     bbox = union_bbox([list(m.get("bbox") or []) for m in members])
     if not bbox:
         return None
@@ -139,7 +159,16 @@ def _make_region(
         "entities": [],
         "coverage_fallback": True,
     }
-    content = region_content_from_items(content_items)
+    # The markdown renderer handles fewer labels than coverage. Adapt copies
+    # so every meaningful source text survives without changing item identity.
+    render_items = [
+        {**item, "label": "text"}
+        if item.get("label") in {"paragraph", "caption", "code", "formula"}
+        or (item.get("label") == "table" and not _has_cell_text(item))
+        else item
+        for item in content_items
+    ]
+    content = region_content_from_items(render_items)
     if content:
         region["content"] = content
     if kind == "table":

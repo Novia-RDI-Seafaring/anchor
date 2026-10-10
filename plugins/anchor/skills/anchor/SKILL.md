@@ -74,10 +74,12 @@ provider as needed; `anchor check` reports what the resolved config accepts.
 
 - **Always pass a `workspace_slug`.** ANCHOR is multi-canvas; create one
   per question or project (`canvas_create_workspace`) and reuse it.
-- **Provenance is the contract.** When you place a spec value or quote a
-  number, anchor it to its source via an edge carrying
-  `data.kind = "evidence"` and `data.source_ref = {page, bbox}`. The
-  system enforces this on `anchored` evidence edges.
+- **Provenance is the contract.** Put `source_ref = {slug, page, bbox?}`
+  on each spec row or on the node's `data` when quoting a source. The
+  Sources dock lists the referenced documents and opens their evidence.
+  Document cards and evidence edges are optional presentation. An explicit
+  `anchored` evidence edge still requires `data.kind = "evidence"` and
+  `data.source_ref`; a citation alone does not grant Verified status.
 - **Slug naming.** Document slugs are filename-derived (lowercase,
   hyphenated). Canvas slugs are user-chosen, e.g. `pump-analysis`.
 - **Don't re-ingest.** `list_documents()` first; if the slug exists with
@@ -232,7 +234,7 @@ real time on every connected client via SSE.
 
 | Node type | When to use |
 | --- | --- |
-| `document` | A whole PDF as a card on the canvas. |
+| `document` | An optional PDF card for a reading list or presentation. |
 | `spec` | A table of rows with values. Each row carries a `source_ref`. |
 | `fact` | A free-form note tied to a source. |
 | `image` | A region crop or screenshot. |
@@ -244,6 +246,13 @@ real time on every connected client via SSE.
 
 The full list and the data shapes live in the on-disk substrate docs;
 this is the shortlist of the ones agents touch most.
+
+Put a citation in a node's `data.source_ref` or in each spec row's
+`source_ref`. The Sources dock derives its document list from those references
+and opens the shared viewer at the cited page and region. A document card or
+an evidence edge to a hub card is not required. Existing cards still render,
+and an explicit anchored evidence edge remains useful when the line itself
+communicates something. A citation does not grant Verified status by itself.
 
 ### Say it in Markdown when it has structure
 
@@ -292,12 +301,11 @@ not render the rest of Markdown -- `**bold**` stays asterisks in a
 card you like when it just needs to point at its source. There is no
 element where a claim has to go unanchored.
 
-An inline ref is a pointer for whoever reads the card. It is **not** an
-evidence edge. The edge is the reviewable claim that a value came from a
-region, and rows of values still belong in a `spec` node where each row
-carries its own `source_ref`. Use the link for prose that mentions a
-source in passing; use an edge, or a spec row, when the relation itself
-is the point. Doing both is fine.
+An inline ref is a pointer for whoever reads the card. Rows of values still
+belong in a `spec` node where each row carries its own `source_ref`. An
+explicit evidence edge can show a useful visual relation, but neither that
+edge nor a document card is required to review a citation. The server's claim
+binding determines a row's evidence state.
 
 ### Review states
 
@@ -307,8 +315,8 @@ those, every node you create is stamped `data.review = {state:
 set or change a node's `review` state unless the user asks you to. A
 node with `review.state == "rejected"` is feedback: the human turned it
 down, so revise or replace it rather than ignoring or deleting the
-verdict. `accepted` means the human signed off. Evidence edges and
-`source_ref` remain how a value is checked; `review` only records the
+verdict. `accepted` means the human signed off. `source_ref` and stored
+claim evidence remain how a value is checked; `review` only records the
 outcome of that check. A whole proposal set carries one verdict for every
 element in it (see below).
 
@@ -502,8 +510,7 @@ top-left corner of each element; children sit inside their area's box.
 ]
 ```
 
-Then edges: evidence edges from each `spec` back to the document card,
-and labelled edges between the areas' key cards carrying the reasoning
+Then labelled edges between the areas' key cards carrying the reasoning
 ("fails at 5 m", "passes with margin"). Finish with
 `canvas_propose_set` so the human rules on the answer as one thing.
 
@@ -571,7 +578,9 @@ regions tagged with the page number and bounding box they came from.
   text, score`. This is how you "find stuff" in the documents by meaning,
   not by guessing a page. CLI `anchor search "<query>"`, HTTP
   `GET /api/search?q=…`. Embeddings are created during `ingest_pdf`; if a
-  doc was ingested without them, run `embed` first (`anchor embed`).
+  doc was ingested without them, run `embed` first (`anchor embed`). Search
+  text includes title, description, tags, entities and source content. Run
+  `anchor embed <slug>` again to include metadata in an existing index.
 - `list_documents()` — every document and its current status.
 - `list_entities(slug)` - what a document is ABOUT: every entity its gold
   regions name, with counts and pages. A title and a page count do not tell
@@ -586,6 +595,13 @@ regions tagged with the page number and bounding box they came from.
   result and is much larger, so reach for it only when you truly need
   the whole document at once.
 - `get_gold_regions(slug, page?)` — structured regions with `page + bbox`.
+- `inspect_region(slug, region_id)` - one region's metadata, stable silver
+  membership, source content, table cells and `source_ref`. Qualify a search
+  hit with its page: hit `page=2, region_id="r1"` becomes `"p2/r1"`.
+  CLI `anchor inspect-region <slug> p2/r1`.
+- `get_region_content(slug, region_id)` - the region's stored or reconstructed
+  source markdown and cells. Use the same page-qualified locator when
+  inspection has no stored content. CLI `anchor region-content <slug> p2/r1`.
 - `get_page_text(slug, page)` — polished or raw page markdown.
 - `get_crop(slug, "<page>/<region_id>.png")` - LOOK at one region: the crop
   comes back as an image the harness displays, so you can read a chart,
@@ -594,16 +610,23 @@ regions tagged with the page number and bounding box they came from.
   `.anchor_data/` yourself; reading the store directly bypasses the tool
   surface and may not even be permitted.
 
-### Finding content — search first, then retrieve
+### Finding content - search, inspect, answer
 
 To answer "what does this document say about X" or "find the pricing /
-the flow rate / the warranty", **start with `search_documents(query)`** —
-it ranks gold regions across all documents by meaning. Each hit already
-carries its `slug, page, region_id`, so follow up with
-`get_gold_regions(slug, page=…)` or `get_page_text(slug, page)` to read
-the full context and cite the page + bbox. Do not page through every
-region by hand or re-read whole documents when search points you at the
-right region directly.
+the flow rate / the warranty", **start with `search_documents(query)`**.
+It ranks gold regions across all documents by meaning. For each relevant
+hit, call `inspect_region(hit.slug, "p<page>/<region_id>")` using the hit's
+page and region id. Page qualification prevents selecting a different
+page's region with the same local id.
+
+Read the inspected source content and cells before answering. A title,
+description, tag or entity explains why a hit ranked; it is not evidence
+for a value. If stored content is absent, call `get_region_content` with
+the same locator. Cite the returned `source_ref`, using the silver item
+or cell locator when available, or the region/page/bbox otherwise.
+Use `get_page_text` for adjacent context and `get_crop` for visual evidence
+when needed. If you already know the exact region locator, inspect it
+directly. Search and inspection avoid re-reading whole documents.
 
 ### Typical flow
 
@@ -611,11 +634,17 @@ When the user drops a PDF and asks for specs on the canvas:
 
 1. `list_documents()` first — skip ingest if the slug is already golded.
 2. `ingest_pdf(pdf_path="/abs/path/to/datasheet.pdf")` only if needed.
-3. `search_documents("flow rate")` to locate the right region(s), or
-   `get_gold_regions(slug=..., page=2)` when you already know the page.
-4. Place a `document` node on the canvas via `canvas_add_node`.
-5. Place a `spec` node whose `data.rows` reference the regions, and an
-   `anchored` evidence edge from each row to the document node.
+3. `search_documents("flow rate")` to locate the right region(s).
+4. Inspect each hit with `inspect_region(slug, "p<page>/<region_id>")`.
+   Read its source content/cells, using `get_region_content` if needed,
+   before extracting values or answering.
+5. Place one `spec` node whose `data.rows` each carry a `source_ref` naming
+   the document slug, page, and available region/item/cell/bbox locator.
+   For a fact, put the reference in the node's `data.source_ref`.
+6. The Sources dock shows those documents automatically. Place a `document`
+   card or an explicit `anchored` evidence edge only when useful for the
+   presentation; neither is required for a source citation. A citation alone
+   does not establish a validated claim binding or Verified row status.
 
 ### Common errors
 

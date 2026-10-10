@@ -771,8 +771,14 @@ def canvas_add_edge(
     target: str,
     edge_type: str = typer.Option("floating", "--type", "-t", help="`floating` or `anchored`"),
     label: str = typer.Option("", "--label", "-l"),
-    source_handle: str | None = typer.Option(None, "--source-handle"),
-    target_handle: str | None = typer.Option(None, "--target-handle"),
+    source_handle: str | None = typer.Option(
+        None, "--source-handle",
+        help="Exact source handle ID for an anchored card/model port (such as a spec row). Omit for plain shapes and floating wiring.",
+    ),
+    target_handle: str | None = typer.Option(
+        None, "--target-handle",
+        help="Exact target handle ID for an anchored card/model port (such as a document region). Omit for plain shapes and floating wiring.",
+    ),
     data: str | None = typer.Option(
         None,
         "--data",
@@ -780,7 +786,7 @@ def canvas_add_edge(
     ),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
-    """Add an edge between two nodes."""
+    """Add an edge between two nodes. Plain shapes use floating wiring without handles."""
     ws = _build_canvas_runtime(data_dir).workspace
     payload = _parse_data(data)
     kwargs: dict = {
@@ -829,8 +835,14 @@ def canvas_update_edge(
     edge_id: str,
     label: str | None = typer.Option(None, "--label", "-l"),
     edge_type: str | None = typer.Option(None, "--type", "-t", help="`floating` or `anchored`"),
-    source_handle: str | None = typer.Option(None, "--source-handle"),
-    target_handle: str | None = typer.Option(None, "--target-handle"),
+    source_handle: str | None = typer.Option(
+        None, "--source-handle",
+        help="Exact source handle ID for an anchored card/model port (such as a spec row). Omit to keep the current handle unchanged.",
+    ),
+    target_handle: str | None = typer.Option(
+        None, "--target-handle",
+        help="Exact target handle ID for an anchored card/model port (such as a document region). Omit to keep the current handle unchanged.",
+    ),
     data: str | None = typer.Option(
         None,
         "--data",

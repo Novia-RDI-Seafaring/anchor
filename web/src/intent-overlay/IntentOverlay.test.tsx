@@ -103,8 +103,100 @@ function draw(points: [number, number][]) {
   fireEvent.pointerUp(surface, event(points.at(-1)!));
 }
 const ring: [number, number][] = [[80, 80], [150, 75], [220, 80], [225, 140], [220, 200], [150, 205], [80, 200], [75, 140], [80, 80]];
+const pointer = (x: number, y: number, extra = {}) => ({ clientX: x * 2 + 20, clientY: y * 2 + 10, button: 0, pointerId: 1, ...extra });
+const ink = () => Array.from(screen.getByTestId("comment-lasso-ink").querySelectorAll("polyline"));
+async function labeledShape() {
+  const api = fixture(); render(<Form api={api} />); await act(async () => {});
+  draw([[300, 300], [400, 300], [400, 400], [300, 400], [300, 300]]);
+  const note = screen.getByTestId("comment-lasso-note");
+  fireEvent.change(note, { target: { value: "Copied shape" } });
+  fireEvent.keyDown(note, { key: "Enter" });
+  return screen.getByTestId("comment-lasso-surface");
+}
 
 describe("independent DOM intent overlay", () => {
+  it("Alt-drags a drawn shape with its label without moving the original", async () => {
+    const surface = await labeledShape();
+    const original = ink()[0]!.getAttribute("points");
+    fireEvent.pointerDown(surface, pointer(350, 300, { altKey: true }));
+    fireEvent.pointerMove(surface, pointer(390, 320, { altKey: true }));
+    fireEvent.pointerUp(surface, pointer(390, 320, { altKey: true }));
+    expect(ink()).toHaveLength(2);
+    expect(ink()[0]!.getAttribute("points")).toBe(original);
+    expect(ink()[1]!.getAttribute("points")).toContain("700,650");
+    expect(screen.getAllByTestId("comment-lasso-note")).toHaveLength(2);
+    expect(screen.getAllByDisplayValue("Copied shape")).toHaveLength(2);
+  });
+
+  it("copies, cuts and repeatedly pastes selected markup with its hosted label", async () => {
+    const surface = await labeledShape();
+    fireEvent.click(surface, pointer(350, 300)); // Consume the synthetic drawing click.
+    fireEvent.click(surface, pointer(350, 300));
+    fireEvent.keyDown(window, { key: "c", metaKey: true });
+    fireEvent.keyDown(window, { key: "v", ctrlKey: true });
+    expect(ink()).toHaveLength(2);
+    fireEvent.keyDown(window, { key: "x", ctrlKey: true });
+    expect(ink()).toHaveLength(1);
+    expect(screen.getAllByTestId("comment-lasso-note")).toHaveLength(1);
+    fireEvent.keyDown(window, { key: "v", ctrlKey: true });
+    expect(ink()).toHaveLength(2);
+    fireEvent.keyDown(window, { key: "v", ctrlKey: true });
+    expect(ink()).toHaveLength(3);
+    expect(screen.getAllByDisplayValue("Copied shape")).toHaveLength(3);
+  });
+
+  it("Alt-drags a floating label and supports label cut/paste outside its editor", async () => {
+    const api = fixture(); render(<Form api={api} />); await act(async () => {});
+    const surface = screen.getByTestId("comment-lasso-surface");
+    fireEvent.doubleClick(surface, pointer(300, 300));
+    const original = screen.getByTestId("comment-lasso-note");
+    fireEvent.change(original, { target: { value: "Copied label" } });
+    fireEvent.keyDown(original, { key: "Enter" });
+    fireEvent.pointerDown(original, pointer(300, 300, { altKey: true }));
+    fireEvent.pointerMove(original, pointer(350, 320, { altKey: true }));
+    fireEvent.pointerUp(original, pointer(350, 320, { altKey: true }));
+    const frames = screen.getAllByTestId("comment-lasso-note-frame");
+    expect(frames).toHaveLength(2);
+    expect(frames[0]!.style.left).toBe("620px");
+    expect(frames[1]!.style.left).toBe("720px");
+    fireEvent.keyDown(window, { key: "x", ctrlKey: true });
+    expect(screen.getAllByDisplayValue("Copied label")).toHaveLength(1);
+    fireEvent.keyDown(window, { key: "v", ctrlKey: true });
+    expect(screen.getAllByDisplayValue("Copied label")).toHaveLength(2);
+  });
+
+  it("retains existing markup targets while Alt-dragging a floating label", async () => {
+    const api = fixture(); render(<Form api={api} />); await act(async () => {});
+    draw(ring);
+    const remark = screen.getByTestId("comment-lasso-note");
+    fireEvent.change(remark, { target: { value: "Grounded remark" } });
+    fireEvent.keyDown(remark, { key: "Enter" });
+    const surface = screen.getByTestId("comment-lasso-surface");
+    fireEvent.doubleClick(surface, pointer(700, 700));
+    const floating = screen.getAllByTestId("comment-lasso-note")[1]!;
+    fireEvent.change(floating, { target: { value: "Floating copy" } });
+    fireEvent.keyDown(floating, { key: "Enter" });
+    fireEvent.pointerDown(floating, pointer(700, 700, { altKey: true }));
+    fireEvent.pointerMove(floating, pointer(750, 720, { altKey: true }));
+    fireEvent.pointerUp(floating, pointer(750, 720, { altKey: true }));
+    expect(screen.getByTestId("comment-lasso-ids").textContent).toContain(id);
+    expect(screen.getAllByDisplayValue("Floating copy")).toHaveLength(2);
+  });
+
+  it("keeps native clipboard keys in note editors and Alt+Shift line deformation", async () => {
+    const surface = await labeledShape();
+    const note = screen.getByTestId("comment-lasso-note");
+    const event = new KeyboardEvent("keydown", { key: "x", ctrlKey: true, bubbles: true, cancelable: true });
+    fireEvent(note, event);
+    expect(event.defaultPrevented).toBe(false);
+    const original = ink()[0]!.getAttribute("points");
+    fireEvent.pointerDown(surface, pointer(350, 300, { altKey: true, shiftKey: true }));
+    fireEvent.pointerMove(surface, pointer(350, 270, { altKey: true, shiftKey: true }));
+    fireEvent.pointerUp(surface, pointer(350, 270, { altKey: true, shiftKey: true }));
+    expect(ink()).toHaveLength(1);
+    expect(ink()[0]!.getAttribute("points")).not.toBe(original);
+  });
+
   it("measures ordinary fields, preserves opaque targets and ink across active toggles, and submits host coordinates", async () => {
     const api = fixture();
     const view = render(<Form api={api} />);

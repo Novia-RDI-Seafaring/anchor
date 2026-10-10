@@ -1,9 +1,13 @@
 import { NOTHING_SELECTED, PALETTE } from "./markupStore";
 import { useEffect, useEffectEvent } from "react";
 import type { MarkupModel } from "./types";
+import { clipboardKey, isTextEditing } from "@/shared/clipboard";
+import { appendMarkup, captureMarkup, markupSelection, type MarkupFragment } from "./clipboard";
 
-export function usePenInput(context: Pick<MarkupModel, "active" | "surfaceRef" | "getViewport" | "setViewport" | "setLifted" | "markupStore" | "newStack" | "removeLabel" | "removeSelected" | "setSelected" | "onExit" | "host">) {
-  const { active, surfaceRef, getViewport, setViewport, setLifted, markupStore, newStack, removeLabel, removeSelected, setSelected, onExit, host } = context;
+let clipboard: { fragment: MarkupFragment; pastes: number } | null = null;
+
+export function usePenInput(context: Pick<MarkupModel, "active" | "surfaceRef" | "getViewport" | "setViewport" | "setLifted" | "markupStore" | "newStack" | "removeLabel" | "removeSelected" | "setSelected" | "onExit" | "host" | "settledNotes">) {
+  const { active, surfaceRef, getViewport, setViewport, setLifted, markupStore, newStack, removeLabel, removeSelected, setSelected, onExit, host, settledNotes } = context;
   // A native non-passive listener: React's onWheel is passive and cannot stop
   // the page scrolling instead.
   useEffect(() => {
@@ -30,8 +34,25 @@ export function usePenInput(context: Pick<MarkupModel, "active" | "surfaceRef" |
     // Keys typed into a field belong to the field. Escape there leaves the
     // words; here it would clear every mark on the board, and backspace
     // there deletes a letter, not the label being written in.
-    const target = e.target as HTMLElement | null;
-    if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return;
+    if (isTextEditing(e.target)) return;
+    const key = clipboardKey(e);
+    if (key) {
+      const state = markupStore.getState();
+      if (key === "v") {
+        if (!clipboard) return;
+        e.preventDefault();
+        const step = ++clipboard.pastes * 24;
+        markupStore.setState(appendMarkup(state, clipboard.fragment, { x: step, y: step }, host.geometry.boxes));
+        return;
+      }
+      const selection = markupSelection(state, state.activeLabel ? { strokes: [], notes: [state.activeLabel] } : state.selected);
+      const fragment = captureMarkup({ ...state, notes: settledNotes }, selection);
+      if (!fragment.marks.length && !fragment.notes.length) return;
+      e.preventDefault();
+      clipboard = { fragment, pastes: 0 };
+      if (key === "x") state.dropMarks(selection.strokes, selection.notes, host.geometry.boxes);
+      return;
+    }
     if (e.key === " " || e.code === "Space") {
       e.preventDefault();
       if (!e.repeat) setLifted(true);

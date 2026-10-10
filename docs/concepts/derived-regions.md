@@ -28,6 +28,11 @@ payload fields remain available under `data`. An ambiguous derivation returns
 the candidate pages, and an omitted child ID receives the next free page ID.
 A valid region source is not a verified canvas claim (G7 still applies).
 
+A supplied child ID can update an existing derived record on the parent's
+page. It cannot replace an original gold region on that page. Choose a
+different ID when it conflicts; HTTP returns 409, MCP returns an error, and
+CLI exits with an error message. The same ID on a different page is allowed.
+
 Derived regions persist beside their parents and survive restart. Run `embed`
 to include them in search. Follow hits using their slug, page and region ID.
 Publication during a pinned operation retains G4 behavior: the operation stays

@@ -45,6 +45,19 @@ Commands resolve storage from the selected environment and project, in order:
 selection > the default environment and its `default` project. An explicit
 `--data-dir DIR` overrides for a single command.
 
+For native-text documents, use `anchor ingest report.pdf --profile text` to
+build grounded gold chunks directly from silver text and tables. This skips
+model-backed polishing and vision extraction; configured embeddings still run
+and use the environment's selected provider. Docling extraction, OCR settings,
+page images, and source references are retained. Figures do not receive visual
+interpretation. The default `--profile keyed` keeps the existing datasheet path.
+Do not combine `--profile text` with `--skip-regions`. Existing gold is still
+skipped unless you pass `--force` to replace it using the selected profile.
+
+The same choice is available as `profile="text"` on MCP `ingest_pdf` and the
+`profile=text` form field on `POST /api/workspaces/{slug}/upload`. Text-profile
+uploads run directly even in a harness project, without an agent intent.
+
 ## Canvas commands
 
 ```bash

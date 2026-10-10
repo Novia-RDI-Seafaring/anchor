@@ -36,6 +36,7 @@ ROLES: tuple[str, ...] = (
     "decision",
     "rejected",
     "open",
+    "heading",
 )
 
 #: One line each, surfaced through the node-types registry so an agent can
@@ -49,6 +50,7 @@ ROLE_DESCRIPTIONS: dict[str, str] = {
     "decision": "The answer. At most one per question.",
     "rejected": "An option considered and turned down, with the reason.",
     "open": "Still unresolved; someone has to confirm it.",
+    "heading": "A concept displayed as a section heading, without card chrome.",
 }
 
 

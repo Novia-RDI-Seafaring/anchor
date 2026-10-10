@@ -49,6 +49,44 @@ def known_pdf(tmp_path: Path) -> Path:
 
 
 @pytest.mark.slow
+def test_real_docling_text_profile_produces_grounded_gold(known_pdf: Path, tmp_path: Path):
+    import asyncio
+
+    from anchor.extensions.anchor_pdfs.core.services import IngestService
+    from anchor.extensions.anchor_pdfs.infra.fs_doc_store import FsDocStore
+    from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
+    from anchor.infra.bus.memory_bus import MemoryEventBus
+
+    async def run():
+        store = FsDocStore(tmp_path / "text-store")
+        service = IngestService(
+            store, MemoryEventBus(), extractor=DoclingPdfExtractor(device="cpu"),
+            renderer=PymupdfPdfRenderer(),
+        )
+        result = await service.ingest_pdf(known_pdf.read_bytes(), "known.pdf", profile="text")
+        assert result["region_count"] > 0
+        assert result["polished_pages"] == []
+        assert await store.has_gold("known")
+        base = pymupdf.Pixmap((tmp_path / "text-store/silver/known/pages/1.png").read_bytes())
+        overlay = pymupdf.Pixmap((tmp_path / "text-store/silver/known/pages/1.candidates.png").read_bytes())
+        assert (overlay.width, overlay.height) == (base.width, base.height)
+        candidates = await store.get_page_candidates("known", 1)
+        for candidate in candidates:
+            left, top, _, bottom = candidate["bbox"]
+            x = round(left * base.width / PAGE_W)
+            y = round((top + bottom) / 2 * base.height / PAGE_H)
+            assert overlay.pixel(x, y) != base.pixel(x, y)
+        regions = (await store.get_gold_map("known"))["pages"][1]
+        for token, _ in LINES:
+            containing = [region for region in regions if token in region.get("content", "")]
+            assert containing, token
+            for region in containing:
+                assert region["member_item_ids"]
+                assert _locate_text_sync(known_pdf, 1, token, region["bbox"])
+    asyncio.run(run())
+
+
+@pytest.mark.slow
 def test_docling_bboxes_contain_their_own_text_in_top_left_space(known_pdf: Path):
     import asyncio
 

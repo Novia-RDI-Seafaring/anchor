@@ -49,7 +49,7 @@ export function useInkGestures(context: Pick<MarkupModel, "active" | "getViewpor
     }
     // Shift draws a rubber band over the mark-up instead of drawing on it,
     // for picking out several marks at once.
-    if (e.shiftKey) {
+    if (e.shiftKey && !e.altKey) {
       e.preventDefault();
       e.stopPropagation();
       (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
@@ -76,10 +76,10 @@ export function useInkGestures(context: Pick<MarkupModel, "active" | "getViewpor
       const p = toFlow(e);
       const hit = strokeAt(p, markupStore.getState().marks.map((mark) => mark.points), 10 / Math.max(0.1, getViewport().zoom));
       if (hit >= 0 && !new Set(markupStore.getState().notes.map((note) => note.onStroke)).has(hit)) {
-        // Option held: pull the line here rather than move the shape. The
+        // Option+Shift held: pull the line here rather than move the shape. The
         // reach is a quarter of the line, so a ring drawn a row short is
         // pulled over the row without the rest of it going anywhere.
-        if (e.altKey) {
+        if (e.altKey && e.shiftKey) {
           e.preventDefault();
           e.stopPropagation();
           (e.target as HTMLElement).setPointerCapture?.(e.pointerId);

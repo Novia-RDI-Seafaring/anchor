@@ -69,7 +69,7 @@ class GoldIngest:
     def __init__(
         self,
         store: DocStore,
-        extractor: RegionExtractor,
+        extractor: RegionExtractor | None,
         clock: Clock,
         publish: Publish,
     ) -> None:
@@ -91,6 +91,8 @@ class GoldIngest:
         record_activity: RecordActivity,
         finish_stage: FinishStage,
     ) -> GoldIngestResult:
+        if self.extractor is None:
+            raise ValueError("Keyed gold ingestion requires a region extractor")
         attempts = 0
         region_count = 0
         invalid_count = 0
@@ -229,6 +231,56 @@ class GoldIngest:
             empty=empty,
             attempts=attempts,
             coverage_fallback_count=fallback_count,
+        )
+
+    async def run_text(
+        self,
+        *,
+        slug: str,
+        docling: dict[str, Any],
+        workspace_id: str,
+        record_activity: RecordActivity,
+        finish_stage: FinishStage,
+    ) -> GoldIngestResult:
+        """Build grounded gold from silver without a model-authored pass."""
+        started_at = self.clock.now()
+        candidates = build_page_candidates(docling)
+        full_items = _items_by_page(docling)
+        pages: dict[int, list[dict[str, Any]]] = {}
+        async with self.store.ingest_lock(
+            slug, wait=True, timeout=INGEST_LOCK_WAIT_SECONDS,
+        ):
+            await self.store.clear_gold_complete(slug)
+            for current, (page, items) in enumerate(candidates.items(), 1):
+                regions = synthesize_coverage_regions(
+                    page, items, [], full_items=full_items.get(page),
+                )
+                require_unique_region_ids(regions, page=page)
+                valid, errors = validate_regions(regions)
+                if errors:
+                    raise ValueError(f"Invalid text-profile regions on page {page}: {errors}")
+                pages[page] = valid
+                await self.publish(IngestProgress(
+                    slug=slug, stage="gold_regions", current=current, total=len(candidates),
+                ), workspace_id)
+                await record_activity("gold_regions", current=current, total=len(candidates))
+            count = sum(len(regions) for regions in pages.values())
+            if count:
+                for page, regions in pages.items():
+                    await self.store.write_gold_region_file(slug, page, regions)
+                await self.store.mark_gold_complete(slug, {
+                    "mode": "text", "model": None, "region_count": count,
+                    "coverage_fallback_count": count, "completed_at": self.clock.now(),
+                })
+            await self.publish(DocGoldExtracted(slug=slug, region_count=count), workspace_id)
+        finish_stage(
+            "gold_regions", started_at, profile="text", model=None,
+            page_count=len(pages), region_count=count, attempt=1,
+        )
+        return GoldIngestResult(
+            region_count=count, invalid_region_count=0, region_errors=[],
+            completed=count > 0, empty=count == 0, attempts=1,
+            coverage_fallback_count=count,
         )
 
     @staticmethod

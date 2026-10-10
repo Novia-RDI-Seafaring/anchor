@@ -46,6 +46,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/cn";
+import { isTextEditing } from "@/shared/clipboard";
 import { useUiStore } from "@/stores/uiStore";
 
 type Props = { workspaceSlug: string };
@@ -86,12 +87,7 @@ export function LeftToolRail({ workspaceSlug }: Props) {
   // fields use the same keys.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const typing =
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable);
+      const typing = isTextEditing(event.target);
       if (event.key === "[" && !event.metaKey && !event.ctrlKey && !event.altKey) {
         if (typing) return;
         event.preventDefault();
@@ -141,7 +137,7 @@ export function LeftToolRail({ workspaceSlug }: Props) {
   const dropPayload = (name: string, meta: PaletteMeta) => {
     const label = meta.noDefaultLabel ? "" : meta.label;
     return {
-      node_type: name,
+      node_type: meta.nodeType ?? name,
       label,
       ...(meta.width !== undefined ? { width: meta.width } : {}),
       ...(meta.height !== undefined ? { height: meta.height } : {}),

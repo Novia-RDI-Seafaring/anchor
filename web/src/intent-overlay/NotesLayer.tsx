@@ -6,9 +6,10 @@ import { NOTHING_SELECTED } from "./markupStore";
 import { HOST_INSET_PX, INK, NOTE_FONT_PX, NOTE_H, NOTE_LEAD_GAP_PX, NOTE_W } from "./constants";
 import { FaintNote, FloatingNote, HostedNote } from "./Notes";
 import type { MarkupModel } from "./types";
+import { appendMarkup, captureMarkup } from "./clipboard";
 
-export function LiveNotes({ model }: { model: Pick<MarkupModel, "notes" | "strokes" | "notePos" | "screen" | "viewport" | "setNotes" | "editing" | "markupStore" | "setEditing" | "growHost" | "lineFrom" | "calledOut" | "setSelected" | "setActiveLabel" | "labelDrag" | "toFlow" | "moveLabel" | "activeLabel" | "removeLabel"> }) {
-  const { notes, strokes, notePos, screen, viewport, setNotes, editing, markupStore, setEditing, growHost, lineFrom, calledOut, setSelected, setActiveLabel, labelDrag, toFlow, moveLabel, activeLabel, removeLabel } = model;
+export function LiveNotes({ model }: { model: Pick<MarkupModel, "notes" | "strokes" | "notePos" | "screen" | "viewport" | "setNotes" | "editing" | "markupStore" | "setEditing" | "growHost" | "lineFrom" | "calledOut" | "setSelected" | "setActiveLabel" | "labelDrag" | "toFlow" | "moveLabel" | "activeLabel" | "removeLabel" | "boxes" | "settledNotes"> }) {
+  const { notes, strokes, notePos, screen, viewport, setNotes, editing, markupStore, setEditing, growHost, lineFrom, calledOut, setSelected, setActiveLabel, labelDrag, toFlow, moveLabel, activeLabel, removeLabel, boxes, settledNotes } = model;
   return (<>
     {notes.map((n) => {
       const host = n.inStroke !== undefined ? strokes[n.inStroke] : undefined;
@@ -92,16 +93,24 @@ export function LiveNotes({ model }: { model: Pick<MarkupModel, "notes" | "strok
           }}
           onCommit={() => setEditing(null)}
           onGrab={(e) => {
+            let id = n.id;
+            if (e.altKey) {
+              const state = markupStore.getState();
+              const fragment = captureMarkup({ ...state, notes: settledNotes }, { strokes: [], notes: [n.id] });
+              const copy = appendMarkup(state, fragment, { x: 0, y: 0 }, boxes);
+              markupStore.setState(copy);
+              id = copy.selected.notes[fragment.notes.findIndex((note) => note.id === n.id)]!;
+            }
             setSelected(NOTHING_SELECTED);
-            setActiveLabel(n.id);
-            labelDrag.current = { id: n.id, start: toFlow(e), from: notePos(n) };
+            setActiveLabel(id);
+            labelDrag.current = { id, start: toFlow(e), from: notePos(n) };
             e.currentTarget.setPointerCapture(e.pointerId);
           }}
           onDrag={(e) => {
             const d = labelDrag.current;
-            if (!d || d.id !== n.id) return;
+            if (!d) return;
             const p = toFlow(e);
-            moveLabel(n.id, {
+            moveLabel(d.id, {
               x: d.from.x + (p.x - d.start.x),
               y: d.from.y + (p.y - d.start.y),
             });

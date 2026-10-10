@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,7 @@ from anchor.extensions.anchor_pdfs.core.gold_ingest import (
 from anchor.extensions.anchor_pdfs.core.gold_ingest import (
     GoldIngest,
 )
+from anchor.extensions.anchor_pdfs.core.ingest.page_images import write_page_images
 from anchor.extensions.anchor_pdfs.core.pointed_extraction import (
     extract_pointed as _extract_pointed,
 )
@@ -63,6 +65,11 @@ GOLD_EMPTY_MAX_ATTEMPTS = _GOLD_EMPTY_MAX_ATTEMPTS
 INGEST_LOCK_WAIT_SECONDS = _INGEST_LOCK_WAIT_SECONDS
 SynopsisService = _SynopsisService
 AmbiguousRegionError = _AmbiguousRegionError
+
+
+class IngestProfile(StrEnum):
+    keyed = "keyed"
+    text = "text"
 
 #: Matches the trailing r-number of a gold region id: plain ``r4`` as well as
 #: producer-prefixed forms like ``lkh:p4-r1``. Used to mint the next free id.
@@ -145,7 +152,13 @@ class IngestService:
         polish_model: str | None = None,
         region_model: str | None = None,
         dpi: int | None = None,
+        profile: IngestProfile | str = IngestProfile.keyed,
     ) -> dict[str, Any]:
+        profile = IngestProfile(profile)
+        if profile == IngestProfile.text:
+            if not regions:
+                raise ValueError("The text profile requires gold regions; omit skip_regions / --skip-regions")
+            polish = False
         polish_model = polish_model or self.default_polish_model
         region_model = region_model or self.default_region_model
         dpi = self.default_dpi if dpi is None else dpi
@@ -303,8 +316,9 @@ class IngestService:
                 current_stage = "silver_render_pages"
                 stage_started_at = self.clock.now()
                 page_pngs = replacement_pngs if replacement_pngs is not None else await self.renderer.render_pages(bronze_path, dpi=dpi)
-                for page, png in page_pngs.items():
-                    await store.write_silver_artifact(slug, f"pages/{page}.png", png)
+                await write_page_images(
+                    store, self.renderer, slug, page_pngs, page_candidates, pages_meta,
+                )
                 for it in docling.get("items", []):
                     if isinstance(it.get("page"), (int, float)):
                         items_by_page.setdefault(int(it["page"]), []).append(it)
@@ -359,24 +373,31 @@ class IngestService:
             gold_completed = False
             empty_gold = False
             gold_attempts = 0
-            if regions and self.region_extractor and page_count:
+            if regions and (profile == IngestProfile.text or (self.region_extractor and page_count)):
                 current_stage = "gold_regions"
-                gold = await GoldIngest(
+                gold_ingest = GoldIngest(
                     store,
                     self.region_extractor,
                     self.clock,
                     self._publish,
-                ).run(
-                    slug=slug,
-                    docling=docling,
-                    page_pngs=page_pngs,
-                    items_by_page=items_by_page,
-                    page_count=page_count,
-                    model=region_model,
-                    workspace_id=publish_workspace_id,
-                    record_activity=record_activity,
-                    finish_stage=finish_stage,
                 )
+                if profile == IngestProfile.text:
+                    gold = await gold_ingest.run_text(
+                        slug=slug, docling=docling, workspace_id=publish_workspace_id,
+                        record_activity=record_activity, finish_stage=finish_stage,
+                    )
+                else:
+                    gold = await gold_ingest.run(
+                        slug=slug,
+                        docling=docling,
+                        page_pngs=page_pngs,
+                        items_by_page=items_by_page,
+                        page_count=page_count,
+                        model=region_model,
+                        workspace_id=publish_workspace_id,
+                        record_activity=record_activity,
+                        finish_stage=finish_stage,
+                    )
                 region_count = gold.region_count
                 invalid_region_count = gold.invalid_region_count
                 coverage_fallback_count = gold.coverage_fallback_count
@@ -409,6 +430,10 @@ class IngestService:
             # surface flag it, instead of a silent `success` that an autonomous
             # loop reads as done.
             empty_gold_reason = (
+                "The text profile found no groundable text or tables in silver. "
+                "Try full_page_ocr / --full-page-ocr for scanned text, or the keyed "
+                "profile for visual content."
+                if profile == IngestProfile.text else
                 f"gold extraction produced 0 regions after {gold_attempts} "
                 f"attempt(s) on a {page_count}-page document. This is usually a "
                 "transient region-extraction failure, not a region-less PDF; "
@@ -431,13 +456,14 @@ class IngestService:
                 "region_errors": region_errors,
                 "gold_complete": gold_completed,
                 "gold_attempts": gold_attempts,
-                "mode": "keyed",
+                "mode": profile.value,
                 "embedded_count": embedded_count,
                 "options": {
+                    "profile": profile.value,
                     "polish": polish,
                     "regions": regions,
                     "polish_model": polish_model if polish and self.polisher else None,
-                    "region_model": region_model if regions and self.region_extractor else None,
+                    "region_model": region_model if profile == IngestProfile.keyed and regions and self.region_extractor else None,
                     "dpi": dpi,
                     "embed_model": self.embed_model_id if embedded_count else None,
                 },
@@ -457,6 +483,7 @@ class IngestService:
                 await self.store.publish_replacement(slug, generation, sorted(page_pngs or page_candidates))
 
             summary = {
+                "profile": profile.value,
                 "slug": slug,
                 "filename": filename,
                 "page_count": page_count,

@@ -21,6 +21,16 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "slug": {"type": "string"},
                     "skip_polish": {"type": "boolean"},
                     "skip_regions": {"type": "boolean"},
+                    "profile": {
+                        "type": "string",
+                        "enum": ["keyed", "text"],
+                        "default": "keyed",
+                        "description": (
+                            "text builds grounded gold from silver without polishing "
+                            "or vision calls. Configured embeddings still run. "
+                            "Cannot combine with skip_regions."
+                        ),
+                    },
                     "full_page_ocr": {
                         "type": "boolean",
                         "description": (

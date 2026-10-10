@@ -13,8 +13,9 @@ import {
 import { type Note, type Selection } from "./markupStore";
 import { noteRect } from "./geometry";
 import type { MarkupModel } from "./types";
+import { appendMarkup, captureMarkup } from "./clipboard";
 
-export function useSelectionGestures(context: Pick<MarkupModel, "markupStore" | "applyMarks" | "setIds" | "manual" | "boxes" | "selected" | "groupDrag" | "toFlow" | "setNotes" | "getViewport" | "drewJustNow">) {
+export function useSelectionGestures(context: Pick<MarkupModel, "markupStore" | "applyMarks" | "setIds" | "manual" | "boxes" | "selected" | "groupDrag" | "toFlow" | "setNotes" | "getViewport" | "drewJustNow" | "settledNotes">) {
   const { markupStore, applyMarks, setIds, manual, boxes, selected, groupDrag, toFlow, setNotes, getViewport, drewJustNow } = context;
   /** Put a stroke back with new geometry, leaving everything else alone. */
   const replaceStroke = (index: number, points: Point[]) => {
@@ -80,7 +81,13 @@ export function useSelectionGestures(context: Pick<MarkupModel, "markupStore" | 
         e.stopPropagation();
         // A tab on one stroke drags that stroke. The handles on the selection
         // drag the selection. Same machinery, different set of marks.
-        const sel = over ?? selected;
+        let sel = over ?? selected;
+        if (mode === "move" && e.altKey) {
+          const state = markupStore.getState();
+          const copy = appendMarkup(state, captureMarkup({ ...state, notes: context.settledNotes }, sel), { x: 0, y: 0 }, boxes);
+          markupStore.setState(copy);
+          sel = copy.selected;
+        }
         const from = rectOf(sel);
         if (!from) return;
         groupDrag.current = {
