@@ -1,0 +1,23 @@
+.canvas-hand-mode .react-flow__pane,
+.canvas-hand-mode .react-flow__node,
+.canvas-hand-mode .react-flow__node * {
+  cursor: grab !important;
+}
+
+/* ReactFlow otherwise makes non-selectable, non-draggable nodes inert. */
+.canvas-hand-mode .react-flow__node {
+  pointer-events: auto !important;
+}
+
+.canvas-hand-mode:active .react-flow__pane,
+.canvas-hand-mode:active .react-flow__node,
+.canvas-hand-mode:active .react-flow__node * {
+  cursor: grabbing !important;
+}
+
+.canvas-hand-mode .react-flow__node button,
+.canvas-hand-mode .react-flow__node button *,
+.canvas-hand-mode .react-flow__node a,
+.canvas-hand-mode .react-flow__node a * {
+  cursor: pointer !important;
+}
