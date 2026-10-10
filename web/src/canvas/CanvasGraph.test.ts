@@ -2,6 +2,25 @@ import { expect, it } from "vitest";
 
 import { toRfNode } from "./CanvasGraph";
 import { foldedGraph, structureSignature } from "./subtrees";
+
+it("renders a deeply nested hierarchy at its canonical absolute positions", () => {
+  const nodes = {
+    outer: { id: "outer", node_type: "area", label: "Outer", x: 100, y: 100 },
+    middle: { id: "middle", node_type: "area", label: "Middle", x: 150, y: 150, parent: "outer" },
+    inner: { id: "inner", node_type: "area", label: "Inner", x: 180, y: 180, parent: "middle" },
+    leaf: { id: "leaf", node_type: "fact", label: "Leaf", x: 210, y: 210, parent: "inner" },
+  };
+  for (const delta of [0, 5]) {
+    const moved = Object.fromEntries(Object.values(nodes).map((node) => [node.id, { ...node, x: node.x + delta }]));
+    const rendered = new Map<string, { x: number; y: number }>();
+    for (const node of Object.values(moved)) {
+      const flow = toRfNode(node, moved);
+      const parent = flow.parentId ? rendered.get(flow.parentId)! : { x: 0, y: 0 };
+      rendered.set(node.id, { x: flow.position.x + parent.x, y: flow.position.y + parent.y });
+      expect(rendered.get(node.id)).toEqual({ x: node.x, y: node.y });
+    }
+  }
+});
 import { CANVAS_EDGE_Z_INDEX, canvasNodeLayers } from "./layering";
 
 it("renders a shared child at its saved position when its actual container is folded away", () => {
@@ -44,7 +63,7 @@ it("applies visual layers without changing nesting, dimensions or drag locks", (
   expect(card.style?.zIndex).toBe(card.zIndex);
   expect(card.zIndex).toBeGreaterThan(CANVAS_EDGE_Z_INDEX);
   expect(card).toMatchObject({
-    parentId: "inner", position: { x: 380, y: 450 }, draggable: false,
+    parentId: "inner", position: { x: 480, y: 570 }, draggable: false,
     data: { width: 200, height: 90 },
   });
 });
