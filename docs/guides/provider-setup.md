@@ -16,12 +16,14 @@ choose a provider or authorize document egress.
 | `local` | No | Stays on this computer | No | The document must not be sent to an LLM or external model endpoint. Bronze and silver are enough. |
 | `ollama` | Yes | Your Ollama server, normally this computer or your LAN | No | You need gold while keeping extraction on infrastructure you control. |
 | `harness` | Yes | The connected agent harness reads every page | No ANCHOR key | The harness and its model provider are approved for the document. |
+| `claude` | Yes | Anthropic, through your own `claude` CLI sign-in | No | You have a Claude plan, Anthropic is approved for the document, and ingest should run in the background. |
+| `codex` | Yes | OpenAI, through your own `codex` CLI sign-in | No | You have a ChatGPT plan, OpenAI is approved for the document, and ingest should run in the background. |
 | `openai` | Yes | OpenAI | Yes | Public OpenAI processing is approved. |
 | `azure` | Yes | The Azure OpenAI endpoint you specify | Yes | Processing in your Azure tenant is approved. |
 | `custom` | Yes | The OpenAI-compatible endpoint you specify | Yes | You operate or approve that endpoint. |
 
 !!! danger "Restricted documents"
-    Do not choose `harness`, `openai`, `azure`, or `custom` until the receiving
+    Do not choose `harness`, `claude`, `codex`, `openai`, `azure`, or `custom` until the receiving
     service is approved for the document. `harness` does not create an ANCHOR
     model client, but it still gives page content to the connected agent. For
     local gold, use `ollama` with an endpoint you control.
@@ -71,6 +73,7 @@ not mean every configured endpoint is OpenAI. The provider and endpoint in
 | `provider = "local"` | Ignores the key. No model client is created. |
 | `provider = "ollama"` | Does not require a user key. ANCHOR uses a local placeholder required by the client library. |
 | `provider = "harness"` | Ignores the key. The agent performs the vision work. |
+| `provider = "claude"` or `"codex"` | Ignores the key. The CLI answers on its own sign-in, and ANCHOR removes API keys from the CLI's environment so a key cannot take over. |
 | `provider = "openai"` | Uses `ANCHOR_OPENAI_API_KEY`. A process-level `OPENAI_API_KEY` is also accepted only for public OpenAI with no custom base URL. |
 | `provider = "azure"` or `"custom"` | Requires `ANCHOR_OPENAI_API_KEY` for the selected endpoint. An ambient `OPENAI_API_KEY` is not used. |
 
@@ -138,6 +141,40 @@ anchor install codex --env agent-gold
 Restart the harness after installation. During ingest, the harness reads the
 page work items and submits grounded regions back to ANCHOR. The harness's own
 provider and retention policy decide where those pages may go.
+
+### Gold through your Claude or ChatGPT plan
+
+These providers run the two vision steps (page polish and gold regions)
+through an agent CLI you already have, signed in with your own plan. No API
+key is involved, and ingest runs in the background like the keyed providers.
+
+```bash
+# Claude Code, signed in with a Claude plan (run `claude` once, then /login)
+anchor env create plan-claude --provider claude --yes
+anchor check --env plan-claude        # confirms the CLI is installed and signed in
+
+# Codex, signed in with a ChatGPT plan (run `codex login` once)
+anchor env create plan-codex --provider codex --yes
+anchor check --env plan-codex
+```
+
+For each page, ANCHOR runs the CLI once in a temporary folder that holds only
+the page image, and asks for JSON that matches a fixed schema. The CLI runs
+without your own MCP servers, settings or session history. Claude Code gets
+only its Read tool; Codex runs in its read-only sandbox.
+
+ANCHOR never reads, stores or forwards the CLI's credentials. It runs the
+CLI exactly as you installed it. Usage counts against your plan's limits, the
+same as using the CLI yourself. Page content goes to Anthropic or OpenAI
+under your plan's terms, so `local_only` environments never use these
+providers.
+
+The model is `sonnet` for Claude and the CLI's own default for Codex. Change
+it with `polish_model` and `region_model` in the environment's `env.toml`.
+Embeddings stay local, so keep a local `embed_model`.
+
+These providers suit one person using their own plan on their own machine.
+They are not a way to share one sign-in with other people.
 
 ### Gold with public OpenAI
 

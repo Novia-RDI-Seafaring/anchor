@@ -130,17 +130,26 @@ def build_ingest_service(
     policy = egress or resolve_egress_policy(config, require_remote_credential=False)
     if embedder is None:
         embedder = build_project_embedder(model=config.embed_model, policy=policy)
+    polisher, region_extractor = None, None
+    if policy.agent_cli:
+        from anchor.extensions.anchor_pdfs.infra.llm.agent_cli import (
+            AgentCliPageMdPolisher,
+            AgentCliRegionExtractor,
+            agent_cli_for,
+        )
+
+        cli = agent_cli_for(policy.agent_cli)
+        polisher, region_extractor = AgentCliPageMdPolisher(cli), AgentCliRegionExtractor(cli)
+    elif policy.remote_clients_enabled:
+        polisher = OpenAIPageMdPolisher(api_key=policy.api_key, base_url=policy.base_url)
+        region_extractor = OpenAIRegionExtractor(api_key=policy.api_key, base_url=policy.base_url)
     return IngestService(
         doc_store,
         bus,
         extractor=DoclingPdfExtractor(device=config.docling_device),
         renderer=PymupdfPdfRenderer(),
-        polisher=OpenAIPageMdPolisher(api_key=policy.api_key, base_url=policy.base_url)
-        if policy.remote_clients_enabled
-        else None,
-        region_extractor=OpenAIRegionExtractor(api_key=policy.api_key, base_url=policy.base_url)
-        if policy.remote_clients_enabled
-        else None,
+        polisher=polisher,
+        region_extractor=region_extractor,
         embedder=embedder,
         embed_model_id=getattr(embedder, "model_id", None),
         default_polish_model=config.polish_model,

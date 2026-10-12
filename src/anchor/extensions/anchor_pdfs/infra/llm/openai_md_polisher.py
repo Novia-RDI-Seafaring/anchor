@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import json
 from typing import Any
+
+from .prompts import polish_prompt
 
 
 class OpenAIPageMdPolisher:
@@ -30,17 +31,13 @@ class OpenAIPageMdPolisher:
 
         client = make_openai_client(self.api_key, self.base_url)
         b64 = base64.b64encode(page_image).decode()
-        prompt = (
-            "You are polishing a per-page markdown rendering. Use the page image "
-            "and the docling items as ground truth. Keep all text faithful; only "
-            f"clean structure. Page {page_no}.\n\nSeed markdown:\n{det_md}\n"
-        )
+        prompt = polish_prompt(page_no, det_md, items)
         rsp = client.chat.completions.create(
             model=model,
             messages=[{
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": prompt + "\n\nDocling items:\n" + json.dumps(items)[:8000]},
+                    {"type": "text", "text": prompt},
                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
                 ],
             }],
