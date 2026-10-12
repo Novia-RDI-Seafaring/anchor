@@ -34,7 +34,8 @@ import aiofiles
 
 from anchor.core.ids import validate_workspace_slug
 from anchor.core.upload_safety import UnsafeUploadError, assert_within, safe_upload_name
-from anchor.extensions.anchor_pdfs.core.generation import polished_membership
+from anchor.extensions.anchor_pdfs.core.generation import polished_membership, require_page_items
+from anchor.extensions.anchor_pdfs.core.ingest.region_resolution import materialize_source_region
 from anchor.extensions.anchor_pdfs.core.ingest.validation import require_unique_region_ids
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld, RegionIdConflictError
 from anchor.extensions.anchor_pdfs.core.silver import project_index
@@ -164,6 +165,12 @@ class FsDocStore:
             base = view._doc_dir(self.silver, slug) / "pages"
             if any(not (base / f"{page}{suffix}").is_file() for suffix in (".raw.md", ".png", ".candidates.json")):
                 raise SourceIdentityError("replacement silver page is incomplete")
+            if index["document"].get("silver_items_version") == 1:
+                try:
+                    require_page_items(await view.get_page_items(slug, page),
+                                       await view.get_page_candidates(slug, page), metadata, page)
+                except ValueError as exc:
+                    raise SourceIdentityError(str(exc)) from exc
         polished = polished_membership(report)
         if not set(polished).issubset(membership) or any(
             not (view._doc_dir(self.silver, slug) / "pages" / f"{page}.md").is_file() for page in polished
@@ -174,6 +181,13 @@ class FsDocStore:
             raise SourceIdentityError("replacement gold is outside current page membership")
         for page, regions in gold.items():
             require_unique_region_ids(regions, page=page)
+            items = await view.get_page_items(slug, page)
+            if items is not None:
+                for region in regions:
+                    try:
+                        materialize_source_region(region, page=page, items=items)
+                    except ValueError as exc:
+                        raise SourceIdentityError(str(exc)) from exc
         identities = {(page, r["id"]) for page, regions in gold.items() for r in regions}
         embeddings = await view.get_embeddings(slug)
         if embeddings and any((v["page"], v["region_id"]) not in identities for v in embeddings.get("vectors", [])):
@@ -549,6 +563,18 @@ class FsDocStore:
             return None
         return data if isinstance(data, list) else None
 
+    @document_view
+    async def get_page_items(self, slug: str, page: int) -> list[dict[str, Any]] | None:
+        p = self._doc_dir(self.silver, slug) / "pages" / f"{int(page)}.items.json"
+        p = assert_within(p, self.silver)
+        if not p.is_file():
+            return None
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return None
+        return data if isinstance(data, list) and all(isinstance(item, dict) for item in data) else None
+
     def _region_pages(
         self, layer: Path, slug: str, page: int | None = None,
     ) -> dict[int, list[dict[str, Any]]]:
@@ -569,6 +595,10 @@ class FsDocStore:
     @document_view
     async def get_regions(self, slug: str, page: int | None = None) -> dict[str, Any]:
         pages = self._region_pages(self.gold, slug, page)
+        for pg, regions in pages.items():
+            items = await self.get_page_items(slug, pg)
+            if items is not None:
+                pages[pg] = [materialize_source_region(r, page=pg, items=items) for r in regions]
         for pg, regions in self._region_pages(self.knowledge, slug, page).items():
             pages.setdefault(pg, []).extend(regions)
         return {"slug": slug, "pages": dict(sorted(pages.items()))}

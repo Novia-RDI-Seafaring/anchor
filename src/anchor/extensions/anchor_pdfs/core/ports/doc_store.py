@@ -143,6 +143,14 @@ class DocStore(Protocol):
         candidates artifact."""
         raise NotImplementedError
 
+    async def get_page_items(self, slug: str, page: int) -> list[dict[str, Any]] | None:
+        """Internal uncapped silver evidence in stable per-page ID order.
+
+        None means a legacy document has no full item artifact. Candidate
+        previews retain their existing public shape and text limits.
+        """
+        raise NotImplementedError
+
     async def get_crop_path(self, slug: str, rel_path: str) -> Path | None:
         raise NotImplementedError
 

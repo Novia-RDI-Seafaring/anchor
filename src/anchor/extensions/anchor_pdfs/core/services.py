@@ -50,6 +50,7 @@ from anchor.extensions.anchor_pdfs.core.region_inspect import (
 from anchor.extensions.anchor_pdfs.core.silver import (
     build_index,
     build_page_candidates,
+    build_page_items,
     build_pages_meta,
     find_low_text_pages,
     low_text_pages_warning,
@@ -282,6 +283,7 @@ class IngestService:
             pages_md = render_pages_md(docling)
             pages_meta = build_pages_meta(docling)
             page_candidates = build_page_candidates(docling)
+            page_items = build_page_items(docling)
             replacement_pngs = None
             if previous_index is not None:
                 current_stage = "silver_render_pages"
@@ -303,6 +305,9 @@ class IngestService:
                 await store.write_silver_artifact(
                     slug, f"pages/{page}.candidates.json", json.dumps(candidates),
                 )
+                await store.write_silver_artifact(
+                    slug, f"pages/{page}.items.json", json.dumps(page_items.get(page, [])),
+                )
             finish_stage(
                 "silver_index",
                 stage_started_at,
@@ -319,6 +324,8 @@ class IngestService:
                 await write_page_images(
                     store, self.renderer, slug, page_pngs, page_candidates, pages_meta,
                 )
+                for page in page_pngs.keys() - page_candidates.keys():
+                    await store.write_silver_artifact(slug, f"pages/{page}.items.json", "[]")
                 for it in docling.get("items", []):
                     if isinstance(it.get("page"), (int, float)):
                         items_by_page.setdefault(int(it["page"]), []).append(it)

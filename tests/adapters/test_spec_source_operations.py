@@ -18,7 +18,7 @@ from anchor.extensions.anchor_pdfs.core.services import IngestService
 from anchor.infra.config import AnchorConfig
 from tests.adapters.test_value_provenance_parity import _input, _regions
 from tests.extensions.anchor_pdfs.test_replacement_generations import pipeline
-from tests.fixtures.tables import canonical_regions
+from tests.fixtures.tables import canonical_regions, write_source_table_regions
 
 
 def without_evidence(data):
@@ -173,10 +173,10 @@ def test_create_and_update_use_current_generation_gold(transport, tmp_path):
     async def replace():
         await ops.runtime.workspace.create_workspace("g6")
         await pipeline(store, [["OLD"]]).ingest_pdf(b"A", "doc.pdf")
-        await store.write_gold_region_file("doc", 1, _regions())
+        await write_source_table_regions(store, "doc", 1, _regions())
         old = store.snapshot("doc")
         await pipeline(store, [["NEW"]]).ingest_pdf(b"B", "doc.pdf", force=True)
-        await store.write_gold_region_file("doc", 1, canonical_regions([{
+        await write_source_table_regions(store, "doc", 1, canonical_regions([{
             "id": "pressure", "page": 1, "kind": "table", "bbox": [0, 0, 100, 100],
             "cells": [{"row": 0, "col": 0, "text": "Pressure", "bbox": [10, 70, 55, 80]},
                       {"row": 0, "col": 1, "text": "43", "bbox": [60, 70, 90, 80]}],
