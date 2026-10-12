@@ -5,6 +5,7 @@ import asyncio
 import json
 from copy import deepcopy
 
+from anchor.extensions.anchor_pdfs.core.ingest.region_resolution import materialize_source_region
 from anchor.extensions.anchor_pdfs.core.ingest.session import PROTOCOL_VERSION
 from tests.fixtures.services import make_in_memory_services
 
@@ -235,12 +236,15 @@ def test_status_is_the_resume_surface_by_id_and_slug():
         staged = json.loads(
             await s.session_store.read_text(sid, "gold/pages/2.regions.json")
         )
-        cells = staged["regions"][0]["cells"]
+        assert not {"content", "cells", "table_topology"}.intersection(staged["regions"][0])
+        resolved = materialize_source_region(staged["regions"][0], page=2,
+                                             items=await s.doc_store.get_page_items("demo", 2))
+        cells = resolved["cells"]
         assert [{k: c[k] for k in ("row", "col", "text", "bbox")} for c in cells] == [
             {"row": 0, "col": 0, "text": "Field", "bbox": [10.0, 102.0, 80.0, 132.0]},
             {"row": 0, "col": 1, "text": "Value", "bbox": [100.0, 102.0, 180.0, 132.0]},
         ]
-        assert staged["regions"][0]["table_topology"]["status"] == "valid"
+        assert resolved["table_topology"]["status"] == "valid"
         by_slug = await s.ingest_session.ingest_status(slug="demo")
         assert by_slug["session_id"] == sid
         assert by_slug["state"] == "open"
@@ -292,6 +296,9 @@ def test_submit_page_resolves_table_slice_to_selected_cells_and_bbox():
             "rows": [0, 2],
             "columns": [0, 1],
         }
+        assert not {"content", "cells", "table_topology"}.intersection(region)
+        region = materialize_source_region(region, page=2,
+                                            items=await s.doc_store.get_page_items("demo", 2))
         assert [cell["text"] for cell in region["cells"]] == [
             "Field", "Value", "Head", "5 m",
         ]

@@ -7,8 +7,8 @@ ops let an agent then pull one region without paging the whole document:
   description, bbox, geometry, members, tags, entities, cells) plus a derived
   `source_ref` for grounding.
 - `get_region_content(slug, region_id)` -> the region's reconstructed content
-  (markdown + table cells), rebuilt from silver candidates when the region
-  stored none.
+  (markdown + table cells), reconstructed from uncapped silver source items.
+  Legacy documents without full items retain their stored-content fallback.
 
 Backed by the selected DocStore generation. Region ids are per-page
 (`r1`, `r2`, ...); the token may be `p2/r4`, `2/r4`, or a unique bare `r4`.
@@ -168,11 +168,11 @@ async def inspect_region(
 async def get_region_content(
     store: DocStore, slug: str, region_id: str, *, raise_ambiguous: bool = False
 ) -> dict[str, Any] | None:
-    """Return one gold region's reconstructed content (markdown + cells).
+    """Return readable source content reconstructed by the pinned store view.
 
-    Prefers the region's stored `content`; when absent (e.g. a region whose
-    bbox snapped to nothing), rebuilds it from the page's silver candidates via
-    `member_item_ids`."""
+    Producer-derived payloads and legacy source content remain authoritative.
+    Older metadata-only regions can fall back to their candidate previews.
+    """
     store = store.snapshot(slug)
     found = await find_region(store, slug, region_id, raise_ambiguous=raise_ambiguous)
     if found is None:

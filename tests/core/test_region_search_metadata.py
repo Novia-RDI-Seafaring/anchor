@@ -101,7 +101,7 @@ def test_metadata_only_query_selects_matching_region(entry_point, query):
         result = await ingest.search(query, k=1)
         assert result["hits"][0]["slug"] == "z-target"
         assert result["hits"][0]["score"] > 0.5
-        assert "Pressure 17 bar" in result["hits"][0]["text"]
+        assert "Pressure 17 bar" not in result["hits"][0]["text"]
 
     asyncio.run(run())
 
@@ -114,7 +114,7 @@ def test_metadata_is_deduplicated_and_malformed_entries_are_ignored():
         "entities": ["LKH-85", "CAVITATION", " supported pumps "],
     })
     assert text.split("\n\n") == [
-        "Operating limits", "Supported pumps", "Pressure 17 bar",
+        "Operating limits", "Supported pumps",
         "cavitation", "LKH-85",
     ]
     assert region_search_text({

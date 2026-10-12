@@ -579,7 +579,9 @@ regions tagged with the page number and bounding box they came from.
   not by guessing a page. CLI `anchor search "<query>"`, HTTP
   `GET /api/search?q=…`. Embeddings are created during `ingest_pdf`; if a
   doc was ingested without them, run `embed` first (`anchor embed`). Search
-  text includes title, description, tags, entities and source content. Run
+  text defaults to title, description, tags and entities for described source
+  chunks. Undescribed chunks fall back to their uncapped silver text/cells;
+  producer-derived records retain their stored-content recall. Run
   `anchor embed <slug>` again to include metadata in an existing index.
 - `list_documents()` — every document and its current status.
 - `list_entities(slug)` - what a document is ABOUT: every entity its gold
@@ -599,9 +601,10 @@ regions tagged with the page number and bounding box they came from.
   membership, source content, table cells and `source_ref`. Qualify a search
   hit with its page: hit `page=2, region_id="r1"` becomes `"p2/r1"`.
   CLI `anchor inspect-region <slug> p2/r1`.
-- `get_region_content(slug, region_id)` - the region's stored or reconstructed
-  source markdown and cells. Use the same page-qualified locator when
-  inspection has no stored content. CLI `anchor region-content <slug> p2/r1`.
+- `get_region_content(slug, region_id)` - source markdown and cells rebuilt
+  from full silver membership, including exact table slices. Legacy source
+  content and producer-derived payloads retain their stored-data fallback.
+  Use the same page-qualified locator. CLI `anchor region-content <slug> p2/r1`.
 - `get_page_text(slug, page)` — polished or raw page markdown.
 - `get_crop(slug, "<page>/<region_id>.png")` - LOOK at one region: the crop
   comes back as an image the harness displays, so you can read a chart,
@@ -621,8 +624,10 @@ page's region with the same local id.
 
 Read the inspected source content and cells before answering. A title,
 description, tag or entity explains why a hit ranked; it is not evidence
-for a value. If stored content is absent, call `get_region_content` with
-the same locator. Cite the returned `source_ref`, using the silver item
+for a value. Original gold stores membership and search metadata; inspection
+reconstructs uncapped source content from silver. Use `get_region_content`
+with the same locator when you need its readable content view. Cite the returned
+`source_ref`, using the silver item
 or cell locator when available, or the region/page/bbox otherwise.
 Use `get_page_text` for adjacent context and `get_crop` for visual evidence
 when needed. If you already know the exact region locator, inspect it
