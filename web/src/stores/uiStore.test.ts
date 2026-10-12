@@ -49,6 +49,7 @@ beforeEach(() => {
     sourceClusterCollapsed: false,
     hoveredSourceRef: null,
     armedTool: null,
+    navigationMode: "select",
     selectedNodeId: null,
     selectedEdgeId: null,
     propertiesOpen: false,
@@ -59,6 +60,16 @@ beforeEach(() => {
 });
 
 describe("uiStore.armTool", () => {
+  it("switches navigation without leaving a shape or half-drawn connector armed", () => {
+    useUiStore.setState({ armedTool: "concept", connectSourceId: "a" });
+    useUiStore.getState().setNavigationMode("hand");
+    expect(useUiStore.getState()).toMatchObject({ navigationMode: "hand", armedTool: null, connectSourceId: null });
+    useUiStore.getState().armTool("__connect__");
+    expect(useUiStore.getState()).toMatchObject({ navigationMode: "select", armedTool: "__connect__" });
+    useUiStore.getState().setNavigationMode("hand");
+    useUiStore.getState().disarmTool();
+    expect(useUiStore.getState().navigationMode).toBe("select");
+  });
   it("arms a tool when none is set", () => {
     useUiStore.getState().armTool("concept");
     expect(useUiStore.getState().armedTool).toBe("concept");

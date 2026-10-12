@@ -13,6 +13,8 @@ Flat legacy originals remain readable only with unambiguous ownership:
         gold/<slug>/
             pages/<n>.regions.json
             pages/<n>/<region-id>.png
+        knowledge/<slug>/
+            pages/<n>.regions.json
 """
 from __future__ import annotations
 
@@ -32,13 +34,15 @@ import aiofiles
 
 from anchor.core.ids import validate_workspace_slug
 from anchor.core.upload_safety import UnsafeUploadError, assert_within, safe_upload_name
-from anchor.extensions.anchor_pdfs.core.generation import polished_membership
+from anchor.extensions.anchor_pdfs.core.generation import polished_membership, require_page_items
+from anchor.extensions.anchor_pdfs.core.ingest.region_resolution import materialize_source_region
 from anchor.extensions.anchor_pdfs.core.ingest.validation import require_unique_region_ids
-from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
+from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld, RegionIdConflictError
 from anchor.extensions.anchor_pdfs.core.silver import project_index
 from anchor.extensions.anchor_pdfs.core.source_identity import SourceIdentityError, original_source
 from anchor.extensions.anchor_pdfs.infra._generation import document_view
 from anchor.extensions.anchor_pdfs.infra._region_normalize import _normalise_regions
+from anchor.infra.atomic_file import replace_file
 
 #: How long a stale ingest lock file may sit before another writer reclaims it.
 #: A lock is freed in a ``finally`` on normal exit and on a handled crash, but a
@@ -71,6 +75,7 @@ class FsDocStore:
         self.bronze = self.data_dir / "bronze"
         self.silver = self.data_dir / "silver"
         self.gold = self.data_dir / "gold"
+        self.knowledge = self.data_dir / "knowledge"
         # Live ingest-activity records (issue #51): one small JSON per slug the
         # pipeline updates as it advances, so an in-flight ingest is visible
         # across process boundaries and survives a restart.
@@ -160,16 +165,29 @@ class FsDocStore:
             base = view._doc_dir(self.silver, slug) / "pages"
             if any(not (base / f"{page}{suffix}").is_file() for suffix in (".raw.md", ".png", ".candidates.json")):
                 raise SourceIdentityError("replacement silver page is incomplete")
+            if index["document"].get("silver_items_version") == 1:
+                try:
+                    require_page_items(await view.get_page_items(slug, page),
+                                       await view.get_page_candidates(slug, page), metadata, page)
+                except ValueError as exc:
+                    raise SourceIdentityError(str(exc)) from exc
         polished = polished_membership(report)
         if not set(polished).issubset(membership) or any(
             not (view._doc_dir(self.silver, slug) / "pages" / f"{page}.md").is_file() for page in polished
         ):
             raise SourceIdentityError("replacement polished page is incomplete or outside current membership")
-        gold = (await view.get_regions(slug))["pages"]
+        gold = (await view.get_source_regions(slug))["pages"]
         if not set(gold).issubset(membership):
             raise SourceIdentityError("replacement gold is outside current page membership")
         for page, regions in gold.items():
             require_unique_region_ids(regions, page=page)
+            items = await view.get_page_items(slug, page)
+            if items is not None:
+                for region in regions:
+                    try:
+                        materialize_source_region(region, page=page, items=items)
+                    except ValueError as exc:
+                        raise SourceIdentityError(str(exc)) from exc
         identities = {(page, r["id"]) for page, regions in gold.items() for r in regions}
         embeddings = await view.get_embeddings(slug)
         if embeddings and any((v["page"], v["region_id"]) not in identities for v in embeddings.get("vectors", [])):
@@ -193,7 +211,7 @@ class FsDocStore:
             tmp = target.with_name(f"{uuid4().hex}.tmp")
             try:
                 tmp.write_text(json.dumps(manifest), encoding="utf-8")
-                os.replace(tmp, target)
+                await replace_file(tmp, target)
             finally:
                 tmp.unlink(missing_ok=True)
 
@@ -404,7 +422,8 @@ class FsDocStore:
                 rdata = json.loads(rf.read_text(encoding="utf-8"))
             except (ValueError, OSError):
                 continue
-            total += len(rdata if isinstance(rdata, list) else rdata.get("regions", []))
+            regions = rdata if isinstance(rdata, list) else rdata.get("regions", [])
+            total += sum(1 for r in regions if isinstance(r, dict) and not r.get("derived_from"))
         return total
 
     def _gold_artifacts_consistent(self, slug: str) -> bool:
@@ -465,9 +484,12 @@ class FsDocStore:
         # Atomic commit: write a sibling temp file, then rename over the
         # marker. A crash leaves either the old marker or the new one.
         tmp = target.with_name(GOLD_COMPLETE_MARKER + ".tmp")
-        async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
-            await f.write(payload)
-        os.replace(tmp, target)
+        try:
+            async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
+                await f.write(payload)
+            await replace_file(tmp, target)
+        finally:
+            tmp.unlink(missing_ok=True)
         return target
 
     async def clear_gold_complete(self, slug: str) -> None:
@@ -476,9 +498,12 @@ class FsDocStore:
             return
         payload = json.dumps({"complete": False})
         tmp = target.with_name(GOLD_COMPLETE_MARKER + ".tmp")
-        async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
-            await f.write(payload)
-        os.replace(tmp, target)
+        try:
+            async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
+                await f.write(payload)
+            await replace_file(tmp, target)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     @document_view
     async def get_index(self, slug: str, *, include_content: bool = False) -> dict[str, Any] | None:
@@ -539,19 +564,51 @@ class FsDocStore:
         return data if isinstance(data, list) else None
 
     @document_view
-    async def get_regions(self, slug: str, page: int | None = None) -> dict[str, Any]:
-        result: dict[str, Any] = {"slug": slug, "pages": {}}
-        d = self._doc_dir(self.gold, slug) / "pages"
+    async def get_page_items(self, slug: str, page: int) -> list[dict[str, Any]] | None:
+        p = self._doc_dir(self.silver, slug) / "pages" / f"{int(page)}.items.json"
+        p = assert_within(p, self.silver)
+        if not p.is_file():
+            return None
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return None
+        return data if isinstance(data, list) and all(isinstance(item, dict) for item in data) else None
+
+    def _region_pages(
+        self, layer: Path, slug: str, page: int | None = None,
+    ) -> dict[int, list[dict[str, Any]]]:
+        pages: dict[int, list[dict[str, Any]]] = {}
+        d = self._doc_dir(layer, slug) / "pages"
         if not d.is_dir():
-            return result
+            return pages
         for rf in sorted(d.glob("*.regions.json")):
-            data = json.loads(rf.read_text(encoding="utf-8"))
-            pg = int(data.get("page", rf.stem.rstrip(".regions")))
+            data = json.loads(assert_within(rf, layer).read_text(encoding="utf-8"))
+            filename_page = int(rf.name.removesuffix(".regions.json"))
+            pg = int(data.get("page", filename_page)) if isinstance(data, dict) else filename_page
             if page is not None and pg != page:
                 continue
             regions = data.get("regions", data) if isinstance(data, dict) else data
-            result["pages"][pg] = _normalise_regions(regions)
-        return result
+            pages[pg] = _normalise_regions(regions)
+        return pages
+
+    @document_view
+    async def get_regions(self, slug: str, page: int | None = None) -> dict[str, Any]:
+        pages = self._region_pages(self.gold, slug, page)
+        for pg, regions in pages.items():
+            items = await self.get_page_items(slug, pg)
+            if items is not None:
+                pages[pg] = [materialize_source_region(r, page=pg, items=items) for r in regions]
+        for pg, regions in self._region_pages(self.knowledge, slug, page).items():
+            pages.setdefault(pg, []).extend(regions)
+        return {"slug": slug, "pages": dict(sorted(pages.items()))}
+
+    @document_view
+    async def get_source_regions(self, slug: str) -> dict[str, Any]:
+        return {"slug": slug, "pages": {
+            page: [r for r in regions if not r.get("derived_from")]
+            for page, regions in self._region_pages(self.gold, slug).items()
+        }}
 
     @document_view
     async def get_gold_map(self, slug: str) -> dict[str, Any] | None:
@@ -781,13 +838,13 @@ class FsDocStore:
                     tmp = base / f"{uuid4().hex}.tmp"
                     try:
                         tmp.write_bytes(pdf_bytes)
-                        os.replace(tmp, target)
+                        await replace_file(tmp, target)
                     finally:
                         tmp.unlink(missing_ok=True)
                 tmp = base / f"{uuid4().hex}.tmp"
                 try:
                     tmp.write_text(json.dumps({**source, "filename": clean, "legacy_sources": legacy_sources}), encoding="utf-8")
-                    os.replace(tmp, record_path)
+                    await replace_file(tmp, record_path)
                 finally:
                     tmp.unlink(missing_ok=True)
             except (OSError, ValueError) as exc:
@@ -867,9 +924,12 @@ class FsDocStore:
         payload = json.dumps({**record, "slug": slug})
         # Atomic upsert so a concurrent reader never sees a half-written file.
         tmp = target.with_suffix(".json.tmp")
-        async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
-            await f.write(payload)
-        os.replace(tmp, target)
+        try:
+            async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
+                await f.write(payload)
+            await replace_file(tmp, target)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     async def read_ingest_activity(self, slug: str) -> dict[str, Any] | None:
         try:
@@ -928,28 +988,52 @@ class FsDocStore:
                 "or region.page"
             )
         async with self._lock:
-            # Same inline barrier as `write_gold_region_file`: the slug is
-            # caller-supplied, so check containment right where the read path
-            # is built.
-            if not slug or "/" in slug or "\\" in slug or slug in {".", ".."}:
-                raise UnsafeUploadError(f"unsafe document slug: {slug!r}")
-            base = os.path.realpath(os.fspath(self.gold))
-            candidate = os.path.normpath(
-                os.path.join(os.fspath(self._doc_dir(self.gold, slug)), "pages", f"{page}.regions.json")
-            )
-            if not candidate.startswith(base + os.sep):
-                raise UnsafeUploadError(f"document slug {slug!r} escapes the gold dir")
-            target = Path(candidate)
-            existing: list[dict[str, Any]] = []
-            if target.is_file():
-                data = json.loads(target.read_text())
-                raw = data.get("regions", data) if isinstance(data, dict) else data
-                if isinstance(raw, list):
-                    existing = [r for r in raw if isinstance(r, dict)]
+            gold = self._region_pages(self.gold, slug, page).get(page, [])
             rid = region.get("id")
+            if rid and any(r.get("id") == rid and not r.get("derived_from") for r in gold):
+                raise RegionIdConflictError(rid, page)
+            if rid and any(r.get("id") == rid for r in gold):
+                kept = [r for r in gold if r.get("id") != rid]
+                return await self.write_gold_region_file(slug, page, [*kept, region])
+            existing = self._region_pages(self.knowledge, slug, page).get(page, [])
             kept = [r for r in existing if r.get("id") != rid] if rid else existing
             kept.append(region)
-            return await self.write_gold_region_file(slug, page, kept)
+            return await self._write_knowledge_region_file(slug, page, kept)
+
+    async def _write_knowledge_region_file(
+        self, slug: str, page: int, regions: list[dict[str, Any]],
+    ) -> Path:
+        base = os.path.realpath(os.fspath(self.knowledge))
+        candidate = os.path.realpath(os.path.join(
+            os.fspath(self._doc_dir(self.knowledge, slug)), "pages", f"{int(page)}.regions.json",
+        ))
+        if not candidate.startswith(base + os.sep):
+            raise UnsafeUploadError(f"document slug {slug!r} escapes the knowledge dir")
+        target = Path(candidate)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_name(f"{uuid4().hex}.tmp")
+        try:
+            async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
+                await f.write(json.dumps({"page": page, "regions": _normalise_regions(regions)}, indent=2))
+            await replace_file(tmp, target)
+        finally:
+            tmp.unlink(missing_ok=True)
+        return target
+
+    @document_view
+    async def remove_derived_region(self, slug: str, page: int, region_id: str) -> bool:
+        async with self._lock:
+            for layer in (self.gold, self.knowledge):
+                regions = self._region_pages(layer, slug, page).get(page, [])
+                if not any(r.get("id") == region_id and r.get("derived_from") for r in regions):
+                    continue
+                kept = [r for r in regions if r.get("id") != region_id]
+                if layer == self.gold:
+                    await self.write_gold_region_file(slug, page, kept)
+                else:
+                    await self._write_knowledge_region_file(slug, page, kept)
+                return True
+        return False
 
     async def write_embeddings(self, slug: str, payload: dict[str, Any]) -> Path:
         # Inline normalise-then-prefix-check (not delegated): the slug can
@@ -964,7 +1048,7 @@ class FsDocStore:
         try:
             async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
                 await f.write(json.dumps(payload))
-            os.replace(tmp, target)
+            await replace_file(tmp, target)
         finally:
             tmp.unlink(missing_ok=True)
         return target

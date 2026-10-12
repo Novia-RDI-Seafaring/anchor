@@ -4,16 +4,17 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from copy import copy
+from copy import copy, deepcopy
 from datetime import UTC
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from anchor.core.upload_safety import safe_upload_name
-from anchor.extensions.anchor_pdfs.core.generation import polished_membership
+from anchor.extensions.anchor_pdfs.core.generation import polished_membership, require_page_items
+from anchor.extensions.anchor_pdfs.core.ingest.region_resolution import materialize_source_region
 from anchor.extensions.anchor_pdfs.core.ingest.validation import require_unique_region_ids
-from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
+from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld, RegionIdConflictError
 from anchor.extensions.anchor_pdfs.core.silver import project_index
 from anchor.extensions.anchor_pdfs.core.source_identity import SourceIdentityError, original_source
 from anchor.extensions.anchor_pdfs.infra._generation import document_view
@@ -40,12 +41,14 @@ class MemoryDocStore:
         self._published_polished: frozenset[int] | None = None
         self._page_images: dict[tuple[str, int], bytes] = {}
         self._regions: dict[tuple[str, int], list[dict[str, Any]]] = {}
+        self._knowledge: dict[tuple[str, int], list[dict[str, Any]]] = {}
         self._gold_maps: dict[str, dict[str, Any]] = {}
         self._crops: dict[tuple[str, str], bytes] = {}
         self._bronze: dict[tuple[str, str], bytes] = {}
         self._original_sources: dict[str, dict[str, str]] = {}
         self._embeddings: dict[str, dict[str, Any]] = {}
         self._candidates: dict[tuple[str, int], list[dict[str, Any]]] = {}
+        self._items: dict[tuple[str, int], list[dict[str, Any]]] = {}
         # Gold completeness markers: slug -> marker dict ({"complete": bool, ...}).
         self._gold_markers: dict[str, dict[str, Any]] = {}
         # Failed-ingest records: slug -> failure record (mirrors the fs
@@ -109,13 +112,28 @@ class MemoryDocStore:
                        or (slug, page) not in candidate._candidates for page in pages)):
             raise SourceIdentityError("replacement is incomplete or has inconsistent page membership")
         polished = polished_membership(candidate._reports[slug])
+        if candidate._indexes[slug]["document"].get("silver_items_version") == 1:
+            for page in pages:
+                try:
+                    require_page_items(await candidate.get_page_items(slug, page),
+                                       await candidate.get_page_candidates(slug, page),
+                                       candidate._pages_meta[slug], page)
+                except ValueError as exc:
+                    raise SourceIdentityError(str(exc)) from exc
         if not set(polished).issubset(pages) or any((slug, p) not in candidate._polished for p in polished):
             raise SourceIdentityError("replacement polished page is incomplete or outside current membership")
-        gold = (await candidate.get_regions(slug))["pages"]
+        gold = (await candidate.get_source_regions(slug))["pages"]
         if not set(gold).issubset(pages):
             raise SourceIdentityError("replacement gold is outside current page membership")
         for page, regions in gold.items():
             require_unique_region_ids(regions, page=page)
+            items = await candidate.get_page_items(slug, page)
+            if items is not None:
+                for region in regions:
+                    try:
+                        materialize_source_region(region, page=page, items=items)
+                    except ValueError as exc:
+                        raise SourceIdentityError(str(exc)) from exc
         identities = {(page, r["id"]) for page, regions in gold.items() for r in regions}
         embeddings = await candidate.get_embeddings(slug)
         if embeddings and any((v["page"], v["region_id"]) not in identities for v in embeddings.get("vectors", [])):
@@ -243,13 +261,22 @@ class MemoryDocStore:
     @document_view
     async def get_regions(self, slug: str, page: int | None = None) -> dict[str, Any]:
         pages: dict[int, list[dict[str, Any]]] = {}
-        for (s, p), regions in self._regions.items():
-            if s != slug:
-                continue
-            if page is not None and p != page:
-                continue
-            pages[p] = _normalise_regions(regions)
-        return {"slug": slug, "pages": pages}
+        for collection in (self._regions, self._knowledge):
+            for (s, p), regions in collection.items():
+                if s == slug and (page is None or p == page):
+                    pages.setdefault(p, []).extend(_normalise_regions(regions))
+        for pg, regions in pages.items():
+            items = await self.get_page_items(slug, pg)
+            if items is not None:
+                pages[pg] = [materialize_source_region(r, page=pg, items=items) for r in regions]
+        return {"slug": slug, "pages": dict(sorted(pages.items()))}
+
+    @document_view
+    async def get_source_regions(self, slug: str) -> dict[str, Any]:
+        return {"slug": slug, "pages": {
+            p: _normalise_regions([r for r in regions if not r.get("derived_from")])
+            for (s, p), regions in self._regions.items() if s == slug
+        }}
 
     @document_view
     async def get_gold_map(self, slug: str) -> dict[str, Any] | None:
@@ -275,7 +302,7 @@ class MemoryDocStore:
     def _count_gold_regions(self, slug: str) -> int:
         """Regions actually held for ``slug`` across all pages."""
         return sum(
-            len(regions)
+            sum(1 for r in regions if not r.get("derived_from"))
             for (s, _p), regions in self._regions.items()
             if s == slug
         )
@@ -329,6 +356,11 @@ class MemoryDocStore:
     async def get_page_candidates(self, slug: str, page: int) -> list[dict[str, Any]] | None:
         candidates = self._candidates.get((slug, page))
         return [dict(c) for c in candidates] if candidates is not None else None
+
+    @document_view
+    async def get_page_items(self, slug: str, page: int) -> list[dict[str, Any]] | None:
+        items = self._items.get((slug, page))
+        return deepcopy(items) if isinstance(items, list) and all(isinstance(item, dict) for item in items) else None
 
     @document_view
     async def get_crop_path(self, slug: str, rel_path: str) -> Path | None:
@@ -399,6 +431,9 @@ class MemoryDocStore:
         elif (m := re.fullmatch(r"pages/(\d+)\.candidates\.json", name)):
             data = json.loads(payload) if isinstance(payload, str) else json.loads(payload.decode())
             self._candidates[(slug, int(m.group(1)))] = data
+        elif (m := re.fullmatch(r"pages/(\d+)\.items\.json", name)):
+            data = json.loads(payload) if isinstance(payload, str) else json.loads(payload.decode())
+            self._items[(slug, int(m.group(1)))] = data
         elif (m := re.fullmatch(r"pages/(\d+)\.md", name)) and isinstance(payload, str):
             self._page_text[(slug, int(m.group(1)))] = payload
             self._polished.add((slug, int(m.group(1))))
@@ -463,12 +498,28 @@ class MemoryDocStore:
                 "or region.page"
             )
         async with self._lock:
-            existing = list(self._regions.get((slug, page), []))
+            gold = self._regions.get((slug, page), [])
             rid = region.get("id")
+            if rid and any(r.get("id") == rid and not r.get("derived_from") for r in gold):
+                raise RegionIdConflictError(rid, page)
+            legacy = rid and any(r.get("id") == rid for r in gold)
+            collection = self._regions if legacy else self._knowledge
+            existing = collection.get((slug, page), [])
             kept = [r for r in existing if r.get("id") != rid] if rid else existing
             kept.append(region)
-            self._regions[(slug, page)] = _normalise_regions(kept)
-        return Path(f"memory://gold/{slug}/{page}.regions.json")
+            collection[(slug, page)] = _normalise_regions(kept)
+        layer = "gold" if legacy else "knowledge"
+        return Path(f"memory://{layer}/{slug}/{page}.regions.json")
+
+    @document_view
+    async def remove_derived_region(self, slug: str, page: int, region_id: str) -> bool:
+        async with self._lock:
+            for collection in (self._regions, self._knowledge):
+                regions = collection.get((slug, page), [])
+                if any(r.get("id") == region_id and r.get("derived_from") for r in regions):
+                    collection[(slug, page)] = [r for r in regions if r.get("id") != region_id]
+                    return True
+        return False
 
     @document_view
     async def write_embeddings(self, slug: str, payload: dict[str, Any]) -> Path:

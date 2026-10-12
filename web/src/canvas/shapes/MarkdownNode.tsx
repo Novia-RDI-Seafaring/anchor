@@ -257,7 +257,7 @@ const BASE_COMPONENTS: Components = {
  * slug to open the document beside the right card, which is why this is
  * built per card rather than once at module load.
  */
-function markdownComponents(workspaceSlug: string | undefined): Components {
+export function markdownComponents(workspaceSlug: string | undefined): Components {
   return {
     ...BASE_COMPONENTS,
     a: (props) => {
@@ -291,7 +291,7 @@ function markdownComponents(workspaceSlug: string | undefined): Components {
  * `javascript:` link. `anchor:` is the one scheme we widen that by, and
  * deliberately: it never navigates, it opens a document in the viewer.
  */
-function urlTransform(url: string): string {
+export function urlTransform(url: string): string {
   if (isAnchorHref(url)) return url;
   return defaultUrlTransform(url);
 }

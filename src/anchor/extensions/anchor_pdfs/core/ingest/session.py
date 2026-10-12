@@ -43,9 +43,12 @@ from anchor.extensions.anchor_pdfs.core.events import (
 )
 from anchor.extensions.anchor_pdfs.core.generation import complete_pages
 from anchor.extensions.anchor_pdfs.core.ingest.coverage import synthesize_coverage_regions
+from anchor.extensions.anchor_pdfs.core.ingest.page_images import write_page_images
 from anchor.extensions.anchor_pdfs.core.ingest.region_resolution import (
     PAGE_INSTRUCTIONS,
+    materialize_source_region,
     resolve_regions,
+    source_region_metadata,
 )
 from anchor.extensions.anchor_pdfs.core.ingest.validation import region_id_errors
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
@@ -56,6 +59,7 @@ from anchor.extensions.anchor_pdfs.core.ports.session_store import IngestSession
 from anchor.extensions.anchor_pdfs.core.silver import (
     build_index,
     build_page_candidates,
+    build_page_items,
     build_pages_meta,
     needs_polish,
     normalize_items,
@@ -247,6 +251,7 @@ class IngestSessionService:
         pages_md = render_pages_md(docling)
         pages_meta = build_pages_meta(docling)
         page_candidates = build_page_candidates(docling)
+        page_items = build_page_items(docling)
         replacement_pngs = None
         if previous_index is not None:
             replacement_pngs = await self.renderer.render_pages(bronze_path, dpi=dpi)
@@ -262,11 +267,17 @@ class IngestSessionService:
             await store.write_silver_artifact(
                 slug, f"pages/{page}.candidates.json", json.dumps(candidates),
             )
+            await store.write_silver_artifact(
+                slug, f"pages/{page}.items.json", json.dumps(page_items.get(page, [])),
+            )
         page_count = max(page_candidates, default=0)
         if page_count:
             page_pngs = replacement_pngs if replacement_pngs is not None else await self.renderer.render_pages(bronze_path, dpi=dpi)
-            for page, png in page_pngs.items():
-                await store.write_silver_artifact(slug, f"pages/{page}.png", png)
+            await write_page_images(
+                store, self.renderer, slug, page_pngs, page_candidates, pages_meta,
+            )
+            for page in page_pngs.keys() - page_candidates.keys():
+                await store.write_silver_artifact(slug, f"pages/{page}.items.json", "[]")
         await self._publish(DocSilvered(slug=slug, page_count=page_count))
 
         now = self.clock.now()
@@ -380,7 +391,8 @@ class IngestSessionService:
         slug = session["slug"]
         store = await self._session_documents(session)
         candidates = await store.get_page_candidates(slug, page) or []
-        resolved, errors = resolve_regions(regions, page=page, candidates=candidates)
+        items = await store.get_page_items(slug, page)
+        resolved, errors = resolve_regions(regions, page=page, candidates=items if items is not None else candidates)
 
         if polished_md is not None:
             if not isinstance(polished_md, str) or not polished_md.strip():
@@ -393,7 +405,7 @@ class IngestSessionService:
 
         await self.sessions.write_text(
             session_id, f"gold/pages/{page}.regions.json",
-            json.dumps({"page": page, "regions": resolved}, indent=2),
+            json.dumps({"page": page, "regions": [source_region_metadata(r) for r in resolved] if items is not None else resolved}, indent=2),
         )
         if polished_md is not None:
             await self.sessions.write_text(session_id, f"silver/pages/{page}.md", polished_md)
@@ -518,10 +530,13 @@ class IngestSessionService:
             # meaningful silver candidates the agent left uncovered, so they
             # stay searchable. Authored regions are untouched.
             candidates = await store.get_page_candidates(slug, page) or []
-            extra = synthesize_coverage_regions(page, candidates, regions)
+            items = await store.get_page_items(slug, page)
+            extra = synthesize_coverage_regions(page, candidates, regions, full_items=items)
             if extra:
                 regions = [*regions, *extra]
                 coverage_fallback_count += len(extra)
+            if items is not None:
+                regions = [materialize_source_region(r, page=page, items=items) for r in regions]
             staged_regions[page] = regions
             identity_errors.extend(region_id_errors(regions, page=page))
             region_count += len(regions)
@@ -539,7 +554,8 @@ class IngestSessionService:
         # Replacement writes still stay private until G4 publication.
         await store.clear_gold_complete(slug)
         for page, regions in staged_regions.items():
-            await store.write_gold_region_file(slug, page, regions)
+            stored = [source_region_metadata(r) for r in regions] if await store.get_page_items(slug, page) is not None else regions
+            await store.write_gold_region_file(slug, page, stored)
             md = await self.sessions.read_text(session_id, f"silver/pages/{page}.md")
             if md is not None:
                 await store.write_silver_artifact(slug, f"pages/{page}.md", md)

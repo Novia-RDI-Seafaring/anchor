@@ -196,6 +196,7 @@ def build_index(docling: dict[str, Any], *, filename: str = "", title: str = "")
             "filename": filename,
             "title": resolved_title,
             "page_count": page_count,
+            "silver_items_version": 1,
         },
         "outline": outline,
         "tables": tables,
@@ -485,7 +486,7 @@ def _render_page_md(items: list[dict[str, Any]]) -> str:
             level = 1 if text.isupper() and len(text) <= 40 else 2
             lines.append(f"{'#' * (level + 1)} {text}")
             lines.append("")
-        elif label == "text" and text:
+        elif label in {"text", "paragraph", "caption", "code", "formula"} and text:
             lines.append(text)
             lines.append("")
         elif label == "list_item" and text:
@@ -500,6 +501,8 @@ def _render_page_md(items: list[dict[str, Any]]) -> str:
             lines.append("")
         elif label == "table":
             md = render_table_cells_md(it.get("cells"), it.get("table_topology"))
+            if not md and text:
+                md = text
             if md:
                 lines.append(md)
                 lines.append("")
@@ -628,6 +631,8 @@ def _reading_order(item: dict[str, Any]) -> int | None:
 def region_content_from_items(
     items: Any,
     indexes: list[int] | None = None,
+    *,
+    max_chars: int | None = _REGION_CONTENT_MAX,
 ) -> str:
     """Render selected Docling items as trusted gold-region content."""
     if not isinstance(items, list):
@@ -640,19 +645,15 @@ def region_content_from_items(
     content = _render_page_md(
         [item for item in selected if isinstance(item, dict)]
     ).strip()
-    return content[:_REGION_CONTENT_MAX].rstrip()
+    return content[:max_chars].rstrip() if max_chars is not None else content
 
 
 def region_search_text(region: dict[str, Any]) -> str:
-    """Combine unique region fields for embedding and retrieval.
+    """Use semantic metadata for source chunks, with a source-content fallback.
 
-    #242 embedding fallback: the default text is ``title`` + ``description`` +
-    ``content``. When the model authored no ``description``, a caption-less
-    table (issue #231) would otherwise embed as just its title — and its cell
-    values, the only searchable content it has, are invisible. In that case we
-    fall back to the reconstructed table-cell text so the values stay findable.
-    Deduped so a well-described table whose ``content`` already renders the grid
-    is not double-counted.
+    Undescribed chunks include reconstructed text/cells so coverage remains
+    searchable. Producer-derived records retain their stored-content recall.
+    Repeated fields and metadata entries contribute only once.
     """
     parts: list[str] = []
     seen: set[str] = set()
@@ -666,14 +667,40 @@ def region_search_text(region: dict[str, Any]) -> str:
             seen.add(normalized)
             parts.append(text)
 
-    for key in ("title", "description", "content"):
+    for key in ("title", "description"):
         add(region.get(key))
 
+    for key in ("tags", "entities"):
+        values = region.get(key)
+        if isinstance(values, list):
+            for value in values:
+                add(value)
+
     description = region.get("description")
-    if not (isinstance(description, str) and description.strip()):
+    if region.get("derived_from") or not (isinstance(description, str) and description.strip()):
+        add(region.get("content"))
         add(render_table_cells_md(region.get("cells"), region.get("table_topology")))
 
     return "\n\n".join(parts)
+
+
+def build_page_items(docling: dict[str, Any]) -> dict[int, list[dict[str, Any]]]:
+    """Uncapped source items in their stored per-page order, with stable IDs.
+
+    Candidate previews and source membership use this exact traversal. Keep
+    extractor metadata and cells intact; reading order never renumbers IDs.
+    """
+    by_page: dict[int, list[dict[str, Any]]] = {}
+    source_items = docling.get("items")
+    if not isinstance(source_items, list):
+        return {}
+    for item in source_items:
+        if not isinstance(item, dict) or not isinstance(item.get("page"), (int, float)):
+            continue
+        page = int(item["page"])
+        items = by_page.setdefault(page, [])
+        items.append({**item, "id": f"p{page}-i{len(items)}", "page": page})
+    return dict(sorted(by_page.items()))
 
 
 def build_page_candidates(docling: dict[str, Any]) -> dict[int, list[dict[str, Any]]]:

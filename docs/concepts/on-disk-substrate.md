@@ -44,6 +44,7 @@ data/  ( = the project's .anchor_data/ )
 |           +-- <n>.raw.md          raw Docling markdown for page n
 |           +-- <n>.png             rasterised page image
 |           +-- <n>.candidates.json region candidates proposed for page n
+|           +-- <n>.items.json      uncapped silver source items with stable IDs and cells
 |
 +-- gold/                           (anchor_pdfs)
 |   +-- <slug>/
@@ -53,6 +54,11 @@ data/  ( = the project's .anchor_data/ )
 |           +-- <n>.regions.json    structured regions for page n (id, kind, source_ref, ...)
 |           +-- <n>/
 |               +-- <region-id>.png cropped screenshot of the region bbox
+|
++-- knowledge/                      (anchor_pdfs, derived producer records)
+|   +-- <slug>/
+|       +-- pages/
+|           +-- <n>.regions.json    chart series, normalized specs, calculated artifacts
 |
 +-- ingest_status/                  (anchor_pdfs, written during active ingestion)
 |   +-- <slug>.json                 live activity record: stage, progress, started_at, ...
@@ -187,6 +193,7 @@ data/silver/alfa-laval-lkh/
         1.raw.md         raw Docling output for page 1 (pre-polish)
         1.png            rasterised page image (used by the region extractor)
         1.candidates.json region candidates proposed for page 1
+        1.items.json     full source items, text, cells, ordering and extractor metadata
         2.md
         ...
 ```
@@ -198,6 +205,46 @@ also retain the Docling traversal ordinal as `reading_order`, which can have
 gaps between items. Existing stored IDs are not renumbered. Items without
 traversal metadata keep their collection order, and Markdown without that
 metadata retains its geometric fallback.
+
+Candidate text remains a bounded grouping preview. The private full-item
+artifact uses the same `p<page>-i<index>` IDs and preserves uncapped source
+text, precise table cells and extractor metadata. It is written by keyed,
+text-profile and harness ingest, and selected by the same generation pointer.
+
+### Original gold chunks
+
+New original chunks store semantic metadata, stable silver membership and
+display geometry. They do not persist duplicate `content`, `cells` or
+`table_topology`. Region, gold-map, inspect and content reads reconstruct
+those fields from the selected generation's full silver items, including
+the exact rows and columns named by a `table_slice`. Pointed extraction and
+value provenance consume the same reconstructed cells.
+
+Source embeddings use `title + description + tags + entities` when a
+meaningful description exists. Undescribed coverage chunks fall back to
+their uncapped reconstructed source text and cells. Producer-derived records
+retain their stored-content recall. The agent workflow is search, inspect
+the selected chunk, then answer from its silver evidence; descriptions are
+search metadata.
+
+Legacy documents without full-item artifacts retain stored source content
+and cells. Reads do not migrate or rewrite their gold. Producer-derived
+payloads remain authoritative even when full silver exists.
+
+### Knowledge
+
+New `derive_region` records live in `knowledge/<slug>/pages/<n>.regions.json`.
+A selected replacement uses
+`knowledge/<slug>/generations/<id>/pages/<n>.regions.json`. The same document
+generation pointer selects silver, gold and knowledge. A replacement starts
+with empty knowledge, and pinned operations can finish in the retained old
+generation without writing to the current one.
+
+Derived records retain their producer payload and provenance. Existing derived
+gold records with a truthy `derived_from` are read, updated and removed in
+place. Compatibility region and gold-map reads combine both collections;
+source coverage and completeness checks exclude derived records. Crops and
+the combined embedding cache retain their existing gold paths.
 
 ### Gold
 

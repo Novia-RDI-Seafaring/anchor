@@ -23,6 +23,8 @@ import * as intentsApi from "@/api/intents";
 import type { Intent } from "@/api/intents";
 import * as proposalSetsApi from "@/api/proposalSets";
 import type { ProposalSet } from "@/api/proposalSets";
+import { NodeSourceBadge } from "@/canvas/NodeSourceBadge";
+import { useCanvasStore } from "@/stores/canvasStore";
 import { DEFAULT_EXPLORER_WIDTH, DEFAULT_SOURCE_DOCK_RATIO, useUiStore } from "@/stores/uiStore";
 
 import { CANVAS_LINK_MIME } from "./CanvasesPanel";
@@ -84,11 +86,13 @@ function resetUi() {
     sourceClusterCollapsed: false,
     proposalMemberIds: [],
     proposalHighlightIds: [],
+    activeReferenceId: null,
   });
 }
 
 beforeEach(() => {
   resetUi();
+  useCanvasStore.getState().reset();
   // The explorer mounts the intents feed for the tab badge; keep it quiet by
   // default (individual tests re-mock to seed the queue).
   vi.spyOn(intentsApi.intents, "listAll").mockResolvedValue([]);
@@ -113,13 +117,121 @@ function makeDataTransfer() {
   } as unknown as DataTransfer & { _store: Record<string, string> };
 }
 
+function renderFiles() {
+  const rendered = render(<FilesExplorer workspaceSlug="plant" />);
+  fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+  return rendered;
+}
+
+describe("canvas document dock", () => {
+  beforeEach(() => {
+    vi.spyOn(docsApi.documents, "list").mockResolvedValue([
+      makeDoc({ slug: "guide", title: "Guide" }),
+      makeDoc({ slug: "datasheet", title: "Datasheet", has_gold: false }),
+      makeDoc({ slug: "unused", title: "Unused document" }),
+    ]);
+    vi.spyOn(cadApi.cad, "list").mockResolvedValue([]);
+    vi.spyOn(canvasesApi.canvases, "list").mockResolvedValue([]);
+    useCanvasStore.getState().setSnapshot({
+      slug: "plant", title: "Plant", version: 1, metadata: {},
+      nodes: [
+        { id: "fact", node_type: "fact", data: { source_ref: { slug: "guide", page: 3, bbox: [10, 20, 80, 40] } } },
+        { id: "table", node_type: "spec", data: { rows: [
+          { key: "Pressure", value: "42", source_ref: { slug: "guide", page: 3 } },
+          { key: "Temperature", value: "80", source_ref: { slug: "datasheet", page: 2 } },
+        ] } },
+      ],
+      edges: [],
+    });
+  });
+
+  it("defaults to deduplicated canvas sources and leaves all project documents in Files", async () => {
+    render(<FilesExplorer workspaceSlug="plant" />);
+    expect(screen.getByRole("tab", { name: "Sources 2" }).getAttribute("aria-selected")).toBe("true");
+    await screen.findByText("Guide");
+    expect(screen.getAllByTestId("document-item")).toHaveLength(2);
+    expect(screen.getByText("12 pages | no gold")).toBeTruthy();
+    expect(screen.queryByText("Unused document")).toBeNull();
+    expect(Object.values(useCanvasStore.getState().nodes).some((node) => node.node_type === "document")).toBe(false);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Files" }));
+    expect(screen.getByText("Unused document")).toBeTruthy();
+  });
+
+  it("follows a fact source without a card and preserves its page and box when the active dock item is clicked", async () => {
+    render(<>
+      <FilesExplorer workspaceSlug="plant" />
+      <NodeSourceBadge workspaceSlug="plant" data={useCanvasStore.getState().nodes.fact!.data!} />
+    </>);
+    await screen.findByText("Guide");
+    fireEvent.click(screen.getByRole("button", { name: /Open source:/ }));
+    const guide = screen.getAllByTestId("document-item").find((item) => item.getAttribute("data-slug") === "guide")!;
+    expect(guide.getAttribute("data-active")).toBe("true");
+    expect(guide.getAttribute("data-expanded")).toBe("true");
+    expect(screen.getByText("Viewing page 3")).toBeTruthy();
+    expect(useUiStore.getState().pdfViewer).toMatchObject({ slug: "guide", page: 3, highlightBbox: [10, 20, 80, 40] });
+    fireEvent.click(guide);
+    expect(useUiStore.getState().pdfViewer).toMatchObject({ slug: "guide", page: 3, highlightBbox: [10, 20, 80, 40] });
+    const datasheet = screen.getAllByTestId("document-item").find((item) => item.getAttribute("data-slug") === "datasheet")!;
+    fireEvent.click(datasheet);
+    expect(useUiStore.getState().pdfViewer).toMatchObject({ slug: "datasheet", page: 2 });
+    expect(datasheet.getAttribute("data-active")).toBe("true");
+    expect(guide.getAttribute("data-expanded")).toBe("false");
+  });
+
+  it("updates on source edits and removals and shows missing corpus sources", async () => {
+    render(<FilesExplorer workspaceSlug="plant" />);
+    await screen.findByText("Guide");
+    act(() => useCanvasStore.getState().applyEvent({
+      id: "edit", type: "NodeUpdated", version: 2,
+      workspace_id: "plant", ts: 100,
+      payload: { id: "table", fields: { data: { rows: [{ source_ref: { slug: "missing", page: 5 } }] } } },
+    }));
+    expect(screen.queryByText("Datasheet")).toBeNull();
+    expect(screen.getByText("Document unavailable in this project")).toBeTruthy();
+    expect(screen.getByTestId("missing-document-item").getAttribute("data-slug")).toBe("missing");
+    act(() => useCanvasStore.getState().applyEvent({
+      id: "remove", type: "NodeRemoved", version: 3, payload: { id: "fact" },
+      workspace_id: "plant", ts: 101,
+    }));
+    expect(screen.queryByText("Guide")).toBeNull();
+    expect(screen.getByText("Canvas sources (1)")).toBeTruthy();
+  });
+
+  it("distinguishes a failed corpus lookup from a missing document", async () => {
+    vi.spyOn(docsApi.documents, "list").mockRejectedValue(new Error("network unavailable"));
+    render(<FilesExplorer workspaceSlug="plant" />);
+    await screen.findByRole("status");
+    expect(screen.getAllByText("Document details unavailable")).toHaveLength(2);
+    expect(screen.queryByText("Document unavailable in this project")).toBeNull();
+  });
+
+  it("does not show a previous canvas's sources while a different canvas is loading", async () => {
+    const { rerender } = render(<FilesExplorer workspaceSlug="plant" />);
+    await screen.findByText("Guide");
+    rerender(<FilesExplorer workspaceSlug="other" />);
+    expect(screen.getByText("Canvas sources (0)")).toBeTruthy();
+    expect(screen.queryByText("Guide")).toBeNull();
+  });
+
+  it("shows an open library document without adding it to the canvas source set", async () => {
+    render(<FilesExplorer workspaceSlug="plant" />);
+    await screen.findByText("Guide");
+    act(() => useUiStore.getState().openPdf("unused", { page: 4, mode: "dock", workspaceSlug: "plant" }));
+    expect(screen.getByText("Unused document")).toBeTruthy();
+    expect(screen.getByText("not cited on this canvas")).toBeTruthy();
+    expect(screen.getByText("Canvas sources (2)")).toBeTruthy();
+    expect(screen.getByText("Viewing page 4")).toBeTruthy();
+  });
+});
+
 describe("FilesExplorer listing", () => {
   it("lists ingested documents and CAD models", async () => {
     vi.spyOn(docsApi.documents, "list").mockResolvedValue([makeDoc()]);
     vi.spyOn(cadApi.cad, "list").mockResolvedValue([makeCad()]);
     vi.spyOn(canvasesApi.canvases, "list").mockResolvedValue([]);
 
-    render(<FilesExplorer workspaceSlug="plant" />);
+    renderFiles();
 
     await waitFor(() => {
       expect(screen.getByText("Pump Leaflet")).toBeTruthy();
@@ -135,7 +247,7 @@ describe("FilesExplorer click-to-open + active highlight", () => {
     vi.spyOn(canvasesApi.canvases, "list").mockResolvedValue([]);
     const openPdf = vi.spyOn(useUiStore.getState(), "openPdf");
 
-    render(<FilesExplorer workspaceSlug="plant" />);
+    renderFiles();
 
     const row = await screen.findByTestId("document-item");
     act(() => {
@@ -162,7 +274,7 @@ describe("FilesExplorer click-to-open + active highlight", () => {
       });
     });
 
-    const { container } = render(<FilesExplorer workspaceSlug="plant" />);
+    const { container } = renderFiles();
 
     await waitFor(() => {
       expect(screen.getByText("Doc B")).toBeTruthy();
@@ -181,7 +293,7 @@ describe("FilesExplorer drag payloads", () => {
     vi.spyOn(cadApi.cad, "list").mockResolvedValue([]);
     vi.spyOn(canvasesApi.canvases, "list").mockResolvedValue([]);
 
-    render(<FilesExplorer workspaceSlug="plant" />);
+    renderFiles();
 
     const row = await screen.findByTestId("document-item");
     const dt = makeDataTransfer();
@@ -199,7 +311,7 @@ describe("FilesExplorer drag payloads", () => {
     vi.spyOn(cadApi.cad, "list").mockResolvedValue([makeCad({ slug: "imp-1" })]);
     vi.spyOn(canvasesApi.canvases, "list").mockResolvedValue([]);
 
-    render(<FilesExplorer workspaceSlug="plant" />);
+    renderFiles();
 
     await waitFor(() => {
       expect(screen.getByText("Impeller")).toBeTruthy();
@@ -220,7 +332,7 @@ describe("FilesExplorer drag payloads", () => {
       makeWorkspace({ slug: "loop", title: "Loop" }),
     ]);
 
-    render(<FilesExplorer workspaceSlug="plant" />);
+    renderFiles();
 
     // Switch to the Canvases tab.
     fireEvent.click(screen.getByRole("tab", { name: "Canvases" }));
@@ -259,7 +371,7 @@ describe("FilesExplorer intents tab (#323)", () => {
       makeOpenIntent({ id: "done", status: "resolved" }),
     ]);
 
-    render(<FilesExplorer workspaceSlug="plant" />);
+    renderFiles();
 
     // Badge counts only the OPEN intents, visible from any tab.
     const badge = await screen.findByTestId("tab-badge-intents");
@@ -271,7 +383,7 @@ describe("FilesExplorer intents tab (#323)", () => {
     vi.spyOn(cadApi.cad, "list").mockResolvedValue([]);
     vi.spyOn(canvasesApi.canvases, "list").mockResolvedValue([]);
 
-    render(<FilesExplorer workspaceSlug="plant" />);
+    renderFiles();
     await waitFor(() => expect(intentsApi.intents.listAll).toHaveBeenCalled());
     expect(screen.queryByTestId("tab-badge-intents")).toBeNull();
 
@@ -292,7 +404,7 @@ describe("FilesExplorer proposals tab (#359)", () => {
       makeProposalSet({ id: "ps4", state: "rejected" }),
     ]);
 
-    render(<FilesExplorer workspaceSlug="plant" />);
+    renderFiles();
 
     const badge = await screen.findByTestId("tab-badge-proposals");
     expect(badge.textContent).toBe("2");
@@ -303,7 +415,7 @@ describe("FilesExplorer proposals tab (#359)", () => {
     vi.spyOn(cadApi.cad, "list").mockResolvedValue([]);
     vi.spyOn(canvasesApi.canvases, "list").mockResolvedValue([]);
 
-    render(<FilesExplorer workspaceSlug="plant" />);
+    renderFiles();
     await waitFor(() =>
       expect(proposalSetsApi.proposalSets.list).toHaveBeenCalledWith("plant"),
     );
@@ -332,7 +444,7 @@ describe("FilesExplorer proposals tab (#359)", () => {
       }),
     ]);
 
-    render(<FilesExplorer workspaceSlug="plant" />);
+    renderFiles();
 
     await waitFor(() => {
       expect(useUiStore.getState().proposalMemberIds).toEqual(["n1", "e1"]);

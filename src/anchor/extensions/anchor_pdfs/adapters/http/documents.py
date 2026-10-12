@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 from pydantic import BaseModel
 
 from anchor.adapters.http.deps import get_doc_store, get_ingest_service
-from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
+from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore, RegionIdConflictError
 from anchor.extensions.anchor_pdfs.core.region_crops import (
     CropUnavailable,
     get_page_image,
@@ -423,6 +423,8 @@ async def derive_region(
 
     try:
         return await ingest.derive_region(slug, body.parent_region_id, body.region)
+    except RegionIdConflictError as exc:
+        raise HTTPException(409, str(exc)) from None
     except AmbiguousRegionError as exc:
         raise HTTPException(
             409, {"error": str(exc), "candidate_pages": exc.pages}
