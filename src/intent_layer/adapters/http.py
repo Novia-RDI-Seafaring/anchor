@@ -9,6 +9,7 @@ The project-level intent queue, exposed over HTTP for parity with MCP / CLI:
 - ``GET  /api/intents/events``     - SSE stream of the ``intent_pending`` signal.
 - ``GET  /api/intents/{id}``       - one full record incl. thread items.
 - ``POST /api/intents/{id}/items`` - append a thread item.
+- ``POST /api/intents/{id}/act``   - suggest, apply, mark done and ask in one call.
 - ``POST /api/intents/{id}/items/{item}/answer``  - answer a question.
 - ``POST /api/intents/{id}/items/{item}/apply``   - approve + apply a suggestion.
 - ``POST /api/intents/{id}/items/{item}/decline`` - decline a suggestion.
@@ -41,6 +42,7 @@ from fastapi.routing import APIRoute
 from sse_starlette.sse import EventSourceResponse
 
 from intent_layer.actor import Actor, actor_scope, current_actor, set_current_actor
+from intent_layer.adapters.mcp import act_payload
 from intent_layer.models import INTENT_KINDS
 from intent_layer.service import (
     IntentService,
@@ -252,6 +254,40 @@ def create_router(get_intent_service: Callable[..., IntentService],
         except ThreadError as exc:
             return _thread_error(exc)
         return {"intent": intent.to_dict(), "item": item.to_dict()}
+
+
+    @router.post("/{intent_id}/act")
+    async def act(
+        intent_id: str,
+        body: dict,
+        intents: IntentService = Depends(get_intent_service),
+    ):
+        """Act, then ask, in one call: ``{text, ops, supersedes?, apply?, done?,
+        question?, result?, resolve?}``.
+
+        Posts a suggestion and applies it, marks the ``done`` placed messages
+        done, then adds a ``question`` (``{text, options?, place?}``) or a
+        ``result``, and resolves if asked. 409 ``apply_failed`` means nothing
+        after the suggestion happened and the host is untouched.
+        """
+        _actor_override(body)
+        try:
+            out = await intents.act(
+                intent_id,
+                text=str(body.get("text") or ""),
+                ops=body.get("ops"),
+                supersedes=body.get("supersedes"),
+                apply=body.get("apply", True) is not False,
+                done=body.get("done"),
+                question=body.get("question"),
+                result=body.get("result"),
+                resolve=bool(body.get("resolve")),
+            )
+        except KeyError:
+            return _not_found(intent_id)
+        except ThreadError as exc:
+            return _thread_error(exc)
+        return act_payload(out)
 
 
     @router.patch("/{intent_id}/items/{item_id}")

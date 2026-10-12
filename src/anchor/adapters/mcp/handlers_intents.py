@@ -20,12 +20,15 @@ connected client's actor (#322) so item ``author`` is never client-supplied.
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from anchor.core.events.actor import Actor
 from anchor.core.services.intent_service import (
     IntentService,
 )
+from anchor.infra.activity import ActivityLog
+from intent_layer.timing import intent_timing
 
 TOOL_NAMES: set[str] = {
     "list_pending_intents",
@@ -35,10 +38,12 @@ TOOL_NAMES: set[str] = {
     "intent_ask",
     "intent_add_item",
     "intent_update_item",
+    "intent_act",
     "intent_answer",
     "intent_apply",
     "intent_decline",
     "intent_revert",
+    "intent_timing",
 }
 
 _PLACE_SCHEMA: dict[str, Any] = {
@@ -120,10 +125,11 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "the first option. Handle each one: the moment you pick one up, post a "
                 "`message` saying what you are about to do, with a `place` "
                 "where the result will land so a ghost box shows there while "
-                "you work; do it; then mark that message `done` with "
-                "intent_update_item. A board that shows nothing while the agent "
-                "works reads as an agent doing nothing. Reply in its thread with "
-                "intent_add_item, then call resolve_intent. A thread whose "
+                "you work; work out the ops; then one intent_act call: the "
+                "suggestion applied, that message marked `done`, and the "
+                "question (with options) or result, resolving when nothing is "
+                "left to ask. A board that shows nothing while the agent works "
+                "reads as an agent doing nothing. A thread whose "
                 "latest item is your own `question` with state `open` is "
                 "still waiting on the human: skip it and come back later. "
                 "Pass `canvas` to see one canvas's view; omit it for the "
@@ -168,6 +174,23 @@ def tool_definitions() -> list[dict[str, Any]]:
                         "description": "Outcome payload recorded on the intent.",
                     },
                 },
+                "required": ["id"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "intent_timing",
+            "description": (
+                "How long an intent took and how many calls it cost: seconds "
+                "from the ask to the first placed status (pickup), to the "
+                "first suggestion, to the last agent item and to resolution; "
+                "and the adapter calls made in that window, by kind and by "
+                "name, from the activity log. For looking at the loop itself, "
+                "not for handling the ask."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {"id": id_arg},
                 "required": ["id"],
                 "additionalProperties": False,
             },
@@ -330,12 +353,65 @@ def tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "intent_act",
+            "description": (
+                "Act, then ask, in one call: post a `suggestion` from `text` "
+                "and `ops`, apply it to the canvas at once, mark your placed "
+                "status messages (`done`) done, then ask a `question` with "
+                "options the human can press, or post a `result`, and "
+                "`resolve` the thread if nothing is left to ask. This is the "
+                "write to make once you know what to do: it replaces four "
+                "calls. The human sees the change on the board with keep and "
+                "put back beside it, and put back restores things exactly. "
+                "If the ops cannot be applied nothing after the suggestion "
+                "happens, the canvas is untouched, and the error names the "
+                "failing op. Pass `apply: false` to stage the suggestion for "
+                "the human to approve instead, for a change that is large or "
+                "hard to undo by eye."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": id_arg,
+                    "text": {"type": "string", "description": "What the change does, one or two sentences."},
+                    "ops": {
+                        "type": "array",
+                        "items": _OP_SCHEMA,
+                        "description": "Canvas ops, as for intent_add_item type=suggestion.",
+                    },
+                    "supersedes": {"type": "string", "description": "An earlier suggestion this replaces."},
+                    "apply": {"type": "boolean", "description": "Apply at once (default true)."},
+                    "done": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Ids of your placed status messages to mark done.",
+                    },
+                    "question": {
+                        "type": "object",
+                        "description": "`{text, options?, place?}`: the ask that follows the act.",
+                        "properties": {
+                            "text": {"type": "string"},
+                            "options": {"type": "array", "items": {"type": "string"}},
+                            "place": _PLACE_SCHEMA,
+                        },
+                        "required": ["text"],
+                        "additionalProperties": False,
+                    },
+                    "result": {"type": "string", "description": "A closing note, when there is nothing to ask."},
+                    "resolve": {"type": "boolean", "description": "Resolve the thread as well (default false)."},
+                },
+                "required": ["id", "text", "ops"],
+                "additionalProperties": False,
+            },
+        },
+        {
             "name": "intent_apply",
             "description": (
                 "Approve a pending suggestion and apply its ops to the canvas "
                 "all-or-nothing, attributed to the suggestion's author with the "
-                "approver recorded as the review. A human's verb: do not apply "
-                "your own suggestions. On failure nothing is written and the "
+                "approver recorded as the review. The human's verb for a staged "
+                "suggestion; an agent acting first uses intent_act, which "
+                "applies as it posts. On failure nothing is written and the "
                 "result names the failing op index and reason (`stale` when "
                 "an element no longer exists)."
             ),
@@ -385,9 +461,17 @@ def tool_definitions() -> list[dict[str, Any]]:
     ]
 
 
-async def call_tool(intents: IntentService, name: str, args: dict[str, Any], *, actor: Actor | None = None) -> str:
-    """Retain Anchor schemas and map its ask to the generic dispatcher."""
+async def call_tool(intents: IntentService, name: str, args: dict[str, Any], *,
+                    actor: Actor | None = None, activity: ActivityLog | None = None) -> str:
+    """Retain Anchor schemas and map its ask to the generic dispatcher.
+    ``activity`` is the project's call log, for ``intent_timing``."""
     from intent_layer.adapters.mcp import call_tool as dispatch
+    if name == "intent_timing":
+        intent = await intents.get(args["id"])
+        if intent is None:
+            return json.dumps({"error": "not_found", "id": args.get("id")})
+        calls = activity.read(since=intent.created_at) if activity is not None else []
+        return json.dumps({"timing": intent_timing(intent, calls)})
     if name == "intent_ask":
         slug = args["workspace_slug"]
         args = {**args, "origin_canvas_id": slug, "targets": [

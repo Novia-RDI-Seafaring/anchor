@@ -80,6 +80,25 @@ def create_cli(get_service: Callable[[], IntentService], *,
                                 "ops": parse(ops, "--ops"), "supersedes": supersedes,
                                 "place": parse(place, "--place"), "options": option})
 
+    @app.command("act")
+    def act(intent_id: str, text: str = typer.Option(..., "--text"),
+            ops: str = typer.Option(..., "--ops", help="Operations as a JSON array, or @path."),
+            supersedes: str | None = typer.Option(None, "--supersedes"),
+            stage: bool = typer.Option(False, "--stage", help="Stage for approval instead of applying."),
+            done: list[str] | None = typer.Option(None, "--done", help="A placed message to mark done; repeat."),
+            ask: str | None = typer.Option(None, "--ask", help="A question to follow the change."),
+            option: list[str] | None = typer.Option(None, "--option"),
+            ask_place: str | None = typer.Option(None, "--ask-place"),
+            result: str | None = typer.Option(None, "--result"),
+            resolve: bool = typer.Option(False, "--resolve")) -> None:
+        question = None
+        if ask:
+            question = {"text": ask, "options": option or None,
+                        "place": parse(ask_place, "--ask-place")}
+        run("intent_act", {"id": intent_id, "text": text, "ops": parse(ops, "--ops"),
+                           "supersedes": supersedes, "apply": not stage, "done": done or None,
+                           "question": question, "result": result, "resolve": resolve})
+
     @app.command("update-item")
     def update_item(intent_id: str, item_id: str,
                     text: str | None = typer.Option(None, "--text"),

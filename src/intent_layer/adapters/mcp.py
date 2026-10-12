@@ -16,7 +16,7 @@ from intent_layer.service import (
 TOOL_NAMES = {
     "list_pending_intents", "next_intent", "resolve_intent", "get_intent",
     "intent_ask", "intent_add_item", "intent_update_item", "intent_answer",
-    "intent_apply", "intent_revert", "intent_decline",
+    "intent_act", "intent_apply", "intent_revert", "intent_decline",
 }
 
 
@@ -45,6 +45,16 @@ def tool_definitions(*, target_schema: dict[str, Any] | None = None,
             "options": {"type": "array", "items": text}}, ["id", "type"]),
         "intent_update_item": ({**item, "text": text, "state": text, "place": place}, ["id", "item_id"]),
         "intent_answer": ({**item, "text": text}, ["id", "item_id", "text"]),
+        "intent_act": ({**ident, "text": text,
+                        "ops": {"type": "array", "items": op_schema or {"type": "object"}},
+                        "supersedes": text, "apply": {"type": "boolean"},
+                        "done": {"type": "array", "items": text},
+                        "question": {"type": "object", "properties": {
+                            "text": text, "options": {"type": "array", "items": text},
+                            "place": place}, "required": ["text"],
+                            "additionalProperties": False},
+                        "result": text, "resolve": {"type": "boolean"}},
+                       ["id", "text", "ops"]),
         "intent_apply": (item, ["id", "item_id"]),
         "intent_revert": (item, ["id", "item_id"]),
         "intent_decline": ({**item, "comment": text}, ["id", "item_id"]),
@@ -130,6 +140,19 @@ async def _dispatch(intents: IntentService, name: str, args: dict[str, Any]) -> 
                 args["id"], args["item_id"], text=args.get("text") or "",
             )
             return json.dumps({"intent": intent.to_dict(), "item": item.to_dict()})
+        if name == "intent_act":
+            out = await intents.act(
+                args["id"],
+                text=str(args.get("text") or ""),
+                ops=args.get("ops"),
+                supersedes=args.get("supersedes"),
+                apply=args.get("apply", True) is not False,
+                done=args.get("done"),
+                question=args.get("question"),
+                result=args.get("result"),
+                resolve=bool(args.get("resolve")),
+            )
+            return json.dumps(act_payload(out))
         if name == "intent_apply":
             intent, item, applied = await intents.apply_suggestion(
                 args["id"], args["item_id"],
@@ -152,6 +175,17 @@ async def _dispatch(intents: IntentService, name: str, args: dict[str, Any]) -> 
     except ThreadError as exc:
         return json.dumps(_error(exc))
     raise RuntimeError(f"unknown intent tool {name!r}")
+
+
+def act_payload(out: dict[str, Any]) -> dict[str, Any]:
+    """The wire shape of :meth:`IntentService.act`, shared by every transport."""
+    return {
+        "intent": out["intent"].to_dict(),
+        "suggestion": out["suggestion"].to_dict(),
+        "applied": out["applied"],
+        "question": out["question"].to_dict() if out["question"] else None,
+        "result": out["result"].to_dict() if out["result"] else None,
+    }
 
 
 def _error(exc: ThreadError) -> dict[str, Any]:
