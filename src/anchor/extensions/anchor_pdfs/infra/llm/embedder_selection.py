@@ -30,7 +30,7 @@ def build_embedder(
                 f"embed_model {model!r} is a remote embedding model but this "
                 "environment resolved no approved model credential; set "
                 "embed_model to a local model (for example "
-                "'hotchpotch/bekko-embedding-v1-a8m') or configure the environment's "
+                "'hotchpotch/bekko-embedding-v1-a25m') or configure the environment's "
                 "provider credential"
             )
         return OpenAIEmbedder(api_key=api_key, model=model, base_url=base_url)

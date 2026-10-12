@@ -1,11 +1,12 @@
 """Embedder backed by onnxruntime — local, no API key, no torch.
 
-Default model is ``hotchpotch/bekko-embedding-v1-a8m`` (384-d, multilingual,
-124 MiB ONNX graph). ``BAAI/bge-small-en-v1.5`` remains a supported local
-choice. Any sentence-transformers repo that ships ``onnx/model.onnx`` works:
-the pooling mode and maximum length are read from the repo's own
-``1_Pooling/config.json`` and ``sentence_bert_config.json``, so bge pools the
-CLS token and bekko mean-pools without a per-model table here.
+Default model is ``hotchpotch/bekko-embedding-v1-a25m`` (384-d, multilingual,
+190 MiB ONNX graph). The smaller ``hotchpotch/bekko-embedding-v1-a8m`` and
+``BAAI/bge-small-en-v1.5`` remain supported local choices. Any
+sentence-transformers repo that ships ``onnx/model.onnx`` works: the pooling
+mode and maximum length are read from the repo's own ``1_Pooling/config.json``
+and ``sentence_bert_config.json``, so bge pools the CLS token and bekko
+mean-pools without a per-model table here.
 
 Why onnxruntime rather than sentence-transformers: importing
 ``sentence_transformers`` pulls torch + transformers + scipy + sklearn — 4,114
@@ -35,7 +36,7 @@ import asyncio
 import threading
 from typing import Any
 
-DEFAULT_EMBED_MODEL = "hotchpotch/bekko-embedding-v1-a8m"
+DEFAULT_EMBED_MODEL = "hotchpotch/bekko-embedding-v1-a25m"
 
 #: Cap on one embed call, including the first-call import + session build.
 #: Loading numpy's native extension has been observed to wedge indefinitely

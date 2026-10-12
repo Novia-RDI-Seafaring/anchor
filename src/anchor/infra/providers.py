@@ -171,13 +171,13 @@ class EmbedOption:
 # models means re-embedding (`anchor embed --overwrite`).
 LOCAL_EMBED_OPTIONS: tuple[EmbedOption, ...] = (
     EmbedOption(
-        "hotchpotch/bekko-embedding-v1-a8m",
-        "bekko-a8m · 384d · multilingual, 2k-token regions · local, no egress",
+        "hotchpotch/bekko-embedding-v1-a25m",
+        "bekko-a25m · 384d · multilingual, 2k-token regions · local, no egress",
         remote=False,
     ),
     EmbedOption(
-        "hotchpotch/bekko-embedding-v1-a25m",
-        "bekko-a25m · 384d · multilingual, larger and slower · local, no egress",
+        "hotchpotch/bekko-embedding-v1-a8m",
+        "bekko-a8m · 384d · multilingual, smaller and faster · local, no egress",
         remote=False,
     ),
     EmbedOption("BAAI/bge-small-en-v1.5", "bge-small · 384d · English, 512 tokens · local, no egress", remote=False),

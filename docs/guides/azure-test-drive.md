@@ -17,7 +17,7 @@ With the Azure provider and the default **local** embedding model:
 
 If you pick a **remote** embedding model, region embedding input text is
 also sent to the configured endpoint. Keep the default
-local model (`bekko-embedding-v1-a8m`) to avoid that.
+local model (`bekko-embedding-v1-a25m`) to avoid that.
 
 ## Prerequisite: create and note your deployment(s)
 
@@ -70,7 +70,7 @@ anchor env create work \
 
 This creates env "work" and its default project. Give your **vision deployment
 name** as `--vision-model`. Drop `--embed-model` to keep the embedding default
-(`bekko-embedding-v1-a8m`, local) unless you deployed an embeddings model. `anchor env
+(`bekko-embedding-v1-a25m`, local) unless you deployed an embeddings model. `anchor env
 create`:
 
 - appends `/openai/v1/` if you pass the bare resource URL,

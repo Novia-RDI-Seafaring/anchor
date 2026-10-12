@@ -50,7 +50,7 @@ class EgressPolicy:
                 f"provider {provider!r} does not allow remote embedding model "
                 f"{model!r}: embedding would send document text off-host. "
                 "Set embed_model to a local model (for example "
-                "'hotchpotch/bekko-embedding-v1-a8m'), or move the project to an "
+                "'hotchpotch/bekko-embedding-v1-a25m'), or move the project to an "
                 "environment that allows model egress."
             )
         if require_credential and not self.remote_clients_enabled:

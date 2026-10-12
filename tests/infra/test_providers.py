@@ -88,7 +88,7 @@ def test_embed_options_depend_on_provider():
     for key in ("local", "ollama"):
         opts = embed_options_for(get_provider(key))
         assert all(not o.remote for o in opts)
-        assert opts[0].model == "hotchpotch/bekko-embedding-v1-a8m"
+        assert opts[0].model == "hotchpotch/bekko-embedding-v1-a25m"
         assert "BAAI/bge-small-en-v1.5" in {o.model for o in opts}
     # Endpoint providers also offer remote embeddings.
     for key in ("openai", "azure", "custom"):

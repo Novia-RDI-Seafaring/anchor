@@ -81,7 +81,7 @@ credential for that environment. Ollama needs no user key.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `embed_model` | `hotchpotch/bekko-embedding-v1-a8m` | Local gold-region embeddings; configured `text-embedding-*` models use an allowed endpoint instead |
+| `embed_model` | `hotchpotch/bekko-embedding-v1-a25m` | Local gold-region embeddings; configured `text-embedding-*` models use an allowed endpoint instead |
 | `polish_model` / `region_model` | `gpt-5.4` | Model or deployment names used when an endpoint-backed stage is enabled |
 | `openai_base_url` | Unset | Environment-owned OpenAI-compatible endpoint |
 | `docling_device` | `auto` | Local extraction accelerator selection |
@@ -93,8 +93,8 @@ Three local models run on-host with onnxruntime. None sends text anywhere.
 
 | Model | Notes |
 | --- | --- |
-| `hotchpotch/bekko-embedding-v1-a8m` | Default. Multilingual, reads up to 2,048 tokens per region. |
-| `hotchpotch/bekko-embedding-v1-a25m` | Same family, larger. Slightly better retrieval, about 2.5x slower. |
+| `hotchpotch/bekko-embedding-v1-a25m` | Default. Multilingual, reads up to 2,048 tokens per region. |
+| `hotchpotch/bekko-embedding-v1-a8m` | Same family, smaller. About 2.5x faster, weaker on Swedish and Finnish queries. |
 | `BAAI/bge-small-en-v1.5` | English only, reads 512 tokens per region. The default before bekko. |
 
 Vectors from different models cannot be compared. Search skips any document

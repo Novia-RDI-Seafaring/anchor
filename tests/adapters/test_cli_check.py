@@ -111,7 +111,7 @@ def test_check_local_only_echoes_no_egress_posture(tmp_path):
     # The asserted no-egress line + the model set a prefetch would warm.
     assert "local-only" in result.output
     assert "offline models" in result.output
-    assert "hotchpotch/bekko-embedding-v1-a8m" in result.output
+    assert "hotchpotch/bekko-embedding-v1-a25m" in result.output
 
 
 def test_check_local_only_with_remote_embed_model_exits_nonzero(tmp_path):
@@ -123,7 +123,7 @@ def test_check_local_only_with_remote_embed_model_exits_nonzero(tmp_path):
     cfg = _env_dir(tmp_path) / "env.toml"
     cfg.write_text(
         cfg.read_text().replace(
-            'embed_model = "hotchpotch/bekko-embedding-v1-a8m"',
+            'embed_model = "hotchpotch/bekko-embedding-v1-a25m"',
             'embed_model = "text-embedding-3-small"',
         ),
         encoding="utf-8",

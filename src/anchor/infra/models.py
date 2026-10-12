@@ -1,7 +1,7 @@
 """Model provisioning + offline enforcement for local-only ingests.
 
 Anchor's local stages load two model families from the HuggingFace hub on first
-use: the ONNX embedder (default ``hotchpotch/bekko-embedding-v1-a8m``) and
+use: the ONNX embedder (default ``hotchpotch/bekko-embedding-v1-a25m``) and
 docling's layout / OCR models. On a locked-down host that first-run download is
 unexpected outbound traffic. This module is the one place that:
 
@@ -29,7 +29,7 @@ HF_OFFLINE_VARS = ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE")
 
 #: Default local embedding model. The alternatives live in
 #: ``anchor.infra.providers.LOCAL_EMBED_OPTIONS``.
-DEFAULT_EMBED_MODEL = "hotchpotch/bekko-embedding-v1-a8m"
+DEFAULT_EMBED_MODEL = "hotchpotch/bekko-embedding-v1-a25m"
 
 
 @dataclass(frozen=True)
