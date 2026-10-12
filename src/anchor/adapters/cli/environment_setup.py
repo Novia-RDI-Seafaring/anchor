@@ -213,7 +213,7 @@ def _resolve_provider(flag: str | None, *, interactive: bool) -> Provider:
 def _resolve_embed_model(flag: str | None, provider: Provider, *, interactive: bool) -> str:
     """Pick the embedding model, with options that depend on the provider.
 
-    Local providers keep vectors on-host (single bge option). Endpoint
+    Local providers keep vectors on-host (bekko or bge). Endpoint
     providers additionally offer remote embeddings, which send text out.
     """
     if flag:

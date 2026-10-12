@@ -5,7 +5,7 @@ import pytest
 
 from anchor.adapters.mcp.services import _build_ingest_service
 from anchor.adapters.mcp.stdio_main import _config_for_data_dir, _preload_native_math
-from anchor.extensions.anchor_pdfs.infra.llm.onnx_bge_embedder import OnnxBgeEmbedder
+from anchor.extensions.anchor_pdfs.infra.llm.onnx_embedder import OnnxEmbedder
 from anchor.extensions.anchor_pdfs.infra.llm.openai_embedder import OpenAIEmbedder
 from anchor.extensions.anchor_pdfs.infra.llm.openai_md_polisher import OpenAIPageMdPolisher
 from anchor.extensions.anchor_pdfs.infra.llm.openai_region_extractor import OpenAIRegionExtractor
@@ -48,7 +48,7 @@ def test_mcp_wires_configured_local_embedder_without_openai_key(tmp_path, monkey
 
     ingest = _build_ingest_service(config, MemoryEventBus(), MemoryDocStore())
 
-    assert isinstance(ingest.embedder, OnnxBgeEmbedder)
+    assert isinstance(ingest.embedder, OnnxEmbedder)
     assert ingest.embed_model_id == "local/test-model"
 
 
@@ -89,7 +89,7 @@ def test_mcp_openai_key_does_not_override_configured_local_embedder(tmp_path):
 
     ingest = _build_ingest_service(config, MemoryEventBus(), MemoryDocStore())
 
-    assert isinstance(ingest.embedder, OnnxBgeEmbedder)
+    assert isinstance(ingest.embedder, OnnxEmbedder)
     assert ingest.embed_model_id == "local/test-model"
 
 
@@ -110,7 +110,7 @@ def test_mcp_local_only_builds_no_openai_client_despite_key(tmp_path, monkeypatc
 
     assert ingest.polisher is None
     assert ingest.region_extractor is None
-    assert isinstance(ingest.embedder, OnnxBgeEmbedder)
+    assert isinstance(ingest.embedder, OnnxEmbedder)
 
 
 def test_mcp_local_only_pins_offline_env(tmp_path, monkeypatch):
