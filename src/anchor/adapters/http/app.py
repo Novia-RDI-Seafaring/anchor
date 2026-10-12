@@ -42,6 +42,7 @@ from anchor.extensions.anchor_sysml.adapters.http import sysml_routes
 from anchor.extensions.anchor_sysml.core.services import SysmlService
 from anchor.infra.activity import ActivityLog
 from anchor.infra.config import AnchorConfig
+from anchor.infra.egress_policy import MissingModelCredentialError
 
 
 class _ActorAttributionMiddleware:
@@ -266,6 +267,13 @@ def build_app(
         # Surfaces both boundary validation and the defence-in-depth check
         # inside FsWorkspaceStore as a consistent 400.
         return JSONResponse({"detail": str(exc)}, status_code=400)
+
+    @app.exception_handler(MissingModelCredentialError)
+    async def _missing_credential(
+        _req: Request, exc: MissingModelCredentialError
+    ) -> JSONResponse:
+        # Only operations that call the remote model raise this; reads work.
+        return JSONResponse({"detail": str(exc), **exc.to_dict()}, status_code=503)
 
     @app.exception_handler(UnsafeUploadError)
     async def _unsafe_upload(_req: Request, exc: UnsafeUploadError) -> JSONResponse:
