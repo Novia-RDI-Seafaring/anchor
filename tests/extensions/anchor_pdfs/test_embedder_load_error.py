@@ -18,7 +18,7 @@ import threading
 
 import pytest
 
-from anchor.extensions.anchor_pdfs.infra.llm.onnx_bge_embedder import OnnxBgeEmbedder
+from anchor.extensions.anchor_pdfs.infra.llm.onnx_embedder import OnnxEmbedder
 
 
 def _install_failing_session(monkeypatch):
@@ -27,13 +27,13 @@ def _install_failing_session(monkeypatch):
     def _boom(*_args, **_kwargs):
         raise RuntimeError("hub unreachable")
 
-    monkeypatch.setattr(OnnxBgeEmbedder, "_ensure_loaded", _boom)
+    monkeypatch.setattr(OnnxEmbedder, "_ensure_loaded", _boom)
 
 
 def test_construction_neither_loads_nor_starts_a_thread():
     before = set(threading.enumerate())
 
-    emb = OnnxBgeEmbedder("nonexistent/model")
+    emb = OnnxEmbedder("nonexistent/model")
 
     assert set(threading.enumerate()) == before
     assert emb._session is None
@@ -42,12 +42,12 @@ def test_construction_neither_loads_nor_starts_a_thread():
 
 
 def test_model_id_is_recorded_for_embeddings_metadata():
-    assert OnnxBgeEmbedder("some/model").model_id == "some/model"
+    assert OnnxEmbedder("some/model").model_id == "some/model"
 
 
 @pytest.mark.asyncio
 async def test_embed_of_nothing_never_touches_the_model():
-    emb = OnnxBgeEmbedder("nonexistent/model")
+    emb = OnnxEmbedder("nonexistent/model")
 
     assert await emb.embed([]) == []
     assert emb._session is None
@@ -56,7 +56,7 @@ async def test_embed_of_nothing_never_touches_the_model():
 @pytest.mark.asyncio
 async def test_embed_reraises_the_load_error(monkeypatch):
     _install_failing_session(monkeypatch)
-    emb = OnnxBgeEmbedder("nonexistent/model")
+    emb = OnnxEmbedder("nonexistent/model")
 
     with pytest.raises(RuntimeError, match="hub unreachable"):
         await emb.embed(["anything"])

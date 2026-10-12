@@ -62,6 +62,13 @@ def _echo(message: str = "") -> None:
     typer.echo(message)
 
 
+_CREDENTIAL_SOURCE_LABELS = {
+    "env_file": "environment .env file",
+    "process": "process environment",
+    "config": "configuration",
+}
+
+
 def _echo_remedy(lines: list[str]) -> None:
     """Print the no-key gold-skip remedy under the api-key line, indented."""
     _echo("                   To fix, either:")
@@ -286,20 +293,32 @@ def check(
         )
         _echo_remedy(no_key_remedy_lines(env_dotenv))
     elif needs_key:
+        from anchor.infra.egress_policy import describe_credential
+
+        cred = describe_credential(cfg)
+        source = _CREDENTIAL_SOURCE_LABELS.get(cred["source"] or "", "process environment")
         if cfg.openai_api_key:
-            _echo("  api key        : ANCHOR_OPENAI_API_KEY detected ✓")
+            _echo(f"  api key        : ANCHOR_OPENAI_API_KEY detected ✓ (from {source})")
         elif key_ok:  # openai + personal key
-            _echo("  api key        : using OPENAI_API_KEY ✓")
+            _echo("  api key        : using OPENAI_API_KEY ✓ (from process environment)")
         else:
             _echo("  api key        : NOT set — gold extraction will be silently skipped")
             if personal:
                 _echo("                   (a personal OPENAI_API_KEY is set but is the wrong "
                            "credential for this endpoint)")
+            _echo("                   Apps like Claude Desktop do not inherit shell "
+                  "variables, so put the key in the .env, not only in your shell.")
             problems.append(
                 "API key missing, so gold extraction is skipped: "
                 + "; ".join(no_key_remedy_lines(env_dotenv))
             )
             _echo_remedy(no_key_remedy_lines(env_dotenv))
+        if key_ok and cred["source"] == "process" and not cred["env_file_has_key"]:
+            # A shell-only key works here but not for an app-launched MCP server.
+            _echo("                   Apps launched outside this shell (for example "
+                  "Claude Desktop) will not see it.")
+            _echo("                   To share it, set ANCHOR_OPENAI_API_KEY in "
+                  f"{cred['env_file'] or env_dotenv or 'the environment .env'}.")
     elif provider_key == "harness":
         _echo("  api key        : not needed — ingestion happens through the agent")
     elif provider_key in AGENT_CLI_PROVIDERS and not cfg.local_only:

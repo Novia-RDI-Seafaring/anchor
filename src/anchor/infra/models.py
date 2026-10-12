@@ -1,7 +1,7 @@
 """Model provisioning + offline enforcement for local-only ingests.
 
 Anchor's local stages load two model families from the HuggingFace hub on first
-use: the ONNX bge embedder (``BAAI/bge-small-en-v1.5``) and
+use: the ONNX embedder (default ``hotchpotch/bekko-embedding-v1-a25m``) and
 docling's layout / OCR models. On a locked-down host that first-run download is
 unexpected outbound traffic. This module is the one place that:
 
@@ -27,10 +27,9 @@ from dataclasses import dataclass
 #: first imported (the CLI sets them at startup when local-only is active).
 HF_OFFLINE_VARS = ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE")
 
-#: The embedding model is fixed to bge-small: the in-browser query embedder is
-#: pinned to it, so a different local model would break browser search (vector
-#: space mismatch). See ``anchor.infra.providers.LOCAL_EMBED_OPTIONS``.
-DEFAULT_EMBED_MODEL = "BAAI/bge-small-en-v1.5"
+#: Default local embedding model. The alternatives live in
+#: ``anchor.infra.providers.LOCAL_EMBED_OPTIONS``.
+DEFAULT_EMBED_MODEL = "hotchpotch/bekko-embedding-v1-a25m"
 
 
 @dataclass(frozen=True)
@@ -39,7 +38,7 @@ class ModelSpec:
 
     #: HuggingFace repo id (embedder) or a docling family label.
     repo_id: str
-    #: ``embed`` (onnxruntime bge graph) or ``docling`` (layout + OCR bundle).
+    #: ``embed`` (onnxruntime embedding graph) or ``docling`` (layout + OCR bundle).
     kind: str
     #: Human one-liner for the prefetch report.
     note: str
@@ -49,7 +48,7 @@ def required_models(embed_model: str = DEFAULT_EMBED_MODEL) -> tuple[ModelSpec, 
     """The model set a local-only ingest needs cached before going offline.
 
     A *remote* embedder (``text-embedding-*``) needs nothing local — it never
-    loads weights — so it is omitted; only the on-host bge model and the docling
+    loads weights — so it is omitted; only the on-host embedding model and the docling
     layout/OCR bundle are returned.
     """
     specs: list[ModelSpec] = []
@@ -58,7 +57,7 @@ def required_models(embed_model: str = DEFAULT_EMBED_MODEL) -> tuple[ModelSpec, 
             ModelSpec(
                 repo_id=embed_model,
                 kind="embed",
-                note="onnxruntime bge embedder (local search vectors)",
+                note="onnxruntime embedder (local search vectors)",
             )
         )
     specs.append(
@@ -99,7 +98,7 @@ def _truthy(value: str | None) -> bool:
 def prefetch_models(embed_model: str = DEFAULT_EMBED_MODEL) -> list[dict[str, object]]:
     """Download the required model set so a later offline ingest works.
 
-    Fetches each model exactly as ingest needs it (the ONNX bge graph for the
+    Fetches each model exactly as ingest needs it (the ONNX graph for the
     embedder, docling's converter for layout/OCR), which populates the
     HuggingFace cache. Must run with network access; an offline env would defeat
     the point, so this deliberately does NOT call :func:`enforce_offline`.
@@ -127,17 +126,23 @@ def prefetch_models(embed_model: str = DEFAULT_EMBED_MODEL) -> list[dict[str, ob
     return results
 
 
-#: Repo-relative artefacts an ONNX bge embed needs. Mirrors ``_ONNX_WEIGHTS`` /
-#: ``_TOKENIZER`` in ``anchor.extensions.anchor_pdfs.infra.llm.onnx_bge_embedder``
+#: Repo-relative artefacts an ONNX embed needs. Mirrors ``_ONNX_WEIGHTS``,
+#: ``_TOKENIZER``, ``_POOLING_CONFIG`` and ``_ST_CONFIG`` in
+#: ``anchor.extensions.anchor_pdfs.infra.llm.onnx_embedder``
 #: -- kept as literals here because ``infra`` must not import ``extensions``.
 #: If the embedder changes which files it opens, update both.
-_EMBED_ARTEFACTS = ("onnx/model.onnx", "tokenizer.json")
+_EMBED_ARTEFACTS = (
+    "onnx/model.onnx",
+    "tokenizer.json",
+    "1_Pooling/config.json",
+    "sentence_bert_config.json",
+)
 
 
 def _warm_embedder(model_id: str) -> None:
     """Force the embedder's ONNX graph and tokenizer into the cache.
 
-    Fetches exactly the artefacts the ONNX bge embedder opens, so a later
+    Fetches exactly the artefacts the ONNX embedder opens, so a later
     offline embed finds everything it needs. Downloading the files is enough;
     building the session adds nothing to the cache.
     """

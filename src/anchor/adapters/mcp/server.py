@@ -40,6 +40,10 @@ from anchor.infra.environment import (
 
 
 def _error_result(exc: Exception) -> str:
+    from anchor.infra.egress_policy import MissingModelCredentialError
+
+    if isinstance(exc, MissingModelCredentialError):
+        return _json.dumps(exc.to_dict())
     return _json.dumps({"error": str(exc)})
 
 
