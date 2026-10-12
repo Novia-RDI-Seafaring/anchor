@@ -326,7 +326,7 @@ def embed(
     """Embed gold regions of a document and persist to embeddings.json.
 
     Uses the environment's configured `embed_model`: the local
-    sentence-transformer BAAI/bge-small-en-v1.5 is the local-provider
+    hotchpotch/bekko-embedding-v1-a25m is the local-provider
     default, but a configured remote model (e.g. text-embedding-3-small)
     is used instead when the environment names one. Note that `anchor
     search` skips documents whose stored embed_model does not match the
