@@ -95,6 +95,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   const borderStyle = ph.active || d.dashed ? "border-dashed" : "border-solid";
   const setHoveredSourceRef = useUiStore((s) => s.setHoveredSourceRef);
   const clearHoveredSourceRef = useUiStore((s) => s.clearHoveredSourceRef);
+  const handMode = useUiStore((s) => s.navigationMode === "hand");
   const { id: workspaceSlug } = useParams<{ id: string }>();
 
   // Local working copy of rows so cell edits feel snappy. Replaced when
@@ -110,7 +111,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   }, [canonicalRows]);
 
   const persistRows = (next: Row[]) => {
-    if (!workspaceSlug) return;
+    if (!workspaceSlug || useUiStore.getState().navigationMode === "hand") return;
     canvases
       .patchNode(workspaceSlug, id, { data: { ...(d ?? {}), rows: next } })
       .catch((err) => {
@@ -449,6 +450,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                         judges read as one object. */}
                     {rowRef ? (
                       <RefReviewChip
+                        readOnly={handMode}
                         label={r.key || `row ${i + 1}`}
                         review={refReview(r)}
                         onRevalidate={
