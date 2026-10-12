@@ -9,7 +9,7 @@ from typing import Any
 from anchor.core.services.workspace_service import WorkspaceService
 from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.infra.config import AnchorConfig, discover_config_file
-from anchor.infra.egress_policy import resolve_egress_policy
+from anchor.infra.egress_policy import describe_credential, resolve_egress_policy
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +85,9 @@ async def build_status_summary(
             "polish_model": config.polish_model,
             "region_model": config.region_model,
         },
+        # Present or missing, and where it came from (env .env file vs the
+        # process environment). The key itself is never included.
+        "credential": describe_credential(config),
         "api_keys": {
             "anchor_openai_api_key": config.openai_api_key is not None,
             "openai_api_key": bool(os.environ.get("OPENAI_API_KEY")),
