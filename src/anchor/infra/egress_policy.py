@@ -189,21 +189,12 @@ def resolve_egress_policy(
 
 
 def environment_dotenv_path(config: AnchorConfig) -> Path | None:
-    """The private ``.env`` of the environment that owns ``config``'s project."""
-    from anchor.core.ids import validate_env_name
-    from anchor.infra.environment import envs_dir, identify_data_dir
+    """The private ``.env`` of the environment that owns ``config``'s project.
 
-    try:
-        env_name, _ = identify_data_dir(config.data_dir)
-        if not env_name:
-            # A managed project folder without its marker still sits under
-            # <envs>/<env>/projects/<project>/.
-            relative = config.data_dir.resolve().relative_to(envs_dir().resolve())
-            env_name = relative.parts[0]
-        validate_env_name(env_name)
-    except (OSError, ValueError):
-        return None
-    return envs_dir() / env_name / ".env"
+    Set by the environment resolver (``anchor.infra.environment``); ``None``
+    for a config built without an environment.
+    """
+    return getattr(config, "_env_dotenv_path", None)
 
 
 def describe_credential(config: AnchorConfig) -> dict[str, Any]:
