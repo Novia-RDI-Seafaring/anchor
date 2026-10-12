@@ -70,7 +70,9 @@ app.include_router(create_router(lambda: service, lambda: signals,
 ```
 
 The HTTP inbox supports list pending, list all, create, get and resolve, plus
-add/update item, answer, apply, revert and decline. `/events` sends an initial
+add/update item, act, answer, apply, revert and decline. Act posts a
+suggestion, applies it, marks placed messages done, and asks a question or
+posts a result in one call. `/events` sends an initial
 pending-count snapshot, then count nudges. Subscribe before reading the snapshot;
 payloads are pulled from the inbox. A disconnect or snapshot failure releases
 the subscription. The host application owns authentication, origin policy,

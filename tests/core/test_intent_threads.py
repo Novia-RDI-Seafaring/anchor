@@ -723,3 +723,84 @@ async def test_revert_puts_back_the_checks_and_verdicts_it_found():
     assert nodes["spec"]["data"] == spec_before
     # A removed element comes back with its own verdict, not a fresh "accepted".
     assert nodes["aside"]["data"] == aside_before
+
+
+# -- act, then ask, in one call --------------------------------------------- #
+async def test_act_does_the_four_things_in_order():
+    svc, ws, _bus, _clock = _services()
+    intent = await _thread(svc, ws)
+    with actor_scope(AGENT):
+        _, status = await svc.add_item(intent.id, type="message", text="renaming", place={"x": 1, "y": 2})
+        out = await svc.act(
+            intent.id,
+            text="Renamed N1",
+            ops=[{"type": "NodeUpdated", "payload": {"id": "n1", "fields": {"label": "Renamed"}}}],
+            done=[status.id],
+            question={"text": "Right name?", "options": ["Yes", "No"]},
+        )
+    assert out["suggestion"].state == SUGGESTION_APPLIED
+    assert out["applied"]["versions"]
+    state = await ws.get_state("cv")
+    assert next(n for n in state["nodes"] if n["id"] == "n1")["label"] == "Renamed"
+    thread = await svc.get(intent.id)
+    assert thread.find_item(status.id).state == "done"
+    assert out["question"].type == "question" and out["question"].options == ["Yes", "No"]
+    # The order on the thread is the order things happened: status, suggestion, question.
+    assert [i.type for i in thread.items] == ["message", "suggestion", "question"]
+    assert thread.status == "pending"
+
+
+async def test_act_can_stage_close_and_resolve():
+    svc, ws, _bus, _clock = _services()
+    intent = await _thread(svc, ws)
+    with actor_scope(AGENT):
+        out = await svc.act(
+            intent.id,
+            text="Renamed N1",
+            ops=[{"type": "NodeUpdated", "payload": {"id": "n1", "fields": {"label": "Renamed"}}}],
+            apply=False,
+            result="Done, nothing to ask.",
+            resolve=True,
+        )
+    assert out["suggestion"].state == SUGGESTION_PENDING and out["applied"] is None
+    assert out["result"].type == "result" and out["question"] is None
+    assert (await svc.get(intent.id)).status == "resolved"
+    state = await ws.get_state("cv")
+    assert next(n for n in state["nodes"] if n["id"] == "n1")["label"] == "N1"
+
+
+async def test_act_stops_at_a_failed_apply():
+    svc, ws, _bus, _clock = _services()
+    intent = await _thread(svc, ws)
+    with actor_scope(AGENT):
+        _, status = await svc.add_item(intent.id, type="message", text="renaming", place={"x": 1, "y": 2})
+        with pytest.raises(SuggestionApplyError):
+            await svc.act(
+                intent.id,
+                text="Rename a ghost",
+                ops=[{"type": "NodeUpdated", "payload": {"id": "nope", "fields": {"label": "x"}}}],
+                done=[status.id],
+                question={"text": "Right?"},
+            )
+    thread = await svc.get(intent.id)
+    # The suggestion is there, pending; nothing after it happened.
+    assert [i.type for i in thread.items] == ["message", "suggestion"]
+    assert thread.items[1].state == SUGGESTION_PENDING
+    assert thread.find_item(status.id).state == "planned"
+
+
+async def test_act_refuses_a_question_without_words():
+    svc, ws, _bus, _clock = _services()
+    intent = await _thread(svc, ws)
+    with actor_scope(AGENT):
+        with pytest.raises(ThreadError) as exc:
+            await svc.act(
+                intent.id, text="x",
+                ops=[{"type": "NodeUpdated", "payload": {"id": "n1", "fields": {"label": "y"}}}],
+                question={"options": ["a"]},
+            )
+    assert exc.value.code == "invalid_item"
+    # Refused before anything was posted or applied.
+    assert (await svc.get(intent.id)).items == []
+    state = await ws.get_state("cv")
+    assert next(n for n in state["nodes"] if n["id"] == "n1")["label"] == "N1"
