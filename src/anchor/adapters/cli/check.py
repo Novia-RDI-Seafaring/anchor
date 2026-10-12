@@ -91,7 +91,11 @@ def check(
     project: str = typer.Option(
         None,
         "--project",
-        help="Project NAME to check (default: the cwd project, then the env default).",
+        help=(
+            "Project NAME to check, or the path to an `anchor init` folder "
+            "(default: the cwd project, then the env default). A folder's anchor.toml "
+            "binds its environment, so --env must match or be omitted."
+        ),
     ),
 ) -> None:
     """Verify the resolved project + data zone + config.
@@ -101,10 +105,12 @@ def check(
     says which project that is and where it came from, so "where will my
     ingest land?" is answered before anything else (#303).
     """
+    from anchor.adapters.cli.common import resolve_project_or_exit
     from anchor.infra.egress_policy import EgressPolicyError
     from anchor.infra.environment import (
         LEGACY_DATA_DIR,
         get_use,
+        looks_like_project_path,
         resolve_project,
     )
     from anchor.infra.environment_storage import (
@@ -115,7 +121,7 @@ def check(
 
     env_flag, project_flag = env, project
     try:
-        resolved = resolve_project(env_flag, project_flag)
+        resolved = resolve_project_or_exit(env_flag, project_flag)
     except EgressPolicyError as exc:
         # A config whose egress claims contradict each other (for example
         # local_only with a remote text-embedding-* embed_model, #271) must
@@ -133,7 +139,9 @@ def check(
     # Where the project name came from — mirrors resolve_project's own
     # precedence so the report never claims a source the resolver didn't use.
     marker_root = _walk_up_for_project()
-    if project_flag is not None:
+    if project_flag is not None and looks_like_project_path(project_flag):
+        source = f"from --project {project_dir.parent / PROJECT_MARKER_FILENAME}"
+    elif project_flag is not None:
         source = "from --project"
     elif env_flag is None and marker_root is not None:
         source = f"from {marker_root / PROJECT_MARKER_FILENAME}"

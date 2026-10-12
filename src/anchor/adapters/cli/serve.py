@@ -10,6 +10,7 @@ from typing import Annotated
 
 import typer
 
+from anchor.adapters.cli.common import PROJECT_OPTION_HELP, resolve_project_or_exit
 from anchor.adapters.project_runtime import (
     RuntimeProfile,
     build_project_runtime_for_data_dir,
@@ -100,7 +101,9 @@ def serve(
     ),
     env: str = typer.Option(None, "--env", help="Environment to serve (default: resolved)."),
     project: str = typer.Option(
-        None, "--project", help="Project to serve (default: the environment's default)."
+        None,
+        "--project",
+        help=f"Project to serve (default: the environment's default). {PROJECT_OPTION_HELP}",
     ),
     host: str = typer.Option(
         "127.0.0.1",
@@ -128,9 +131,7 @@ def serve(
     # --data-dir was given. One server serves one project (a browser session is
     # one project); point it at a non-default project with --project.
     if data_dir is None:
-        from anchor.infra.environment import resolve_project
-
-        rp = resolve_project(env, project)
+        rp = resolve_project_or_exit(env, project)
         data_dir = rp.data_dir
         typer.echo(f"[anchor serve] env={rp.environment.name} project={rp.name}", err=True)
 

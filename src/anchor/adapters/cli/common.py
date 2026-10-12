@@ -27,6 +27,45 @@ def default_data_dir() -> Path:
 DEFAULT_DATA_DIR = default_data_dir()
 
 
+PROJECT_OPTION_HELP = (
+    "Project NAME in the environment, or the path to an `anchor init` folder "
+    "(one holding an anchor.toml; `.`, `~/...` and anything with a slash is a "
+    "path). A folder's anchor.toml binds its environment, so --env must match "
+    "or be omitted."
+)
+
+
+def resolve_project_or_exit(env: str | None, project: str | None):
+    """``resolve_project`` for a CLI command: a bad selector is a one-line usage error.
+
+    A project name that fails validation, a folder without an ``anchor.toml``,
+    an ``--env`` that contradicts the folder's marker, or an environment that
+    is not set up all exit with code 2 and the resolver's own message, so the
+    user reads what to fix rather than a traceback.
+    """
+    from anchor.core.ids import InvalidEnvNameError, InvalidProjectNameError
+    from anchor.infra.environment import (
+        NoEnvironmentError,
+        NoProjectError,
+        NotAProjectFolderError,
+        ProjectEnvMismatchError,
+        resolve_project,
+    )
+
+    try:
+        return resolve_project(env, project)
+    except (
+        InvalidEnvNameError,
+        InvalidProjectNameError,
+        NoEnvironmentError,
+        NoProjectError,
+        NotAProjectFolderError,
+        ProjectEnvMismatchError,
+    ) as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(code=2) from None
+
+
 def read_json_arg(value: str) -> str:
     """Return the raw JSON text for a CLI value, dereferencing ``@path``.
 
