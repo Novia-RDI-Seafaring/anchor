@@ -23,6 +23,10 @@ or choose a drawing tool. Middle-button and right-button dragging pan the view
 while another tool is active. Navigation keys leave text editors, source controls,
 and mark-up alone.
 
+Double-click empty canvas in Select to place a text element and start typing.
+Press Enter or click away to save, or Escape to cancel the current text edit.
+Double-click an existing shape to edit its label.
+
 ## Common objects
 
 | Node type | Purpose |
