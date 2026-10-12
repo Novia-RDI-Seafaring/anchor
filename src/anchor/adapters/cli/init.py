@@ -26,7 +26,7 @@ def init(
         None,
         "--provider",
         help="Provision the environment with this provider if it does not exist "
-        "(local|ollama|openai|azure|custom|harness). Used only when the env is created.",
+        "(local|ollama|openai|azure|custom|harness|claude|codex). Used only when the env is created.",
     ),
     embed_model: str = typer.Option(None, "--embed-model", help="Embedding model (with --provider)."),
     base_url: str = typer.Option(None, "--base-url", help="Endpoint (with --provider)."),

@@ -16,6 +16,7 @@ import sys
 import typer
 
 from anchor.infra.config import AnchorConfig
+from anchor.infra.egress_policy import AGENT_CLI_PROVIDERS
 from anchor.infra.providers import get_provider, no_key_remedy_lines, normalize_base_url
 
 # Providers that authenticate against an endpoint (mirror of init's set).
@@ -211,6 +212,8 @@ def check(
     elif provider_key == "harness":
         _echo("  vision         : your agent harness - gold extraction runs through")
         _echo("                   ingest sessions (begin -> submit pages -> finalize)")
+    elif provider_key in AGENT_CLI_PROVIDERS:
+        _echo(f"  vision         : your `{provider_key}` CLI, model {cfg.region_model}")
     else:
         _echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com (public)'}")
         _echo(f"  vision model   : {cfg.region_model}")
@@ -259,7 +262,7 @@ def check(
     # local/ollama/harness keep content on-host → no key. openai accepts a
     # personal OPENAI_API_KEY. azure/custom (and any configured endpoint) need
     # the endpoint's own key in ANCHOR_OPENAI_API_KEY — a personal key is wrong there.
-    if provider_key in ("local", "ollama", "harness"):
+    if provider_key in ("local", "ollama", "harness", *AGENT_CLI_PROVIDERS):
         needs_key = False
         key_ok = True
     elif provider_key == "openai":
@@ -299,6 +302,9 @@ def check(
             _echo_remedy(no_key_remedy_lines(env_dotenv))
     elif provider_key == "harness":
         _echo("  api key        : not needed — ingestion happens through the agent")
+    elif provider_key in AGENT_CLI_PROVIDERS and not cfg.local_only:
+        _echo("  api key        : not needed — the CLI answers on its own sign-in")
+        _check_agent_cli(provider_key, problems)
     else:
         _echo("  api key        : not needed (no egress)")
 
@@ -410,6 +416,24 @@ def _probe_ocr_backend() -> tuple[bool, str | None]:
         return False, "missing"
     except ImportError as exc:
         return False, str(exc)
+
+
+def _check_agent_cli(provider_key: str, problems: list[str]) -> None:
+    """Confirm the provider's CLI is installed and signed in; never print account details."""
+    from anchor.extensions.anchor_pdfs.infra.llm.agent_cli import agent_cli_for
+
+    cli = agent_cli_for(provider_key)
+    if not cli.found():
+        _echo(f"  {provider_key} cli     : NOT found on PATH")
+        problems.append(
+            f"The `{cli.binary}` CLI is not installed or not on PATH; install it and "
+            f"{cli.sign_in_hint}."
+        )
+        return
+    ok, detail = cli.sign_in()
+    _echo(f"  {provider_key} cli     : {detail}{' ✓' if ok else ''}")
+    if not ok:
+        problems.append(f"The `{cli.binary}` CLI is not signed in; {cli.sign_in_hint}.")
 
 
 def _probe(cfg: AnchorConfig, embed_remote: bool, problems: list[str]) -> None:

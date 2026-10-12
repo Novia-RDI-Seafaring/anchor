@@ -49,6 +49,8 @@ Create another environment when the processing destination changes.
 | --- | --- | --- |
 | `local` | Skipped | No ANCHOR-side remote model client |
 | `harness` | Agent ingestion session | Connected agent and its chosen model provider |
+| `claude` | Your `claude` CLI, per page | Anthropic, through your own Claude Code sign-in |
+| `codex` | Your `codex` CLI, per page | OpenAI, through your own Codex sign-in |
 | `ollama` | Configured vision model | Configured Ollama endpoint |
 | `openai` | Configured vision model | Public OpenAI endpoint |
 | `azure` | Configured deployment | Configured Azure OpenAI endpoint |

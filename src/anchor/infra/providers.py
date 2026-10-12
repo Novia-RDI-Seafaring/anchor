@@ -65,6 +65,26 @@ PROVIDERS: tuple[Provider, ...] = (
         "harness's own provider agreement. Anchor creates no additional model endpoint.",
     ),
     Provider(
+        key="claude",
+        label="Claude Code (your Claude plan, no API key)",
+        zone="Anthropic - pages go through your own Claude Code sign-in",
+        does_vision=True,
+        base_url_required=False,
+        default_vision_model="sonnet",
+        note="Polish and gold regions run through the `claude` CLI you have installed and "
+        "signed in to. Anchor never touches the credential. Embeddings stay local.",
+    ),
+    Provider(
+        key="codex",
+        label="Codex (your ChatGPT plan, no API key)",
+        zone="OpenAI - pages go through your own Codex sign-in",
+        does_vision=True,
+        base_url_required=False,
+        default_vision_model="default",
+        note="Polish and gold regions run through the `codex` CLI you have installed and "
+        "signed in to (`codex login`). Anchor never touches the credential. Embeddings stay local.",
+    ),
+    Provider(
         key="ollama",
         label="Ollama (self-hosted)",
         zone="your machine / LAN · no internet egress",
