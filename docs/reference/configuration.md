@@ -24,6 +24,7 @@ Inside an initialized working folder, CLI commands resolve the nearest
 `anchor.toml` unless explicitly overridden. Outside that folder, selection uses
 explicit `--env` / `--project` where supported, `ANCHOR_ENV` / `ANCHOR_PROJECT`,
 the saved `anchor use` selection, and then the default environment and project.
+`--project` accepts a project name or the path to an `anchor init` folder.
 An explicit `--data-dir` selects a raw storage directory for commands that
 support it. Use command help for the available selectors.
 
@@ -49,6 +50,8 @@ Create another environment when the processing destination changes.
 | --- | --- | --- |
 | `local` | Skipped | No ANCHOR-side remote model client |
 | `harness` | Agent ingestion session | Connected agent and its chosen model provider |
+| `claude` | Your `claude` CLI, per page | Anthropic, through your own Claude Code sign-in |
+| `codex` | Your `codex` CLI, per page | OpenAI, through your own Codex sign-in |
 | `ollama` | Configured vision model | Configured Ollama endpoint |
 | `openai` | Configured vision model | Public OpenAI endpoint |
 | `azure` | Configured deployment | Configured Azure OpenAI endpoint |
@@ -81,11 +84,35 @@ credential for that environment. Ollama needs no user key.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `embed_model` | `BAAI/bge-small-en-v1.5` | Local gold-region embeddings; configured `text-embedding-*` models use an allowed endpoint instead |
+| `embed_model` | `hotchpotch/bekko-embedding-v1-a25m` | Local gold-region embeddings; configured `text-embedding-*` models use an allowed endpoint instead |
 | `polish_model` / `region_model` | `gpt-5.4` | Model or deployment names used when an endpoint-backed stage is enabled |
 | `openai_base_url` | Unset | Environment-owned OpenAI-compatible endpoint |
 | `docling_device` | `auto` | Local extraction accelerator selection |
 | `local_only` | Provider-dependent | Offline/no-remote-client policy; `local` environments enable it |
+
+### Local embedding models
+
+Three local models run on-host with onnxruntime. None sends text anywhere.
+
+| Model | Notes |
+| --- | --- |
+| `hotchpotch/bekko-embedding-v1-a25m` | Default. Multilingual, reads up to 2,048 tokens per region. |
+| `hotchpotch/bekko-embedding-v1-a8m` | Same family, smaller. About 2.5x faster, weaker on Swedish and Finnish queries. |
+| `BAAI/bge-small-en-v1.5` | English only, reads 512 tokens per region. The default before bekko. |
+
+Vectors from different models cannot be compared. Search skips any document
+embedded with a model other than the active one and lists it under `skipped`.
+To switch models, set `embed_model` in the environment's `env.toml` and
+re-embed:
+
+```bash
+anchor embed --overwrite
+```
+
+To go back to bge, set `embed_model = "BAAI/bge-small-en-v1.5"` and run the same
+command. Environments created before bekko became the default keep bge until
+you change them. For an offline (`local_only`) environment, run
+`anchor models prefetch` first so the new weights are cached.
 
 ### Azure OpenAI
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import copy
 import json as _json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,7 @@ from anchor.extensions.anchor_cad import mcp_handlers as cad_handlers
 from anchor.extensions.anchor_fmus import mcp_handlers as fmu_handlers
 from anchor.extensions.anchor_pdfs import mcp_handlers as pdf_handlers
 from anchor.extensions.anchor_sysml import mcp_handlers as sysml_handlers
+from anchor.infra.activity import ActivityLog
 from anchor.infra.environment import (
     NoEnvironmentError,
     NoProjectError,
@@ -40,6 +42,10 @@ from anchor.infra.environment import (
 
 
 def _error_result(exc: Exception) -> str:
+    from anchor.infra.egress_policy import MissingModelCredentialError
+
+    if isinstance(exc, MissingModelCredentialError):
+        return _json.dumps(exc.to_dict())
     return _json.dumps({"error": str(exc)})
 
 
@@ -456,6 +462,15 @@ def build_mcp_server(
     @app.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
         args = dict(arguments)
+        # The activity log counts the call whatever happens to it: an agent's
+        # cost is in calls, and a failed one cost a turn too. The project is
+        # read before the handlers pop it from the arguments.
+        started = time.perf_counter()
+        log_dir = None
+        try:
+            log_dir = Path(router.bundle_for(args.get("project")).config.data_dir)
+        except Exception:  # noqa: BLE001 -- no project resolves, no log
+            log_dir = None
         try:
             if name == tiering.CAPABILITIES_TOOL_NAME:
                 try:
@@ -497,6 +512,7 @@ def build_mcp_server(
                     raise RuntimeError("intent queue is not available")
                 text = await handlers_intents.call_tool(
                     b.intents, name, args, actor=_client_actor(),
+                    activity=ActivityLog(Path(b.config.data_dir)),
                 )
             elif name in fmu_names:
                 b = get_bundle(args.pop("project", None))
@@ -534,6 +550,13 @@ def build_mcp_server(
             )
         except Exception as exc:  # noqa: BLE001  - surface to caller as JSON
             text = _error_result(exc)
+        if log_dir is not None:
+            ActivityLog(log_dir).record(
+                kind="mcp",
+                name=name,
+                ms=round((time.perf_counter() - started) * 1000, 1),
+                intent=arguments.get("id") if name.startswith("intent_") or name == "resolve_intent" else None,
+            )
         # Promote inline-image envelopes (`{"_mcp_image_b64": ..., "_mcp_mime": ...}`)
         # to MCP ImageContent so the host harness renders the bytes inline.
         # Any other return shape stays TextContent.

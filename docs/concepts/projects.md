@@ -114,6 +114,8 @@ project        : --project  >  ANCHOR_PROJECT  >  anchor use  >  "default"
 - **CLI / server** walk up from the current folder to the nearest `anchor.toml`
   and resolve that project with no flags. Otherwise they read `--env` /
   `--project`, the `anchor use` session selection, or the defaults.
+  `--project` also accepts the path to an `anchor init` folder
+  (`anchor serve --project ~/work/pumps`), resolved from its `anchor.toml`.
 - **MCP / agents** pin one environment per server (`anchor-mcp --env <name>`)
   and pass the `project` per call. Two environments are two named servers, so
   an agent never crosses a zone by accident.

@@ -14,6 +14,7 @@ from pathlib import Path
 import typer
 
 from anchor.infra.config import AnchorConfig
+from anchor.infra.egress_policy import AGENT_CLI_PROVIDERS
 from anchor.infra.providers import (
     PROVIDERS,
     Provider,
@@ -212,7 +213,7 @@ def _resolve_provider(flag: str | None, *, interactive: bool) -> Provider:
 def _resolve_embed_model(flag: str | None, provider: Provider, *, interactive: bool) -> str:
     """Pick the embedding model, with options that depend on the provider.
 
-    Local providers keep vectors on-host (single bge option). Endpoint
+    Local providers keep vectors on-host (bekko or bge). Endpoint
     providers additionally offer remote embeddings, which send text out.
     """
     if flag:
@@ -395,7 +396,7 @@ def _provision_environment(
 def create_environment(
     name: str = typer.Argument(None, help="Environment name to create (required)."),
     env: str = typer.Option(None, "--env", help="Environment name to create (same as NAME)."),
-    provider: str = typer.Option(None, "--provider", help="local|harness|ollama|openai|azure|custom."),
+    provider: str = typer.Option(None, "--provider", help="local|harness|claude|codex|ollama|openai|azure|custom."),
     embed_model: str = typer.Option(None, "--embed-model", help="Local embedding model id."),
     base_url: str = typer.Option(None, "--base-url", help="Endpoint for the chosen provider."),
     vision_model: str = typer.Option(
@@ -505,7 +506,10 @@ def _report(env_name: str, prov: Provider) -> None:
     # for a named (azure/custom) endpoint - only ANCHOR_OPENAI_API_KEY counts there.
     personal = bool(os.environ.get("OPENAI_API_KEY"))
     key_ok = has_anchor_key or (prov.key == "openai" and personal)
-    if prov.does_vision:
+    if prov.key in AGENT_CLI_PROVIDERS:
+        typer.echo(f"  vision         : your `{prov.key}` CLI, model {cfg.polish_model}")
+        typer.echo("  api key        : not needed - the CLI answers on its own sign-in")
+    elif prov.does_vision:
         typer.echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com'}")
         typer.echo(f"  vision model   : {cfg.polish_model}")
         if needs_key:

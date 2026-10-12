@@ -4,10 +4,14 @@
 ``anchor intent next``                 peek the oldest pending intent.
 ``anchor intent resolve <id>``         mark an intent resolved with a result.
 ``anchor intent show <id>``            one full record incl. thread items.
+``anchor intent timing <id>``          how long an intent took and how many calls it cost.
+``anchor activity [--since] [--limit]`` the activity log, one entry per adapter call.
 ``anchor intent ask <slug> --text ... --target <node>...``
                                        create a thread anchored to a selection.
 ``anchor intent add-item <id> --type ... [--text] [--ops] [--supersedes] [--option]``
                                        append a message / question / suggestion / result.
+``anchor intent act <id> --text ... --ops ... [--done] [--ask] [--result] [--resolve]``
+                                       suggest, apply, mark done and ask in one call.
 ``anchor intent answer <id> <item> --text ...``   answer a question.
 ``anchor intent apply <id> <item>``               approve + apply a suggestion.
 ``anchor intent decline <id> <item> [--comment]`` decline a suggestion.
@@ -188,6 +192,42 @@ def intent_show(
     typer.echo(json.dumps({"intent": intent.to_dict()}, indent=2))
 
 
+@intent_app.command("timing")
+def intent_timing_cmd(
+    intent_id: str = typer.Argument(..., help="The intent id."),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """How long an intent took and how many calls it cost."""
+    from anchor.infra.activity import ActivityLog
+    from intent_layer.timing import intent_timing
+
+    svc = _intent_service(data_dir)
+    intent = asyncio.run(svc.get(intent_id))
+    if intent is None:
+        typer.echo(json.dumps({"error": "not_found", "id": intent_id}), err=True)
+        raise typer.Exit(code=1)
+    calls = ActivityLog(_runtime_data_dir(data_dir)).read(since=intent.created_at)
+    typer.echo(json.dumps({"timing": intent_timing(intent, calls)}, indent=2))
+
+
+def _runtime_data_dir(data_dir: Path) -> Path:
+    from anchor.adapters.cli.services import _build_canvas_runtime
+
+    return Path(_build_canvas_runtime(data_dir).config.data_dir)
+
+
+def activity(
+    since: float | None = typer.Option(None, "--since", help="Unix timestamp; entries from here on."),
+    limit: int = typer.Option(2000, "--limit", help="At most this many, newest kept."),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """The activity log: one entry per adapter call, oldest first."""
+    from anchor.infra.activity import ActivityLog
+
+    entries = ActivityLog(_runtime_data_dir(data_dir)).read(since=since, limit=limit)
+    typer.echo(json.dumps({"entries": entries, "count": len(entries)}, indent=2))
+
+
 @intent_app.command("ask")
 def intent_ask(
     slug: str = typer.Argument(..., help="The canvas the ask is anchored to."),
@@ -250,6 +290,45 @@ def intent_add_item(
         )
     )
     typer.echo(json.dumps({"intent": intent.to_dict(), "item": item.to_dict()}, indent=2))
+
+
+@intent_app.command("act")
+def intent_act(
+    intent_id: str = typer.Argument(..., help="The intent (thread) id."),
+    text: str = typer.Option(..., "--text", help="What the change does."),
+    ops: str = typer.Option(..., "--ops", help="Ops as a JSON array, or @path to a JSON file."),
+    supersedes: str | None = typer.Option(None, "--supersedes", help="An earlier suggestion this revises."),
+    stage: bool = typer.Option(False, "--stage", help="Stage for the human instead of applying."),
+    done: list[str] | None = typer.Option(None, "--done", help="A placed status to mark done; repeat."),
+    ask: str | None = typer.Option(None, "--ask", help="A question to follow the change."),
+    option: list[str] | None = typer.Option(None, "--option", help="An answer to offer; repeat."),
+    ask_place: str | None = typer.Option(None, "--ask-place", help="Where the question sits: 'x,y' or 'x,y,w,h'."),
+    result: str | None = typer.Option(None, "--result", help="A closing note."),
+    resolve: bool = typer.Option(False, "--resolve", help="Resolve the thread as well."),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Act, then ask, in one call: suggest, apply, mark statuses done, ask."""
+    from intent_layer.adapters.mcp import act_payload
+
+    question = None
+    if ask:
+        question = {"text": ask, "options": list(option) if option else None, "place": _place_arg(ask_place)}
+    parsed_ops = _json_arg(ops, "--ops")
+    svc = _intent_service(data_dir)
+    out = _run(
+        svc.act(
+            intent_id,
+            text=text,
+            ops=parsed_ops,
+            supersedes=supersedes,
+            apply=not stage,
+            done=list(done) if done else None,
+            question=question,
+            result=result,
+            resolve=resolve,
+        )
+    )
+    typer.echo(json.dumps(act_payload(out), indent=2))
 
 
 @intent_app.command("update-item")

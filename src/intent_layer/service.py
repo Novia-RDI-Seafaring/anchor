@@ -32,6 +32,7 @@ from intent_layer.models import (
     INTENT_KINDS,
     PENDING,
     PLACE_STATES,
+    PLACED_DONE,
     PLACED_PLANNED,
     QUESTION_ANSWERED,
     RESOLVED,
@@ -408,6 +409,72 @@ class IntentService:
         await self._store.replace(intent)
         await self._signal_pending(intent.origin_canvas_id)
         return intent, item, application.result
+
+    async def act(
+        self,
+        intent_id: str,
+        *,
+        text: str,
+        ops: list[dict[str, Any]],
+        supersedes: str | None = None,
+        apply: bool = True,
+        done: list[str] | None = None,
+        question: dict[str, Any] | None = None,
+        result: str | None = None,
+        resolve: bool = False,
+    ) -> dict[str, Any]:
+        """Act, then ask, in one call.
+
+        The round trip an agent takes after it knows what to do was four
+        calls: post the suggestion, apply it, mark the placed statuses done,
+        ask the question. Each is a turn for an agent, with its own thinking
+        between. This does all of them: a ``suggestion`` from ``text`` and
+        ``ops``, applied at once unless ``apply`` is false; the ``done``
+        messages set to ``done``; then a ``question`` (``{text, options?,
+        place?}``) or a ``result`` text, or both; and ``resolve`` closes the
+        thread. The order is the order things should happen in: nothing is
+        marked done or asked about until the change is applied. A question
+        without text is refused before anything is posted. A suggestion that
+        cannot be applied raises :class:`SuggestionApplyError` and leaves the
+        thread as it was, plus the pending suggestion.
+
+        Returns ``{intent, suggestion, applied, question, result}`` with the
+        item records and the host's apply metadata, for the transport
+        adapters to pass on as they are.
+        """
+        if question and (
+            not isinstance(question, dict) or not str(question.get("text") or "").strip()
+        ):
+            raise ThreadError("invalid_item", "question needs text")
+        intent, suggestion = await self.add_item(
+            intent_id, type="suggestion", text=text, ops=ops, supersedes=supersedes,
+        )
+        applied: dict[str, Any] | None = None
+        if apply:
+            intent, suggestion, applied = await self.apply_suggestion(intent_id, suggestion.id)
+        for item_id in done or []:
+            intent, _ = await self.update_item(intent_id, item_id, state=PLACED_DONE)
+        asked: ThreadItem | None = None
+        if question:
+            intent, asked = await self.add_item(
+                intent_id,
+                type="question",
+                text=str(question["text"]),
+                options=question.get("options"),
+                place=question.get("place"),
+            )
+        told: ThreadItem | None = None
+        if result:
+            intent, told = await self.add_item(intent_id, type="result", text=result)
+        if resolve:
+            intent = await self.resolve(intent_id, result={"built": text})
+        return {
+            "intent": intent,
+            "suggestion": suggestion,
+            "applied": applied,
+            "question": asked,
+            "result": told,
+        }
 
     async def revert_suggestion(
         self, intent_id: str, item_id: str,

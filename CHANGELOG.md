@@ -11,6 +11,18 @@ next version section on tag.
 
 ### Fixed
 
+- `anchor serve --project <folder>` works. The CLI's `--project` used to take a
+  project name only, so a folder path failed with an invalid-name error while
+  `anchor-mcp --project <folder>` accepted the same path. `serve`, `check` and
+  `serve-info` now take a name or the path to an `anchor init` folder: anything
+  with a slash, or starting with `.` or `~`, is a path, and so is a bare word
+  that names an `anchor init` folder in the current directory. The folder's
+  `anchor.toml` picks the environment and the project name, and its config
+  layers the same way as running inside the folder. A folder without an
+  `anchor.toml` is reported in one line as not an `anchor init` project, and
+  an `--env` that contradicts the folder's marker is an error rather than a
+  silent switch of data zone. Plain names behave as before.
+
 - A hover-opened source pane can actually be read. In `viewer` hover mode the
   pane opens on the left edge while the link that opened it sits out in the
   canvas, so reading it means travelling to it -- and travelling means leaving

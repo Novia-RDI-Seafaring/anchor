@@ -16,6 +16,16 @@ from anchor.extensions.anchor_pdfs.core.region_inspect import (
     inspect_region,
 )
 from anchor.extensions.anchor_pdfs.core.services import IngestProfile
+from anchor.infra.egress_policy import MissingModelCredentialError
+
+
+def _run_model_call(coro):
+    """Run a command that needs the remote model; report a missing key as JSON."""
+    try:
+        return asyncio.run(coro)
+    except MissingModelCredentialError as exc:
+        typer.echo(json.dumps(exc.to_dict()), err=True)
+        raise typer.Exit(code=1) from None
 
 
 def ingest(
@@ -71,6 +81,9 @@ def ingest(
 
     try:
         result = asyncio.run(run())
+    except MissingModelCredentialError as exc:
+        typer.echo(json.dumps(exc.to_dict()), err=True)
+        raise typer.Exit(code=1) from None
     except Exception as exc:  # noqa: BLE001 - surface a clean line, not a stack
         typer.echo(f"Ingest failed for {pdf_path.name}: {exc}", err=True)
         if "MPS" in str(exc) or "float64" in str(exc):
@@ -151,7 +164,7 @@ def search(
             err=True,
         )
         raise typer.Exit(code=1)
-    out = asyncio.run(ingest_svc.search(query, k=k))
+    out = _run_model_call(ingest_svc.search(query, k=k))
     typer.echo(json.dumps(out, indent=2))
 
 
@@ -326,7 +339,7 @@ def embed(
     """Embed gold regions of a document and persist to embeddings.json.
 
     Uses the environment's configured `embed_model`: the local
-    sentence-transformer BAAI/bge-small-en-v1.5 is the local-provider
+    hotchpotch/bekko-embedding-v1-a25m is the local-provider
     default, but a configured remote model (e.g. text-embedding-3-small)
     is used instead when the environment names one. Note that `anchor
     search` skips documents whose stored embed_model does not match the
@@ -365,7 +378,7 @@ def embed(
             out.append({"slug": s, "embedded": n, "embed_model": ingest_svc.embed_model_id})
         return out
 
-    typer.echo(json.dumps(asyncio.run(run_all()), indent=2))
+    typer.echo(json.dumps(_run_model_call(run_all()), indent=2))
 
 
 def index(

@@ -32,17 +32,17 @@ def _config_for_project(project: Path) -> AnchorConfig:
     """
     import sys
 
-    from anchor.infra.environment import DATA_DIRNAME, PROJECT_MARKER_FILENAME, config_for_data_dir
+    from anchor.infra.environment import NotAProjectFolderError, resolve_project_folder
 
-    folder = project.expanduser()
-    if not (folder / PROJECT_MARKER_FILENAME).is_file():
+    try:
+        return resolve_project_folder(project).config
+    except NotAProjectFolderError:
         print(
             f"Warning: anchor-mcp: no anchor.toml in {project} — run `anchor init` there. "
             "Falling back to environment / defaults.",
             file=sys.stderr,
         )
         return AnchorConfig()
-    return config_for_data_dir(folder / DATA_DIRNAME)
 
 
 async def _run(

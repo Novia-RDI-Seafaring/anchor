@@ -111,7 +111,7 @@ def test_check_local_only_echoes_no_egress_posture(tmp_path):
     # The asserted no-egress line + the model set a prefetch would warm.
     assert "local-only" in result.output
     assert "offline models" in result.output
-    assert "BAAI/bge-small-en-v1.5" in result.output
+    assert "hotchpotch/bekko-embedding-v1-a25m" in result.output
 
 
 def test_check_local_only_with_remote_embed_model_exits_nonzero(tmp_path):
@@ -123,7 +123,7 @@ def test_check_local_only_with_remote_embed_model_exits_nonzero(tmp_path):
     cfg = _env_dir(tmp_path) / "env.toml"
     cfg.write_text(
         cfg.read_text().replace(
-            'embed_model = "BAAI/bge-small-en-v1.5"',
+            'embed_model = "hotchpotch/bekko-embedding-v1-a25m"',
             'embed_model = "text-embedding-3-small"',
         ),
         encoding="utf-8",
@@ -351,6 +351,40 @@ def test_check_project_flag_overrides_cwd_marker(monkeypatch, tmp_path):
     assert "pumps" not in result.output
     expected_dir = _env_dir(tmp_path) / "projects" / "other" / ".anchor_data"
     assert str(expected_dir) in result.output
+
+
+def test_check_project_flag_accepts_init_folder(monkeypatch, tmp_path):
+    # `--project <folder>` resolves that `anchor init` folder like
+    # `anchor-mcp --project <folder>` does, instead of rejecting the path as
+    # an invalid project name (#380).
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
+    folder = _make_marker_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["check", "--project", str(folder)])
+    assert result.exit_code == 0, result.output
+    assert f"project        : pumps  (from --project {folder / 'anchor.toml'})" in result.output
+    assert str(folder / ".anchor_data") in result.output
+
+
+def test_check_project_flag_folder_without_marker_is_one_line_error(monkeypatch, tmp_path):
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["check", "--project", str(plain)])
+    assert result.exit_code == 2, result.output
+    assert "Traceback" not in result.output
+    assert f"{plain} is not an `anchor init` project" in result.output
+
+
+def test_check_project_folder_rejects_contradicting_env(monkeypatch, tmp_path):
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
+    runner.invoke(app, ["env", "create", "other", "--yes", "--provider", "local"])
+    folder = _make_marker_project(tmp_path)
+    result = runner.invoke(app, ["check", "--env", "other", "--project", str(folder)])
+    assert result.exit_code == 2, result.output
+    assert "Traceback" not in result.output
+    assert "binds this project to environment 'local'" in result.output
 
 
 def test_check_serve_report_scoped_to_resolved_project(monkeypatch, tmp_path):
