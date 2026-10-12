@@ -53,6 +53,14 @@ function renderNode({ selected, data }: { selected: boolean; data?: Record<strin
 }
 
 describe("ConceptNode selection gating", () => {
+  it("renders a heading without card chrome and preserves its subtitle", () => {
+    renderNode({ selected: false, data: { label: "Operating limits", subtitle: "From the manual", role: "heading" } });
+    const heading = screen.getByTestId("heading-node");
+    expect(heading.className).not.toContain("border");
+    expect(heading.className).not.toContain("shadow");
+    expect(screen.getByText("Operating limits").style.fontSize).toContain("28px");
+    expect(screen.getByText("From the manual")).toBeTruthy();
+  });
   it("renders the label", () => {
     renderNode({ selected: false });
     expect(screen.getByText("hello")).toBeTruthy();

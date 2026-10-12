@@ -10,7 +10,13 @@ receive the latest non-yanked PyPI wheel. The PyPI wheel is not updated by a
 plain merge to `main`; it is updated only when maintainers tag and publish a new
 release.
 
-## Current Release
+## Release history
+
+Run `anchor version` to identify your installation. The entries below are
+historical release notes, not an assertion that an older version is current.
+See the repository
+[CHANGELOG](https://github.com/Novia-RDI-Seafaring/anchor/blob/main/CHANGELOG.md)
+for the maintained change history.
 
 | Version | Date | Main difference |
 | --- | --- | --- |

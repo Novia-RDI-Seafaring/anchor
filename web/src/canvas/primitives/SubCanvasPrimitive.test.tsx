@@ -16,6 +16,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { breadcrumb } from "@/canvas/breadcrumb";
+import { useUiStore } from "@/stores/uiStore";
 import * as workspacesHook from "@/canvas/useWorkspacesList";
 import { SubCanvasPrimitive } from "./SubCanvasPrimitive";
 
@@ -27,6 +28,7 @@ function LocationProbe() {
 
 beforeEach(() => {
   breadcrumb.clear();
+  useUiStore.setState({ pendingInlineRenameNodeId: null });
   vi.stubGlobal("fetch", vi.fn());
 });
 
@@ -97,6 +99,14 @@ async function renderTile({
   });
   return result;
 }
+
+it("consumes keyboard rename focus for the existing sub-canvas title editor", async () => {
+  mockWorkspaces([{ slug: "child", title: "Child", node_count: 0, edge_count: 0 }]);
+  useUiStore.getState().requestInlineRename("n1");
+  await renderTile({ data: { canvas_slug: "child", title: "Child" }, selected: true });
+  expect((screen.getByPlaceholderText("title") as HTMLInputElement).value).toBe("Child");
+  expect(useUiStore.getState().pendingInlineRenameNodeId).toBeNull();
+});
 
 describe("SubCanvasPrimitive", () => {
   it("renders the title and the producer label", async () => {

@@ -12,7 +12,7 @@ function dimension(value: unknown): value is number {
 }
 
 /**
- * Parse gold-map.pages_meta at the API seam. Current silver declares
+ * Parse document-index or gold-map pages_meta at the API seam. Silver declares
  * pages[page].page_size in source points. The older flat page -> width/height
  * consumer contract remains explicit compatibility. Malformed current data
  * never falls through to legacy fields or inferred DPI.

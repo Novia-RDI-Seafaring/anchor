@@ -7,7 +7,7 @@
  *
  * Liveness has three legs, matching the queue's push-notify / pull-payload
  * design and the other panels' habits:
- *   1. SSE — `GET /api/intents/events` fires an `intent_pending {count}`
+ *   1. SSE - the shared `GET /api/events` stream fires `intent_pending {count}`
  *      signal on every change made through the serving process; the hook
  *      refetches on each signal.
  *   2. Poll — a light 8s interval (the FilesExplorer cadence) reconciles

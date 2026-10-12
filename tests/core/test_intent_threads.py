@@ -800,3 +800,7 @@ async def test_act_refuses_a_question_without_words():
                 question={"options": ["a"]},
             )
     assert exc.value.code == "invalid_item"
+    # Refused before anything was posted or applied.
+    assert (await svc.get(intent.id)).items == []
+    state = await ws.get_state("cv")
+    assert next(n for n in state["nodes"] if n["id"] == "n1")["label"] == "N1"

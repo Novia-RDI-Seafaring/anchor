@@ -1,9 +1,10 @@
 /**
  * SelectionPanel — the properties of whatever is selected, open on the left.
  */
-import { render } from "@testing-library/react";
+import { fireEvent, render, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { canvases } from "@/api/canvases";
 
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -53,5 +54,18 @@ describe("SelectionPanel", () => {
     expect(text).toContain("Text");
     expect(text).not.toContain("Fill");
     expect(text).not.toContain("Stroke");
+  });
+
+  it("sets a heading through the existing data patch and hides irrelevant box styling", async () => {
+    const patch = vi.spyOn(canvases, "patchNode").mockResolvedValue({});
+    seed({ n1: { id: "n1", node_type: "concept", data: { source_ref: { slug: "manual", page: 2 } } } });
+    useUiStore.setState({ selectedNodeId: "n1" });
+    const { getByLabelText, rerender, getByTestId } = renderPanel();
+    fireEvent.change(getByLabelText("Node appearance"), { target: { value: "heading" } });
+    await waitFor(() => expect(patch).toHaveBeenCalledWith("w1", "n1", { data: { role: "heading" } }));
+    seed({ n1: { id: "n1", node_type: "concept", data: { role: "heading" } } });
+    rerender(<MemoryRouter initialEntries={["/canvas/w1"]}><Routes><Route path="/canvas/:id" element={<SelectionPanel />} /></Routes></MemoryRouter>);
+    expect(getByTestId("selection-panel").textContent).not.toContain("Fill");
+    patch.mockRestore();
   });
 });

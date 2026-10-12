@@ -1,4 +1,4 @@
-import { BACKEND_URL } from "@/api/client";
+import { projectSse } from "./projectSse";
 
 export type EventActor = {
   kind: "human" | "agent" | "system";
@@ -60,8 +60,7 @@ export type SseOptions = {
 };
 
 export class CanvasSse {
-  private es: EventSource | null = null;
-  private retryMs = 1000;
+  private unsubscribe: (() => void) | null = null;
   private slug: string;
   private handlers: SseHandlers;
   private options: SseOptions;
@@ -72,50 +71,18 @@ export class CanvasSse {
     this.options = options;
   }
 
-  private url(): string {
-    const params = new URLSearchParams();
-    if (this.options.actorKind) params.set("actor_kind", this.options.actorKind);
-    if (this.options.actorLabel) params.set("actor_label", this.options.actorLabel);
-    const query = params.toString();
-    return `${BACKEND_URL}/api/workspaces/${this.slug}/events${query ? `?${query}` : ""}`;
-  }
-
   connect(): void {
-    if (this.es) return;
-    this.es = new EventSource(this.url());
-    this.es.addEventListener("snapshot", (ev) => {
-      try {
-        this.handlers.onSnapshot?.(JSON.parse((ev as MessageEvent).data));
-        this.retryMs = 1000;
-      } catch (_err) {
-        // ignore malformed snapshot
-      }
-    });
-    this.es.addEventListener("patch", (ev) => {
-      try {
-        this.handlers.onPatch?.(JSON.parse((ev as MessageEvent).data));
-      } catch (_err) {
-        // ignore malformed patch
-      }
-    });
-    this.es.addEventListener("presence", (ev) => {
-      try {
-        this.handlers.onPresence?.(JSON.parse((ev as MessageEvent).data));
-      } catch (_err) {
-        // ignore malformed presence
-      }
-    });
-    this.es.onerror = (err) => {
-      this.handlers.onError?.(err);
-      this.disconnect();
-      const next = Math.min(this.retryMs * 2, 30000);
-      setTimeout(() => this.connect(), this.retryMs);
-      this.retryMs = next;
-    };
+    if (this.unsubscribe) return;
+    this.unsubscribe = projectSse.subscribe({
+      snapshot: this.handlers.onSnapshot,
+      patch: (payload) => this.handlers.onPatch?.(payload as CanvasEvent),
+      presence: (payload) => this.handlers.onPresence?.(payload as PresencePayload),
+      onError: this.handlers.onError,
+    }, { slug: this.slug, ...this.options });
   }
 
   disconnect(): void {
-    this.es?.close();
-    this.es = null;
+    this.unsubscribe?.();
+    this.unsubscribe = null;
   }
 }

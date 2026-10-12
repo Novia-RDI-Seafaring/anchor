@@ -136,10 +136,8 @@
    type it is visible in peripheral vision, so the mark is found rather than
    hunted for. */
 .anchor-mark {
-  /* The LOOK only. Layout and pointer behaviour belong to each call site: the
-     source pane's mark floats above the pages and takes no clicks, while a
-     region on a document card is the same mark AND the thing you drag onto the
-     canvas. Putting `pointer-events: none` in here would break that. */
+  /* SourceMark supplies layout and ignores pointer events. Interactive document
+     regions keep their own hit targets underneath the shared visual mark. */
   border-radius: 2px;
   background: rgba(250, 204, 21, 0.6);
   /* Outline, not border. A border is drawn INSIDE the element, so on a mark

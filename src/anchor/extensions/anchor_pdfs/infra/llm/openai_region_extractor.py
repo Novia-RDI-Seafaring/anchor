@@ -8,6 +8,8 @@ import logging
 import re
 from typing import Any
 
+from .prompts import region_prompt
+
 logger = logging.getLogger(__name__)
 
 
@@ -35,30 +37,7 @@ class OpenAIRegionExtractor:
 
         client = make_openai_client(self.api_key, self.base_url)
         b64 = base64.b64encode(page_image).decode()
-        prompt = (
-            f"List the visual regions on page {page_no} of this engineering PDF. "
-            "For each region emit, as top-level fields of the region object: id, kind "
-            "(chart|spec_block|table|figure|diagram|text), title, description, tags[], "
-            "entities[], and its geometry as either member_item_ids[] or bbox. "
-            f"{_frame_sentence(page_size, dpi)}"
-            "member_item_ids names the Docling items the region covers (their ids, "
-            "from the list below); that is the preferred way, and the server computes "
-            "the box from them. Only when no item covers a visual, give an approximate "
-            "bbox [left, top, right, bottom] in top-left PDF points (origin at the "
-            "page's top-left corner, y increasing downward), never in image pixels. "
-            "One region covers one block: a table or picture "
-            "belongs to exactly one region, and a region names only the items of its "
-            "own block, not the heading or table that follows it. For tables and spec "
-            "blocks, make regions tight: split distinct visual sections or sub-tables "
-            "separated by headers, whitespace, or rules. Do not merge adjacent "
-            "sub-tables, and keep values from neighboring groups out of the region. In "
-            "the description, list exact visible facts as 'key: value' pairs when the "
-            "region contains key/value rows. Include the value for every key you can "
-            "read; if two keys share the same value, repeat that value for both keys. "
-            "Do not deduplicate equal values or summarize numeric values. Return JSON "
-            "with key 'regions'.\n"
-            f"\nDocling items (id, label, bbox in points, text):\n{json.dumps(items)[:8000]}"
-        )
+        prompt = region_prompt(page_no, items, page_size=page_size, dpi=dpi)
         messages = [{
             "role": "user",
             "content": [
@@ -101,24 +80,3 @@ class OpenAIRegionExtractor:
                 page_no, model, body[:200],
             )
             return []
-
-
-def _frame_sentence(page_size: list[float] | None, dpi: int | None) -> str:
-    """Tell the model what it is looking at, so its boxes land in points.
-
-    A vision model given a raster and asked for points guesses the frame
-    unless told: pixels on one page, points on the next. Saying the page
-    size, the raster size and the scale removes the guess.
-    """
-    if not page_size or len(page_size) != 2:
-        return ""
-    width, height = float(page_size[0]), float(page_size[1])
-    sentence = f"The page is {width:.1f} x {height:.1f} PDF points. "
-    if dpi:
-        scale = dpi / 72.0
-        sentence += (
-            f"The attached image is this page rendered at {dpi} dpi, "
-            f"{round(width * scale)} x {round(height * scale)} px, so 1 pt = {scale:.3f} px; "
-            "the Docling items' bboxes are in points, not in these pixels. "
-        )
-    return sentence

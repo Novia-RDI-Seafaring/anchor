@@ -129,6 +129,16 @@ def build_index(docling: dict[str, Any], *, filename: str = "", title: str = "")
     if not isinstance(items, list):
         items = []
 
+    # New extractors retain Docling tree order; legacy payloads keep their order.
+    items = [it for _, it in sorted(
+        ((position, it) for position, it in enumerate(items) if isinstance(it, dict)),
+        key=lambda pair: pair[1].get("reading_order", pair[0]),
+    )]
+    groups = {
+        group["id"]: group for group in docling.get("groups", [])
+        if isinstance(group, dict) and isinstance(group.get("id"), str)
+    }
+
     pages = {int(it["page"]) for it in items if isinstance(it, dict) and isinstance(it.get("page"), (int, float))}
     page_count = max(pages) if pages else 0
 
@@ -136,7 +146,7 @@ def build_index(docling: dict[str, Any], *, filename: str = "", title: str = "")
     tables: list[dict[str, Any]] = []
     figures: list[dict[str, Any]] = []
 
-    last_header_by_page: dict[int, str] = {}
+    last_header_by_page: dict[int, tuple[str, list[str]]] = {}
     resolved_title = title
 
     for it in items:
@@ -152,14 +162,17 @@ def build_index(docling: dict[str, Any], *, filename: str = "", title: str = "")
         page = int(page)
 
         if label in _SECTION_LABELS and text:
-            level = 1 if label == "title" else _guess_level(text)
-            outline.append({"level": level, "title": text, "page": page, "bbox": _clean_bbox(bbox)})
-            last_header_by_page[page] = text
+            level = it.get("level") or (1 if label == "title" else _guess_level(text))
+            heading = {"level": level, "title": text, "page": page, "bbox": _clean_bbox(bbox)}
+            if "group_path" in it:
+                heading["group_path"] = it["group_path"]
+            outline.append(heading)
+            last_header_by_page[page] = (text, it.get("group_path", []))
             if not resolved_title:
                 resolved_title = text
 
         elif label == "table":
-            caption = last_header_by_page.get(page, "")
+            caption = _index_caption(it, groups, last_header_by_page.get(page))
             header_row, first_col, shape = _summarize_table_cells(it.get("cells"))
             tables.append({
                 "id": f"t{len(tables) + 1}",
@@ -171,28 +184,64 @@ def build_index(docling: dict[str, Any], *, filename: str = "", title: str = "")
                 "first_column_values": first_col,
                 "cells": _clean_table_cells(it.get("cells")),
                 "table_topology": topology_status(it),
+                **_index_relationships(it),
             })
 
         elif label == "picture":
-            caption = last_header_by_page.get(page, "")
-            figures.append({"page": page, "bbox": _clean_bbox(bbox), "caption": caption})
+            caption = _index_caption(it, groups, last_header_by_page.get(page))
+            figures.append({"page": page, "bbox": _clean_bbox(bbox), "caption": caption, **_index_relationships(it)})
 
     return {
         "document": {
             "filename": filename,
             "title": resolved_title,
             "page_count": page_count,
+            "silver_items_version": 1,
         },
         "outline": outline,
         "tables": tables,
         "figures": figures,
+        "groups": list(groups.values()),
     }
+
+
+def _index_relationships(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        field: item[field] for field in ("group_path", "captions", "references", "footnotes")
+        if field in item
+    }
+
+
+def _index_caption(
+    item: dict[str, Any], groups: dict[str, dict[str, Any]],
+    preceding_header: tuple[str, list[str]] | None,
+) -> str:
+    captions = item.get("captions", [])
+    explicit = " ".join(
+        caption["text"].strip() for caption in captions
+        if isinstance(caption, dict) and isinstance(caption.get("text"), str)
+        and caption["text"].strip()
+    )
+    if explicit:
+        return explicit
+    path = item.get("group_path", [])
+    if preceding_header and preceding_header[1] == path:
+        return preceding_header[0]
+    for ref in reversed(path):
+        group = groups.get(ref, {})
+        if group.get("label") in {"chapter", "section"} and group.get("name"):
+            return group["name"]
+    # Legacy payloads have no tree metadata; retain their preceding-header fallback.
+    return preceding_header[0] if preceding_header and "group_path" not in item else ""
 
 
 INDEX_CONTENT_FIELDS: tuple[str, ...] = ("cells",)
 
 
-def project_index(index: dict[str, Any] | None, *, include_content: bool = False) -> dict[str, Any] | None:
+def project_index(
+    index: dict[str, Any] | None, *, include_content: bool = False,
+    pages_meta: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     """Return the index with per-entry content included or stripped.
 
     The silver index is a map of the document: an outline plus one entry per
@@ -207,9 +256,23 @@ def project_index(index: dict[str, Any] | None, *, include_content: bool = False
     ``bbox``). Pass ``include_content=True`` for the unabridged record.
     ``None`` passes through so callers can keep reporting "not found".
     """
-    if index is None or include_content:
-        return index
+    if index is None:
+        return None
     out = dict(index)
+    # Geometry belongs to silver, independent of whether gold is complete.
+    # Keep item content out of this map and retain the explicit origin stamp.
+    if isinstance(pages_meta, dict):
+        current = "pages" in pages_meta
+        pages = pages_meta.get("pages") if current else pages_meta
+        summary = {
+            str(page): {k: v for k, v in entry.items() if k in {"page_size", "width", "height"}}
+            for page, entry in pages.items() if isinstance(entry, dict)
+        } if isinstance(pages, dict) else {}
+        out["pages_meta"] = {"pages": summary} if current else summary
+        if "bbox_origin" in pages_meta:
+            out["pages_meta"]["bbox_origin"] = pages_meta["bbox_origin"]
+    if include_content:
+        return out
     tables = out.get("tables")
     if isinstance(tables, list):
         out["tables"] = [
@@ -394,12 +457,15 @@ def render_pages_md(docling: dict[str, Any]) -> dict[int, str]:
 
 
 def _render_page_md(items: list[dict[str, Any]]) -> str:
-    def sort_key(it: dict[str, Any]) -> tuple[float, float]:
-        # Reading order: top-left origin, so a smaller y is higher on the page.
+    def sort_key(it: dict[str, Any]) -> tuple[int, float, float]:
+        order = _reading_order(it)
+        if order is not None:
+            return (0, float(order), 0)
+        # Legacy items lack canonical order; retain their geometric fallback.
         bbox = it.get("bbox") or [0, 0, 0, 0]
         top = min(bbox[1], bbox[3]) if len(bbox) == 4 else 0
         left = bbox[0] if len(bbox) == 4 else 0
-        return (float(top), float(left))
+        return (1, float(top), float(left))
 
     ordered = sorted(items, key=sort_key)
     lines: list[str] = []
@@ -420,7 +486,7 @@ def _render_page_md(items: list[dict[str, Any]]) -> str:
             level = 1 if text.isupper() and len(text) <= 40 else 2
             lines.append(f"{'#' * (level + 1)} {text}")
             lines.append("")
-        elif label == "text" and text:
+        elif label in {"text", "paragraph", "caption", "code", "formula"} and text:
             lines.append(text)
             lines.append("")
         elif label == "list_item" and text:
@@ -435,6 +501,8 @@ def _render_page_md(items: list[dict[str, Any]]) -> str:
             lines.append("")
         elif label == "table":
             md = render_table_cells_md(it.get("cells"), it.get("table_topology"))
+            if not md and text:
+                md = text
             if md:
                 lines.append(md)
                 lines.append("")
@@ -555,9 +623,16 @@ _CANDIDATE_TEXT_MAX = 800
 _REGION_CONTENT_MAX = 6000
 
 
+def _reading_order(item: dict[str, Any]) -> int | None:
+    order = item.get("reading_order")
+    return order if isinstance(order, int) and not isinstance(order, bool) and order >= 0 else None
+
+
 def region_content_from_items(
     items: Any,
     indexes: list[int] | None = None,
+    *,
+    max_chars: int | None = _REGION_CONTENT_MAX,
 ) -> str:
     """Render selected Docling items as trusted gold-region content."""
     if not isinstance(items, list):
@@ -570,19 +645,15 @@ def region_content_from_items(
     content = _render_page_md(
         [item for item in selected if isinstance(item, dict)]
     ).strip()
-    return content[:_REGION_CONTENT_MAX].rstrip()
+    return content[:max_chars].rstrip() if max_chars is not None else content
 
 
 def region_search_text(region: dict[str, Any]) -> str:
-    """Combine unique region fields for embedding and retrieval.
+    """Use semantic metadata for source chunks, with a source-content fallback.
 
-    #242 embedding fallback: the default text is ``title`` + ``description`` +
-    ``content``. When the model authored no ``description``, a caption-less
-    table (issue #231) would otherwise embed as just its title — and its cell
-    values, the only searchable content it has, are invisible. In that case we
-    fall back to the reconstructed table-cell text so the values stay findable.
-    Deduped so a well-described table whose ``content`` already renders the grid
-    is not double-counted.
+    Undescribed chunks include reconstructed text/cells so coverage remains
+    searchable. Producer-derived records retain their stored-content recall.
+    Repeated fields and metadata entries contribute only once.
     """
     parts: list[str] = []
     seen: set[str] = set()
@@ -596,22 +667,50 @@ def region_search_text(region: dict[str, Any]) -> str:
             seen.add(normalized)
             parts.append(text)
 
-    for key in ("title", "description", "content"):
+    for key in ("title", "description"):
         add(region.get(key))
 
+    for key in ("tags", "entities"):
+        values = region.get(key)
+        if isinstance(values, list):
+            for value in values:
+                add(value)
+
     description = region.get("description")
-    if not (isinstance(description, str) and description.strip()):
+    if region.get("derived_from") or not (isinstance(description, str) and description.strip()):
+        add(region.get("content"))
         add(render_table_cells_md(region.get("cells"), region.get("table_topology")))
 
     return "\n\n".join(parts)
+
+
+def build_page_items(docling: dict[str, Any]) -> dict[int, list[dict[str, Any]]]:
+    """Uncapped source items in their stored per-page order, with stable IDs.
+
+    Candidate previews and source membership use this exact traversal. Keep
+    extractor metadata and cells intact; reading order never renumbers IDs.
+    """
+    by_page: dict[int, list[dict[str, Any]]] = {}
+    source_items = docling.get("items")
+    if not isinstance(source_items, list):
+        return {}
+    for item in source_items:
+        if not isinstance(item, dict) or not isinstance(item.get("page"), (int, float)):
+            continue
+        page = int(item["page"])
+        items = by_page.setdefault(page, [])
+        items.append({**item, "id": f"p{page}-i{len(items)}", "page": page})
+    return dict(sorted(by_page.items()))
 
 
 def build_page_candidates(docling: dict[str, Any]) -> dict[int, list[dict[str, Any]]]:
     """Per-page docling candidate items: `{page: [{id, label, bbox, text}]}`.
 
     Ids reuse the stable `p{page}-i{idx}` scheme `build_pages_meta` mints,
-    with `idx` being the item's position within its page (docling order),
-    so the two artifacts always agree. Table items additionally carry a
+    with `idx` being the item's stored position within its page, so existing
+    references stay stable. New Docling extractions use canonical tree order;
+    `reading_order` makes that order explicit without renumbering legacy items.
+    Table items additionally carry a
     `cells_preview` so an agent can group a table without reading cells.
     """
     items = docling.get("items")
@@ -638,6 +737,8 @@ def build_page_candidates(docling: dict[str, Any]) -> dict[int, list[dict[str, A
                 "bbox": _clean_bbox(it.get("bbox")),
                 "text": text[:_CANDIDATE_TEXT_MAX],
             }
+            if (order := _reading_order(it)) is not None:
+                candidate["reading_order"] = order
             if it.get("label") == "table":
                 header_row, _, shape = _summarize_table_cells(it.get("cells"))
                 candidate["cells_preview"] = {"shape": shape, "header_row": header_row}

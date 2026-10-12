@@ -17,6 +17,8 @@ import { requestViewerZoom } from "@/canvas/viewerZoom";
 import { useUiStore } from "@/stores/uiStore";
 
 import { PdfSourceView } from "./PdfSourceView";
+import { SourceDock } from "./SourceDock";
+import { PageWithBboxViewer } from "./PageWithBboxViewer";
 
 const PAGE_COUNT = 6;
 
@@ -24,6 +26,7 @@ const PAGE_COUNT = 6;
 function makeDoc() {
   return {
     numPages: PAGE_COUNT,
+    getOutline: vi.fn(async () => []),
     getPage: vi.fn(async (_p: number) => ({
       view: [0, 0, 100, 200],
       getViewport: ({ scale }: { scale: number }) => ({ width: 100 * scale, height: 200 * scale }),
@@ -93,6 +96,14 @@ function stubScroller(target: number | null = null): { lastTop: () => number | n
       return this.getAttribute?.("data-testid") === "pdf-scroller" ? 300 : 0;
     },
   });
+  Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+    configurable: true,
+    get() { return 10000; },
+  });
+  Object.defineProperty(HTMLElement.prototype, "scrollWidth", {
+    configurable: true,
+    get() { return 10000; },
+  });
   HTMLElement.prototype.scrollTo = function scrollTo(opts: ScrollToOptions | number) {
     if (typeof opts === "object" && opts.top != null) lastTop = opts.top;
   } as typeof HTMLElement.prototype.scrollTo;
@@ -125,7 +136,155 @@ async function renderViewer(props?: Partial<Parameters<typeof PdfSourceView>[0]>
   return { onPageChange, rerender };
 }
 
+describe("source navigation at high zoom", () => {
+  afterEach(() => { useUiStore.setState({ pdfZoom: 1 }); });
+
+  it.each([
+    { bbox: [82, 40, 92, 45], initialLeft: 0, expectedLeft: 112 },
+    { bbox: [10, 40, 20, 45], initialLeft: 110, expectedLeft: 0 },
+  ])("reveals an offscreen cell without moving its visible vertical position: $initialLeft", async ({ bbox, initialLeft, expectedLeft }) => {
+    stubScroller();
+    useUiStore.setState({ pdfZoom: 3.8 });
+    const { rerender } = await renderViewer();
+    const el = screen.getByTestId("pdf-scroller");
+    const content = el.firstElementChild as HTMLElement;
+    Object.defineProperties(content, {
+      offsetLeft: { configurable: true, value: 16 },
+      offsetTop: { configurable: true, value: 16 },
+    });
+    Object.defineProperties(el, {
+      scrollWidth: { configurable: true, value: 412 },
+      scrollHeight: { configurable: true, value: 4700 },
+    });
+    el.scrollLeft = initialLeft;
+    el.scrollTop = 0;
+    const scroll = vi.fn();
+    el.scrollTo = scroll;
+    await rerender({ highlightPage: 1, highlightBbox: bbox, highlightNonce: 1 });
+    await waitFor(() => expect(scroll).toHaveBeenCalledWith({
+      top: 0, left: expectedLeft, behavior: "smooth",
+    }));
+    expect(screen.getByLabelText("Reset zoom").textContent).toBe("380%");
+    const visibleLeft = 16 + bbox[0]! * 3.8 - expectedLeft;
+    const visibleRight = 16 + bbox[2]! * 3.8 - expectedLeft;
+    expect(visibleLeft).toBeGreaterThanOrEqual(0);
+    expect(visibleRight).toBeLessThanOrEqual(300);
+  });
+
+  it("keeps both scroll axes when the source is already visible", async () => {
+    stubScroller();
+    useUiStore.setState({ pdfZoom: 3.8 });
+    const { rerender } = await renderViewer({
+      highlightPage: 1, highlightBbox: [40, 40, 50, 45], highlightNonce: 1,
+    });
+    const el = screen.getByTestId("pdf-scroller");
+    el.scrollLeft = 40;
+    el.scrollTop = 0;
+    const scroll = vi.fn();
+    el.scrollTo = scroll;
+    await rerender({ highlightPage: 1, highlightBbox: [40, 40, 50, 45], highlightNonce: 2 });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 450)); });
+    expect(scroll).not.toHaveBeenCalled();
+  });
+});
+
+describe("dock Contents to fullscreen", () => {
+  beforeEach(() => {
+    useUiStore.setState({ pdfViewer: null, pdfZoom: 1 });
+    vi.spyOn(documents, "index").mockResolvedValue({
+      document: { title: "Manual", filename: "manual.pdf", page_count: PAGE_COUNT },
+      outline: [],
+      tables: [{ caption: "Operating data", page: 2, bbox: [10, 40, 80, 90] }],
+      pages_meta: { bbox_origin: "top-left", pages: {
+        "2": { page_size: [100, 200] }, "3": { page_size: [100, 200] },
+      } },
+    });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    act(() => useUiStore.setState({ pdfViewer: null }));
+  });
+
+  async function selectTable() {
+    stubScroller();
+    useUiStore.getState().openPdf("manual", { mode: "dock" });
+    await act(async () => { render(<><SourceDock /><PageWithBboxViewer /></>); });
+    fireEvent.click(screen.getByRole("tab", { name: "Contents" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Operating data/ }));
+    expect(await screen.findByTestId("reference-confirm-flash")).toBeTruthy();
+  }
+  async function loadModalImage(slug = "manual", page = 2) {
+    const image = await screen.findByAltText(`${slug} page ${page}`);
+    Object.defineProperties(image, { naturalWidth: { value: 200 }, naturalHeight: { value: 400 } });
+    await act(async () => { fireEvent.load(image); });
+    return image.parentElement!;
+  }
+
+  it("draws the dock's selected silver table on the first fullscreen transition", async () => {
+    await selectTable();
+    fireEvent.click(screen.getByTitle("Open as full-screen quick-look"));
+    expect(useUiStore.getState().pdfViewer).toMatchObject({
+      slug: "manual", mode: "modal", page: 2, highlightPage: 2, highlightBbox: [10, 40, 80, 90],
+    });
+    const page = await loadModalImage();
+    const box = page.querySelector("rect")!;
+    expect(box).not.toBeNull();
+    expect(["x", "y", "width", "height"].map((key) => Number(box.getAttribute(key))))
+      .toEqual([20, 80, 140, 100]);
+    fireEvent.click(screen.getByRole("button", { name: /Next/ }));
+    expect((await loadModalImage("manual", 3)).querySelector("rect")).toBeNull();
+  });
+
+  it("does not revive an expired dock confirmation", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await selectTable();
+    await act(async () => { vi.advanceTimersByTime(2300); });
+    expect(screen.queryByTestId("reference-confirm-flash")).toBeNull();
+    fireEvent.click(screen.getByTitle("Open as full-screen quick-look"));
+    expect((await loadModalImage()).querySelector("rect")).toBeNull();
+  });
+
+  it("does not transfer a table box after navigating to another page", async () => {
+    await selectTable();
+    await act(async () => { useUiStore.getState().setPdfPage(3); });
+    fireEvent.click(screen.getByTitle("Open as full-screen quick-look"));
+    expect((await loadModalImage("manual", 3)).querySelector("rect")).toBeNull();
+  });
+
+  it("does not transfer the previous document's table box", async () => {
+    await selectTable();
+    await act(async () => { useUiStore.getState().openPdf("replacement", { page: 2, mode: "dock" }); });
+    await act(async () => { useUiStore.getState().setPdfPage(2); });
+    fireEvent.click(screen.getByTitle("Open as full-screen quick-look"));
+    expect((await loadModalImage("replacement")).querySelector("rect")).toBeNull();
+  });
+
+  it("keeps a new source highlight when reopening the same document", async () => {
+    await selectTable();
+    await act(async () => { useUiStore.getState().openPdf("manual", {
+      page: 2, highlightBbox: [20, 100, 60, 120],
+    }); });
+    fireEvent.click(screen.getByTitle("Open as full-screen quick-look"));
+    expect(useUiStore.getState().pdfViewer?.highlightBbox).toEqual([20, 100, 60, 120]);
+  });
+});
+
 describe("PdfSourceView (continuous)", () => {
+  it("jumps to a silver heading and flashes its box on the target page", async () => {
+    const scroller = stubScroller();
+    const { onPageChange } = await renderViewer({ index: {
+      document: { title: "Manual", filename: "manual.pdf", page_count: 6 },
+      outline: [{ title: "Operating limits", level: 1, page: 4, bbox: [10, 40, 80, 50] }],
+    } });
+    fireEvent.click(screen.getByRole("tab", { name: "Contents" }));
+    fireEvent.click(screen.getByRole("button", { name: "Operating limits 4" }));
+    expect(scroller.lastTop()).toBe(632);
+    expect(onPageChange).toHaveBeenCalledWith(4);
+    const flash = await screen.findByTestId("reference-confirm-flash");
+    expect(flash.closest("[data-testid='pdf-page-slot']")?.getAttribute("data-page")).toBe("4");
+    await waitFor(() => expect(screen.queryByTestId("reference-confirm-flash")).toBeNull(), { timeout: 3000 });
+  });
+
   it("renders a thumbnail rail with one thumbnail per page", async () => {
     stubScroller();
     await renderViewer();
@@ -137,7 +296,7 @@ describe("PdfSourceView (continuous)", () => {
   it("hides the rail when toggled off", async () => {
     stubScroller();
     await renderViewer();
-    fireEvent.click(screen.getByLabelText("Toggle thumbnails"));
+    fireEvent.click(screen.getByLabelText("Toggle PDF navigation"));
     expect(screen.queryByTestId("thumbnail-rail")).toBeNull();
   });
 
@@ -291,6 +450,35 @@ describe("PdfSourceView (continuous)", () => {
         screen.getAllByTestId("pdf-highlight").map((el) => el.getAttribute("data-mark-kind")),
       ).toEqual(["primary#0", "cell#0", "cell#1"]),
     );
+  });
+
+  it("magnifies the first place, then follows the place under the pointer", async () => {
+    useUiStore.setState({ pdfZoom: 1 });
+    vi.stubGlobal("PointerEvent", MouseEvent);
+    stubScroller();
+    const { rerender } = await renderViewer({
+      highlightPage: 1, highlightBbox: [10, 20, 40, 60], highlightNonce: 1,
+      highlightAlso: [{ page: 2, bbox: [10, 20, 40, 60], precision: "cell" }],
+    });
+    const lensPage = () => screen.getByTestId("source-magnifier").getAttribute("data-page");
+    expect(lensPage()).toBe("1");
+    const second = screen.getAllByTestId("pdf-highlight")[1]!;
+    const pointer = { clientX: parseFloat(second.style.left) + 5,
+      clientY: parseFloat(second.style.top) + 5 };
+    const scroller = screen.getByTestId("pdf-scroller");
+    // Pointer observation leaves browser selection and dragging untouched.
+    expect(fireEvent.pointerMove(scroller, { ...pointer, buttons: 1 })).toBe(true);
+    expect(lensPage()).toBe("1");
+    expect(fireEvent.pointerMove(scroller, { ...pointer, buttons: 0 })).toBe(true);
+    expect(lensPage()).toBe("2");
+    fireEvent.pointerLeave(scroller);
+    expect(lensPage()).toBe("1");
+    fireEvent.pointerMove(scroller, { ...pointer, buttons: 0 });
+    expect(lensPage()).toBe("2");
+    await rerender({ highlightNonce: 2 });
+    expect(lensPage()).toBe("1");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("source-magnifier")).toBeNull();
   });
 
   it("still draws the primary when an extra place has no geometry", async () => {

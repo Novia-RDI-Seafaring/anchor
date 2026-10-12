@@ -21,13 +21,22 @@ silver/<slug>/generations/<id>/pages.meta.json
 silver/<slug>/generations/<id>/pages/...
 gold/<slug>/generations/<id>/pages/...
 gold/<slug>/generations/<id>/embeddings.json
+knowledge/<slug>/generations/<id>/pages/...
 ```
 
 The candidate's index records its original source identity. Rendered pages
 define the complete page set, including blank pages. Publication requires a
 successful report, matching metadata, complete raw/image/candidate artifacts,
-gold inside that page set, and embeddings that refer only to candidate gold.
+source gold inside that page set, and ingest embeddings that refer only to
+candidate source gold. Derived knowledge cannot satisfy a missing source member.
 Skipping regions intentionally publishes no old gold or embeddings.
+
+New ingests also persist uncapped `pages/<n>.items.json` evidence. Their
+`document.silver_items_version` stamp makes publication require full items
+whose page and stable IDs agree with candidate previews and page metadata,
+including empty item lists for blank pages. Missing or inconsistent evidence
+rejects publication and leaves the previous generation current. Legacy
+generations without the stamp retain their existing publication behavior.
 
 Raw and optional polished page text are produced inside the same candidate.
 The successful ingest report lists the pages actually polished by that run.
@@ -38,7 +47,7 @@ A file found on disk cannot add itself to that inventory.
 `publish_replacement` adds the generation id and page set to the index and
 atomically replaces `.current.json`. The pointer binds that id, source hash,
 page set, initial gold inventory and embedding presence. One pointer selects
-both silver and gold, so switching it also switches original-source resolution.
+silver, gold and knowledge, so switching it also switches original-source resolution.
 Readers never enumerate historical generation directories for current content.
 Missing or inconsistent authoritative source/index metadata fails closed.
 
@@ -52,9 +61,10 @@ each other's trees. Old trees remain readable for already-pinned operations.
 | Artifact | Replacement behavior |
 | --- | --- |
 | Index and source metadata | Candidate-owned, switched by the pointer |
-| Page metadata, raw text, candidates, images | Complete new rendered page set |
+| Page metadata, full items, raw text, candidates, images | Complete new rendered page set |
 | Polished text | Empty candidate; only polish produced by this run is published |
 | Gold and table slices | Empty candidate, populated only by this run |
+| Derived knowledge | Empty candidate; no carryover from old generations |
 | Crops | Empty candidate, no inherited old-region images |
 | Embeddings | Empty candidate; rebuilt from candidate gold if configured |
 | Reports and gold completion marker | Private until publication |
@@ -63,7 +73,7 @@ each other's trees. Old trees remain readable for already-pinned operations.
 `DocStore.snapshot(slug)` pins compound reads and delayed embedding or
 derived-region writes. An old embedding job can finish in its old tree but
 cannot contaminate the replacement. Standalone embedding rebuilds read only
-current gold. Search uses one complete embedding payload per document and
+current source and derived regions. Search uses one complete embedding payload per document and
 checks its actual model before scoring. Normal derived-region operations may
 subsequently extend the selected generation; the pointer's gold inventory is
 the publication inventory, not a permanent ban on those existing operations.

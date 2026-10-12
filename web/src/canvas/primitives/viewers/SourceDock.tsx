@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useDocumentIndex } from "@/api/useDocumentIndex";
+import type { DocumentIndex } from "@/api/documents";
 import { cancelTransientClose, scheduleTransientClose } from "@/canvas/transientViewer";
 import { useUiStore } from "@/stores/uiStore";
 
@@ -48,6 +49,36 @@ export function SourceDock() {
   const generation = index?.document.generation?.id;
   const open = Boolean(viewer && slug && isDock);
   const nonce = viewer?.nonce;
+  const contentsHighlight = useRef<{
+    slug: string; nonce?: number; generation?: string; page: number; bbox: number[];
+  } | null>(null);
+  const onContentsHighlightChange = useCallback((highlight: { page: number; bbox: number[] } | null) => {
+    const active = useUiStore.getState().pdfViewer;
+    if (active?.mode === "dock" && active.slug === slug && active.nonce === nonce) {
+      contentsHighlight.current = highlight ? { ...highlight, slug: active.slug, nonce, generation } : null;
+    }
+  }, [slug, nonce, generation]);
+  const openFullscreen = () => {
+    const active = useUiStore.getState().pdfViewer;
+    const highlight = contentsHighlight.current;
+    if (active?.mode !== "dock") return;
+    if (highlight && highlight.slug === active.slug && highlight.nonce === active.nonce
+      && highlight.generation === generation && highlight.page === active.page) {
+      useUiStore.getState().openPdf(active.slug, {
+        page: active.page, mode: "modal", highlightBbox: highlight.bbox,
+        workspaceSlug: active.workspaceSlug, documentNodeId: active.documentNodeId,
+      });
+    } else {
+      setMode("modal");
+    }
+  };
+  const onPageChange = useCallback((page: number) => {
+    const active = useUiStore.getState().pdfViewer;
+    // Scroll effects can arrive after the dock hands navigation to quick-look.
+    if (active?.mode === "dock" && active.slug === slug && active.nonce === nonce) {
+      setPage(page);
+    }
+  }, [setPage, slug, nonce]);
 
   const onPointerMove = useCallback(
     (e: PointerEvent) => {
@@ -89,12 +120,12 @@ export function SourceDock() {
     generation: string | undefined;
     total: number;
     title: string;
+    index: DocumentIndex | null;
   } | null>(null);
   const [exiting, setExiting] = useState(false);
   const wasOpen = useRef(false);
   useEffect(() => {
-    const isOpen = Boolean(viewer && slug && isDock);
-    if (isOpen) {
+    if (open) {
       // Reopened (or opened at a different ref): cancel any pending fade.
       wasOpen.current = true;
       setExiting(false);
@@ -108,7 +139,7 @@ export function SourceDock() {
     // `exiting` is deliberately NOT a dependency: including it re-ran this
     // effect the instant it was set, and the cleanup then cancelled the very
     // timer that ends the fade, so the pane never unmounted.
-  }, [viewer, slug, isDock]);
+  }, [open]);
 
   // Escape closes the dock — but let the floating "Make reference" menu (and an
   // active text selection) consume the first Escape, so it takes two presses to
@@ -202,10 +233,13 @@ export function SourceDock() {
       generation,
       total: index?.document?.page_count ?? lastShown.current?.total ?? 0,
       title: index?.document?.title ?? slug!,
+      index,
     };
   }
   const shown = lastShown.current;
-  if (!shown || (!open && !exiting)) return null;
+  // The first closed render precedes the exit effect. Keep the same inner
+  // viewer mounted on that render too, so its scroll position survives.
+  if (!shown || (!open && !exiting && !wasOpen.current)) return null;
 
   const { viewer: shownViewer, slug: shownSlug, total, title: docTitle } = shown;
   const shownGeneration = shown.generation;
@@ -247,7 +281,7 @@ export function SourceDock() {
         <div className="flex items-center gap-1">
           <button
             type="button"
-            onClick={() => setMode("modal")}
+            onClick={openFullscreen}
             className="rounded px-1.5 py-0.5 hover:bg-neutral-200"
             title="Open as full-screen quick-look"
           >
@@ -271,12 +305,14 @@ export function SourceDock() {
           generation={shownGeneration}
           page={Math.min(shownViewer.page, total || 1)}
           total={total}
+          index={shown.index}
           highlightBbox={shownViewer.highlightBbox}
           highlightAlso={shownViewer.highlightAlso}
           highlightPage={shownViewer.highlightPage}
           highlightNonce={shownViewer.nonce}
           title={docTitle}
-          onPageChange={setPage}
+          onPageChange={onPageChange}
+          onContentsHighlightChange={onContentsHighlightChange}
           canvasSlug={shownViewer.workspaceSlug}
         />
         {/* Draggable divider, pinned to the dock's right edge. */}

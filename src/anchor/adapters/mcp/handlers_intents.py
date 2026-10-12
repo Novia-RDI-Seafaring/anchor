@@ -23,16 +23,12 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from anchor.core.events.actor import Actor, actor_scope
-from anchor.core.intents.intent import INTENT_KINDS
-from anchor.core.intents.timing import intent_timing
+from anchor.core.events.actor import Actor
 from anchor.core.services.intent_service import (
     IntentService,
-    SuggestionApplyError,
-    ThreadError,
-    UnknownIntentKindError,
 )
 from anchor.infra.activity import ActivityLog
+from intent_layer.timing import intent_timing
 
 TOOL_NAMES: set[str] = {
     "list_pending_intents",
@@ -383,7 +379,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                     "text": {"type": "string", "description": "What the change does, one or two sentences."},
                     "ops": {
                         "type": "array",
-                        "items": {"type": "object"},
+                        "items": _OP_SCHEMA,
                         "description": "Canvas ops, as for intent_add_item type=suggestion.",
                     },
                     "supersedes": {"type": "string", "description": "An earlier suggestion this replaces."},
@@ -399,7 +395,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                         "properties": {
                             "text": {"type": "string"},
                             "options": {"type": "array", "items": {"type": "string"}},
-                            "place": {"type": "object"},
+                            "place": _PLACE_SCHEMA,
                         },
                         "required": ["text"],
                         "additionalProperties": False,
@@ -468,136 +464,20 @@ def tool_definitions() -> list[dict[str, Any]]:
     ]
 
 
-async def call_tool(
-    intents: IntentService,
-    name: str,
-    args: dict[str, Any],
-    *,
-    actor: Actor | None = None,
-    activity: ActivityLog | None = None,
-) -> str:
-    """Dispatch one intent tool call. Thread writes are attributed to
-    ``actor`` (the connected MCP client, #322); with none given they fall
-    back to the generic ``{kind: "agent", label: "mcp-agent"}``. ``activity``
-    is the project's call log, for ``intent_timing``."""
-    if actor is None:
-        actor = Actor(kind="agent", label="mcp-agent")
+async def call_tool(intents: IntentService, name: str, args: dict[str, Any], *,
+                    actor: Actor | None = None, activity: ActivityLog | None = None) -> str:
+    """Retain Anchor schemas and map its ask to the generic dispatcher.
+    ``activity`` is the project's call log, for ``intent_timing``."""
+    from intent_layer.adapters.mcp import call_tool as dispatch
     if name == "intent_timing":
         intent = await intents.get(args["id"])
         if intent is None:
             return json.dumps({"error": "not_found", "id": args.get("id")})
         calls = activity.read(since=intent.created_at) if activity is not None else []
         return json.dumps({"timing": intent_timing(intent, calls)})
-    with actor_scope(actor):
-        return await _dispatch(intents, name, args)
-
-
-async def _dispatch(intents: IntentService, name: str, args: dict[str, Any]) -> str:
-    if name == "list_pending_intents":
-        pending = await intents.list_pending(canvas=args.get("canvas"))
-        return json.dumps({"intents": [i.to_dict() for i in pending]})
-    if name == "next_intent":
-        nxt = await intents.next(canvas=args.get("canvas"))
-        return json.dumps({"intent": nxt.to_dict() if nxt is not None else None})
-    if name == "resolve_intent":
-        try:
-            resolved = await intents.resolve(args["id"], args.get("result"))
-        except KeyError:
-            return json.dumps({"error": "not_found", "id": args.get("id")})
-        return json.dumps({"resolved": resolved.to_dict()})
-    if name == "get_intent":
-        intent = await intents.get(args["id"])
-        if intent is None:
-            return json.dumps({"error": "not_found", "id": args.get("id")})
-        return json.dumps({"intent": intent.to_dict()})
     if name == "intent_ask":
         slug = args["workspace_slug"]
-        targets = [
-            {"workspace_id": slug, "node_id": node}
-            for node in (args.get("targets") or [])
-        ]
-        try:
-            intent = await intents.enqueue(
-                "user_request",
-                origin_canvas_id=slug,
-                payload={"text": args.get("text", "")},
-                targets=targets,
-            )
-        except UnknownIntentKindError:
-            return json.dumps({"error": "unknown_kind", "valid_kinds": sorted(INTENT_KINDS)})
-        except ThreadError as exc:
-            return json.dumps(_error(exc))
-        return json.dumps({"intent": intent.to_dict()})
-    try:
-        if name == "intent_add_item":
-            intent, item = await intents.add_item(
-                args["id"],
-                type=args.get("type", ""),
-                text=args.get("text") or "",
-                ops=args.get("ops"),
-                supersedes=args.get("supersedes"),
-                place=args.get("place"),
-                options=args.get("options"),
-            )
-            return json.dumps({"intent": intent.to_dict(), "item": item.to_dict()})
-        if name == "intent_update_item":
-            intent, item = await intents.update_item(
-                args["id"],
-                args["item_id"],
-                text=args.get("text"),
-                state=args.get("state"),
-                place=args.get("place"),
-            )
-            return json.dumps({"intent": intent.to_dict(), "item": item.to_dict()})
-        if name == "intent_answer":
-            intent, item = await intents.answer_question(
-                args["id"], args["item_id"], text=args.get("text") or "",
-            )
-            return json.dumps({"intent": intent.to_dict(), "item": item.to_dict()})
-        if name == "intent_act":
-            out = await intents.act(
-                args["id"],
-                text=str(args.get("text") or ""),
-                ops=list(args.get("ops") or []),
-                supersedes=args.get("supersedes"),
-                apply=args.get("apply", True) is not False,
-                done=args.get("done"),
-                question=args.get("question"),
-                result=args.get("result"),
-                resolve=bool(args.get("resolve")),
-            )
-            return json.dumps({
-                "intent": out["intent"].to_dict(),
-                "suggestion": out["suggestion"].to_dict(),
-                "applied": out["applied"],
-                "question": out["question"].to_dict() if out["question"] else None,
-                "result": out["result"].to_dict() if out["result"] else None,
-            })
-        if name == "intent_apply":
-            intent, item, applied = await intents.apply_suggestion(
-                args["id"], args["item_id"],
-            )
-            return json.dumps(
-                {"intent": intent.to_dict(), "item": item.to_dict(), "applied": applied}
-            )
-        if name == "intent_revert":
-            intent, item, reverted = await intents.revert_suggestion(args["id"], args["item_id"])
-            return json.dumps(
-                {"intent": intent.to_dict(), "item": item.to_dict(), "reverted": reverted}
-            )
-        if name == "intent_decline":
-            intent, item = await intents.decline_suggestion(
-                args["id"], args["item_id"], comment=args.get("comment"),
-            )
-            return json.dumps({"intent": intent.to_dict(), "item": item.to_dict()})
-    except KeyError:
-        return json.dumps({"error": "not_found", "id": args.get("id")})
-    except ThreadError as exc:
-        return json.dumps(_error(exc))
-    raise RuntimeError(f"unknown intent tool {name!r}")
-
-
-def _error(exc: ThreadError) -> dict[str, Any]:
-    if isinstance(exc, SuggestionApplyError):
-        return {**exc.to_dict(), "message": str(exc)}
-    return {"error": exc.code, "message": str(exc)}
+        args = {**args, "origin_canvas_id": slug, "targets": [
+            {"workspace_id": slug, "node_id": node} for node in (args.get("targets") or [])
+        ]}
+    return await dispatch(intents, name, args, actor=actor)

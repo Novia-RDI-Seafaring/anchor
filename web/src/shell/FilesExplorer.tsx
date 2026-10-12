@@ -1,21 +1,20 @@
 /**
- * FilesExplorer — the left-edge file list of the source cluster (#220 part B).
+ * FilesExplorer: canvas sources and project files in the source cluster.
  *
- * VS Code / Cursor model: ingested artefacts live here at the far left, the
- * PDF viewer sits immediately to the right, the canvas after that, and the
- * inspector (Properties) on the far right. This component replaces the retired
- * right-side Library drawer; its Documents + CAD lists moved here, and the
- * Canvases list keeps a home as a second tab.
+ * Sources derives a document dock from the current canvas's citations. Files
+ * keeps the project-wide document and CAD library. Both use the shared PDF
+ * viewer; a source citation does not need a document card or an evidence hub.
  *
  * Two interactions per document row:
- *   1. Click  -> open it in the shared PDF viewer (dock mode), to the right.
+ *   1. Click  -> open it in the shared PDF viewer (dock mode).
  *      The open document is highlighted as active.
  *   2. Drag   -> drop on the canvas to instantiate a node. The drag payloads
  *      are byte-for-byte the ones the old Library used so CanvasGraph's drop
  *      handler is untouched: `application/x-anchor-node` for documents + CAD,
  *      `application/x-anchor-canvas-link` for canvases.
  */
-import { useEffect, useRef, useState } from "react";
+import { FileText } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { cad, type CadModel } from "@/api/cad";
 import {
@@ -23,8 +22,10 @@ import {
   type WorkspaceListEntry,
 } from "@/api/canvases";
 import { ReferencesPanel } from "@/canvas/primitives/viewers/ReferencesPanel";
+import { useOpenSourceRef } from "@/canvas/useOpenSourceRef";
 import { documents, type DocumentSummary } from "@/api/documents";
 import { cn } from "@/lib/cn";
+import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
 import {
@@ -36,13 +37,14 @@ import { IntentsPanel } from "./IntentsPanel";
 import { useIntentsFeed } from "./intentsFeed";
 import { ProposalsPanel } from "./ProposalsPanel";
 import { useProposalSetsFeed } from "./proposalSetsFeed";
+import { canvasSources, type CanvasSource } from "./canvasSources";
 
 type Props = { workspaceSlug: string };
 
-type TabKey = "files" | "canvases" | "references" | "intents" | "proposals";
+type TabKey = "sources" | "files" | "canvases" | "references" | "intents" | "proposals";
 
 export function FilesExplorer({ workspaceSlug }: Props) {
-  const [tab, setTab] = useState<TabKey>("files");
+  const [tab, setTab] = useState<TabKey>("sources");
   // Mounted here (not in the panel) so the Intents tab badge stays live even
   // while another tab is showing.
   const intentsFeed = useIntentsFeed();
@@ -54,8 +56,19 @@ export function FilesExplorer({ workspaceSlug }: Props) {
   const [cads, setCads] = useState<CadModel[]>([]);
   const [workspaces, setWorkspaces] = useState<WorkspaceListEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
+  const [documentsLoaded, setDocumentsLoaded] = useState(false);
+
+  const canvasSlug = useCanvasStore((s) => s.slug);
+  const nodes = useCanvasStore((s) => s.nodes);
+  const edges = useCanvasStore((s) => s.edges);
+  const sources = useMemo(
+    () => canvasSlug === workspaceSlug ? canvasSources(nodes, edges) : [],
+    [canvasSlug, workspaceSlug, nodes, edges],
+  );
 
   const openPdf = useUiStore((s) => s.openPdf);
+  const openSourceRef = useOpenSourceRef(workspaceSlug);
   // Bring the References tab forward when a reference becomes active (e.g. the
   // user clicked its green box in the PDF viewer), so the selection is visible.
   const activeReferenceId = useUiStore((s) => s.activeReferenceId);
@@ -64,6 +77,7 @@ export function FilesExplorer({ workspaceSlug }: Props) {
   }, [activeReferenceId]);
   // The active document is whatever the shared viewer currently shows.
   const activeSlug = useUiStore((s) => s.pdfViewer?.slug ?? null);
+  const activePage = useUiStore((s) => s.pdfViewer?.page);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,12 +85,17 @@ export function FilesExplorer({ workspaceSlug }: Props) {
     const refresh = async () => {
       try {
         const [d, c, w] = await Promise.all([
-          documents.list().catch(() => [] as DocumentSummary[]),
+          documents.list().then(
+            (items) => ({ items, error: null }),
+            () => ({ items: [] as DocumentSummary[], error: "Could not load project documents." }),
+          ),
           cad.list().catch(() => [] as CadModel[]),
           canvases.list().catch(() => [] as WorkspaceListEntry[]),
         ]);
         if (!cancelled) {
-          setDocs(d);
+          if (!d.error) setDocs(d.items);
+          setDocumentsError(d.error);
+          setDocumentsLoaded(true);
           setCads(c);
           setWorkspaces(w);
         }
@@ -101,16 +120,39 @@ export function FilesExplorer({ workspaceSlug }: Props) {
     openPdf(slug, { mode: "dock", workspaceSlug });
   };
 
+  const openSource = (source: CanvasSource) => {
+    const ui = useUiStore.getState();
+    if (ui.pdfViewer?.slug === source.slug && ui.pdfViewer.workspaceSlug === workspaceSlug) {
+      // Selecting the active source keeps the page and highlight being reviewed.
+      ui.setPdfViewerMode("dock");
+      ui.pinPdfViewer();
+      return;
+    }
+    if (source.ref) {
+      ui.setPdfViewerMode("dock");
+      openSourceRef(source.ref);
+    } else {
+      openDocument(source.slug);
+    }
+  };
+
   const visibleCanvases = filterAttachable(workspaces, workspaceSlug);
+  const activeDocument = docs.find((d) => d.slug === activeSlug);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-white" data-testid="files-explorer">
-      {/* Tabs: Files (documents + CAD) and Canvases. */}
+      {/* Canvas sources and the project-wide file library share the viewer. */}
       <div
         className="flex shrink-0 flex-wrap items-center gap-1 border-b border-neutral-200 bg-neutral-50 px-1.5 py-1"
         role="tablist"
         aria-label="Explorer sections"
       >
+        <ExplorerTab
+          label="Sources"
+          active={tab === "sources"}
+          onClick={() => setTab("sources")}
+          badge={sources.length}
+        />
         <ExplorerTab
           label="Files"
           active={tab === "files"}
@@ -163,7 +205,60 @@ export function FilesExplorer({ workspaceSlug }: Props) {
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        {tab === "files" ? (
+        {tab === "sources" ? (
+          <div className="space-y-3" data-testid="document-dock">
+            <Section title={`Canvas sources (${sources.length})`}>
+              {sources.length === 0 ? (
+                <Empty hint="Add a source citation to a fact or spec row. Browse Files for project documents." />
+              ) : (
+                [...sources].sort((a, b) => Number(b.slug === activeSlug) - Number(a.slug === activeSlug))
+                  .map((source) => {
+                    const doc = docs.find((d) => d.slug === source.slug);
+                    return doc ? (
+                      <DocumentItem
+                        key={source.slug}
+                        doc={doc}
+                        active={source.slug === activeSlug}
+                        expanded={source.slug === activeSlug}
+                        page={source.slug === activeSlug ? activePage : undefined}
+                        onOpen={() => openSource(source)}
+                      />
+                    ) : (
+                      <MissingDocumentItem
+                        key={source.slug}
+                        source={source}
+                        active={source.slug === activeSlug}
+                        hint={!documentsLoaded ? "Loading document details..." : documentsError
+                          ? "Document details unavailable" : "Document unavailable in this project"}
+                        onOpen={() => openSource(source)}
+                      />
+                    );
+                  })
+              )}
+            </Section>
+            {activeSlug && !sources.some((source) => source.slug === activeSlug) ? (
+              <Section title="Open document" subtitle="not cited on this canvas">
+                {activeDocument ? (
+                  <DocumentItem
+                    key={activeSlug}
+                    doc={activeDocument}
+                    active
+                    expanded
+                    page={activePage}
+                    onOpen={() => openSource({ slug: activeSlug })}
+                  />
+                ) : (
+                  <MissingDocumentItem
+                    source={{ slug: activeSlug }}
+                    active
+                    hint="Document details unavailable"
+                    onOpen={() => openSource({ slug: activeSlug })}
+                  />
+                )}
+              </Section>
+            ) : null}
+          </div>
+        ) : tab === "files" ? (
           <div className="space-y-3">
             <Section title={`Documents (${docs.length})`} subtitle="anchor_pdfs">
               {docs.length === 0 ? (
@@ -217,6 +312,9 @@ export function FilesExplorer({ workspaceSlug }: Props) {
           </div>
         )}
 
+        {documentsError && (tab === "sources" || tab === "files") ? (
+          <div role="status" className="px-2 pt-2 text-[10px] text-red-600">{documentsError} Retrying automatically.</div>
+        ) : null}
         {error ? (
           <div className="px-2 pt-2 text-[10px] text-red-600">error: {error}</div>
         ) : null}
@@ -273,10 +371,14 @@ function ExplorerTab({
 function DocumentItem({
   doc,
   active,
+  expanded = false,
+  page,
   onOpen,
 }: {
   doc: DocumentSummary;
   active: boolean;
+  expanded?: boolean;
+  page?: number;
   onOpen: () => void;
 }) {
   const [imgError, setImgError] = useState(false);
@@ -285,7 +387,7 @@ function DocumentItem({
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const thumbnailUrl = documents.pageImageUrl(doc.slug, 1);
-  const hint = `${doc.page_count}p${doc.has_gold ? " · gold" : ""}`;
+  const hint = `${doc.page_count} ${doc.page_count === 1 ? "page" : "pages"} | ${doc.has_gold ? "gold ready" : "no gold"}`;
   const payload = {
     node_type: "document",
     label: doc.title || doc.filename,
@@ -315,6 +417,7 @@ function DocumentItem({
         data-testid="document-item"
         data-slug={doc.slug}
         data-active={active ? "true" : "false"}
+        data-expanded={expanded ? "true" : "false"}
         aria-current={active ? "true" : undefined}
         onClick={onOpen}
         onKeyDown={(e) => {
@@ -350,9 +453,9 @@ function DocumentItem({
             {imgError ? (
               <div
                 data-testid="thumbnail-fallback"
-                className="flex h-10 w-8 items-center justify-center rounded bg-neutral-100 text-[14px] text-neutral-400"
+                className={cn("flex items-center justify-center rounded bg-neutral-100 text-neutral-400", expanded ? "h-20 w-16" : "h-10 w-8")}
               >
-                ▤
+                <FileText size={20} aria-hidden="true" />
               </div>
             ) : (
               <img
@@ -360,7 +463,7 @@ function DocumentItem({
                 src={thumbnailUrl}
                 alt={doc.filename}
                 loading="lazy"
-                className="h-10 w-8 rounded object-cover object-top"
+                className={cn("rounded object-cover object-top", expanded ? "h-20 w-16" : "h-10 w-8")}
                 onError={() => setImgError(true)}
               />
             )}
@@ -380,6 +483,9 @@ function DocumentItem({
               {doc.filename}
             </div>
             <div className="text-[9px] italic text-neutral-400">{hint}</div>
+            {expanded && page ? (
+              <div className="mt-1 text-[10px] font-medium text-sky-700">Viewing page {page}</div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -422,6 +528,32 @@ function DocumentItem({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function MissingDocumentItem({ source, active, hint, onOpen }: {
+  source: CanvasSource;
+  active: boolean;
+  hint: string;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid="missing-document-item"
+      data-slug={source.slug}
+      data-active={active ? "true" : "false"}
+      aria-current={active ? "true" : undefined}
+      onClick={onOpen}
+      className={cn("flex w-full items-center gap-2 rounded border px-2 py-2 text-left",
+        active ? "border-sky-300 bg-sky-50 ring-1 ring-sky-300" : "border-amber-200 bg-amber-50")}
+    >
+      <FileText size={20} className="shrink-0 text-neutral-400" aria-hidden="true" />
+      <span className="min-w-0">
+        <span className="block truncate text-xs font-medium text-neutral-800">{source.slug}</span>
+        <span className="block text-[10px] text-neutral-500">{hint}</span>
+      </span>
+    </button>
   );
 }
 

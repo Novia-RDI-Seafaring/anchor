@@ -195,10 +195,11 @@ def test_publication_rejects_invalid_or_missing_polished_members_before_switch(t
         candidate = store.replacement("doc", token)
         index = await store.get_index("doc")
         await candidate.write_silver_artifact("doc", "index.json", json.dumps(index))
-        await candidate.write_silver_artifact("doc", "pages.meta.json", json.dumps({"pages": {"1": {}}}))
+        await candidate.write_silver_artifact("doc", "pages.meta.json", json.dumps({"pages": {"1": {"item_ids": []}}}))
         await candidate.write_silver_artifact("doc", "pages/1.raw.md", "NEW RAW")
         await candidate.write_silver_artifact("doc", "pages/1.png", b"image")
         await candidate.write_silver_artifact("doc", "pages/1.candidates.json", "[]")
+        await candidate.write_silver_artifact("doc", "pages/1.items.json", "[]")
         await candidate.write_silver_artifact("doc", "ingest-report.json", json.dumps({
             "status": "success", "polished_pages": polished,
         }))

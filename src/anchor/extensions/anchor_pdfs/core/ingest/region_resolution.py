@@ -75,6 +75,55 @@ PAGE_INSTRUCTIONS = (
 )
 
 
+def source_region_metadata(region: dict[str, Any]) -> dict[str, Any]:
+    """Persist original chunks as metadata; producer payloads stay authoritative."""
+    if region.get("derived_from"):
+        return dict(region)
+    return {key: value for key, value in region.items()
+            if key not in {"content", "cells", "table_topology"}}
+
+
+def materialize_source_region(
+    region: dict[str, Any], *, page: int, items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Reconstruct source content and precise cells from one pinned silver page.
+
+    Legacy callers without full silver keep their stored data. Callers with
+    full silver never trust duplicated source content. Derived records bypass
+    reconstruction because their payload was created by a separate producer.
+    """
+    if region.get("derived_from"):
+        return dict(region)
+    out = source_region_metadata(region)
+    if any(not isinstance(item.get("id"), str) for item in items):
+        raise ValueError(f"invalid silver item identity on page {page}")
+    by_id = {item["id"]: item for item in items}
+    if region.get("table_slice") is not None:
+        _, bbox, data, content, _, errors = _resolve_table_slice(
+            region["table_slice"], index=0, kind=region.get("kind"), by_id=by_id,
+        )
+        if errors:
+            raise ValueError("invalid silver table membership: " + "; ".join(e["message"] for e in errors))
+        out.update(data)
+        out["bbox"] = bbox
+    else:
+        member_ids = region.get("member_item_ids")
+        if member_ids:
+            if not isinstance(member_ids, list) or any(not isinstance(m, str) or m not in by_id for m in member_ids):
+                raise ValueError(f"unknown silver members for region {region.get('id')!r} on page {page}")
+            selected = [by_id[m] for m in member_ids]
+        else:
+            bbox = region.get("approx_bbox") or region.get("bbox") or []
+            _, indexes = snap_to_docling_items({"items": items}, page, bbox)
+            selected = [items[i] for i in indexes]
+        content = region_content_from_items(selected, max_chars=None)
+        if region.get("kind") in {"table", "spec_block"}:
+            out.update(table_data_from_items(selected, region_bbox=region.get("bbox")))
+    if content:
+        out["content"] = content
+    return out
+
+
 def resolve_regions(
     regions: Any,
     *,

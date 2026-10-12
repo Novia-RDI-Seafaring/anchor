@@ -53,7 +53,7 @@ describe("IntentsSse", () => {
     sse.connect();
 
     const es = FakeEventSource.instances[0]!;
-    expect(es.url).toContain("/api/intents/events");
+    expect(es.url).toContain("/api/events");
 
     es.emit("intent_pending", JSON.stringify({ count: 3 }));
     expect(onPending).toHaveBeenCalledWith(3);

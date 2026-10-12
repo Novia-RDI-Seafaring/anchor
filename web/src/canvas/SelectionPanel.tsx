@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { FillPicker } from "@/canvas/FillPicker";
 import { StrokePicker } from "@/canvas/StrokePicker";
 import { TextPicker } from "@/canvas/TextPicker";
+import { NodePresentationEditor } from "@/canvas/NodePresentationEditor";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
@@ -34,7 +35,7 @@ export function SelectionPanel() {
   const getNodeData = (nid: string) => nodes[nid]?.data;
   // Text elements are words with no box, so fill and stroke would style
   // nothing the user can see.
-  const isText = node.node_type === "text";
+  const isText = node.node_type === "text" || node.data?.role === "heading";
 
   return (
     <div
@@ -42,6 +43,7 @@ export function SelectionPanel() {
       className="pointer-events-auto absolute left-3 top-16 z-20 flex max-h-[calc(100vh-6rem)] w-[17rem] flex-col gap-3 overflow-y-auto rounded-xl border border-neutral-200 bg-white/95 px-3 py-3 shadow-md backdrop-blur"
       aria-label="Selection properties"
     >
+      <NodePresentationEditor workspaceSlug={workspaceSlug} node={node} />
       {isText ? null : (
         <>
           <PanelSection label="Fill">

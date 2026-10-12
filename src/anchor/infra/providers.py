@@ -65,6 +65,26 @@ PROVIDERS: tuple[Provider, ...] = (
         "harness's own provider agreement. Anchor creates no additional model endpoint.",
     ),
     Provider(
+        key="claude",
+        label="Claude Code (your Claude plan, no API key)",
+        zone="Anthropic - pages go through your own Claude Code sign-in",
+        does_vision=True,
+        base_url_required=False,
+        default_vision_model="sonnet",
+        note="Polish and gold regions run through the `claude` CLI you have installed and "
+        "signed in to. Anchor never touches the credential. Embeddings stay local.",
+    ),
+    Provider(
+        key="codex",
+        label="Codex (your ChatGPT plan, no API key)",
+        zone="OpenAI - pages go through your own Codex sign-in",
+        does_vision=True,
+        base_url_required=False,
+        default_vision_model="default",
+        note="Polish and gold regions run through the `codex` CLI you have installed and "
+        "signed in to (`codex login`). Anchor never touches the credential. Embeddings stay local.",
+    ),
+    Provider(
         key="ollama",
         label="Ollama (self-hosted)",
         zone="your machine / LAN · no internet egress",
@@ -166,12 +186,21 @@ class EmbedOption:
     remote: bool
 
 
-# Local stays a single bge model on purpose: the in-browser query embedder is
-# fixed to bge-small, so a different local model would silently break browser
-# search (vector-space mismatch — see #41). The meaningful choice is local-vs-
-# remote, surfaced only when an endpoint exists.
+# The first entry is the default. Search embeds queries on the server with the
+# configured model and skips documents embedded with another one, so switching
+# models means re-embedding (`anchor embed --overwrite`).
 LOCAL_EMBED_OPTIONS: tuple[EmbedOption, ...] = (
-    EmbedOption("BAAI/bge-small-en-v1.5", "bge-small · 384d · local, no egress", remote=False),
+    EmbedOption(
+        "hotchpotch/bekko-embedding-v1-a25m",
+        "bekko-a25m · 384d · multilingual, 2k-token regions · local, no egress",
+        remote=False,
+    ),
+    EmbedOption(
+        "hotchpotch/bekko-embedding-v1-a8m",
+        "bekko-a8m · 384d · multilingual, smaller and faster · local, no egress",
+        remote=False,
+    ),
+    EmbedOption("BAAI/bge-small-en-v1.5", "bge-small · 384d · English, 512 tokens · local, no egress", remote=False),
 )
 
 REMOTE_EMBED_OPTIONS: tuple[EmbedOption, ...] = (
@@ -183,7 +212,7 @@ REMOTE_EMBED_OPTIONS: tuple[EmbedOption, ...] = (
 def embed_options_for(provider: Provider) -> tuple[EmbedOption, ...]:
     """Embedding choices for a provider.
 
-    The local sentence-transformer model always applies (no egress). Remote
+    The local sentence-transformer models always apply (no egress). Remote
     embeddings are offered only when there is an OpenAI-compatible endpoint to
     send vectors to; ``local``/``ollama`` keep embeddings on the host.
     """

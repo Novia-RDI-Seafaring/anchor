@@ -22,7 +22,7 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, PrivateAttr, SecretStr, field_validator
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -117,6 +117,10 @@ def discover_config_file() -> Path | None:
 class AnchorConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ANCHOR_", env_file=".env", extra="ignore")
 
+    #: The private ``.env`` of the environment this config was resolved from,
+    #: set by the environment resolver. Private, so no setting can redirect it.
+    _env_dotenv_path: Path | None = PrivateAttr(default=None)
+
     data_dir: Path = Field(default_factory=lambda: Path.home() / "anchor-data")
 
     @field_validator("data_dir", mode="after")
@@ -161,7 +165,7 @@ class AnchorConfig(BaseSettings):
     # project's anchor.toml. Run ``anchor models prefetch`` once first so the
     # required weights are cached before an offline run.
     local_only: bool = False
-    embed_model: str = "BAAI/bge-small-en-v1.5"
+    embed_model: str = "hotchpotch/bekko-embedding-v1-a25m"
     polish_model: str = "gpt-5.4"
     region_model: str = "gpt-5.4"
     dpi: int = 150

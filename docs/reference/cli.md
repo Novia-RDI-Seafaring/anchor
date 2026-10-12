@@ -7,19 +7,23 @@ The `anchor` command exposes the user-facing local application surface.
 | Command | Purpose |
 | --- | --- |
 | `anchor init [name]` | Initialize a project in the current folder. Writes an `anchor.toml` marker and a hidden `.anchor_data/`, binds the folder to an environment, and registers the project by name. The name defaults to the folder's. `--env <name>` binds it (default: the default env). If that environment does not exist, init prompts for a provider on a terminal, or accepts `--provider` / `--base-url` / `--vision-model` / `--embed-model` to provision it inline, or errors (pointing at `anchor env create`) when run unattended. `--description`, `--force`, `--yes` round out the flags. |
-| `anchor env create <name>` | The provider / data-zone picker. Creates an environment (the trust boundary) and its `default` project, writing `env.toml`. Options: `--provider local\|harness\|ollama\|openai\|azure\|custom`, `--embed-model`, `--base-url`, `--vision-model`, `--docling-device`, `--description`, `--yes`, `--force`. Self-corrects an Azure endpoint missing `/openai/v1/` and offers to save the key to `~/.anchor/envs/<name>/.env`. The key does not choose the provider. |
+| `anchor env create <name>` | The provider / data-zone picker. Creates an environment (the trust boundary) and its `default` project, writing `env.toml`. Options: `--provider local\|harness\|claude\|codex\|ollama\|openai\|azure\|custom`, `--embed-model`, `--base-url`, `--vision-model`, `--docling-device`, `--description`, `--yes`, `--force`. Self-corrects an Azure endpoint missing `/openai/v1/` and offers to save the key to `~/.anchor/envs/<name>/.env`. The key does not choose the provider. |
 | `anchor env list / show / default / set-description` | Manage environments. `list` shows them (`*` marks the default); `show <name>` prints the profile and its projects; `default <name>` sets the default; `set-description <name> <desc>` updates the description. |
 | `anchor project create / list / set-description / move / remove / rename` | Manage projects inside an environment. `create <name> --env <env>` makes a *managed* project under `envs/<env>/projects/<name>/`. `move <name> --to <env> --env <src>` relocates a project across environments, confirming the zone change. `remove <name> [--delete-data] [--force]` deregisters a project (and with `--delete-data` deletes its `.anchor_data/` + `anchor.toml`); it refuses a project that still has documents/canvases unless `--force`. `rename <old> <new>` renames a project across the registry + its `anchor.toml`. |
-| `anchor use <env> [project]` | Set a session default so later commands can omit `--env` / `--project`. |
+| `anchor use <env> [project]` | Set CLI session defaults. This does not select a project for an MCP server. |
 | `anchor migrate` | Fold a pre-existing `~/anchor-data` into `envs/local/projects/default/.anchor_data/`. |
 | `anchor check --env <name>` | Verify the resolved data zone: provider / endpoint / project dir / models / key, repair a malformed endpoint (`--fix`), and with `--probe` confirm the deployment + key. Exits non-zero when something would break. |
-| `anchor serve` | Serve the web UI and HTTP/SSE API for the selected project. |
+| `anchor serve` | Serve one project; use `--env NAME --project NAME` explicitly when needed, or `--project <folder>` to serve an `anchor init` folder by path (the folder's `anchor.toml` picks the environment, so `--env` must match or be omitted). Port 8002 is the default; an unavailable port fails with the bind reason. Use `--port N` to choose a port or `--port-walk` to try up to 20 ports and print the actual URL. |
+| `anchor serve-info` | List running canvas servers and their resolved projects/URLs. |
+| `anchor models list / prefetch --env NAME` | Inspect or download the local model set before offline ingestion. Prefetch requires network access. |
 
 `anchor env create <name>` is the recommended first step on a new machine, then
 `anchor init` in a working folder, then `anchor check`. Inside a project folder
 Anchor walks up to the nearest `anchor.toml` and needs no flags. Otherwise
 select the environment and project with `--env` / `--project`, `anchor use`, or
-`ANCHOR_ENV` / `ANCHOR_PROJECT`. Every flag of `anchor env create` is scriptable
+`ANCHOR_ENV` / `ANCHOR_PROJECT`. `--project` takes a project name or the path
+to an `anchor init` folder (`anchor check --project ~/work/pumps`), the same
+folder form `anchor-mcp --project` accepts. Every flag of `anchor env create` is scriptable
 (`--yes --provider … --base-url … --vision-model …`), so an agent can scaffold
 an environment the way it runs `npm init`. See
 [Environments and projects](../guides/environments-and-projects.md) and the
@@ -42,6 +46,19 @@ Commands resolve storage from the selected environment and project, in order:
 `--env` / `--project` > `ANCHOR_ENV` / `ANCHOR_PROJECT` > the `anchor use`
 selection > the default environment and its `default` project. An explicit
 `--data-dir DIR` overrides for a single command.
+
+For native-text documents, use `anchor ingest report.pdf --profile text` to
+build grounded gold chunks directly from silver text and tables. This skips
+model-backed polishing and vision extraction; configured embeddings still run
+and use the environment's selected provider. Docling extraction, OCR settings,
+page images, and source references are retained. Figures do not receive visual
+interpretation. The default `--profile keyed` keeps the existing datasheet path.
+Do not combine `--profile text` with `--skip-regions`. Existing gold is still
+skipped unless you pass `--force` to replace it using the selected profile.
+
+The same choice is available as `profile="text"` on MCP `ingest_pdf` and the
+`profile=text` form field on `POST /api/workspaces/{slug}/upload`. Text-profile
+uploads run directly even in a harness project, without an agent intent.
 
 ## Canvas commands
 
@@ -74,14 +91,48 @@ anchor canvas --help
 | `anchor fmu` | Inspect and simulate FMUs when the optional runtime is installed. |
 | `anchor cad` | Inspect supported CAD models and alter parameters. |
 | `anchor extensions` | List and inspect OIP producer manifests. |
-| `anchor install <harness>` | Register ANCHOR's MCP server (+ skill) with an AI harness. |
+| `anchor install <harness>` | Register MCP for `codex`, `claude-code`, `claude-desktop`, or `cursor`. Only the Claude Code installer also writes a composed skill. |
 
 Run `anchor <group> --help` for option-level detail.
 
-`anchor install claude-code` (and `cursor`, `claude-desktop`) register an MCP
+`anchor install codex` (and `claude-code`, `cursor`, `claude-desktop`) register an MCP
 entry pointing at an environment (`--env <name>`, default the default
-environment). `claude-desktop` supports a named entry per environment
+environment). `codex` and `claude-desktop` support a named entry per environment
 (`--name`), so you can register more than one; see the command's `--help`.
 
 For current Claude Code, Codex, OpenCode, Cursor, and generic stdio setup
 instructions, see [Agent configuration](../guides/agent-configuration.md).
+
+## Intent inbox and review threads
+
+```bash
+anchor intents
+anchor intent next
+anchor intent show INTENT_ID
+anchor intent --help
+```
+
+Intents are project-scoped. A browser markup request or harness PDF upload can
+queue one. An external agent must pull and handle it; the application does not
+launch the agent. Empty placeholders do not enqueue requests.
+
+`anchor intent` includes thread replies (`add-item`, `update-item`, `ask`),
+`act` (suggest, apply, mark done and ask in one call), human decisions
+(`answer`, `apply`, `decline`, `revert`), `resolve`, and `timing`. `anchor
+intent timing INTENT_ID` reports how long an intent took and how many calls it
+cost. `anchor activity` prints the project's activity log, one entry per HTTP
+request or MCP tool call.
+Use subcommand help for payload arguments. An agent should stage a suggestion
+and wait for the human rather than approve its own changes.
+
+## Ingestion and source inspection
+
+`anchor ingest` is built-in ingestion. Browser uploads in a `harness` environment
+instead wait for a harness session; built-in ingestion alone does not perform
+that agent's gold interpretation. `anchor ingest-session --help` exposes the
+page-by-page session protocol for CLI use.
+
+Useful inspection commands include `page-text`, `locate-text`, `inspect-region`,
+`region-content`, `resolve-ref`, `ingests`, and `ingest-status`. Gold-region
+semantic search requires gold plus embeddings; page reading and available
+geometry can work without gold. See [Documents and canvases](../guides/documents-and-canvases.md).

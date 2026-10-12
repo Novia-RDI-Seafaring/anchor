@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { Handle, Position, useUpdateNodeInternals, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
 import { regionDropPayload } from "@/canvas/regionDrop";
 import { BACKEND_URL } from "@/api/client";
-import { documents, refHasSelector, type Region } from "@/api/documents";
+import { documents, type Region } from "@/api/documents";
 import { useDocumentIndex } from "@/api/useDocumentIndex";
 import { bboxToImageRect, sameBbox } from "@/lib/bbox";
 import { parseDocumentPageGeometry, type DocumentPageGeometry } from "@/lib/documentPageGeometry";
 import { useUiStore } from "@/stores/uiStore";
+import { SourceMark } from "@/canvas/SourceMark";
+import { useSourceValueHighlight } from "@/canvas/useSourceValueHighlight";
 
 const STATUS_STYLES: Record<string, string> = {
   pending: "border-amber-400 bg-amber-50",
@@ -120,9 +122,9 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   const [pageMeta, setPageMeta] = useState<Record<number, DocumentPageGeometry>>({});
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [hoveredLocal, setHoveredLocal] = useState<string | null>(null);
-  const [valueQuads, setValueQuads] = useState<number[][]>([]);
   const [nowSeconds, setNowSeconds] = useState(() => Date.now() / 1000);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const updateNodeInternals = useUpdateNodeInternals();
 
   useEffect(() => {
     if (isReady) return;
@@ -152,7 +154,6 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     if (!isReady || !slug) return;
     let cancelled = false;
     setRegions([]);
-    setImgSize(null);
     documents.regions(slug, page).then((rs) => {
       if (!cancelled) setRegions(rs);
     }).catch(() => {});
@@ -199,6 +200,21 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   // finishes, and the explorer already shows it. Only the regions and marks
   // drawn over it wait for ingestion.
   const coverUrl = slug ? documents.pageImageUrl(slug, page, generation) : null;
+  useEffect(() => {
+    const image = imgRef.current;
+    // A cached image can finish before this effect, or remain loaded while
+    // regions refresh. Do not wait for another load event in either case.
+    setImgSize(image?.complete && image.naturalWidth > 0 && image.naturalHeight > 0
+      ? { w: image.naturalWidth, h: image.naturalHeight }
+      : null);
+  }, [coverUrl]);
+
+  useEffect(() => {
+    // Region handles mount asynchronously without changing the node's size.
+    // Refresh after their DOM commit so ReactFlow registers and retires them.
+    updateNodeInternals(id);
+  }, [id, regions, imgSize, pageW, pageH, updateNodeInternals]);
+
   const ingestProgress = typeof d.ingest_progress === "number"
     ? Math.max(0, Math.min(100, Math.round(d.ingest_progress)))
     : status === "pending"
@@ -220,39 +236,9 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     ? status === "pending" ? "waiting" : "running"
     : `elapsed ${formatElapsed(elapsedSeconds)}`;
 
-  // A ref that points below the region (one silver item, one table cell)
-  // resolves to a tighter bbox than the region rectangle. The click path
-  // already does this, which is why the source dock lands on the cell while
-  // this preview drew a box around the whole section. Resolve it here too so
-  // the two surfaces agree about what the ref points at.
-  const [resolvedBbox, setResolvedBbox] = useState<number[] | null>(null);
-  const hoverSelectorKey = hoveredSourceRef && hoveredSourceRef.slug === slug
-    ? JSON.stringify([
-        hoveredSourceRef.page,
-        hoveredSourceRef.region_id ?? null,
-        hoveredSourceRef.item_id ?? null,
-        hoveredSourceRef.cell ?? null,
-      ])
-    : null;
-  useEffect(() => {
-    if (!slug || !hoveredSourceRef || hoveredSourceRef.slug !== slug) {
-      setResolvedBbox(null);
-      return;
-    }
-    if (!refHasSelector(hoveredSourceRef)) {
-      setResolvedBbox(null);
-      return;
-    }
-    let cancelled = false;
-    documents
-      .resolveRef(slug, hoveredSourceRef)
-      .then((r) => { if (!cancelled) setResolvedBbox(r?.bbox ?? null); })
-      // Region rectangle stays the graceful fallback: never show nothing.
-      .catch(() => { if (!cancelled) setResolvedBbox(null); });
-    return () => { cancelled = true; };
-    // hoverSelectorKey collapses the ref to the parts that change the answer,
-    // so a re-render with an equal-but-new object does not refetch.
-  }, [slug, hoverSelectorKey]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const { resolvedBbox, valueQuads, status: sourceStatus } = useSourceValueHighlight(
+    slug, page, hoveredSourceRef, generation, isReady,
+  );
 
   const externalHighlight = useMemo<RegionHighlight | null>(() => {
     if (!hoveredSourceRef || !slug) return null;
@@ -264,29 +250,33 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     };
   }, [hoveredSourceRef, slug, page, resolvedBbox]);
 
-  // Value-precise highlight (#197): when the hovered ref carries the cell value
-  // (`query`), locate that text inside the region and draw a finer yellow quad
-  // layer over the region rectangle. Empty result -> the region-level highlight
-  // (above) is the graceful fallback, so we never show nothing.
-  const valueQuery = externalHighlight ? hoveredSourceRef?.query : undefined;
-  const valueBbox = externalHighlight?.bbox;
-  useEffect(() => {
-    if (!isReady || !slug || !valueQuery || valueQuery.trim() === "") {
-      setValueQuads([]);
-      return;
+  const sourceMarks = [];
+  if (canScale && imgSize) {
+    const mainBbox = externalHighlight?.bbox ?? (externalHighlight?.regionId
+      ? regions.find((r, idx) => ((r as { id?: string }).id ?? `r${idx}`) === externalHighlight.regionId)?.bbox
+      : undefined);
+    const candidates = [
+      ...(mainBbox ? [{ key: "main", testId: "external-highlight", bbox: mainBbox }] : []),
+      ...valueQuads.map((bbox, i) => ({ key: `value-${i}`, testId: "value-quad", bbox })),
+      ...(hoveredSourceRef && hoveredSourceRef.slug === slug ? (hoveredSourceRef.places ?? [])
+        .map((place, i) => ({ key: `also-${i}`, testId: "also-place", ...place }))
+        .filter((place) => place.page === page) : []),
+    ];
+    for (const { key, testId, bbox } of candidates) {
+      const rect = bboxToImageRect(bbox, pageW, pageH, 100, 100);
+      if (rect) sourceMarks.push({ key, testId, rect });
     }
-    let cancelled = false;
-    documents.locate(slug, page, valueQuery, valueBbox).then((quads) => {
-      if (!cancelled) setValueQuads(quads);
-    }).catch(() => { if (!cancelled) setValueQuads([]); });
-    return () => { cancelled = true; };
-  }, [slug, page, valueQuery, valueBbox, isReady]);
+  }
 
   return (
     <div
       className={`w-80 rounded-lg border-2 text-sm shadow-sm transition ${cls} hover:shadow-md`}
     >
       <Handle type="target" position={Position.Left} className="canvas-node-socket" />
+
+      {sourceStatus ? (
+        <div role="status" className="px-3 py-1 text-xs text-amber-800">{sourceStatus}</div>
+      ) : null}
 
       {/* Page viewport with overlay.
           Image renders at natural aspect ratio (no maxHeight, no object-fit
@@ -352,20 +342,13 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                     key={rid}
                     // `nodrag nopan` opts each region out of ReactFlow node-
                     // drag and viewport-pan, so HTML5 drag fires cleanly.
-                    className={`nodrag nopan absolute cursor-grab active:cursor-grabbing${
-                      active ? " anchor-mark anchor-mark-flying" : ""
-                    }`}
+                    className="nodrag nopan absolute cursor-grab active:cursor-grabbing"
                     style={{
                       left: `${xpc}%`,
                       top: `${ypc}%`,
                       width: `${wpc}%`,
                       height: `${hpc}%`,
-                      // When it is the region being pointed at, the shared mark
-                      // supplies the look; an inline background would override
-                      // the class and put a second colour back on the board.
-                      ...(active
-                        ? {}
-                        : { background: "transparent", outline: "1px solid transparent", outlineOffset: "-1px" }),
+                      background: "transparent",
                     }}
                     data-region-handle-id={`region:${rid}`}
                     title={r.title ?? r.kind ?? rid}
@@ -403,6 +386,9 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                       );
                     }}
                   >
+                    {isLocal && !isExternal ? (
+                      <SourceMark box={{ left: 0, top: 0, width: "100%", height: "100%" }} />
+                    ) : null}
                     {overlayUrl ? (
                       <img
                         src={overlayUrl}
@@ -437,84 +423,13 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                 );
               })
             : null}
-          {canScale && imgSize && externalHighlight?.bbox
-            ? (() => {
-                const parent = externalHighlight.regionId
-                  ? regions.find((r, idx) => ((r as { id?: string }).id ?? `r${idx}`) === externalHighlight.regionId)
-                  : undefined;
-                if (parent?.bbox && sameBbox(externalHighlight.bbox, parent.bbox)) return null;
-                const rect = bboxToImageRect(externalHighlight.bbox, pageW, pageH, 100, 100);
-                if (!rect) return null;
-                const { x: xpc, y: ypc, w: wpc, h: hpc } = rect;
-                return (
-                  // The same mark the source pane uses. A reader following one
-                  // ref should not have to learn two highlights depending on
-                  // whether the document happened to be on the board -- and
-                  // since the card and the pane now answer the same hover, the
-                  // two would otherwise disagree in colour about the same word.
-                  // It travels here too: the coordinates are percentages of the
-                  // page image, so they move only when the ref does.
-                  <div
-                    data-testid="external-highlight"
-                    className="anchor-mark anchor-mark-flying pointer-events-none absolute"
-                    style={{
-                      left: `${xpc}%`,
-                      top: `${ypc}%`,
-                      width: `${wpc}%`,
-                      height: `${hpc}%`,
-                    }}
-                  />
-                );
-              })()
-            : null}
-          {/* Value-precise highlight (#197): finer yellow marker-pen quads
-              over the region rectangle, marking the exact text the grounded
-              value came from. Empty -> region-level highlight is the fallback. */}
-          {canScale && imgSize && valueQuads.length > 0
-            ? valueQuads.map((quad, qi) => {
-                const rect = bboxToImageRect(quad, pageW, pageH, 100, 100);
-                if (!rect) return null;
-                const { x: xpc, y: ypc, w: wpc, h: hpc } = rect;
-                return (
-                  <div
-                    key={`value-quad-${qi}`}
-                    data-testid="value-quad"
-                    className="anchor-mark pointer-events-none absolute"
-                    style={{
-                      left: `${xpc}%`,
-                      top: `${ypc}%`,
-                      width: `${wpc}%`,
-                      height: `${hpc}%`,
-                    }}
-                  />
-                );
-              })
-            : null}
-          {/* The other places the hovered reference points at, on this page:
-              the letter naming the dimension on the drawing, beside the cell
-              the value came from. The viewer and the pictures on the canvas
-              draw them; the card drew only the cell. */}
-          {canScale && imgSize && hoveredSourceRef?.slug === slug
-            ? (hoveredSourceRef?.places ?? [])
-                .filter((pl) => pl.page === page)
-                .map((pl, pi) => {
-                  const rect = bboxToImageRect(pl.bbox, pageW, pageH, 100, 100);
-                  if (!rect) return null;
-                  return (
-                    <div
-                      key={`also-${pi}`}
-                      data-testid="also-place"
-                      className="anchor-mark anchor-mark-fade anchor-mark-flying pointer-events-none absolute"
-                      style={{
-                        left: `${rect.x}%`,
-                        top: `${rect.y}%`,
-                        width: `${rect.w}%`,
-                        height: `${rect.h}%`,
-                      }}
-                    />
-                  );
-                })
-            : null}
+          {sourceMarks.map(({ key, testId, rect }) => (
+            <SourceMark
+              key={key}
+              data-testid={testId}
+              box={{ left: `${rect.x}%`, top: `${rect.y}%`, width: `${rect.w}%`, height: `${rect.h}%` }}
+            />
+          ))}
         </div>
       ) : (
         <div className="flex h-24 w-full items-center justify-center rounded-t-md bg-neutral-100 text-3xl text-neutral-400">

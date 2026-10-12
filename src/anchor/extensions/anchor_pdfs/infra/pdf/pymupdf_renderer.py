@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Any
 
 from anchor.extensions.anchor_pdfs.core.ports.pdf_renderer import CropFormat
+from anchor.extensions.anchor_pdfs.infra.pdf.candidate_overlay import render_candidate_overlay
 
 
 class PymupdfPdfRenderer:
@@ -13,6 +15,17 @@ class PymupdfPdfRenderer:
 
     async def page_sizes(self, pdf_path: Path) -> dict[int, tuple[float, float]]:
         return await asyncio.to_thread(_page_sizes_sync, pdf_path)
+
+    async def render_candidate_overlay(
+        self,
+        page_image: bytes,
+        candidates: list[dict[str, Any]],
+        *,
+        page_size: tuple[float, float] | None,
+    ) -> bytes:
+        return await asyncio.to_thread(
+            render_candidate_overlay, page_image, candidates, page_size=page_size,
+        )
 
     async def crop_region(
         self,
@@ -64,7 +77,21 @@ def _crop_region_sync(pdf_path: Path, page_no: int, bbox: list[float], fmt: Crop
         if fmt == "png":
             return page.get_pixmap(clip=rect, dpi=dpi).tobytes("png")
         elif fmt == "svg":
-            return page.get_svg_image(matrix=pymupdf.Matrix(dpi / 72, dpi / 72)).encode()
+            clip = rect & page.rect
+            if clip.width <= 1e-6 or clip.height <= 1e-6:
+                raise ValueError(f"bbox does not intersect the page: {bbox}")
+            # SVG has no clip argument. Crop a copy, translating the displayed
+            # PNG clip to the unrotated, absolute coordinates set_cropbox needs.
+            cropbox = clip * page.derotation_matrix
+            origin = page.cropbox_position
+            cropbox += (origin.x, origin.y, origin.x, origin.y)
+            with pymupdf.open() as cropped:
+                cropped.insert_pdf(doc, from_page=page_no - 1, to_page=page_no - 1)
+                cropped_page = cropped[0]
+                cropped_page.set_cropbox(cropbox)
+                return cropped_page.get_svg_image(
+                    matrix=pymupdf.Matrix(dpi / 72, dpi / 72)
+                ).encode("utf-8")
         elif fmt == "pdf":
             new = pymupdf.open()
             new.insert_pdf(doc, from_page=page_no - 1, to_page=page_no - 1)

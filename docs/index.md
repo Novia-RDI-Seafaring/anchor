@@ -1,80 +1,53 @@
 # ANCHOR
 
-**A**gent-**N**ative **C**anvas to **H**elp **O**rganize **R**esources<br>
-*Source-Grounded Knowledge Canvas for Traceable Engineering Document Extraction*
+**A**gent-**N**ative **C**anvas to **H**elp **O**rganize **R**esources.
 
-ANCHOR is a tool that lets you and your agent work with engineering documents.
+ANCHOR is a local canvas where you and an external AI agent work with
+engineering documents. Add a PDF, ask for one specification table, and inspect
+each row's source in the PDF dock. Requests, clarifications, and proposed edits
+can stay attached to the canvas objects they concern.
 
-Drop a PDF onto a canvas. The agent reads it and pulls the values you need into a spec table. Every value links back to the page and bounding box it came from, so you can click and see the source.
+The browser, CLI, and MCP tools use the same persisted project data. ANCHOR runs
+on your computer; document disclosure depends on the provider and agent you
+choose. A local project folder does not imply that the connected model is local.
 
-Drop FMU simulation models onto the same canvas and wire the extracted values into their parameters.
+## Start here
 
-It runs on your laptop. Run `anchor init` in a working folder to start a project there. A project is a folder: an `anchor.toml` marker plus a hidden `.anchor_data/` corpus, bound to an environment. An environment is the trust boundary where you choose the AI provider (and therefore where your documents may go); the first time you run `anchor init` it asks you to pick that provider (or pass `--provider`), and `anchor env create` makes a named one up front. Agents talk to it over MCP, so it works with Claude Code, Cursor, Claude Desktop, or any MCP client. There's an HTTP API and a CLI too.
+1. [Install ANCHOR](getting-started/installation.md). The published wheel
+   includes the browser UI; Python 3.12+ is required.
+2. [Follow the Quickstart](getting-started/quickstart.md). Choose a provider,
+   create a project and canvas, connect an agent, and ingest your first PDF.
+3. [Work through the tutorial](getting-started/tutorial.md). Build a table,
+   check its sources, submit a canvas request, and review an agent's suggestion.
 
----
+[Open the Quickstart](getting-started/quickstart.md){.md-button .md-button--primary}
+[Learn the canvas workflow](getting-started/tutorial.md){.md-button}
 
-## Get started
+## Choose the right workflow
 
-=== "uv (recommended)"
+| You want to... | Read |
+| --- | --- |
+| View and extract a PDF without an ANCHOR API key | [Quickstart](getting-started/quickstart.md) |
+| Keep ANCHOR model processing local, or configure an endpoint | [Provider setup](guides/provider-setup.md) |
+| Use a working folder or keep several projects | [Environments and projects](guides/environments-and-projects.md) |
+| Upload documents, create canvases, and inspect row sources | [Documents and canvases](guides/documents-and-canvases.md) |
+| Connect Codex, Claude, Cursor, or another MCP client | [Agent setup](guides/agent-setup.md) and [manual configuration](guides/agent-configuration.md) |
+| Understand Verified, Unverified, and Stale rows | [Claim and evidence](concepts/claim-evidence.md) |
+| Script operations or discover agent tools | [CLI reference](reference/cli.md) and [MCP reference](reference/mcp.md) |
+| Understand storage and service boundaries | [Projects](concepts/projects.md), [architecture](concepts/architecture.md), and [on-disk substrate](concepts/on-disk-substrate.md) |
 
-    ```bash
-    uv tool install anchor-kb
-    anchor serve
-    ```
+## What to expect
 
-=== "pipx"
+PDFs are stored as originals plus derived page extraction and, when produced,
+interpreted regions. Local Docling extraction works without a model endpoint.
+Harness ingestion lets your agent interpret pages. Endpoint-backed ingestion
+uses your selected model service. Gold-region semantic search needs gold
+regions and embeddings.
 
-    ```bash
-    pipx install anchor-kb
-    anchor serve
-    ```
+Source links make an answer inspectable. Their precision varies from a whole
+page to a cell or explicit box. A citation or an automated evidence match does
+not certify that a value is suitable for an engineering decision.
 
-=== "pip"
-
-    ```bash
-    pip install anchor-kb
-    anchor serve
-    ```
-
-Then open <http://127.0.0.1:8002> in your browser.
-
-For your own work, `cd` into a working folder and run `anchor init` to start a
-project there. To use a non-local data zone, run `anchor env create` first to
-pick the AI provider / data zone. See
-[Choose a provider and enable gold](guides/provider-setup.md), then read
-[Environments and projects](concepts/projects.md) for the full model.
-
-Requires Python 3.12+. CI tests Linux and runs CLI smoke checks on macOS and
-Windows; verify browser and PDF workflows on your target platform.
-
-[Five-minute tutorial](getting-started/tutorial.md){.md-button .md-button--primary }
-[Architecture overview](concepts/architecture.md){.md-button }
-
----
-
-## What's in this documentation
-
-- **[Tutorial](getting-started/tutorial.md)** - first day, from install to "agent fills in my engineering specs"
-- **[Install](getting-started/installation.md)** - paths for end users and contributors, plus optional extras
-- **[Provider setup](guides/provider-setup.md)** - choose a data boundary, configure credentials, and recover silver-only documents
-- **[Usage](guides/documents-and-canvases.md)** - ingest documents, create canvases, and connect an agent
-- **[Projects](concepts/projects.md)** - a folder is a project; providers, data zones, and how every adapter finds it
-- **[Architecture](concepts/architecture.md)** - the hexagonal monolith, ports + adapters
-- **[Data and events](concepts/data-and-events.md)** - workspace state model, event log, real-time sync
-- **[On-disk substrate](concepts/on-disk-substrate.md)** - what every folder under a project means
-- **[Canvas](concepts/canvas.md)** - node types, edges, sub-canvases
-- **[Many interfaces](concepts/interfaces.md)** - HTTP, MCP, CLI, and the parity rule
-- **[Extensions and OIP](concepts/extensions-and-oip.md)** - how third-party producers plug in
-- **[Chart ingestion](guides/chart-ingestion.md)** - digitize a chart into a data series via an external OIP producer
-- **[Agent setup](guides/agent-setup.md)** - connect MCP clients and optional local models
-- **[Agent configuration](guides/agent-configuration.md)** - configure Claude Code, Codex, Cursor, OpenCode, and generic stdio clients
-- **[Reference](reference/cli.md)** - CLI, MCP tool families, and configuration
-- **[Citation and acknowledgments](reference/citation.md)** - citing ANCHOR and project funding
-
----
-
-## Designed for both humans and agents
-
-ANCHOR is **agent-native**: every operation reaches HTTP, MCP, and CLI in parity. An agent driving the canvas through MCP and a human clicking in a browser end up at the same workspace, see each other's edits in real time, and share the same source-grounded view of the data.
-
-The point is to kill the manual loop: open a datasheet, find a number, paste it into a spreadsheet or simulation, hope you got the right one. The agent does the lookup; the source link makes every answer checkable.
+FMU simulation needs the optional runtime. CAD and SysML tools are experimental.
+The default HTTP server is unauthenticated and binds to loopback; keep it local
+unless you provide an authenticated deployment layer.

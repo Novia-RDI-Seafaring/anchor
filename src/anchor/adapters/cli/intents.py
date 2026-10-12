@@ -4,10 +4,14 @@
 ``anchor intent next``                 peek the oldest pending intent.
 ``anchor intent resolve <id>``         mark an intent resolved with a result.
 ``anchor intent show <id>``            one full record incl. thread items.
+``anchor intent timing <id>``          how long an intent took and how many calls it cost.
+``anchor activity [--since] [--limit]`` the activity log, one entry per adapter call.
 ``anchor intent ask <slug> --text ... --target <node>...``
                                        create a thread anchored to a selection.
 ``anchor intent add-item <id> --type ... [--text] [--ops] [--supersedes] [--option]``
                                        append a message / question / suggestion / result.
+``anchor intent act <id> --text ... --ops ... [--done] [--ask] [--result] [--resolve]``
+                                       suggest, apply, mark done and ask in one call.
 ``anchor intent answer <id> <item> --text ...``   answer a question.
 ``anchor intent apply <id> <item>``               approve + apply a suggestion.
 ``anchor intent decline <id> <item> [--comment]`` decline a suggestion.
@@ -194,8 +198,8 @@ def intent_timing_cmd(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """How long an intent took and how many calls it cost."""
-    from anchor.core.intents.timing import intent_timing
     from anchor.infra.activity import ActivityLog
+    from intent_layer.timing import intent_timing
 
     svc = _intent_service(data_dir)
     intent = asyncio.run(svc.get(intent_id))
@@ -304,15 +308,18 @@ def intent_act(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Act, then ask, in one call: suggest, apply, mark statuses done, ask."""
-    svc = _intent_service(data_dir)
+    from intent_layer.adapters.mcp import act_payload
+
     question = None
     if ask:
         question = {"text": ask, "options": list(option) if option else None, "place": _place_arg(ask_place)}
+    parsed_ops = _json_arg(ops, "--ops")
+    svc = _intent_service(data_dir)
     out = _run(
         svc.act(
             intent_id,
             text=text,
-            ops=_json_arg(ops, "--ops"),
+            ops=parsed_ops,
             supersedes=supersedes,
             apply=not stage,
             done=list(done) if done else None,
@@ -321,18 +328,7 @@ def intent_act(
             resolve=resolve,
         )
     )
-    typer.echo(
-        json.dumps(
-            {
-                "intent": out["intent"].to_dict(),
-                "suggestion": out["suggestion"].to_dict(),
-                "applied": out["applied"],
-                "question": out["question"].to_dict() if out["question"] else None,
-                "result": out["result"].to_dict() if out["result"] else None,
-            },
-            indent=2,
-        )
-    )
+    typer.echo(json.dumps(act_payload(out), indent=2))
 
 
 @intent_app.command("update-item")

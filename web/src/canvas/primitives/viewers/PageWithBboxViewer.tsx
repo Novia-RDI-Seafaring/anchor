@@ -4,8 +4,10 @@ import { canvases } from "@/api/canvases";
 import { documents, type Region } from "@/api/documents";
 import { useDocumentIndex } from "@/api/useDocumentIndex";
 import { bboxToImageRect, sameBbox } from "@/lib/bbox";
-import { parseDocumentPageGeometry, type DocumentPageGeometry } from "@/lib/documentPageGeometry";
+import { parseDocumentPageGeometry } from "@/lib/documentPageGeometry";
 import { useUiStore } from "@/stores/uiStore";
+
+import { PdfNavigationRail } from "./PdfNavigationRail";
 
 /**
  * Modal PDF viewer.
@@ -28,11 +30,12 @@ export function PageWithBboxViewer() {
   const index = useDocumentIndex(viewer?.slug, viewer?.mode === "modal");
   const generation = index?.document.generation?.id;
   const [regions, setRegions] = useState<Region[]>([]);
-  const [pageMeta, setPageMeta] = useState<Record<number, DocumentPageGeometry>>({});
+  const pageMeta = parseDocumentPageGeometry(index?.pages_meta);
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [activeRegion, setActiveRegion] = useState<string | null>(null);
   const [sending, setSending] = useState<string | null>(null);
   const [valueQuads, setValueQuads] = useState<number[][]>([]);
+  const [contentsOpen, setContentsOpen] = useState(false);
   const viewerSlug = viewer?.slug;
   const viewerPage = viewer?.page;
   const viewerHighlightRegionId = viewer?.highlightRegionId;
@@ -91,20 +94,8 @@ export function PageWithBboxViewer() {
 
   useEffect(() => {
     if (!viewerSlug) return;
-    let cancel = false;
-    setPageMeta({});
     setRegions([]);
     setActiveRegion(null);
-    fetch(`${(import.meta.env.VITE_BACKEND_URL as string | undefined) ?? ""}/api/documents/${viewerSlug}/gold-map`)
-      .then((r) => r.ok ? r.json() : null)
-      .then((map) => {
-        if (cancel || !map) return;
-        setPageMeta(parseDocumentPageGeometry(map.pages_meta));
-      })
-      .catch(() => {});
-    return () => {
-      cancel = true;
-    };
   }, [viewerSlug, generation]);
 
   useEffect(() => {
@@ -203,6 +194,11 @@ export function PageWithBboxViewer() {
           >
             ⇤ Dock left
           </button>
+          <button type="button" onClick={() => setContentsOpen((open) => !open)}
+            aria-expanded={contentsOpen}
+            className="rounded border border-white/20 px-2 py-1 text-sm hover:bg-white/10">
+            Contents
+          </button>
           <div className="text-sm opacity-80">
             {index?.document?.title ?? viewer.slug}
           </div>
@@ -235,6 +231,18 @@ export function PageWithBboxViewer() {
         </div>
       ) : null}
       <div className="flex flex-1 overflow-hidden">
+        {contentsOpen ? (
+          <PdfNavigationRail key={`${viewer.slug}:${generation ?? "legacy"}`}
+            slug={viewer.slug} generation={generation} page={viewer.page}
+            total={total} index={index} initialTab="contents"
+            onNavigate={(entry) => {
+              if (!entry.page) return;
+              useUiStore.getState().openPdf(viewer.slug, {
+                page: entry.page, mode: "modal", highlightBbox: entry.bbox,
+                workspaceSlug: viewer.workspaceSlug, documentNodeId: viewer.documentNodeId,
+              });
+            }} />
+        ) : null}
         <main className="relative flex flex-1 items-center justify-center overflow-auto p-6">
           <div className="relative">
             <img

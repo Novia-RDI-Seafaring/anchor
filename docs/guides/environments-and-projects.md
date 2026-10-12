@@ -98,7 +98,10 @@ stays in `ANCHOR_OPENAI_API_KEY` or the gitignored `.env`, never in the profile.
 ## Configuration layering
 
 ```
-built-in defaults  <  env.toml  <  project anchor.toml  <  environment .env  <  process ANCHOR_* / flags
+Non-security settings: defaults < environment < permitted project overrides
+Selection: explicit CLI flags / ANCHOR_ENV / ANCHOR_PROJECT / CLI session defaults
+Security policy: selected environment owns provider, endpoint, and local-only mode
+Credentials: selected environment .env or permitted explicit process credential
 ```
 
 Settings live in the environment's `env.toml`. A project usually has none and
@@ -124,7 +127,12 @@ project        : --project  >  ANCHOR_PROJECT  >  anchor use  >  "default"
 
 When you run Anchor inside a project folder (or any subfolder of it) without
 `--env` / `--project`, it walks up to the nearest `anchor.toml` and resolves
-that project — no flags needed. Otherwise it resolves by name.
+that project — no flags needed. Otherwise it resolves by name, or by folder:
+`--project ~/work/pumps` (any value with a slash, or starting with `.` / `~`)
+resolves that `anchor init` folder, the same way `anchor-mcp --project <folder>`
+does. The folder's `anchor.toml` names its environment, so pass a matching
+`--env` or none; a folder without an `anchor.toml` is reported as not an
+`anchor init` project.
 `anchor use <env> [project]` records a session default so later commands can
 omit the flags. It only affects the human CLI. The agent (MCP) path is pinned
 per server and is never retargeted by `anchor use`.

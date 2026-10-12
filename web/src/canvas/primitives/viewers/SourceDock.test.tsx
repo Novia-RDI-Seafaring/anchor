@@ -7,19 +7,22 @@
  * returns to canvas-full. The real PdfSourceView is stubbed so these tests run
  * without PDF.js in jsdom.
  */
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { documents } from "@/api/documents";
+import { documents, type DocumentIndex } from "@/api/documents";
 import { TRANSIENT_CLOSE_MS } from "@/canvas/transientViewer";
 import { useUiStore } from "@/stores/uiStore";
 
 import { SourceDock } from "./SourceDock";
 
+const navigation = vi.hoisted(() => ({ onPageChange: (_page: number) => {} }));
+
 vi.mock("./PdfSourceView", () => ({
-  PdfSourceView: ({ slug, page, total, generation }: { slug: string; page: number; total: number; generation?: string }) => (
-    <div data-testid="pdf-source-view" data-slug={slug} data-page={page} data-total={total} data-generation={generation} />
-  ),
+  PdfSourceView: ({ slug, page, total, generation, index, onPageChange }: { slug: string; page: number; total: number; generation?: string; index?: DocumentIndex | null; onPageChange: (page: number) => void }) => {
+    navigation.onPageChange = onPageChange;
+    return <div data-testid="pdf-source-view" data-slug={slug} data-page={page} data-total={total} data-generation={generation} data-outline={index?.outline?.map((entry) => entry.title).join(",")} />;
+  },
 }));
 
 beforeEach(() => {
@@ -44,6 +47,53 @@ async function renderDock() {
 }
 
 describe("SourceDock", () => {
+  it("keeps the mounted reader and ignores its navigation after switching to full screen", async () => {
+    vi.useFakeTimers();
+    useUiStore.getState().openPdf("fullscreen-manual", { page: 1, mode: "dock" });
+    await renderDock();
+    const reader = screen.getByTestId("pdf-source-view");
+    const dockNavigation = navigation.onPageChange;
+    act(() => dockNavigation(4));
+    expect(useUiStore.getState().pdfViewer?.page).toBe(4);
+
+    fireEvent.click(screen.getByTitle("Open as full-screen quick-look"));
+    // DOM identity detects even an unmount/remount hidden inside an act flush.
+    expect(screen.getByTestId("pdf-source-view")).toBe(reader);
+    expect(screen.getByTestId("source-dock").className).toContain("anchor-source-out");
+    expect(useUiStore.getState().pdfViewer).toMatchObject({ mode: "modal", page: 4 });
+    act(() => {
+      dockNavigation(1);
+      navigation.onPageChange(2);
+    });
+    expect(useUiStore.getState().pdfViewer?.page).toBe(4);
+    // Quick-look can navigate during the fade without cancelling its timer.
+    act(() => useUiStore.getState().setPdfPage(5));
+    act(() => vi.advanceTimersByTime(120));
+    expect(screen.queryByTestId("source-dock")).toBeNull();
+    expect(useUiStore.getState().pdfViewer?.page).toBe(5);
+  });
+
+  it("ignores a previous dock navigation callback after opening another document", async () => {
+    useUiStore.getState().openPdf("previous-manual", { mode: "dock" });
+    await renderDock();
+    const previousNavigation = navigation.onPageChange;
+    await act(async () => useUiStore.getState().openPdf("next-manual", { page: 3 }));
+    act(() => previousNavigation(1));
+    expect(useUiStore.getState().pdfViewer).toMatchObject({ slug: "next-manual", page: 3 });
+    act(() => navigation.onPageChange(4));
+    expect(useUiStore.getState().pdfViewer?.page).toBe(4);
+  });
+
+  it("passes the fetched outline into the shared PDF view", async () => {
+    vi.mocked(documents.index).mockResolvedValue({
+      document: { title: "Manual", filename: "manual.pdf", page_count: 5 },
+      outline: [{ title: "Operating limits", level: 1, page: 3, bbox: [10, 40, 80, 50] }],
+    });
+    useUiStore.getState().openPdf("manual", { mode: "dock" });
+    await renderDock();
+    expect(screen.getByTestId("pdf-source-view").getAttribute("data-outline")).toBe("Operating limits");
+  });
+
   it("refreshes an open LKH viewer from four pages to its published one-page generation", async () => {
     vi.useFakeTimers();
     vi.mocked(documents.index).mockResolvedValue({

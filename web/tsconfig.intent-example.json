@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "paths": {} },
+  "include": ["examples/intent-layer", "src/intent-overlay", "vite.intent-example.config.ts"]
+}

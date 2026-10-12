@@ -9,14 +9,15 @@ anything sensitive.
 
 With the Azure provider and the default **local** embedding model:
 
-- **Never leaves the host:** the raw PDFs (`bronze/`), per-page text and PNGs
-  (`silver/`), the structured regions (`gold/`), and the embedding vectors.
+- **Stored locally:** original PDFs (`bronze/`), page extraction (`silver/`),
+  structured regions (`gold/`), and local embedding vectors. Local storage
+  does not imply that the content is processed only on this computer.
 - **Sent only to your Azure endpoint:** rendered page images + text, for the
   gold region-extraction and polish stages.
 
-If you pick a **remote** embedding model (`text-embedding-3-small/large`), page
-text is also sent to your Azure endpoint for embeddings. Keep the default
-`bge-small` (local) to avoid that.
+If you pick a **remote** embedding model, region embedding input text is
+also sent to the configured endpoint. Keep the default
+local model (`bekko-embedding-v1-a25m`) to avoid that.
 
 ## Prerequisite: create and note your deployment(s)
 
@@ -69,7 +70,7 @@ anchor env create work \
 
 This creates env "work" and its default project. Give your **vision deployment
 name** as `--vision-model`. Drop `--embed-model` to keep the embedding default
-(`bge-small`, local) unless you deployed an embeddings model. `anchor env
+(`bekko-embedding-v1-a25m`, local) unless you deployed an embeddings model. `anchor env
 create`:
 
 - appends `/openai/v1/` if you pass the bare resource URL,

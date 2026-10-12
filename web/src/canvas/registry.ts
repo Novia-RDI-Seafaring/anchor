@@ -60,6 +60,8 @@ import { TextNode } from "@/canvas/shapes/TextNode";
 
 /** Optional toolbar/palette metadata for a registered node type. */
 export type PaletteMeta = {
+  /** Palette variants reuse an existing canonical node type. */
+  nodeType?: string;
   /** Section in the toolbar. */
   group: "shapes" | "cards" | "producers";
   /** Human-readable label (tooltip + accessibility). */
@@ -165,6 +167,16 @@ registerNodeRenderer("concept", ConceptNode, {
   glyph: "rect",
   noDefaultLabel: true,
   order: 10,
+});
+paletteMeta.set("__heading__", {
+  nodeType: "concept",
+  group: "shapes",
+  label: "Heading",
+  hint: "section label, no card border",
+  glyph: "text",
+  noDefaultLabel: true,
+  data: { role: "heading" },
+  order: 7,
 });
 registerNodeRenderer("entity", EntityNode, {
   group: "shapes",

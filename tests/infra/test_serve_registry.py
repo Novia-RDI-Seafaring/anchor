@@ -21,6 +21,7 @@ def _home(monkeypatch, tmp_path):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(env_mod, "ANCHOR_HOME", tmp_path / ".anchor")
     monkeypatch.setattr(env_mod, "LEGACY_DATA_DIR", tmp_path / "_legacy_unused")
+    monkeypatch.setattr(sr, "_pid_alive", lambda pid: pid != 999999)
 
 
 def test_identify_data_dir_reads_marker(tmp_path):
@@ -75,9 +76,8 @@ def test_find_serve_distinguishes_projects(tmp_path, monkeypatch):
     pa = sr.register_serve(
         host="127.0.0.1", port=8002, data_dir=a / ".anchor_data", started_at="t"
     )
-    # Reuse a live pid (the parent of this test process) for the second record
-    # so it is not pruned as stale; only the filename needs to differ.
-    other_pid = os.getppid() or real_pid
+    # Registry behavior is independent of OS process discovery.
+    other_pid = real_pid + 1
     monkeypatch.setattr(sr.os, "getpid", lambda: other_pid)
     pb = sr.register_serve(
         host="127.0.0.1", port=8003, data_dir=b / ".anchor_data", started_at="t"
