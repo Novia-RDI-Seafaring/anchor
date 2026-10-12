@@ -116,7 +116,10 @@ launch the agent. Empty placeholders do not enqueue requests.
 
 `anchor intent` includes thread replies (`add-item`, `update-item`, `ask`),
 `act` (suggest, apply, mark done and ask in one call), human decisions
-(`answer`, `apply`, `decline`, `revert`), and `resolve`.
+(`answer`, `apply`, `decline`, `revert`), `resolve`, and `timing`. `anchor
+intent timing INTENT_ID` reports how long an intent took and how many calls it
+cost. `anchor activity` prints the project's activity log, one entry per HTTP
+request or MCP tool call.
 Use subcommand help for payload arguments. An agent should stage a suggestion
 and wait for the human rather than approve its own changes.
 

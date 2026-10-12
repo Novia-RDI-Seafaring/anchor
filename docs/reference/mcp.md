@@ -60,6 +60,7 @@ Desktop installers register MCP entries without a separate skill file.
 | Canvas | `canvas_list_workspaces`, `canvas_create_workspace`, `canvas_get_state`, `canvas_add_node`, `canvas_update_node`, `canvas_add_edge`, `canvas_node_types`, `canvas_snapshot` |
 | Intent inbox and threads | `list_pending_intents`, `next_intent`, `get_intent`, `intent_add_item`, `intent_act`, `resolve_intent` |
 | Human intent decisions | `intent_answer`, `intent_apply`, `intent_decline`, `intent_revert` |
+| Intent loop timing | `intent_timing` |
 | Proposal sets | `canvas_propose_set`, `canvas_add_to_proposal_set`, `canvas_list_proposal_sets`, `canvas_review_proposal_set` |
 | References | `canvas_create_reference`, `canvas_list_references`, `canvas_remove_reference`, `canvas_update_reference`, `canvas_attach_reference` |
 | Documents | `ingest_pdf`, `list_documents`, `get_document_index`, `get_gold_regions`, `search_documents`, `get_crop` |

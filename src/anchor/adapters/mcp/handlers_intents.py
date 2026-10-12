@@ -20,12 +20,15 @@ connected client's actor (#322) so item ``author`` is never client-supplied.
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from anchor.core.events.actor import Actor
 from anchor.core.services.intent_service import (
     IntentService,
 )
+from anchor.infra.activity import ActivityLog
+from intent_layer.timing import intent_timing
 
 TOOL_NAMES: set[str] = {
     "list_pending_intents",
@@ -40,6 +43,7 @@ TOOL_NAMES: set[str] = {
     "intent_apply",
     "intent_decline",
     "intent_revert",
+    "intent_timing",
 }
 
 _PLACE_SCHEMA: dict[str, Any] = {
@@ -170,6 +174,23 @@ def tool_definitions() -> list[dict[str, Any]]:
                         "description": "Outcome payload recorded on the intent.",
                     },
                 },
+                "required": ["id"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "intent_timing",
+            "description": (
+                "How long an intent took and how many calls it cost: seconds "
+                "from the ask to the first placed status (pickup), to the "
+                "first suggestion, to the last agent item and to resolution; "
+                "and the adapter calls made in that window, by kind and by "
+                "name, from the activity log. For looking at the loop itself, "
+                "not for handling the ask."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {"id": id_arg},
                 "required": ["id"],
                 "additionalProperties": False,
             },
@@ -440,9 +461,17 @@ def tool_definitions() -> list[dict[str, Any]]:
     ]
 
 
-async def call_tool(intents: IntentService, name: str, args: dict[str, Any], *, actor: Actor | None = None) -> str:
-    """Retain Anchor schemas and map its ask to the generic dispatcher."""
+async def call_tool(intents: IntentService, name: str, args: dict[str, Any], *,
+                    actor: Actor | None = None, activity: ActivityLog | None = None) -> str:
+    """Retain Anchor schemas and map its ask to the generic dispatcher.
+    ``activity`` is the project's call log, for ``intent_timing``."""
     from intent_layer.adapters.mcp import call_tool as dispatch
+    if name == "intent_timing":
+        intent = await intents.get(args["id"])
+        if intent is None:
+            return json.dumps({"error": "not_found", "id": args.get("id")})
+        calls = activity.read(since=intent.created_at) if activity is not None else []
+        return json.dumps({"timing": intent_timing(intent, calls)})
     if name == "intent_ask":
         slug = args["workspace_slug"]
         args = {**args, "origin_canvas_id": slug, "targets": [

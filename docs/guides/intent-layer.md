@@ -23,6 +23,7 @@ by the host; they are not executable code.
 | `intent_layer.service` | Inbox and thread state transitions with an explicit host |
 | `intent_layer.fs_store`, `memory_store` | Durable and in-memory intent stores |
 | `intent_layer.signals` | Count-only signal port and in-process implementation |
+| `intent_layer.timing` | Timing summary of one intent from its thread and host call records |
 | `intent_layer.adapters.http` | Mounted FastAPI router factory |
 | `intent_layer.adapters.mcp` | Tool definitions and JSON dispatch |
 | `intent_layer.adapters.cli` | Mountable Typer inbox factory |
