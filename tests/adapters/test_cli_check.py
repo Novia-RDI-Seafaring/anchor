@@ -353,6 +353,40 @@ def test_check_project_flag_overrides_cwd_marker(monkeypatch, tmp_path):
     assert str(expected_dir) in result.output
 
 
+def test_check_project_flag_accepts_init_folder(monkeypatch, tmp_path):
+    # `--project <folder>` resolves that `anchor init` folder like
+    # `anchor-mcp --project <folder>` does, instead of rejecting the path as
+    # an invalid project name (#380).
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
+    folder = _make_marker_project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["check", "--project", str(folder)])
+    assert result.exit_code == 0, result.output
+    assert f"project        : pumps  (from --project {folder / 'anchor.toml'})" in result.output
+    assert str(folder / ".anchor_data") in result.output
+
+
+def test_check_project_flag_folder_without_marker_is_one_line_error(monkeypatch, tmp_path):
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["check", "--project", str(plain)])
+    assert result.exit_code == 2, result.output
+    assert "Traceback" not in result.output
+    assert f"{plain} is not an `anchor init` project" in result.output
+
+
+def test_check_project_folder_rejects_contradicting_env(monkeypatch, tmp_path):
+    runner.invoke(app, ["env", "create", "local", "--yes", "--provider", "local"])
+    runner.invoke(app, ["env", "create", "other", "--yes", "--provider", "local"])
+    folder = _make_marker_project(tmp_path)
+    result = runner.invoke(app, ["check", "--env", "other", "--project", str(folder)])
+    assert result.exit_code == 2, result.output
+    assert "Traceback" not in result.output
+    assert "binds this project to environment 'local'" in result.output
+
+
 def test_check_serve_report_scoped_to_resolved_project(monkeypatch, tmp_path):
     # The serve line must reflect the serve bound to the RESOLVED project's
     # data dir — a serve on :8003 for the cwd project was invisible while
