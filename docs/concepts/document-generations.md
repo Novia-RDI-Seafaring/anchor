@@ -31,6 +31,13 @@ source gold inside that page set, and ingest embeddings that refer only to
 candidate source gold. Derived knowledge cannot satisfy a missing source member.
 Skipping regions intentionally publishes no old gold or embeddings.
 
+New ingests also persist uncapped `pages/<n>.items.json` evidence. Their
+`document.silver_items_version` stamp makes publication require full items
+whose page and stable IDs agree with candidate previews and page metadata,
+including empty item lists for blank pages. Missing or inconsistent evidence
+rejects publication and leaves the previous generation current. Legacy
+generations without the stamp retain their existing publication behavior.
+
 Raw and optional polished page text are produced inside the same candidate.
 The successful ingest report lists the pages actually polished by that run.
 Publication validates this `polished_pages` inventory against page membership
@@ -54,7 +61,7 @@ each other's trees. Old trees remain readable for already-pinned operations.
 | Artifact | Replacement behavior |
 | --- | --- |
 | Index and source metadata | Candidate-owned, switched by the pointer |
-| Page metadata, raw text, candidates, images | Complete new rendered page set |
+| Page metadata, full items, raw text, candidates, images | Complete new rendered page set |
 | Polished text | Empty candidate; only polish produced by this run is published |
 | Gold and table slices | Empty candidate, populated only by this run |
 | Derived knowledge | Empty candidate; no carryover from old generations |

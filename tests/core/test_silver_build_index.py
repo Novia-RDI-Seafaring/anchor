@@ -160,7 +160,7 @@ def test_region_content_from_items_renders_selected_table():
     assert "Intro" not in content
 
 
-def test_region_search_text_includes_server_content_once():
+def test_region_search_text_uses_source_metadata_when_described():
     region = {
         "title": "Limits",
         "description": "Limits",
@@ -170,7 +170,7 @@ def test_region_search_text_includes_server_content_once():
     text = region_search_text(region)
 
     assert text.count("Limits") == 1
-    assert "| limit | 10 |" in text
+    assert "| limit | 10 |" not in text
 
 
 def test_region_search_text_falls_back_to_cells_when_no_description():
@@ -208,9 +208,7 @@ def test_region_search_text_skips_cell_fallback_when_described():
     text = region_search_text(region)
 
     assert "Max flow 35 m3/h at 55 m head." in text
-    # `content` still contributes the grid once; the standalone cell fallback
-    # is not appended on top.
-    assert text.count("| Flow | Head |") == 1
+    assert "| Flow | Head |" not in text
 
 
 def test_point_in_bbox_tolerates_reversed_y_order():

@@ -25,6 +25,7 @@ def test_read_paths_reject_traversal_slugs(tmp_path, slug):
             lambda: store.get_page_text(slug, 1),
             lambda: store.get_page_image_path(slug, 1),
             lambda: store.get_page_candidates(slug, 1),
+            lambda: store.get_page_items(slug, 1),
             lambda: store.get_regions(slug),
             lambda: store.get_pages_meta(slug),
             lambda: store.get_gold_map(slug),
@@ -66,6 +67,29 @@ def test_gold_document_link_cannot_read_outside_storage(tmp_path):
 
     with pytest.raises(UnsafeUploadError):
         asyncio.run(store.get_regions("doc"))
+
+
+@pytest.mark.parametrize("link_kind", ["document", "pages", "file"])
+def test_full_silver_item_links_cannot_read_outside_storage(tmp_path, link_kind):
+    store = FsDocStore(tmp_path / "store")
+    outside = tmp_path / "outside"
+    (outside / "pages").mkdir(parents=True)
+    outside_file = outside / "pages/1.items.json"
+    outside_file.write_text('[{"id": "p1-i0", "text": "outside"}]', encoding="utf-8")
+    doc = store.silver / "doc"
+    try:
+        if link_kind == "document":
+            doc.symlink_to(outside, target_is_directory=True)
+        elif link_kind == "pages":
+            doc.mkdir()
+            (doc / "pages").symlink_to(outside / "pages", target_is_directory=True)
+        else:
+            (doc / "pages").mkdir(parents=True)
+            (doc / "pages/1.items.json").symlink_to(outside_file)
+    except OSError:
+        pytest.skip("symlinks are unavailable")
+    with pytest.raises(UnsafeUploadError):
+        asyncio.run(store.get_page_items("doc", 1))
 
 
 @pytest.mark.parametrize("slug", ["../etc", "..", ".", "a/b", "a\\b", "", "C:/outside"])

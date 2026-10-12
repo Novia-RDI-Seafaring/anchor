@@ -18,6 +18,7 @@ from anchor.infra.stores.memory_stores import MemoryWorkspaceStore
 from tests.adapters.test_spec_source_operations import CanvasOperations
 from tests.adapters.test_value_provenance_parity import _input, _regions
 from tests.extensions.anchor_pdfs.test_replacement_generations import pipeline
+from tests.fixtures.tables import write_source_table_regions
 
 
 @pytest.mark.parametrize("transport", ["http", "mcp", "cli"])
@@ -86,13 +87,13 @@ def test_replacement_cannot_reuse_previous_generation_verification(tmp_path):
     async def seed():
         await ops.runtime.workspace.create_workspace("g7")
         await pipeline(ops.runtime.doc_store, [["A"]]).ingest_pdf(b"A", "doc.pdf")
-        await ops.runtime.doc_store.write_gold_region_file("doc", 1, _regions())
+        await write_source_table_regions(ops.runtime.doc_store, "doc", 1, _regions())
     asyncio.run(seed())
     node = ops.call("add", _input("exact"))
     before = ops.read(node)
     async def replace():
         await pipeline(ops.runtime.doc_store, [["B"]]).ingest_pdf(b"B", "doc.pdf", force=True)
-        await ops.runtime.doc_store.write_gold_region_file("doc", 1, _regions())
+        await write_source_table_regions(ops.runtime.doc_store, "doc", 1, _regions())
     asyncio.run(replace())
     ops.call("update", before, node)
     assert ops.read(node)["rows"][0]["evidence"]["status"] == "stale"

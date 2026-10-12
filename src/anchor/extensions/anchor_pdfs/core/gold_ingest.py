@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from anchor.core.clock import Clock
 from anchor.extensions.anchor_pdfs.core.events import DocGoldExtracted, IngestProgress
 from anchor.extensions.anchor_pdfs.core.ingest.coverage import synthesize_coverage_regions
+from anchor.extensions.anchor_pdfs.core.ingest.region_resolution import source_region_metadata
 from anchor.extensions.anchor_pdfs.core.ingest.validation import (
     require_unique_region_ids,
     validate_regions,
@@ -209,7 +210,8 @@ class GoldIngest:
                     require_unique_region_ids(pages_valid[page], page=page)
                 # Validate every page before exposing any page's gold.
                 for page, valid in pages_valid.items():
-                    await self.store.write_gold_region_file(slug, page, valid)
+                    stored = [source_region_metadata(r) for r in valid] if await self.store.get_page_items(slug, page) is not None else valid
+                    await self.store.write_gold_region_file(slug, page, stored)
                 region_count += fallback_count
                 await self.store.mark_gold_complete(slug, {
                     "mode": "keyed",
@@ -267,7 +269,8 @@ class GoldIngest:
             count = sum(len(regions) for regions in pages.values())
             if count:
                 for page, regions in pages.items():
-                    await self.store.write_gold_region_file(slug, page, regions)
+                    stored = [source_region_metadata(r) for r in regions] if await self.store.get_page_items(slug, page) is not None else regions
+                    await self.store.write_gold_region_file(slug, page, stored)
                 await self.store.mark_gold_complete(slug, {
                     "mode": "text", "model": None, "region_count": count,
                     "coverage_fallback_count": count, "completed_at": self.clock.now(),

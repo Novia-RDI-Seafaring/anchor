@@ -44,6 +44,7 @@ data/  ( = the project's .anchor_data/ )
 |           +-- <n>.raw.md          raw Docling markdown for page n
 |           +-- <n>.png             rasterised page image
 |           +-- <n>.candidates.json region candidates proposed for page n
+|           +-- <n>.items.json      uncapped silver source items with stable IDs and cells
 |
 +-- gold/                           (anchor_pdfs)
 |   +-- <slug>/
@@ -192,6 +193,7 @@ data/silver/alfa-laval-lkh/
         1.raw.md         raw Docling output for page 1 (pre-polish)
         1.png            rasterised page image (used by the region extractor)
         1.candidates.json region candidates proposed for page 1
+        1.items.json     full source items, text, cells, ordering and extractor metadata
         2.md
         ...
 ```
@@ -203,6 +205,31 @@ also retain the Docling traversal ordinal as `reading_order`, which can have
 gaps between items. Existing stored IDs are not renumbered. Items without
 traversal metadata keep their collection order, and Markdown without that
 metadata retains its geometric fallback.
+
+Candidate text remains a bounded grouping preview. The private full-item
+artifact uses the same `p<page>-i<index>` IDs and preserves uncapped source
+text, precise table cells and extractor metadata. It is written by keyed,
+text-profile and harness ingest, and selected by the same generation pointer.
+
+### Original gold chunks
+
+New original chunks store semantic metadata, stable silver membership and
+display geometry. They do not persist duplicate `content`, `cells` or
+`table_topology`. Region, gold-map, inspect and content reads reconstruct
+those fields from the selected generation's full silver items, including
+the exact rows and columns named by a `table_slice`. Pointed extraction and
+value provenance consume the same reconstructed cells.
+
+Source embeddings use `title + description + tags + entities` when a
+meaningful description exists. Undescribed coverage chunks fall back to
+their uncapped reconstructed source text and cells. Producer-derived records
+retain their stored-content recall. The agent workflow is search, inspect
+the selected chunk, then answer from its silver evidence; descriptions are
+search metadata.
+
+Legacy documents without full-item artifacts retain stored source content
+and cells. Reads do not migrate or rewrite their gold. Producer-derived
+payloads remain authoritative even when full silver exists.
 
 ### Knowledge
 

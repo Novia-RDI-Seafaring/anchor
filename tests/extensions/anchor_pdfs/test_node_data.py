@@ -13,6 +13,7 @@ from anchor.infra.bus.memory_bus import MemoryEventBus
 from anchor.infra.stores.memory_stores import MemoryWorkspaceStore
 from tests.adapters.test_value_provenance_parity import _input, _regions
 from tests.extensions.anchor_pdfs.test_replacement_generations import pipeline
+from tests.fixtures.tables import write_source_table_regions
 
 
 def test_no_store_preserves_create_and_update_and_binding_cannot_retarget():
@@ -68,7 +69,7 @@ def test_resolution_pins_one_document_generation_across_pages(tmp_path):
             regions = deepcopy(_regions())
             for region in regions:
                 region["page"] = page
-            await store.write_gold_region_file("doc", page, regions)
+            await write_source_table_regions(store, "doc", page, regions)
         old = store.snapshot("doc")
         ws = WorkspaceService(MemoryWorkspaceStore(), MemoryEventBus())
         bind_workspace_sources(ws, store)
