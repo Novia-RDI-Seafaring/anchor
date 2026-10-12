@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from anchor.extensions.anchor_pdfs.infra.llm.onnx_bge_embedder import OnnxBgeEmbedder
+from anchor.extensions.anchor_pdfs.infra.llm.onnx_embedder import OnnxEmbedder
 from anchor.extensions.anchor_pdfs.infra.llm.openai_embedder import OpenAIEmbedder
 from anchor.infra.egress_policy import (
     EgressPolicyError,
@@ -35,7 +35,7 @@ class MissingCredentialEmbedder:
 
 def build_project_embedder(
     *, model: str, policy: EgressPolicy
-) -> OnnxBgeEmbedder | OpenAIEmbedder | MissingCredentialEmbedder:
+) -> OnnxEmbedder | OpenAIEmbedder | MissingCredentialEmbedder:
     """Build a project's embedder, deferring a missing remote credential.
 
     The policy has already rejected a remote model in a no-egress environment,
@@ -56,7 +56,7 @@ def build_embedder(
     model: str,
     api_key: str | None = None,
     base_url: str | None = None,
-) -> OnnxBgeEmbedder | OpenAIEmbedder:
+) -> OnnxEmbedder | OpenAIEmbedder:
     """Build the embedder named by configuration.
 
     Local models run on onnxruntime and stay local even when an OpenAI key is
@@ -75,8 +75,8 @@ def build_embedder(
                 f"embed_model {model!r} is a remote embedding model but this "
                 "environment resolved no approved model credential; set "
                 "embed_model to a local model (for example "
-                "'BAAI/bge-small-en-v1.5') or configure the environment's "
+                "'hotchpotch/bekko-embedding-v1-a25m') or configure the environment's "
                 "provider credential"
             )
         return OpenAIEmbedder(api_key=api_key, model=model, base_url=base_url)
-    return OnnxBgeEmbedder(model=model)
+    return OnnxEmbedder(model=model)

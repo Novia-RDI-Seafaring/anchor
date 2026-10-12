@@ -256,7 +256,7 @@ store never presents incomplete gold.
 ```
 data/gold/alfa-laval-lkh/
     .complete.json       {"complete": true, "mode": "keyed", "model": "gpt-5.4", ...}
-    embeddings.json      {"embed_model": "BAAI/bge-small-en-v1.5", "dim": 384, "vectors": [...]}
+    embeddings.json      {"embed_model": "hotchpotch/bekko-embedding-v1-a25m", "dim": 384, "vectors": [...]}
     pages/
         1.regions.json   {"page": 1, "regions": [{id, kind, source_ref, content}, ...]}
         2.regions.json

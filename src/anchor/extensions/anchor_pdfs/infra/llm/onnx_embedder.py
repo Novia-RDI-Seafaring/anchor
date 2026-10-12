@@ -1,10 +1,12 @@
 """Embedder backed by onnxruntime — local, no API key, no torch.
 
-Default model is ``BAAI/bge-small-en-v1.5`` (384-d, 133 MB fp32 ONNX graph). The model id
-is the *same* one the browser embeds queries with: `web/src/search/embedder.ts`
-runs `@xenova/transformers` over these same ONNX weights in a Web Worker. Both
-sides therefore share one runtime as well as one embedding space, instead of
-torch on the server and ONNX in the client.
+Default model is ``hotchpotch/bekko-embedding-v1-a25m`` (384-d, multilingual,
+190 MiB ONNX graph). The smaller ``hotchpotch/bekko-embedding-v1-a8m`` and
+``BAAI/bge-small-en-v1.5`` remain supported local choices. Any
+sentence-transformers repo that ships ``onnx/model.onnx`` works: the pooling
+mode and maximum length are read from the repo's own ``1_Pooling/config.json``
+and ``sentence_bert_config.json``, so bge pools the CLS token and bekko
+mean-pools without a per-model table here.
 
 Why onnxruntime rather than sentence-transformers: importing
 ``sentence_transformers`` pulls torch + transformers + scipy + sklearn — 4,114
@@ -34,7 +36,7 @@ import asyncio
 import threading
 from typing import Any
 
-DEFAULT_EMBED_MODEL = "BAAI/bge-small-en-v1.5"
+DEFAULT_EMBED_MODEL = "hotchpotch/bekko-embedding-v1-a25m"
 
 #: Cap on one embed call, including the first-call import + session build.
 #: Loading numpy's native extension has been observed to wedge indefinitely
@@ -44,17 +46,32 @@ DEFAULT_EMBED_MODEL = "BAAI/bge-small-en-v1.5"
 #: client's own timeout fires and leaves it guessing.
 EMBED_TIMEOUT_S = 30.0
 
-#: Repo-relative paths of the two artefacts an ONNX embed needs.
+#: Repo-relative paths of the artefacts an ONNX embed needs. Mirrored by
+#: ``_EMBED_ARTEFACTS`` in ``anchor.infra.models`` so prefetch caches them all.
 _ONNX_WEIGHTS = "onnx/model.onnx"
 _TOKENIZER = "tokenizer.json"
+_POOLING_CONFIG = "1_Pooling/config.json"
+_ST_CONFIG = "sentence_bert_config.json"
 
-#: bge models pool the CLS token (``1_Pooling/config.json`` sets
-#: ``pooling_mode_cls_token``), then L2-normalise. Not mean pooling.
-_MAX_TOKENS = 512
+#: Published (pooling, max_seq_length) per model, used only when the configs
+#: above are missing from an offline cache.
+_KNOWN_CONFIGS = {"BAAI/bge-small-en-v1.5": ("cls", 512)}
+
+#: Ceiling on tokens per text, below the model's own ``max_seq_length``. The
+#: exported ONNX graphs use full attention, so memory grows with the square of
+#: the length: one 8,192-token bekko input peaks near 5 GB, a 2,048-token one
+#: near 250 MB. 2,048 still fits a whole spec table.
+MAX_TOKENS_CAP = 2048
+
+#: Batches are packed by padded length so one long region does not pad every
+#: short one up to its size. A batch holds at most this many tokens of
+#: attention, ``rows * length**2``: one text at the cap, or many short ones.
+_ATTENTION_BUDGET = MAX_TOKENS_CAP**2
+_MAX_BATCH = 32
 
 
-class OnnxBgeEmbedder:
-    """Embed text with a bge ONNX graph via onnxruntime.
+class OnnxEmbedder:
+    """Embed text with a sentence-transformers ONNX graph via onnxruntime.
 
     Loading is lazy and single-flight: the first ``embed`` builds the session
     under ``_load_lock``, later calls reuse it. Unlike the torch path this is
@@ -67,6 +84,8 @@ class OnnxBgeEmbedder:
         self._session: Any = None
         self._tokenizer: Any = None
         self._dim: int | None = None
+        self._pooling = "cls"
+        self.max_tokens = 512
         self._load_error: Exception | None = None
         self._load_lock = threading.Lock()
 
@@ -87,18 +106,35 @@ class OnnxBgeEmbedder:
                 # ~20 s import into the MCP connect handshake and stopped
                 # clients connecting at all. Keep the connect path clean and
                 # pay the cost on first embed, bounded by EMBED_TIMEOUT_S.
+                import json
+
                 import onnxruntime
                 from huggingface_hub import hf_hub_download
                 from tokenizers import Tokenizer
 
                 weights = hf_hub_download(self.model_id, _ONNX_WEIGHTS)
                 tokenizer_json = hf_hub_download(self.model_id, _TOKENIZER)
+                try:
+                    with open(hf_hub_download(self.model_id, _POOLING_CONFIG)) as f:
+                        pooling = _pooling_mode(json.load(f))
+                    with open(hf_hub_download(self.model_id, _ST_CONFIG)) as f:
+                        max_seq = int(json.load(f).get("max_seq_length") or 512)
+                except Exception:
+                    # An offline cache prefetched before these configs were
+                    # read holds only the graph + tokenizer. Known models
+                    # fall back to their published settings; anything else
+                    # must not guess its pooling.
+                    if self.model_id not in _KNOWN_CONFIGS:
+                        raise
+                    pooling, max_seq = _KNOWN_CONFIGS[self.model_id]
 
+                self._pooling = pooling
+                self.max_tokens = min(max_seq, MAX_TOKENS_CAP)
                 tokenizer = Tokenizer.from_file(tokenizer_json)
-                tokenizer.enable_truncation(max_length=_MAX_TOKENS)
+                tokenizer.enable_truncation(max_length=self.max_tokens)
                 tokenizer.enable_padding()
 
-                # One session, CPU only: this is a 133 MB encoder graph and the
+                # One session, CPU only: this is a ~130 MB encoder graph and the
                 # provider list must stay explicit so onnxruntime does not warn
                 # about absent CUDA on a CPU-only host.
                 self._session = onnxruntime.InferenceSession(
@@ -128,25 +164,41 @@ class OnnxBgeEmbedder:
         import numpy as np
 
         self._ensure_loaded()
-        encodings = self._tokenizer.encode_batch(texts)
+        # A lone encode is never padded, so these are the true lengths.
+        lengths = [len(self._tokenizer.encode(t).ids) for t in texts]
+        out: list[Any] = [None] * len(texts)
+        for batch in _length_batches(lengths):
+            encodings = self._tokenizer.encode_batch([texts[i] for i in batch])
+            vecs = self._embed_encodings(encodings, np)
+            for i, vec in zip(batch, vecs, strict=True):
+                out[i] = vec
+
+        if self._dim is None and out:
+            self._dim = len(out[0])
+        return out
+
+    def _embed_encodings(self, encodings: list[Any], np: Any) -> list[list[float]]:
+        """Run one padded batch, pool it, and L2-normalise each row."""
         feeds = self._build_feeds(encodings, np)
         last_hidden = self._session.run(None, feeds)[0]
 
-        # CLS pooling, then L2-normalise so cosine similarity is a dot product.
-        cls = last_hidden[:, 0]
-        norms = np.linalg.norm(cls, axis=1, keepdims=True)
-        vecs = cls / np.maximum(norms, 1e-12)
-
-        if self._dim is None and len(vecs) > 0:
-            self._dim = int(vecs.shape[1])
+        if self._pooling == "mean":
+            mask = feeds["attention_mask"][..., None].astype(np.float32)
+            pooled = (last_hidden * mask).sum(axis=1) / np.maximum(mask.sum(axis=1), 1e-9)
+        else:
+            pooled = last_hidden[:, 0]
+        # L2-normalise so cosine similarity is a dot product.
+        norms = np.linalg.norm(pooled, axis=1, keepdims=True)
+        vecs = pooled / np.maximum(norms, 1e-12)
         return [v.tolist() for v in vecs.astype(np.float32)]
 
     def _build_feeds(self, encodings: list[Any], np: Any) -> dict[str, Any]:
         """Feed only the inputs this graph declares.
 
         bge graphs take ``input_ids`` + ``attention_mask``, and most also take
-        ``token_type_ids``. Exporters differ on the third one, so match the
-        session's own input names rather than assuming a fixed signature.
+        ``token_type_ids``; ModernBERT graphs such as bekko take only the first
+        two. Match the session's own input names rather than assuming a fixed
+        signature.
         """
         available = {i.name for i in self._session.get_inputs()}
         columns = {
@@ -159,3 +211,36 @@ class OnnxBgeEmbedder:
             for name, values in columns.items()
             if name in available
         }
+
+
+def _pooling_mode(config: dict[str, Any]) -> str:
+    """The pooling a sentence-transformers ``1_Pooling/config.json`` asks for.
+
+    Only CLS and mean are implemented. Anything else raises, because pooling
+    the wrong way yields vectors that look fine and rank badly.
+    """
+    if config.get("pooling_mode_cls_token"):
+        return "cls"
+    if config.get("pooling_mode_mean_tokens"):
+        return "mean"
+    raise ValueError(f"unsupported pooling config: {config}")
+
+
+def _length_batches(lengths: list[int]) -> list[list[int]]:
+    """Group text indexes by length so each batch stays within the budget.
+
+    Sorting by length keeps padding small; a batch closes when one more row
+    would push ``rows * longest**2`` past :data:`_ATTENTION_BUDGET`.
+    """
+    order = sorted(range(len(lengths)), key=lambda i: lengths[i])
+    batches: list[list[int]] = []
+    current: list[int] = []
+    for i in order:
+        rows = len(current) + 1
+        if current and (rows > _MAX_BATCH or rows * lengths[i] ** 2 > _ATTENTION_BUDGET):
+            batches.append(current)
+            current = []
+        current.append(i)
+    if current:
+        batches.append(current)
+    return batches
