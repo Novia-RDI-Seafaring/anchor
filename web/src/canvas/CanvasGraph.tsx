@@ -55,6 +55,7 @@ import "./canvasNavigation.css";
 import { refreshWorkspaces } from "@/canvas/useWorkspacesList";
 import { useCanvasClipboard } from "@/canvas/useCanvasClipboard";
 import { useCanvasKeyboard } from "@/canvas/useCanvasKeyboard";
+import { usePaneText } from "@/canvas/usePaneText";
 import { CanvasSse, type CanvasEvent } from "@/realtime/sseClient";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -311,6 +312,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   const [connectLine, setConnectLine] = useState<{ ax: number; ay: number; bx: number; by: number } | null>(null);
   const navigate = useNavigate();
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const paneText = usePaneText({ slug, active: !readOnly && !armedTool && navigationMode === "select", toFlow: screenToFlowPosition });
   // Pointer-down origin for armed-tool drag-to-size. Lives in a ref so
   // pointermove handlers can update the in-flight ghost rect without
   // re-rendering ReactFlow on every pixel — only the ghost state below
@@ -1350,6 +1352,8 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   return (
     <div
       ref={rootRef}
+      onMouseDownCapture={paneText.onMouseDownCapture}
+      onDoubleClickCapture={paneText.onDoubleClickCapture}
       // The crosshair is forced through every descendant while a placing
       // tool is armed. Not for the pen: its surface sets its own cursor -- a
       // crosshair to draw, a hand over drawn ink -- and its buttons theirs.
@@ -1373,6 +1377,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     >
       {canvasClipboard.error ? <div role="alert" className="absolute left-3 top-3 z-50 rounded border border-red-300 bg-white p-2 text-sm text-red-800">{canvasClipboard.error}</div> : null}
       {canvasKeyboard.error ? <div role="alert" className="absolute left-3 top-3 z-50 rounded border border-red-300 bg-white p-2 text-sm text-red-800">{canvasKeyboard.error}</div> : null}
+      {paneText.error ? <div role="alert" className="absolute left-3 top-3 z-50 rounded border border-red-300 bg-white p-2 text-sm text-red-800">{paneText.error}</div> : null}
       {/* Mount custom <marker> defs once per canvas. Edge components
           reference them by URL fragment (`url(#anchor-mk-...)`); SVG
           marker IDs resolve document-wide so a sibling defs SVG works. */}
