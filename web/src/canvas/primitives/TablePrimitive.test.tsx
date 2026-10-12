@@ -20,11 +20,11 @@ import { useUiStore } from "@/stores/uiStore";
 import { TablePrimitive } from "./TablePrimitive";
 
 beforeEach(() => {
-  useUiStore.setState({ hoveredSourceRef: null, pdfViewer: null });
+  useUiStore.setState({ hoveredSourceRef: null, pdfViewer: null, navigationMode: "select" });
 });
 
 afterEach(() => {
-  useUiStore.setState({ hoveredSourceRef: null, pdfViewer: null });
+  useUiStore.setState({ hoveredSourceRef: null, pdfViewer: null, navigationMode: "select" });
   vi.unstubAllGlobals();
 });
 
@@ -445,6 +445,27 @@ describe("TablePrimitive header anchor", () => {
 
 describe("saying whether a reference checks out", () => {
   const ROW = { key: "B", value: "87", source_ref: { slug: "doc", page: 3, region_id: "r2" } };
+
+  it("closes a pending row review in Hand and preserves source viewing without verdict writes", async () => {
+    const patch = vi.spyOn(canvases, "patchNode").mockResolvedValue({} as never);
+    await renderTable({ source_doc_slug: "doc", rows: [ROW] });
+    fireEvent.contextMenu(screen.getByTestId("ref-review-chip"));
+    expect(screen.getByTestId("ref-review-menu")).toBeTruthy();
+    act(() => useUiStore.getState().setNavigationMode("hand"));
+    expect(screen.queryByTestId("ref-review-menu")).toBeNull();
+    fireEvent.contextMenu(screen.getByTestId("ref-review-chip"));
+    fireEvent.keyDown(window, { key: "y" });
+    expect(screen.queryByTestId("ref-review-menu")).toBeNull();
+    expect(patch).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Open source page 3" }));
+    await waitFor(() => expect(useUiStore.getState().pdfViewer?.page).toBe(3));
+    expect(patch).not.toHaveBeenCalled();
+    act(() => useUiStore.getState().setNavigationMode("select"));
+    fireEvent.contextMenu(screen.getByTestId("ref-review-chip"));
+    fireEvent.click(screen.getByTestId("ref-review-reject"));
+    await waitFor(() => expect(patch).toHaveBeenCalledOnce());
+    patch.mockRestore();
+  });
 
   it("offers a verdict on a right-click on the anchor", async () => {
     // Hovering the anchor is for looking; the verdict is a deliberate act,

@@ -61,6 +61,7 @@ export function RefReviewChip({
   onRevalidate,
   label,
   children,
+  readOnly = false,
 }: {
   review: RefReview | null;
   onChange: (state: RefVerdictName | null, note?: string) => void;
@@ -70,6 +71,8 @@ export function RefReviewChip({
   label: string;
   /** The anchor itself. */
   children?: ReactNode;
+  /** Preserve source viewing without offering a persisted verdict action. */
+  readOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState(review?.note ?? "");
@@ -79,6 +82,7 @@ export function RefReviewChip({
   const leaveTimer = useRef<number | null>(null);
 
   useEffect(() => setNote(review?.note ?? ""), [review?.note]);
+  useEffect(() => { if (readOnly) setOpen(false); }, [readOnly]);
 
   const clearTimer = (t: React.MutableRefObject<number | null>) => {
     if (t.current !== null) window.clearTimeout(t.current);
@@ -137,6 +141,7 @@ export function RefReviewChip({
    * stays in the field, and one more press puts it back.
    */
   const commit = (next: RefVerdictName) => {
+    if (readOnly) return;
     onChange(state === next ? null : next, next === state ? undefined : note);
     // A choice made is the menu done with, as in any menu. The note typed
     // before choosing goes with the verdict.
@@ -145,11 +150,11 @@ export function RefReviewChip({
 
   /** Store the note against the verdict it explains, leaving that verdict be. */
   const saveNote = () => {
-    if (state) onChange(state, note);
+    if (!readOnly && state) onChange(state, note);
   };
 
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open || readOnly) return undefined;
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
@@ -166,7 +171,7 @@ export function RefReviewChip({
     return () => window.removeEventListener("keydown", onKey, true);
     // `commit` closes over the note; re-bind when it changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, note]);
+  }, [open, note, readOnly]);
 
   return (
     <span
@@ -184,6 +189,7 @@ export function RefReviewChip({
         // picked out by it; the right button is for the menu alone.
         e.preventDefault();
         e.stopPropagation();
+        if (readOnly) return;
         showAt(e.clientX, e.clientY);
       }}
       onPointerDown={(e) => {
@@ -219,7 +225,7 @@ export function RefReviewChip({
         </span>
       ) : null}
 
-      {open && rect
+      {open && rect && !readOnly
         ? createPortal(
             // Portalled: the row lives inside React Flow's transformed
             // viewport, where a fixed position resolves against the transform
