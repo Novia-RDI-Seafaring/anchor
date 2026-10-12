@@ -55,6 +55,31 @@ class NoProjectError(Exception):
         super().__init__(message)
 
 
+class NotAProjectFolderError(Exception):
+    """A folder was given as a project but carries no ``anchor.toml`` marker."""
+
+    def __init__(self, folder: Path) -> None:
+        self.folder = folder
+        super().__init__(
+            f"{folder} is not an `anchor init` project (no {PROJECT_MARKER_FILENAME}). "
+            f"Run `anchor init` in that folder, or pass a project NAME instead."
+        )
+
+
+class ProjectEnvMismatchError(Exception):
+    """``--env`` names one environment while the project folder's marker names another."""
+
+    def __init__(self, folder: Path, marker_env: str, requested_env: str) -> None:
+        self.folder = folder
+        self.marker_env = marker_env
+        self.requested_env = requested_env
+        super().__init__(
+            f"{folder / PROJECT_MARKER_FILENAME} binds this project to environment "
+            f"{marker_env!r}, but --env {requested_env!r} was given. Drop --env to use "
+            f"the folder's environment, or move the project with `anchor project move`."
+        )
+
+
 class ProjectNotEmptyError(Exception):
     """A project still has content and removal was not forced."""
 

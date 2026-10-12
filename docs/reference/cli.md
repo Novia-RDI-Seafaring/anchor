@@ -13,7 +13,7 @@ The `anchor` command exposes the user-facing local application surface.
 | `anchor use <env> [project]` | Set CLI session defaults. This does not select a project for an MCP server. |
 | `anchor migrate` | Fold a pre-existing `~/anchor-data` into `envs/local/projects/default/.anchor_data/`. |
 | `anchor check --env <name>` | Verify the resolved data zone: provider / endpoint / project dir / models / key, repair a malformed endpoint (`--fix`), and with `--probe` confirm the deployment + key. Exits non-zero when something would break. |
-| `anchor serve` | Serve one project; use `--env NAME --project NAME` explicitly when needed. Port 8002 is the default; an unavailable port fails with the bind reason. Use `--port N` to choose a port or `--port-walk` to try up to 20 ports and print the actual URL. |
+| `anchor serve` | Serve one project; use `--env NAME --project NAME` explicitly when needed, or `--project <folder>` to serve an `anchor init` folder by path (the folder's `anchor.toml` picks the environment, so `--env` must match or be omitted). Port 8002 is the default; an unavailable port fails with the bind reason. Use `--port N` to choose a port or `--port-walk` to try up to 20 ports and print the actual URL. |
 | `anchor serve-info` | List running canvas servers and their resolved projects/URLs. |
 | `anchor models list / prefetch --env NAME` | Inspect or download the local model set before offline ingestion. Prefetch requires network access. |
 
@@ -21,7 +21,9 @@ The `anchor` command exposes the user-facing local application surface.
 `anchor init` in a working folder, then `anchor check`. Inside a project folder
 Anchor walks up to the nearest `anchor.toml` and needs no flags. Otherwise
 select the environment and project with `--env` / `--project`, `anchor use`, or
-`ANCHOR_ENV` / `ANCHOR_PROJECT`. Every flag of `anchor env create` is scriptable
+`ANCHOR_ENV` / `ANCHOR_PROJECT`. `--project` takes a project name or the path
+to an `anchor init` folder (`anchor check --project ~/work/pumps`), the same
+folder form `anchor-mcp --project` accepts. Every flag of `anchor env create` is scriptable
 (`--yes --provider … --base-url … --vision-model …`), so an agent can scaffold
 an environment the way it runs `npm init`. See
 [Environments and projects](../guides/environments-and-projects.md) and the

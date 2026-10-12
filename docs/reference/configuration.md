@@ -24,6 +24,7 @@ Inside an initialized working folder, CLI commands resolve the nearest
 `anchor.toml` unless explicitly overridden. Outside that folder, selection uses
 explicit `--env` / `--project` where supported, `ANCHOR_ENV` / `ANCHOR_PROJECT`,
 the saved `anchor use` selection, and then the default environment and project.
+`--project` accepts a project name or the path to an `anchor init` folder.
 An explicit `--data-dir` selects a raw storage directory for commands that
 support it. Use command help for the available selectors.
 
