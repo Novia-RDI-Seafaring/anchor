@@ -16,6 +16,7 @@ import sys
 import typer
 
 from anchor.infra.config import AnchorConfig
+from anchor.infra.egress_policy import AGENT_CLI_PROVIDERS
 from anchor.infra.providers import get_provider, no_key_remedy_lines, normalize_base_url
 
 # Providers that authenticate against an endpoint (mirror of init's set).
@@ -98,7 +99,11 @@ def check(
     project: str = typer.Option(
         None,
         "--project",
-        help="Project NAME to check (default: the cwd project, then the env default).",
+        help=(
+            "Project NAME to check, or the path to an `anchor init` folder "
+            "(default: the cwd project, then the env default). A folder's anchor.toml "
+            "binds its environment, so --env must match or be omitted."
+        ),
     ),
 ) -> None:
     """Verify the resolved project + data zone + config.
@@ -108,10 +113,12 @@ def check(
     says which project that is and where it came from, so "where will my
     ingest land?" is answered before anything else (#303).
     """
+    from anchor.adapters.cli.common import resolve_project_or_exit
     from anchor.infra.egress_policy import EgressPolicyError
     from anchor.infra.environment import (
         LEGACY_DATA_DIR,
         get_use,
+        looks_like_project_path,
         resolve_project,
     )
     from anchor.infra.environment_storage import (
@@ -122,7 +129,7 @@ def check(
 
     env_flag, project_flag = env, project
     try:
-        resolved = resolve_project(env_flag, project_flag)
+        resolved = resolve_project_or_exit(env_flag, project_flag)
     except EgressPolicyError as exc:
         # A config whose egress claims contradict each other (for example
         # local_only with a remote text-embedding-* embed_model, #271) must
@@ -140,7 +147,9 @@ def check(
     # Where the project name came from — mirrors resolve_project's own
     # precedence so the report never claims a source the resolver didn't use.
     marker_root = _walk_up_for_project()
-    if project_flag is not None:
+    if project_flag is not None and looks_like_project_path(project_flag):
+        source = f"from --project {project_dir.parent / PROJECT_MARKER_FILENAME}"
+    elif project_flag is not None:
         source = "from --project"
     elif env_flag is None and marker_root is not None:
         source = f"from {marker_root / PROJECT_MARKER_FILENAME}"
@@ -218,6 +227,8 @@ def check(
     elif provider_key == "harness":
         _echo("  vision         : your agent harness - gold extraction runs through")
         _echo("                   ingest sessions (begin -> submit pages -> finalize)")
+    elif provider_key in AGENT_CLI_PROVIDERS:
+        _echo(f"  vision         : your `{provider_key}` CLI, model {cfg.region_model}")
     else:
         _echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com (public)'}")
         _echo(f"  vision model   : {cfg.region_model}")
@@ -266,7 +277,7 @@ def check(
     # local/ollama/harness keep content on-host → no key. openai accepts a
     # personal OPENAI_API_KEY. azure/custom (and any configured endpoint) need
     # the endpoint's own key in ANCHOR_OPENAI_API_KEY — a personal key is wrong there.
-    if provider_key in ("local", "ollama", "harness"):
+    if provider_key in ("local", "ollama", "harness", *AGENT_CLI_PROVIDERS):
         needs_key = False
         key_ok = True
     elif provider_key == "openai":
@@ -318,6 +329,9 @@ def check(
                   f"{cred['env_file'] or env_dotenv or 'the environment .env'}.")
     elif provider_key == "harness":
         _echo("  api key        : not needed — ingestion happens through the agent")
+    elif provider_key in AGENT_CLI_PROVIDERS and not cfg.local_only:
+        _echo("  api key        : not needed — the CLI answers on its own sign-in")
+        _check_agent_cli(provider_key, problems)
     else:
         _echo("  api key        : not needed (no egress)")
 
@@ -429,6 +443,24 @@ def _probe_ocr_backend() -> tuple[bool, str | None]:
         return False, "missing"
     except ImportError as exc:
         return False, str(exc)
+
+
+def _check_agent_cli(provider_key: str, problems: list[str]) -> None:
+    """Confirm the provider's CLI is installed and signed in; never print account details."""
+    from anchor.extensions.anchor_pdfs.infra.llm.agent_cli import agent_cli_for
+
+    cli = agent_cli_for(provider_key)
+    if not cli.found():
+        _echo(f"  {provider_key} cli     : NOT found on PATH")
+        problems.append(
+            f"The `{cli.binary}` CLI is not installed or not on PATH; install it and "
+            f"{cli.sign_in_hint}."
+        )
+        return
+    ok, detail = cli.sign_in()
+    _echo(f"  {provider_key} cli     : {detail}{' ✓' if ok else ''}")
+    if not ok:
+        problems.append(f"The `{cli.binary}` CLI is not signed in; {cli.sign_in_hint}.")
 
 
 def _probe(cfg: AnchorConfig, embed_remote: bool, problems: list[str]) -> None:

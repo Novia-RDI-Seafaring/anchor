@@ -8,6 +8,8 @@ import logging
 import re
 from typing import Any
 
+from .prompts import region_prompt
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,21 +33,7 @@ class OpenAIRegionExtractor:
 
         client = make_openai_client(self.api_key, self.base_url)
         b64 = base64.b64encode(page_image).decode()
-        prompt = (
-            f"List the visual regions on page {page_no} of this engineering PDF. "
-            "For each region emit: id, kind (chart|spec_block|table|figure|diagram|text), "
-            "title, description, approximate bbox [left, top, right, bottom] in top-left "
-            "PDF points (origin at the page's top-left corner, y increasing downward), "
-            "tags[], entities[]. For tables and spec blocks, make regions tight: split "
-            "distinct visual sections or sub-tables separated by headers, whitespace, or rules. "
-            "Do not merge adjacent sub-tables, and keep values from neighboring groups out of "
-            "the region. In the description, list exact visible facts as 'key: value' pairs "
-            "when the region contains key/value rows. Include the value for every key you can "
-            "read; if two keys share the same value, repeat that value for both keys. Do not "
-            "deduplicate equal values or summarize numeric values. Return JSON with key "
-            "'regions'.\n"
-            f"\nDocling items:\n{json.dumps(items)[:8000]}"
-        )
+        prompt = region_prompt(page_no, items)
         messages = [{
             "role": "user",
             "content": [

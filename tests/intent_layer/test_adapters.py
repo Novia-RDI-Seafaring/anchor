@@ -242,3 +242,33 @@ async def test_http_actor_scope_restores_on_unhandled_host_error_or_cancellation
                     "type": "suggestion", "ops": CHANGE, "actor": agent.model_dump(),
                 })
             assert current_actor() is outer
+
+
+@pytest.mark.parametrize("adapter", ["http", "mcp", "cli"])
+def test_act_in_one_call_on_every_transport(adapter, tmp_path):
+    host, signals = FormHost(), MemoryPendingSignals()
+    service = IntentService(FsIntentStore(tmp_path), signals, host=host)
+    ident = asyncio.run(service.enqueue("user_request", origin_canvas_id="signup",
+                                        targets=["email"])).id
+    args = {"id": ident, "text": "Use the work address", "ops": CHANGE,
+            "question": {"text": "Right?", "options": ["Yes", "No"]}, "resolve": True}
+    if adapter == "mcp":
+        out = json.loads(asyncio.run(call_tool(service, "intent_act", args, actor=READER)))
+    elif adapter == "http":
+        app = FastAPI()
+        app.include_router(create_router(lambda: service, lambda: signals,
+                                         prefix="/form/inbox", default_actor=READER))
+        response = TestClient(app).post(f"/form/inbox/{ident}/act", json=args)
+        assert response.status_code == 200, response.text
+        out = response.json()
+    else:
+        result = CliRunner().invoke(create_cli(lambda: service, default_actor=READER), [
+            "act", ident, "--text", args["text"], "--ops", json.dumps(CHANGE),
+            "--ask", "Right?", "--option", "Yes", "--option", "No", "--resolve"])
+        assert result.exit_code == 0, result.output
+        out = json.loads(result.output)
+    assert out["suggestion"]["state"] == "applied"
+    assert out["applied"] == {"form": "signup", "revision": 1}
+    assert out["question"]["options"] == ["Yes", "No"]
+    assert out["intent"]["status"] == "resolved"
+    assert host.fields["email"] == "new@example.test"

@@ -24,6 +24,7 @@ Inside an initialized working folder, CLI commands resolve the nearest
 `anchor.toml` unless explicitly overridden. Outside that folder, selection uses
 explicit `--env` / `--project` where supported, `ANCHOR_ENV` / `ANCHOR_PROJECT`,
 the saved `anchor use` selection, and then the default environment and project.
+`--project` accepts a project name or the path to an `anchor init` folder.
 An explicit `--data-dir` selects a raw storage directory for commands that
 support it. Use command help for the available selectors.
 
@@ -49,6 +50,8 @@ Create another environment when the processing destination changes.
 | --- | --- | --- |
 | `local` | Skipped | No ANCHOR-side remote model client |
 | `harness` | Agent ingestion session | Connected agent and its chosen model provider |
+| `claude` | Your `claude` CLI, per page | Anthropic, through your own Claude Code sign-in |
+| `codex` | Your `codex` CLI, per page | OpenAI, through your own Codex sign-in |
 | `ollama` | Configured vision model | Configured Ollama endpoint |
 | `openai` | Configured vision model | Public OpenAI endpoint |
 | `azure` | Configured deployment | Configured Azure OpenAI endpoint |

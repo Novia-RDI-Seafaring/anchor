@@ -72,7 +72,9 @@ async def build_status_summary(
             # no Anchor-side vision endpoint.
             "harness_mode": (config.provider or "").lower() == "harness",
             "key_required": (config.provider or "").lower()
-            not in ("local", "ollama", "harness", ""),
+            not in ("local", "ollama", "harness", "claude", "codex", ""),
+            # ``claude`` / ``codex``: vision runs through that signed-in CLI.
+            "agent_cli": egress.agent_cli,
             # Local-only / no-egress posture: when true, ingest + embed build no
             # OpenAI client and model loading is pinned offline. The runtime
             # asserts this the same way across CLI, HTTP and MCP.

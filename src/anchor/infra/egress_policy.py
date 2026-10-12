@@ -16,6 +16,10 @@ if TYPE_CHECKING:
     from anchor.infra.config import AnchorConfig
 
 _SERVER_EGRESS_PROVIDERS = frozenset({"azure", "custom", "ollama", "openai"})
+#: Providers whose vision stages run through the user's own signed-in agent
+#: CLI. Page content leaves the host (to Anthropic or OpenAI), so they count
+#: as egress, but Anchor builds no model client and holds no credential.
+AGENT_CLI_PROVIDERS = frozenset({"claude", "codex"})
 _PROJECT_IMMUTABLE_FIELDS = frozenset({"openai_base_url", "provider"})
 _PROJECT_FORBIDDEN_FIELDS = frozenset({"openai_api_key"})
 
@@ -68,6 +72,8 @@ class EgressPolicy:
     remote_clients_enabled: bool
     credential_source: str | None = None
     dotenv_path: Path | None = None
+    #: ``claude`` or ``codex`` when the vision stages run through that CLI.
+    agent_cli: str | None = None
 
     def validate_embed_model(
         self,
@@ -125,6 +131,22 @@ def resolve_egress_policy(
 ) -> EgressPolicy:
     """Resolve explicit model credentials and endpoint without ambient fallback."""
     provider = (config.provider or "").strip().lower() or None
+    if provider in AGENT_CLI_PROVIDERS and not config.local_only:
+        policy = EgressPolicy(
+            provider=provider,
+            api_key=None,
+            base_url=None,
+            server_egress_allowed=True,
+            remote_clients_enabled=False,
+            dotenv_path=environment_dotenv_path(config),
+            agent_cli=provider,
+        )
+        # Embeddings stay on the host: there is no endpoint key to embed with.
+        policy.validate_embed_model(
+            config.embed_model,
+            require_credential=require_remote_credential,
+        )
+        return policy
     server_egress_allowed = (
         not config.local_only and provider in _SERVER_EGRESS_PROVIDERS
     )

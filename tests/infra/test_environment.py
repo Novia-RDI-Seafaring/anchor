@@ -13,6 +13,8 @@ from anchor.infra.environment import (
     Meta,
     NoEnvironmentError,
     NoProjectError,
+    NotAProjectFolderError,
+    ProjectEnvMismatchError,
     ProjectNotEmptyError,
     config_for_data_dir,
     create_env,
@@ -20,6 +22,7 @@ from anchor.infra.environment import (
     default_env_name,
     environment_meta,
     list_env_names,
+    looks_like_project_path,
     move_project,
     project_contents,
     project_meta,
@@ -398,6 +401,118 @@ def test_resolve_project_require_exists(tmp_path):
     create_env("local")
     with pytest.raises(NoProjectError):
         resolve_project("local", "ghost", require_exists=True)
+
+
+# --------------------------------------------------------------------------- #
+# `--project <folder>`: an `anchor init` folder path instead of a name (#380)
+# --------------------------------------------------------------------------- #
+def _init_folder(tmp_path, env_name="work", name="pumps", *, marker_extra=""):
+    env = create_env(env_name, settings={"provider": "local", "embed_model": "ENVMODEL"})
+    folder = tmp_path / "work" / name
+    create_project(env, name, root=folder)
+    (folder / "anchor.toml").write_text(
+        f'env = "{env_name}"\nname = "{name}"\n{marker_extra}', encoding="utf-8"
+    )
+    return folder
+
+
+def test_resolve_project_accepts_absolute_folder_path(tmp_path):
+    folder = _init_folder(tmp_path, marker_extra='embed_model = "MARK"\n')
+    rp = resolve_project(None, str(folder))
+    assert rp.environment.name == "work"
+    assert rp.name == "pumps"
+    assert rp.data_dir == folder / ".anchor_data"
+    # layered like the walk-up branch: env.toml < anchor.toml
+    assert rp.config.embed_model == "MARK"
+    assert rp.config.provider == "local"
+
+
+def test_resolve_project_accepts_relative_folder_path(tmp_path, monkeypatch):
+    folder = _init_folder(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    rp = resolve_project(None, "work/pumps")
+    assert rp.name == "pumps"
+    assert rp.data_dir == folder / ".anchor_data"
+    assert rp.data_dir.is_absolute()
+    # a dot-relative form resolves the same folder
+    assert resolve_project(None, "./work/pumps").data_dir == folder / ".anchor_data"
+
+
+def test_resolve_project_expands_tilde(tmp_path, monkeypatch):
+    folder = _init_folder(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    rp = resolve_project(None, "~/work/pumps")
+    assert rp.data_dir == folder / ".anchor_data"
+
+
+def test_resolve_project_folder_without_marker_is_an_error(tmp_path):
+    create_env("work")
+    plain = tmp_path / "not-a-project"
+    plain.mkdir()
+    with pytest.raises(NotAProjectFolderError) as failure:
+        resolve_project(None, str(plain))
+    assert str(plain) in str(failure.value)
+    assert "anchor init" in str(failure.value)
+    # a path that does not exist at all gets the same clear answer
+    with pytest.raises(NotAProjectFolderError):
+        resolve_project(None, str(tmp_path / "missing" / "folder"))
+
+
+def test_resolve_project_folder_env_flag_must_match_marker(tmp_path):
+    folder = _init_folder(tmp_path)
+    create_env("other")
+    # a matching --env is fine
+    assert resolve_project("work", str(folder)).name == "pumps"
+    with pytest.raises(ProjectEnvMismatchError) as failure:
+        resolve_project("other", str(folder))
+    assert "'work'" in str(failure.value)
+    assert "'other'" in str(failure.value)
+
+
+def test_resolve_project_folder_falls_back_to_default_env_and_folder_name(tmp_path):
+    create_env("local")
+    set_default_env("local")
+    folder = tmp_path / "lkh"
+    folder.mkdir()
+    (folder / "anchor.toml").write_text("", encoding="utf-8")  # marker with no fields
+    rp = resolve_project(None, str(folder))
+    assert rp.environment.name == "local"
+    assert rp.name == "lkh"
+
+
+def test_resolve_project_plain_name_unchanged(tmp_path, monkeypatch):
+    env = create_env("local")
+    create_project(env, "pumps")
+    # A bare word is a name even when a same-named folder (without a marker)
+    # sits in the cwd; only an `anchor init` folder is taken as a path.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pumps").mkdir()
+    rp = resolve_project("local", "pumps")
+    assert rp.data_dir == env.project_dir("pumps")
+    with pytest.raises(InvalidProjectNameError):
+        resolve_project("local", "bad name!")
+
+
+def test_resolve_project_bare_name_of_init_folder_in_cwd_is_a_path(tmp_path, monkeypatch):
+    folder = _init_folder(tmp_path)
+    monkeypatch.chdir(folder.parent)
+    assert resolve_project(None, "pumps").data_dir == folder / ".anchor_data"
+
+
+def test_looks_like_project_path(tmp_path, monkeypatch):
+    assert looks_like_project_path("/abs/path")
+    assert looks_like_project_path("a/b")
+    assert looks_like_project_path("./here")
+    assert looks_like_project_path(".")
+    assert looks_like_project_path("~/x")
+    assert not looks_like_project_path("pumps")
+    assert not looks_like_project_path("")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "pumps").mkdir()
+    assert not looks_like_project_path("pumps")  # a folder, but not an init one
+    (tmp_path / "pumps" / "anchor.toml").write_text("", encoding="utf-8")
+    assert looks_like_project_path("pumps")
 
 
 def test_layering_env_then_project_then_envvar(tmp_path, monkeypatch):

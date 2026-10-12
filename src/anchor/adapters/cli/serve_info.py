@@ -24,7 +24,12 @@ def serve_info(
         help="Show only the serve bound to this project data dir (prints its base URL).",
     ),
     project: str = typer.Option(
-        None, "--project", help="Show only the serve bound to this project (by name)."
+        None,
+        "--project",
+        help=(
+            "Show only the serve bound to this project: a project NAME or the "
+            "path to an `anchor init` folder (as for `anchor serve --project`)."
+        ),
     ),
     env: str = typer.Option(
         None, "--env", help="Restrict --project lookup to this environment."
