@@ -116,7 +116,7 @@ def build_ingest_service(
     than one per service.
     """
     from anchor.extensions.anchor_pdfs.core.services import IngestService
-    from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
+    from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_project_embedder
     from anchor.extensions.anchor_pdfs.infra.llm.openai_md_polisher import OpenAIPageMdPolisher
     from anchor.extensions.anchor_pdfs.infra.llm.openai_region_extractor import (
         OpenAIRegionExtractor,
@@ -125,13 +125,11 @@ def build_ingest_service(
     from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
     from anchor.infra.egress_policy import resolve_egress_policy
 
-    policy = egress or resolve_egress_policy(config)
+    # A missing key must not block construction: read-only operations work
+    # without one, and the embedder raises a structured error on first use.
+    policy = egress or resolve_egress_policy(config, require_remote_credential=False)
     if embedder is None:
-        embedder = build_embedder(
-            model=config.embed_model,
-            api_key=policy.api_key,
-            base_url=policy.base_url,
-        )
+        embedder = build_project_embedder(model=config.embed_model, policy=policy)
     return IngestService(
         doc_store,
         bus,
@@ -166,18 +164,16 @@ def build_ingest_session_service(
     """
     from anchor.extensions.anchor_pdfs.core.ingest.session import IngestSessionService
     from anchor.extensions.anchor_pdfs.infra.fs_session_store import FsIngestSessionStore
-    from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
+    from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_project_embedder
     from anchor.extensions.anchor_pdfs.infra.pdf.docling_extractor import DoclingPdfExtractor
     from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
     from anchor.infra.egress_policy import resolve_egress_policy
 
-    policy = egress or resolve_egress_policy(config)
+    # A missing key must not block construction: read-only operations work
+    # without one, and the embedder raises a structured error on first use.
+    policy = egress or resolve_egress_policy(config, require_remote_credential=False)
     if embedder is None:
-        embedder = build_embedder(
-            model=config.embed_model,
-            api_key=policy.api_key,
-            base_url=policy.base_url,
-        )
+        embedder = build_project_embedder(model=config.embed_model, policy=policy)
     return IngestSessionService(
         doc_store,
         FsIngestSessionStore(config.data_dir),
@@ -233,7 +229,10 @@ def build_project_runtime(
 
     profile = RuntimeProfile(profile)
     features = _PROFILE_FEATURES[profile]
-    egress = resolve_egress_policy(config)
+    # A remote embed model without a visible key still builds the runtime;
+    # only calls that reach the remote model fail (see build_project_embedder).
+    # A remote model in a no-egress environment is still rejected here.
+    egress = resolve_egress_policy(config, require_remote_credential=False)
     data_dir = config.data_dir
     bus = MemoryEventBus()
     doc_store = FsDocStore(data_dir)
@@ -266,13 +265,11 @@ def build_project_runtime(
     # duplicated the model in memory.
     shared_embedder = None
     if features.ingest or features.ingest_session:
-        from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import build_embedder
-
-        shared_embedder = build_embedder(
-            model=config.embed_model,
-            api_key=egress.api_key,
-            base_url=egress.base_url,
+        from anchor.extensions.anchor_pdfs.infra.llm.embedder_selection import (
+            build_project_embedder,
         )
+
+        shared_embedder = build_project_embedder(model=config.embed_model, policy=egress)
 
     ingest = (
         build_ingest_service(config, bus, doc_store, egress=egress, embedder=shared_embedder)
