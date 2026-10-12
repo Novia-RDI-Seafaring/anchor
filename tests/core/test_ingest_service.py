@@ -218,7 +218,7 @@ def test_ingest_uses_service_level_pipeline_defaults():
             seen["polish_model"] = model
             return deterministic_md
 
-        async def extract_page(*, page_image, page_no, docling_items, model):
+        async def extract_page(*, page_image, page_no, docling_items, model, **_frame):
             seen["region_model"] = model
             return []
 
@@ -252,7 +252,7 @@ def test_ingest_promotes_approximate_bbox_before_storing_gold_regions():
             ],
         }
 
-        async def extract_page(*, page_image, page_no, docling_items, model):
+        async def extract_page(*, page_image, page_no, docling_items, model, **_frame):
             return [
                 {
                     "id": "r1",

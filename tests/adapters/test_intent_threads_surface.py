@@ -116,6 +116,26 @@ def test_http_add_item_author_is_request_actor_never_body():
     assert client.post("/api/intents/ghost/items", json={"type": "message", "text": "x"}).status_code == 404
 
 
+def test_http_actor_takes_the_cli_string_form_and_refuses_junk():
+    client, _s = _client()
+    intent = _ask(client)
+    rsp = client.post(
+        f"/api/intents/{intent['id']}/items",
+        json={"type": "message", "text": "on it", "actor": "agent:claude"},
+    )
+    assert rsp.status_code == 200, rsp.text
+    assert rsp.json()["item"]["author"] == {"kind": "agent", "id": None, "label": "claude"}
+    # A malformed actor is refused rather than quietly becoming the browser.
+    for junk in ("wizard:merlin", 7, {"label": "no kind"}, {"kind": "robot"}):
+        bad = client.post(
+            f"/api/intents/{intent['id']}/items",
+            json={"type": "message", "text": "x", "actor": junk},
+        )
+        assert bad.status_code == 400, (junk, bad.text)
+        assert bad.json()["detail"]["error"] == "invalid_actor"
+    assert [i["author"]["label"] for i in client.get(f"/api/intents/{intent['id']}").json()["intent"]["items"]] == ["claude"]
+
+
 def test_http_question_answer():
     client, _s = _client()
     intent = _ask(client)

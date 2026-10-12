@@ -9,6 +9,22 @@ from __future__ import annotations
 
 from typing import Any
 
+from anchor.extensions.anchor_pdfs.core.ingest.geometry import (
+    BLOCK_KINDS,
+    EXCLUSIVE_LABELS,
+    PICTURE_KINDS,
+    adopt_table,
+    disown_shared_members,
+    in_page_points,
+    keep_in_table,
+    keep_picture_items,
+    merge_into_pictures,
+    merged_region,
+    mostly_inside,
+    needs_adoption,
+    outside_tables,
+    picture_frames,
+)
 from anchor.extensions.anchor_pdfs.core.ingest.validation import (
     REGION_KINDS,
     bbox_error,
@@ -64,8 +80,15 @@ def resolve_regions(
     *,
     page: int,
     candidates: list[dict[str, Any]],
+    page_size: list[float] | tuple[float, float] | None = None,
+    dpi: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Resolve untrusted submissions into validated, grounded gold regions."""
+    """Resolve untrusted submissions into validated, grounded gold regions.
+
+    ``page_size`` (points) and ``dpi`` (of the page raster the harness saw)
+    let an ``approx_bbox`` be checked against the page: pixels that fit the
+    raster are scaled to points, anything outside both is rejected.
+    """
     if not isinstance(regions, list):
         return [], [_err(0, "regions", "regions must be a list")]
 
@@ -78,6 +101,7 @@ def resolve_regions(
         "items": [{**candidate, "page": page} for candidate in by_id.values()]
     }
     resolved: list[dict[str, Any]] = []
+    resolved_indexes: list[int] = []
     errors: list[dict[str, Any]] = []
 
     for index, raw in enumerate(regions):
@@ -124,6 +148,8 @@ def resolve_regions(
                 member_ids=member_ids,
                 approx_bbox=approx_bbox,
                 table_slice=table_slice,
+                page_size=page_size,
+                dpi=dpi,
             )
         )
         if geometry_errors:
@@ -154,11 +180,117 @@ def resolve_regions(
         if not geometry or geometry_errors:
             continue
         resolved.append(region)
+        resolved_indexes.append(index)
 
     errors.extend(region_id_errors(resolved, page=page))
+    errors.extend(_shared_block_errors(resolved, resolved_indexes, by_id))
     if errors:
         return [], errors
+    # The key owns its letters: a picture region named by both gives them up.
+    for pos, kept in disown_shared_members(resolved).items():
+        kept_items = [by_id[m] for m in kept if m in by_id]
+        frame = union_bbox([list(item.get("bbox") or []) for item in kept_items])
+        if not frame:
+            continue
+        region = {**resolved[pos], "member_item_ids": kept, "bbox": frame}
+        content = region_content_from_items(kept_items)
+        if content:
+            region["content"] = content
+        else:
+            region.pop("content", None)
+        resolved[pos] = region
+
+    # One drawing in the PDF is one region: picture regions take their
+    # Docling picture's frame, and views of one drawing merge.
+    pictures = [
+        box for candidate in by_id.values()
+        if candidate.get("label") == "picture" and (box := _candidate_bbox(candidate))
+    ]
+    frames, absorbed = merge_into_pictures(resolved, pictures)
+    for pos, frame in frames.items():
+        region = merged_region(resolved[pos], [resolved[o] for o in absorbed.get(pos, [])])
+        region["bbox"] = frame
+        content = region_content_from_items([by_id[m] for m in region.get("member_item_ids") or [] if m in by_id])
+        if content:
+            region["content"] = content
+        resolved[pos] = region
+    gone = {o for others in absorbed.values() for o in others}
+    resolved = [r for pos, r in enumerate(resolved) if pos not in gone]
+
+    # A picture that spans a drawing and the key beside it gives the key
+    # its own room (see ``ingest.geometry.picture_frames``).
+    own_boxes = {
+        pos: [
+            box for member in region.get("member_item_ids") or []
+            if member in by_id
+            and by_id[member].get("label") != "picture"
+            and (box := _candidate_bbox(by_id[member]))
+        ]
+        for pos, region in enumerate(resolved)
+        if region.get("kind") in PICTURE_KINDS
+    }
+    for pos, frame in picture_frames(resolved, own_boxes).items():
+        region = resolved[pos]
+        kept = [
+            member for member in region.get("member_item_ids") or []
+            if member in by_id and (
+                by_id[member].get("label") == "picture"
+                or mostly_inside(_candidate_bbox(by_id[member]), frame)
+            )
+        ]
+        region = {**region, "bbox": frame, "member_item_ids": kept}
+        content = region_content_from_items([by_id[m] for m in kept])
+        if content:
+            region["content"] = content
+        else:
+            region.pop("content", None)
+        resolved[pos] = region
     return resolved, []
+
+
+def _candidate_bbox(candidate: dict[str, Any]) -> list[float] | None:
+    raw = candidate.get("bbox")
+    if isinstance(raw, list) and len(raw) == 4:
+        try:
+            return [float(v) for v in raw]
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _shared_block_errors(
+    resolved: list[dict[str, Any]],
+    indexes: list[int],
+    by_id: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """One table or picture, one region. Names every region that shares one.
+
+    Two regions naming the same table are two regions for one block: a sign
+    the member lists ran past their block. This path has a repair round, so
+    the page goes back with the item and the regions named.
+    """
+    holders: dict[str, list[tuple[int, str]]] = {}
+    for index, region in zip(indexes, resolved, strict=True):
+        for member_id in region.get("member_item_ids") or []:
+            label = (by_id.get(member_id) or {}).get("label")
+            if label in EXCLUSIVE_LABELS:
+                holders.setdefault(member_id, []).append((index, str(region.get("id"))))
+    errors: list[dict[str, Any]] = []
+    for member_id, owners in holders.items():
+        if len(owners) < 2:
+            continue
+        label = by_id[member_id]["label"]
+        names = ", ".join(region_id for _, region_id in owners)
+        for index, _ in owners:
+            errors.append(_err(
+                index,
+                "member_item_ids",
+                f"{member_id} is a {label} named by regions {names}; a {label} is "
+                "one block and belongs to one region. Keep it in the region whose "
+                "body it is and name only that block's own items in the others "
+                "(or use table_slice for one part of a table).",
+            ))
+    return errors
 
 
 def _region_payload(
@@ -193,6 +325,8 @@ def _resolve_geometry(
     member_ids: Any,
     approx_bbox: Any,
     table_slice: Any,
+    page_size: list[float] | tuple[float, float] | None = None,
+    dpi: int | None = None,
 ) -> tuple[
     str,
     list[float],
@@ -212,6 +346,7 @@ def _resolve_geometry(
         return _resolve_members(
             member_ids,
             index=index,
+            kind=kind,
             page=page,
             by_id=by_id,
         )
@@ -221,6 +356,8 @@ def _resolve_geometry(
         kind=kind,
         page=page,
         docling_view=docling_view,
+        page_size=page_size,
+        dpi=dpi,
     )
 
 
@@ -230,6 +367,7 @@ def _resolve_members(
     index: int,
     page: int,
     by_id: dict[str, dict[str, Any]],
+    kind: Any = None,
 ) -> tuple[str, list[float], dict[str, Any], str, Any, list[dict[str, Any]]]:
     if not isinstance(member_ids, list) or not member_ids:
         return _failed_geometry(
@@ -248,6 +386,36 @@ def _resolve_members(
         ))
 
     selected_items = [by_id[member_id] for member_id in member_ids]
+    kept_ids = list(member_ids)
+    if kind in PICTURE_KINDS:
+        # A picture region is its picture and the labels inside it, not the
+        # table a run-on member list dragged along.
+        kept = keep_picture_items(selected_items)
+        selected_items = [selected_items[pos] for pos in kept]
+        kept_ids = [kept_ids[pos] for pos in kept]
+    elif kind in BLOCK_KINDS:
+        # Named by heading and cell texts, which can stand in other tables
+        # too, or with another table than its heading's: take the table
+        # under the heading and what is inside it.
+        tables = [(cid, c) for cid, c in by_id.items() if c.get("label") == "table"]
+        table_items = [c for _, c in tables]
+        chosen = (
+            adopt_table(selected_items, table_items)
+            if needs_adoption(selected_items, table_items) else None
+        )
+        if chosen is not None:
+            table_id, table = tables[chosen]
+            kept = keep_in_table(selected_items, _candidate_bbox(table) or [])
+            kept_ids = [table_id, *(
+                kept_ids[pos] for pos in kept
+                if kept_ids[pos] != table_id and selected_items[pos].get("label") != "table"
+            )]
+            selected_items = [by_id[cid] for cid in kept_ids]
+        elif not any(item.get("label") == "table" for item in selected_items):
+            outside = outside_tables(selected_items, table_items)
+            if outside:
+                kept_ids = [kept_ids[pos] for pos in outside]
+                selected_items = [selected_items[pos] for pos in outside]
     bbox = union_bbox([list(item.get("bbox") or []) for item in selected_items])
     if not bbox:
         return _failed_geometry(_err(
@@ -260,7 +428,7 @@ def _resolve_members(
         bbox,
         table_data_from_items(selected_items),
         region_content_from_items(selected_items),
-        list(member_ids),
+        kept_ids,
         [],
     )
 
@@ -272,11 +440,17 @@ def _resolve_approx_bbox(
     kind: Any,
     page: int,
     docling_view: dict[str, list[dict[str, Any]]],
+    page_size: list[float] | tuple[float, float] | None = None,
+    dpi: int | None = None,
 ) -> tuple[str, list[float], dict[str, Any], str, Any, list[dict[str, Any]]]:
     message = bbox_error(approx_bbox)
     if message:
         return _failed_geometry(_err(index, "approx_bbox", message))
     normalized = [float(value) for value in approx_bbox]
+    if page_size and len(page_size) == 2:
+        normalized, message = in_page_points(normalized, page_size, dpi)
+        if message:
+            return _failed_geometry(_err(index, "approx_bbox", f"approx_{message}"))
     snapped, item_indexes = snap_to_docling_items(docling_view, page, normalized)
     if not snapped:
         return "coarse", normalized, {}, "", normalized, []

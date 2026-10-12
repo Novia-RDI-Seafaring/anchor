@@ -346,9 +346,12 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       </div>
 
       {previewUrl ? (
-        <div className="border-b border-neutral-200 bg-neutral-50">
-          {/* Shrink-wrapped round the picture, so the lit boxes, placed in
-              percent, land on the picture and not on the letterbox. */}
+        <div className="border-b border-neutral-200 bg-white px-3 py-2">
+          {/* Paper round the section: its crop is the section's box, which
+              sits right on the text, so without a margin the words touch the
+              card's edges. Shrink-wrapped round the picture inside, so the
+              lit boxes, placed in percent, land on the picture and not on the
+              margin. */}
           <div className="relative mx-auto w-fit max-w-full">
           <img
             src={previewUrl}
@@ -356,7 +359,9 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
             title={d.description}
             // Up to a readable height: capped at 128 px, a table's rows
             // shrank to a grey strip whatever the card's width.
-            className="block h-auto max-h-80 w-auto max-w-full"
+            // A section placed by eye from the viewer keeps its shape: the
+            // height cap applies only to cards the reader did not size.
+            className={`block h-auto w-auto max-w-full ${typeof d.width === "number" ? "" : "max-h-80"}`}
             loading="lazy"
             draggable={false}
             onError={(e) => {

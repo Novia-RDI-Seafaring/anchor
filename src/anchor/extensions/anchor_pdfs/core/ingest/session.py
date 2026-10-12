@@ -380,7 +380,15 @@ class IngestSessionService:
         slug = session["slug"]
         store = await self._session_documents(session)
         candidates = await store.get_page_candidates(slug, page) or []
-        resolved, errors = resolve_regions(regions, page=page, candidates=candidates)
+        pages_meta = await store.get_pages_meta(slug) or {}
+        page_meta = (pages_meta.get("pages") or {}).get(str(page)) or {}
+        resolved, errors = resolve_regions(
+            regions,
+            page=page,
+            candidates=candidates,
+            page_size=page_meta.get("page_size"),
+            dpi=session.get("dpi"),
+        )
 
         if polished_md is not None:
             if not isinstance(polished_md, str) or not polished_md.strip():

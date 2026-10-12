@@ -78,6 +78,7 @@ class FakeRegionExtractor:
 
     async def extract_page(
         self, *, page_image: bytes, page_no: int, docling_items: list[dict[str, Any]], model: str,
+        **_frame: Any,
     ) -> list[dict[str, Any]]:
         return [dict(r, page=page_no) for r in self._regions]
 

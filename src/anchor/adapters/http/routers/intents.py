@@ -35,12 +35,12 @@ import json
 from contextlib import suppress
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from anchor.adapters.http.deps import apply_actor_override, get_intent_service
-from anchor.core.events.actor import Actor
+from anchor.core.events.actor import Actor, parse_actor
 from anchor.core.intents.intent import INTENT_KINDS, INTENT_PENDING_EVENT
 from anchor.core.intents.timing import intent_timing
 from anchor.core.services.intent_service import (
@@ -54,9 +54,32 @@ router = APIRouter(prefix="/api/intents", tags=["intents"])
 
 
 def _actor_override(body: dict[str, Any] | None) -> None:
+    """``actor`` is ``{kind, label?, id?}`` or ``"kind[:label]"`` as on the CLI.
+
+    A malformed actor is a 400, not a quiet fall-back to the human/browser
+    default: attribution decides who may move which thread state, so a
+    wrong default is worse than an error.
+    """
     raw = (body or {}).get("actor")
-    if isinstance(raw, dict) and raw.get("kind"):
-        apply_actor_override(Actor(**raw))
+    if raw is None:
+        return
+    try:
+        if isinstance(raw, str):
+            actor = parse_actor(raw)
+        elif isinstance(raw, dict):
+            actor = Actor(**raw)
+        else:
+            raise ValueError("actor must be an object or a string")
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_actor",
+                "message": "actor must be {kind, label?, id?} or 'kind[:label]' "
+                f"(kind: human, agent, system): {exc}",
+            },
+        ) from exc
+    apply_actor_override(actor)
 
 
 def _not_found(intent_id: str, item_id: str | None = None) -> JSONResponse:

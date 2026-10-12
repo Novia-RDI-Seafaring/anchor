@@ -226,3 +226,13 @@ body[data-pen-panning] *,
 body[data-pen-lifted][data-pen-panning] .react-flow :is(*, [data-source-anchor]) {
   cursor: grabbing !important;
 }
+
+/* PDF viewer: inside a section, off the text, the pointer is a handle for
+   dragging the section to the canvas; over text it stays a caret. */
+[data-testid="pdf-page-slot"][data-grab],
+[data-testid="pdf-page-slot"][data-grab] .textLayer {
+  cursor: grab;
+}
+[data-testid="pdf-page-slot"][data-grab]:active {
+  cursor: grabbing;
+}

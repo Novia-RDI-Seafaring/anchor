@@ -36,6 +36,13 @@ export type SketchNode = {
   rect: Rect;
   /** An existing canvas element this shape encircles, when it does. */
   encircles?: string;
+  /**
+   * Words on a line drawn out of this shape, at the spot the reader left
+   * them. "specs" and "dimensions" called out of a box say what goes under
+   * it and where; without the spot, a reader who dragged them into place
+   * got them back stacked in typing order.
+   */
+  callouts?: { text: string; at: Point }[];
 };
 
 export type SketchEdge = { from: string; to: string };
@@ -70,7 +77,14 @@ function shapeAt(p: Point, shapes: { id: string; outline: Point[]; rect: Rect }[
  */
 export function resolveSketch(
   strokes: Point[][],
-  labels: { text: string; inStroke?: number }[],
+  labels: {
+    text: string;
+    inStroke?: number;
+    onStroke?: number;
+    ringStroke?: number;
+    x?: number;
+    y?: number;
+  }[],
   boxes: Box[] = [],
 ): Sketch {
   const shapes = strokes
@@ -91,12 +105,29 @@ export function resolveSketch(
       };
     });
 
-  const nodes: SketchNode[] = shapes.map((s) => ({
-    id: s.id,
-    label: labels.find((l) => l.inStroke === s.index)?.text.trim() ?? "",
-    rect: s.rect,
-    ...(s.encircles ? { encircles: s.encircles } : {}),
-  }));
+  // Words called out of a shape: on a line that starts in it, or offered
+  // beside a ring that is the shape.
+  const calloutsOf = (shape: (typeof shapes)[number]) =>
+    labels
+      .filter((l) => {
+        const text = l.text.trim();
+        if (!text || l.x === undefined || l.y === undefined) return false;
+        if (l.ringStroke === shape.index) return true;
+        const line = l.onStroke !== undefined ? strokes[l.onStroke] : undefined;
+        return line !== undefined && line.length > 0 && shapeAt(line[0]!, [shape]) === shape.id;
+      })
+      .map((l) => ({ text: l.text.trim(), at: { x: l.x!, y: l.y! } }));
+
+  const nodes: SketchNode[] = shapes.map((s) => {
+    const callouts = calloutsOf(s);
+    return {
+      id: s.id,
+      label: labels.find((l) => l.inStroke === s.index)?.text.trim() ?? "",
+      rect: s.rect,
+      ...(s.encircles ? { encircles: s.encircles } : {}),
+      ...(callouts.length > 0 ? { callouts } : {}),
+    };
+  });
 
   const edges: SketchEdge[] = [];
   for (const points of strokes) {
@@ -126,7 +157,13 @@ export function describeSketch(sketch: Sketch): string {
   };
   const parts = [
     sketch.nodes
-      .map((n) => `${n.label || "(unlabelled)"} at ${Math.round(n.rect.x)},${Math.round(n.rect.y)}`)
+      .map((n) => {
+        const here = `${n.label || "(unlabelled)"} at ${Math.round(n.rect.x)},${Math.round(n.rect.y)}`;
+        const out = (n.callouts ?? []).map(
+          (c) => `"${c.text}" at ${Math.round(c.at.x)},${Math.round(c.at.y)}`,
+        );
+        return out.length > 0 ? `${here}, calling out ${out.join(", ")}` : here;
+      })
       .join("; "),
   ];
   if (sketch.edges.length > 0) {

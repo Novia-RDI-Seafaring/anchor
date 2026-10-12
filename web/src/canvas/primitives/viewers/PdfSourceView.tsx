@@ -1188,6 +1188,67 @@ function PageSlot(props: SlotProps) {
     return best;
   };
 
+  // Inside a region, the pointer off the text is a handle: press and drag
+  // the region to the canvas. Over text it stays a caret, for selecting a
+  // reference. The slot is draggable only while the pointer is off text, so
+  // a press on text starts a selection and never a drag.
+  const [grabbable, setGrabbable] = useState(false);
+  const overText = (target: EventTarget | null): boolean =>
+    target instanceof Element && target.closest(".textLayer span, .textLayer br") !== null;
+  const hoveredRegion = hoverRegionId ? regions.find((r) => (r.id ?? null) === hoverRegionId) ?? null : null;
+
+  // What is being carried, as the drag shows it: the section cut from the
+  // rendered page, not the page (the slot is the drag source, so the
+  // browser's own preview would be all of it).
+  // Returns where the section was held and how wide it showed, so the drop
+  // can land it exactly under the preview, at the size it was seen.
+  const sectionDragImage = (
+    e: React.DragEvent<HTMLElement>,
+    region: Region,
+  ): { grabX: number; grabY: number; width: number } | null => {
+    const rect = bboxToRect(region.bbox);
+    const slot = (e.currentTarget as HTMLElement).closest('[data-testid="pdf-page-slot"]');
+    const page = slot?.querySelector("canvas");
+    if (!rect || !slot || !page || page.clientWidth === 0) return null;
+    const scale = page.width / page.clientWidth;
+    const pageBox = page.getBoundingClientRect();
+    const slotBox = slot.getBoundingClientRect();
+    const sx = (rect.left - (pageBox.left - slotBox.left)) * scale;
+    const sy = (rect.top - (pageBox.top - slotBox.top)) * scale;
+    // At the size it shows in the viewer, so what is let go is what lands;
+    // only a section wider than a drag image can sensibly be is scaled.
+    const maxW = 900;
+    const k = Math.min(1, maxW / rect.width);
+    const cut = document.createElement("canvas");
+    cut.width = Math.max(1, Math.round(rect.width * k));
+    cut.height = Math.max(1, Math.round(rect.height * k));
+    cut.getContext("2d")?.drawImage(page, sx, sy, rect.width * scale, rect.height * scale, 0, 0, cut.width, cut.height);
+    Object.assign(cut.style, {
+      position: "fixed", top: "-10000px", left: "-10000px",
+      border: "2px solid rgb(14 165 233)", borderRadius: "4px", background: "white",
+    });
+    document.body.appendChild(cut);
+    const host = slot.getBoundingClientRect();
+    const grabX = Math.min(cut.width, Math.max(0, (e.clientX - host.left - rect.left) * k));
+    const grabY = Math.min(cut.height, Math.max(0, (e.clientY - host.top - rect.top) * k));
+    e.dataTransfer.setDragImage(cut, grabX, grabY);
+    window.setTimeout(() => cut.remove(), 0);
+    return { grabX, grabY, width: cut.width };
+  };
+
+  /** The drop payload, with where the preview was held and how wide it was. */
+  const carrySection = (e: React.DragEvent<HTMLElement>, region: Region): boolean => {
+    const payload = regionDropPayload({ slug, page: item.page, region });
+    if (!payload) return false;
+    const held = sectionDragImage(e, region);
+    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.setData(
+      "application/x-anchor-node",
+      JSON.stringify(held ? { ...payload, __drop: held } : payload),
+    );
+    return true;
+  };
+
   const handleContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!canvasSlug) return;
     const best = regionAt(e);
@@ -1208,11 +1269,25 @@ function PageSlot(props: SlotProps) {
       onContextMenu={handleContextMenu}
       onMouseMove={(e) => {
         if (!canvasSlug) return;
+        // On the chip the pointer may be just outside the region's box; the
+        // region stays hovered so the chip does not vanish under it.
+        if (e.target instanceof Element && e.target.closest('[data-testid="region-drag-tab"]')) return;
         const hit = regionAt(e);
         const id = hit ? (hit.id ?? null) : null;
         setHoverRegionId((prev) => (prev === id ? prev : id));
+        const grab = id !== null && !overText(e.target);
+        setGrabbable((prev) => (prev === grab ? prev : grab));
       }}
-      onMouseLeave={() => setHoverRegionId(null)}
+      onMouseLeave={() => {
+        setHoverRegionId(null);
+        setGrabbable(false);
+      }}
+      draggable={grabbable && hoveredRegion !== null}
+      onDragStart={(e) => {
+        if (!grabbable || !hoveredRegion) return;
+        if (!carrySection(e, hoveredRegion)) e.preventDefault();
+      }}
+      data-grab={grabbable ? "" : undefined}
     >
       {shouldRender && doc ? (
         <div
@@ -1286,14 +1361,11 @@ function PageSlot(props: SlotProps) {
                 draggable
                 title={`drag "${region.title ?? region.kind ?? ""}" onto the canvas`}
                 className="absolute z-20 flex cursor-grab items-center gap-1 whitespace-nowrap rounded-full border border-sky-300 bg-white/95 px-2 py-0.5 text-[10px] text-sky-700 shadow-sm active:cursor-grabbing"
-                style={{ left: rect.left + rect.width - 8, top: rect.top - 10, transform: "translateX(-100%)" }}
+                style={{ left: rect.left + rect.width - 8, top: rect.top + 6, transform: "translateX(-100%)" }}
                 onMouseDown={(e) => e.stopPropagation()}
                 onDragStart={(e) => {
                   e.stopPropagation();
-                  const payload = regionDropPayload({ slug, page: item.page, region });
-                  if (!payload) return;
-                  e.dataTransfer.effectAllowed = "copy";
-                  e.dataTransfer.setData("application/x-anchor-node", JSON.stringify(payload));
+                  carrySection(e, region);
                 }}
               >
                 <span aria-hidden>⠿</span>

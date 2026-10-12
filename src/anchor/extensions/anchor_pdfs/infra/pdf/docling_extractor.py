@@ -241,7 +241,75 @@ def _convert(
         format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
     )
     result = converter.convert(str(pdf_path))
-    return _flatten(result.document)
+    return tighten_to_glyphs(_flatten(result.document), pdf_path)
+
+
+#: Breathing room round the glyphs, in points.
+_GLYPH_PAD = 0.75
+
+
+def tighten_to_glyphs(flat: dict[str, Any], pdf_path: Path) -> dict[str, Any]:
+    """Text and cell boxes shrunk to the words the PDF actually draws in them.
+
+    Docling boxes a run of text by the font's whole line height. With a font
+    whose ascent and descent are generous (Lato, from LaTeX) a cell's box is
+    half again the row pitch of a dense table and reaches into the rows above
+    and below, so a highlight on one value lights two. The PDF knows where
+    each word is; its boxes are the glyphs. A box only ever shrinks, and one
+    with no words inside (an OCR'd scan) is left as Docling gave it.
+    """
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:  # pragma: no cover - PyMuPDF ships with the extension
+        return flat
+    try:
+        doc = fitz.open(str(pdf_path))
+    except Exception:  # noqa: BLE001 - an unreadable PDF keeps Docling's boxes
+        return flat
+    words_by_page: dict[int, list[tuple[float, float, float, float]]] = {}
+
+    def words(page: int) -> list[tuple[float, float, float, float]]:
+        if page not in words_by_page:
+            try:
+                found = doc[page - 1].get_text("words")
+            except Exception:  # noqa: BLE001
+                found = []
+            words_by_page[page] = [(w[0], w[1], w[2], w[3], str(w[4])) for w in found]
+        return words_by_page[page]
+
+    def tight(bbox: Any, page: Any, text: Any = "") -> Any:
+        if not isinstance(bbox, list) or len(bbox) != 4 or not isinstance(page, int) or page < 1:
+            return bbox
+        left, top, right, bottom = bbox
+        inside = [
+            w for w in words(page)
+            if left <= (w[0] + w[2]) / 2 <= right and top <= (w[1] + w[3]) / 2 <= bottom
+        ]
+        # A box tall enough to hold its neighbours' words as well: keep the
+        # ones that are this text. "110" in a box that also holds the "85"
+        # of the row above is the "110".
+        tokens = set(str(text or "").split())
+        own = [w for w in inside if w[4] in tokens] if tokens else []
+        inside = own or inside
+        if not inside:
+            return bbox
+        return [
+            max(left, min(w[0] for w in inside) - _GLYPH_PAD),
+            max(top, min(w[1] for w in inside) - _GLYPH_PAD),
+            min(right, max(w[2] for w in inside) + _GLYPH_PAD),
+            min(bottom, max(w[3] for w in inside) + _GLYPH_PAD),
+        ]
+
+    try:
+        for item in flat.get("items") or []:
+            if item.get("label") in ("table", "picture"):
+                for cell in item.get("cells") or []:
+                    cell["bbox"] = tight(cell.get("bbox"), item.get("page"), cell.get("text"))
+                continue
+            item["bbox"] = tight(item.get("bbox"), item.get("page"), item.get("text"))
+    finally:
+        doc.close()
+    return flat
 
 
 def _flatten(doc: Any) -> dict[str, Any]:

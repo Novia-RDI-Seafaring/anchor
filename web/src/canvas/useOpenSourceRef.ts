@@ -107,6 +107,53 @@ export function documentCardInView(slug: string | undefined): boolean {
   if (!slug || typeof document === "undefined") return false;
   const nodeId = documentNodeIdFor(slug);
   if (!nodeId) return false;
+  return nodeInView(nodeId);
+}
+
+type PlaceRef = {
+  slug?: string;
+  page?: number;
+  region_id?: string;
+  bbox?: number[];
+};
+
+/**
+ * Is the place a ref points at already shown on the canvas, in a section
+ * card or a picture cut from the page, and on screen?
+ *
+ * A section dragged to the canvas lights the value hovered in it. Opening
+ * the source pane over it as well shows the same thing twice, and covers the
+ * board the reader arranged to see it on. A place counts as shown when the
+ * section is the ref's own region, or when its cut holds the ref's box.
+ */
+export function sectionInView(ref: PlaceRef | null | undefined): boolean {
+  if (!ref?.slug || typeof document === "undefined") return false;
+  const nodes = useCanvasStore.getState().nodes;
+  for (const node of Object.values(nodes)) {
+    if (node.node_type === "document") continue;
+    const d = (node.data ?? {}) as {
+      source_doc_slug?: string;
+      source_region_id?: string;
+      source_ref?: PlaceRef & { slug?: string };
+    };
+    const cut = d.source_ref;
+    if (!cut || (cut.slug ?? d.source_doc_slug) !== ref.slug) continue;
+    if (typeof cut.page !== "number" || cut.page !== (ref.page ?? cut.page)) continue;
+    const sameRegion =
+      !!ref.region_id && (cut.region_id === ref.region_id || d.source_region_id === ref.region_id);
+    const holds =
+      Array.isArray(ref.bbox) && ref.bbox.length === 4 && Array.isArray(cut.bbox) && cut.bbox.length === 4
+        ? ref.bbox[0]! >= cut.bbox[0]! - 1 &&
+          ref.bbox[1]! >= cut.bbox[1]! - 1 &&
+          ref.bbox[2]! <= cut.bbox[2]! + 1 &&
+          ref.bbox[3]! <= cut.bbox[3]! + 1
+        : false;
+    if ((sameRegion || holds) && nodeInView(node.id)) return true;
+  }
+  return false;
+}
+
+function nodeInView(nodeId: string): boolean {
   // Matched by attribute rather than built into a selector: node ids come from
   // the server and are not guaranteed to be selector-safe.
   const el = Array.from(document.querySelectorAll(".react-flow__node")).find(

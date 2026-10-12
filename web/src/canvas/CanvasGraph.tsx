@@ -225,7 +225,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   const reset = useCanvasStore((s) => s.reset);
   const nodes = useCanvasStore((s) => s.nodes);
   const edges = useCanvasStore((s) => s.edges);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, getZoom } = useReactFlow();
   const openPdf = useUiStore((s) => s.openPdf);
   const setHoveredSourceRef = useUiStore((s) => s.setHoveredSourceRef);
   const clearHoveredSourceRef = useUiStore((s) => s.clearHoveredSourceRef);
@@ -819,6 +819,41 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     [findAreaAtPoint, slug],
   );
 
+  const settleUnderPreview = useCallback(
+    async (id: string, target: { left: number; top: number; width: number }) => {
+      const picture = () => {
+        const el = Array.from(document.querySelectorAll(".react-flow__node")).find(
+          (n) => n.getAttribute("data-id") === id,
+        );
+        const img = el?.querySelector("img");
+        return img && img.complete && img.naturalWidth > 0 ? img.getBoundingClientRect() : null;
+      };
+      const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
+      for (let attempt = 0; attempt < 30; attempt++) {
+        await wait(100);
+        const r = picture();
+        const node = useCanvasStore.getState().nodes[id];
+        if (!r || !node || r.width === 0) continue;
+        const zoom = getZoom() || 1;
+        const scale = target.width / r.width;
+        const width = (node.data as { width?: number } | undefined)?.width;
+        if (Math.abs(scale - 1) > 0.02 && typeof width === "number") {
+          // The picture shows narrower than the card (padding, centring):
+          // widen the card by what is missing, then measure again.
+          await canvases.patchNode(slug, id, { data: { width: Math.round(width + (target.width - r.width) / zoom) } });
+          continue;
+        }
+        const dx = (target.left - r.left) / zoom;
+        const dy = (target.top - r.top) / zoom;
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+          await canvases.patchNode(slug, id, { x: node.x + dx, y: node.y + dy });
+        }
+        return;
+      }
+    },
+    [slug, getZoom],
+  );
+
   const onDrop = useCallback(async (event: React.DragEvent) => {
     const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
 
@@ -854,13 +889,28 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     if (nodeSpecRaw) {
       event.preventDefault();
       try {
-        const spec = JSON.parse(nodeSpecRaw) as {
+        const parsed = JSON.parse(nodeSpecRaw) as {
           node_type: string;
           label?: string;
           width?: number;
           height?: number;
           data?: Record<string, unknown>;
+          /** Where a section's drag preview was held, and how wide it showed (screen px). */
+          __drop?: { grabX: number; grabY: number; width: number };
         };
+        const { __drop: held, ...spec } = parsed;
+        // A section carried from the viewer lands where its preview was let
+        // go, at the size it showed: the reader placed it by eye, so the
+        // pointer is not its corner and the card is not a default width.
+        if (held && held.width > 0) {
+          const corner = screenToFlowPosition({ x: event.clientX - held.grabX, y: event.clientY - held.grabY });
+          const right = screenToFlowPosition({ x: event.clientX - held.grabX + held.width, y: event.clientY });
+          const width = Math.round(right.x - corner.x);
+          flowPos.x = corner.x;
+          flowPos.y = corner.y;
+          spec.width = width;
+          spec.data = { ...(spec.data ?? {}), width };
+        }
 
         // Special path for sub-canvas tiles: the LeftToolRail tags the
         // payload with `__create_sub_canvas`. We provision a fresh child
@@ -889,6 +939,17 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
           y: flowPos.y,
         })) as { event?: { payload?: { id?: string } } } | null;
         const newId = res?.event?.payload?.id;
+        // Then the picture inside the card is put where the preview was: a
+        // card has its own padding, title row and caption, and a section card
+        // centres its picture, so the card's corner is not the picture's.
+        // Measured on screen once it has rendered, rather than guessed.
+        if (newId && held && held.width > 0) {
+          void settleUnderPreview(newId, {
+            left: event.clientX - held.grabX,
+            top: event.clientY - held.grabY,
+            width: held.width,
+          });
+        }
         // Dropped inside a region: the region adopts it, so it travels
         // with the region afterwards. A region dropped on a region does not
         // nest (side-by-side groups are the common case).
@@ -1011,7 +1072,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         }
       }));
     }
-  }, [slug, screenToFlowPosition, adoptIntoRegion]);
+  }, [slug, screenToFlowPosition, adoptIntoRegion, settleUnderPreview]);
 
   // Armed-tool placement gesture. When `armedTool` is set, a click on the
   // pane places the shape at default size; a click-and-drag places it with
