@@ -10,9 +10,12 @@ of turns an agent took.
 from __future__ import annotations
 
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 FILE_NAME = "activity.jsonl"
 
@@ -28,8 +31,10 @@ class ActivityLog:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(entry, separators=(",", ":")) + "\n")
-        except OSError:
-            pass
+        except OSError as exc:
+            # A full disk or a read-only data dir must not fail the request
+            # or tool call being logged; the measurement is best effort.
+            logger.debug("activity log write to %s failed: %s", self.path, exc)
 
     def read(self, *, since: float | None = None, limit: int = 5000) -> list[dict[str, Any]]:
         """The last ``limit`` entries at or after ``since``, oldest first."""
