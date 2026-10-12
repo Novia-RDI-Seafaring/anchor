@@ -16,6 +16,7 @@ import sys
 import typer
 
 from anchor.infra.config import AnchorConfig
+from anchor.infra.egress_policy import AGENT_CLI_PROVIDERS
 from anchor.infra.providers import get_provider, no_key_remedy_lines, normalize_base_url
 
 # Providers that authenticate against an endpoint (mirror of init's set).
@@ -59,6 +60,13 @@ def _echo(message: str = "") -> None:
                 encoding, errors="replace"
             )
     typer.echo(message)
+
+
+_CREDENTIAL_SOURCE_LABELS = {
+    "env_file": "environment .env file",
+    "process": "process environment",
+    "config": "configuration",
+}
 
 
 def _echo_remedy(lines: list[str]) -> None:
@@ -219,6 +227,8 @@ def check(
     elif provider_key == "harness":
         _echo("  vision         : your agent harness - gold extraction runs through")
         _echo("                   ingest sessions (begin -> submit pages -> finalize)")
+    elif provider_key in AGENT_CLI_PROVIDERS:
+        _echo(f"  vision         : your `{provider_key}` CLI, model {cfg.region_model}")
     else:
         _echo(f"  vision endpoint: {cfg.openai_base_url or 'api.openai.com (public)'}")
         _echo(f"  vision model   : {cfg.region_model}")
@@ -267,7 +277,7 @@ def check(
     # local/ollama/harness keep content on-host → no key. openai accepts a
     # personal OPENAI_API_KEY. azure/custom (and any configured endpoint) need
     # the endpoint's own key in ANCHOR_OPENAI_API_KEY — a personal key is wrong there.
-    if provider_key in ("local", "ollama", "harness"):
+    if provider_key in ("local", "ollama", "harness", *AGENT_CLI_PROVIDERS):
         needs_key = False
         key_ok = True
     elif provider_key == "openai":
@@ -291,22 +301,37 @@ def check(
         )
         _echo_remedy(no_key_remedy_lines(env_dotenv))
     elif needs_key:
+        from anchor.infra.egress_policy import describe_credential
+
+        cred = describe_credential(cfg)
+        source = _CREDENTIAL_SOURCE_LABELS.get(cred["source"] or "", "process environment")
         if cfg.openai_api_key:
-            _echo("  api key        : ANCHOR_OPENAI_API_KEY detected ✓")
+            _echo(f"  api key        : ANCHOR_OPENAI_API_KEY detected ✓ (from {source})")
         elif key_ok:  # openai + personal key
-            _echo("  api key        : using OPENAI_API_KEY ✓")
+            _echo("  api key        : using OPENAI_API_KEY ✓ (from process environment)")
         else:
             _echo("  api key        : NOT set — gold extraction will be silently skipped")
             if personal:
                 _echo("                   (a personal OPENAI_API_KEY is set but is the wrong "
                            "credential for this endpoint)")
+            _echo("                   Apps like Claude Desktop do not inherit shell "
+                  "variables, so put the key in the .env, not only in your shell.")
             problems.append(
                 "API key missing, so gold extraction is skipped: "
                 + "; ".join(no_key_remedy_lines(env_dotenv))
             )
             _echo_remedy(no_key_remedy_lines(env_dotenv))
+        if key_ok and cred["source"] == "process" and not cred["env_file_has_key"]:
+            # A shell-only key works here but not for an app-launched MCP server.
+            _echo("                   Apps launched outside this shell (for example "
+                  "Claude Desktop) will not see it.")
+            _echo("                   To share it, set ANCHOR_OPENAI_API_KEY in "
+                  f"{cred['env_file'] or env_dotenv or 'the environment .env'}.")
     elif provider_key == "harness":
         _echo("  api key        : not needed — ingestion happens through the agent")
+    elif provider_key in AGENT_CLI_PROVIDERS and not cfg.local_only:
+        _echo("  api key        : not needed — the CLI answers on its own sign-in")
+        _check_agent_cli(provider_key, problems)
     else:
         _echo("  api key        : not needed (no egress)")
 
@@ -418,6 +443,24 @@ def _probe_ocr_backend() -> tuple[bool, str | None]:
         return False, "missing"
     except ImportError as exc:
         return False, str(exc)
+
+
+def _check_agent_cli(provider_key: str, problems: list[str]) -> None:
+    """Confirm the provider's CLI is installed and signed in; never print account details."""
+    from anchor.extensions.anchor_pdfs.infra.llm.agent_cli import agent_cli_for
+
+    cli = agent_cli_for(provider_key)
+    if not cli.found():
+        _echo(f"  {provider_key} cli     : NOT found on PATH")
+        problems.append(
+            f"The `{cli.binary}` CLI is not installed or not on PATH; install it and "
+            f"{cli.sign_in_hint}."
+        )
+        return
+    ok, detail = cli.sign_in()
+    _echo(f"  {provider_key} cli     : {detail}{' ✓' if ok else ''}")
+    if not ok:
+        problems.append(f"The `{cli.binary}` CLI is not signed in; {cli.sign_in_hint}.")
 
 
 def _probe(cfg: AnchorConfig, embed_remote: bool, problems: list[str]) -> None:

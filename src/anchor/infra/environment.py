@@ -183,6 +183,9 @@ def _layered_config(env: Environment, data_dir: Path, marker: dict[str, Any]) ->
     layers.pop("data_dir", None)
     config = AnchorConfig.from_layers(layer_values=layers, data_dir=data_dir)
     validate_environment_config(environment_values, config)
+    # Recorded here, where the environment is known, so the egress policy can
+    # name the .env without importing this module back.
+    config._env_dotenv_path = env.root / ".env"
     return config
 
 
