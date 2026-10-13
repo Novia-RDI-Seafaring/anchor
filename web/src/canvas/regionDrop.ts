@@ -4,7 +4,7 @@
  *
  * One rule for both places a section can be dragged from: the document
  * card's page preview and the source dock. A table or a paragraph becomes a
- * spec card anchored to its bbox, as it always did. A diagram or a figure
+ * section card: the page cut to its bbox, with its kind and page above it. A diagram or a figure
  * becomes a picture, cut from the page by that bbox, since a drawing shown
  * as a card of empty rows was the reason the old canvas could not "drag the
  * image over": it could, and what arrived was not an image.
@@ -59,24 +59,20 @@ export function regionDropPayload(args: {
       data: { label, width: 320, ...common },
     };
   }
-  // Wide enough that the section's picture on the card can be read: a
-  // thirteen-column table at a card's default width was a strip of grey.
-  // And no description as body text: for a table it is the table again,
-  // flattened into a paragraph, under a picture of the table.
-  // Shown in full: a spec card is compact by default (title and summary), but
-  // a dragged section is the picture of the section, so a compact card would
-  // arrive as a title with nothing under it.
+  // Everything else -- a table, a text block, a list -- is a section card:
+  // the page cut to its bbox, under a line naming its kind and page. Wide
+  // enough that a thirteen-column table can be read. No rows to fill and no
+  // search tags: the card is the section as the document shows it.
   const width = Math.round(Math.min(900, Math.max(360, (bbox[2]! - bbox[0]!) * 1.6)));
   return {
-    node_type: "spec",
+    node_type: "section",
     label,
     width,
     data: {
       ...common,
+      label,
+      kind: region.kind ?? "section",
       width,
-      display_mode: "full",
-      crops: region.crops,
-      tags: (region as { tags?: string[] }).tags ?? [],
     },
   };
 }

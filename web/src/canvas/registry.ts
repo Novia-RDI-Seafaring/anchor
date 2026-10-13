@@ -47,6 +47,7 @@ import { SysmlPackagePrimitive } from "./primitives/SysmlPackagePrimitive";
 import { ChartPrimitive } from "./primitives/ChartPrimitive";
 import { SysmlRequirementPrimitive } from "./primitives/SysmlRequirementPrimitive";
 import { TablePrimitive } from "./primitives/TablePrimitive";
+import { SectionPrimitive } from "./primitives/SectionPrimitive";
 
 // Shapes — canvas-internal structural node types
 import { AreaNode } from "./shapes/AreaNode";
@@ -326,6 +327,9 @@ registerNodeRenderer("image", ImagePrimitive, {
   width: 320,
   order: 45,
 });
+// A section of a document dragged out of it: a table, a text block, a list,
+// shown as the page shows it. Made by the drop, not from the palette.
+registerNodeRenderer("section", SectionPrimitive);
 // future primitives (when their renderers land):
 //   registerNodeRenderer("media", MediaPrimitive);
 //   registerNodeRenderer("code", CodePrimitive);
