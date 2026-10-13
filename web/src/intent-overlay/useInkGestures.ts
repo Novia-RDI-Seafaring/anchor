@@ -11,6 +11,8 @@ import {
   loopCentre,
   markHits,
   MIN_STROKE_PX,
+  MIN_STROKE_REACH_PX,
+  extent,
   nearRect,
   pullStroke,
   rectFrom,
@@ -204,7 +206,11 @@ export function useInkGestures(context: Pick<MarkupModel, "active" | "getViewpor
       // a remark, and keeping it litters the layer with specks nobody meant.
       // On the ground of a remark set aside, though, it is a choice: that
       // one comes back to the pen.
-      if (!cur || cur.length < 2 || strokeLength(cur) < MIN_STROKE_PX) {
+      // Judged by how far it reaches on screen, not by the length of its
+      // path: a hand that wobbles in place draws a long path that spans a
+      // couple of pixels, and that was left on the board as a dot.
+      const zoom = Math.max(0.1, getViewport().zoom);
+      if (!cur || cur.length < 2 || strokeLength(cur) < MIN_STROKE_PX || extent(cur) * zoom < MIN_STROKE_REACH_PX) {
         if (cur?.[0]) tapRef.current = cur[0];
         return null;
       }

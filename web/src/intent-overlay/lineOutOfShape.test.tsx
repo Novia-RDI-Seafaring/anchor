@@ -108,3 +108,49 @@ it("moves the canvas so the words at the end of a line drawn to the edge can be 
   expect(moved.x).toBeLessThan(0);
   expect(moved.y).toBe(0);
 });
+
+it("leaves no dot behind for a wobble in place", async () => {
+  render(<Host />); await act(async () => {});
+  const before = screen.getByTestId("comment-lasso-ink").querySelectorAll("polyline").length;
+  // A long path that never goes anywhere: back and forth over three pixels.
+  draw([[400, 400], [403, 401], [400, 402], [403, 400], [400, 401], [403, 402], [401, 400]]);
+  expect(screen.getByTestId("comment-lasso-ink").querySelectorAll("polyline").length).toBe(before);
+});
+
+it("takes the line back when Escape leaves its label unwritten", async () => {
+  render(<Host />); await act(async () => {});
+  draw([[300, 300], [500, 300], [500, 450], [300, 450], [300, 300]]);
+  const first = screen.getByTestId("comment-lasso-note");
+  fireEvent.change(first, { target: { value: "PX-5" } });
+  fireEvent.keyDown(first, { key: "Enter" });
+  const lines = () => screen.getByTestId("comment-lasso-ink").querySelectorAll("polyline").length;
+  const withBox = lines();
+  draw([[420, 380], [520, 360], [620, 330], [720, 320]]);
+  expect(lines()).toBeGreaterThan(withBox);
+  const offered = screen.getAllByTestId("comment-lasso-note").at(-1)!;
+  fireEvent.keyDown(offered, { key: "Escape" });
+  expect(lines()).toBe(withBox);
+  // The box and its words stay.
+  expect((screen.getAllByTestId("comment-lasso-note") as HTMLTextAreaElement[]).map((n) => n.value)).toEqual(["PX-5"]);
+});
+
+it("deletes a line with its label when the label is picked out and deleted", async () => {
+  render(<Host />); await act(async () => {});
+  draw([[300, 300], [500, 300], [500, 450], [300, 450], [300, 300]]);
+  const first = screen.getByTestId("comment-lasso-note");
+  fireEvent.change(first, { target: { value: "PX-5" } });
+  fireEvent.keyDown(first, { key: "Enter" });
+  const lines = () => screen.getByTestId("comment-lasso-ink").querySelectorAll("polyline").length;
+  const withBox = lines();
+  draw([[420, 380], [520, 360], [620, 330], [720, 320]]);
+  const label = screen.getAllByTestId("comment-lasso-note").at(-1)!;
+  fireEvent.change(label, { target: { value: "specs" } });
+  fireEvent.keyDown(label, { key: "Enter" });
+  // Pick the label out (press and let go on its words), then delete.
+  const words = screen.getAllByTestId("comment-lasso-note").at(-1)!;
+  fireEvent.pointerDown(words, { clientX: 730, clientY: 320, button: 0, pointerId: 2 });
+  fireEvent.pointerUp(words, { clientX: 730, clientY: 320, button: 0, pointerId: 2 });
+  fireEvent.keyDown(window, { key: "Delete" });
+  expect(lines()).toBe(withBox);
+  expect((screen.getAllByTestId("comment-lasso-note") as HTMLTextAreaElement[]).map((n) => n.value)).toEqual(["PX-5"]);
+});

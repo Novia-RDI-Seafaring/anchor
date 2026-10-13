@@ -23,9 +23,17 @@ import { SketchCross } from "./InkIcons";
  * dropped on the way out either way. Neither key reaches the canvas: the
  * mode's own escape clears the whole mark, and the field's must not.
  */
-function noteKeys({ onCommit }: { onCommit: () => void }) {
+function noteKeys({ onCommit, onCancel }: { onCommit: () => void; onCancel?: () => void }) {
   return (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     e.stopPropagation();
+    // Escape on a field nobody has written in takes back the gesture that
+    // offered it: the line was drawn to reach words that never came, so it
+    // is a stroke pointing at nothing.
+    if (e.key === "Escape" && onCancel && !e.currentTarget.value.trim()) {
+      e.preventDefault();
+      onCancel();
+      return;
+    }
     if ((e.key === "Enter" && !e.shiftKey) || e.key === "Escape") {
       e.preventDefault();
       onCommit();
@@ -168,7 +176,7 @@ export function HostedNote({
  */
 export function FloatingNote({
   value, offered, editing, at, width, deg, flip, gap, fontSize, color,
-  onChange, onBlur, onCommit, onGrab, onDrag, onDrop, onEdit, onRemove,
+  onChange, onBlur, onCommit, onCancel, onGrab, onDrag, onDrop, onEdit, onRemove,
   active,
 }: {
   value: string;
@@ -190,6 +198,8 @@ export function FloatingNote({
   onChange: (v: string) => void;
   onBlur: () => void;
   onCommit: () => void;
+  /** Escape before writing anything: take back the line that offered it. */
+  onCancel?: () => void;
   /** Picked up by its words, to be carried somewhere else. */
   onGrab: (e: React.PointerEvent) => void;
   onDrag: (e: React.PointerEvent) => void;
@@ -326,7 +336,7 @@ export function FloatingNote({
           placeholder={offered ? "write\u2026" : "write"}
           onChange={(e) => onChange(e.target.value)}
           onBlur={onBlur}
-          onKeyDown={noteKeys({ onCommit })}
+          onKeyDown={noteKeys({ onCommit, onCancel })}
           // Written, and not being written in: the words are a thing to pick up
           // and carry. preventDefault keeps a grab from putting a caret in them
           // -- moving a label and editing it are different gestures, and the
