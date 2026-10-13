@@ -33,6 +33,7 @@ import {
 import { PdfPageCanvas } from "./PdfPageCanvas";
 import { PdfNavigationRail } from "./PdfNavigationRail";
 import { SourceMagnifier } from "./SourceMagnifier";
+import { worthMagnifying } from "./sourceMagnifierGeometry";
 import type { ContentsEntry } from "./pdfContents";
 import { loadPdf, pageSizes as readPageSizes, type PdfDoc } from "./pdfjs";
 
@@ -539,7 +540,8 @@ export function PdfSourceView({
     bboxToRectOnPage,
   ]);
 
-  const magnifierMark = markPlacements.find((mark) => mark.key === magnifierTarget) ?? markPlacements[0];
+  const magnifiable = markPlacements.filter(worthMagnifying);
+  const magnifierMark = magnifiable.find((mark) => mark.key === magnifierTarget) ?? magnifiable[0];
   const magnifierPage = magnifierMark ? items.find((item) => item.page === magnifierMark.source.page) : undefined;
   const onMagnifierPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const content = contentRef.current;
