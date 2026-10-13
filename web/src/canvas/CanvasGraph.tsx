@@ -1270,6 +1270,8 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     // select one mid-arm. A region is the exception: its body is the space
     // you draw into, so placing inside one has to work, and the new element
     // joins that region.
+    // An edge is selected, never placed on.
+    if (target.closest(".react-flow__edge")) return;
     const overId = (target.closest(".react-flow__node") as HTMLElement | null)?.dataset.id;
     if (overId) {
       const over = useCanvasStore.getState().nodes[overId];
@@ -1419,6 +1421,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       // tool is armed. Not for the pen: its surface sets its own cursor -- a
       // crosshair to draw, a hand over drawn ink -- and its buttons theirs.
       data-canvas-read-only={readOnly ? "true" : undefined}
+      data-armed-placing={armedTool && armedTool !== INTENT_TOOL && armedTool !== CONNECT_TOOL ? "" : undefined}
       onDragStartCapture={handMode ? (event) => event.preventDefault() : undefined}
       onDragOver={readOnly ? undefined : handMode ? (event) => {
         event.preventDefault();

@@ -42,6 +42,18 @@
   cursor: crosshair !important;
 }
 
+/* Except where a press does something else. An edge is selected, whatever
+   tool is armed, so it shows the pointer. With a placing tool armed, a press
+   on an element (other than an area, which is drawn into) selects it rather
+   than placing, so elements show the pointer too. The connector keeps the
+   crosshair over elements: they are what it joins. */
+.cursor-crosshair .react-flow__edge,
+.cursor-crosshair .react-flow__edge *,
+.cursor-crosshair[data-armed-placing] .react-flow__node:not(.react-flow__node-area),
+.cursor-crosshair[data-armed-placing] .react-flow__node:not(.react-flow__node-area) * {
+  cursor: pointer !important;
+}
+
 /* NodeResizer's default handle size (4–6 px square) is too small to grab
    confidently. Bump corner squares to 10 px and edge line handles to a
    thicker hit-zone. The visual remains a small dot; the larger size also
