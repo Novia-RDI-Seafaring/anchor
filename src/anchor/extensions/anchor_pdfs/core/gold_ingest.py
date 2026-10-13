@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -13,6 +14,7 @@ from anchor.extensions.anchor_pdfs.core.ingest.geometry import (
     PICTURE_KINDS,
     adopt_table,
     disown_shared_members,
+    headed_blocks_in,
     in_page_points,
     keep_block_items,
     keep_in_table,
@@ -431,6 +433,40 @@ class GoldIngest:
             snapped[pos] = region
         gone = {o for others in absorbed.values() for o in others}
         snapped = [r for pos, r in enumerate(snapped) if pos not in gone]
+        regions = [r if isinstance(r, dict) else {} for r in snapped]
+
+        # A key the picture's frame takes in is a region of its own, whether
+        # or not the extractor drew one: a heading in the frame with text
+        # under it in its column. The cut below then gives it its room.
+        page_items = [(mid, items[idx]) for mid, idx in by_candidate.items() if isinstance(items[idx], dict)]
+        claimed = {
+            m for r in regions if r.get("kind") not in PICTURE_KINDS
+            for m in r.get("member_item_ids") or []
+        }
+        next_index = 1 + max(
+            (int(m.group(1)) for r in regions if (m := re.search(r"(\d+)$", str(r.get("id") or "")))),
+            default=0,
+        )
+        for region in list(regions):
+            if region.get("kind") not in PICTURE_KINDS or not _item_bbox(region):
+                continue
+            free = [(mid, it) for mid, it in page_items if mid not in claimed]
+            for block in headed_blocks_in(_item_bbox(region), free):
+                indexes = [by_candidate[m] for m in block["members"]]
+                key = {
+                    "id": f"p{page}-r{next_index}",
+                    "kind": "spec_block",
+                    "title": block["title"],
+                    "description": "",
+                    "tags": [],
+                    "member_item_ids": block["members"],
+                    "bbox": block["bbox"],
+                    "content": region_content_from_items(items, indexes),
+                    "split_from": region.get("id"),
+                }
+                next_index += 1
+                claimed.update(block["members"])
+                snapped.append(key)
         regions = [r if isinstance(r, dict) else {} for r in snapped]
 
         # A picture that spans a drawing and the key beside it gives the key

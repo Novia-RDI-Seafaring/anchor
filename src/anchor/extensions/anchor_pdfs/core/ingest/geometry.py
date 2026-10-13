@@ -272,6 +272,59 @@ def picture_frames(
     return changed
 
 
+#: Labels that make up the text block under a heading inside a picture.
+_KEY_TEXT_LABELS = frozenset({"text", "list_item", "paragraph", "caption"})
+
+
+def headed_blocks_in(
+    frame: list[float],
+    items: list[tuple[str, dict[str, Any]]],
+    *,
+    min_entries: int = 2,
+) -> list[dict[str, Any]]:
+    """Headed text blocks a picture's frame takes in: a key beside a drawing.
+
+    Docling can draw one picture round a dimension drawing and the letter
+    key next to it. Whether the key then got a region of its own depended on
+    how the model happened to draw the page. Here it does not: a heading
+    inside the frame with at least ``min_entries`` text items under it, in
+    its column, is a block of its own. ``items`` are ``(candidate id,
+    item)`` pairs for the page. Returns ``{"heading", "title", "members",
+    "bbox"}`` per block; the caller makes them regions and cuts the picture.
+    """
+    blocks: list[dict[str, Any]] = []
+    taken: set[str] = set()
+    for hid, heading in items:
+        if heading.get("label") != "section_header":
+            continue
+        hbox = _bbox(heading)
+        if not hbox or not mostly_inside(hbox, frame):
+            continue
+        members = [
+            mid for mid, item in items
+            if mid not in taken
+            and item.get("label") in _KEY_TEXT_LABELS
+            and (box := _bbox(item))
+            and mostly_inside(box, frame)
+            and box[1] >= hbox[1] - PAGE_TOLERANCE
+            and box[0] >= hbox[0] - PAGE_TOLERANCE
+        ]
+        if len(members) < min_entries:
+            continue
+        boxes = [hbox] + [b for mid, item in items if mid in members and (b := _bbox(item))]
+        bbox = union_bbox(boxes)
+        if not bbox:
+            continue
+        taken.update(members)
+        blocks.append({
+            "heading": hid,
+            "title": " ".join(str(heading.get("text") or "").split()),
+            "members": [hid, *members],
+            "bbox": bbox,
+        })
+    return blocks
+
+
 def adopt_table(named: list[dict[str, Any]], tables: list[dict[str, Any]]) -> int | None:
     """The page table a block region means, when it did not name one.
 
