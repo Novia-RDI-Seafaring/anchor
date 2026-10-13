@@ -63,6 +63,9 @@ export function regionDropPayload(args: {
   // thirteen-column table at a card's default width was a strip of grey.
   // And no description as body text: for a table it is the table again,
   // flattened into a paragraph, under a picture of the table.
+  // Shown in full: a spec card is compact by default (title and summary), but
+  // a dragged section is the picture of the section, so a compact card would
+  // arrive as a title with nothing under it.
   const width = Math.round(Math.min(900, Math.max(360, (bbox[2]! - bbox[0]!) * 1.6)));
   return {
     node_type: "spec",
@@ -71,6 +74,7 @@ export function regionDropPayload(args: {
     data: {
       ...common,
       width,
+      display_mode: "full",
       crops: region.crops,
       tags: (region as { tags?: string[] }).tags ?? [],
     },

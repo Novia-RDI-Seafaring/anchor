@@ -40,6 +40,8 @@ describe("what a dragged section becomes", () => {
     expect(p.width).toBe(795);
     expect(p.data.width).toBe(795);
     expect(p.data.description).toBeUndefined();
+    // Shown in full, so the section's picture arrives with it.
+    expect(p.data.display_mode).toBe("full");
   });
 
   it("refuses a section with no box to point at", () => {
