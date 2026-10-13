@@ -138,3 +138,49 @@ def test_keyed_snapper_records_member_item_ids_in_candidate_scheme():
     # And the coverage pass sees p2-i2 as the only gap on that page.
     extra = synthesize_coverage_regions(2, build_page_candidates(docling)[2], snapped)
     assert [r["member_item_ids"] for r in extra] == [["p2-i2"]]
+
+
+def test_a_stray_header_cell_inside_a_table_is_covered_by_it():
+    # Docling emitted the tables' last header cells again as loose text.
+    # Each lies inside its table's region, so none needs a fallback chunk,
+    # and they must not merge into one strip cutting across the tables.
+    cands = [
+        {"id": "p3-i61", "label": "text", "text": "PX-85", "bbox": [475, 555, 500, 566]},
+        {"id": "p3-i62", "label": "text", "text": "PX-100", "bbox": [515, 247, 545, 258]},
+        {"id": "p3-i63", "label": "text", "text": "IEC280", "bbox": [518, 430, 544, 440]},
+    ]
+    regions = [
+        {"id": "p3-r3", "kind": "table", "bbox": [42, 245, 553, 388], "member_item_ids": ["p3-i25"]},
+        {"id": "p3-r5", "kind": "table", "bbox": [42, 428, 553, 517], "member_item_ids": ["p3-i31"]},
+        {"id": "p3-r7", "kind": "table", "bbox": [44, 552, 553, 595], "member_item_ids": ["p3-i69"]},
+    ]
+    assert synthesize_coverage_regions(3, cands, regions) == []
+    assert coverage_stats(cands, regions)["uncovered_items"] == 0
+
+
+def test_text_outside_any_table_still_gets_a_fallback_chunk():
+    cands = [{"id": "p3-i70", "label": "text", "text": "Loose note", "bbox": [45, 620, 300, 632]}]
+    regions = [{"id": "p3-r7", "kind": "table", "bbox": [44, 552, 553, 595], "member_item_ids": []}]
+    extra = synthesize_coverage_regions(3, cands, regions)
+    assert [r["member_item_ids"] for r in extra] == [["p3-i70"]]
+
+
+def test_letters_on_a_drawing_are_covered_by_the_drawing():
+    cands = [
+        {"id": "p3-i11", "label": "text", "text": "C", "bbox": [170, 106, 175, 112]},
+        {"id": "p3-i25", "label": "text", "text": "A Suction flange face", "bbox": [366, 86, 510, 93]},
+    ]
+    regions = [{"id": "p3-r1", "kind": "diagram", "bbox": [45, 64, 550, 220], "member_item_ids": ["p3-i0"]}]
+    assert synthesize_coverage_regions(3, cands, regions) == []
+
+
+def test_a_run_breaks_where_reading_order_jumps_across_the_page():
+    # A footer line, then the masthead at the top of the page: next in
+    # reading order, but not one chunk.
+    cands = [
+        {"id": "p1-i15", "label": "text", "text": "Fictional company notice", "bbox": [45, 767, 550, 787]},
+        {"id": "p1-i17", "label": "text", "text": "N NORRHAVN", "bbox": [49, 48, 137, 58]},
+        {"id": "p1-i18", "label": "text", "text": "Fluid Technology", "bbox": [68, 57, 120, 64]},
+    ]
+    extra = synthesize_coverage_regions(1, cands, regions=[])
+    assert [r["member_item_ids"] for r in extra] == [["p1-i15"], ["p1-i17", "p1-i18"]]

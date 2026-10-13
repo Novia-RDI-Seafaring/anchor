@@ -77,6 +77,57 @@ def covered_item_ids(regions: list[dict[str, Any]]) -> set[str]:
     return covered
 
 
+#: Slack, in PDF points, when testing whether an item sits inside a region.
+_CONTAIN_TOLERANCE = 1.0
+
+#: A run breaks when the next item is further than this from the last one,
+#: in PDF points, so a chunk never spans unrelated places on the page.
+_MAX_RUN_GAP = 24.0
+
+
+def _bbox4(value: Any) -> list[float] | None:
+    if isinstance(value, list) and len(value) == 4 and all(isinstance(v, (int, float)) for v in value):
+        return [float(v) for v in value]
+    return None
+
+
+def _inside_authored_region(
+    candidate: dict[str, Any], regions: list[dict[str, Any]]
+) -> bool:
+    """Whether an item lies inside a region the extractor drew.
+
+    Docling emits text it finds inside tables and pictures as loose items: a
+    table's header cell a second time, the letters on a dimension drawing,
+    the callouts on a product photo. The region already shows them, and a
+    fallback chunk for them is a second box over the first. Strays from
+    several tables used to merge into one chunk cutting down across all of
+    them.
+    """
+    box = _bbox4(candidate.get("bbox"))
+    if box is None:
+        return False
+    t = _CONTAIN_TOLERANCE
+    for region in regions:
+        if not isinstance(region, dict) or region.get("derived_from"):
+            continue
+        frame = _bbox4(region.get("bbox"))
+        if frame is None:
+            continue
+        if (box[0] >= frame[0] - t and box[1] >= frame[1] - t
+                and box[2] <= frame[2] + t and box[3] <= frame[3] + t):
+            return True
+    return False
+
+
+def _far_apart(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    """Whether two items are too far apart, vertically, to share a chunk."""
+    ba, bb = _bbox4(a.get("bbox")), _bbox4(b.get("bbox"))
+    if ba is None or bb is None:
+        return False
+    gap = max(bb[1] - ba[3], ba[1] - bb[3])
+    return gap > _MAX_RUN_GAP
+
+
 def _next_region_index(regions: list[dict[str, Any]]) -> int:
     """Continue the per-page ``r{n}`` sequence after the highest authored id."""
     highest = 0
@@ -246,7 +297,7 @@ def synthesize_coverage_regions(
 
         if label not in MEANINGFUL_LABELS:
             continue
-        if cid in covered:
+        if cid in covered or _inside_authored_region(cand, regions):
             flush_run()
             continue
 
@@ -262,8 +313,9 @@ def synthesize_coverage_regions(
                 index += 1
             continue
 
-        # Text-like: merge into the current run, bounded by the size cap.
-        if run and run_chars + len(text) > max_run_chars:
+        # Text-like: merge into the current run, bounded by the size cap and
+        # by distance: reading order can jump from a footer to the masthead.
+        if run and (run_chars + len(text) > max_run_chars or _far_apart(candidates[run[-1]], cand)):
             flush_run()
         run.append(pos)
         run_chars += len(text)
@@ -281,7 +333,11 @@ def coverage_stats(
         c for c in candidates
         if isinstance(c, dict) and str(c.get("label") or "") in MEANINGFUL_LABELS
     ]
-    covered_count = sum(1 for c in meaningful if c.get("id") in covered)
+    covered_count = sum(
+        1 for c in meaningful
+        if c.get("id") in covered
+        or _inside_authored_region(c, regions)
+    )
     return {
         "meaningful_items": len(meaningful),
         "covered_items": covered_count,
