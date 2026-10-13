@@ -20,7 +20,8 @@ import {
   strokeBounds,
   strokeHeading,
   strokeLength,
-  toggleId
+  toggleId,
+  type Point,
 } from "./lasso";
 import { NOTHING_SELECTED } from "./markupStore";
 import { CALLOUT_GAP_PX, NOTE_H, NOTE_W, SNAP_PX } from "./constants";
@@ -367,6 +368,7 @@ export function useInkGestures(context: Pick<MarkupModel, "active" | "getViewpor
           // not to the ring: dragging them swings the connector and leaves
           // the encirclement on what it was drawn around.
           const { end, from } = strokeHeading(split && line.length > 1 ? line : cur);
+          revealLabelAt(end, from);
           setNotes((prev) => [
             ...prev,
             {
@@ -391,6 +393,29 @@ export function useInkGestures(context: Pick<MarkupModel, "active" | "getViewpor
       }
       return null;
     });
+  };
+
+  // A line drawn to the edge of the window ends where its words would go off
+  // screen: the field was there and focused, but nothing showed where to
+  // type. The canvas moves just enough to bring the words into view.
+  const revealLabelAt = (end: Point, from: Point | undefined) => {
+    const bands = offScreen();
+    if (bands.length !== 4) return;
+    const visible = { left: bands[0]!.x + bands[0]!.width, right: bands[1]!.x, top: bands[2]!.y + bands[2]!.height, bottom: bands[3]!.y };
+    const rightward = !from || end.x >= from.x;
+    const label = {
+      left: rightward ? end.x : end.x - NOTE_W,
+      right: rightward ? end.x + NOTE_W : end.x,
+      top: end.y - NOTE_H / 2,
+      bottom: end.y + NOTE_H / 2,
+    };
+    const dx = label.right > visible.right ? label.right - visible.right
+      : label.left < visible.left ? label.left - visible.left : 0;
+    const dy = label.bottom > visible.bottom ? label.bottom - visible.bottom
+      : label.top < visible.top ? label.top - visible.top : 0;
+    if (!dx && !dy) return;
+    const view = getViewport();
+    setViewport({ ...view, x: view.x - dx * view.zoom, y: view.y - dy * view.zoom });
   };
 
   // Double-click puts a comment where you double-clicked. Inside a shape that
