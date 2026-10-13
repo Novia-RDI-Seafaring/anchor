@@ -50,6 +50,7 @@ import {
 } from "@/canvas/PaintGhost";
 import { connectClick } from "@/canvas/connect";
 import { CONNECT_TOOL, INTENT_TOOL, nodeTypes, paletteEntries } from "@/canvas/registry";
+import { loadViewport, saveViewport } from "@/canvas/viewportMemory";
 import { canvasNavigation } from "@/canvas/canvasNavigation";
 import "./canvasNavigation.css";
 import { refreshWorkspaces } from "@/canvas/useWorkspacesList";
@@ -241,7 +242,17 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     if (selected && structure.hidden.has(selected)) useUiStore.getState().setSelectedNodeId(null);
   }, [detailNodeId, nodes, structure]);
   useEffect(() => { setDetailNodeId(null); setStructureError(null); }, [slug]);
-  const { screenToFlowPosition, getZoom } = useReactFlow();
+  const { screenToFlowPosition, getZoom, setViewport } = useReactFlow();
+  // Come back to where this canvas was last looked at; only a canvas never
+  // opened in this browser fits everything into view.
+  const [initialViewport] = useState(() => loadViewport(slug));
+  const viewportSlug = useRef(slug);
+  useEffect(() => {
+    if (viewportSlug.current === slug) return;
+    viewportSlug.current = slug;
+    const saved = loadViewport(slug);
+    if (saved) void setViewport(saved);
+  }, [slug, setViewport]);
   const openPdf = useUiStore((s) => s.openPdf);
   const setHoveredSourceRef = useUiStore((s) => s.setHoveredSourceRef);
   const clearHoveredSourceRef = useUiStore((s) => s.clearHoveredSourceRef);
@@ -1460,7 +1471,9 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
-        fitView
+        fitView={!initialViewport}
+        defaultViewport={initialViewport ?? undefined}
+        onMoveEnd={(_, viewport) => saveViewport(slug, viewport)}
         nodesDraggable={!readOnly && !handMode && armedTool !== CONNECT_TOOL}
         // Keep containers below edges and every ordinary card above them,
         // including selected edges and edges attached to parented nodes.
