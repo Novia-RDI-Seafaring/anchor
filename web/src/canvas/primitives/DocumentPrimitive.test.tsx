@@ -177,8 +177,15 @@ describe("DocumentPrimitive click isolation", () => {
       const { container } = await renderDoc(READY_DOC);
       const image = screen.getByRole("img") as HTMLImageElement;
       Object.defineProperties(image, { naturalWidth: { value: 600 }, naturalHeight: { value: 800 } });
-      await act(async () => { fireEvent.load(image); });
+      vi.mocked(documents.locate).mockResolvedValue([[10, 20, 30, 40]]);
+      await act(async () => {
+        fireEvent.load(image);
+        useUiStore.getState().setHoveredSourceRef({
+          slug: "pump", page: 1, bbox: [10, 20, 30, 40], query: "value",
+        });
+      });
       expect(container.querySelector("[data-region-handle-id]")).toBeNull();
+      expect(screen.queryByTestId("value-quad")).toBeNull();
       expect(screen.getByRole("status").textContent).toContain("page dimensions unknown");
       expect(image.style.display).toBe("block");
     },
@@ -331,6 +338,133 @@ describe("DocumentPrimitive selector precision", () => {
     Object.defineProperties(image, { naturalWidth: { value: 600 }, naturalHeight: { value: 800 } });
     await act(async () => { fireEvent.load(image); });
   }
+
+  const px42Values = [
+    {
+      label: "pressure",
+      query: "600 kPa (6 bar)",
+      row: 1,
+      bbox: [275.658, 285.6667686, 344.4547343, 294.4637444],
+      quad: [275.6579895019531, 284.7572326660156, 344.4696350097656, 294.7198486328125],
+    },
+    {
+      label: "temperature",
+      query: "-10 to 140 degrees C",
+      row: 3,
+      bbox: [275.658, 309.5777686, 364.85016902, 318.3747444],
+      quad: [275.6579895019531, 308.6682434082031, 364.87298583984375, 318.630859375],
+    },
+  ];
+
+  it.each(px42Values.flatMap((value) => ["bbox", "cell"].map((locator) => ({ ...value, locator }))))(
+    "locates the real PX42 $label text within its $locator despite small font-metric bleed", async ({ query, row, bbox, quad, locator }) => {
+      const resolveRef = vi.spyOn(documents, "resolveRef").mockResolvedValue({
+        slug: "pump", page: 2, bbox, precision: "cell",
+      });
+      vi.mocked(documents.locate).mockResolvedValue([quad]);
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => geometryFixture.gold_map }));
+      await renderDoc(READY_DOC);
+      await act(async () => {
+        useUiStore.getState().setHoveredSourceRef({
+          slug: "pump", page: 2, bbox, query,
+          ...(locator === "cell" ? { region_id: "r3", cell: { row, col: 1 } } : {}),
+        });
+      });
+      await loadSourceImage();
+      await waitFor(() => expect(screen.getByTestId("value-quad")).toBeTruthy());
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(documents.locate).toHaveBeenLastCalledWith("pump", 2, query, bbox);
+      expect(resolveRef).toHaveBeenCalledTimes(locator === "cell" ? 1 : 0);
+      const valueMark = screen.getByTestId("value-quad");
+      const sourceMark = screen.getByTestId("external-highlight");
+      // The font box may bleed; the displayed word mark stays inside its locator.
+      expect(valueMark.style.cssText).toBe(sourceMark.style.cssText);
+    },
+  );
+
+  it.each([
+    { label: "left", quad: [8.99, 20, 30, 40] },
+    { label: "top", quad: [10, 18.99, 30, 40] },
+    { label: "right", quad: [10, 20, 31.01, 40] },
+    { label: "bottom", quad: [10, 20, 30, 41.01] },
+    { label: "empty", quad: [10, 20, 10, 40] },
+    { label: "reversed", quad: [30, 20, 10, 40] },
+    { label: "nonfinite", quad: [10, 20, Number.NaN, 40] },
+    { label: "incomplete", quad: [10, 20, 30] },
+  ])("keeps the not-located warning for a genuinely invalid or out-of-scope $label quad", async ({ quad }) => {
+    vi.mocked(documents.locate).mockResolvedValue([quad]);
+    await renderDoc(READY_DOC);
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({
+        slug: "pump", page: 1, bbox: [10, 20, 30, 40], query: "value",
+      });
+    });
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Exact source value not located"));
+    expect(screen.queryByTestId("value-quad")).toBeNull();
+  });
+
+  it.each(["no match", "failed request"])("keeps the not-located warning for %s", async (failure) => {
+    if (failure === "failed request") vi.mocked(documents.locate).mockRejectedValue(new Error("unavailable"));
+    await renderDoc(READY_DOC);
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({
+        slug: "pump", page: 1, bbox: [10, 20, 30, 40], query: "missing value",
+      });
+    });
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Exact source value not located"));
+    expect(screen.queryByTestId("value-quad")).toBeNull();
+  });
+
+  it.each([
+    { bbox: [10, 20, 10.1, 20.1], quad: [9.5, 19.5, 10.6, 20.6] },
+    { bbox: [10, 20, 10.1, 20.1], quad: [9.1, 20, 9.9, 20.1] },
+  ])("does not accept a nearby quad without meaningful overlap: %j", async ({ bbox, quad }) => {
+    vi.mocked(documents.locate).mockResolvedValue([quad]);
+    await renderDoc(READY_DOC);
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 1, bbox, query: "value" });
+    });
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Exact source value not located"));
+    expect(screen.queryByTestId("value-quad")).toBeNull();
+  });
+
+  it("preserves ambiguity when two quads have only bounded font-metric bleed", async () => {
+    vi.mocked(documents.locate).mockResolvedValue([[9.1, 20, 20, 30], [20, 30, 30.9, 40]]);
+    await renderDoc(READY_DOC);
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({
+        slug: "pump", page: 1, bbox: [10, 20, 30, 40], query: "repeated value",
+      });
+    });
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Ambiguous source"));
+    expect(screen.queryByTestId("value-quad")).toBeNull();
+  });
+
+  it.each([undefined, [10, 20, 10, 40], [30, 20, 10, 40], [10, 20, Number.NaN, 40]])(
+    "keeps the coarse warning for missing or invalid locator geometry: %j", async (bbox) => {
+      await renderDoc(READY_DOC);
+      await act(async () => {
+        useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 1, bbox, query: "value" });
+      });
+      expect(screen.getByRole("status").textContent).toContain("Coarse source");
+      expect(documents.locate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not use precise selector geometry resolved on a different page", async () => {
+    vi.spyOn(documents, "resolveRef").mockResolvedValue({
+      slug: "pump", page: 2, bbox: [10, 20, 30, 40], precision: "cell",
+    });
+    await renderDoc(READY_DOC);
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({
+        slug: "pump", page: 1, region_id: "r3", cell: { row: 1, col: 1 }, query: "value",
+      });
+    });
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Coarse source"));
+    expect(documents.locate).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("value-quad")).toBeNull();
+  });
 
   it("keeps equal motor-size values tied to their certified frequency cells", async () => {
     const cells = [[304, 229, 348, 238], [304, 240, 348, 249]];
