@@ -17,11 +17,20 @@ export function navigationKey(event: KeyboardEvent): CanvasNavigationMode | null
   return key === "h" ? "hand" : "select";
 }
 
+/**
+ * What a drag on the canvas does. With no tool armed, dragging the empty
+ * canvas pans and Shift-dragging draws a selection box (React Flow's
+ * `selectionKeyCode`); elements are clicked and dragged as themselves. A
+ * separate pointer mode for selecting asked the reader to switch modes for
+ * the most common gesture. The hand is a view-only mode: everything pans and
+ * nothing moves. An armed tool owns the primary button, so the canvas pans
+ * with the middle or right one.
+ */
 export function canvasNavigation(mode: CanvasNavigationMode, readOnly: boolean, armedTool: string | null) {
   const hand = !readOnly && !armedTool && mode === "hand";
   return {
     hand,
-    selectionOnDrag: !readOnly && !armedTool && !hand,
-    panOnDrag: readOnly || hand ? true : [1, 2],
+    selectionOnDrag: false,
+    panOnDrag: armedTool && !readOnly ? [1, 2] : true,
   };
 }

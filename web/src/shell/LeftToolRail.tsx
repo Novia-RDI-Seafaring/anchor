@@ -30,7 +30,7 @@
  */
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
-import { Hand, MousePointer2, Plus, WandSparkles, X } from "lucide-react";
+import { Hand, Plus, WandSparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { cad } from "@/api/cad";
@@ -97,7 +97,8 @@ export function LeftToolRail({ workspaceSlug }: Props) {
       const navigation = armedTool !== INTENT_TOOL ? navigationKey(event) : null;
       if (navigation) {
         event.preventDefault();
-        setNavigationMode(navigation);
+        // H toggles the hand; V (the old pointer key) leaves it.
+        setNavigationMode(navigation === "hand" && navigationMode === "hand" && !armedTool ? "select" : navigation);
         return;
       }
       if (event.key === "[" && !event.metaKey && !event.ctrlKey && !event.altKey) {
@@ -134,7 +135,7 @@ export function LeftToolRail({ workspaceSlug }: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleSourceCluster, armedTool, armTool, disarmTool, setNavigationMode, setSelectedNodeId, setPropertiesOpen]);
+  }, [toggleSourceCluster, armedTool, armTool, disarmTool, navigationMode, setNavigationMode, setSelectedNodeId, setPropertiesOpen]);
 
   const shapes = paletteEntries("shapes");
   const cards = paletteEntries("cards");
@@ -187,30 +188,29 @@ export function LeftToolRail({ workspaceSlug }: Props) {
         aria-label="Canvas tools"
       >
         <RailGroup label="Navigation">
-          {([
-            { mode: "select", label: "Select", key: "V", Icon: MousePointer2, hint: "select or move elements; drag empty canvas to select" },
-            { mode: "hand", label: "Hand", key: "H", Icon: Hand, hint: "drag to pan the canvas" },
-          ] as const).map(({ mode, label, key, Icon, hint }) => (
-            <Tooltip key={mode}>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  aria-label={label}
-                  aria-pressed={!armedTool && navigationMode === mode}
-                  onClick={() => setNavigationMode(mode)}
-                  className={`relative grid h-9 w-9 place-items-center rounded-lg border text-neutral-600 transition ${
-                    !armedTool && navigationMode === mode
-                      ? "border-sky-400 bg-sky-50 text-sky-700"
-                      : "border-transparent hover:border-neutral-300 hover:bg-neutral-50"
-                  }`}
-                >
-                  <Icon size={16} strokeWidth={1.75} aria-hidden />
-                  <span className="pointer-events-none absolute bottom-0 right-0.5 text-[8px] leading-none text-neutral-400" aria-hidden>{key}</span>
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="right"><div className="font-medium">{label}</div><div className="text-neutral-300">{hint}</div></TooltipContent>
-            </Tooltip>
-          ))}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Hand"
+                aria-pressed={!armedTool && navigationMode === "hand"}
+                onClick={() => setNavigationMode(navigationMode === "hand" && !armedTool ? "select" : "hand")}
+                className={`relative grid h-9 w-9 place-items-center rounded-lg border text-neutral-600 transition ${
+                  !armedTool && navigationMode === "hand"
+                    ? "border-sky-400 bg-sky-50 text-sky-700"
+                    : "border-transparent hover:border-neutral-300 hover:bg-neutral-50"
+                }`}
+              >
+                <Hand size={16} strokeWidth={1.75} aria-hidden />
+                <span className="pointer-events-none absolute bottom-0 right-0.5 text-[8px] leading-none text-neutral-400" aria-hidden>H</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <div className="font-medium">Hand</div>
+              <div className="text-neutral-300">view only: drag pans, nothing moves. Click again to leave.</div>
+              <div className="text-neutral-300">Without it: drag the background to pan, Shift-drag to select.</div>
+            </TooltipContent>
+          </Tooltip>
         </RailGroup>
         <RailDivider />
         {/* Mark up. Armed, the canvas takes ink: rings, lines, words, filed

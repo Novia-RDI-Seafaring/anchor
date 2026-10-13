@@ -27,8 +27,8 @@ it("does not steal source controls, text, dialogs, or read-only canvases", () =>
   }
 });
 
-it("uses primary dragging for selection or hand panning while other tools keep alternate-button pan", () => {
-  expect(canvasNavigation("select", false, null)).toMatchObject({ hand: false, selectionOnDrag: true, panOnDrag: [1, 2] });
+it("pans on a background drag, leaves selection to Shift, and keeps alternate-button pan for armed tools", () => {
+  expect(canvasNavigation("select", false, null)).toMatchObject({ hand: false, selectionOnDrag: false, panOnDrag: true });
   expect(canvasNavigation("hand", false, null)).toMatchObject({ hand: true, selectionOnDrag: false, panOnDrag: true });
   expect(canvasNavigation("hand", true, null)).toMatchObject({ hand: false, selectionOnDrag: false, panOnDrag: true });
   expect(canvasNavigation("hand", false, "concept")).toMatchObject({ hand: false, selectionOnDrag: false, panOnDrag: [1, 2] });
