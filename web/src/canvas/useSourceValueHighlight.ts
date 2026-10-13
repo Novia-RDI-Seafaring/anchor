@@ -7,6 +7,24 @@ function validBox(box: number[] | undefined): box is number[] {
     && box[0]! < box[2]! && box[1]! < box[3]!;
 }
 
+function scopedTextQuad(box: number[], clip: number[]): number[] | null {
+  // PDF font metrics can extend slightly beyond Docling's text/cell box.
+  // Bound that difference in PDF points and keep the drawn mark in its locator.
+  const tolerance = 1;
+  if (!validBox(box)
+    || box[0]! < clip[0]! - tolerance || box[1]! < clip[1]! - tolerance
+    || box[2]! > clip[2]! + tolerance || box[3]! > clip[3]! + tolerance) return null;
+  const scoped = [
+    Math.max(box[0]!, clip[0]!), Math.max(box[1]!, clip[1]!),
+    Math.min(box[2]!, clip[2]!), Math.min(box[3]!, clip[3]!),
+  ];
+  if (!validBox(scoped)) return null;
+  const overlap = (scoped[2]! - scoped[0]!) / (box[2]! - box[0]!)
+    * (scoped[3]! - scoped[1]!) / (box[3]! - box[1]!);
+  // A small nearby box must not pass just because it fits the tolerance band.
+  return overlap >= 0.5 ? scoped : null;
+}
+
 /** Text search refines a locator; it cannot establish which claim a value supports. */
 export function useSourceValueHighlight(
   slug: string | undefined,
@@ -21,7 +39,7 @@ export function useSourceValueHighlight(
   const [resolution, setResolution] = useState<{ key: string; ref: ResolvedRef | null } | null>(null);
   const [located, setLocated] = useState<{ key: string; quads: number[][] } | null>(null);
   const needsResolution = refHasSelector(ref);
-  const resolved = resolution?.key === key ? resolution.ref : null;
+  const resolved = resolution?.key === key && resolution.ref?.page === page ? resolution.ref : null;
   const resolvedBbox = resolved?.bbox;
   // Region boxes remain coarse even when only one identical value happens to
   // be searchable. Item/cell identity is certified by the existing resolver.
@@ -48,9 +66,8 @@ export function useSourceValueHighlight(
         if (cancelled) return;
         // Refuse multiple matches and out-of-scope results. A first-match
         // choice would silently turn an ambiguous search into exact evidence.
-        const scoped = quads.filter((box) => validBox(box)
-          && box[0]! >= clip[0]! && box[1]! >= clip[1]!
-          && box[2]! <= clip[2]! && box[3]! <= clip[3]!);
+        const scoped = quads.map((box) => scopedTextQuad(box, clip))
+          .filter((box): box is number[] => box !== null);
         setLocated({ key, quads: scoped.length === quads.length ? scoped : [] });
       })
       .catch(() => { if (!cancelled) setLocated({ key, quads: [] }); });
