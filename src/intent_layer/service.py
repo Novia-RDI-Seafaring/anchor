@@ -156,13 +156,31 @@ class IntentService:
         await self._signal_pending(origin_canvas_id)
         return stored
 
-    async def list_pending(self, *, canvas: str | None = None) -> list[Intent]:
+    async def _mark_stale(self, intents: list[Intent]) -> list[Intent]:
+        """Ask the host which pending intents point only at things now gone.
+
+        A thread whose every target was deleted has nothing left for an
+        agent to look at. It stays pending, so its asker can still see and
+        remove it, but it carries ``stale`` with the host's reason.
+        """
+        check = getattr(self._host, "stale_reason", None)
+        if check is None:
+            return intents
+        for intent in intents:
+            if intent.status == PENDING and intent.targets:
+                intent.stale = await check(intent.targets)
+        return intents
+
+    async def list_pending(
+        self, *, canvas: str | None = None, include_stale: bool = False,
+    ) -> list[Intent]:
         """Pending intents for this project, oldest first.
 
         ``canvas`` filters to a per-canvas view (matching ``origin_canvas_id``
         or ``target``); omit it for the whole project. A cross-canvas intent is
         therefore visible from the canvas that raised it and from the canvas it
-        targets.
+        targets. Stale intents (see :meth:`_mark_stale`) are left out unless
+        ``include_stale``: the agent's inbox should hold work it can do.
         """
         items = [i for i in await self._store.list() if i.status == PENDING]
         if canvas is not None:
@@ -171,11 +189,17 @@ class IntentService:
                 for i in items
                 if i.origin_canvas_id == canvas or i.target == canvas
             ]
+        items = await self._mark_stale(items)
+        if not include_stale:
+            items = [i for i in items if i.stale is None]
         items.sort(key=lambda i: (i.created_at, i.id))
         return items
 
     async def list_all(self, *, canvas: str | None = None) -> list[Intent]:
-        """Every intent (pending + resolved), newest first. For audit/UI."""
+        """Every intent (pending + resolved), newest first. For audit/UI.
+
+        Pending ones carry ``stale`` when the host reports their targets gone,
+        so a reader can see why and remove them."""
         items = await self._store.list()
         if canvas is not None:
             items = [
@@ -183,11 +207,13 @@ class IntentService:
                 for i in items
                 if i.origin_canvas_id == canvas or i.target == canvas
             ]
+        items = await self._mark_stale(items)
         items.sort(key=lambda i: (i.created_at, i.id), reverse=True)
         return items
 
     async def next(self, *, canvas: str | None = None) -> Intent | None:
-        """The oldest pending intent (optionally for one canvas), or ``None``.
+        """The oldest pending intent that is not stale (optionally for one
+        canvas), or ``None``.
 
         A peek, not a claim: it does not mark the intent in-flight. The handler
         calls :meth:`resolve` when done, which is the only state transition.

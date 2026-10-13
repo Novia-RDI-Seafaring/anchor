@@ -32,7 +32,7 @@ def tool_definitions(*, target_schema: dict[str, Any] | None = None,
         key: {"type": "number"} for key in ("x", "y", "width", "height")
     }, "required": ["x", "y"], "additionalProperties": False}
     schemas = {
-        "list_pending_intents": ({"canvas": text}, []),
+        "list_pending_intents": ({"canvas": text, "include_stale": {"type": "boolean"}}, []),
         "next_intent": ({"canvas": text}, []),
         "resolve_intent": ({**ident, "result": {"type": "object"}}, ["id"]),
         "get_intent": (ident, ["id"]),
@@ -83,7 +83,9 @@ async def call_tool(
 
 async def _dispatch(intents: IntentService, name: str, args: dict[str, Any]) -> str:
     if name == "list_pending_intents":
-        pending = await intents.list_pending(canvas=args.get("canvas"))
+        pending = await intents.list_pending(
+            canvas=args.get("canvas"), include_stale=bool(args.get("include_stale")),
+        )
         return json.dumps({"intents": [i.to_dict() for i in pending]})
     if name == "next_intent":
         nxt = await intents.next(canvas=args.get("canvas"))

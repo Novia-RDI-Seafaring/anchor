@@ -243,6 +243,10 @@ class Intent(BaseModel):
     targets: list[JsonValue] = Field(default_factory=list)
     base_version: int | None = None
     items: list[ThreadItem] = Field(default_factory=list)
+    #: Why a pending intent can no longer be acted on, e.g. every element it
+    #: points at was deleted. Worked out by the host when the intent is read;
+    #: never persisted.
+    stale: str | None = Field(default=None, exclude=True)
 
     @field_validator("targets", mode="before")
     @classmethod
@@ -269,6 +273,8 @@ class Intent(BaseModel):
             d["resolved_at"] = self.resolved_at
         if self.result is not None:
             d["result"] = self.result
+        if self.stale is not None:
+            d["stale"] = self.stale
         return d
 
     @classmethod

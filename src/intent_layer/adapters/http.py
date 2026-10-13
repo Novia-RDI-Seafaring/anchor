@@ -125,10 +125,13 @@ def create_router(get_intent_service: Callable[..., IntentService],
     @router.get("")
     async def list_pending(
         canvas: str | None = None,
+        include_stale: bool = False,
         intents: IntentService = Depends(get_intent_service),
     ):
-        """Pending intents for this project (oldest first), optionally per-canvas."""
-        pending = await intents.list_pending(canvas=canvas)
+        """Pending intents for this project (oldest first), optionally per-canvas.
+
+        Stale ones (every target deleted) are left out unless ``include_stale``."""
+        pending = await intents.list_pending(canvas=canvas, include_stale=include_stale)
         return {"intents": [i.to_dict() for i in pending], "count": len(pending)}
 
 

@@ -74,7 +74,9 @@ families rather than listing every operation.
 ## Process a submitted canvas request
 
 1. Pull `list_pending_intents` for the project at the start of an ANCHOR task
-   and when prompted to check the inbox.
+   and when prompted to check the inbox. Intents whose every target was
+   deleted are stale and left out unless `include_stale` is set; each then
+   carries a `stale` reason, and the Intents panel offers to remove it.
 2. Read the selected intent, its target objects, and relevant document evidence.
 3. Reply through `intent_add_item`. Use a question when requirements are unclear,
    or a suggestion with staged operations and a rationale for a proposed edit.

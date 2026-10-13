@@ -64,6 +64,9 @@ export type Intent = {
   targets?: { workspace_id: string; node_id: string }[];
   base_version?: number | null;
   items?: ThreadItem[];
+  /** Why a pending intent can no longer be acted on: every element it points
+   *  at was deleted. The agent's inbox leaves it out; the reader removes it. */
+  stale?: string;
 };
 
 /**

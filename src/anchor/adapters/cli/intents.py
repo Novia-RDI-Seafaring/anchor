@@ -133,14 +133,21 @@ def intents(
     all_: bool = typer.Option(
         False, "--all", help="Include resolved intents, newest first."
     ),
+    include_stale: bool = typer.Option(
+        False, "--include-stale",
+        help="Include stale intents: ones whose every target was deleted.",
+    ),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
-    """List pending agent intents for this project (the agent's inbox)."""
+    """List pending agent intents for this project (the agent's inbox).
+
+    Stale intents, whose every target was deleted, are left out unless
+    ``--include-stale``; ``--all`` shows them with their ``stale`` reason."""
     svc = _intent_service(data_dir)
     if all_:
         items = asyncio.run(svc.list_all(canvas=canvas))
     else:
-        items = asyncio.run(svc.list_pending(canvas=canvas))
+        items = asyncio.run(svc.list_pending(canvas=canvas, include_stale=include_stale))
     typer.echo(json.dumps({"intents": [i.to_dict() for i in items]}, indent=2))
 
 

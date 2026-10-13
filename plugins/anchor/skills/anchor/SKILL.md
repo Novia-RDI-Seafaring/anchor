@@ -95,7 +95,10 @@ creates a **thread**: an intent with `targets` (`[{workspace_id, node_id}]`),
 the canvas `base_version` at ask time, and `items` (the conversation).
 
 - At the start of any Anchor task, and whenever you are idle, call
-  `list_pending_intents` (`anchor intents` on the CLI). Take one.
+  `list_pending_intents` (`anchor intents` on the CLI). Take one. An intent
+  whose every target was deleted is stale and left out; pass
+  `include_stale` (`--include-stale`) to see them, each with its `stale`
+  reason. The reader removes those, not you.
 - Read the targets' subgraph with `canvas_get_state` (filter by the target
   ids). `canvas_snapshot` gives you the picture.
 - Reply in the thread with `intent_add_item(id, type, text, ops?)`:
