@@ -40,7 +40,10 @@ export function SelectionPanel() {
   return (
     <div
       data-testid="selection-panel"
-      className="pointer-events-auto absolute left-3 top-16 z-20 flex max-h-[calc(100vh-6rem)] w-[17rem] flex-col gap-3 overflow-y-auto rounded-xl border border-neutral-200 bg-white/95 px-3 py-3 shadow-md backdrop-blur"
+      // Leave room for the tool rail, including its scrollbar on short canvases.
+      // Bound the panel to the canvas and let its controls shrink or wrap.
+      // Its controls also stay above the selected node's quick-connect dots.
+      className="pointer-events-auto absolute left-20 top-16 z-30 flex max-h-[calc(100%_-_5rem)] w-[17rem] max-w-[calc(100%_-_6rem)] flex-col gap-3 overflow-y-auto rounded-xl border border-neutral-200 bg-white/95 px-3 py-3 shadow-md backdrop-blur [&>section>div]:min-w-0 [&>section>label]:flex-wrap"
       aria-label="Selection properties"
     >
       <NodePresentationEditor workspaceSlug={workspaceSlug} node={node} />
