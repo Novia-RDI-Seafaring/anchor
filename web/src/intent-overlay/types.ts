@@ -86,6 +86,8 @@ export type MarkupModel = {
   setAnswering: MarkupStoreValue["writeAnswer"];
   keepSuggestion: (id: string) => Set<string>;
   settle: (intentId: string, judged: Set<string>) => Promise<void>;
+  /** Take back a sent remark: resolved as withdrawn and off the board. */
+  withdraw: (intentId: string) => Promise<void>;
   kept: Set<string>;
   written: string;
   reading: import("./sketch").Sketch;

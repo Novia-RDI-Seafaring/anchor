@@ -61,6 +61,7 @@ export function useMarkupState(context: Pick<MarkupModel, "active" | "host">) {
   const panelDrag = useRef<{ startX: number; startY: number; x: number; y: number } | null>(null);
 
   const settle = (intentId: string, judged: Set<string>) => markupStore.getState().settle(intentId, judged, host.thread);
+  const withdraw = (intentId: string) => markupStore.getState().withdraw(intentId, host.thread);
 
   const drawing = useRef(false);
 
@@ -117,5 +118,5 @@ export function useMarkupState(context: Pick<MarkupModel, "active" | "host">) {
     }
   }, [active, markupStore, setCurrent, setMarquee]);
 
-  return { markupStore, marks, ink, notes, ids, manual, hoveredStroke, editing, selected, dropOn, activeLabel, sending, filed, openFiled, kept, lifted, hoverShelf, shelf, ground, panelAt, answering, setNotes, setIds, setManual, setHoveredStroke, setEditing, setSelected, setDropOn, setActiveLabel, setOpenFiled, setLifted, setHoverShelf, setPanelAt, setAnswering, keepSuggestion, setMarginDeg, current, setCurrent, marquee, setMarquee, tapRef, panelRef, panelDrag, settle, drawing, drewJustNow, surfaceRef, marqueeDrag, labelDrag, pullDrag, groupDrag, panning, strokes, applyMarks, reset };
+  return { markupStore, marks, ink, notes, ids, manual, hoveredStroke, editing, selected, dropOn, activeLabel, sending, filed, openFiled, kept, lifted, hoverShelf, shelf, ground, panelAt, answering, setNotes, setIds, setManual, setHoveredStroke, setEditing, setSelected, setDropOn, setActiveLabel, setOpenFiled, setLifted, setHoverShelf, setPanelAt, setAnswering, keepSuggestion, setMarginDeg, current, setCurrent, marquee, setMarquee, tapRef, panelRef, panelDrag, settle, withdraw, drawing, drewJustNow, surfaceRef, marqueeDrag, labelDrag, pullDrag, groupDrag, panning, strokes, applyMarks, reset };
 }

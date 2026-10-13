@@ -181,8 +181,8 @@ export function SendRemark({ model }: { model: Pick<MarkupModel, "sayable" | "re
   </>);
 }
 
-export function Readout({ model }: { model: Pick<MarkupModel, "panelRef" | "panelAt" | "panelDrag" | "setPanelAt" | "lifted" | "dropOn" | "editing" | "current" | "looping" | "strokes" | "cutsReading" | "host" | "strikesReading" | "reading" | "ids" | "written" | "shelf" | "filed" | "ghosts" | "openFiled" | "setOpenFiled"> }) {
-  const { panelRef, panelAt, panelDrag, setPanelAt, lifted, dropOn, editing, current, looping, strokes, cutsReading, host, strikesReading, reading, ids, written, shelf, filed, ghosts, openFiled, setOpenFiled } = model;
+export function Readout({ model }: { model: Pick<MarkupModel, "panelRef" | "panelAt" | "panelDrag" | "setPanelAt" | "lifted" | "dropOn" | "editing" | "current" | "looping" | "strokes" | "cutsReading" | "host" | "strikesReading" | "reading" | "ids" | "written" | "shelf" | "filed" | "ghosts" | "openFiled" | "setOpenFiled" | "withdraw"> }) {
+  const { panelRef, panelAt, panelDrag, setPanelAt, lifted, dropOn, editing, current, looping, strokes, cutsReading, host, strikesReading, reading, ids, written, shelf, filed, ghosts, openFiled, setOpenFiled, withdraw } = model;
   return (<>
     <div
       ref={panelRef}
@@ -354,6 +354,18 @@ export function Readout({ model }: { model: Pick<MarkupModel, "panelRef" | "pane
                       {f.intent?.result ? (
                         <li className="text-emerald-700">
                           done: {String((f.intent.result as { action?: string }).action ?? "resolved")}
+                        </li>
+                      ) : null}
+                      {pending ? (
+                        <li>
+                          <button
+                            type="button"
+                            data-testid="comment-lasso-filed-withdraw"
+                            className="pointer-events-auto text-neutral-500 hover:text-red-600 hover:underline"
+                            onClick={() => void withdraw(f.intentId)}
+                          >
+                            withdraw this remark
+                          </button>
                         </li>
                       ) : null}
                     </ol>

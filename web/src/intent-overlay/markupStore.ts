@@ -174,6 +174,10 @@ type MarkupActions = {
     get: (id: string) => Promise<Intent | null>;
     resolve: (id: string, result: { verdict: string }) => Promise<unknown>;
   }) => Promise<void>;
+  /** Take back a sent remark: resolved as withdrawn, and off the board. */
+  withdraw: (intentId: string, host: {
+    resolve: (id: string, result: Record<string, unknown>) => Promise<unknown>;
+  }) => Promise<void>;
 };
 
 const emptyRemark = () => ({
@@ -346,6 +350,16 @@ export function createMarkupStore() {
             item.author.kind !== "human" && !judged.has(item.id))));
         if (!open) await host.resolve(intentId, { verdict: "judged on the board" });
       } catch { /* The next poll shows whatever state the server is in. */ }
+    },
+    withdraw: async (intentId, host) => {
+      // Sent is not final: a remark sent by mistake, or one nobody will now
+      // answer, is taken back from the board it was drawn on. The record
+      // stays, resolved as withdrawn, so an agent mid-way sees why.
+      await host.resolve(intentId, { withdrawn: true, verdict: "withdrawn by the asker" });
+      set((state) => ({
+        filed: state.filed.filter((remark) => remark.intentId !== intentId),
+        openFiled: state.openFiled === intentId ? null : state.openFiled,
+      }));
     },
   }));
 }

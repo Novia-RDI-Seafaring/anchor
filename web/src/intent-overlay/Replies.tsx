@@ -9,8 +9,8 @@ import { ReplyLine } from "./ReplyLine";
 import { splitGhostText } from "./replyModel";
 import type { MarkupModel } from "./types";
 
-export function Replies({ model }: { model: Pick<MarkupModel, "ghosts" | "screen" | "viewport" | "answering" | "setAnswering" | "keepSuggestion" | "settle" | "kept" | "written" | "reading" | "cutsReading" | "reset" | "host"> }) {
-  const { ghosts, screen, viewport, answering, setAnswering, keepSuggestion, settle, kept, written, reading, cutsReading, reset, host } = model;
+export function Replies({ model }: { model: Pick<MarkupModel, "ghosts" | "screen" | "viewport" | "answering" | "setAnswering" | "keepSuggestion" | "settle" | "withdraw" | "kept" | "written" | "reading" | "cutsReading" | "reset" | "host"> }) {
+  const { ghosts, screen, viewport, answering, setAnswering, keepSuggestion, settle, withdraw, kept, written, reading, cutsReading, reset, host } = model;
   return (<>
     {ghosts.flatMap(({ f, preview }) =>
       (preview?.nodes ?? []).map((n) => {
@@ -105,7 +105,19 @@ export function Replies({ model }: { model: Pick<MarkupModel, "ghosts" | "screen
               <span>{status.text}</span>
             </div>
           ) : pending && !suggestion && !applied ? (
-            <div className="text-[11px] text-neutral-400">sent {"\u00b7"} waiting for the agent</div>
+            <div className="pointer-events-auto flex items-center gap-1.5 text-[11px] text-neutral-400">
+              <span>sent {"\u00b7"} waiting for the agent</span>
+              <button
+                type="button"
+                data-testid="comment-lasso-withdraw"
+                className="rounded px-1 text-neutral-500 underline-offset-2 hover:bg-neutral-100 hover:text-red-600 hover:underline"
+                title="Take this remark back: the agent will not pick it up"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => void withdraw(f.intentId)}
+              >
+                withdraw
+              </button>
+            </div>
           ) : null}
 
           {questions.map((q) => (
