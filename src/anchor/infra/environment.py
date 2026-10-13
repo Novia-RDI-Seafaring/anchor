@@ -78,6 +78,8 @@ from anchor.infra.environment_storage import (
     Meta,
     NoEnvironmentError,
     NoProjectError,
+    NotAProjectFolderError,
+    ProjectEnvMismatchError,
     ProjectNotEmptyError,
     ResolvedProject,
     _expand,
@@ -181,6 +183,9 @@ def _layered_config(env: Environment, data_dir: Path, marker: dict[str, Any]) ->
     layers.pop("data_dir", None)
     config = AnchorConfig.from_layers(layer_values=layers, data_dir=data_dir)
     validate_environment_config(environment_values, config)
+    # Recorded here, where the environment is known, so the egress policy can
+    # name the .env without importing this module back.
+    config._env_dotenv_path = env.root / ".env"
     return config
 
 
@@ -189,6 +194,45 @@ def resolve_project_config(env: Environment, project: str) -> AnchorConfig:
     data_dir = env.project_dir(project)
     marker = _read_project_marker(env.project_root(project))
     return _layered_config(env, data_dir, marker)
+
+
+def looks_like_project_path(value: str) -> bool:
+    """True when a ``--project`` value is a folder path rather than a project name.
+
+    A value with a path separator, or starting with ``.`` / ``~``, can never be
+    a valid project name, so it is read as a path. A bare word that names an
+    existing ``anchor init`` folder (one with an ``anchor.toml``) is a path
+    too; any other bare word is a name.
+    """
+    if not value:
+        return False
+    if "/" in value or os.sep in value or value[0] in ("~", "."):
+        return True
+    candidate = Path(value)
+    return candidate.is_dir() and (candidate / PROJECT_MARKER_FILENAME).is_file()
+
+
+def resolve_project_folder(folder: Path | str) -> ResolvedProject:
+    """Resolve an ``anchor init`` folder to its project: marker, env, data dir, config.
+
+    The folder's ``anchor.toml`` names the environment (default: the default
+    env) and the project (default: the folder's name); the corpus lives in
+    ``<folder>/.anchor_data``. Config layers ``env.toml < anchor.toml``
+    exactly as a walk-up from inside the folder does. A folder without the
+    marker raises :class:`NotAProjectFolderError`.
+    """
+    root = Path(os.path.abspath(_expand(folder)))
+    if not (root / PROJECT_MARKER_FILENAME).is_file():
+        raise NotAProjectFolderError(root)
+    marker = _read_project_marker(root)
+    env_name = str(marker.get("env") or default_env_name())
+    validate_env_name(env_name)
+    environment = _load_env(env_name)
+    name = str(marker.get("name") or root.name)
+    data_dir = root / DATA_DIRNAME
+    return ResolvedProject(
+        environment, name, data_dir, _layered_config(environment, data_dir, marker)
+    )
 
 
 def resolve_project(
@@ -201,20 +245,23 @@ def resolve_project(
 
     With neither ``env`` nor ``project`` given, a project ``anchor.toml`` found
     by walking up from the current directory wins (run Anchor inside a project
-    folder). Otherwise resolve by name.
+    folder). A ``project`` that is a folder path (see
+    :func:`looks_like_project_path`) resolves that ``anchor init`` folder, the
+    same way ``anchor-mcp --project <folder>`` does; its marker binds the
+    environment, so an ``env`` naming a different one raises
+    :class:`ProjectEnvMismatchError`. Otherwise resolve by name.
     """
     if env is None and project is None:
         root = _walk_up_for_project()
         if root is not None:
-            marker = _read_project_marker(root)
-            env_name = str(marker.get("env") or default_env_name())
-            validate_env_name(env_name)
-            environment = _load_env(env_name)
-            name = str(marker.get("name") or root.name)
-            data_dir = root / DATA_DIRNAME
-            return ResolvedProject(
-                environment, name, data_dir, _layered_config(environment, data_dir, marker)
+            return resolve_project_folder(root)
+    if project is not None and looks_like_project_path(project):
+        resolved = resolve_project_folder(project)
+        if env is not None and env != resolved.environment.name:
+            raise ProjectEnvMismatchError(
+                resolved.data_dir.parent, resolved.environment.name, env
             )
+        return resolved
     environment = resolve_environment(env)
     name = project or os.environ.get(PROJECT_VAR) or get_use().get("project") or DEFAULT_PROJECT
     validate_project_name(name)

@@ -23,6 +23,7 @@ by the host; they are not executable code.
 | `intent_layer.service` | Inbox and thread state transitions with an explicit host |
 | `intent_layer.fs_store`, `memory_store` | Durable and in-memory intent stores |
 | `intent_layer.signals` | Count-only signal port and in-process implementation |
+| `intent_layer.timing` | Timing summary of one intent from its thread and host call records |
 | `intent_layer.adapters.http` | Mounted FastAPI router factory |
 | `intent_layer.adapters.mcp` | Tool definitions and JSON dispatch |
 | `intent_layer.adapters.cli` | Mountable Typer inbox factory |
@@ -70,7 +71,9 @@ app.include_router(create_router(lambda: service, lambda: signals,
 ```
 
 The HTTP inbox supports list pending, list all, create, get and resolve, plus
-add/update item, answer, apply, revert and decline. `/events` sends an initial
+add/update item, act, answer, apply, revert and decline. Act posts a
+suggestion, applies it, marks placed messages done, and asks a question or
+posts a result in one call. `/events` sends an initial
 pending-count snapshot, then count nudges. Subscribe before reading the snapshot;
 payloads are pulled from the inbox. A disconnect or snapshot failure releases
 the subscription. The host application owns authentication, origin policy,

@@ -16,12 +16,49 @@ if TYPE_CHECKING:
     from anchor.infra.config import AnchorConfig
 
 _SERVER_EGRESS_PROVIDERS = frozenset({"azure", "custom", "ollama", "openai"})
+#: Providers whose vision stages run through the user's own signed-in agent
+#: CLI. Page content leaves the host (to Anthropic or OpenAI), so they count
+#: as egress, but Anchor builds no model client and holds no credential.
+AGENT_CLI_PROVIDERS = frozenset({"claude", "codex"})
 _PROJECT_IMMUTABLE_FIELDS = frozenset({"openai_base_url", "provider"})
 _PROJECT_FORBIDDEN_FIELDS = frozenset({"openai_api_key"})
 
 
 class EgressPolicyError(ValueError):
     """Raised before runtime startup when model egress policy is unsafe."""
+
+
+ANCHOR_KEY_VAR = "ANCHOR_OPENAI_API_KEY"
+
+
+def credential_hint(dotenv_path: Path | str | None) -> str:
+    """Where the model key goes, and why a shell export may not reach Anchor."""
+    target = str(dotenv_path) if dotenv_path else "the environment's .env file next to env.toml"
+    return (
+        f"Set {ANCHOR_KEY_VAR} in {target}. Apps like Claude Desktop do not "
+        "inherit shell variables, so a key exported in your shell is invisible to them."
+    )
+
+
+class MissingModelCredentialError(EgressPolicyError):
+    """A remote model is configured but no key is visible to this process.
+
+    Raised only by operations that actually call the remote model (query
+    embedding, embedding at ingest). Read-only operations never raise it.
+    """
+
+    code = "missing_model_credential"
+
+    def __init__(self, model: str, *, dotenv_path: Path | str | None = None) -> None:
+        super().__init__(
+            f"remote embedding model {model!r} requires an approved model "
+            "credential, and none is visible to this process"
+        )
+        self.model = model
+        self.hint = credential_hint(dotenv_path)
+
+    def to_dict(self) -> dict[str, str]:
+        return {"error": self.code, "message": str(self), "hint": self.hint}
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +71,9 @@ class EgressPolicy:
     server_egress_allowed: bool
     remote_clients_enabled: bool
     credential_source: str | None = None
+    dotenv_path: Path | None = None
+    #: ``claude`` or ``codex`` when the vision stages run through that CLI.
+    agent_cli: str | None = None
 
     def validate_embed_model(
         self,
@@ -50,13 +90,11 @@ class EgressPolicy:
                 f"provider {provider!r} does not allow remote embedding model "
                 f"{model!r}: embedding would send document text off-host. "
                 "Set embed_model to a local model (for example "
-                "'BAAI/bge-small-en-v1.5'), or move the project to an "
+                "'hotchpotch/bekko-embedding-v1-a25m'), or move the project to an "
                 "environment that allows model egress."
             )
         if require_credential and not self.remote_clients_enabled:
-            raise EgressPolicyError(
-                f"remote embedding model {model!r} requires an approved model credential"
-            )
+            raise MissingModelCredentialError(model, dotenv_path=self.dotenv_path)
 
 
 def is_remote_embedding_model(model: str) -> bool:
@@ -93,6 +131,22 @@ def resolve_egress_policy(
 ) -> EgressPolicy:
     """Resolve explicit model credentials and endpoint without ambient fallback."""
     provider = (config.provider or "").strip().lower() or None
+    if provider in AGENT_CLI_PROVIDERS and not config.local_only:
+        policy = EgressPolicy(
+            provider=provider,
+            api_key=None,
+            base_url=None,
+            server_egress_allowed=True,
+            remote_clients_enabled=False,
+            dotenv_path=environment_dotenv_path(config),
+            agent_cli=provider,
+        )
+        # Embeddings stay on the host: there is no endpoint key to embed with.
+        policy.validate_embed_model(
+            config.embed_model,
+            require_credential=require_remote_credential,
+        )
+        return policy
     server_egress_allowed = (
         not config.local_only and provider in _SERVER_EGRESS_PROVIDERS
     )
@@ -147,12 +201,62 @@ def resolve_egress_policy(
         server_egress_allowed=True,
         remote_clients_enabled=api_key is not None,
         credential_source=credential_source,
+        dotenv_path=environment_dotenv_path(config),
     )
     policy.validate_embed_model(
         config.embed_model,
         require_credential=require_remote_credential,
     )
     return policy
+
+
+def environment_dotenv_path(config: AnchorConfig) -> Path | None:
+    """The private ``.env`` of the environment that owns ``config``'s project.
+
+    Set by the environment resolver (``anchor.infra.environment``); ``None``
+    for a config built without an environment.
+    """
+    return getattr(config, "_env_dotenv_path", None)
+
+
+def describe_credential(config: AnchorConfig) -> dict[str, Any]:
+    """Credential state for status surfaces. Never includes the key itself.
+
+    ``source`` names where the effective key came from: ``env_file`` (the
+    environment's private ``.env``) or ``process`` (the launching shell or app).
+    A process-only key is invisible to apps launched outside that shell.
+    """
+    provider = (config.provider or "").strip().lower() or None
+    # Ollama runs with a local placeholder key, so only real endpoints need one.
+    required = not config.local_only and provider in _SERVER_EGRESS_PROVIDERS - {"ollama"}
+    dotenv_path = environment_dotenv_path(config)
+    env_file_has_key = bool(read_environment_dotenv(dotenv_path).get("openai_api_key"))
+    variable: str | None = None
+    source: str | None = None
+    if required:
+        if os.environ.get(ANCHOR_KEY_VAR, "").strip():
+            variable, source = ANCHOR_KEY_VAR, "process"
+        elif env_file_has_key:
+            variable, source = ANCHOR_KEY_VAR, "env_file"
+        elif config.openai_api_key is not None:
+            variable, source = ANCHOR_KEY_VAR, "config"
+        elif (
+            provider == "openai"
+            and not (config.openai_base_url or "").strip()
+            and os.environ.get("OPENAI_API_KEY", "").strip()
+        ):
+            variable, source = "OPENAI_API_KEY", "process"
+    info: dict[str, Any] = {
+        "required": required,
+        "present": source is not None,
+        "source": source,
+        "variable": variable,
+        "env_file": str(dotenv_path) if dotenv_path is not None else None,
+        "env_file_has_key": env_file_has_key,
+    }
+    if required and (source is None or (source == "process" and not env_file_has_key)):
+        info["hint"] = credential_hint(dotenv_path)
+    return info
 
 
 def secure_environment_layers(

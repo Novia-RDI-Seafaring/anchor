@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -39,7 +40,9 @@ from anchor.extensions.anchor_pdfs.core.ports.doc_store import DocStore
 from anchor.extensions.anchor_pdfs.core.services import IngestService
 from anchor.extensions.anchor_sysml.adapters.http import sysml_routes
 from anchor.extensions.anchor_sysml.core.services import SysmlService
+from anchor.infra.activity import ActivityLog
 from anchor.infra.config import AnchorConfig
+from anchor.infra.egress_policy import MissingModelCredentialError
 
 
 class _ActorAttributionMiddleware:
@@ -60,6 +63,66 @@ class _ActorAttributionMiddleware:
             return
         with actor_scope(Actor(kind="human", label="browser")):
             await self._app(scope, receive, send)
+
+
+class _ActivityMiddleware:
+    """Write one line per API call to the project's activity log.
+
+    What it records is the cost of an agent's work in the unit that
+    matters: calls. Pure ASGI, like the actor middleware, so it adds no
+    task hop; the event stream and the log's own endpoint are left out.
+    """
+
+    SKIP = {"/api/intents/events", "/api/activity", "/api/status"}
+
+    def __init__(self, app, log) -> None:  # noqa: ANN001 -- ASGI app, ActivityLog
+        self._app = app
+        self._log = log
+
+    async def __call__(self, scope, receive, send) -> None:  # noqa: ANN001
+        path = scope.get("path", "") if scope["type"] == "http" else ""
+        if (
+            self._log is None
+            or scope["type"] != "http"
+            or not path.startswith("/api/")
+            or path in self.SKIP
+            or path.endswith("/events")
+        ):
+            await self._app(scope, receive, send)
+            return
+        started = time.perf_counter()
+        status = {"code": 0}
+
+        async def _send(message):  # noqa: ANN001
+            if message.get("type") == "http.response.start":
+                status["code"] = int(message.get("status", 0))
+            await send(message)
+
+        try:
+            await self._app(scope, receive, _send)
+        finally:
+            parts = path.split("/")
+            intent = parts[3] if len(parts) > 3 and parts[2] == "intents" and parts[3] not in ("all", "events") else None
+            self._log.record(
+                kind="http",
+                name=f"{scope.get('method', '')} {_route_shape(path)}",
+                ms=round((time.perf_counter() - started) * 1000, 1),
+                status=status["code"],
+                intent=intent,
+            )
+
+
+def _route_shape(path: str) -> str:
+    """The path with ids and slugs blanked, so calls group by what they do."""
+    parts = path.split("/")
+    out: list[str] = []
+    for i, part in enumerate(parts):
+        prev = parts[i - 1] if i else ""
+        if prev in ("intents", "items", "workspaces", "nodes", "edges", "documents", "pages", "proposal-sets", "references", "projects") and part not in ("all", "events"):
+            out.append("{}")
+        else:
+            out.append(part)
+    return "/".join(out)
 
 
 def build_app(
@@ -153,6 +216,12 @@ def build_app(
     app.state.ingest_session_service = ingest_session_service
     app.state.anchor_config = config
     app.state.extension_status = extension_status
+    # The activity log lives beside the canvases, where the CLI and an MCP
+    # session find the same file.
+    activity_dir = runtime.config.data_dir if runtime is not None else (
+        canvases_dir.parent if canvases_dir is not None else None
+    )
+    app.state.activity = ActivityLog(activity_dir) if activity_dir is not None else None
 
     # Bridge cross-process writes (CLI / MCP-stdio in another process) into
     # this app's bus by tailing each workspace's events.jsonl. SSE router
@@ -184,6 +253,7 @@ def build_app(
     # Default actor for every request (#322). Added after CORS so it wraps
     # the routers directly; a request-body `actor` still overrides per-call.
     app.add_middleware(_ActorAttributionMiddleware)
+    app.add_middleware(_ActivityMiddleware, log=app.state.activity)
 
     app.add_middleware(
         CORSMiddleware,
@@ -197,6 +267,13 @@ def build_app(
         # Surfaces both boundary validation and the defence-in-depth check
         # inside FsWorkspaceStore as a consistent 400.
         return JSONResponse({"detail": str(exc)}, status_code=400)
+
+    @app.exception_handler(MissingModelCredentialError)
+    async def _missing_credential(
+        _req: Request, exc: MissingModelCredentialError
+    ) -> JSONResponse:
+        # Only operations that call the remote model raise this; reads work.
+        return JSONResponse({"detail": str(exc), **exc.to_dict()}, status_code=503)
 
     @app.exception_handler(UnsafeUploadError)
     async def _unsafe_upload(_req: Request, exc: UnsafeUploadError) -> JSONResponse:

@@ -16,7 +16,7 @@ from anchor.adapters.cli.fmu import fmu_app
 from anchor.adapters.cli.ingest_session import ingest_session_app
 from anchor.adapters.cli.init import init
 from anchor.adapters.cli.install import install_app
-from anchor.adapters.cli.intents import intent_app, intents
+from anchor.adapters.cli.intents import activity, intent_app, intents
 from anchor.adapters.cli.migrate import migrate_app
 from anchor.adapters.cli.models import models_app
 from anchor.adapters.cli.project import project_app
@@ -66,6 +66,7 @@ app.command("serve-info")(serve_info)
 app.command()(use)
 register_document_commands(app)
 app.command("intents")(intents)
+app.command("activity")(activity)
 app.command()(demo)
 
 app.add_typer(env_app, name="env")
