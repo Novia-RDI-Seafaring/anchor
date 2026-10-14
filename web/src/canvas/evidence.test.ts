@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evidenceState } from "./evidence";
+import { currentEvidenceCheck, evidenceState } from "./evidence";
 
 describe("claim-bound evidence", () => {
   const source_ref = { slug: "doc", page: 1, region_id: "pressure" };
@@ -20,5 +20,14 @@ describe("claim-bound evidence", () => {
   it("does not infer verification when text returns to its old value", () => {
     expect(evidenceState({ key: "Pressure", value: "42", source_ref,
       evidence: { ...evidence, status: "stale" } })).toBe("stale");
+  });
+  it("shows check results only for the exact current claim and source", () => {
+    const check = { status: "verified" as const, code: "verified", message: "Matched", next_step: "Inspect",
+      claim: evidence.claim, source_ref };
+    const row = { key: "Pressure", value: "42", source_ref, evidence: { ...evidence, check } };
+    expect(currentEvidenceCheck(row)).toEqual(check);
+    expect(currentEvidenceCheck({ ...row, value: "41" })).toBeNull();
+    expect(currentEvidenceCheck({ ...row, source_ref: { ...source_ref, page: 2 } })).toBeNull();
+    expect(currentEvidenceCheck({ ...row, evidence: { ...row.evidence, status: "stale" } })).toBeNull();
   });
 });
