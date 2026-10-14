@@ -6,6 +6,8 @@ a spec table keeps a separate source reference for each row.
 
 For automatic evidence states and human citation judgments, see
 [Evidence status and source review](#evidence-status-and-source-review).
+For agent plans, previews, and applied changes, see
+[Agent plans and canvas nodes](#agent-plans-and-canvas-nodes).
 
 ## Select the project before you start
 
@@ -171,6 +173,28 @@ An agent can ask for clarification or stage a suggested change. Inspect the
 preview and approve, decline, or send feedback in the thread. Empty placeholders
 do not submit work on their own. See the
 [tutorial](../getting-started/tutorial.md) for the full review flow.
+
+### Agent plans and canvas nodes
+
+An agent's plan or progress update belongs to the intent thread when the agent
+posts it there. A positioned message can appear on the board as a ghost card;
+it remains stored with the thread rather than becoming an ordinary canvas node.
+
+| Item | Representation |
+| --- | --- |
+| Plan or progress | An intent-thread message, optionally displayed as a positioned ghost card. |
+| Pending proposed changes | An intent suggestion with a preview of the nodes and edges it would change. |
+| Applied changes | Real nodes and edges saved with the canvas. |
+
+A pending preview does not change the saved canvas. Applying the suggestion
+creates, updates, or removes real nodes and edges, while the intent thread keeps
+the conversation and change record. Applied changes may offer **keep** and
+**revert** controls in that thread.
+
+The plan itself becomes canvas content only if the agent explicitly creates
+nodes to represent it, for example a text node listing the steps. A plan written
+only in an external agent's chat is not automatically sent to ANCHOR; the agent
+must post it to the intent thread or create the intended canvas content.
 
 ## Inspect and maintain row evidence
 

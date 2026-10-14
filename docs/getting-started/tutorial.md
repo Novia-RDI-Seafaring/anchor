@@ -83,6 +83,9 @@ Agent-created nodes can also use the canvas review mode and proposal sets.
 Those group added elements for review and are separate from intent-thread
 suggestions. The resulting table remains editable by you.
 
+For the distinction between plan messages, previews, and saved nodes, see
+[Agent plans and canvas nodes](../guides/documents-and-canvases.md#agent-plans-and-canvas-nodes).
+
 ## Reuse the project
 
 In a second terminal:
