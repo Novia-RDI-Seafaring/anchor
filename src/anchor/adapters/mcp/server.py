@@ -119,7 +119,8 @@ SERVER_INFO_TOOL_DEFINITION = {
 
 _PROJECT_ARG_DESC = (
     "The project (a corpus inside this environment) to act on. Omit to use the "
-    "environment's default project. A named project must already exist — create "
+    "session's project (set by create_project(folder=...) or open_project), "
+    "else the environment's default project. A named project must already exist — create "
     "it with create_project, or call list_projects to see the options."
 )
 
@@ -128,8 +129,8 @@ LIFECYCLE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "name": "list_projects",
         "description": (
-            "List the projects in this Anchor environment (name + description). "
-            "Use it to pick the right project before a project-scoped call."
+            "List the projects in this Anchor environment (name, description, "
+            "folder). Use it to pick the right project before a project-scoped call."
         ),
         "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
     },
@@ -138,15 +139,21 @@ LIFECYCLE_TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "description": (
             "Create a new project (its own documents + canvases) in this "
             "environment. Suggest a short description from the user's first "
-            "documents; the user can edit it later."
+            "documents; the user can edit it later. Pass `folder` (the absolute "
+            "path you are working in) to get the project for that folder: the "
+            "one already there, or a new one named after it. It then becomes "
+            "this session's default project."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "name": {"type": "string"},
                 "description": {"type": "string"},
+                "folder": {
+                    "type": "string",
+                    "description": "Absolute path of your working folder.",
+                },
             },
-            "required": ["name"],
         },
     },
     {
@@ -259,7 +266,9 @@ def _handle_lifecycle(router: ProjectRouter, name: str, args: dict[str, Any]) ->
     if name == "list_projects":
         return _json.dumps(router.list_projects())
     if name == "create_project":
-        return _json.dumps(router.create_project(args["name"], args.get("description", "")))
+        return _json.dumps(router.create_project(
+            args.get("name"), args.get("description", ""), folder=args.get("folder"),
+        ))
     if name == "create_environment":
         return _json.dumps(
             router.create_environment(

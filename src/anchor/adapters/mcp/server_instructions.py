@@ -13,6 +13,20 @@ What it is:
   returns a self-correcting error.
 - You have HTTP/MCP/CLI parity for every operation. Pick MCP from here.
 
+Your working folder is your project (load-bearing):
+- If you work in a folder (your harness's project or workspace, a repo, a
+  case folder), call `create_project(folder=<its absolute path>)` once at
+  the start, before you ingest anything. It returns the project that folder
+  already is (or sits inside), or makes the folder a project named after it,
+  and makes it this session's default. What you ingest and draw then stays
+  with that folder, which is what the user expects.
+- Do not fall back to the environment's `default` project just because no
+  project was named. Use `default` only when there is no working folder.
+- If the user names a project, use theirs.
+- When you start the web app for the user, serve the same project:
+  `anchor serve --env <env> --project <that project>`. `server_info` tells
+  you whether one is already running for it, and at which URL.
+
 Source-grounding (load-bearing):
 - Every value placed on the canvas should carry `data.source_ref`
   pointing back at its origin (page+bbox for PDFs, region_id for

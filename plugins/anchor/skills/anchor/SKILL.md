@@ -88,6 +88,21 @@ provider as needed; `anchor check` reports what the resolved config accepts.
   regions on a non-empty document (usually a transient failure), so `has_gold`
   is false and you should re-ingest that slug to recover its regions.
 
+## Your working folder is your project
+
+If you work in a folder (your harness's project or workspace, a repo, a case
+folder), call `create_project(folder=<its absolute path>)` once at the start,
+before you ingest anything (`anchor project create --folder <path>` on the
+CLI). It returns the project that folder already is, or sits inside, or makes
+the folder a project named after it, and makes it the session's default. What
+you ingest and draw then stays with that folder. Do not fall back to the
+environment's `default` project just because nobody named one. If the user
+names a project, use theirs.
+
+When you start the web app for the user, serve the same project:
+`anchor serve --env <env> --project <that project>`. `server_info` tells you
+whether one is already running for it, and at which URL.
+
 ## Scoped asks: your inbox
 
 A user can select elements on a canvas and ask something about them. That

@@ -29,6 +29,7 @@ from anchor.infra.environment import (
     Meta,
     NoEnvironmentError,
     NoProjectError,
+    bind_folder_project,
     create_env,
     create_project,
     ensure_project,
@@ -100,7 +101,11 @@ class ProjectRouter:
     def list_projects(self) -> dict[str, Any]:
         env = self.environment()
         projects = [
-            {"name": name, "description": project_meta(env, name).description}
+            {
+                "name": name,
+                "description": project_meta(env, name).description,
+                "folder": str(env.project_root(name)),
+            }
             for name in env.list_project_names()
         ]
         return {
@@ -110,10 +115,21 @@ class ProjectRouter:
             "projects": projects,
         }
 
-    def create_project(self, name: str, description: str = "") -> dict[str, Any]:
+    def create_project(
+        self, name: str | None, description: str = "", folder: str | None = None,
+    ) -> dict[str, Any]:
         env = self.environment()
         if not env.initialized:
             raise NoEnvironmentError(env.name)
+        if folder is not None:
+            # The agent's working folder: its project, found or made, becomes
+            # this session's default so every later call lands there.
+            bound = bind_folder_project(env, folder, name=name, description=description)
+            self._cache.pop(str(env.project_dir(bound["project"])), None)
+            self._session_default = bound["project"]
+            return {**bound, "session_default": bound["project"]}
+        if not name:
+            raise NoProjectError(None, env.list_project_names())
         create_project(env, name, description=description)
         self._cache.pop(str(env.project_dir(name)), None)
         return {"created": name, "data_dir": str(env.project_dir(name))}

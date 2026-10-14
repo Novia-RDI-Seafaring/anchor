@@ -34,6 +34,14 @@ or pass `project="pump-study"` on project-scoped calls. Before a session
 selection, omitted project arguments use `default`. `anchor use` affects CLI
 defaults only.
 
+An agent working in a folder (a Codex project, a repo) calls
+`create_project(folder="/abs/path")` at the start. It returns the project that
+folder already is, or sits inside, or makes the folder a project named after
+it, as `anchor init` would. Either way it becomes the session's default, so
+what the agent ingests stays with that folder. The server instructions tell
+agents to do this before ingesting. `list_projects` reports each project's
+`folder`.
+
 Call `list_projects` and `anchor_status` when data looks empty or wrong. Add a
 second named server to access another environment. See
 [Agent setup](../guides/agent-setup.md) and
