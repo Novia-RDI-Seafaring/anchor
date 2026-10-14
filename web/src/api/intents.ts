@@ -67,6 +67,9 @@ export type Intent = {
   /** Why a pending intent can no longer be acted on: every element it points
    *  at was deleted. The agent's inbox leaves it out; the reader removes it. */
   stale?: string;
+  /** When an agent's inbox read first returned it (epoch seconds), and who. */
+  seen_at?: number;
+  seen_by?: { kind: string; label?: string | null; id?: string | null } | null;
 };
 
 /**

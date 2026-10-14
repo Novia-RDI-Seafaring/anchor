@@ -7,6 +7,7 @@ import { describeSketch } from "./sketch";
 import { GHOST_H, GHOST_W } from "./constants";
 import { ReplyLine } from "./ReplyLine";
 import { splitGhostText } from "./replyModel";
+import { SentStatus } from "./SentStatus";
 import type { MarkupModel } from "./types";
 
 export function Replies({ model }: { model: Pick<MarkupModel, "ghosts" | "screen" | "viewport" | "answering" | "setAnswering" | "keepSuggestion" | "settle" | "withdraw" | "kept" | "written" | "reading" | "cutsReading" | "reset" | "host"> }) {
@@ -105,19 +106,7 @@ export function Replies({ model }: { model: Pick<MarkupModel, "ghosts" | "screen
               <span>{status.text}</span>
             </div>
           ) : pending && !suggestion && !applied ? (
-            <div className="pointer-events-auto flex items-center gap-1.5 text-[11px] text-neutral-400">
-              <span>sent {"\u00b7"} waiting for the agent</span>
-              <button
-                type="button"
-                data-testid="comment-lasso-withdraw"
-                className="rounded px-1 text-neutral-500 underline-offset-2 hover:bg-neutral-100 hover:text-red-600 hover:underline"
-                title="Take this remark back: the agent will not pick it up"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => void withdraw(f.intentId)}
-              >
-                withdraw
-              </button>
-            </div>
+            <SentStatus intent={f.intent} hint={host.display.listenHint} onWithdraw={() => void withdraw(f.intentId)} />
           ) : null}
 
           {questions.map((q) => (

@@ -77,6 +77,10 @@ families rather than listing every operation.
    and when prompted to check the inbox. Intents whose every target was
    deleted are stale and left out unless `include_stale` is set; each then
    carries a `stale` reason, and the Intents panel offers to remove it.
+   The first agent read of each intent (`list_pending_intents`, `next_intent`,
+   `get_intent`, or the CLI equivalents) records `seen_at` and `seen_by`. The
+   board shows "seen by <agent>", or, after 30 seconds unread, says no agent
+   has read it and how to start one. The browser's own refetches do not count.
 2. Read the selected intent, its target objects, and relevant document evidence.
 3. Reply through `intent_add_item`. Use a question when requirements are unclear,
    or a suggestion with staged operations and a rationale for a proposed edit.

@@ -171,8 +171,28 @@ class IntentService:
                 intent.stale = await check(intent.targets)
         return intents
 
+    async def _note_seen(self, intents: list[Intent], reader: Actor | None) -> None:
+        """Record the first time an agent's inbox read returned each intent.
+
+        Only the first read is kept: the asker wants to know whether anyone
+        is listening, not how often they look. The adapters pass ``reader``
+        only for reads made by an agent, never for the browser's own refetch.
+        """
+        if reader is None:
+            return
+        changed: set[str | None] = set()
+        for intent in intents:
+            if intent.status == PENDING and intent.seen_at is None:
+                intent.seen_at = self._ts()
+                intent.seen_by = reader
+                await self._store.replace(intent)
+                changed.add(intent.origin_canvas_id)
+        for origin in changed:
+            await self._signal_pending(origin)
+
     async def list_pending(
         self, *, canvas: str | None = None, include_stale: bool = False,
+        reader: Actor | None = None,
     ) -> list[Intent]:
         """Pending intents for this project, oldest first.
 
@@ -181,6 +201,7 @@ class IntentService:
         therefore visible from the canvas that raised it and from the canvas it
         targets. Stale intents (see :meth:`_mark_stale`) are left out unless
         ``include_stale``: the agent's inbox should hold work it can do.
+        ``reader`` names the agent reading its inbox (see :meth:`_note_seen`).
         """
         items = [i for i in await self._store.list() if i.status == PENDING]
         if canvas is not None:
@@ -193,6 +214,7 @@ class IntentService:
         if not include_stale:
             items = [i for i in items if i.stale is None]
         items.sort(key=lambda i: (i.created_at, i.id))
+        await self._note_seen(items, reader)
         return items
 
     async def list_all(self, *, canvas: str | None = None) -> list[Intent]:
@@ -211,7 +233,9 @@ class IntentService:
         items.sort(key=lambda i: (i.created_at, i.id), reverse=True)
         return items
 
-    async def next(self, *, canvas: str | None = None) -> Intent | None:
+    async def next(
+        self, *, canvas: str | None = None, reader: Actor | None = None,
+    ) -> Intent | None:
         """The oldest pending intent that is not stale (optionally for one
         canvas), or ``None``.
 
@@ -219,10 +243,15 @@ class IntentService:
         calls :meth:`resolve` when done, which is the only state transition.
         """
         pending = await self.list_pending(canvas=canvas)
+        if pending:
+            await self._note_seen(pending[:1], reader)
         return pending[0] if pending else None
 
-    async def get(self, intent_id: str) -> Intent | None:
-        return await self._store.get(intent_id)
+    async def get(self, intent_id: str, *, reader: Actor | None = None) -> Intent | None:
+        intent = await self._store.get(intent_id)
+        if intent is not None:
+            await self._note_seen([intent], reader)
+        return intent
 
     async def resolve(
         self, intent_id: str, result: dict[str, Any] | None = None

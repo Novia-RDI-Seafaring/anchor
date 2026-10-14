@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from intent_layer.actor import Actor, actor_scope
+from intent_layer.actor import Actor, actor_scope, current_actor
 from intent_layer.models import INTENT_KINDS
 from intent_layer.service import (
     IntentService,
@@ -85,10 +85,11 @@ async def _dispatch(intents: IntentService, name: str, args: dict[str, Any]) -> 
     if name == "list_pending_intents":
         pending = await intents.list_pending(
             canvas=args.get("canvas"), include_stale=bool(args.get("include_stale")),
+            reader=current_actor(),
         )
         return json.dumps({"intents": [i.to_dict() for i in pending]})
     if name == "next_intent":
-        nxt = await intents.next(canvas=args.get("canvas"))
+        nxt = await intents.next(canvas=args.get("canvas"), reader=current_actor())
         return json.dumps({"intent": nxt.to_dict() if nxt is not None else None})
     if name == "resolve_intent":
         try:
@@ -97,7 +98,7 @@ async def _dispatch(intents: IntentService, name: str, args: dict[str, Any]) -> 
             return json.dumps({"error": "not_found", "id": args.get("id")})
         return json.dumps({"resolved": resolved.to_dict()})
     if name == "get_intent":
-        intent = await intents.get(args["id"])
+        intent = await intents.get(args["id"], reader=current_actor())
         if intent is None:
             return json.dumps({"error": "not_found", "id": args.get("id")})
         return json.dumps({"intent": intent.to_dict()})

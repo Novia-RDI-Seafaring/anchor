@@ -247,6 +247,10 @@ class Intent(BaseModel):
     #: points at was deleted. Worked out by the host when the intent is read;
     #: never persisted.
     stale: str | None = Field(default=None, exclude=True)
+    #: When an agent's inbox read first returned this intent, and who read it.
+    #: Lets the asker tell "nobody is listening" from "seen, still working".
+    seen_at: float | None = None
+    seen_by: Actor | None = None
 
     @field_validator("targets", mode="before")
     @classmethod
@@ -275,6 +279,10 @@ class Intent(BaseModel):
             d["result"] = self.result
         if self.stale is not None:
             d["stale"] = self.stale
+        if self.seen_at is not None:
+            d["seen_at"] = self.seen_at
+        if self.seen_by is not None:
+            d["seen_by"] = self.seen_by.model_dump()
         return d
 
     @classmethod
@@ -304,4 +312,10 @@ class Intent(BaseModel):
                 for i in (raw.get("items") or [])
                 if isinstance(i, dict)
             ],
+            seen_at=(float(raw["seen_at"]) if raw.get("seen_at") is not None else None),
+            seen_by=(
+                Actor(**raw["seen_by"])
+                if isinstance(raw.get("seen_by"), dict) and raw["seen_by"].get("kind")
+                else None
+            ),
         )

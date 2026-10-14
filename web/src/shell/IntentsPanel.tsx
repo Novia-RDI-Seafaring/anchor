@@ -16,6 +16,7 @@
 import { useState } from "react";
 
 import { intents, type Intent } from "@/api/intents";
+import { agentReach } from "@/intent-overlay";
 import { cn } from "@/lib/cn";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -214,6 +215,24 @@ function CreateIntentForm({
 // resolved rows show the resolution text when the record carries one.
 // ---------------------------------------------------------------------------
 
+/** Whether an agent has read this open intent yet, and what to do if not. */
+function ReachLine({ intent }: { intent: Intent }) {
+  const reach = agentReach(intent);
+  return (
+    <div
+      className={cn("mt-0.5 text-[10px]", reach.kind === "unheard" ? "text-amber-700" : "text-neutral-500")}
+      data-testid="intent-reach"
+      data-reach={reach.kind}
+    >
+      {reach.kind === "seen"
+        ? `Seen by ${reach.by} · ${reach.ago}`
+        : reach.kind === "waiting"
+          ? "Waiting for an agent to read the inbox"
+          : "No agent has read it yet. Ask yours to check the Anchor inbox, or run `anchor intents`."}
+    </div>
+  );
+}
+
 function IntentRow({
   intent,
   onDismiss,
@@ -268,6 +287,7 @@ function IntentRow({
             {nodeId ? ` · node ${nodeId}` : ""}
             {when ? ` · ${when}` : ""}
           </div>
+          {isOpen && !stale ? <ReachLine intent={intent} /> : null}
           {stale ? (
             <div className="mt-0.5 break-words text-[10px] text-neutral-500" data-testid="intent-stale">
               Stale: {stale}. No agent will pick it up; remove it.

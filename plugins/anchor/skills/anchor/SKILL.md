@@ -98,7 +98,9 @@ the canvas `base_version` at ask time, and `items` (the conversation).
   `list_pending_intents` (`anchor intents` on the CLI). Take one. An intent
   whose every target was deleted is stale and left out; pass
   `include_stale` (`--include-stale`) to see them, each with its `stale`
-  reason. The reader removes those, not you.
+  reason. The reader removes those, not you. Your first read of an intent
+  is recorded as `seen_at` / `seen_by`, so the asker sees that an agent
+  has it. A remark nobody has read tells its asker no agent is listening.
 - Read the targets' subgraph with `canvas_get_state` (filter by the target
   ids). `canvas_snapshot` gives you the picture.
 - Reply in the thread with `intent_add_item(id, type, text, ops?)`:

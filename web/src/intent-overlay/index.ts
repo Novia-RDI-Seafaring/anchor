@@ -5,3 +5,4 @@ export type { OverlayHost, ThreadPort, Intent, ThreadItem, Submission, Preview, 
 export type { Box, Point, Rect } from "./lasso";
 export type { RowBand } from "./cuts";
 export type { EdgePath } from "./strikes";
+export { agentReach, readerName, UNHEARD_AFTER_S, type Reach } from "./reach";

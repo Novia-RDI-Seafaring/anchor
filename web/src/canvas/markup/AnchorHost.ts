@@ -9,6 +9,11 @@ import { useAnchorGeometry } from "./AnchorGeometry";
 export function toOverlayIntent(intent: Intent): OverlayIntent {
   return { ...intent, targetIds: (intent.targets ?? []).map((target) => target.node_id) };
 }
+/** How to get an agent reading this project's remarks. */
+const LISTEN_HINT = {
+  prompt: "Check the Anchor intent inbox (list_pending_intents) and handle what is there.",
+  command: "anchor intents",
+};
 const input: OverlayHost["input"] = {
   capturesLiftedPress: (target) => {
     const el = target as HTMLElement | null;
@@ -56,6 +61,7 @@ export function useAnchorOverlayHost(workspaceSlug: string, boxes: Box[]): Overl
     },
     display: {
       labelOf: (id) => String(geometry.storeNodes[id]?.data?.label ?? id),
+      listenHint: LISTEN_HINT,
       preview: (item) => {
         if (!item.ops) return null;
         const preview = previewOps(item.ops, geometry.storeNodes, Object.values(geometry.storeEdges));

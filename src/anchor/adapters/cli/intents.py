@@ -33,7 +33,12 @@ from typing import Any
 import typer
 
 from anchor.adapters.cli.common import DEFAULT_DATA_DIR
-from anchor.core.events.actor import parse_actor, resolve_cli_actor, set_current_actor
+from anchor.core.events.actor import (
+    current_actor,
+    parse_actor,
+    resolve_cli_actor,
+    set_current_actor,
+)
 
 intent_app = typer.Typer(help="Resolve, inspect, and reply to agent intents.")
 
@@ -147,7 +152,9 @@ def intents(
     if all_:
         items = asyncio.run(svc.list_all(canvas=canvas))
     else:
-        items = asyncio.run(svc.list_pending(canvas=canvas, include_stale=include_stale))
+        items = asyncio.run(svc.list_pending(
+            canvas=canvas, include_stale=include_stale, reader=resolve_cli_actor(),
+        ))
     typer.echo(json.dumps({"intents": [i.to_dict() for i in items]}, indent=2))
 
 
@@ -158,7 +165,7 @@ def intent_next(
 ) -> None:
     """Peek the oldest pending intent (or {intent: null}). A peek, not a claim."""
     svc = _intent_service(data_dir)
-    nxt = asyncio.run(svc.next(canvas=canvas))
+    nxt = asyncio.run(svc.next(canvas=canvas, reader=current_actor()))
     typer.echo(
         json.dumps({"intent": nxt.to_dict() if nxt is not None else None}, indent=2)
     )
@@ -192,7 +199,7 @@ def intent_show(
 ) -> None:
     """Print one intent in full: targets, base_version, and every thread item."""
     svc = _intent_service(data_dir)
-    intent = asyncio.run(svc.get(intent_id))
+    intent = asyncio.run(svc.get(intent_id, reader=current_actor()))
     if intent is None:
         typer.echo(json.dumps({"error": "not_found", "id": intent_id}), err=True)
         raise typer.Exit(code=1)

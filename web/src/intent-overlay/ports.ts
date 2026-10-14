@@ -30,6 +30,10 @@ export type Intent = {
   result?: Record<string, unknown>;
   targetIds?: string[];
   items?: ThreadItem[];
+  /** When an agent's inbox read first returned it, in epoch seconds. */
+  seen_at?: number;
+  /** Who read it: `{kind: "agent", label: "claude-code"}`. */
+  seen_by?: { kind: string; label?: string | null } | null;
 };
 export type Submission = {
   text: string;
@@ -82,6 +86,11 @@ export type OverlayHost = {
   display: {
     labelOf(targetId: string): string;
     preview(item: ThreadItem): Preview | null;
+    /**
+     * What to tell the asker when no agent has read a remark: a prompt to
+     * paste into their agent, and a shell command that reads the inbox.
+     */
+    listenHint?: { prompt: string; command?: string };
   };
   thread: ThreadPort;
   input?: {
