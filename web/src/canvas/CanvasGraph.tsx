@@ -50,7 +50,7 @@ import {
 } from "@/canvas/PaintGhost";
 import { connectClick } from "@/canvas/connect";
 import { CONNECT_TOOL, INTENT_TOOL, nodeTypes } from "@/canvas/registry";
-import { canvasNavigation } from "@/canvas/canvasNavigation";
+import { canvasNavigation, navigationNodes } from "@/canvas/canvasNavigation";
 import "./canvasNavigation.css";
 import { refreshWorkspaces } from "@/canvas/useWorkspacesList";
 import { useCanvasClipboard } from "@/canvas/useCanvasClipboard";
@@ -1322,7 +1322,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         readOnly: readOnly || handMode, toggle: toggleSubtree, inspect: setDetailNodeId,
       }}>
       <ReactFlow
-        nodes={handMode ? rfNodes.map((node) => ({ ...node, selected: false, draggable: false, selectable: false, connectable: false, deletable: false })) : rfNodes}
+        nodes={navigationNodes(rfNodes, navigation)}
         edges={handMode ? rfEdges.map((edge) => ({ ...edge, selected: false, selectable: false, deletable: false })) : rfEdges}
         nodeTypes={structuredTypes}
         edgeTypes={edgeTypes}
@@ -1330,7 +1330,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         fitView
-        nodesDraggable={!readOnly && !handMode && armedTool !== CONNECT_TOOL}
+        nodesDraggable={navigation.nodesDraggable}
         // Keep containers below edges and every ordinary card above them,
         // including selected edges and edges attached to parented nodes.
         zIndexMode="manual"
