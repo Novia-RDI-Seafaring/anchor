@@ -19,11 +19,14 @@ async def enrich_spec_row_source_refs(data: Any, store: DocStore) -> Any:
     return resolved
 
 
-async def resolve_spec_row_sources(data: Any, store: DocStore) -> tuple[Any, dict[int, dict]]:
+async def resolve_spec_row_sources(
+    data: Any, store: DocStore, *, diagnostics: dict[int, dict] | None = None,
+) -> tuple[Any, dict[int, dict]]:
     """Return explicit successful validations, including already precise refs.
 
     The compatibility enrichment interface still returns just the data. Only
     this producer verdict can establish a new claim binding at the write seam.
+    Optional diagnostics explain abstention without changing resolution.
     """
     validations: dict[int, dict] = {}
     if not isinstance(data, dict):
@@ -43,15 +46,18 @@ async def resolve_spec_row_sources(data: Any, store: DocStore) -> tuple[Any, dic
             continue
         source_ref = row.get("source_ref", {})
         if not isinstance(source_ref, dict):
+            _diagnose(diagnostics, index, "source_unavailable")
             next_rows.append(row)
             continue
         value = row.get("value")
-        if not isinstance(value, str) or not value.strip():
+        if not isinstance(value, str) or not value.strip() or not _norm(row.get("key")):
+            _diagnose(diagnostics, index, "invalid_claim")
             next_rows.append(row)
             continue
 
         scope = _source_scope(data, row, source_ref)
         if scope is None:
+            _diagnose(diagnostics, index, "source_unavailable")
             next_rows.append(row)
             continue
         slug, page = scope["slug"], scope["page"]
@@ -59,17 +65,33 @@ async def resolve_spec_row_sources(data: Any, store: DocStore) -> tuple[Any, dic
         if slug not in snapshots:
             snapshots[slug] = store.snapshot(slug)
         regions = await _regions_for_page(snapshots[slug], cache, slug, page)
+        scoped_regions = _candidate_regions(regions, region_id, page)
         candidates = [
             (region, key_cell, value_cell)
-            for region in _candidate_regions(regions, region_id, page)
+            for region in scoped_regions
             for key_cell, value_cell in _matching_pairs(region, row.get("key"), value)
         ]
         if len(candidates) != 1:
+            if not scoped_regions:
+                code = "source_unavailable"
+            elif len(candidates) > 1:
+                code = "ambiguous_pair"
+            else:
+                pairs = [pair for region in scoped_regions for pair in validated_pairs(region)]
+                if not pairs:
+                    code = "no_certified_pair"
+                elif not any(_norm(key.get("text")).lower() == _norm(row.get("key")).lower()
+                             for key, _ in pairs):
+                    code = "key_mismatch"
+                else:
+                    code = "value_mismatch"
+            _diagnose(diagnostics, index, code)
             next_rows.append(row)
             continue
         region, key_cell, value_cell = candidates[0]
         cell_bbox = _clean_bbox(value_cell.get("bbox"))
         if not cell_bbox or not _locator_agrees(scope, region, key_cell, value_cell):
+            _diagnose(diagnostics, index, "locator_mismatch")
             next_rows.append(row)
             continue
 
@@ -103,9 +125,55 @@ async def resolve_spec_row_sources(data: Any, store: DocStore) -> tuple[Any, dic
             "table_digest": region["table_topology"]["digest"],
             "key_cell_id": key_cell["cell_id"], "value_cell_id": value_cell["cell_id"],
         }
+        _diagnose(diagnostics, index, "verified")
         changed = True
 
     return ({**data, "rows": next_rows} if changed else data), validations
+
+
+_CHECK_MESSAGES = {
+    "verified": (
+        "The printed key and complete value match one certified source pair.",
+        "Inspect the linked source and its operating conditions before using the value.",
+    ),
+    "invalid_claim": (
+        "A non-empty text key and complete text value are required.",
+        "Enter the printed key and complete value, then check again.",
+    ),
+    "source_unavailable": (
+        "The referenced document, page or region is unavailable or the source reference is invalid.",
+        "Open the source, confirm its document, page and region, and ingest it if necessary.",
+    ),
+    "no_certified_pair": (
+        "This source has no certified key/value pair for automatic verification.",
+        "Inspect the linked source manually. A precise cell citation alone cannot verify a claim.",
+    ),
+    "key_mismatch": (
+        "The key does not match a printed key in the certified source pairs.",
+        "Use the printed key without descriptive additions, or select the correct source.",
+    ),
+    "value_mismatch": (
+        "The complete value does not match the certified value for this key.",
+        "Compare the complete printed value, units, symbols and case, or select the correct source.",
+    ),
+    "ambiguous_pair": (
+        "More than one certified pair matches this key and value.",
+        "Select the specific source region and check again.",
+    ),
+    "locator_mismatch": (
+        "The cited cell or bounding box conflicts with the matched source pair.",
+        "Open the source and correct the cell or bounding box before checking again.",
+    ),
+}
+
+
+def _diagnose(diagnostics: dict[int, dict] | None, index: int, code: str) -> None:
+    if diagnostics is not None:
+        message, next_step = _CHECK_MESSAGES[code]
+        diagnostics[index] = {
+            "status": "verified" if code == "verified" else "unverified",
+            "code": code, "message": message, "next_step": next_step,
+        }
 
 
 async def _regions_for_page(

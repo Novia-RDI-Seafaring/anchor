@@ -37,11 +37,16 @@ def test_edit_and_revalidate_with_restart(transport, tmp_path):
     assert stale["rows"][0]["source_ref"] == original["rows"][0]["source_ref"]
     edited["rows"][0]["revalidate_evidence"] = True
     ops.call("update", edited, node)
-    assert ops.read(node) == stale
+    checked = ops.read(node)
+    check = checked["rows"][0]["evidence"].pop("check")
+    assert check["status"] == "unverified" and check["code"] == "value_mismatch"
+    assert check["claim"]["value"] == "999999" and check["next_step"]
+    assert checked == stale
     original["rows"][0]["revalidate_evidence"] = True
     ops.call("update", original, node)
     row = ops.read(node)["rows"][0]
     assert row["evidence"]["status"] == "verified"
+    assert row["evidence"]["check"]["code"] == "verified"
     assert row["source_ref"]["coord_origin"] == "top-left"
 
 

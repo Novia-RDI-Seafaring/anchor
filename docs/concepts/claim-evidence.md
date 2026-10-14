@@ -41,11 +41,23 @@ claim. Reverting text alone does not restore verification.
 
 ## Deliberate revalidation
 
-Select the spec and click the row's **Check** button. HTTP, MCP and CLI use the
+Select the spec, open a row source's context menu, and choose **Re-check against
+the source**. The row shows checking progress followed by its completed result.
+HTTP, MCP and CLI use the
 same existing update operation: send the row list with `revalidate_evidence:
 true` on the desired row. The server consumes this request flag; it is not
-persisted. Success replaces the binding; failure keeps stale/unverified status.
+persisted. Success replaces the binding; abstention keeps stale/unverified status.
 Do not send `evidence.status = verified` as an instruction.
+
+The resulting row includes server-owned `evidence.check` with `status`, `code`,
+`message` and `next_step`, bound to the checked `claim` and `source_ref`. The
+existing update response and saved state expose the same diagnostic in every
+adapter. Reasons distinguish unavailable sources, mismatched printed keys or
+complete values, missing certified pairs, ambiguity, and conflicting locators.
+A precise cell link without a certified key/value pair still cannot verify a
+claim. Inspect that source manually. A failed request is shown separately and
+does not establish a completed check. Editing the checked claim or source
+removes its old result; caller-supplied check results cannot grant verification.
 
 For example, PATCH `/api/workspaces/demo/nodes/spec-id` with:
 
