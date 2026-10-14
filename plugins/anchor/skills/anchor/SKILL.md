@@ -583,6 +583,19 @@ one blob of text with no per-value provenance and no table view.
 created with a `description` but no `rows` — a reminder to move tabular
 facts into rows. The write still succeeds; prose-only specs are allowed.
 
+A row's name is its `key`. A row sent with `label` or `name` instead is
+stored with that text as its `key`, but write `key` yourself.
+
+When the document the rows came from is on the canvas, connect the spec
+to its card with an evidence edge (`data.kind = "evidence"`), the same as
+a human would draw. Without it the reader cannot see where the table came
+from without opening each row.
+
+Editing a row's `key` or `value` marks its evidence `stale`: the claim is
+no longer the one that was checked against the page. That is not an
+error. Send the row again with `revalidate_evidence: true` to have it
+checked against its `source_ref`; a match turns it `verified` again.
+
 ## `anchor_pdfs` — ingest engineering PDFs
 
 Bronze → silver → gold pipeline that turns each page into structured

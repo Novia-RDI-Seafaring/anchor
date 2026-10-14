@@ -120,7 +120,7 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string"},
-                    "slug": {"type": "string"},
+                    "slug": {"type": "string", "description": "The document slug, as in list_documents and search hits (`slug`)."},
                 },
             },
         },
@@ -196,7 +196,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "slug": {"type": "string"},
+                    "slug": {"type": "string", "description": "The document slug, as in list_documents and search hits (`slug`)."},
                     "include_content": {
                         "type": "boolean",
                         "description": (
@@ -233,7 +233,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "slug": {"type": "string"},
+                    "slug": {"type": "string", "description": "The document slug, as in list_documents and search hits (`slug`)."},
                     "page": {"type": "integer"},
                 },
                 "required": ["slug"],
@@ -249,7 +249,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "slug": {"type": "string"},
+                    "slug": {"type": "string", "description": "The document slug, as in list_documents and search hits (`slug`)."},
                     "region_id": {"type": "string"},
                 },
                 "required": ["slug", "region_id"],
@@ -265,7 +265,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "slug": {"type": "string"},
+                    "slug": {"type": "string", "description": "The document slug, as in list_documents and search hits (`slug`)."},
                     "region_id": {"type": "string"},
                 },
                 "required": ["slug", "region_id"],
@@ -277,7 +277,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "slug": {"type": "string"},
+                    "slug": {"type": "string", "description": "The document slug, as in list_documents and search hits (`slug`)."},
                     "page": {"type": "integer"},
                 },
                 "required": ["slug", "page"],
@@ -297,7 +297,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "slug": {"type": "string"},
+                    "slug": {"type": "string", "description": "The document slug, as in list_documents and search hits (`slug`)."},
                     "page": {"type": "integer"},
                     "query": {"type": "string", "description": "The text to locate."},
                     "within_bbox": {
@@ -332,7 +332,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "slug": {"type": "string"},
+                    "slug": {"type": "string", "description": "The document slug, as in list_documents and search hits (`slug`)."},
                     "page": {"type": "integer"},
                     "dpi": {"type": "integer", "description": "Optional re-render DPI (72-600); cached per DPI."},
                     "format": {
@@ -362,7 +362,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "slug": {"type": "string"},
+                    "slug": {"type": "string", "description": "The document slug, as in list_documents and search hits (`slug`)."},
                     "rel_path": {"type": "string", "description": "'<page>/<region_id>.png' like '4/r1.png' ('p4/r1' also accepted)."},
                     "dpi": {"type": "integer", "description": "Optional render DPI (72-600, default 300); an explicit value re-renders the cached crop."},
                     "format": {
@@ -385,7 +385,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "slug": {"type": "string"},
+                    "slug": {"type": "string", "description": "The document slug, as in list_documents and search hits (`slug`)."},
                     "format": {"type": "string", "enum": ["path", "base64"], "default": "path"},
                 },
                 "required": ["slug"],
@@ -401,7 +401,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "slug": {"type": "string"},
+                    "slug": {"type": "string", "description": "The document slug, as in list_documents and search hits (`slug`)."},
                     "overwrite": {"type": "boolean", "default": False},
                 },
                 "required": ["slug"],
@@ -445,7 +445,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "slug": {"type": "string"},
+                    "slug": {"type": "string", "description": "The document slug, as in list_documents and search hits (`slug`)."},
                     "parent_region_id": {
                         "type": "string",
                         "description": (
@@ -475,7 +475,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "slug": {"type": "string"},
+                    "slug": {"type": "string", "description": "The document slug, as in list_documents and search hits (`slug`)."},
                     "region_id": {"type": "string"},
                 },
                 "required": ["slug", "region_id"],
@@ -502,7 +502,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "slug": {"type": "string"},
+                    "slug": {"type": "string", "description": "The document slug, as in list_documents and search hits (`slug`)."},
                     "ref": {
                         "type": "object",
                         "description": (
@@ -548,7 +548,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "slug": {"type": "string"},
+                    "slug": {"type": "string", "description": "The document slug, as in list_documents and search hits (`slug`)."},
                     "select": {
                         "type": "object",
                         "description": (
@@ -583,7 +583,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "slug": {"type": "string"},
+                    "slug": {"type": "string", "description": "The document slug, as in list_documents and search hits (`slug`)."},
                     "entity": {"type": "string", "description": "e.g. 'LKH-5'"},
                     "output": {
                         "type": "string",
