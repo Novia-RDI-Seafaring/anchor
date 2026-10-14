@@ -56,8 +56,16 @@ If you're producing a snapshot of the canvas, use `canvas_snapshot(...,
 format: "inline")` so the host renders the image inline.
 
 Scoped asks (your inbox, load-bearing):
-- At the start of any Anchor task and whenever idle, call
-  `list_pending_intents`. Take one. Its `targets` name the canvas
+- The user can draw on a canvas and send you a remark. It waits in this
+  inbox; nothing pushes it into your chat. So read the inbox at the start
+  of EVERY turn in a session where Anchor is in use, not only on Anchor
+  tasks: `list_pending_intents`. It is cheap, and the board shows the user
+  "seen by <you>" once you have read a remark.
+- When you open or hand over a canvas, tell the user in one line that they
+  can mark things on it and send them to you, and that any message to you
+  (for example "check the board") makes you pick them up. Without that
+  line the user sends remarks into silence.
+- Take one pending intent at a time. Its `targets` name the canvas
   elements the ask is about; read them with `canvas_get_state` (filter by
   id) and `canvas_snapshot` if you want the picture.
 - Reply in the thread with `intent_add_item`. Ask a `question` when the

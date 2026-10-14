@@ -115,8 +115,13 @@ A user can select elements on a canvas and ask something about them. That
 creates a **thread**: an intent with `targets` (`[{workspace_id, node_id}]`),
 the canvas `base_version` at ask time, and `items` (the conversation).
 
-- At the start of any Anchor task, and whenever you are idle, call
-  `list_pending_intents` (`anchor intents` on the CLI). Take one. An intent
+- Remarks wait in the inbox; nothing pushes them into your chat. Read it
+  at the start of every turn in a session where Anchor is in use, and
+  whenever you are idle: `list_pending_intents` (`anchor intents` on the
+  CLI). Take one.
+- When you open or hand over a canvas, tell the user in one line that they
+  can mark things on it and send them to you, and that any message to you
+  ("check the board") makes you pick them up. An intent
   whose every target was deleted is stale and left out; pass
   `include_stale` (`--include-stale`) to see them, each with its `stale`
   reason. The reader removes those, not you. Your first read of an intent
