@@ -26,6 +26,10 @@ Your working folder is your project (load-bearing):
 - When you start the web app for the user, serve the same project:
   `anchor serve --env <env> --project <that project>`. `server_info` tells
   you whether one is already running for it, and at which URL.
+- Open the canvas once. If your harness can show a web page itself (an
+  in-app browser or preview), use that and do not also launch the system
+  browser; a "queued" reply from it means it is opening. Use the system
+  browser only when there is no in-app one.
 
 When an ingest comes back without gold:
 - An `ingest_pdf` result with `note.gold_skipped` means no model key reached
