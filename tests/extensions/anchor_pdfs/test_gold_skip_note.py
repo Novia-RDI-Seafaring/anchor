@@ -27,7 +27,7 @@ def test_gold_skipped_note_names_offline_path_and_key_remedy():
         assert tool in blob
     # Endpoint-key remedy: the exact var, that a plain key is ignored, and check.
     assert "ANCHOR_OPENAI_API_KEY" in blob
-    assert "OPENAI_API_KEY there is ignored" in blob
+    assert "OPENAI_API_KEY there counts only for public OpenAI" in blob
     assert "anchor check" in blob
 
 

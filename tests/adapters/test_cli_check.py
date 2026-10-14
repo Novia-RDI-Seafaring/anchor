@@ -203,7 +203,7 @@ def test_check_missing_key_prints_actionable_remedy(tmp_path):
     assert result.exit_code == 1, result.output
     assert "silently skipped" in result.output
     assert "ANCHOR_OPENAI_API_KEY" in result.output
-    assert "OPENAI_API_KEY in that .env is ignored" in result.output
+    assert "OPENAI_API_KEY in that .env counts only for public OpenAI" in result.output
     assert str(_env_dir(tmp_path) / ".env") in result.output
     assert "--provider harness" in result.output
     assert "ingest_begin" in result.output

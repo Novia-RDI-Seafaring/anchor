@@ -103,7 +103,7 @@ def gold_skipped_note(env_file: str | None = None) -> dict[str, Any]:
         ),
         "fix_key": (
             f"Ask the user to put the line {ANCHOR_KEY_VAR}=<their key> in "
-            f"{target} (a plain OPENAI_API_KEY there is ignored). Do not ask "
+            f"{target} (a plain OPENAI_API_KEY there counts only for public OpenAI). Do not ask "
             "them to paste the key into the chat. Then start a new chat so the "
             "server restarts, and re-ingest with force=true. `anchor check` "
             "verifies the data zone + key."

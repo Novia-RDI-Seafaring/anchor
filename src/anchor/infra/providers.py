@@ -130,7 +130,7 @@ def get_provider(key: str) -> Provider | None:
 
 
 #: The one env var that actually carries the endpoint key. A plain
-#: OPENAI_API_KEY in the env's .env is ignored (only ANCHOR_* keys propagate),
+#: OPENAI_API_KEY in the env's .env counts only for public OpenAI,
 #: so onboarding messaging must name this exact variable (issue #226).
 ANCHOR_KEY_VAR = "ANCHOR_OPENAI_API_KEY"
 
@@ -139,7 +139,8 @@ def no_key_remedy_lines(env_dotenv_path: str | None) -> list[str]:
     """Actionable remedy when gold needs a key but none is configured.
 
     Names the exact fix: (a) the env's ``.env`` path, (b) that the key MUST be
-    ``ANCHOR_OPENAI_API_KEY`` (a plain ``OPENAI_API_KEY`` there is ignored), and
+    ``ANCHOR_OPENAI_API_KEY`` (a plain ``OPENAI_API_KEY`` there counts only for
+    public OpenAI), and
     (c) the offline no-key alternative — switch to the ``harness`` (or ``local``)
     provider and drive the harness ingest tools. Shared by ``anchor check``,
     ``anchor install``, and the MCP ``ingest_pdf`` gold-skip note so the guidance
@@ -148,7 +149,8 @@ def no_key_remedy_lines(env_dotenv_path: str | None) -> list[str]:
     target = env_dotenv_path or "the environment's .env"
     return [
         f"Set the endpoint key named {ANCHOR_KEY_VAR} in {target}",
-        "  (a plain OPENAI_API_KEY in that .env is ignored; only ANCHOR_* keys load).",
+        "  (a plain OPENAI_API_KEY in that .env counts only for public OpenAI,",
+        "  never for an Azure or custom endpoint).",
         "Or run key-free: switch to --provider harness (or local) and drive the",
         "  harness ingest tools (ingest_begin -> ingest_get_page ->",
         "  ingest_submit_page -> ingest_finalize; the agent reads pages, embed is local).",

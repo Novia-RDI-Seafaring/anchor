@@ -389,7 +389,7 @@ def _warn_shell_only_key(env_name: str, *, dry_run: bool) -> None:
     typer.echo("  the Dock or Finder does not read your shell profile, so its Anchor")
     typer.echo("  server will ingest without gold (no figures, no regions).")
     typer.echo(f"  - Put {ANCHOR_KEY_VAR}=<key> in {env_file}")
-    typer.echo("    (a plain OPENAI_API_KEY there is ignored).")
+    typer.echo("    (a plain OPENAI_API_KEY there counts only for public OpenAI).")
     typer.echo(f"  Verify with: anchor check --env {env_name}")
 
 

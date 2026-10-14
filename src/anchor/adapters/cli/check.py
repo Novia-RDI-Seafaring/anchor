@@ -282,13 +282,15 @@ def check(
         key_ok = True
     elif provider_key == "openai":
         needs_key = True
-        key_ok = bool(cfg.openai_api_key) or personal
+        from anchor.infra.egress_policy import describe_credential
+
+        key_ok = bool(cfg.openai_api_key) or personal or describe_credential(cfg)["present"]
     else:  # azure, custom, or an unknown provider that still names an endpoint
         needs_key = bool(cfg.openai_base_url) or embed_remote or provider_key in _KEYED_PROVIDERS
         key_ok = bool(cfg.openai_api_key)
 
-    # The env's .env is where ANCHOR_OPENAI_API_KEY belongs (only ANCHOR_* keys
-    # there load — a plain OPENAI_API_KEY is ignored). Name the exact path in the
+    # The env's .env is where ANCHOR_OPENAI_API_KEY belongs (a plain
+    # OPENAI_API_KEY there counts only for public OpenAI). Name the exact path in the
     # remedy so an agent or user can act without guessing (issue #226).
     env_dotenv = str(env.root / ".env") if env.initialized else None
     # An unset provider silently skips gold at ingest time (no vision stage runs),

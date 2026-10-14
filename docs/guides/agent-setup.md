@@ -46,7 +46,9 @@ Put the key in the environment's private `.env`, which every launch reads:
 ANCHOR_OPENAI_API_KEY=sk-...
 ```
 
-A plain `OPENAI_API_KEY` in that file is ignored. `anchor install` warns when
+For public OpenAI a plain `OPENAI_API_KEY` line there works too, so the line
+from your shell profile can be copied as is. Azure and custom endpoints accept
+only `ANCHOR_OPENAI_API_KEY`. `anchor install` warns when
 the key exists only in your shell, and `anchor check --env study` confirms the
 file is read. If the agent reports `gold_skipped` on an ingest, this is the
 cause. Add the key, start a new chat, and re-ingest with `force=true`.
