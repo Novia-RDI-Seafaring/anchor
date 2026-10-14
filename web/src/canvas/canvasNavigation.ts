@@ -21,7 +21,18 @@ export function canvasNavigation(mode: CanvasNavigationMode, readOnly: boolean, 
   const hand = !readOnly && !armedTool && mode === "hand";
   return {
     hand,
+    nodesDraggable: !readOnly && !hand && !armedTool,
     selectionOnDrag: !readOnly && !armedTool && !hand,
     panOnDrag: readOnly || hand ? true : [1, 2],
   };
+}
+
+/** Per-node drag overrides must obey the tool that owns the gesture. */
+export function navigationNodes<T extends { draggable?: boolean }>(
+  nodes: T[], navigation: ReturnType<typeof canvasNavigation>,
+): T[] {
+  if (navigation.hand) {
+    return nodes.map((node) => ({ ...node, selected: false, draggable: false, selectable: false, connectable: false, deletable: false }));
+  }
+  return navigation.nodesDraggable ? nodes : nodes.map((node) => ({ ...node, draggable: false }));
 }
