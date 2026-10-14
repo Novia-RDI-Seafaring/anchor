@@ -252,6 +252,14 @@ def _with_project_arg(defs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def _env_file(config) -> str | None:
+    """The key file of the environment that owns ``config``, for remedies."""
+    from anchor.infra.egress_policy import environment_dotenv_path
+
+    path = environment_dotenv_path(config)
+    return str(path) if path is not None else None
+
+
 def _resolution_error(exc: NoProjectError | NoEnvironmentError) -> str:
     if isinstance(exc, NoProjectError):
         return _json.dumps(
@@ -544,6 +552,7 @@ def build_mcp_server(
                     b.ingest, b.doc_store, name, args,
                     synopsis=b.synopsis,
                     ingest_session=b.ingest_session,
+                    env_file=_env_file(b.config),
                 )
         except (NoProjectError, NoEnvironmentError) as exc:
             text = _resolution_error(exc)

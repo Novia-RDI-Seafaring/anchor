@@ -57,6 +57,12 @@ required for `azure` and `custom`). With the `openai` provider a plain
 providers need no key. Set the other `ANCHOR_OPENAI_*` variables for your
 provider as needed; `anchor check` reports what the resolved config accepts.
 
+Put the key in the environment's `.env` (`~/.anchor/envs/<env>/.env`), not
+only in a shell profile. Agent apps started from the Dock or Finder do not
+read `~/.zshrc`, so their Anchor server sees no key and ingests without gold.
+An `ingest_pdf` result with `note.gold_skipped` means exactly this. Tell the
+user which file to edit; never ask for the key in chat or write it yourself.
+
 ## When to use
 
 - The user drops a PDF datasheet, leaflet, or manual and wants it readable.

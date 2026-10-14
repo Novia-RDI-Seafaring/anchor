@@ -139,3 +139,25 @@ def test_no_key_warning_absent_for_local_env(_paths):
     create_env("local", settings={"provider": "local"})
     result = runner.invoke(app, ["install", "claude-desktop", "--env", "local", "--yes"])
     assert "silently skipped" not in result.output
+
+
+def test_a_key_only_in_the_shell_is_flagged(_paths, monkeypatch):
+    # install runs in a terminal that exports the key; the app it registers for
+    # is started from the Dock and never sees it.
+    monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-shell-only")
+    env = create_env("work", settings={"provider": "openai"})
+    result = runner.invoke(app, ["install", "claude-desktop", "--env", "work", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert "only in this shell" in result.output
+    assert str(env.root / ".env") in result.output
+    assert "sk-test-shell-only" not in result.output
+
+
+def test_a_key_in_the_env_file_is_not_flagged(_paths, monkeypatch):
+    monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-shell-only")
+    env = create_env("work", settings={"provider": "openai"})
+    (env.root / ".env").write_text("ANCHOR_OPENAI_API_KEY=sk-test-file\n")
+    result = runner.invoke(app, ["install", "claude-desktop", "--env", "work", "--yes"])
+    assert "only in this shell" not in result.output

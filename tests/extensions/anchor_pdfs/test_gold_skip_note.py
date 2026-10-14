@@ -98,3 +98,20 @@ def test_ingest_pdf_no_note_when_idempotent_skip(tmp_path):
     )
     out = _call_ingest(ingest, pdf)
     assert "note" not in out
+
+
+def test_the_note_names_the_key_file_and_why_the_app_missed_it(tmp_path):
+    pdf = _make_pdf(tmp_path)
+    ingest = _FakeIngest(
+        region_extractor=None,
+        summary={"slug": "doc", "region_count": 0, "status": "success"},
+    )
+    out = json.loads(_run(call_tool(
+        ingest, store=None, name="ingest_pdf",
+        args={"pdf_path": str(pdf)}, env_file="/home/u/.anchor/envs/openai/.env",
+    )))
+    note = out["note"]
+    assert "/home/u/.anchor/envs/openai/.env" in note["fix_key"]
+    assert "shell profile" in note["why"]
+    assert "force=true" in note["fix_key"]
+    assert "no vision provider" not in note["reason"]

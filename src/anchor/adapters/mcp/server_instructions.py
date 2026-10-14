@@ -27,6 +27,16 @@ Your working folder is your project (load-bearing):
   `anchor serve --env <env> --project <that project>`. `server_info` tells
   you whether one is already running for it, and at which URL.
 
+When an ingest comes back without gold:
+- An `ingest_pdf` result with `note.gold_skipped` means no model key reached
+  this server. The usual cause: the agent app was started from the Dock or
+  Finder and never read the shell profile that exports the key. Tell the
+  user that, and give them the exact file the note names. Never ask them to
+  paste the key into the chat, and do not write it yourself.
+- Do not report "no vision provider". The vision model is configured; only
+  its key is missing. Say which fallback you used (`profile="text"` reads no
+  figures) so the user knows to re-ingest with `force=true` once the key is in.
+
 Source-grounding (load-bearing):
 - Every value placed on the canvas should carry `data.source_ref`
   pointing back at its origin (page+bbox for PDFs, region_id for

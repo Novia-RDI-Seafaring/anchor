@@ -31,6 +31,33 @@ Restart or reconnect the client after registration. Each entry launches
 connection instructions, and an `anchor://help` resource. It does not start the
 browser server.
 
+### Put the model key where the app can read it
+
+A keyed environment (`openai`, `azure`, `custom`) needs its model key to reach
+the `anchor-mcp` process the client starts. Agent apps started from the Dock or
+Finder, such as Codex, Claude Desktop, and the Claude desktop app, do not read
+your shell profile. A key exported in `~/.zshrc` works in the terminal and is
+missing in the app. Ingest then runs without gold: no regions, no figures.
+
+Put the key in the environment's private `.env`, which every launch reads:
+
+```bash
+# ~/.anchor/envs/study/.env
+ANCHOR_OPENAI_API_KEY=sk-...
+```
+
+A plain `OPENAI_API_KEY` in that file is ignored. `anchor install` warns when
+the key exists only in your shell, and `anchor check --env study` confirms the
+file is read. If the agent reports `gold_skipped` on an ingest, this is the
+cause. Add the key, start a new chat, and re-ingest with `force=true`.
+
+### Use your working folder as the project
+
+An agent opened in a folder calls `create_project(folder=...)` at the start, so
+what it ingests stays with that folder. In Codex, open the folder as a project
+and ask for the ingest; the folder gets an `anchor.toml` and `.anchor_data/`
+named after it. Serve the same project when you open the canvas.
+
 Codex and Claude Desktop support `--name` for multiple named entries. Claude
 Code and Cursor use a single `anchor` entry; rerunning their installer selects
 the requested environment for that entry. `--dry-run` previews an installer.
@@ -90,6 +117,9 @@ chat can also create canvas objects through the normal canvas tools.
 
 - **No documents:** verify the MCP environment, call `list_projects`, and use
   the right project. Check the browser server with `anchor serve-info`.
+- **Ingest says `gold_skipped` or "no vision provider":** the model key did
+  not reach the app's `anchor-mcp`. See
+  [Put the model key where the app can read it](#put-the-model-key-where-the-app-can-read-it).
 - **Awaiting agent:** have the agent pull the ingestion intent and complete the
   harness session. A PDF upload does not automatically run your harness.
 - **Executable missing:** locate `anchor-mcp` with `Get-Command anchor-mcp`
