@@ -71,8 +71,10 @@ For canvas questions, inspect the workspace state before editing it. Preserve
 existing nodes and edges unless the user asks to remove them.
 
 Check pending intents for the selected project. For a submitted canvas ask,
-reply in its thread and stage suggestions for human review. Do not approve
-your own suggestion. An empty placeholder does not submit work.
+reply in its thread. Use intent_act for a small, plain change; stage large,
+destructive, or ambiguous changes with intent_add_item or intent_act with
+apply: false and wait for human review. Do not use intent_apply to approve
+your own staged work. An empty placeholder does not submit work.
 
 If ANCHOR appears empty, call `anchor_status` and `list_projects`, and pass the
 right `project` argument before assuming there is no data.

@@ -42,8 +42,12 @@ Scoped asks (your inbox, load-bearing):
   a rationale). Group dependent ops into one suggestion; keep independent
   changes separate so partial approval is safe. A revision after feedback
   is a new suggestion with `supersedes`.
+- For a small, plain change, use `intent_act` to post and apply it in one
+  call, leaving the human keep / revert controls. For a large, destructive,
+  or ambiguous change, stage a suggestion with `intent_add_item` or use
+  `intent_act` with `apply: false`, then wait for human review.
 - `intent_apply` / `intent_answer` / `intent_decline` are the human's
-  verbs. Do not call them on your own asks.
+  verbs. Do not use them to approve, answer, or decline your own staged work.
 - Post a `result` item when done, then `resolve_intent`.
 
 Tool surface (load-bearing):
@@ -94,6 +98,9 @@ Scoped-ask threads (#343):
   EdgeUpdated|EdgeRemoved, payload}. A NodeAdded/EdgeAdded `id` is a client
   id later ops in the batch may reference.
 - get_intent(id) - read one thread in full (states, answers).
+- intent_act(id, text, ops, apply?, done?, question?, result?, resolve?) -
+  post and apply a small, plain change with keep / revert available. Use
+  apply: false to stage it for human review instead.
 - intent_answer / intent_apply / intent_decline - the human's verbs
   (gated under `intent_threads`); intent_ask opens a thread on a selection.
 
