@@ -62,6 +62,20 @@ describe("SelectionPanel", () => {
     expect(text).not.toContain("Stroke");
   });
 
+  it("uses the actual one-node marquee selection for Ask agent instead of a stale single-node id", () => {
+    seed({ a: { id: "a", node_type: "concept", data: {} }, b: { id: "b", node_type: "concept", data: {} } });
+    useUiStore.setState({ selectedNodeId: "a" });
+    const onAsk = vi.fn();
+    const view = render(<MemoryRouter initialEntries={["/canvas/w1"]}><Routes><Route path="/canvas/:id" element={<SelectionPanel nodeIds={["b"]} onAsk={onAsk} />} /></Routes></MemoryRouter>);
+    fireEvent.click(view.getByRole("button", { name: "Ask agent" }));
+    expect(onAsk).toHaveBeenCalledOnce();
+    expect(useUiStore.getState().selectedNodeId).toBe("a");
+    view.rerender(<MemoryRouter initialEntries={["/canvas/w1"]}><Routes><Route path="/canvas/:id" element={<SelectionPanel nodeIds={[]} onAsk={onAsk} />} /></Routes></MemoryRouter>);
+    expect(view.queryByTestId("selection-panel")).toBeNull();
+    view.rerender(<MemoryRouter initialEntries={["/canvas/w1"]}><Routes><Route path="/canvas/:id" element={<SelectionPanel nodeIds={["a", "b"]} onAsk={onAsk} />} /></Routes></MemoryRouter>);
+    expect(view.queryByTestId("selection-panel")).toBeNull();
+  });
+
   it("sets a heading through the existing data patch and hides irrelevant box styling", async () => {
     const patch = vi.spyOn(canvases, "patchNode").mockResolvedValue({});
     seed({ n1: { id: "n1", node_type: "concept", data: { source_ref: { slug: "manual", page: 2 } } } });

@@ -34,6 +34,7 @@ import { proposalSets } from "@/api/proposalSets";
 import { ProposalReview } from "@/canvas/ProposalReview";
 import type { Box as LassoBox } from "@/canvas/lasso";
 import { SelectionPanel } from "@/canvas/SelectionPanel";
+import { SelectionAskDialog } from "@/canvas/SelectionAskDialog";
 import { NodeDetailPanel } from "@/canvas/NodeDetailPanel";
 import { CanvasStructureContext, structuredNodeTypes } from "@/canvas/StructuredNode";
 import { foldedGraph, structureSignature } from "@/canvas/subtrees";
@@ -334,6 +335,14 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   // Mirror of the above for callbacks that must not re-create on every
   // frame (the region hit-test reads measured sizes during a drag).
   const rfNodesRef = useRef<RfNode[]>([]);
+  const [selectionAsk, setSelectionAsk] = useState<{ workspaceSlug: string; targets: string[] } | null>(null);
+  useEffect(() => { setSelectionAsk(null); }, [slug, readOnly, handMode, armedTool]);
+  const askSelection = () => {
+    const ui = useUiStore.getState();
+    if (readOnly || ui.navigationMode !== "select" || ui.armedTool) return;
+    const ids = rfNodesRef.current.filter((node) => node.selected).map((node) => node.id);
+    if (ids.length) setSelectionAsk({ workspaceSlug: slug, targets: ids });
+  };
   const [rfEdges, setRfEdges] = useState<RfEdge[]>([]);
   const canvasClipboard = useCanvasClipboard({
     slug, active: !readOnly && !commentMode && !handMode,
@@ -1622,8 +1631,9 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
           xyflow's useStore. */}
       {readOnly || handMode ? null : (
         <>
-          <NodeContextToolbar workspaceSlug={slug} />
-          <SelectionPanel />
+          <NodeContextToolbar workspaceSlug={slug} onAsk={armedTool ? undefined : askSelection} />
+          <SelectionPanel nodeIds={rfNodes.filter((node) => node.selected).map((node) => node.id)} onAsk={armedTool ? undefined : askSelection} />
+          {selectionAsk?.workspaceSlug === slug ? <SelectionAskDialog key={slug} workspaceSlug={slug} targetIds={selectionAsk.targets} onClose={() => setSelectionAsk(null)} /> : null}
           <NodeContextMenu
             workspaceSlug={slug}
             target={contextMenuTarget}
