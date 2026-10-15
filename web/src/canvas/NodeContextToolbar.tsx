@@ -72,12 +72,13 @@ import { TextPicker } from "./TextPicker";
 
 type Props = {
   workspaceSlug: string;
+  onAsk?: () => void;
 };
 
 /** Local-storage flag — show the "(right-click for more)" hint once per session. */
 const HINT_KEY = "anchor:nodeToolbar:hint-seen";
 
-export function NodeContextToolbar({ workspaceSlug }: Props) {
+export function NodeContextToolbar({ workspaceSlug, onAsk }: Props) {
   // Read ReactFlow's own selection state and viewport transform.
   const rfNodes = useStore((s) => s.nodes);
   const transform = useStore((s) => s.transform);
@@ -268,6 +269,7 @@ export function NodeContextToolbar({ workspaceSlug }: Props) {
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="flex items-center gap-1 rounded-md border border-neutral-200 bg-white px-1 py-1 shadow-md">
+        {onAsk ? <Button variant="ghost" size="sm" onClick={onAsk}>Ask agent</Button> : null}
         {/* Organize ▾ — only when any selected node has an edge. Disabled
             for pure-multi selections without subtree semantics. */}
         {anySelectedHasEdges ? (

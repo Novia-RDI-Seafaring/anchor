@@ -22,16 +22,19 @@ import { useUiStore } from "@/stores/uiStore";
  * gets fill, stroke and text. The panel is empty markup when the selection
  * is empty, so the canvas is unobstructed while nothing is picked.
  */
-export function SelectionPanel() {
+export function SelectionPanel({ nodeIds: selection, onAsk }: {
+  nodeIds?: string[];
+  onAsk?: () => void;
+} = {}) {
   const { id: workspaceSlug } = useParams<{ id: string }>();
   const selectedNodeId = useUiStore((s) => s.selectedNodeId);
   const nodes = useCanvasStore((s) => s.nodes);
 
-  if (!workspaceSlug || !selectedNodeId) return null;
-  const node = nodes[selectedNodeId];
+  const nodeIds = selection ?? (selectedNodeId ? [selectedNodeId] : []);
+  if (!workspaceSlug || nodeIds.length !== 1) return null;
+  const node = nodes[nodeIds[0]!];
   if (!node) return null;
 
-  const nodeIds = [selectedNodeId];
   const getNodeData = (nid: string) => nodes[nid]?.data;
   // Text elements are words with no box, so fill and stroke would style
   // nothing the user can see.
@@ -46,6 +49,7 @@ export function SelectionPanel() {
       className="pointer-events-auto absolute left-20 top-16 z-30 flex max-h-[calc(100%_-_5rem)] w-[17rem] max-w-[calc(100%_-_6rem)] flex-col gap-3 overflow-y-auto rounded-xl border border-neutral-200 bg-white/95 px-3 py-3 shadow-md backdrop-blur [&>section>div]:min-w-0 [&>section>label]:flex-wrap"
       aria-label="Selection properties"
     >
+      {onAsk ? <button type="button" onClick={onAsk} className="rounded border border-neutral-300 bg-white px-2 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50">Ask agent</button> : null}
       <NodePresentationEditor workspaceSlug={workspaceSlug} node={node} />
       {isText ? null : (
         <>

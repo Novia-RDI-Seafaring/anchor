@@ -169,6 +169,13 @@ add your words, and click **send to agent**. The request and subsequent answers
 remain in an intent thread. If nothing happens, ask the external agent to pull
 pending intents; registering MCP alone does not launch background agent work.
 
+You can also select existing nodes, including by dragging a selection box, and
+choose **Ask agent** in the selection controls. Type your request and choose
+**Send to agent**. The thread targets exactly the nodes selected when you opened
+the request, and the selection stays in place. You do not need to redraw it with
+the pen. Find the queued request in **Intents**. A failed submission keeps your
+text so you can retry.
+
 An agent can ask for clarification or stage a suggested change. Inspect the
 preview and approve, decline, or send feedback in the thread. Empty placeholders
 do not submit work on their own. See the
