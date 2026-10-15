@@ -97,6 +97,42 @@ const READY_DOC = {
   page_count: 3,
 };
 
+describe("DocumentPrimitive overlapping hover regions", () => {
+  it.each([false, true])("keeps hover, open and drag on the smaller region, reversed=%s", async (reversed) => {
+    const table = { id: "range", kind: "table", title: "Range table", bbox: [40, 630, 550, 719] };
+    const broad = { id: "cover", kind: "text", title: "Cover text", bbox: [45, 48, 550, 787] };
+    vi.mocked(documents.regions).mockResolvedValue(reversed ? [broad, table] : [table, broad]);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => geometryFixture.gold_map }));
+    const { container, onParentClick } = await renderDoc(READY_DOC);
+    const image = screen.getByRole("img") as HTMLImageElement;
+    Object.defineProperties(image, { naturalWidth: { value: 600 }, naturalHeight: { value: 800 } });
+    await act(async () => { fireEvent.load(image); });
+    const hits = Array.from(container.querySelectorAll<HTMLElement>("[data-region-handle-id]"));
+    expect(hits.map((hit) => hit.dataset.regionHandleId)).toEqual(["region:cover", "region:range"]);
+    const hit = hits[1]!;
+    expect(hit.querySelector('[data-handleid="region:range"]')).not.toBeNull();
+    fireEvent.mouseEnter(hit);
+    expect(useUiStore.getState().hoveredSourceRef).toEqual({ slug: "pump", page: 1, region_id: "range", bbox: table.bbox });
+    expect(parseFloat(screen.getByTestId("external-highlight").style.top)).toBeCloseTo(630 / 800 * 100);
+    fireEvent.click(hit);
+    expect(onParentClick).not.toHaveBeenCalled();
+    expect(useUiStore.getState().pdfViewer).toMatchObject({ slug: "pump", page: 1, highlightRegionId: "range", highlightBbox: table.bbox });
+    const setData = vi.fn();
+    fireEvent.dragStart(hit, { dataTransfer: { setData } });
+    expect(setData).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse(setData.mock.calls[0]![1] as string);
+    expect(payload).toMatchObject({ node_type: "spec", data: { source_doc_node_id: "doc1", source_region_id: "range", source_ref: { page: 1, bbox: table.bbox, region_id: "range" } } });
+    fireEvent.mouseLeave(hit);
+    expect(useUiStore.getState().hoveredSourceRef).toBeNull();
+    expect(screen.queryByTestId("external-highlight")).toBeNull();
+    // Broad sources remain available where there is no smaller hit.
+    fireEvent.mouseEnter(hits[0]!);
+    expect(useUiStore.getState().hoveredSourceRef?.region_id).toBe("cover");
+    fireEvent.mouseLeave(hits[0]!);
+    expect(useUiStore.getState().hoveredSourceRef).toBeNull();
+  });
+});
+
 describe("DocumentPrimitive click isolation", () => {
   it("moves the existing main, word and extra-place marks to the next reference", async () => {
     vi.mocked(documents.regions).mockResolvedValue(geometryFixture.gold_map.pages["1"]);

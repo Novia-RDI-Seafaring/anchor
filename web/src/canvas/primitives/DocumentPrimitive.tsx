@@ -11,6 +11,7 @@ import { parseDocumentPageGeometry, type DocumentPageGeometry } from "@/lib/docu
 import { useUiStore } from "@/stores/uiStore";
 import { SourceMark } from "@/canvas/SourceMark";
 import { useSourceValueHighlight } from "@/canvas/useSourceValueHighlight";
+import { documentRegionLayers } from "./documentRegionLayers";
 
 const STATUS_STYLES: Record<string, string> = {
   pending: "border-amber-400 bg-amber-50",
@@ -196,6 +197,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   const pageW = pageMeta[page]?.width ?? 0;
   const pageH = pageMeta[page]?.height ?? 0;
   const canScale = imgSize && pageW > 0 && pageH > 0;
+  const regionLayers = useMemo(() => documentRegionLayers(regions, pageW, pageH), [regions, pageW, pageH]);
   // The page is served as soon as the PDF is on disk, long before ingestion
   // finishes, and the explorer already shows it. Only the regions and marks
   // drawn over it wait for ingestion.
@@ -316,19 +318,12 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
               Collapses what used to be three stacked layers (SVG hover,
               vector overlay, transparent drag layer). Those overlapped
               imperfectly and made HTML5 drag flaky. One element per region
-              means no hit-test ambiguity. */}
+              keeps hover, click and drag attached to the same source.
+              Smaller regions paint last so broad coverage cannot hide them. */}
           {canScale && imgSize && slug
-            ? regions.map((r, idx) => {
-                // Order-independent bbox → image rect (see lib/bbox). The
-                // gold extractor's 4-tuple ordering is not guaranteed, so we
-                // never assume bbox[1] is the top edge.
-                // A 100-by-100 target expresses the shared scale as percentages.
-                const rect = bboxToImageRect(r.bbox, pageW, pageH, 100, 100);
-                if (!rect) return null;
+            ? regionLayers.map(({ region: r, rid, rect }) => {
                 const { x: xpc, y: ypc, w: wpc, h: hpc } = rect;
-                // rect is non-null only when bbox has ≥4 valid numbers.
                 const bbox = r.bbox as number[];
-                const rid = (r as { id?: string }).id ?? `r${idx}`;
                 const isLocal = hoveredLocal === rid;
                 const isExternal = matchesExternalHighlight(externalHighlight, rid, bbox);
                 const active = isLocal || isExternal;
