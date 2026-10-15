@@ -81,10 +81,13 @@ or polling. Tell it to check pending intents at the start of an ANCHOR task.
 > `pump-selection`, then propose one spec table with row-level source references.
 > Ask me in the intent thread if the desired product variant is unclear.
 
-For submitted canvas asks, the agent should reply in the thread and stage
-suggestions for your review. It should wait for clarification or approval rather
-than approving its own suggestion. Direct extraction requests made in the agent
-chat can also create canvas objects through the normal canvas tools.
+For submitted canvas asks, the agent should reply in the thread. A small, plain
+change can use `intent_act`, leaving you **keep** and **revert** controls. Large,
+destructive, or ambiguous changes should be staged for your review with
+`intent_add_item` or `intent_act` with `apply: false`. The agent waits for your
+answer or approval instead of using `intent_apply` to approve its own staged
+work. Direct extraction requests made in the agent chat can also create canvas
+objects through the normal canvas tools.
 
 ## Troubleshooting
 

@@ -617,7 +617,8 @@ def test_http_act_in_one_call():
     assert client.post("/api/intents/ghost/act", json={"text": "x", "ops": RENAME}).status_code == 404
 
 
-async def test_mcp_act_is_core_and_works(_home):
+@pytest.mark.parametrize("apply", [True, False])
+async def test_mcp_act_is_core_and_works(_home, apply):
     create_env("local")
     create_project(env_mod.resolve_environment("local"), "pumps")
     router = ProjectRouter(env_arg="local")
@@ -629,9 +630,14 @@ async def test_mcp_act_is_core_and_works(_home):
     intent = (await _call(server, "intent_ask", project="pumps", workspace_slug="cv",
                           text="name this", targets=["n1"]))["intent"]
     out = await _call(server, "intent_act", project="pumps", id=intent["id"],
-                      text="Renamed N1", ops=RENAME, result="done", resolve=True)
-    assert out["suggestion"]["state"] == "applied" and out["result"]["type"] == "result"
-    assert out["intent"]["status"] == "resolved"
+                      text="Rename N1", ops=RENAME, apply=apply,
+                      result="done" if apply else "Awaiting review", resolve=apply)
+    assert out["suggestion"]["state"] == ("applied" if apply else "pending")
+    assert out["result"]["type"] == "result"
+    assert out["intent"]["status"] == ("resolved" if apply else "pending")
+    assert (out["applied"] is not None) == apply
+    state = await bundle.workspace.get_state("cv")
+    assert state["nodes"][0]["label"] == ("Pump A" if apply else "N1")
 
 
 def test_cli_act(tmp_path):
