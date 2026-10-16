@@ -1,7 +1,7 @@
 import { NOTHING_SELECTED, PALETTE } from "./markupStore";
 import { useEffect, useEffectEvent } from "react";
 import type { MarkupModel } from "./types";
-import { clipboardKey, isTextEditing } from "@/shared/clipboard";
+import { clipboardKey, isCanvasSelectAll, isTextEditing } from "@/shared/clipboard";
 import { appendMarkup, captureMarkup, markupSelection, type MarkupFragment } from "./clipboard";
 
 let clipboard: { fragment: MarkupFragment; pastes: number } | null = null;
@@ -35,6 +35,14 @@ export function usePenInput(context: Pick<MarkupModel, "active" | "surfaceRef" |
     // words; here it would clear every mark on the board, and backspace
     // there deletes a letter, not the label being written in.
     if (isTextEditing(e.target)) return;
+    // Select all is the board's drawing, not the page's text.
+    if (isCanvasSelectAll(e)) {
+      e.preventDefault();
+      window.getSelection()?.removeAllRanges();
+      const state = markupStore.getState();
+      state.selectMarks({ strokes: state.marks.map((_, i) => i), notes: state.notes.map((n) => n.id) });
+      return;
+    }
     const key = clipboardKey(e);
     if (key) {
       const state = markupStore.getState();

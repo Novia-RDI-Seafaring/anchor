@@ -1,3 +1,4 @@
+import { isCanvasSelectAll } from "@/shared/clipboard";
 import { useKeyPress,
   Background,
   Controls,
@@ -391,6 +392,20 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   const [edgeContextTarget, setEdgeContextTarget] = useState<EdgeContextMenuTarget | null>(null);
 
   // Navigation and markup put editing gestures and the selection down.
+  // Cmd/Ctrl+A selects every element on the canvas, not every word on the
+  // page. In intent mode the pen's overlay answers it with the drawing.
+  useEffect(() => {
+    if (readOnly || commentMode) return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      if (!isCanvasSelectAll(event)) return;
+      event.preventDefault();
+      window.getSelection()?.removeAllRanges();
+      setRfNodes((prev) => prev.map((n) => (n.selected ? n : { ...n, selected: true })));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [readOnly, commentMode]);
+
   useEffect(() => {
     if (!commentMode && !handMode) return;
     setRfNodes((prev) => (prev.some((n) => n.selected) ? prev.map((n) => (n.selected ? { ...n, selected: false } : n)) : prev));
