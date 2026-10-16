@@ -11,6 +11,8 @@ import {
   loopCentre,
   markHits,
   MIN_STROKE_PX,
+  MIN_STROKE_REACH_PX,
+  extent,
   nearRect,
   pullStroke,
   rectFrom,
@@ -20,7 +22,8 @@ import {
   strokeBounds,
   strokeHeading,
   strokeLength,
-  toggleId
+  toggleId,
+  type Point,
 } from "./lasso";
 import { NOTHING_SELECTED } from "./markupStore";
 import { CALLOUT_GAP_PX, NOTE_H, NOTE_W, SNAP_PX } from "./constants";
@@ -203,7 +206,11 @@ export function useInkGestures(context: Pick<MarkupModel, "active" | "getViewpor
       // a remark, and keeping it litters the layer with specks nobody meant.
       // On the ground of a remark set aside, though, it is a choice: that
       // one comes back to the pen.
-      if (!cur || cur.length < 2 || strokeLength(cur) < MIN_STROKE_PX) {
+      // Judged by how far it reaches on screen, not by the length of its
+      // path: a hand that wobbles in place draws a long path that spans a
+      // couple of pixels, and that was left on the board as a dot.
+      const zoom = Math.max(0.1, getViewport().zoom);
+      if (!cur || cur.length < 2 || strokeLength(cur) < MIN_STROKE_PX || extent(cur) * zoom < MIN_STROKE_REACH_PX) {
         if (cur?.[0]) tapRef.current = cur[0];
         return null;
       }
@@ -301,7 +308,17 @@ export function useInkGestures(context: Pick<MarkupModel, "active" | "getViewpor
             const outline = ringOutline(st);
             return outline.length >= 3 && insidePolygon(cur[0]!, outline);
           });
-      const leavesAShape = leftShape >= 0;
+      // A sent remark's ink stays on the board, and drawing out of it is the
+      // same gesture: a new remark about what the reader drew there. Without
+      // this, a line out of a sent shape ended in silence.
+      const leavesSent =
+        !isLoop(cur) && !split &&
+        markupStore.getState().filed.some((remark) => remark.marks.some((mark) => {
+          if (!isLoop(mark.points)) return false;
+          const outline = ringOutline(mark.points);
+          return outline.length >= 3 && insidePolygon(cur[0]!, outline);
+        }));
+      const leavesAShape = leftShape >= 0 || leavesSent;
       // A join says what it means with its two ends, so no words are offered.
       if ((caught.length > 0 || leavesAShape) && !pendingOffer && !onto) {
         const id = `n${Date.now()}`;
@@ -367,6 +384,7 @@ export function useInkGestures(context: Pick<MarkupModel, "active" | "getViewpor
           // not to the ring: dragging them swings the connector and leaves
           // the encirclement on what it was drawn around.
           const { end, from } = strokeHeading(split && line.length > 1 ? line : cur);
+          revealLabelAt(end, from);
           setNotes((prev) => [
             ...prev,
             {
@@ -391,6 +409,29 @@ export function useInkGestures(context: Pick<MarkupModel, "active" | "getViewpor
       }
       return null;
     });
+  };
+
+  // A line drawn to the edge of the window ends where its words would go off
+  // screen: the field was there and focused, but nothing showed where to
+  // type. The canvas moves just enough to bring the words into view.
+  const revealLabelAt = (end: Point, from: Point | undefined) => {
+    const bands = offScreen();
+    if (bands.length !== 4) return;
+    const visible = { left: bands[0]!.x + bands[0]!.width, right: bands[1]!.x, top: bands[2]!.y + bands[2]!.height, bottom: bands[3]!.y };
+    const rightward = !from || end.x >= from.x;
+    const label = {
+      left: rightward ? end.x : end.x - NOTE_W,
+      right: rightward ? end.x + NOTE_W : end.x,
+      top: end.y - NOTE_H / 2,
+      bottom: end.y + NOTE_H / 2,
+    };
+    const dx = label.right > visible.right ? label.right - visible.right
+      : label.left < visible.left ? label.left - visible.left : 0;
+    const dy = label.bottom > visible.bottom ? label.bottom - visible.bottom
+      : label.top < visible.top ? label.top - visible.top : 0;
+    if (!dx && !dy) return;
+    const view = getViewport();
+    setViewport({ ...view, x: view.x - dx * view.zoom, y: view.y - dy * view.zoom });
   };
 
   // Double-click puts a comment where you double-clicked. Inside a shape that

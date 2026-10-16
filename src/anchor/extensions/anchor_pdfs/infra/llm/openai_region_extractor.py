@@ -25,15 +25,19 @@ class OpenAIRegionExtractor:
         page_no: int,
         docling_items: list[dict[str, Any]],
         model: str,
+        page_size: list[float] | None = None,
+        dpi: int | None = None,
     ) -> list[dict[str, Any]]:
-        return await asyncio.to_thread(self._sync, page_image, page_no, docling_items, model)
+        return await asyncio.to_thread(
+            self._sync, page_image, page_no, docling_items, model, page_size, dpi,
+        )
 
-    def _sync(self, page_image, page_no, items, model):
+    def _sync(self, page_image, page_no, items, model, page_size=None, dpi=None):
         from .openai_client import make_openai_client
 
         client = make_openai_client(self.api_key, self.base_url)
         b64 = base64.b64encode(page_image).decode()
-        prompt = region_prompt(page_no, items)
+        prompt = region_prompt(page_no, items, page_size=page_size, dpi=dpi)
         messages = [{
             "role": "user",
             "content": [

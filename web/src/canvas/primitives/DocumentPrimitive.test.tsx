@@ -121,7 +121,8 @@ describe("DocumentPrimitive overlapping hover regions", () => {
     fireEvent.dragStart(hit, { dataTransfer: { setData } });
     expect(setData).toHaveBeenCalledTimes(1);
     const payload = JSON.parse(setData.mock.calls[0]![1] as string);
-    expect(payload).toMatchObject({ node_type: "spec", data: { source_doc_node_id: "doc1", source_region_id: "range", source_ref: { page: 1, bbox: table.bbox, region_id: "range" } } });
+    // A table drops as a section card: the page cut to the region.
+    expect(payload).toMatchObject({ node_type: "section", data: { source_doc_node_id: "doc1", source_region_id: "range", source_ref: { page: 1, bbox: table.bbox, region_id: "range" } } });
     fireEvent.mouseLeave(hit);
     expect(useUiStore.getState().hoveredSourceRef).toBeNull();
     expect(screen.queryByTestId("external-highlight")).toBeNull();

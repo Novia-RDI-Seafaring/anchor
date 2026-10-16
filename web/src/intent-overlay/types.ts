@@ -5,7 +5,7 @@ import {
   type Point,
   type Rect
 } from "./lasso";
-import type { OverlayHost, Preview, Viewport } from "./ports";
+import type { OverlayHost, Changes, Preview, Viewport } from "./ports";
 import { type EdgePath } from "./strikes";
 import type { createMarkupStore, Filed, Note, Selection, Stack } from "./markupStore";
 import type { ThreadItem } from "./ports";
@@ -18,6 +18,8 @@ type Ghost = {
   questions: ThreadItem[];
   suggestion: ThreadItem | undefined;
   applied: ThreadItem | undefined;
+  /** What the applied change did to the real elements. */
+  changes: Changes | null;
   placed: ThreadItem[];
   items: ThreadItem[];
   preview: Preview | null;
@@ -30,6 +32,8 @@ export type MarkupProps = {
   onFiled?: () => void;
   /** Put the pen down: escape with nothing left to clear leaves the mode. */
   onExit?: () => void;
+  /** Pick the pen up: a reply waiting for the reader takes them back in. */
+  onEnter?: () => void;
 };
 
 /** Internal composition state; host callers use MarkupProps. */
@@ -86,6 +90,8 @@ export type MarkupModel = {
   setAnswering: MarkupStoreValue["writeAnswer"];
   keepSuggestion: (id: string) => Set<string>;
   settle: (intentId: string, judged: Set<string>) => Promise<void>;
+  /** Take back a sent remark: resolved as withdrawn and off the board. */
+  withdraw: (intentId: string) => Promise<void>;
   kept: Set<string>;
   written: string;
   reading: import("./sketch").Sketch;

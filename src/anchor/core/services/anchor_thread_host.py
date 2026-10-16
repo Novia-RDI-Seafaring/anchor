@@ -150,6 +150,15 @@ def _validate_ops(ops: Any) -> list[dict[str, Any]]:
     return out
 
 
+def _ids(collection: Any) -> list[str]:
+    """Element ids from a state's nodes or edges, keyed or listed."""
+    if isinstance(collection, dict):
+        return [str(k) for k in collection]
+    if isinstance(collection, list):
+        return [str(e["id"]) for e in collection if isinstance(e, dict) and "id" in e]
+    return []
+
+
 class AnchorThreadHost:
     """Compatibility host, including validation when no workspace is wired."""
 
@@ -176,6 +185,37 @@ class AnchorThreadHost:
 
     async def base_version(self, origin_id: str) -> int | None:
         return await self._workspace.version_of(origin_id) if self._workspace is not None else None
+
+    async def stale_reason(self, targets: list[JsonValue]) -> str | None:
+        """Why an intent can no longer be acted on, or None.
+
+        Stale when every element it points at is gone: the nodes or edges
+        were deleted, or their canvas was. One survivor keeps it live, since
+        the ask can still be read against what is left.
+        """
+        if self._workspace is None:
+            return None
+        by_canvas: dict[str, list[str]] = {}
+        for target in targets:
+            if isinstance(target, dict):
+                ws, node = target.get("workspace_id"), target.get("node_id")
+                if isinstance(ws, str) and isinstance(node, str):
+                    by_canvas.setdefault(ws, []).append(node)
+        if not by_canvas:
+            return None
+        known = {m.slug for m in await self._workspace.store.list_workspaces()}
+        for slug, ids in by_canvas.items():
+            if slug not in known:
+                continue
+            state = await self._workspace.get_state(slug)
+            present = set(_ids(state.get("nodes"))) | set(_ids(state.get("edges")))
+            if any(i in present for i in ids):
+                return None
+        count = sum(len(ids) for ids in by_canvas.values())
+        return (
+            "the element it points at was deleted" if count == 1
+            else f"all {count} elements it points at were deleted"
+        )
 
     @staticmethod
     def _canvas(context: ThreadContext) -> str:

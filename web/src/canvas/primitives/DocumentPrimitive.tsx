@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Handle, Position, useUpdateNodeInternals, type NodeProps } from "@xyflow/react";
+import { Handle, Position, useConnection, useUpdateNodeInternals, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
 import { regionDropPayload } from "@/canvas/regionDrop";
@@ -105,6 +105,18 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   const slug = d.slug;
 
   const openPdf = useUiStore((s) => s.openPdf);
+  // A link being drawn from another card lights the whole document up, not
+  // only its regions: dropping on the card links to the document.
+  // Exactly one thing lights while a link is over this card, and it is what
+  // the link will join: a region when the pointer is on one (or the link has
+  // snapped to its socket), otherwise the whole document.
+  const linking = useConnection((c) => c.inProgress && c.fromNode.id !== id);
+  const snappedRegion = useConnection((c) =>
+    c.inProgress && c.toNode?.id === id && c.toHandle?.id?.startsWith("region:")
+      ? c.toHandle.id.slice("region:".length)
+      : null,
+  );
+  const [pointerOver, setPointerOver] = useState(false);
   const hoveredSourceRef = useUiStore((s) => s.hoveredSourceRef);
   const setHoveredSourceRef = useUiStore((s) => s.setHoveredSourceRef);
   const clearHoveredSourceRef = useUiStore((s) => s.clearHoveredSourceRef);
@@ -123,6 +135,8 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   const [pageMeta, setPageMeta] = useState<Record<number, DocumentPageGeometry>>({});
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [hoveredLocal, setHoveredLocal] = useState<string | null>(null);
+  const linkRegion = linking ? snappedRegion ?? hoveredLocal : null;
+  const linkTarget = linking && pointerOver && linkRegion === null;
   const [nowSeconds, setNowSeconds] = useState(() => Date.now() / 1000);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const updateNodeInternals = useUpdateNodeInternals();
@@ -280,7 +294,11 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
 
   return (
     <div
-      className={`relative w-80 rounded-lg border-2 text-sm shadow-sm transition ${cls} hover:shadow-md`}
+      className={`relative w-80 rounded-lg border-2 text-sm shadow-sm transition ${cls} hover:shadow-md ${linkTarget ? "ring-4 ring-sky-400 ring-offset-2" : ""}`}
+      data-testid="document-node"
+      data-link-target={linkTarget ? "true" : undefined}
+      onPointerEnter={() => setPointerOver(true)}
+      onPointerLeave={() => setPointerOver(false)}
     >
       <Handle type="target" position={Position.Left} className="canvas-node-socket" />
 
@@ -340,7 +358,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
             ? regionLayers.map(({ region: r, rid, rect }) => {
                 const { x: xpc, y: ypc, w: wpc, h: hpc } = rect;
                 const bbox = r.bbox as number[];
-                const isLocal = hoveredLocal === rid;
+                const isLocal = linking ? linkRegion === rid : hoveredLocal === rid;
                 const isExternal = matchesExternalHighlight(externalHighlight, rid, bbox);
                 const active = isLocal || isExternal;
                 const crops = (r as { crops?: { svg?: string | null } }).crops;

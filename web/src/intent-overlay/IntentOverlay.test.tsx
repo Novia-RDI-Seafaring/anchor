@@ -220,6 +220,24 @@ describe("independent DOM intent overlay", () => {
     expect(api.threadPort.loadScoped).toHaveBeenCalledOnce();
   });
 
+  it("withdraws a sent remark from the board, resolved as withdrawn", async () => {
+    const api = fixture();
+    render(<Form api={api} />);
+    await act(async () => {});
+    draw(ring);
+    const note = screen.getByTestId("comment-lasso-note");
+    fireEvent.change(note, { target: { value: "Check address" } });
+    fireEvent.keyDown(note, { key: "Enter" });
+    fireEvent.click(screen.getByTestId("comment-lasso-send"));
+    await waitFor(() => expect(screen.getByTestId("comment-lasso-withdraw")).toBeTruthy());
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("comment-lasso-withdraw"));
+    });
+    expect(api.threadPort.resolve).toHaveBeenCalledWith("request", expect.objectContaining({ withdrawn: true }));
+    expect(screen.queryByTestId("comment-lasso-withdraw")).toBeNull();
+    expect(screen.queryByTestId("comment-lasso-filed")).toBeNull();
+  });
+
   it("restores a scoped thread, answers options, previews without writing, and applies/reverts through the form host", async () => {
     const api = fixture([thread([question, suggestion])]);
     const view = render(<Form api={api} />);

@@ -23,7 +23,7 @@ it("shows a compact first line, fold count and detail action while full mode pre
   const mount = (data: Record<string, unknown>) => <MemoryRouter><ReactFlowProvider>
     <CanvasStructureContext.Provider value={context}><Renderer {...props(data)} /></CanvasStructureContext.Provider>
   </ReactFlowProvider></MemoryRouter>;
-  const { rerender } = render(mount({ label: "Limit", text: "Short line\nLong second line", collapsed: true }));
+  const { rerender } = render(mount({ label: "Limit", text: "Short line\nLong second line", collapsed: true, display_mode: "compact" }));
   expect(screen.getByText("Short line")).toBeTruthy();
   expect(screen.queryByText(/Long second line/)).toBeNull();
   expect(screen.getByRole("button", { name: "Expand subtree" }).textContent).toBe("+4");
@@ -36,9 +36,18 @@ it("shows a compact first line, fold count and detail action while full mode pre
 });
 
 it("tolerates arbitrary table rows while retaining row handles", () => {
-  const { container } = render(<MemoryRouter><ReactFlowProvider><Renderer {...props({ label: "Data", rows: [null, 12, { key: "Speed" }] }, "spec")} /></ReactFlowProvider></MemoryRouter>);
+  const { container } = render(<MemoryRouter><ReactFlowProvider><Renderer {...props({ label: "Data", rows: [null, 12, { key: "Speed" }], display_mode: "compact" }, "spec")} /></ReactFlowProvider></MemoryRouter>);
   expect(screen.getByText("3 rows")).toBeTruthy();
   expect(container.querySelector('[data-handleid="row:2:Speed"]')).toBeTruthy();
+});
+
+it("shows a card in full unless asked to fold it", () => {
+  const rows = [{ key: "Min temp", value: "-10 °C" }];
+  const mount = (data: Record<string, unknown>) => <MemoryRouter><ReactFlowProvider><Renderer {...props(data, "spec")} /></ReactFlowProvider></MemoryRouter>;
+  const { rerender } = render(mount({ label: "LKH10", rows }));
+  expect(screen.queryByText("1 rows")).toBeNull();
+  rerender(mount({ label: "LKH10", rows, display_mode: "compact" }));
+  expect(screen.getByText("1 rows")).toBeTruthy();
 });
 
 it("allows inspection in a read-only view without fold or edit controls", () => {
@@ -55,7 +64,7 @@ it("preserves pending inline rename on a newly placed compact card", async () =>
   const patch = vi.spyOn(canvases, "patchNode").mockResolvedValue({});
   useCanvasStore.setState({ nodes: { n1: { id: "n1", node_type: "fact", label: "", x: 0, y: 0, data: {} } } });
   useUiStore.getState().requestInlineRename("n1");
-  render(<MemoryRouter><ReactFlowProvider><Renderer {...props({ label: "" })} /></ReactFlowProvider></MemoryRouter>);
+  render(<MemoryRouter><ReactFlowProvider><Renderer {...props({ label: "", display_mode: "compact" })} /></ReactFlowProvider></MemoryRouter>);
   await waitFor(() => expect(screen.getByRole("textbox", { name: "Node label" })).toBeTruthy());
   fireEvent.change(screen.getByRole("textbox", { name: "Node label" }), { target: { value: "New claim" } });
   fireEvent.keyDown(screen.getByRole("textbox", { name: "Node label" }), { key: "Enter" });

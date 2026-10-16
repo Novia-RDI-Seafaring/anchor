@@ -42,6 +42,18 @@
   cursor: crosshair !important;
 }
 
+/* Except where a press does something else. An edge is selected, whatever
+   tool is armed, so it shows the pointer. With a placing tool armed, a press
+   on an element (other than an area, which is drawn into) selects it rather
+   than placing, so elements show the pointer too. The connector keeps the
+   crosshair over elements: they are what it joins. */
+.cursor-crosshair .react-flow__edge,
+.cursor-crosshair .react-flow__edge *,
+.cursor-crosshair[data-armed-placing] .react-flow__node:not(.react-flow__node-area),
+.cursor-crosshair[data-armed-placing] .react-flow__node:not(.react-flow__node-area) * {
+  cursor: pointer !important;
+}
+
 /* NodeResizer's default handle size (4–6 px square) is too small to grab
    confidently. Bump corner squares to 10 px and edge line handles to a
    thicker hit-zone. The visual remains a small dot; the larger size also
@@ -140,11 +152,9 @@
      regions keep their own hit targets underneath the shared visual mark. */
   border-radius: 2px;
   background: rgba(250, 204, 21, 0.6);
-  /* Outline, not border. A border is drawn INSIDE the element, so on a mark
-     the size of one table cell it covered most of the value underneath -- the
-     thing the reader opened the mark to read. An outline is drawn outside the
-     box, costs no layout, and leaves the whole marked area showing through. */
-  outline: 1.25px solid rgba(161, 98, 7, 0.9);
+  /* No outline: a hard edge read as a box drawn on the page, and where it
+     sat a hair off the text it looked misaligned. The wash and its halo
+     are the mark. */
   /* The wash reaches a little past the box it marks. A pen does that, and on
      a one-cell mark the few extra pixels are the difference between findable
      and not. It grows from the SAME rectangle in every direction, so the mark
@@ -223,4 +233,14 @@ body[data-pen-lifted] .react-flow :is([data-testid="ref-review-chip"], [data-sou
 body[data-pen-panning] *,
 body[data-pen-lifted][data-pen-panning] .react-flow :is(*, [data-source-anchor]) {
   cursor: grabbing !important;
+}
+
+/* PDF viewer: inside a section, off the text, the pointer is a handle for
+   dragging the section to the canvas; over text it stays a caret. */
+[data-testid="pdf-page-slot"][data-grab],
+[data-testid="pdf-page-slot"][data-grab] .textLayer {
+  cursor: grab;
+}
+[data-testid="pdf-page-slot"][data-grab]:active {
+  cursor: grabbing;
 }

@@ -75,10 +75,10 @@ ANCHOR_OPENAI_API_KEY=<credential-for-this-environment>
 
 The file is loaded only when the environment has a valid `env.toml`. An orphan
 key file neither selects a provider nor enables model traffic. The scoped loader
-accepts `ANCHOR_` names; a bare `OPENAI_API_KEY` in that file is ignored.
-A process-level `OPENAI_API_KEY` is a fallback only for the public `openai`
-provider with no custom base URL. Azure and custom endpoints require the explicit
-credential for that environment. Ollama needs no user key.
+accepts `ANCHOR_` names. A bare `OPENAI_API_KEY`, in that file or in the
+process, is a fallback only for the public `openai` provider with no custom
+base URL. A pasted `export` prefix and surrounding quotes are tolerated. Azure
+and custom endpoints require the explicit credential for that environment. Ollama needs no user key.
 
 ## Model and extraction settings
 

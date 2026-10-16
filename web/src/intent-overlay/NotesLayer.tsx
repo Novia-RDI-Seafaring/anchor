@@ -92,6 +92,10 @@ export function LiveNotes({ model }: { model: Pick<MarkupModel, "notes" | "strok
             markupStore.getState().commitNote(n.id);
           }}
           onCommit={() => setEditing(null)}
+          onCancel={n.onStroke !== undefined ? () => {
+            setEditing(null);
+            removeLabel(n.id);
+          } : undefined}
           onGrab={(e) => {
             let id = n.id;
             if (e.altKey) {

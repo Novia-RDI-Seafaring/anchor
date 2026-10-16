@@ -15,12 +15,18 @@ human-only on purpose (the agent must not relocate a corpus across zones).
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import typer
 
 from anchor.core.ids import InvalidProjectNameError
 from anchor.infra.environment import (
     Environment,
+    FolderProjectError,
+    ProjectEnvMismatchError,
     ProjectNotEmptyError,
+    bind_folder_project,
     create_project,
     move_project,
     project_meta,
@@ -58,15 +64,36 @@ def _zone_of(env: Environment) -> str:
 
 @project_app.command("create")
 def project_create(
-    name: str = typer.Argument(..., help="Project name (managed at projects/<name>/)."),
+    name: str = typer.Argument(
+        None, help="Project name (managed at projects/<name>/; with --folder, defaults "
+        "to the folder's name)."
+    ),
     env: str = typer.Option(None, "--env", help="Environment name (default: resolved)."),
     description: str = typer.Option(
         "", "--description", help="One-line description (shown to agents in list)."
+    ),
+    folder: Path = typer.Option(
+        None, "--folder",
+        help="Make this working folder the project, or report the project it is "
+        "already in. Prints JSON {project, folder, created}.",
     ),
 ) -> None:
     """Create a project in the active environment."""
     environment = resolve_environment(env)
     _require_initialized(environment)
+    if folder is not None:
+        try:
+            bound = bind_folder_project(
+                environment, folder.expanduser().absolute(), name=name, description=description,
+            )
+        except (FolderProjectError, ProjectEnvMismatchError, InvalidProjectNameError) as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=2) from exc
+        typer.echo(json.dumps(bound))
+        return
+    if not name:
+        typer.echo("give a project NAME, or --folder <path>", err=True)
+        raise typer.Exit(code=2)
     try:
         create_project(environment, name, description=description)
     except InvalidProjectNameError as exc:
@@ -91,7 +118,7 @@ def project_list(
         return
     for name in names:
         description = project_meta(environment, name).description
-        typer.echo(f"{name}\t{description}" if description else name)
+        typer.echo(f"{name}\t{description}\t{environment.project_root(name)}")
 
 
 @project_app.command("set-description")

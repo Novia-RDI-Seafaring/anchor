@@ -308,3 +308,21 @@ class TestStrokePlaces:
         assert parse_place("p3/line:103.2,93.3,117.3,93.3") == {
             "page": 3, "line": [103.2, 93.3, 117.3, 93.3],
         }
+
+
+def test_a_cell_box_is_no_taller_than_its_row():
+    from anchor.extensions.anchor_pdfs.core.source_ref_resolve import _within_row
+
+    # Text boxes 24 pt tall on a 14.5 pt row pitch, as the layout model gives
+    # them for a dense table: each reaches into its neighbours.
+    cells = [
+        {"row": r, "col": 1, "bbox": [113, 252 + 14.5 * r, 129, 276 + 14.5 * r]}
+        for r in range(4)
+    ]
+    clipped = _within_row(cells[1]["bbox"], cells[1], cells)
+    centre = lambda r: 264 + 14.5 * r  # noqa: E731
+    assert clipped[1] == (centre(0) + centre(1)) / 2
+    assert clipped[3] == (centre(1) + centre(2)) / 2
+    assert clipped[0] == 113 and clipped[2] == 129
+    # The first and last rows keep their outer edge.
+    assert _within_row(cells[0]["bbox"], cells[0], cells)[1] == 252

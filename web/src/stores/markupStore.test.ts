@@ -174,7 +174,7 @@ describe("markup actions without a DOM", () => {
     expect(store.getState().filed).toEqual([]);
   });
 
-  it("merges ghosts by intent id and removes resolved ghosts only when no pending proposal remains", () => {
+  it("merges ghosts by intent id and removes resolved ghosts only when nothing is left to judge", () => {
     const store = createMarkupStore();
     draw(store);
     const queued = live(store);
@@ -184,9 +184,16 @@ describe("markup actions without a DOM", () => {
     store.getState().loadFiled([{ ...ghost, text: "Duplicate" }, { ...ghost, intentId: "two", intent: intent("two") }]);
     expect(store.getState().filed.map((ghost) => ghost.text)).toEqual([queued.text, queued.text]);
     store.getState().openThread("one");
+    // An agent resolving its thread is not the reader judging the change:
+    // an applied change stays until it is kept or put back.
     store.getState().refreshFiled([
       { ...intent("one", [suggestion("s1", "pending")]), status: "resolved" },
       { ...intent("two", [suggestion("s2", "applied")]), status: "resolved" },
+    ]);
+    expect(store.getState().filed.map((ghost) => ghost.intentId)).toEqual(["one", "two"]);
+    store.getState().refreshFiled([
+      { ...intent("one", [suggestion("s1", "pending")]), status: "resolved" },
+      { ...intent("two", [suggestion("s2", "applied")]), status: "resolved", result: { kept: ["s2"] } },
     ]);
     expect(store.getState().filed.map((ghost) => ghost.intentId)).toEqual(["one"]);
     expect(store.getState().openFiled).toBe("one");
@@ -199,7 +206,7 @@ describe("markup actions without a DOM", () => {
     expect(host.resolve).not.toHaveBeenCalled();
     const judged = store.getState().keepSuggestion("s");
     await store.getState().settle("one", judged, host);
-    expect(host.resolve).toHaveBeenCalledWith("one", { verdict: "judged on the board" });
+    expect(host.resolve).toHaveBeenCalledWith("one", { verdict: "judged on the board", kept: ["s"] });
     host.get.mockResolvedValue(intent("one", [suggestion("s", "pending")]));
     host.resolve.mockClear();
     await store.getState().settle("one", judged, host);

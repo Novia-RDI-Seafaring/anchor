@@ -5,7 +5,7 @@ import { placesFromAlso } from "@/canvas/sourceHighlight";
 import { CLOSE_DELAY_MS, OPEN_DELAY_MS, RefHoverPreview } from "@/canvas/RefHoverPreview";
 import { cancelTransientClose, scheduleTransientClose } from "@/canvas/transientViewer";
 import { requestViewerZoom, viewerAcceptsZoom } from "@/canvas/viewerZoom";
-import { documentCardInView, useOpenSourceRef } from "@/canvas/useOpenSourceRef";
+import { documentCardInView, sectionInView, useOpenSourceRef } from "@/canvas/useOpenSourceRef";
 import { useUiStore } from "@/stores/uiStore";
 
 /**
@@ -32,8 +32,8 @@ import { useUiStore } from "@/stores/uiStore";
  *   1. The source pane is already open -> move it. The reader opened it and is
  *      looking at it, so the next ref swaps its page and the mark travels to
  *      the new box, wherever the ref points.
- *   2. The document is already on the canvas and in view -> light up the card
- *      and open nothing. That is the behaviour the canvas had before any of
+ *   2. The document, or the section the ref points into, is already on the
+ *      canvas and in view -> light it up and open nothing. That is the behaviour the canvas had before any of
  *      this existed. Covering a document the reader can already see with a
  *      second copy of it is the worst of both, and it costs them the canvas
  *      they arranged.
@@ -83,6 +83,9 @@ export function useRefHover(
       // Nothing open, but the document is already on the canvas and visible:
       // the card does the showing.
       if (documentCardInView(refValue.slug)) return;
+      // The section it points into is on the canvas and in view: the section
+      // lights the value, so nothing else needs to open.
+      if (sectionInView(refValue)) return;
       if (hoverMode === "viewer") {
         openRef(refValue, query, { transient: true });
       } else {

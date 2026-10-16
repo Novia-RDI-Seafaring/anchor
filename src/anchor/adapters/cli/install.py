@@ -341,6 +341,7 @@ def _warn_no_key(env_name: str, *, dry_run: bool) -> None:
     ``anchor check`` and the harness fallback (issue #226)."""
     remedy = _no_key_remedy(env_name)
     if not remedy:
+        _warn_shell_only_key(env_name, dry_run=dry_run)
         return
     prefix = "[dry-run] " if dry_run else ""
     typer.echo("")
@@ -350,6 +351,45 @@ def _warn_no_key(env_name: str, *, dry_run: bool) -> None:
     )
     for line in remedy:
         typer.echo(f"  - {line}")
+    typer.echo(f"  Verify with: anchor check --env {env_name}")
+
+
+def _shell_only_key_file(env_name: str) -> str | None:
+    """The env's key file when the key exists only in this shell, else None.
+
+    ``install`` usually runs from a terminal whose profile exports the key, so
+    the no-key check passes. An agent app started from the Dock or Finder does
+    not read that profile, and its Anchor server ingests without gold.
+    """
+    from anchor.infra.egress_policy import describe_credential
+    from anchor.infra.environment import (
+        DEFAULT_PROJECT,
+        resolve_environment,
+        resolve_project_config,
+    )
+
+    env = resolve_environment(env_name)
+    if not env.initialized:
+        return None
+    cred = describe_credential(resolve_project_config(env, DEFAULT_PROJECT))
+    if cred["required"] and cred["source"] == "process" and not cred["env_file_has_key"]:
+        return cred["env_file"] or str(env.root / ".env")
+    return None
+
+
+def _warn_shell_only_key(env_name: str, *, dry_run: bool) -> None:
+    from anchor.infra.providers import ANCHOR_KEY_VAR
+
+    env_file = _shell_only_key_file(env_name)
+    if env_file is None:
+        return
+    prefix = "[dry-run] " if dry_run else ""
+    typer.echo("")
+    typer.echo(prefix + "! The model key is only in this shell. An agent app started from")
+    typer.echo("  the Dock or Finder does not read your shell profile, so its Anchor")
+    typer.echo("  server will ingest without gold (no figures, no regions).")
+    typer.echo(f"  - Put {ANCHOR_KEY_VAR}=<key> in {env_file}")
+    typer.echo("    (a plain OPENAI_API_KEY there counts only for public OpenAI).")
     typer.echo(f"  Verify with: anchor check --env {env_name}")
 
 
@@ -494,6 +534,7 @@ def install_codex(
     initialized, zone = _environment_zone(env_name)
     typer.echo(f"Environment : {env_name}")
     typer.echo(f"Data zone   : {zone}")
+    _warn_no_key(env_name, dry_run=dry_run)
     if not dry_run and not yes:
         if not typer.confirm(
             f"Wire MCP server '{name}' for environment '{env_name}'?",

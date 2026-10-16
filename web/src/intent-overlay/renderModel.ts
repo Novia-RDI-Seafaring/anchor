@@ -10,6 +10,7 @@ import { resolveStrikes } from "./strikes";
 import { BLOB_PAD_PX, GHOST_H, GHOST_W } from "./constants";
 import { noteRect, rectCorners } from "./geometry";
 import type { MarkupModel } from "./types";
+import { awaitingVerdict } from "./verdict";
 
 export function deriveMarkupRender(context: Pick<MarkupModel, "current" | "strokes" | "screen" | "filed" | "boxes" | "viewport" | "kept" | "host" | "notes" | "marks" | "rowsOf" | "edgesOf" | "notePos" | "ids" | "selectionRect" | "selected">) {
   const { current, strokes, screen, filed, boxes, viewport, kept, host, notes, marks, rowsOf, edgesOf, notePos, ids, selectionRect, selected } = context;
@@ -57,16 +58,10 @@ export function deriveMarkupRender(context: Pick<MarkupModel, "current" | "strok
     // Act, then ask: a change the agent applied itself, which the reader has
     // not yet kept or put back. The result is on the canvas; the question is
     // only whether it stays.
-    const applied =
-      f.intent?.status === "resolved"
-        ? undefined
-        : [...items].reverse().find(
-          (it) =>
-            it.type === "suggestion" &&
-            it.state === "applied" &&
-            it.author.kind !== "human" &&
-            !kept.has(it.id),
-        );
+    const applied = awaitingVerdict(f.intent, kept).at(-1);
+    // What that change did, on the real elements: marked until the reader
+    // rules, and what it removed outlined where it stood.
+    const changes = applied ? host.display.changes?.(applied) ?? null : null;
     // Once there is a proposal, the plan has become the result: the agent's
     // ghost boxes stand down and the ops are drawn where they will land.
     const preview: Preview | null = suggestion
@@ -75,7 +70,7 @@ export function deriveMarkupRender(context: Pick<MarkupModel, "current" | "strok
     const placed = preview
       ? []
       : items.filter((it) => it.place && it.type === "message" && it.state !== "done");
-    return { f, blob, status, questions, suggestion, applied, placed, items, preview };
+    return { f, blob, status, questions, suggestion, applied, changes, placed, items, preview };
   });
 
   // A mark with no words points at something without saying what about it.

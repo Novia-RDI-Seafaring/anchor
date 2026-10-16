@@ -9,8 +9,10 @@ from anchor.core.events.actor import Actor
 
 
 class CreateProjectRequest(BaseModel):
-    name: str
+    name: str | None = None
     description: str = ""
+    #: The caller's working folder: find or make the project bound to it.
+    folder: str | None = None
 
 
 class RenameProjectRequest(BaseModel):

@@ -381,6 +381,90 @@ def create_project(
     return name
 
 
+class FolderProjectError(ValueError):
+    """A working folder cannot be made a project, with what to do instead."""
+
+
+def project_for_folder(env: Environment, folder: Path | str) -> str | None:
+    """The project in ``env`` whose folder is ``folder`` or contains it.
+
+    An agent working in a subfolder of a project is still in that project, so
+    the nearest enclosing project folder wins.
+    """
+    target = Path(os.path.realpath(_expand(folder)))
+    best: tuple[str, Path] | None = None
+    for name in env.list_project_names():
+        root = Path(os.path.realpath(env.project_root(name)))
+        if (target == root or root in target.parents) and (
+            best is None or len(root.parts) > len(best[1].parts)
+        ):
+            best = (name, root)
+    return best[0] if best else None
+
+
+def _name_from_folder(folder: Path) -> str:
+    cleaned = "".join(c if c.isalnum() or c in "._-" else "-" for c in folder.name).strip(".-")
+    return (cleaned or "project")[:63]
+
+
+def bind_folder_project(
+    env: Environment,
+    folder: Path | str,
+    *,
+    name: str | None = None,
+    description: str = "",
+) -> dict[str, Any]:
+    """The project for a working folder, made if it has none yet.
+
+    An agent opened in a folder (a Codex project, a repo, a case folder)
+    expects the documents it ingests there to stay there. This returns the
+    project already bound to the folder, or one enclosing it; otherwise it
+    makes the folder a project the way ``anchor init`` does, named after the
+    folder unless ``name`` is given. Idempotent, so an agent can call it at
+    the start of every session.
+    """
+    if not env.initialized:
+        raise NoEnvironmentError(env.name)
+    root = Path(os.path.realpath(_expand(folder)))
+    if not Path(str(folder)).expanduser().is_absolute():
+        raise FolderProjectError(f"folder must be an absolute path, not {str(folder)!r}")
+    if not root.is_dir():
+        raise FolderProjectError(f"{root} is not an existing folder")
+    if root == Path(root.anchor) or root == Path.home().resolve():
+        raise FolderProjectError(
+            f"{root} is too broad to be one project; pass the folder you work in"
+        )
+    existing = project_for_folder(env, root)
+    if existing is not None:
+        return {
+            "project": existing,
+            "folder": str(env.project_root(existing)),
+            "created": False,
+        }
+    marked = (root / PROJECT_MARKER_FILENAME).is_file()
+    if marked:
+        marker = _read_project_marker(root)
+        marker_env = str(marker.get("env") or default_env_name())
+        if marker_env != env.name:
+            raise ProjectEnvMismatchError(root, marker_env, env.name)
+        name = name or str(marker.get("name") or "") or None
+    name = validate_project_name(name or _name_from_folder(root))
+    if env.project_exists(name):
+        raise FolderProjectError(
+            f"a project named {name!r} already exists in another folder "
+            f"({env.project_root(name)}); pass a different name"
+        )
+    if marked:
+        # An `anchor init` folder this environment lost track of: keep its
+        # marker and settings, only register it again.
+        for sub in PROJECT_SUBDIRS:
+            (root / DATA_DIRNAME / sub).mkdir(parents=True, exist_ok=True)
+        register_project(env, name, root)
+    else:
+        create_project(env, name, root=root, description=description)
+    return {"project": name, "folder": str(root), "created": True}
+
+
 def ensure_project(env: Environment, name: str) -> Path:
     """Return ``name``'s data dir, creating its subdirs (and marker) if absent."""
     data_dir = env.project_dir(name)
@@ -596,6 +680,9 @@ def rename_project(env: Environment, old: str, new: str) -> dict[str, Any]:
 
 
 __all__ = [
+    "FolderProjectError",
+    "bind_folder_project",
+    "project_for_folder",
     "ANCHOR_HOME",
     "ENVS_DIRNAME",
     "ENV_CONFIG_FILENAME",

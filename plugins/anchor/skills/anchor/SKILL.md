@@ -60,6 +60,12 @@ required for `azure` and `custom`). With the `openai` provider a plain
 providers need no key. Set the other `ANCHOR_OPENAI_*` variables for your
 provider as needed; `anchor check` reports what the resolved config accepts.
 
+Put the key in the environment's `.env` (`~/.anchor/envs/<env>/.env`), not
+only in a shell profile. Agent apps started from the Dock or Finder do not
+read `~/.zshrc`, so their Anchor server sees no key and ingests without gold.
+An `ingest_pdf` result with `note.gold_skipped` means exactly this. Tell the
+user which file to edit; never ask for the key in chat or write it yourself.
+
 ## When to use
 
 - The user drops a PDF datasheet, leaflet, or manual and wants it readable.
@@ -91,25 +97,58 @@ provider as needed; `anchor check` reports what the resolved config accepts.
   regions on a non-empty document (usually a transient failure), so `has_gold`
   is false and you should re-ingest that slug to recover its regions.
 
+## Your working folder is your project
+
+If you work in a folder (your harness's project or workspace, a repo, a case
+folder), call `create_project(folder=<its absolute path>)` once at the start,
+before you ingest anything (`anchor project create --folder <path>` on the
+CLI). It returns the project that folder already is, or sits inside, or makes
+the folder a project named after it, and makes it the session's default. What
+you ingest and draw then stays with that folder. Do not fall back to the
+environment's `default` project just because nobody named one. If the user
+names a project, use theirs.
+
+When you start the web app for the user, serve the same project:
+`anchor serve --env <env> --project <that project>`. `server_info` tells you
+whether one is already running for it, and at which URL.
+
 ## Scoped asks: your inbox
 
 A user can select elements on a canvas and ask something about them. That
 creates a **thread**: an intent with `targets` (`[{workspace_id, node_id}]`),
 the canvas `base_version` at ask time, and `items` (the conversation).
 
-- At the start of any Anchor task, and whenever you are idle, call
-  `list_pending_intents` (`anchor intents` on the CLI). Take one.
+- Remarks wait in the inbox; nothing pushes them into your chat. Read it
+  at the start of every turn in a session where Anchor is in use, and
+  whenever you are idle: `list_pending_intents` (`anchor intents` on the
+  CLI). Take one.
+- When you open or hand over a canvas, tell the user in one line that they
+  can mark things on it and send them to you, and that any message to you
+  ("check the board") makes you pick them up. An intent
+  whose every target was deleted is stale and left out; pass
+  `include_stale` (`--include-stale`) to see them, each with its `stale`
+  reason. The reader removes those, not you. Your first read of an intent
+  is recorded as `seen_at` / `seen_by`, so the asker sees that an agent
+  has it. A remark nobody has read tells its asker no agent is listening.
 - Read the targets' subgraph with `canvas_get_state` (filter by the target
   ids). `canvas_snapshot` gives you the picture.
 - Reply in the thread with `intent_add_item(id, type, text, ops?)`:
   - `question` when the ask is ambiguous. Then wait; poll `get_intent` for
     the answer.
-  - `suggestion` for any change to the targeted elements. It is a staged
-    batch of canvas ops (`NodeAdded`, `NodeUpdated`, `NodeRemoved`,
-    `EdgeAdded`, `EdgeUpdated`, `EdgeRemoved`, each `{type, payload}`) plus
-    `text` as the rationale. The human previews it and approves or declines.
-    Nothing moves on the canvas until approval. Never edit targeted elements
-    directly.
+  - Show the plan first: one `message` per element you are about to add,
+    with a `place` where it will land ("adding PX-10 dimensions table").
+    Each shows as a ghost box, so the human sees how you read the ask.
+  - Then act with `intent_act(id, text, ops, done)`, `done` naming those
+    plan messages. It
+    applies a batch of canvas ops (`NodeAdded`, `NodeUpdated`, `NodeRemoved`,
+    `EdgeAdded`, `EdgeUpdated`, `EdgeRemoved`, each `{type, payload}`) at
+    once, with `text` as the rationale. The human sees the real result with
+    keep and put back beside it; put back restores things exactly. This is
+    the default. Never edit targeted elements with the canvas tools.
+  - Stage instead (`apply: false`, or a `suggestion` item) when the change
+    is large or hard to judge by eye, such as removing elements or
+    rewriting many rows. The human previews it and approves or declines;
+    nothing moves until approval.
   - Group ops that depend on each other into one suggestion. Keep independent
     changes as separate suggestions so partial approval is safe. A `NodeAdded`
     may carry a client `id` that later ops in the same batch reference.
@@ -351,11 +390,10 @@ set: use a set for what you add outside a thread.
 
 When an intent in your inbox carries `targets`, those elements belong to
 a thread. Do not call `canvas_update_node` / `canvas_remove_node` /
-`canvas_add_edge` on them. Stage the change as a `suggestion` item on
-the thread instead (`intent_add_item`); the ops use the same payload
-shapes as these tools. On approval the batch is applied with you as the
-actor, and every element it creates lands with `data.review = {state:
-"accepted", by: <the approver>}`.
+`canvas_add_edge` on them. Change them through the thread instead:
+`intent_act` applies the ops at once and the human keeps or puts them
+back; a staged `suggestion` (`apply: false`) waits for approval. The ops
+use the same payload shapes as these tools.
 
 ### Make it readable at the zoom it will be read at
 
@@ -554,6 +592,21 @@ one blob of text with no per-value provenance and no table view.
 `canvas_add_node` returns a non-fatal `hint` when a `spec` node is
 created with a `description` but no `rows` — a reminder to move tabular
 facts into rows. The write still succeeds; prose-only specs are allowed.
+
+A row's name is its `key`. A row sent with `label` or `name` instead is
+stored with that text as its `key`, but write `key` yourself. A row may
+carry a `unit` ("mm"); the table shows it after the value. Keep `value`
+as the page prints it, so its evidence can be checked against the source.
+
+When the document the rows came from is on the canvas, connect the spec
+to its card with an evidence edge (`data.kind = "evidence"`), the same as
+a human would draw. Without it the reader cannot see where the table came
+from without opening each row.
+
+Editing a row's `key` or `value` marks its evidence `stale`: the claim is
+no longer the one that was checked against the page. That is not an
+error. Send the row again with `revalidate_evidence: true` to have it
+checked against its `source_ref`; a match turns it `verified` again.
 
 ## `anchor_pdfs` — ingest engineering PDFs
 

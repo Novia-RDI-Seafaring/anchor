@@ -1,4 +1,4 @@
-import { type Intent } from "./ports";
+import { type Ink, type Intent } from "./ports";
 import {
   type Point
 } from "./lasso";
@@ -24,7 +24,33 @@ export function filedFromIntent(intent: Intent): Filed | null {
   // this a remark made with a line or a plain ring lost its keep / put it
   // back the moment the page reloaded, and the change it applied stayed
   // unjudged for good.
+  // Sent with its ink: drawn back exactly as it was, in its own pen.
+  const ink = (intent.payload as { ink?: Ink }).ink;
+  if (ink && Array.isArray(ink.marks) && Array.isArray(ink.notes) && (ink.marks.length > 0 || ink.notes.length > 0)) {
+    const marks = ink.marks.filter((m) => Array.isArray(m.points) && m.points.length > 0) as Mark[];
+    return {
+      intentId: intent.id,
+      text: String((intent.payload as { text?: string }).text ?? ""),
+      ids: targets,
+      sketch: sketch ?? { nodes: [], edges: [] },
+      marks,
+      notes: ink.notes.map((n, i) => ({ ...(n as Note), id: `g-${intent.id}-n${i}` })),
+      color: marks[0]?.color ?? INK,
+      intent,
+    };
+  }
   if (!sketch || sketch.nodes.length === 0) {
+    const at = (intent.payload as { at?: Point }).at;
+    // Words on open canvas: they go back where they were written, so the
+    // reply has somewhere to stand after a reload too.
+    if (targets.length === 0 && at && Number.isFinite(at.x) && Number.isFinite(at.y)) {
+      const text = String((intent.payload as { text?: string }).text ?? "");
+      return {
+        intentId: intent.id, text, ids: [], sketch: { nodes: [], edges: [] }, marks: [],
+        notes: [{ id: `g-${intent.id}-at`, x: at.x, y: at.y, text: text.split("\n\n--- drawn ---")[0] ?? text, color: INK }],
+        color: INK, intent,
+      };
+    }
     if (targets.length === 0) return null;
     return {
       intentId: intent.id,

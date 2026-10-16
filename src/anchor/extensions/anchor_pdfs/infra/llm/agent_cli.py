@@ -50,9 +50,13 @@ REGIONS_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "additionalProperties": False,
-                "required": ["id", "kind", "title", "description", "bbox", "tags", "entities"],
+                "required": [
+                    "id", "kind", "title", "description", "member_item_ids", "bbox", "tags", "entities",
+                ],
                 "properties": {
                     "id": {"type": "string"},
+                    # Preferred geometry: the Docling items the region covers.
+                    "member_item_ids": {"type": "array", "items": {"type": "string"}},
                     "kind": {"type": "string", "enum": _KINDS},
                     "title": {"type": "string"},
                     "description": {"type": "string"},
@@ -277,17 +281,23 @@ class AgentCliRegionExtractor:
         self.cli = cli
 
     async def extract_page(self, *, page_image: bytes, page_no: int,
-                           docling_items: list[dict[str, Any]], model: str) -> list[dict[str, Any]]:
+                           docling_items: list[dict[str, Any]], model: str,
+                           page_size: list[float] | None = None,
+                           dpi: int | None = None) -> list[dict[str, Any]]:
+        prompt = region_prompt(page_no, docling_items, page_size=page_size, dpi=dpi)
         answer = await asyncio.to_thread(
-            self.cli.ask, prompt=region_prompt(page_no, docling_items), image=page_image,
-            schema=REGIONS_SCHEMA, model=model,
+            self.cli.ask, prompt=prompt, image=page_image, schema=REGIONS_SCHEMA, model=model,
         )
         regions = []
         for region in answer.get("regions") or []:
             if not isinstance(region, dict):
                 continue
+            # The strict schema makes every field present; an empty geometry
+            # field means "not given", so drop it and let the other one count.
             if region.get("bbox") is None:
                 region = {k: v for k, v in region.items() if k != "bbox"}
+            if not region.get("member_item_ids"):
+                region = {k: v for k, v in region.items() if k != "member_item_ids"}
             regions.append(region)
         return regions
 
