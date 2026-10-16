@@ -1,9 +1,10 @@
 import { render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { AnchoredText, splitAnchorLinks } from "@/canvas/AnchoredText";
+import { useUiStore } from "@/stores/uiStore";
 
 function draw(text: string) {
   return render(
@@ -54,6 +55,9 @@ describe("splitAnchorLinks", () => {
 });
 
 describe("AnchoredText", () => {
+  // These are about the crop beside the link, which is the "panel" mode.
+  beforeEach(() => { useUiStore.setState({ hoverPreviewMode: "panel" }); });
+
   it("renders an anchor link as a clickable source ref", () => {
     const { container } = draw(
       "Rated head is [24 m](anchor:lkh?page=3&region=r2) at 8 m3/h.",
