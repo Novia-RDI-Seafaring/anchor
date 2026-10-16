@@ -272,6 +272,9 @@
     margin-block-end: calc(calc(var(--spacing) * 0.5) * calc(1 - var(--tw-space-y-reverse)));
   }
 }
+:where([data-intent-overlay]) .gap-x-1 {
+  column-gap: calc(var(--spacing) * 1);
+}
 :where([data-intent-overlay]) .truncate {
   overflow: hidden;
   text-overflow: ellipsis;

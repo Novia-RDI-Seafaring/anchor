@@ -7,6 +7,7 @@ import { describeSketch } from "./sketch";
 import { GHOST_H, GHOST_W } from "./constants";
 import { ReplyLine } from "./ReplyLine";
 import { splitGhostText } from "./replyModel";
+import { SuggestionMeta } from "./SuggestionMeta";
 import type { MarkupModel } from "./types";
 
 export function Replies({ model }: { model: Pick<MarkupModel, "ghosts" | "screen" | "viewport" | "answering" | "setAnswering" | "keepSuggestion" | "settle" | "kept" | "written" | "reading" | "cutsReading" | "reset" | "host"> }) {
@@ -82,7 +83,7 @@ export function Replies({ model }: { model: Pick<MarkupModel, "ghosts" | "screen
         );
       }),
     )}
-    {ghosts.map(({ f, blob, status, questions, suggestion, applied }) => {
+    {ghosts.map(({ f, blob, status, questions, suggestion, applied, preview }) => {
       if (!blob) return null;
       const c = loopCentre(blob);
       const foot = screen(exitLoop(blob, c, { x: c.x, y: c.y + 1e5 }));
@@ -179,8 +180,9 @@ export function Replies({ model }: { model: Pick<MarkupModel, "ghosts" | "screen
               <div className="text-[10px] uppercase tracking-wide" style={{ color: f.color }}>
                 done
               </div>
-              <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-neutral-600">
-                {applied.text.split("\n")[0]}
+              <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1 text-[11px] leading-snug text-neutral-600">
+                <span className="line-clamp-2">{applied.text.split("\n")[0]}</span>
+                <SuggestionMeta item={applied} />
               </div>
               <div className="mt-1.5 flex gap-1.5">
                 <button
@@ -224,8 +226,9 @@ export function Replies({ model }: { model: Pick<MarkupModel, "ghosts" | "screen
               </div>
               {/* One line. The preview above IS the proposal; a paragraph
                     describing what the reader can see is noise. */}
-              <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-neutral-600">
-                {suggestion.text.split("\n")[0]}
+              <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1 text-[11px] leading-snug text-neutral-600">
+                <span className="line-clamp-2">{suggestion.text.split("\n")[0]}</span>
+                <SuggestionMeta item={suggestion} stale={preview?.stale} />
               </div>
               <div className="mt-1.5 flex gap-1.5">
                 <button

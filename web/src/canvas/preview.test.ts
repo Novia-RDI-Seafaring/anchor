@@ -126,4 +126,54 @@ describe("previewing a suggestion", () => {
     );
     expect(out).toEqual([expect.objectContaining({ id: "n", kind: "added", label: "second" })]);
   });
+
+  it("marks missing node and edge targets stale without inventing a preview", () => {
+    for (const op of [
+      { type: "NodeUpdated", payload: { id: "gone", fields: { label: "x" } } },
+      { type: "NodeRemoved", payload: { id: "gone" } },
+      { type: "EdgeAdded", payload: { id: "e", source: "root", target: "gone" } },
+      { type: "EdgeAdded", payload: { source: "root", target: "gone" } },
+      { type: "EdgeUpdated", payload: { id: "gone", fields: { label: "x" } } },
+      { type: "EdgeRemoved", payload: { id: "gone" } },
+    ]) {
+      expect(previewOps([op], nodes)).toEqual({ nodes: [], edges: [], stale: true });
+    }
+  });
+
+  it("keeps existing targets and targets created earlier in the batch fresh", () => {
+    expect(previewOps(SPLIT, nodes).stale).toBe(false);
+    expect(previewOps([{ type: "EdgeAdded", payload: { source: "root", target: "dims" } }], nodes).stale).toBe(false);
+    expect(previewOps([
+      { type: "NodeAdded", payload: { id: "new", x: 0, y: 0 } },
+      { type: "NodeUpdated", payload: { id: "new", fields: { label: "updated" } } },
+      { type: "EdgeAdded", payload: { id: "new-edge", source: "root", target: "new" } },
+      { type: "EdgeUpdated", payload: { id: "new-edge", fields: { label: "updated" } } },
+      { type: "EdgeRemoved", payload: { id: "new-edge" } },
+      { type: "NodeRemoved", payload: { id: "new" } },
+    ], nodes).stale).toBe(false);
+    const edges = [{ id: "existing", source: "root", target: "dims" }];
+    expect(previewOps([{ type: "EdgeRemoved", payload: { id: "existing" } }], nodes, edges).stale).toBe(false);
+    expect(edges).toEqual([{ id: "existing", source: "root", target: "dims" }]);
+  });
+
+  it("checks target existence in batch order and preserves the original ops", () => {
+    const ops = [
+      { type: "NodeRemoved", payload: { id: "dims" } },
+      { type: "EdgeRemoved", payload: { id: "link" } },
+    ];
+    const original = structuredClone(ops);
+    expect(previewOps(ops, nodes, [{ id: "link", source: "root", target: "dims" }]).stale).toBe(true);
+    expect(ops).toEqual(original);
+    expect(nodes.dims).toBe(dims);
+  });
+
+  it("marks an addition stale when its parent has disappeared, using batch order", () => {
+    const child = { type: "NodeAdded", payload: { id: "child", parent: "parent", x: 10, y: 20 } };
+    expect(previewOps([child], nodes)).toEqual({ nodes: [], edges: [], stale: true });
+    expect(previewOps([{ type: "NodeAdded", payload: { parent: "parent", x: 10, y: 20 } }], nodes).stale).toBe(true);
+    const parent = { type: "NodeAdded", payload: { id: "parent", x: 0, y: 0 } };
+    expect(previewOps([parent, child], nodes).stale).toBe(false);
+    expect(previewOps([parent, { type: "NodeRemoved", payload: { id: "parent" } }, child], nodes).stale).toBe(true);
+    expect(previewOps([{ ...child, payload: { ...child.payload, parent: "root" } }], nodes).stale).toBe(false);
+  });
 });

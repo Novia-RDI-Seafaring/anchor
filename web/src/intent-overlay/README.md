@@ -29,7 +29,10 @@ The overlay polls filed threads and cancels refresh results after cleanup.
 Its store belongs to one mount; disabling `active` pauses transient gestures
 while retaining ink, shelf and filed history. Unmounting ends that lifetime.
 
-`display.preview` produces inert boxes, rows and resolved edge endpoints.
+`display.preview` produces inert boxes, rows and resolved edge endpoints. Its
+optional `stale` flag reports operations skipped because their targets no
+longer exist. Pending suggestions show this warning beside the rationale and
+in the thread list; applied history keeps its stored state.
 The renderer never interprets operations or writes host state during preview.
 Approve, decline and revert call the thread port. The host/backend validates
 and performs the change, and owns exact undo behavior.

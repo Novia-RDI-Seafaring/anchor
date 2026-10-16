@@ -6,6 +6,7 @@ import { GHOST_GROUNDS, PALETTE } from "./markupStore";
 import { Plus, WandSparkles } from "lucide-react";
 import { PANEL_INSET_PX } from "./constants";
 import type { MarkupModel } from "./types";
+import { SuggestionMeta } from "./SuggestionMeta";
 
 export function Hotbar({ model }: { model: Pick<MarkupModel, "lifted" | "onExit" | "newStack" | "shelf" | "reveal" | "markupStore" | "switchTo" | "ink" | "ground" | "marks" | "notes" | "ids"> }) {
   const { lifted, onExit, newStack, shelf, reveal, markupStore, switchTo, ink, ground, marks, notes, ids } = model;
@@ -310,7 +311,7 @@ export function Readout({ model }: { model: Pick<MarkupModel, "panelRef" | "pane
             {filed.length} sent {"\u00b7"} on the board
           </div>
           <ul className="mt-1 space-y-0.5">
-            {ghosts.map(({ f, items, suggestion, questions }) => {
+            {ghosts.map(({ f, items, suggestion, questions, preview }) => {
               const open = openFiled === f.intentId;
               const pending = f.intent?.status !== "resolved";
               return (
@@ -327,7 +328,7 @@ export function Readout({ model }: { model: Pick<MarkupModel, "panelRef" | "pane
                     <span className="truncate">{f.text.split("\n")[0]}</span>
                     <span className="shrink-0 text-neutral-400">
                       {suggestion
-                        ? "proposal"
+                        ? preview?.stale ? "stale proposal" : "proposal"
                         : questions.length > 0
                           ? "question"
                           : pending
@@ -344,7 +345,10 @@ export function Readout({ model }: { model: Pick<MarkupModel, "panelRef" | "pane
                             {it.author.kind === "human" ? "you" : it.author.label ?? it.author.kind}
                             {" \u00b7 "}
                             {it.type}
-                            {it.state ? ` \u00b7 ${it.state}` : ""}
+                            {it.type === "suggestion" ? <>
+                              {" \u00b7 "}
+                              <SuggestionMeta item={it} stale={it.id === suggestion?.id && preview?.stale} />
+                            </> : it.state ? ` \u00b7 ${it.state}` : ""}
                             {": "}
                           </span>
                           {it.text}
