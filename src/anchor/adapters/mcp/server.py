@@ -18,9 +18,21 @@ import time
 from pathlib import Path
 from typing import Any
 
-from mcp.server import Server
-from mcp.types import ImageContent, Resource, TextContent, Tool
-from pydantic import AnyUrl
+from mcp.server import Server, ServerRequestContext
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ImageContent,
+    ListResourcesResult,
+    ListToolsResult,
+    PaginatedRequestParams,
+    ReadResourceRequestParams,
+    ReadResourceResult,
+    Resource,
+    TextContent,
+    TextResourceContents,
+    Tool,
+)
 
 from anchor.adapters.mcp import handlers_canvas, handlers_extensions, handlers_intents, tiering
 from anchor.adapters.mcp.router import ProjectRouter
@@ -359,7 +371,6 @@ def build_mcp_server(
         raise ValueError("build_mcp_server requires either a bundle or a router")
     multiproject = router is not None
     instructions = (_env_identity(router) + INSTRUCTIONS) if multiproject else INSTRUCTIONS
-    app = Server(name, instructions=instructions)
 
     def get_bundle(project: str | None) -> ProjectRuntime:
         if router is not None:
@@ -367,14 +378,14 @@ def build_mcp_server(
         assert bundle is not None
         return bundle
 
-    def _client_actor() -> Actor:
+    def _client_actor(ctx: ServerRequestContext) -> Actor:
         """Actor for canvas writes over MCP (#322): always an agent, labeled
         with the connected client's self-declared name (``clientInfo.name``
         from the initialize handshake) when the session exposes it."""
         label = "mcp-agent"
         try:
-            params = app.request_context.session.client_params
-            client_info = getattr(params, "clientInfo", None)
+            params = ctx.session.client_params
+            client_info = getattr(params, "client_info", None)
             client_name = getattr(client_info, "name", None)
             if client_name:
                 label = str(client_name)
@@ -382,25 +393,29 @@ def build_mcp_server(
             pass
         return Actor(kind="agent", label=label)
 
-    @app.list_resources()
-    async def list_resources() -> list[Resource]:
-        return [
+    async def list_resources(
+        ctx: ServerRequestContext, params: PaginatedRequestParams | None,
+    ) -> ListResourcesResult:
+        return ListResourcesResult(resources=[
             Resource(
-                uri=AnyUrl("anchor://help"),
+                uri="anchor://help",
                 name="Anchor help",
                 description=(
                     "Deeper tour of Anchor's tools, placeholder protocol, "
                     "and on-disk layout. Read this when stuck."
                 ),
-                mimeType="text/markdown",
+                mime_type="text/markdown",
             ),
-        ]
+        ])
 
-    @app.read_resource()
-    async def read_resource(uri: AnyUrl) -> str:
-        if str(uri) == "anchor://help":
-            return HELP_RESOURCE_TEXT
-        raise ValueError(f"unknown resource: {uri}")
+    async def read_resource(
+        ctx: ServerRequestContext, params: ReadResourceRequestParams,
+    ) -> ReadResourceResult:
+        if params.uri == "anchor://help":
+            return ReadResourceResult(contents=[TextResourceContents(
+                uri=params.uri, mime_type="text/markdown", text=HELP_RESOURCE_TEXT,
+            )])
+        raise ValueError(f"unknown resource: {params.uri}")
 
     canvas_defs = handlers_canvas.tool_definitions()
     intent_defs = handlers_intents.tool_definitions()
@@ -460,13 +475,14 @@ def build_mcp_server(
             return set()
         return await active_extensions_for_bundle(b)
 
-    @app.list_tools()
-    async def list_tools() -> list[Tool]:
+    async def list_tools(
+        ctx: ServerRequestContext, params: PaginatedRequestParams | None,
+    ) -> ListToolsResult:
         active = await _active_extensions()
         advertised = tiering.select_advertised(
             all_defs, active_extensions=active, extension_names=extension_names,
         )
-        return [Tool(**d) for d in advertised]
+        return ListToolsResult(tools=[Tool(**d) for d in advertised])
 
     status_names = {d["name"] for d in status_defs}
     lifecycle_names = {d["name"] for d in lifecycle_defs}
@@ -476,8 +492,11 @@ def build_mcp_server(
     cad_names = {d["name"] for d in cad_defs}
     sysml_names = {d["name"] for d in sysml_defs} | getattr(sysml_handlers, "LEGACY_TOOL_NAMES", set())
 
-    @app.call_tool()
-    async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent | ImageContent]:
+    async def call_tool(
+        ctx: ServerRequestContext, params: CallToolRequestParams,
+    ) -> CallToolResult:
+        name = params.name
+        arguments = params.arguments or {}
         args = dict(arguments)
         # The activity log counts the call whatever happens to it: an agent's
         # cost is in calls, and a failed one cost a turn too. The project is
@@ -521,14 +540,14 @@ def build_mcp_server(
 
                 text = await handlers_canvas.call_tool(
                     b.workspace, name, args,
-                    actor=_client_actor(), data_dir=Path(b.config.data_dir),
+                    actor=_client_actor(ctx), data_dir=Path(b.config.data_dir),
                 )
             elif name in intent_names:
                 b = get_bundle(args.pop("project", None))
                 if b.intents is None:
                     raise RuntimeError("intent queue is not available")
                 text = await handlers_intents.call_tool(
-                    b.intents, name, args, actor=_client_actor(),
+                    b.intents, name, args, actor=_client_actor(ctx),
                     activity=ActivityLog(Path(b.config.data_dir)),
                 )
             elif name in fmu_names:
@@ -583,11 +602,15 @@ def build_mcp_server(
         except (ValueError, TypeError):
             decoded = None
         if isinstance(decoded, dict) and "_mcp_image_b64" in decoded:
-            return [ImageContent(
+            return CallToolResult(content=[ImageContent(
                 type="image",
                 data=decoded["_mcp_image_b64"],
-                mimeType=decoded.get("_mcp_mime", "image/png"),
-            )]
-        return [TextContent(type="text", text=text)]
+                mime_type=decoded.get("_mcp_mime", "image/png"),
+            )])
+        return CallToolResult(content=[TextContent(type="text", text=text)])
 
-    return app
+    return Server(
+        name=name, instructions=instructions,
+        on_list_resources=list_resources, on_read_resource=read_resource,
+        on_list_tools=list_tools, on_call_tool=call_tool,
+    )

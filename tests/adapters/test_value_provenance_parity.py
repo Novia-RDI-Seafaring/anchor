@@ -8,7 +8,7 @@ from copy import deepcopy
 
 import pytest
 from fastapi.testclient import TestClient
-from mcp.types import CallToolRequest, CallToolRequestParams
+from mcp.client import Client
 from typer.testing import CliRunner
 
 from anchor.adapters.cli.main import app as cli_app
@@ -129,16 +129,11 @@ def test_existing_update_operations_share_strict_resolution(
         server = build_mcp_server(bundle=runtime)
 
         async def update():
-            result = await server.request_handlers[CallToolRequest](
-                CallToolRequest(
-                    method="tools/call",
-                    params=CallToolRequestParams(
-                        name="canvas_update_node",
-                        arguments={"workspace_slug": "g2", "id": "spec", **fields},
-                    ),
-                )
-            )
-            out = json.loads(result.root.content[0].text)
+            async with Client(server) as client:
+                result = await client.call_tool("canvas_update_node", {
+                    "workspace_slug": "g2", "id": "spec", **fields,
+                })
+            out = json.loads(result.content[0].text)
             assert "error" not in out, out
             return out
 

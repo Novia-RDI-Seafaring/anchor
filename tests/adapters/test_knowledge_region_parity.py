@@ -6,7 +6,7 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
-from mcp.types import CallToolRequest, CallToolRequestParams
+from mcp.client import Client
 from typer.testing import CliRunner
 
 from anchor.adapters.cli.main import app as cli_app
@@ -61,10 +61,9 @@ def operation_via(transport, config, operation, *, locator=None, ref=None, succe
             arguments["region_id"] = locator
         if ref:
             arguments["ref"] = ref
-        result = await server.request_handlers[CallToolRequest](CallToolRequest(
-            method="tools/call", params=CallToolRequestParams(name=mcp_names[operation], arguments=arguments),
-        ))
-        return json.loads(result.root.content[0].text)
+        async with Client(server) as client:
+            result = await client.call_tool(mcp_names[operation], arguments)
+        return json.loads(result.content[0].text)
 
     result = asyncio.run(invoke())
     assert ("error" not in result) == success, result

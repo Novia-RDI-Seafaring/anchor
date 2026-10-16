@@ -11,7 +11,7 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
-from mcp.types import CallToolRequest, CallToolRequestParams
+from mcp.client import Client
 from typer.testing import CliRunner
 
 from anchor.adapters.cli import check as check_mod
@@ -49,13 +49,9 @@ def _openai_env():
 
 
 async def _call(server, name: str, **arguments) -> dict:
-    handler = server.request_handlers[CallToolRequest]
-    req = CallToolRequest(
-        method="tools/call",
-        params=CallToolRequestParams(name=name, arguments=arguments),
-    )
-    result = await handler(req)
-    return json.loads(result.root.content[0].text)
+    async with Client(server) as client:
+        result = await client.call_tool(name, arguments)
+    return json.loads(result.content[0].text)
 
 
 def _assert_missing_key_error(body: dict, dotenv) -> None:

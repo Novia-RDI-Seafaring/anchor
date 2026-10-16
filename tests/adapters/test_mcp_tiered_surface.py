@@ -11,11 +11,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from mcp.types import (
-    CallToolRequest,
-    CallToolRequestParams,
-    ListToolsRequest,
-)
+from mcp.client import Client
 
 from anchor.adapters.mcp import tiering
 from anchor.adapters.mcp.router import ProjectRouter
@@ -37,21 +33,15 @@ def _home(monkeypatch, tmp_path):
 
 
 async def _advertised(server) -> list[str]:
-    handler = server.request_handlers[ListToolsRequest]
-    result = await handler(ListToolsRequest(method="tools/list"))
-    return sorted(t.name for t in result.root.tools)
+    async with Client(server) as client:
+        result = await client.list_tools()
+    return sorted(t.name for t in result.tools)
 
 
 async def _call(server, name: str, _args: dict | None = None, **arguments) -> str:
-    handler = server.request_handlers[CallToolRequest]
-    # ``_args`` lets a tool take its own ``name`` argument (e.g. remove_project)
-    # without colliding with the tool name; kwargs remain the common path.
-    req = CallToolRequest(
-        method="tools/call",
-        params=CallToolRequestParams(name=name, arguments=_args or arguments),
-    )
-    result = await handler(req)
-    return result.root.content[0].text
+    async with Client(server) as client:
+        result = await client.call_tool(name, _args or arguments)
+    return result.content[0].text
 
 
 def _single_project_server(tmp_path):
