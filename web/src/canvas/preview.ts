@@ -35,7 +35,7 @@ export type PreviewEdge = {
   target: string;
 };
 
-export type Preview = { nodes: PreviewNode[]; edges: PreviewEdge[] };
+export type Preview = { nodes: PreviewNode[]; edges: PreviewEdge[]; stale: boolean };
 
 /** As much of a canvas node as a preview needs. */
 export type NodeLike = {
@@ -82,13 +82,29 @@ export function previewOps(
   edges: EdgeLike[] = [],
 ): Preview {
   const working: Record<string, NodeLike> = { ...nodes };
+  const workingEdges = new Map(edges.map((edge) => [edge.id, edge]));
   const out: Record<string, PreviewNode> = {};
   const outEdges: PreviewEdge[] = [];
+  let stale = false;
 
   for (const op of ops) {
     const type = String(op.type ?? "");
     const payload = (op.payload ?? {}) as Record<string, unknown>;
     const id = String(payload.id ?? "");
+    if (type === "NodeAdded" && payload.parent != null && !working[String(payload.parent)]) {
+      stale = true;
+      continue;
+    }
+    // Edge additions can omit an id, but still depend on existing endpoints.
+    if (type === "EdgeAdded") {
+      const source = String(payload.source ?? "");
+      const target = String(payload.target ?? "");
+      if (!working[source] || !working[target]) { stale = true; continue; }
+      if (!id) continue;
+      workingEdges.set(id, { id, source, target });
+      outEdges.push({ id, kind: "added", source, target });
+      continue;
+    }
     if (!id) continue;
 
     if (type === "NodeAdded") {
@@ -117,7 +133,7 @@ export function previewOps(
 
     if (type === "NodeUpdated") {
       const was = working[id];
-      if (!was) continue;
+      if (!was) { stale = true; continue; }
       const fields = (payload.fields ?? {}) as Record<string, unknown>;
       const next: NodeLike = {
         ...was,
@@ -147,8 +163,11 @@ export function previewOps(
 
     if (type === "NodeRemoved") {
       const was = working[id];
-      if (!was) continue;
+      if (!was) { stale = true; continue; }
       delete working[id];
+      for (const [edgeId, edge] of workingEdges) {
+        if (edge.source === id || edge.target === id) workingEdges.delete(edgeId);
+      }
       out[id] = {
         id,
         kind: "removed",
@@ -162,22 +181,20 @@ export function previewOps(
       continue;
     }
 
-    if (type === "EdgeAdded") {
-      const source = String(payload.source ?? "");
-      const target = String(payload.target ?? "");
-      if (!working[source] || !working[target]) continue;
-      outEdges.push({ id, kind: "added", source, target });
+    if (type === "EdgeUpdated") {
+      if (!workingEdges.has(id)) stale = true;
       continue;
     }
 
     if (type === "EdgeRemoved") {
-      const was = edges.find((e) => e.id === id);
-      if (!was) continue;
+      const was = workingEdges.get(id);
+      if (!was) { stale = true; continue; }
+      workingEdges.delete(id);
       outEdges.push({ id, kind: "removed", source: was.source, target: was.target });
     }
   }
 
-  return { nodes: Object.values(out), edges: outEdges };
+  return { nodes: Object.values(out), edges: outEdges, stale };
 }
 
 /** Where an element's centre will be after the batch: previewed, or as it is. */

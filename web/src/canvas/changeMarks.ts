@@ -72,6 +72,7 @@ export function changesOf(
     removed: {
       nodes: back.nodes.map((n) => ({ ...n, kind: "removed" })),
       edges: back.edges.map((e) => ({ ...e, kind: "removed" })),
+      stale: back.stale,
     },
   };
 }

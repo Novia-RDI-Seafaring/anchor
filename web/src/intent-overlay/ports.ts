@@ -83,7 +83,12 @@ export type PreviewEdge = {
   from: Point | null;
   to: Point | null;
 };
-export type Preview = { nodes: PreviewNode[]; edges: PreviewEdge[] };
+export type Preview = {
+  nodes: PreviewNode[];
+  edges: PreviewEdge[];
+  /** The host skipped an operation because its target no longer exists. */
+  stale?: boolean;
+};
 /**
  * A real element an applied change touched, while the reader has not ruled
  * on it. `was` is the label it had before a rename.

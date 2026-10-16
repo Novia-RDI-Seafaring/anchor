@@ -73,6 +73,7 @@ export function useAnchorOverlayHost(workspaceSlug: string, boxes: Box[]): Overl
         const preview = previewOps(item.ops, geometry.storeNodes, Object.values(geometry.storeEdges));
         return {
           nodes: preview.nodes,
+          stale: preview.stale,
           edges: preview.edges.map((edge) => ({
             id: edge.id, kind: edge.kind,
             from: previewCentre(edge.source, preview, geometry.storeNodes),
