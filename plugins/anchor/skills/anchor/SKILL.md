@@ -74,8 +74,11 @@ provider as needed; `anchor check` reports what the resolved config accepts.
 
 - **Always pass a `workspace_slug`.** ANCHOR is multi-canvas; create one
   per question or project (`canvas_create_workspace`) and reuse it.
-- **Provenance is the contract.** Put `source_ref = {slug, page, bbox?}`
-  on each spec row or on the node's `data` when quoting a source. The
+- **Provenance is the contract.** Put a `source_ref` on each spec row or
+  on the node's `data` when quoting a source. Point at the smallest thing
+  that holds the value: a value from a table cell is
+  `{slug, page, region_id, cell: {row, col}}`, using that cell's row and
+  col from `get_region_content`, not the whole table's bbox. The
   Sources dock lists the referenced documents and opens their evidence.
   Document cards and evidence edges are optional presentation. An explicit
   `anchored` evidence edge still requires `data.kind = "evidence"` and
@@ -626,9 +629,11 @@ Read the inspected source content and cells before answering. A title,
 description, tag or entity explains why a hit ranked; it is not evidence
 for a value. Original gold stores membership and search metadata; inspection
 reconstructs uncapped source content from silver. Use `get_region_content`
-with the same locator when you need its readable content view. Cite the returned
-`source_ref`, using the silver item
-or cell locator when available, or the region/page/bbox otherwise.
+with the same locator when you need its readable content view. Cite the smallest
+place that holds the value. A value from a table is its cell: add
+`cell: {row, col}` from the returned cells to the region's `source_ref`.
+Otherwise use the silver item, and the region/page/bbox only when nothing
+smaller holds it.
 Use `get_page_text` for adjacent context and `get_crop` for visual evidence
 when needed. If you already know the exact region locator, inspect it
 directly. Search and inspection avoid re-reading whole documents.
@@ -644,7 +649,9 @@ When the user drops a PDF and asks for specs on the canvas:
    Read its source content/cells, using `get_region_content` if needed,
    before extracting values or answering.
 5. Place one `spec` node whose `data.rows` each carry a `source_ref` naming
-   the document slug, page, and available region/item/cell/bbox locator.
+   the document slug, page, and the tightest locator: the cell for a value
+   read from a table (`region_id` plus `cell: {row, col}`), else the item,
+   region or bbox.
    For a fact, put the reference in the node's `data.source_ref`.
 6. The Sources dock shows those documents automatically. Place a `document`
    card or an explicit `anchored` evidence edge only when useful for the
