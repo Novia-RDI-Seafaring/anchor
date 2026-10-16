@@ -597,18 +597,20 @@ export function PdfSourceView({
   const flightKey = highlightPage && highlightBbox
     ? `${highlightNonce ?? 0}|${highlightPage}|${highlightBbox.join(",")}` : null;
   const lastFlightKey = useRef<string | null>(null);
-  const flyingUntil = useRef(0);
+  const flyingKey = useRef<string | null>(null);
   if (flightKey !== lastFlightKey.current) {
     // A mark appearing for the first time has nowhere to fly from.
-    if (lastFlightKey.current && flightKey) flyingUntil.current = Date.now() + MARK_FLIGHT_MS;
+    if (lastFlightKey.current && flightKey) flyingKey.current = flightKey;
     lastFlightKey.current = flightKey;
   }
-  const markFlying = Date.now() < flyingUntil.current;
-  const [, landed] = useState(0);
+  // In flight until its own timer says it landed, not until the clock does:
+  // on a busy machine a render can come late, and the move is still a move.
+  const [landedKey, setLandedKey] = useState<string | null>(null);
+  const markFlying = flightKey !== null && flyingKey.current === flightKey && landedKey !== flightKey;
   useEffect(() => {
-    if (!markFlying) return undefined;
+    if (!markFlying || !flightKey) return undefined;
     // Off again once it has landed, so a wheel zoom does not lag behind.
-    const id = window.setTimeout(() => landed((n) => n + 1), MARK_FLIGHT_MS + 20);
+    const id = window.setTimeout(() => setLandedKey(flightKey), MARK_FLIGHT_MS + 20);
     return () => window.clearTimeout(id);
   }, [flightKey, markFlying]);
 

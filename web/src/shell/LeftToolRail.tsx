@@ -30,7 +30,7 @@
  */
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
-import { Hand, Plus, WandSparkles, X } from "lucide-react";
+import { Plus, WandSparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { cad } from "@/api/cad";
@@ -97,8 +97,8 @@ export function LeftToolRail({ workspaceSlug }: Props) {
       const navigation = armedTool !== INTENT_TOOL ? navigationKey(event) : null;
       if (navigation) {
         event.preventDefault();
-        // H toggles the hand; V (the old pointer key) leaves it.
-        setNavigationMode(navigation === "hand" && navigationMode === "hand" && !armedTool ? "select" : navigation);
+        // V puts down whatever tool is armed.
+        setNavigationMode(navigation);
         return;
       }
       if (event.key === "[" && !event.metaKey && !event.ctrlKey && !event.altKey) {
@@ -189,32 +189,6 @@ export function LeftToolRail({ workspaceSlug }: Props) {
         aria-orientation="vertical"
         aria-label="Canvas tools"
       >
-        <RailGroup label="Navigation">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label="Hand"
-                aria-pressed={!armedTool && navigationMode === "hand"}
-                onClick={() => setNavigationMode(navigationMode === "hand" && !armedTool ? "select" : "hand")}
-                className={`relative grid h-9 w-9 place-items-center rounded-lg border text-neutral-600 transition ${
-                  !armedTool && navigationMode === "hand"
-                    ? "border-sky-400 bg-sky-50 text-sky-700"
-                    : "border-transparent hover:border-neutral-300 hover:bg-neutral-50"
-                }`}
-              >
-                <Hand size={16} strokeWidth={1.75} aria-hidden />
-                <span className="pointer-events-none absolute bottom-0 right-0.5 text-[8px] leading-none text-neutral-400" aria-hidden>H</span>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <div className="font-medium">Hand</div>
-              <div className="text-neutral-300">view only: drag pans, nothing moves. Click again to leave.</div>
-              <div className="text-neutral-300">Without it: drag the background to pan, Shift-drag to select.</div>
-            </TooltipContent>
-          </Tooltip>
-        </RailGroup>
-        <RailDivider />
         {/* Mark up. Armed, the canvas takes ink: rings, lines, words, filed
             as intents for the agent. First on the rail because it is the
             tool the reader reaches for most while reviewing, and because its
