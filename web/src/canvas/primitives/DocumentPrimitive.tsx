@@ -3,6 +3,7 @@ import { Handle, Position, useConnection, useUpdateNodeInternals, type NodeProps
 import { useParams } from "react-router-dom";
 
 import { regionDropPayload } from "@/canvas/regionDrop";
+import { sectionDragImage } from "@/canvas/sectionDragImage";
 import { BACKEND_URL } from "@/api/client";
 import { documents, type Region } from "@/api/documents";
 import { useDocumentIndex } from "@/api/useDocumentIndex";
@@ -405,13 +406,16 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                     onDragStart={(e) => {
                       e.stopPropagation();
                       // Same rule as the source dock: a diagram drops as a
-                      // picture, anything else as a spec card.
+                      // picture, anything else as a section card.
                       const payload = regionDropPayload({ slug, page, region: r, documentNodeId: id });
                       if (!payload) return;
+                      // Carried at the size it will land, and landed where
+                      // it was let go, as from the viewer.
+                      const held = sectionDragImage(e, imgRef.current, payload.width);
                       e.dataTransfer.effectAllowed = "copy";
                       e.dataTransfer.setData(
                         "application/x-anchor-node",
-                        JSON.stringify(payload),
+                        JSON.stringify(held ? { ...payload, __drop: held } : payload),
                       );
                     }}
                   >
