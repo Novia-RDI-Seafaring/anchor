@@ -203,6 +203,41 @@ nodes to represent it, for example a text node listing the steps. A plan written
 only in an external agent's chat is not automatically sent to ANCHOR; the agent
 must post it to the intent thread or create the intended canvas content.
 
+## Save and reuse references
+
+In the PDF dock, select text or a source region and choose **Make reference**.
+The **References** tab keeps the selected quote, page and bounding box in this
+canvas's bibliography. Search by caption, quote or document name. Click an entry
+to return to its source; rename or delete it from the same list.
+
+To reuse an entry, select an editable canvas node, open **References**, and
+choose **Attach** on the entry. Choose **Whole node** or a table row. For a fact,
+note, text or Markdown node with body text, choose **Selected words in text**,
+select the words in the dialog, and choose **Attach**. The citation keeps the
+bibliography ID rather than duplicating its locator in the text. Cancel and
+reopen the dialog if an agent changes that text while you are selecting it.
+
+Agents can create/list/attach references with `canvas_create_reference`,
+`canvas_list_references` and `canvas_attach_reference`. The HTTP
+`/api/workspaces/{canvas}/references` endpoints and CLI
+`anchor canvas reference` commands expose the same store and operations.
+To cite an existing bibliography entry in `data.text`, use the normal node
+update operation with this link syntax:
+
+```markdown
+The maximum pressure is [10 bar](anchor:ref/REFERENCE_ID).
+```
+
+Both plain text cards and Markdown cards resolve this link in their owning
+canvas. Direct document links such as `[10 bar](anchor:datasheet?page=1)` still
+work. A missing or deleted bibliography ID appears as a broken citation;
+references from another canvas are not searched. Deleting an entry leaves the
+copied source locator on already attached nodes and table rows intact.
+
+Attaching a reference replaces that target's current source link. It does not
+record Accept or Reject or mark the claim Verified; inspect and check the
+source as described below.
+
 ## Inspect and maintain row evidence
 
 Click a spec row's source anchor to open its PDF page. The dock highlights a

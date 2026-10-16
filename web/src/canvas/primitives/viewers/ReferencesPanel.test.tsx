@@ -10,7 +10,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { references } from "@/api/references";
-import type { Reference } from "@/stores/canvasStore";
+import { useCanvasStore, type Reference } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
 import { ReferencesPanel } from "./ReferencesPanel";
@@ -37,6 +37,7 @@ const REFS: Reference[] = [
 ];
 
 beforeEach(() => {
+  useCanvasStore.getState().reset();
   useUiStore.setState({ pdfViewer: null });
   vi.spyOn(references, "list").mockResolvedValue(structuredClone(REFS));
 });
@@ -53,6 +54,16 @@ async function renderPanel() {
 }
 
 describe("ReferencesPanel", () => {
+  it("searches captions and quotes and offers attachment only with an editable selection", async () => {
+    await renderPanel();
+    expect((screen.getAllByRole("button", { name: "Attach reference" })[0] as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "5 bar" } });
+    expect(screen.getAllByTestId("reference-row")).toHaveLength(1);
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "missing" } });
+    expect(screen.queryAllByTestId("reference-row")).toHaveLength(0);
+    expect(screen.getByText("No matching references.")).toBeTruthy();
+  });
+
   it("lists the canvas references with label, slug, page, and quote", async () => {
     await renderPanel();
     await waitFor(() => expect(references.list).toHaveBeenCalledWith("canvas-1"));

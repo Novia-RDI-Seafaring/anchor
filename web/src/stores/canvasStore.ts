@@ -304,6 +304,7 @@ function describeEvent(
 type State = {
   slug: string | null;
   version: number;
+  references: Reference[];
   nodes: Record<string, Node>;
   edges: Record<string, Edge>;
   activity: Activity[];
@@ -331,6 +332,7 @@ type State = {
 export const useCanvasStore = create<State>((set) => ({
   slug: null,
   version: 0,
+  references: [],
   nodes: {},
   edges: {},
   activity: [],
@@ -340,6 +342,7 @@ export const useCanvasStore = create<State>((set) => ({
   setSnapshot: (snap) => set({
     slug: snap.slug,
     version: snap.version,
+    references: Array.isArray(snap.metadata?.references) ? snap.metadata.references : [],
     nodes: Object.fromEntries(snap.nodes.map((row) => {
       const n = asNode(row);
       return [n.id, n];
@@ -447,6 +450,7 @@ export const useCanvasStore = create<State>((set) => ({
     const by = actorLabel(evt.actor);
     const nodes = { ...state.nodes };
     const edges = { ...state.edges };
+    let references = state.references;
     const p = evt.payload as Record<string, unknown>;
     // Track the latest actor per node from the live stream (#322).
     const lastEditors = { ...state.lastEditors };
@@ -458,6 +462,29 @@ export const useCanvasStore = create<State>((set) => ({
       delete lastEditors[touchedNodeId];
     }
     switch (evt.type) {
+      case "ReferenceCreated":
+        references = [...references, p.reference as Reference];
+        break;
+      case "ReferenceRemoved":
+        references = references.filter((ref) => ref.id !== p.reference_id);
+        break;
+      case "ReferenceUpdated":
+        references = references.map((ref) => ref.id === p.reference_id
+          ? { ...ref, label: (p.label as string | null) ?? undefined } : ref);
+        break;
+      case "ReferenceAttached": {
+        const node = nodes[p.node_id as string];
+        if (!node) break;
+        const attachment = { reference_id: p.reference_id, source_ref: p.source_ref };
+        const data = node.data ?? {};
+        if (p.row_index == null) {
+          nodes[node.id] = { ...node, data: { ...data, ...attachment } };
+        } else if (Array.isArray(data.rows)) {
+          nodes[node.id] = { ...node, data: { ...data, rows: data.rows.map((row, i) =>
+            i === p.row_index ? { ...row, ...attachment } : row) } };
+        }
+        break;
+      }
       case "NodeAdded":
         nodes[p.id as string] = {
           id: p.id as string,
@@ -603,6 +630,7 @@ export const useCanvasStore = create<State>((set) => ({
       ...state,
       nodes,
       edges,
+      references,
       version: evt.version,
       lastEditors,
       activity: [
@@ -618,7 +646,7 @@ export const useCanvasStore = create<State>((set) => ({
     presenceSelfId: payload.you ?? state.presenceSelfId,
   })),
   reset: () => set({
-    slug: null, version: 0, nodes: {}, edges: {}, activity: [], lastEditors: {},
+    slug: null, version: 0, references: [], nodes: {}, edges: {}, activity: [], lastEditors: {},
     presence: [], presenceSelfId: null,
   }),
 }));

@@ -5,8 +5,9 @@ import Markdown, { defaultUrlTransform } from "react-markdown";
 import { useParams } from "react-router-dom";
 import remarkGfm from "remark-gfm";
 
-import { isAnchorHref, parseAnchorHref } from "@/canvas/anchorHref";
-import { SourceRefLink } from "@/canvas/SourceRefLink";
+import { isAnchorHref } from "@/canvas/anchorHref";
+import { CitationLink } from "@/canvas/CitationLink";
+import { NodeSourceBadge } from "@/canvas/NodeSourceBadge";
 
 import { DEFAULT_BG, DEFAULT_STROKE, resolveColors, resolveText } from "@/canvas/colors";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
@@ -198,6 +199,7 @@ export function MarkdownNode({ id, data, selected }: NodeProps) {
         </div>
       )}
       <Handle type="source" position={Position.Right} />
+      <NodeSourceBadge data={data} workspaceSlug={workspaceSlug} />
     </div>
   );
 }
@@ -264,9 +266,9 @@ export function markdownComponents(workspaceSlug: string | undefined): Component
       const { href, children, ...rest } = props;
       if (isAnchorHref(href)) {
         return (
-          <SourceRefLink workspaceSlug={workspaceSlug} refValue={parseAnchorHref(href)}>
+          <CitationLink workspaceSlug={workspaceSlug} href={href!}>
             {children}
-          </SourceRefLink>
+          </CitationLink>
         );
       }
       return (
