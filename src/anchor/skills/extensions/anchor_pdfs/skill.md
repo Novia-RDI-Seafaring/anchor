@@ -72,9 +72,11 @@ Read the inspected source content and cells before answering. A title,
 description, tag or entity explains why a hit ranked; it is not evidence
 for a value. Original gold stores membership and search metadata; inspection
 reconstructs uncapped source content from silver. Use `get_region_content`
-with the same locator when you need its readable content view. Cite the returned
-`source_ref`, using the silver item
-or cell locator when available, or the region/page/bbox otherwise.
+with the same locator when you need its readable content view. Cite the smallest
+place that holds the value. A value from a table is its cell: add
+`cell: {row, col}` from the returned cells to the region's `source_ref`.
+Otherwise use the silver item, and the region/page/bbox only when nothing
+smaller holds it.
 Use `get_page_text` for adjacent context and `get_crop` for visual evidence
 when needed. If you already know the exact region locator, inspect it
 directly. Search and inspection avoid re-reading whole documents.
@@ -90,7 +92,9 @@ When the user drops a PDF and asks for specs on the canvas:
    Read its source content/cells, using `get_region_content` if needed,
    before extracting values or answering.
 5. Place one `spec` node whose `data.rows` each carry a `source_ref` naming
-   the document slug, page, and available region/item/cell/bbox locator.
+   the document slug, page, and the tightest locator: the cell for a value
+   read from a table (`region_id` plus `cell: {row, col}`), else the item,
+   region or bbox.
    For a fact, put the reference in the node's `data.source_ref`.
 6. The Sources dock shows those documents automatically. Place a `document`
    card or an explicit `anchored` evidence edge only when useful for the

@@ -1,4 +1,13 @@
 /** A source link is not a verdict. Bindings are issued by the server. */
+export type EvidenceCheck = {
+  status: "verified" | "unverified";
+  code: string;
+  message: string;
+  next_step: string;
+  claim: { key?: unknown; value?: unknown };
+  source_ref?: unknown;
+};
+
 export type EvidenceRow = {
   key?: unknown;
   value?: unknown;
@@ -8,6 +17,7 @@ export type EvidenceRow = {
     claim?: { key?: unknown; value?: unknown };
     source_ref?: unknown;
     validation?: unknown;
+    check?: EvidenceCheck;
   };
 };
 
@@ -21,6 +31,18 @@ function canonical(value: unknown): string {
 }
 
 const normalize = (value: unknown) => typeof value === "string" ? value.trim().replace(/\s+/g, " ") : value;
+
+/** A completed check describes only the exact claim and source it checked. */
+export function currentEvidenceCheck(row: EvidenceRow): EvidenceCheck | null {
+  const check = row.evidence?.check;
+  const key = normalize(row.key);
+  if (!check || typeof check.message !== "string" || typeof check.next_step !== "string"
+    || check.claim?.key !== (typeof key === "string" ? key.toLowerCase() : key)
+    || check.claim?.value !== normalize(row.value)
+    || canonical(check.source_ref ?? null) !== canonical(row.source_ref ?? null)
+    || check.status === "verified" && evidenceState(row) !== "verified") return null;
+  return check;
+}
 
 export function evidenceState(row: EvidenceRow): "verified" | "stale" | "unverified" | "none" {
   if (!row.source_ref) return "none";

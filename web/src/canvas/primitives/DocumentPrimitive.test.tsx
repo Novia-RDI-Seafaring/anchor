@@ -97,6 +97,43 @@ const READY_DOC = {
   page_count: 3,
 };
 
+describe("DocumentPrimitive overlapping hover regions", () => {
+  it.each([false, true])("keeps hover, open and drag on the smaller region, reversed=%s", async (reversed) => {
+    const table = { id: "range", kind: "table", title: "Range table", bbox: [40, 630, 550, 719] };
+    const broad = { id: "cover", kind: "text", title: "Cover text", bbox: [45, 48, 550, 787] };
+    vi.mocked(documents.regions).mockResolvedValue(reversed ? [broad, table] : [table, broad]);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => geometryFixture.gold_map }));
+    const { container, onParentClick } = await renderDoc(READY_DOC);
+    const image = screen.getByRole("img") as HTMLImageElement;
+    Object.defineProperties(image, { naturalWidth: { value: 600 }, naturalHeight: { value: 800 } });
+    await act(async () => { fireEvent.load(image); });
+    const hits = Array.from(container.querySelectorAll<HTMLElement>("[data-region-handle-id]"));
+    expect(hits.map((hit) => hit.dataset.regionHandleId)).toEqual(["region:cover", "region:range"]);
+    const hit = hits[1]!;
+    expect(hit.querySelector('[data-handleid="region:range"]')).not.toBeNull();
+    fireEvent.mouseEnter(hit);
+    expect(useUiStore.getState().hoveredSourceRef).toEqual({ slug: "pump", page: 1, region_id: "range", bbox: table.bbox });
+    expect(parseFloat(screen.getByTestId("external-highlight").style.top)).toBeCloseTo(630 / 800 * 100);
+    fireEvent.click(hit);
+    expect(onParentClick).not.toHaveBeenCalled();
+    expect(useUiStore.getState().pdfViewer).toMatchObject({ slug: "pump", page: 1, highlightRegionId: "range", highlightBbox: table.bbox });
+    const setData = vi.fn();
+    fireEvent.dragStart(hit, { dataTransfer: { setData } });
+    expect(setData).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse(setData.mock.calls[0]![1] as string);
+    // A table drops as a section card: the page cut to the region.
+    expect(payload).toMatchObject({ node_type: "section", data: { source_doc_node_id: "doc1", source_region_id: "range", source_ref: { page: 1, bbox: table.bbox, region_id: "range" } } });
+    fireEvent.mouseLeave(hit);
+    expect(useUiStore.getState().hoveredSourceRef).toBeNull();
+    expect(screen.queryByTestId("external-highlight")).toBeNull();
+    // Broad sources remain available where there is no smaller hit.
+    fireEvent.mouseEnter(hits[0]!);
+    expect(useUiStore.getState().hoveredSourceRef?.region_id).toBe("cover");
+    fireEvent.mouseLeave(hits[0]!);
+    expect(useUiStore.getState().hoveredSourceRef).toBeNull();
+  });
+});
+
 describe("DocumentPrimitive click isolation", () => {
   it("moves the existing main, word and extra-place marks to the next reference", async () => {
     vi.mocked(documents.regions).mockResolvedValue(geometryFixture.gold_map.pages["1"]);
@@ -177,8 +214,15 @@ describe("DocumentPrimitive click isolation", () => {
       const { container } = await renderDoc(READY_DOC);
       const image = screen.getByRole("img") as HTMLImageElement;
       Object.defineProperties(image, { naturalWidth: { value: 600 }, naturalHeight: { value: 800 } });
-      await act(async () => { fireEvent.load(image); });
+      vi.mocked(documents.locate).mockResolvedValue([[10, 20, 30, 40]]);
+      await act(async () => {
+        fireEvent.load(image);
+        useUiStore.getState().setHoveredSourceRef({
+          slug: "pump", page: 1, bbox: [10, 20, 30, 40], query: "value",
+        });
+      });
       expect(container.querySelector("[data-region-handle-id]")).toBeNull();
+      expect(screen.queryByTestId("value-quad")).toBeNull();
       expect(screen.getByRole("status").textContent).toContain("page dimensions unknown");
       expect(image.style.display).toBe("block");
     },
@@ -331,6 +375,162 @@ describe("DocumentPrimitive selector precision", () => {
     Object.defineProperties(image, { naturalWidth: { value: 600 }, naturalHeight: { value: 800 } });
     await act(async () => { fireEvent.load(image); });
   }
+
+  const px42Values = [
+    {
+      label: "pressure",
+      query: "600 kPa (6 bar)",
+      row: 1,
+      bbox: [275.658, 285.6667686, 344.4547343, 294.4637444],
+      quad: [275.6579895019531, 284.7572326660156, 344.4696350097656, 294.7198486328125],
+    },
+    {
+      label: "temperature",
+      query: "-10 to 140 degrees C",
+      row: 3,
+      bbox: [275.658, 309.5777686, 364.85016902, 318.3747444],
+      quad: [275.6579895019531, 308.6682434082031, 364.87298583984375, 318.630859375],
+    },
+    {
+      // A range-table cell: the cell box hugs the digits, the text line
+      // reaches 1.8 pt below them.
+      label: "flow",
+      query: "12",
+      row: 1,
+      bbox: [135.634, 653.7878432, 146.035024, 660.284],
+      quad: [135.634, 653.1109008789062, 146.035024, 662.0772705078125],
+    },
+  ];
+
+  it.each(px42Values.flatMap((value) => ["bbox", "cell"].map((locator) => ({ ...value, locator }))))(
+    "locates the real PX42 $label text within its $locator despite small font-metric bleed", async ({ query, row, bbox, quad, locator }) => {
+      const resolveRef = vi.spyOn(documents, "resolveRef").mockResolvedValue({
+        slug: "pump", page: 2, bbox, precision: "cell",
+      });
+      vi.mocked(documents.locate).mockResolvedValue([quad]);
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => geometryFixture.gold_map }));
+      await renderDoc(READY_DOC);
+      await act(async () => {
+        useUiStore.getState().setHoveredSourceRef({
+          slug: "pump", page: 2, bbox, query,
+          ...(locator === "cell" ? { region_id: "r3", cell: { row, col: 1 } } : {}),
+        });
+      });
+      await loadSourceImage();
+      await waitFor(() => expect(screen.getByTestId("value-quad")).toBeTruthy());
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(documents.locate).toHaveBeenLastCalledWith("pump", 2, query, bbox);
+      expect(resolveRef).toHaveBeenCalledTimes(locator === "cell" ? 1 : 0);
+      const valueMark = screen.getByTestId("value-quad");
+      const sourceMark = screen.getByTestId("external-highlight");
+      // The font box may bleed; the displayed word mark stays inside its locator.
+      expect(valueMark.style.cssText).toBe(sourceMark.style.cssText);
+    },
+  );
+
+  it("holds the mark on the last cell while the next one is looked up, not on the whole table", async () => {
+    const first = [275.658, 285.6667686, 344.4547343, 294.4637444];
+    const resolveRef = vi.spyOn(documents, "resolveRef")
+      .mockResolvedValueOnce({ slug: "pump", page: 2, bbox: first, precision: "cell" })
+      .mockImplementationOnce(() => new Promise(() => {}));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => geometryFixture.gold_map }));
+    await renderDoc(READY_DOC);
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 2, region_id: "r3", cell: { row: 1, col: 1 } });
+    });
+    await loadSourceImage();
+    await waitFor(() => expect(screen.getByTestId("external-highlight")).toBeTruthy());
+    const before = screen.getByTestId("external-highlight").style.cssText;
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 2, region_id: "r3", cell: { row: 3, col: 1 } });
+    });
+    await waitFor(() => expect(resolveRef).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId("external-highlight").style.cssText).toBe(before);
+  });
+
+  it.each([
+    { label: "left", quad: [8.99, 20, 30, 40] },
+    { label: "top", quad: [10, 10, 30, 40] },
+    { label: "right", quad: [10, 20, 31.01, 40] },
+    { label: "bottom", quad: [10, 20, 30, 50] },
+    { label: "empty", quad: [10, 20, 10, 40] },
+    { label: "reversed", quad: [30, 20, 10, 40] },
+    { label: "nonfinite", quad: [10, 20, Number.NaN, 40] },
+    { label: "incomplete", quad: [10, 20, 30] },
+  ])("keeps the not-located warning for a genuinely invalid or out-of-scope $label quad", async ({ quad }) => {
+    vi.mocked(documents.locate).mockResolvedValue([quad]);
+    await renderDoc(READY_DOC);
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({
+        slug: "pump", page: 1, bbox: [10, 20, 30, 40], query: "value",
+      });
+    });
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Exact source value not located"));
+    expect(screen.queryByTestId("value-quad")).toBeNull();
+  });
+
+  it.each(["no match", "failed request"])("keeps the not-located warning for %s", async (failure) => {
+    if (failure === "failed request") vi.mocked(documents.locate).mockRejectedValue(new Error("unavailable"));
+    await renderDoc(READY_DOC);
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({
+        slug: "pump", page: 1, bbox: [10, 20, 30, 40], query: "missing value",
+      });
+    });
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Exact source value not located"));
+    expect(screen.queryByTestId("value-quad")).toBeNull();
+  });
+
+  it.each([
+    { bbox: [10, 20, 10.1, 20.1], quad: [9.5, 19.5, 10.6, 20.6] },
+    { bbox: [10, 20, 10.1, 20.1], quad: [9.1, 20, 9.9, 20.1] },
+  ])("does not accept a nearby quad without meaningful overlap: %j", async ({ bbox, quad }) => {
+    vi.mocked(documents.locate).mockResolvedValue([quad]);
+    await renderDoc(READY_DOC);
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 1, bbox, query: "value" });
+    });
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Exact source value not located"));
+    expect(screen.queryByTestId("value-quad")).toBeNull();
+  });
+
+  it("preserves ambiguity when two quads have only bounded font-metric bleed", async () => {
+    vi.mocked(documents.locate).mockResolvedValue([[9.1, 20, 20, 30], [20, 30, 30.9, 40]]);
+    await renderDoc(READY_DOC);
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({
+        slug: "pump", page: 1, bbox: [10, 20, 30, 40], query: "repeated value",
+      });
+    });
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Ambiguous source"));
+    expect(screen.queryByTestId("value-quad")).toBeNull();
+  });
+
+  it.each([undefined, [10, 20, 10, 40], [30, 20, 10, 40], [10, 20, Number.NaN, 40]])(
+    "keeps the coarse warning for missing or invalid locator geometry: %j", async (bbox) => {
+      await renderDoc(READY_DOC);
+      await act(async () => {
+        useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 1, bbox, query: "value" });
+      });
+      expect(screen.getByRole("status").textContent).toContain("Coarse source");
+      expect(documents.locate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not use precise selector geometry resolved on a different page", async () => {
+    vi.spyOn(documents, "resolveRef").mockResolvedValue({
+      slug: "pump", page: 2, bbox: [10, 20, 30, 40], precision: "cell",
+    });
+    await renderDoc(READY_DOC);
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({
+        slug: "pump", page: 1, region_id: "r3", cell: { row: 1, col: 1 }, query: "value",
+      });
+    });
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Coarse source"));
+    expect(documents.locate).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("value-quad")).toBeNull();
+  });
 
   it("keeps equal motor-size values tied to their certified frequency cells", async () => {
     const cells = [[304, 229, 348, 238], [304, 240, 348, 249]];

@@ -88,3 +88,86 @@ def test_resolution_pins_one_document_generation_across_pages(tmp_path):
         updated, _ = await ws.update_node("g6", "spec", {"data": data})
         assert updated.nodes["spec"].data == data
     asyncio.run(run())
+
+
+@pytest.fixture
+async def checked_workspace():
+    store = MemoryDocStore()
+    await store.write_gold_region_file("doc", 1, _regions())
+    ws = WorkspaceService(MemoryWorkspaceStore(), MemoryEventBus())
+    bind_workspace_sources(ws, store)
+    await ws.create_workspace("checks")
+    await ws.add_node("checks", id="spec", node_type="spec")
+    return ws, store
+
+
+async def _check(ws, data):
+    data = deepcopy(data)
+    data["rows"][0]["revalidate_evidence"] = True
+    state, _ = await ws.update_node("checks", "spec", {"data": data})
+    return state.nodes["spec"].data["rows"][0]
+
+
+async def test_check_results_are_server_owned_and_not_a_caller_verdict(checked_workspace):
+    ws, _ = checked_workspace
+    data = _input("wrong_value")
+    data["rows"][0]["evidence"] = {"status": "verified", "check": {"code": "verified"}}
+    state, _ = await ws.update_node("checks", "spec", {"data": data})
+    assert "evidence" not in state.nodes["spec"].data["rows"][0]
+    row = await _check(ws, data)
+    assert row["evidence"]["status"] == "unverified"
+    assert row["evidence"]["check"]["code"] == "value_mismatch"
+    assert row["source_ref"] == data["rows"][0]["source_ref"]
+
+
+@pytest.mark.parametrize("change", ["claim", "source", "source_contents"])
+async def test_check_success_cannot_survive_changed_claim_or_source(checked_workspace, change):
+    ws, store = checked_workspace
+    row = await _check(ws, _input("exact"))
+    assert row["evidence"]["check"]["status"] == "verified"
+    if change == "claim":
+        row["value"] = "41"
+    elif change == "source":
+        row["source_ref"]["page"] = 2
+    else:
+        await store.write_gold_region_file("doc", 1, [])
+    state, _ = await ws.update_node("checks", "spec", {"data": {"rows": [row]}})
+    evidence = state.nodes["spec"].data["rows"][0].get("evidence", {})
+    assert evidence.get("status") != "verified"
+    assert "check" not in evidence
+
+
+async def test_unrelated_edits_keep_a_still_applicable_check_result(checked_workspace):
+    ws, _ = checked_workspace
+    row = await _check(ws, _input("exact"))
+    state, _ = await ws.update_node("checks", "spec", {"data": {"description": "Context"}})
+    assert state.nodes["spec"].data["rows"][0]["evidence"]["check"] == row["evidence"]["check"]
+
+
+async def test_uncertified_cell_link_remains_unverified_and_explains_why(checked_workspace):
+    ws, store = checked_workspace
+    regions = _regions()
+    for region in regions:
+        region.pop("table_topology")
+    await store.write_gold_region_file("doc", 1, regions)
+    data = _input("exact")
+    data["rows"][0]["source_ref"].update(cell={"row": 0, "col": 1}, bbox=[60, 50, 90, 60])
+    row = await _check(ws, data)
+    assert row["evidence"]["status"] == "unverified"
+    assert row["evidence"]["check"]["code"] == "no_certified_pair"
+    assert row["source_ref"] == data["rows"][0]["source_ref"]
+    await store.write_gold_region_file("doc", 1, _regions())
+    state, _ = await ws.update_node("checks", "spec", {"data": {"description": "Context"}})
+    evidence = state.nodes["spec"].data["rows"][0]["evidence"]
+    assert evidence["status"] == "unverified"
+    assert "check" not in evidence
+
+
+@pytest.mark.parametrize("key,value", [("", "42"), ("Pressure", ""), ("Pressure", 42)])
+async def test_incomplete_claim_check_explains_abstention(checked_workspace, key, value):
+    ws, _ = checked_workspace
+    data = _input("exact")
+    data["rows"][0].update(key=key, value=value)
+    row = await _check(ws, data)
+    assert row["evidence"]["status"] == "unverified"
+    assert row["evidence"]["check"]["code"] == "invalid_claim"

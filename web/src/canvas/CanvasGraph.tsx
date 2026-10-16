@@ -1,4 +1,4 @@
-import {
+import { useKeyPress,
   Background,
   Controls,
   MiniMap,
@@ -35,6 +35,7 @@ import { proposalSets } from "@/api/proposalSets";
 import { ProposalReview } from "@/canvas/ProposalReview";
 import type { Box as LassoBox } from "@/canvas/lasso";
 import { SelectionPanel } from "@/canvas/SelectionPanel";
+import { SelectionAskDialog } from "@/canvas/SelectionAskDialog";
 import { NodeDetailPanel } from "@/canvas/NodeDetailPanel";
 import { CanvasStructureContext, structuredNodeTypes } from "@/canvas/StructuredNode";
 import { foldedGraph, structureSignature } from "@/canvas/subtrees";
@@ -52,12 +53,13 @@ import {
 import { connectClick } from "@/canvas/connect";
 import { CONNECT_TOOL, INTENT_TOOL, nodeTypes, paletteEntries } from "@/canvas/registry";
 import { loadViewport, saveViewport } from "@/canvas/viewportMemory";
-import { canvasNavigation } from "@/canvas/canvasNavigation";
+import { canvasNavigation, navigationNodes } from "@/canvas/canvasNavigation";
 import "./canvasNavigation.css";
 import { refreshWorkspaces } from "@/canvas/useWorkspacesList";
 import { useCanvasClipboard } from "@/canvas/useCanvasClipboard";
 import { useCanvasKeyboard } from "@/canvas/useCanvasKeyboard";
 import { usePaneText } from "@/canvas/usePaneText";
+import { useArmedPlacement } from "@/canvas/useArmedPlacement";
 import { CanvasSse, type CanvasEvent } from "@/realtime/sseClient";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -275,7 +277,8 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   // pen down the same way it would drop a shape.
   const armedTool = useUiStore((s) => s.armedTool);
   const navigationMode = useUiStore((s) => s.navigationMode);
-  const navigation = canvasNavigation(navigationMode, readOnly ?? false, armedTool);
+  const panKeyHeld = useKeyPress("Space");
+  const navigation = canvasNavigation(navigationMode, readOnly ?? false, armedTool, panKeyHeld);
   const handMode = navigation.hand;
   const armTool = useUiStore((s) => s.armTool);
   const disarmTool = useUiStore((s) => s.disarmTool);
@@ -329,7 +332,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   // pointermove handlers can update the in-flight ghost rect without
   // re-rendering ReactFlow on every pixel — only the ghost state below
   // does that, and only when the rect actually changes.
-  const armDownRef = useRef<{ clientX: number; clientY: number } | null>(null);
+  const armDownRef = useRef<{ slug: string; clientX: number; clientY: number } | null>(null);
   // Screen-space rect for the WYSIWYG ghost preview while drag-to-size is
   // in progress. `null` when not painting. The ghost outline mirrors the
   // armed tool's silhouette via `PaintGhost` so the user sees exactly the
@@ -345,6 +348,14 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   // Mirror of the above for callbacks that must not re-create on every
   // frame (the region hit-test reads measured sizes during a drag).
   const rfNodesRef = useRef<RfNode[]>([]);
+  const [selectionAsk, setSelectionAsk] = useState<{ workspaceSlug: string; targets: string[] } | null>(null);
+  useEffect(() => { setSelectionAsk(null); }, [slug, readOnly, handMode, armedTool]);
+  const askSelection = () => {
+    const ui = useUiStore.getState();
+    if (readOnly || ui.navigationMode !== "select" || ui.armedTool) return;
+    const ids = rfNodesRef.current.filter((node) => node.selected).map((node) => node.id);
+    if (ids.length) setSelectionAsk({ workspaceSlug: slug, targets: ids });
+  };
   const [rfEdges, setRfEdges] = useState<RfEdge[]>([]);
   const canvasClipboard = useCanvasClipboard({
     slug, active: !readOnly && !commentMode && !handMode,
@@ -1219,79 +1230,10 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     return node?.dataset.id ?? null;
   };
 
-  const placeArmedNode = async (
-    flowX: number,
-    flowY: number,
-    sizeOverride?: { width: number; height: number },
-  ) => {
-    if (!armedTool || armedTool === CONNECT_TOOL || armedTool === INTENT_TOOL) return;
-    // Special path: sub-canvas placement goes through the composite
-    // `createSubCanvas` endpoint so the child workspace + linking node
-    // land atomically. The slug is generated client-side; the backend
-    // returns the linking node id via SSE.
-    if (armedTool === "canvas") {
-      const subSlug = `${slug}-sub-${shortId()}`;
-      try {
-        await canvases.createSubCanvas(slug, {
-          slug: subSlug,
-          title: "Sub-canvas",
-          x: flowX,
-          y: flowY,
-        });
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error("armed sub-canvas placement failed", err);
-      } finally {
-        disarmTool();
-      }
-      return;
-    }
-    // Pull the palette meta for default size + payload shape. Producers
-    // are included so click-to-arm-then-place works for the spec tile.
-    const all = [
-      ...paletteEntries("shapes"),
-      ...paletteEntries("cards"),
-      ...paletteEntries("producers"),
-    ];
-    const meta = all.find((e) => e.name === armedTool)?.meta;
-    const label = meta?.noDefaultLabel ? "" : meta?.label ?? "";
-    const width = sizeOverride?.width ?? meta?.width;
-    const height = sizeOverride?.height ?? meta?.height;
-    try {
-      const placed = (await canvases.addNode(slug, {
-        node_type: meta?.nodeType ?? armedTool,
-        label,
-        x: flowX,
-        y: flowY,
-        ...(width !== undefined ? { width } : {}),
-        ...(height !== undefined ? { height } : {}),
-        data: { ...(meta?.data ?? {}), ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) },
-      })) as { event?: { payload?: { id?: string } } } | null;
-      // A region is not placed into another region: dropping one on top of
-      // another is how people draw side-by-side groups, not nesting.
-      const placedId = placed?.event?.payload?.id;
-      if (placedId) {
-        // Place it and type: select the new element and ask its inline
-        // editor to open. Without this a placed text element sat there with
-        // nothing focused, so typing went nowhere.
-        setSelectedNodeId(placedId);
-        useUiStore.getState().requestInlineRename(placedId);
-      }
-      if (placedId && armedTool !== "area") {
-        await adoptIntoRegion(placedId, {
-          x: flowX + (width ?? 160) / 2,
-          y: flowY + (height ?? 60) / 2,
-        });
-      }
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("armed-tool placement failed", err);
-    } finally {
-      // Always disarm after placement; user can re-arm by clicking the
-      // rail icon again.
-      disarmTool();
-    }
-  };
+  const placeArmedNode = useArmedPlacement({
+    slug, active: !readOnly && !handMode, armedTool, adoptIntoRegion,
+    makeSubCanvasSlug: () => `${slug}-sub-${shortId()}`,
+  });
 
   const onPointerDown = (event: React.PointerEvent) => {
     if (!armedTool || armedTool === INTENT_TOOL) return;
@@ -1322,6 +1264,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     // pointer-up using the SAME endpoints the ghost rect uses, so the
     // WYSIWYG contract (ghost rect == dropped node rect) holds.
     armDownRef.current = {
+      slug,
       clientX: event.clientX,
       clientY: event.clientY,
     };
@@ -1340,7 +1283,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       return;
     }
     const down = armDownRef.current;
-    if (!down || !armedTool) return;
+    if (!down || down.slug !== slug || !armedTool) return;
     // Only sizeable shapes render the ghost — cards drop at default size
     // even when the user drags, so a ghost would be misleading.
     if (!CAN_SIZE[armedTool]) return;
@@ -1403,7 +1346,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     const down = armDownRef.current;
     armDownRef.current = null;
     setPaintRect(null);
-    if (!down) return;
+    if (!down || down.slug !== slug) return;
     const dx = event.clientX - down.clientX;
     const dy = event.clientY - down.clientY;
     const dist = Math.hypot(dx, dy);
@@ -1494,7 +1437,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         readOnly: readOnly || handMode, toggle: toggleSubtree, inspect: setDetailNodeId,
       }}>
       <ReactFlow
-        nodes={handMode ? rfNodes.map((node) => ({ ...node, selected: false, draggable: false, selectable: false, connectable: false, deletable: false })) : rfNodes}
+        nodes={navigationNodes(rfNodes, navigation)}
         edges={handMode ? rfEdges.map((edge) => ({ ...edge, selected: false, selectable: false, deletable: false })) : rfEdges}
         nodeTypes={structuredTypes}
         edgeTypes={edgeTypes}
@@ -1505,7 +1448,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         fitView={!initialViewport}
         defaultViewport={initialViewport ?? undefined}
         onMoveEnd={(_, viewport) => saveViewport(slug, viewport)}
-        nodesDraggable={!readOnly && !handMode && armedTool !== CONNECT_TOOL}
+        nodesDraggable={navigation.nodesDraggable}
         // Keep containers below edges and every ordinary card above them,
         // including selected edges and edges attached to parented nodes.
         zIndexMode="manual"
@@ -1798,8 +1741,9 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
           xyflow's useStore. */}
       {readOnly || handMode ? null : (
         <>
-          <NodeContextToolbar workspaceSlug={slug} />
-          <SelectionPanel />
+          <NodeContextToolbar workspaceSlug={slug} onAsk={armedTool ? undefined : askSelection} />
+          <SelectionPanel nodeIds={rfNodes.filter((node) => node.selected).map((node) => node.id)} onAsk={armedTool ? undefined : askSelection} />
+          {selectionAsk?.workspaceSlug === slug ? <SelectionAskDialog key={slug} workspaceSlug={slug} targetIds={selectionAsk.targets} onClose={() => setSelectionAsk(null)} /> : null}
           <NodeContextMenu
             workspaceSlug={slug}
             target={contextMenuTarget}

@@ -77,8 +77,11 @@ user which file to edit; never ask for the key in chat or write it yourself.
 
 - **Always pass a `workspace_slug`.** ANCHOR is multi-canvas; create one
   per question or project (`canvas_create_workspace`) and reuse it.
-- **Provenance is the contract.** Put `source_ref = {slug, page, bbox?}`
-  on each spec row or on the node's `data` when quoting a source. The
+- **Provenance is the contract.** Put a `source_ref` on each spec row or
+  on the node's `data` when quoting a source. Point at the smallest thing
+  that holds the value: a value from a table cell is
+  `{slug, page, region_id, cell: {row, col}}`, using that cell's row and
+  col from `get_region_content`, not the whole table's bbox. The
   Sources dock lists the referenced documents and opens their evidence.
   Document cards and evidence edges are optional presentation. An explicit
   `anchored` evidence edge still requires `data.kind = "evidence"` and

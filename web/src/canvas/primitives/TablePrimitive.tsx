@@ -1,12 +1,12 @@
 import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
-import { canvases } from "@/api/canvases";
+import { canvases, type CanvasState } from "@/api/canvases";
 import { documents, type ResolvableRef } from "@/api/documents";
 import { PictureHighlightBoxes, usePictureHighlights } from "@/canvas/PictureHighlights";
 import { placesFromAlso } from "@/canvas/sourceHighlight";
-import { evidenceLabels, evidenceState, type EvidenceRow } from "@/canvas/evidence";
+import { currentEvidenceCheck, evidenceLabels, evidenceState, type EvidenceRow } from "@/canvas/evidence";
 import { refReview } from "@/canvas/refReview";
 import { RefReviewChip, refVerdict } from "@/canvas/RefReviewChip";
 import { SourceAnchorButton } from "@/canvas/SourceAnchorButton";
@@ -106,6 +106,18 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   // Local working copy of rows so cell edits feel snappy. Replaced when
   // the canonical rows change from outside (SSE echo, remote agent edit).
   const [rows, setRows] = useState<Row[]>(canonicalRows);
+  const [checkProgress, setCheckProgress] = useState<{
+    index: number; row: Row; phase: "running" | "failed";
+  } | null>(null);
+  const checkRequest = useRef<symbol | null>(null);
+  const latestCanonicalRows = useRef(canonicalRows);
+  latestCanonicalRows.current = canonicalRows;
+  const latestRows = useRef(rows);
+  latestRows.current = rows;
+  useEffect(() => {
+    setCheckProgress(null);
+    return () => { checkRequest.current = null; };
+  }, [workspaceSlug, id]);
   // Track which row index is "pending focus" so the cell can grab focus
   // after the new row mounts. -1 means no pending focus.
   const [pendingFocus, setPendingFocus] = useState<{ row: number; col: "key" | "value" } | null>(
@@ -123,6 +135,34 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         // eslint-disable-next-line no-console
         console.error("row edit failed", err);
       });
+  };
+
+  const revalidateRow = async (index: number) => {
+    if (!workspaceSlug || checkRequest.current || useUiStore.getState().navigationMode === "hand") return;
+    const row = rows[index];
+    if (!row) return;
+    const token = Symbol();
+    checkRequest.current = token;
+    const before = latestCanonicalRows.current;
+    setCheckProgress({ index, row, phase: "running" });
+    try {
+      const result = await canvases.patchNode(workspaceSlug, id, { data: {
+        rows: rows.map((item, i) => i === index ? { ...item, revalidate_evidence: true } : item),
+      } }) as { state?: CanvasState };
+      if (checkRequest.current !== token) return;
+      const node = result?.state?.nodes?.find((item) => item.id === id);
+      const savedRows = (node?.data as { rows?: Row[] } | undefined)?.rows;
+      if (!savedRows?.[index] || !currentEvidenceCheck(savedRows[index])) {
+        throw new Error("The server returned no evidence check result");
+      }
+      // An intervening SSE update owns the rows; a late response cannot undo it.
+      if (latestCanonicalRows.current === before && latestRows.current === rows) setRows(savedRows);
+      setCheckProgress(null);
+    } catch {
+      if (checkRequest.current === token) setCheckProgress({ index, row, phase: "failed" });
+    } finally {
+      if (checkRequest.current === token) checkRequest.current = null;
+    }
   };
 
   const commitRow = (index: number, col: "key" | "value", next: string) => {
@@ -406,9 +446,14 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
               const status = evidenceState(r);
               const evidenceLabel = evidenceLabels[status];
               const rowRef = normalizeRef(r.source_ref);
+              const check = currentEvidenceCheck(r);
+              const progress = checkProgress?.index === i && checkProgress.row.key === r.key
+                && checkProgress.row.value === r.value
+                && JSON.stringify(checkProgress.row.source_ref) === JSON.stringify(r.source_ref)
+                ? checkProgress : null;
               return (
+                <Fragment key={`row-${i}`}>
                 <tr
-                  key={`row-${i}`}
                   data-row-handle-id={hid}
                   className="group/tr relative border-b border-neutral-100 last:border-0 hover:bg-sky-50/40"
                   // Only broadcast on row-enter; the parent <div>'s
@@ -472,13 +517,8 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                         label={r.key || `row ${i + 1}`}
                         review={refReview(r)}
                         onRevalidate={
-                          canEdit && status !== "verified"
-                            ? () =>
-                                persistRows(
-                                  rows.map((row, j) =>
-                                    j === i ? { ...row, revalidate_evidence: true } : row,
-                                  ),
-                                )
+                          canEdit && status !== "verified" && checkProgress?.phase !== "running"
+                            ? () => { void revalidateRow(i); }
                             : undefined
                         }
                         onChange={(state, note) =>
@@ -513,6 +553,16 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                     />
                   </td>
                 </tr>
+                {progress || check ? (
+                  <tr><td colSpan={3} className="px-3 pb-2 text-[10px] leading-snug text-neutral-600">
+                    <span role={progress?.phase === "failed" ? "alert" : "status"}>
+                      {progress ? progress.phase === "running" ? "Checking evidence..." :
+                        "Check request failed. Reload the table and try again; evidence was not confirmed." :
+                        check ? <>Check complete: {check.status === "verified" ? "Verified" : "Not verified"}. {check.message} {check.next_step}</> : null}
+                    </span>
+                  </td></tr>
+                ) : null}
+                </Fragment>
               );
             })}
           </tbody>

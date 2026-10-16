@@ -78,7 +78,7 @@ export function TextPicker({ workspaceSlug, nodeIds, getNodeData, onClose }: Pro
   const setFamily = (next: TextFamily) =>
     void patchField(workspaceSlug, nodeIds, getNodeData, "text_family", next === "default" ? undefined : next);
   const setSize = (next: TextSize) =>
-    void patchField(workspaceSlug, nodeIds, getNodeData, "text_size", next === "md" ? undefined : next);
+    void patchField(workspaceSlug, nodeIds, getNodeData, "text_size", next);
 
   return (
     <div data-testid="text-picker" className="flex min-w-[15rem] flex-col gap-3">

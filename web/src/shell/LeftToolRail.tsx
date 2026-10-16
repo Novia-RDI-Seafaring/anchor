@@ -182,7 +182,9 @@ export function LeftToolRail({ workspaceSlug }: Props) {
         // pushes the tools away from the hand that is already at the left of
         // the board. Vertical also scales: adding a producer adds a row rather
         // than eating the width the canvas needs.
-        className="pointer-events-auto absolute left-3 top-1/2 z-20 flex max-h-[calc(100%_-_1.5rem)] -translate-y-1/2 flex-col items-center gap-1 overflow-y-auto rounded-xl border border-neutral-200 bg-white/95 px-1 py-1.5 shadow-md backdrop-blur"
+        // Reserve the bottom-left zoom/fit controls; scroll the rail itself
+        // when the canvas is too short to show every tool at once.
+        className="pointer-events-auto absolute left-3 top-3 z-20 flex max-h-[calc(100%_-_9.5rem)] flex-col items-center gap-1 overflow-y-auto rounded-xl border border-neutral-200 bg-white/95 px-1 py-1.5 shadow-md backdrop-blur"
         role="toolbar"
         aria-orientation="vertical"
         aria-label="Canvas tools"

@@ -71,6 +71,7 @@ def _input(case):
 
 @pytest.mark.parametrize("adapter", ["http", "mcp", "cli"])
 @pytest.mark.parametrize("mixed_parent", [False, True])
+@pytest.mark.parametrize("check_requested", [False, True])
 @pytest.mark.parametrize(
     "case",
     [
@@ -84,7 +85,9 @@ def _input(case):
         "exact",
     ],
 )
-def test_existing_update_operations_share_strict_resolution(adapter, mixed_parent, case, tmp_path):
+def test_existing_update_operations_share_strict_resolution(
+    adapter, mixed_parent, check_requested, case, tmp_path,
+):
     config = AnchorConfig(data_dir=tmp_path / "data")
     runtime = build_project_runtime(config, profile=RuntimeProfile.CANVAS)
 
@@ -100,7 +103,10 @@ def test_existing_update_operations_share_strict_resolution(adapter, mixed_paren
 
     asyncio.run(seed())
     data = _input(case)
+    if check_requested:
+        data["rows"][0]["revalidate_evidence"] = True
     expected = deepcopy(data)
+    expected["rows"][0].pop("revalidate_evidence", None)
     if case in {"exact", "inferred"}:
         expected["rows"][0]["source_ref"].update(region_id="pressure", bbox=[60, 50, 90, 60], cell={"row": 0, "col": 1})
     fields = {"data": data}
@@ -118,6 +124,7 @@ def test_existing_update_operations_share_strict_resolution(adapter, mixed_paren
         )
         response = TestClient(app).patch("/api/workspaces/g2/nodes/spec", json=fields)
         assert response.status_code == 200, response.text
+        output = response.json()
     elif adapter == "mcp":
         server = build_mcp_server(bundle=runtime)
 
@@ -133,8 +140,9 @@ def test_existing_update_operations_share_strict_resolution(adapter, mixed_paren
             )
             out = json.loads(result.root.content[0].text)
             assert "error" not in out, out
+            return out
 
-        asyncio.run(update())
+        output = asyncio.run(update())
     else:
         args = [
             "canvas",
@@ -150,6 +158,7 @@ def test_existing_update_operations_share_strict_resolution(adapter, mixed_paren
             args += ["--parent", "area"]
         result = CliRunner().invoke(cli_app, args)
         assert result.exit_code == 0, result.output
+        output = json.loads(result.output)
 
     # Reopen persistence through a fresh runtime, including CLI's separate process model.
     reopened = build_project_runtime(config, profile=RuntimeProfile.CANVAS)
@@ -159,4 +168,17 @@ def test_existing_update_operations_share_strict_resolution(adapter, mixed_paren
     evidence = actual["rows"][0].pop("evidence", {})
     assert actual == expected
     assert (evidence.get("status") == "verified") == (case in {"exact", "inferred"})
+    if check_requested:
+        code = {
+            "missing": "source_unavailable", "wrong_key": "key_mismatch",
+            "wrong_value": "value_mismatch", "conflicting_bbox": "locator_mismatch",
+            "ambiguous": "ambiguous_pair", "uncertified": "no_certified_pair",
+            "exact": "verified", "inferred": "verified",
+        }[case]
+        assert evidence["check"]["code"] == code
+        assert evidence["check"]["next_step"]
+        assert evidence["check"]["source_ref"] == actual["rows"][0]["source_ref"]
+        assert f'"code": "{code}"' in json.dumps(output)
+    else:
+        assert "check" not in evidence
     assert spec.get("parent") == ("area" if mixed_parent else None)

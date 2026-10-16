@@ -7,6 +7,29 @@ function validBox(box: number[] | undefined): box is number[] {
     && box[0]! < box[2]! && box[1]! < box[3]!;
 }
 
+function scopedTextQuad(box: number[], clip: number[]): number[] | null {
+  // PDF font metrics extend beyond Docling's text/cell box, which hugs the
+  // glyphs: the text search returns the font's whole line box, ascender to
+  // descender. That bleed is vertical and grows with the type size -- a
+  // 9 pt line sits about 1.8 pt below its digits -- so above and below it is
+  // bounded by a share of the line's height, and sideways by a point.
+  // The drawn mark is still cut to the locator.
+  if (!validBox(box)) return null;
+  const across = 1;
+  const down = Math.max(1, 0.25 * (box[3]! - box[1]!));
+  if (box[0]! < clip[0]! - across || box[1]! < clip[1]! - down
+    || box[2]! > clip[2]! + across || box[3]! > clip[3]! + down) return null;
+  const scoped = [
+    Math.max(box[0]!, clip[0]!), Math.max(box[1]!, clip[1]!),
+    Math.min(box[2]!, clip[2]!), Math.min(box[3]!, clip[3]!),
+  ];
+  if (!validBox(scoped)) return null;
+  const overlap = (scoped[2]! - scoped[0]!) / (box[2]! - box[0]!)
+    * (scoped[3]! - scoped[1]!) / (box[3]! - box[1]!);
+  // A small nearby box must not pass just because it fits the tolerance band.
+  return overlap >= 0.5 ? scoped : null;
+}
+
 /** Text search refines a locator; it cannot establish which claim a value supports. */
 export function useSourceValueHighlight(
   slug: string | undefined,
@@ -21,7 +44,7 @@ export function useSourceValueHighlight(
   const [resolution, setResolution] = useState<{ key: string; ref: ResolvedRef | null } | null>(null);
   const [located, setLocated] = useState<{ key: string; quads: number[][] } | null>(null);
   const needsResolution = refHasSelector(ref);
-  const resolved = resolution?.key === key ? resolution.ref : null;
+  const resolved = resolution?.key === key && resolution.ref?.page === page ? resolution.ref : null;
   const resolvedBbox = resolved?.bbox;
   // Region boxes remain coarse even when only one identical value happens to
   // be searchable. Item/cell identity is certified by the existing resolver.
@@ -48,9 +71,8 @@ export function useSourceValueHighlight(
         if (cancelled) return;
         // Refuse multiple matches and out-of-scope results. A first-match
         // choice would silently turn an ambiguous search into exact evidence.
-        const scoped = quads.filter((box) => validBox(box)
-          && box[0]! >= clip[0]! && box[1]! >= clip[1]!
-          && box[2]! <= clip[2]! && box[3]! <= clip[3]!);
+        const scoped = quads.map((box) => scopedTextQuad(box, clip))
+          .filter((box): box is number[] => box !== null);
         setLocated({ key, quads: scoped.length === quads.length ? scoped : [] });
       })
       .catch(() => { if (!cancelled) setLocated({ key, quads: [] }); });
@@ -66,5 +88,7 @@ export function useSourceValueHighlight(
     : matches.length > 1 ? "Ambiguous source: multiple matching values."
     : matches.length === 0 ? "Exact source value not located."
     : null;
-  return { resolvedBbox, valueQuads: matches.length === 1 ? matches : [], status };
+  // Asked and not yet answered: the place is about to be known exactly.
+  const resolving = !!key && needsResolution && resolution?.key !== key;
+  return { resolvedBbox, resolving, valueQuads: matches.length === 1 ? matches : [], status };
 }

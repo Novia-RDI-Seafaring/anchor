@@ -90,10 +90,12 @@ families rather than listing every operation.
    board shows "seen by <agent>", or, after 30 seconds unread, says no agent
    has read it and how to start one. The browser's own refetches do not count.
 2. Read the selected intent, its target objects, and relevant document evidence.
-3. Reply through `intent_add_item`. Use a question when requirements are unclear,
-   or a suggestion with staged operations and a rationale for a proposed edit.
-4. Wait for the human's answer or decision. An agent should not call the human
-   decision tools to approve its own suggestion.
+3. Reply through `intent_add_item`. Ask a question and wait when requirements
+   are unclear. For a small, plain change, `intent_act` posts and applies it
+   in one call, leaving the human **keep** and **revert** controls.
+4. Stage large, destructive, or ambiguous changes with a suggestion through
+   `intent_add_item` or `intent_act` with `apply: false`. Wait for the human's
+   decision; do not use `intent_apply` to approve your own staged work.
 5. Post the result and resolve the intent after handling it.
 
 The browser can signal a pending count, but ANCHOR does not launch your agent

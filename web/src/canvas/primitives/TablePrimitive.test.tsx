@@ -26,6 +26,7 @@ beforeEach(() => {
 afterEach(() => {
   useUiStore.setState({ hoveredSourceRef: null, pdfViewer: null, navigationMode: "select" });
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 async function renderTable(data: Record<string, unknown>, selected = false) {
@@ -321,6 +322,73 @@ describe("TablePrimitive row handles", () => {
       key: "Pressure", value: "999999", source_ref, revalidate_evidence: true,
     }] });
     patch.mockRestore();
+  });
+
+  it.each(["verified", "unverified"] as const)("shows running and completed %s checks with source links intact", async (status) => {
+    const source_ref = { slug: "doc", page: 1 };
+    const claim = { key: "pressure", value: "42" };
+    const row = { key: "Pressure", value: "42", source_ref };
+    let finish!: (value: unknown) => void;
+    const patch = vi.spyOn(canvases, "patchNode").mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const view = await renderTable({ rows: [row] }, true);
+    fireEvent.contextMenu(screen.getByTestId("ref-review-chip"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Revalidate evidence for Pressure" }));
+    expect(screen.getByText("Checking evidence...")).toBeTruthy();
+    expect(screen.queryByTestId("spec-value-marker")).toBeNull();
+    expect(patch).toHaveBeenCalledTimes(1);
+    const message = status === "verified" ? "Matched the printed key and complete value." : "The complete value differs from the printed value.";
+    const saved = { ...row, evidence: { status, claim, source_ref,
+      ...(status === "verified" ? { validation: { producer: "anchor_pdfs" } } : {}),
+      check: { status, code: status === "verified" ? "verified" : "value_mismatch", message,
+        next_step: "Inspect the complete printed value and units.", claim, source_ref },
+    } };
+    await act(async () => { finish({ state: { nodes: [{ id: "spec1", data: { rows: [saved] } }] } }); });
+    expect(screen.queryByText("Checking evidence...")).toBeNull();
+    expect(screen.getByRole("status").textContent).toContain(`Check complete: ${status === "verified" ? "Verified" : "Not verified"}`);
+    expect(screen.getByRole("status").textContent).toContain(message);
+    expect(screen.getByRole("status").textContent).toContain("Inspect the complete printed value and units.");
+    expect(Boolean(screen.queryByTestId("spec-value-marker"))).toBe(status === "verified");
+    expect(screen.getByRole("button", { name: "Open source page 1" })).toBeTruthy();
+    view.unmount();
+    await renderTable({ rows: [saved] }, true);
+    expect(screen.getByRole("status").textContent).toContain(message);
+  });
+
+  it("distinguishes request failure from completed abstention and permits retry", async () => {
+    const patch = vi.spyOn(canvases, "patchNode").mockRejectedValue(new Error("offline"));
+    await renderTable({ rows: [{ key: "Pressure", value: "42", source_ref: { slug: "doc", page: 1 } }] }, true);
+    fireEvent.contextMenu(screen.getByTestId("ref-review-chip"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Revalidate evidence for Pressure" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Check request failed. Reload"));
+    expect(screen.queryByText(/Check complete/)).toBeNull();
+    expect(screen.queryByTestId("spec-value-marker")).toBeNull();
+    expect(screen.getByRole("button", { name: "Open source page 1" })).toBeTruthy();
+    fireEvent.contextMenu(screen.getByTestId("ref-review-chip"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Revalidate evidence for Pressure" }));
+    await waitFor(() => expect(patch).toHaveBeenCalledTimes(2));
+  });
+
+  it("cannot overwrite a claim edited while a check response was pending", async () => {
+    const source_ref = { slug: "doc", page: 1 };
+    const row = { key: "Pressure", value: "42", source_ref };
+    let finish!: (value: unknown) => void;
+    vi.spyOn(canvases, "patchNode").mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }))
+      .mockResolvedValue({});
+    await renderTable({ rows: [row] }, true);
+    fireEvent.contextMenu(screen.getByTestId("ref-review-chip"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Revalidate evidence for Pressure" }));
+    fireEvent.click(screen.getByText("42"));
+    fireEvent.change(screen.getByPlaceholderText("value"), { target: { value: "999" } });
+    fireEvent.blur(screen.getByPlaceholderText("value"));
+    const claim = { key: "pressure", value: "42" };
+    await act(async () => { finish({ state: { nodes: [{ id: "spec1", data: { rows: [{ ...row,
+      evidence: { status: "verified", claim, source_ref, validation: {}, check: {
+        status: "verified", code: "verified", message: "Matched", next_step: "Inspect", claim, source_ref,
+      } },
+    }] } }] } }); });
+    expect(screen.getByText("999")).toBeTruthy();
+    expect(screen.queryByText(/Check complete/)).toBeNull();
+    expect(screen.queryByTestId("spec-value-marker")).toBeNull();
   });
 
   // --- #242 P2c: highlight through the resolver (closes #274) -------------

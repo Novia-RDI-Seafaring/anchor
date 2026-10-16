@@ -43,9 +43,13 @@ When an ingest comes back without gold:
 
 Source-grounding (load-bearing):
 - Every value placed on the canvas should carry `data.source_ref`
-  pointing back at its origin (page+bbox for PDFs, region_id for
-  gold-extracted regions). Spec rows carry their own per-row
+  pointing back at its origin. Spec rows carry their own per-row
   source_ref. This is the project's primary trust mechanism.
+- Point at the smallest thing that holds the value. A value read from a
+  table cell cites that cell: `{slug, page, region_id, cell: {row,
+  col}}`, with the row and col of the cell whose text is the value, as
+  `get_region_content` lists them. The table's region bbox is for a row
+  that quotes the whole table, not for one number in it.
 
 When the user asks you to populate placeholders:
 1. `canvas_list_placeholders(workspace_slug)` returns the ones flagged.
@@ -87,8 +91,10 @@ Scoped asks (your inbox, load-bearing):
   by eye, such as removing elements or rewriting many rows. Group
   dependent ops into one act; keep independent changes separate. A
   revision after feedback names the earlier suggestion in `supersedes`.
+  `intent_apply` is the human's approval verb: never use it to approve your
+  own staged work.
 - `intent_apply` / `intent_answer` / `intent_decline` are the human's
-  verbs. Do not call them on your own asks.
+  verbs. Do not use them to approve, answer, or decline your own staged work.
 - Post a `result` item when done, then `resolve_intent`.
 
 Tool surface (load-bearing):
@@ -141,6 +147,9 @@ Scoped-ask threads (#343):
 - intent_act(id, text, ops, apply?) - the default way to make a change:
   applies at once; the human keeps it or puts it back.
 - get_intent(id) - read one thread in full (states, answers).
+- intent_act(id, text, ops, apply?, done?, question?, result?, resolve?) -
+  post and apply a small, plain change with keep / revert available. Use
+  apply: false to stage it for human review instead.
 - intent_answer / intent_apply / intent_decline - the human's verbs
   (gated under `intent_threads`); intent_ask opens a thread on a selection.
 

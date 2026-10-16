@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "vitest";
-import { canvasNavigation, navigationKey } from "./canvasNavigation";
+import { canvasNavigation, navigationKey, navigationNodes } from "./canvasNavigation";
 
 afterEach(() => { document.body.innerHTML = ""; });
 
@@ -32,4 +32,43 @@ it("pans on a background drag, leaves selection to Shift, and keeps alternate-bu
   expect(canvasNavigation("hand", false, null)).toMatchObject({ hand: true, selectionOnDrag: false, panOnDrag: true });
   expect(canvasNavigation("hand", true, null)).toMatchObject({ hand: false, selectionOnDrag: false, panOnDrag: true });
   expect(canvasNavigation("hand", false, "concept")).toMatchObject({ hand: false, selectionOnDrag: false, panOnDrag: [1, 2] });
+});
+
+it("keeps an area's explicit drag override from sharing an armed gesture", () => {
+  const nodes = [
+    { id: "area", draggable: true, selected: true },
+    { id: "locked", draggable: false },
+    { id: "ordinary" },
+  ];
+  for (const tool of ["concept", "area", "text", "canvas", "connect", "intent"]) {
+    const navigation = canvasNavigation("select", false, tool);
+    expect(navigation.nodesDraggable).toBe(false);
+    expect(navigationNodes(nodes, navigation).map((node) => node.draggable)).toEqual([false, false, false]);
+    expect(navigationNodes(nodes, navigation)[0]?.selected).toBe(true);
+    expect(navigation.panOnDrag).toEqual([1, 2]);
+  }
+  // Select restores each node's original policy, including explicit locks.
+  const select = canvasNavigation("select", false, null);
+  expect(select.nodesDraggable).toBe(true);
+  expect(navigationNodes(nodes, select)).toBe(nodes);
+  expect(nodes[0]?.draggable).toBe(true);
+});
+
+it("prevents explicit per-node dragging in Hand and read-only modes", () => {
+  const nodes = [{ id: "area", draggable: true, selected: true }];
+  const hand = canvasNavigation("hand", false, null);
+  expect(navigationNodes(nodes, hand)[0]).toMatchObject({ draggable: false, selected: false });
+  expect(hand.panOnDrag).toBe(true);
+  const readOnly = canvasNavigation("select", true, null);
+  expect(readOnly.nodesDraggable).toBe(false);
+  expect(navigationNodes(nodes, readOnly)[0]?.draggable).toBe(false);
+});
+
+it("pans instead of moving a card while space is held", () => {
+  const nodes: { id: string; draggable?: boolean }[] = [{ id: "card" }];
+  const held = canvasNavigation("select", false, null, true);
+  expect(held.nodesDraggable).toBe(false);
+  expect(held.panOnDrag).toBe(true);
+  expect(navigationNodes(nodes, held)[0]?.draggable).toBe(false);
+  expect(canvasNavigation("select", false, null, false).nodesDraggable).toBe(true);
 });

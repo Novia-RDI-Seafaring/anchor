@@ -122,8 +122,11 @@ launch the agent. Empty placeholders do not enqueue requests.
 intent timing INTENT_ID` reports how long an intent took and how many calls it
 cost. `anchor activity` prints the project's activity log, one entry per HTTP
 request or MCP tool call.
-Use subcommand help for payload arguments. An agent should stage a suggestion
-and wait for the human rather than approve its own changes.
+Use subcommand help for payload arguments. An agent can use `act` for a small,
+plain change, leaving the human **keep** and **revert** controls. Use `act
+--stage` or `add-item` with a suggestion to stage large, destructive, or
+ambiguous changes and wait for human review. Do not use `apply` to approve your
+own staged work.
 
 ## Ingestion and source inspection
 

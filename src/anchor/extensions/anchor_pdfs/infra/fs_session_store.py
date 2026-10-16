@@ -13,7 +13,6 @@ invisible to list/search/gold-map until finalize publishes it.
 """
 from __future__ import annotations
 
-import os
 import re
 import shutil
 from pathlib import Path
@@ -21,6 +20,7 @@ from pathlib import Path
 import aiofiles
 
 from anchor.core.upload_safety import UnsafeUploadError, assert_within
+from anchor.infra.atomic_file import replace_file
 
 #: Server-minted ids only ("ing-<uuid4 hex>"), but validate anyway: the id
 #: arrives back over MCP/HTTP/CLI and becomes a directory name.
@@ -59,7 +59,7 @@ class FsIngestSessionStore:
         tmp = target.with_name(target.name + ".tmp")
         async with aiofiles.open(tmp, "w", encoding="utf-8") as f:
             await f.write(payload)
-        os.replace(tmp, target)
+        await replace_file(tmp, target)
 
     async def read_text(self, session_id: str, name: str) -> str | None:
         target = self._artifact_path(session_id, name)

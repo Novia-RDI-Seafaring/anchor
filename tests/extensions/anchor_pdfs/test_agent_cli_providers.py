@@ -1,7 +1,8 @@
 """The ``claude`` and ``codex`` providers run the vision stages through the user's own CLI.
 
-A stand-in CLI on PATH records how it was called and answers like the real
-one, so these tests pin the contract without a real CLI or a sign-in:
+A stand-in on an isolated PATH records how it was called and answers like the
+real CLI. Only the process boundary substitutes its portable Python body;
+lookup, provider arguments, subprocess I/O and parsing remain real:
 
 - the page image and the answer schema reach the CLI;
 - no API key reaches the child process, so the CLI answers on its sign-in;
@@ -35,14 +36,49 @@ REGION = {
 }
 
 
-def _fake_cli(tmp_path: Path, name: str, body: str) -> Path:
-    """Write an executable stand-in for ``name`` that runs ``body`` (Python)."""
+def _fake_cli(tmp_path: Path, name: str, body: str) -> tuple[Path, Path]:
+    """Write a platform lookup marker and its portable Python stand-in."""
+    assert name in {"claude", "codex"}
     bin_dir = tmp_path / "bin"
-    bin_dir.mkdir(exist_ok=True)
-    script = bin_dir / name
-    script.write_text(f"#!{sys.executable}\n{body}", encoding="utf-8")
-    script.chmod(script.stat().st_mode | stat.S_IEXEC)
-    return bin_dir
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    script_dir = tmp_path / "scripts"
+    script_dir.mkdir(parents=True, exist_ok=True)
+    script = script_dir / f"{name}.py"
+    script.write_text(body, encoding="utf-8")
+    marker = bin_dir / (f"{name}.cmd" if os.name == "nt" else name)
+    # Direct execution fails closed if the process guard is ever removed.
+    marker.write_text("@exit /b 97\n" if os.name == "nt" else
+                      f"#!{sys.executable}\nraise SystemExit(97)\n", encoding="utf-8")
+    marker.chmod(marker.stat().st_mode | stat.S_IEXEC)
+    return marker, script
+
+
+@pytest.fixture(autouse=True)
+def owned_cli_processes(tmp_path, monkeypatch):
+    """Permit real subprocesses only for this test's registered stand-ins."""
+    scripts: dict[Path, Path] = {}
+    run_subprocess = agent_cli.subprocess.run
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr(agent_cli.tempfile, "tempdir", str(scratch))
+
+    def run(argv, *args, **kwargs):
+        assert not args and isinstance(argv, list)
+        marker = Path(argv[0]).resolve()
+        assert marker in scripts, "unregistered provider subprocess refused"
+        script = scripts[marker]
+        assert marker.parent == (tmp_path / "bin").resolve()
+        assert script.parent == (tmp_path / "scripts").resolve()
+        assert marker.is_file() and script.is_file()
+        assert not kwargs.get("shell", False), "shell execution refused"
+        if kwargs.get("cwd") is not None:
+            assert Path(kwargs["cwd"]).resolve().is_relative_to(scratch.resolve())
+        # Preserve argument boundaries, including multiline prompts and JSON;
+        # do not send them through CMD or another shell on Windows.
+        return run_subprocess([sys.executable, str(script), *argv[1:]], **kwargs)
+
+    monkeypatch.setattr(agent_cli.subprocess, "run", run)
+    return scripts
 
 
 RECORD = """
@@ -52,9 +88,9 @@ log.write_text(json.dumps({
     "argv": sys.argv[1:],
     "cwd": os.getcwd(),
     "files": sorted(os.listdir(".")),
-    "keys": sorted(k for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY") if k in os.environ),
+    "keys": sorted(k for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY") if k in os.environ),
     "schema": json.loads(pathlib.Path("schema.json").read_text()) if pathlib.Path("schema.json").exists() else None,
-}))
+}), encoding="utf-8")
 """
 
 CLAUDE_OK = RECORD + """
@@ -65,19 +101,23 @@ print(json.dumps({"type": "result", "subtype": "success", "is_error": False, "st
 CODEX_OK = RECORD + """
 answer = json.loads(os.environ["FAKE_ANSWER"])
 out = sys.argv[sys.argv.index("--output-last-message") + 1]
-pathlib.Path(out).write_text(json.dumps(answer))
+pathlib.Path(out).write_text(json.dumps(answer), encoding="utf-8")
 """
 
 
 @pytest.fixture
-def fake_env(tmp_path, monkeypatch):
+def fake_env(tmp_path, monkeypatch, owned_cli_processes):
     monkeypatch.setenv("FAKE_LOG", str(tmp_path / "call.json"))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-should-not-leak")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "sk-should-not-leak")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-should-not-leak")
+    monkeypatch.setenv("CODEX_API_KEY", "sk-should-not-leak")
 
     def use(name: str, body: str, answer: dict) -> Path:
-        bin_dir = _fake_cli(tmp_path, name, body)
-        monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+        marker, script = _fake_cli(tmp_path, name, body)
+        owned_cli_processes[marker.resolve()] = script.resolve()
+        # A missing or unusable marker must never select an installed CLI.
+        monkeypatch.setenv("PATH", str(marker.parent))
         monkeypatch.setenv("FAKE_ANSWER", json.dumps(answer))
         return tmp_path / "call.json"
 
@@ -104,6 +144,7 @@ async def test_claude_regions_get_the_page_the_schema_and_no_api_key(fake_env):
     assert argv[argv.index("--model") + 1] == "sonnet"
     assert "page.png" in call["files"]
     assert call["keys"] == []
+    assert not Path(call["cwd"]).exists(), "temporary page removed after success"
 
 
 @pytest.mark.asyncio
@@ -126,6 +167,50 @@ async def test_codex_regions_attach_the_image_and_read_the_last_message(fake_env
     assert "--ephemeral" in argv and "--ignore-user-config" in argv
     assert "--model" not in argv, "'default' leaves the model to the CLI's own config"
     assert call["keys"] == []
+    assert not Path(call["cwd"]).exists(), "temporary page removed after success"
+
+
+@pytest.mark.parametrize("name,cli_type,body", [
+    ("claude", ClaudeCodeCli, CLAUDE_OK), ("codex", CodexCli, CODEX_OK),
+], ids=["claude", "codex"])
+def test_stand_in_lookup_cannot_fall_through_to_an_inherited_cli(
+    tmp_path, monkeypatch, fake_env, name, cli_type, body,
+):
+    inherited, _ = _fake_cli(tmp_path / "inherited", name, "raise RuntimeError('wrong CLI')\n")
+    monkeypatch.setenv("PATH", str(inherited.parent))
+    log = fake_env(name, body, {"regions": [REGION]})
+    cli = cli_type()
+    selected = Path(cli.resolve())
+    assert selected.parent == log.parent / "bin" and selected != inherited
+    assert cli.ask(prompt='quoted "value"\nnext line', image=PNG,
+                   schema=REGIONS_SCHEMA, model="default") == {"regions": [REGION]}
+    selected.unlink()
+    with pytest.raises(AgentCliError, match="not on PATH"):
+        cli.ask(prompt="missing stand-in", image=PNG, schema={}, model="default")
+
+
+def test_process_boundary_refuses_an_unregistered_colliding_cli(tmp_path, monkeypatch, fake_env):
+    fake_env("claude", CLAUDE_OK, {"regions": []})
+    inherited, _ = _fake_cli(tmp_path / "inherited", "claude", "raise RuntimeError('wrong CLI')\n")
+    monkeypatch.setattr(ClaudeCodeCli, "resolve", lambda _self: str(inherited))
+    with pytest.raises(AssertionError, match="unregistered provider subprocess refused"):
+        ClaudeCodeCli().ask(prompt="x", image=PNG, schema={}, model="default")
+    assert not list((tmp_path / "scratch").iterdir())
+
+
+def test_owned_subprocess_timeout_removes_the_temporary_page(tmp_path, monkeypatch, fake_env):
+    fake_env("claude", "import time\ntime.sleep(10)\n", {})
+    monkeypatch.setattr(agent_cli, "CALL_TIMEOUT_S", 0.5)
+    with pytest.raises(AgentCliError, match="did not answer within"):
+        ClaudeCodeCli().ask(prompt="x", image=PNG, schema={}, model="default")
+    assert not list((tmp_path / "scratch").iterdir())
+
+
+def test_owned_subprocess_invalid_json_is_reported_and_page_removed(tmp_path, fake_env):
+    fake_env("claude", "print('not JSON')\n", {})
+    with pytest.raises(AgentCliError, match="returned non-JSON output"):
+        ClaudeCodeCli().ask(prompt="x", image=PNG, schema={}, model="default")
+    assert not list((tmp_path / "scratch").iterdir())
 
 
 @pytest.mark.asyncio
