@@ -140,11 +140,10 @@ set: use a set for what you add outside a thread.
 
 When an intent in your inbox carries `targets`, those elements belong to
 a thread. Do not call `canvas_update_node` / `canvas_remove_node` /
-`canvas_add_edge` on them. Stage the change as a `suggestion` item on
-the thread instead (`intent_add_item`); the ops use the same payload
-shapes as these tools. On approval the batch is applied with you as the
-actor, and every element it creates lands with `data.review = {state:
-"accepted", by: <the approver>}`.
+`canvas_add_edge` on them. Change them through the thread instead:
+`intent_act` applies the ops at once and the human keeps or puts them
+back; a staged `suggestion` (`apply: false`) waits for approval. The ops
+use the same payload shapes as these tools.
 
 ### Make it readable at the zoom it will be read at
 
@@ -345,7 +344,9 @@ created with a `description` but no `rows` — a reminder to move tabular
 facts into rows. The write still succeeds; prose-only specs are allowed.
 
 A row's name is its `key`. A row sent with `label` or `name` instead is
-stored with that text as its `key`, but write `key` yourself.
+stored with that text as its `key`, but write `key` yourself. A row may
+carry a `unit` ("mm"); the table shows it after the value. Keep `value`
+as the page prints it, so its evidence can be checked against the source.
 
 When the document the rows came from is on the canvas, connect the spec
 to its card with an evidence edge (`data.kind = "evidence"`), the same as

@@ -258,6 +258,23 @@ async def test_answer_question():
 
 
 # -- apply -------------------------------------------------------------------- #
+async def test_an_applied_suggestion_records_who_applied_it():
+    """A person's approval is their verdict; an agent's own apply waits for one."""
+    svc, ws, _bus, _clock = _services()
+    intent = await _thread(svc, ws)
+    rename = [{"type": "NodeUpdated", "payload": {"id": "n1", "fields": {"label": "Renamed"}}}]
+    with actor_scope(AGENT):
+        _, staged = await svc.add_item(intent.id, type="suggestion", text="rename", ops=rename)
+    with actor_scope(HUMAN):
+        _, approved, _meta = await svc.apply_suggestion(intent.id, staged.id)
+    assert approved.applied_by == HUMAN
+    assert type(approved).from_dict(approved.to_dict()).applied_by == HUMAN
+    with actor_scope(AGENT):
+        out = await svc.act(intent.id, text="rename back", ops=[
+            {"type": "NodeUpdated", "payload": {"id": "n1", "fields": {"label": "N1"}}}])
+    assert out["suggestion"].applied_by == AGENT
+
+
 async def test_apply_is_atomic_one_bad_op_applies_nothing():
     svc, ws, _bus, _clock = _services()
     intent = await _thread(svc, ws)
@@ -783,10 +800,28 @@ async def test_act_stops_at_a_failed_apply():
                 question={"text": "Right?"},
             )
     thread = await svc.get(intent.id)
-    # The suggestion is there, pending; nothing after it happened.
-    assert [i.type for i in thread.items] == ["message", "suggestion"]
-    assert thread.items[1].state == SUGGESTION_PENDING
+    # Nothing happened, the suggestion included: an act that could not land
+    # leaves no proposal behind for the human to approve by mistake.
+    assert [i.type for i in thread.items] == ["message"]
     assert thread.find_item(status.id).state == "planned"
+
+
+async def test_a_failed_act_gives_back_the_proposal_it_meant_to_supersede():
+    svc, ws, _bus, _clock = _services()
+    intent = await _thread(svc, ws)
+    with actor_scope(AGENT):
+        _, first = await svc.add_item(
+            intent.id, type="suggestion", text="first",
+            ops=[{"type": "NodeUpdated", "payload": {"id": "n1", "fields": {"label": "First"}}}],
+        )
+        with pytest.raises(SuggestionApplyError):
+            await svc.act(
+                intent.id, text="revision", supersedes=first.id,
+                ops=[{"type": "NodeUpdated", "payload": {"id": "nope", "fields": {"label": "x"}}}],
+            )
+    thread = await svc.get(intent.id)
+    assert [i.id for i in thread.items] == [first.id]
+    assert thread.items[0].state == SUGGESTION_PENDING
 
 
 async def test_act_refuses_a_question_without_words():

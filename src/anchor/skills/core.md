@@ -129,12 +129,20 @@ the canvas `base_version` at ask time, and `items` (the conversation).
 - Reply in the thread with `intent_add_item(id, type, text, ops?)`:
   - `question` when the ask is ambiguous. Then wait; poll `get_intent` for
     the answer.
-  - `suggestion` for any change to the targeted elements. It is a staged
-    batch of canvas ops (`NodeAdded`, `NodeUpdated`, `NodeRemoved`,
-    `EdgeAdded`, `EdgeUpdated`, `EdgeRemoved`, each `{type, payload}`) plus
-    `text` as the rationale. The human previews it and approves or declines.
-    Nothing moves on the canvas until approval. Never edit targeted elements
-    directly.
+  - Show the plan first: one `message` per element you are about to add,
+    with a `place` where it will land ("adding PX-10 dimensions table").
+    Each shows as a ghost box, so the human sees how you read the ask.
+  - Then act with `intent_act(id, text, ops, done)`, `done` naming those
+    plan messages. It
+    applies a batch of canvas ops (`NodeAdded`, `NodeUpdated`, `NodeRemoved`,
+    `EdgeAdded`, `EdgeUpdated`, `EdgeRemoved`, each `{type, payload}`) at
+    once, with `text` as the rationale. The human sees the real result with
+    keep and put back beside it; put back restores things exactly. This is
+    the default. Never edit targeted elements with the canvas tools.
+  - Stage instead (`apply: false`, or a `suggestion` item) when the change
+    is large or hard to judge by eye, such as removing elements or
+    rewriting many rows. The human previews it and approves or declines;
+    nothing moves until approval.
   - Group ops that depend on each other into one suggestion. Keep independent
     changes as separate suggestions so partial approval is safe. A `NodeAdded`
     may carry a client `id` that later ops in the same batch reference.

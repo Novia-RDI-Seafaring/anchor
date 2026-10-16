@@ -134,6 +134,10 @@ class ThreadItem(BaseModel):
     ops: list[dict[str, Any]] | None = None
     supersedes: str | None = None
     applied_versions: list[int] | None = None
+    #: Suggestion only: who applied it. A person approving it has judged it
+    #: already; an agent applying its own is still waiting for keep or put
+    #: back. Without it the board asked to keep what was just approved.
+    applied_by: Actor | None = None
     #: Where on the canvas this item belongs, ``{x, y, width?, height?}`` in
     #: canvas coordinates. Optional: most items are lines in a thread, not
     #: things on the board. The sketch that came in with the intent carries
@@ -164,6 +168,8 @@ class ThreadItem(BaseModel):
             d["supersedes"] = self.supersedes
         if self.applied_versions is not None:
             d["applied_versions"] = list(self.applied_versions)
+        if self.applied_by is not None:
+            d["applied_by"] = self.applied_by.model_dump()
         if self.place is not None:
             d["place"] = dict(self.place)
         if self.undo_ops is not None:
@@ -200,6 +206,11 @@ class ThreadItem(BaseModel):
             ),
             applied_versions=(
                 [int(v) for v in versions_raw] if isinstance(versions_raw, list) else None
+            ),
+            applied_by=(
+                Actor(**raw["applied_by"])
+                if isinstance(raw.get("applied_by"), dict) and raw["applied_by"].get("kind")
+                else None
             ),
             place=(dict(raw["place"]) if isinstance(raw.get("place"), dict) else None),
             undo_ops=(

@@ -72,12 +72,21 @@ Scoped asks (your inbox, load-bearing):
 - Take one pending intent at a time. Its `targets` name the canvas
   elements the ask is about; read them with `canvas_get_state` (filter by
   id) and `canvas_snapshot` if you want the picture.
-- Reply in the thread with `intent_add_item`. Ask a `question` when the
+- Reply in the thread. Ask a `question` with `intent_add_item` when the
   ask is ambiguous and wait (poll `get_intent` for the answer). Never edit
-  the targeted elements directly: propose a `suggestion` (staged ops plus
-  a rationale). Group dependent ops into one suggestion; keep independent
-  changes separate so partial approval is safe. A revision after feedback
-  is a new suggestion with `supersedes`.
+  the targeted elements with the canvas tools: change them through the
+  thread.
+- Show the plan first. Before you change anything, post one `message`
+  per element you are about to add, with a `place` where it will land
+  ("adding PX-10 dimensions table"). Each shows on the board as a ghost
+  box, so the user sees how you read the ask while you work.
+- Then act with `intent_act`, passing those message ids as `done`: it applies your ops at
+  once and the user sees the real result with keep and put back beside it.
+  This is the default. Stage instead (`apply: false`, the user approves
+  before anything moves) only for a change that is large or hard to judge
+  by eye, such as removing elements or rewriting many rows. Group
+  dependent ops into one act; keep independent changes separate. A
+  revision after feedback names the earlier suggestion in `supersedes`.
 - `intent_apply` / `intent_answer` / `intent_decline` are the human's
   verbs. Do not call them on your own asks.
 - Post a `result` item when done, then `resolve_intent`.
@@ -129,6 +138,8 @@ Scoped-ask threads (#343):
   result. Ops: {type: NodeAdded|NodeUpdated|NodeRemoved|EdgeAdded|
   EdgeUpdated|EdgeRemoved, payload}. A NodeAdded/EdgeAdded `id` is a client
   id later ops in the batch may reference.
+- intent_act(id, text, ops, apply?) - the default way to make a change:
+  applies at once; the human keeps it or puts it back.
 - get_intent(id) - read one thread in full (states, answers).
 - intent_answer / intent_apply / intent_decline - the human's verbs
   (gated under `intent_threads`); intent_ask opens a thread on a selection.

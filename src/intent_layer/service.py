@@ -459,6 +459,7 @@ class IntentService:
             raise ThreadError("not_pending", f"suggestion {item_id!r} is {item.state}")
         application = await self._host.apply(self._context(intent, item), deepcopy(item.ops or []))
         item.state = SUGGESTION_APPLIED
+        item.applied_by = self._actor()
         item.applied_versions = list(application.versions)
         item.undo_ops = deepcopy(application.undo)
         await self._store.replace(intent)
@@ -491,7 +492,9 @@ class IntentService:
         marked done or asked about until the change is applied. A question
         without text is refused before anything is posted. A suggestion that
         cannot be applied raises :class:`SuggestionApplyError` and leaves the
-        thread as it was, plus the pending suggestion.
+        thread as it was: the suggestion is taken back out, and a proposal it
+        superseded is pending again. The agent meant to act, not to stage, so
+        a failed act must not leave a proposal for the human to approve.
 
         Returns ``{intent, suggestion, applied, question, result}`` with the
         item records and the host's apply metadata, for the transport
@@ -501,12 +504,19 @@ class IntentService:
             not isinstance(question, dict) or not str(question.get("text") or "").strip()
         ):
             raise ThreadError("invalid_item", "question needs text")
+        before = await self._require(intent_id)
+        prior = before.find_item(supersedes) if supersedes is not None else None
+        prior_state = prior.state if prior is not None else None
         intent, suggestion = await self.add_item(
             intent_id, type="suggestion", text=text, ops=ops, supersedes=supersedes,
         )
         applied: dict[str, Any] | None = None
         if apply:
-            intent, suggestion, applied = await self.apply_suggestion(intent_id, suggestion.id)
+            try:
+                intent, suggestion, applied = await self.apply_suggestion(intent_id, suggestion.id)
+            except SuggestionApplyError:
+                await self._take_back(intent_id, suggestion.id, supersedes, prior_state)
+                raise
         for item_id in done or []:
             intent, _ = await self.update_item(intent_id, item_id, state=PLACED_DONE)
         asked: ThreadItem | None = None
@@ -530,6 +540,18 @@ class IntentService:
             "question": asked,
             "result": told,
         }
+
+    async def _take_back(
+        self, intent_id: str, item_id: str, supersedes: str | None, prior_state: str | None,
+    ) -> None:
+        """Undo an ``add_item`` whose act failed: the item goes, the superseded one returns."""
+        intent = await self._require(intent_id)
+        intent.items = [item for item in intent.items if item.id != item_id]
+        prior = intent.find_item(supersedes) if supersedes is not None else None
+        if prior is not None and prior_state is not None:
+            prior.state = prior_state
+        await self._store.replace(intent)
+        await self._signal_pending(intent.origin_canvas_id)
 
     async def revert_suggestion(
         self, intent_id: str, item_id: str,
