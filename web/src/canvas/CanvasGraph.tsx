@@ -51,7 +51,7 @@ import {
   paintRectFrom,
 } from "@/canvas/PaintGhost";
 import { connectClick } from "@/canvas/connect";
-import { CONNECT_TOOL, INTENT_TOOL, nodeTypes, paletteEntries } from "@/canvas/registry";
+import { CONNECT_TOOL, INTENT_TOOL, nodeTypes } from "@/canvas/registry";
 import { loadViewport, saveViewport } from "@/canvas/viewportMemory";
 import { canvasNavigation, navigationNodes } from "@/canvas/canvasNavigation";
 import "./canvasNavigation.css";
