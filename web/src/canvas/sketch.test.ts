@@ -109,3 +109,40 @@ describe("reading a drawing as a diagram", () => {
     expect(describeSketch({ nodes: [], edges: [] })).toBe("");
   });
 });
+
+
+describe("words called out of a drawn shape", () => {
+  const box = blob(500, 300, 80);
+  const left = line({ x: 480, y: 360 }, { x: 380, y: 520 });
+  const right = line({ x: 520, y: 360 }, { x: 640, y: 520 });
+  const stray = line({ x: 1200, y: 1200 }, { x: 1300, y: 1300 });
+  const strokes = [box, left, right, stray];
+  const labels = [
+    { text: "PX-5", inStroke: 0 },
+    // Dragged to where the reader wants the cards: left and right.
+    { text: "specs", onStroke: 1, x: 330, y: 560 },
+    { text: "dimensions", onStroke: 2, x: 660, y: 560 },
+    { text: "elsewhere", onStroke: 3, x: 1300, y: 1300 },
+  ];
+
+  it("travel with the shape, at the spot they were left", () => {
+    const sketch = resolveSketch(strokes, labels);
+    expect(sketch.nodes).toHaveLength(1);
+    expect(sketch.nodes[0]!.label).toBe("PX-5");
+    expect(sketch.nodes[0]!.callouts).toEqual([
+      { text: "specs", at: { x: 330, y: 560 } },
+      { text: "dimensions", at: { x: 660, y: 560 } },
+    ]);
+  });
+
+  it("are said in the sentence too", () => {
+    const text = describeSketch(resolveSketch(strokes, labels));
+    expect(text).toContain('PX-5 at');
+    expect(text).toContain('calling out "specs" at 330,560, "dimensions" at 660,560');
+  });
+
+  it("include words offered beside a ring", () => {
+    const sketch = resolveSketch([box], [{ text: "check this", ringStroke: 0, x: 700, y: 200 }]);
+    expect(sketch.nodes[0]!.callouts).toEqual([{ text: "check this", at: { x: 700, y: 200 } }]);
+  });
+});

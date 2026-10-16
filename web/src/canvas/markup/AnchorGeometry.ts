@@ -4,11 +4,16 @@ import {
 } from "@/canvas/lasso";
 import { type EdgePath } from "@/canvas/strikes";
 import { useCanvasStore } from "@/stores/canvasStore";
-import { useReactFlow, useViewport } from "@xyflow/react";
+import { useReactFlow, useStoreApi, useViewport } from "@xyflow/react";
 import { useCallback } from "react";
 
 export function useAnchorGeometry() {
-  const { screenToFlowPosition, getViewport, setViewport } = useReactFlow();
+  const { screenToFlowPosition, getViewport, setViewport, fitBounds } = useReactFlow();
+  const flowStore = useStoreApi();
+  const paneSize = useCallback(() => {
+    const { width, height } = flowStore.getState();
+    return width > 0 && height > 0 ? { width, height } : null;
+  }, [flowStore]);
 
   const storeNodes = useCanvasStore((st) => st.nodes);
 
@@ -85,5 +90,5 @@ export function useAnchorGeometry() {
     [screenToFlowPosition],
   );
 
-  return { getViewport, setViewport, storeNodes, storeEdges, rowsOf, edgesOf, viewport, toFlow };
+  return { getViewport, setViewport, fitBounds, paneSize, storeNodes, storeEdges, rowsOf, edgesOf, viewport, toFlow };
 }

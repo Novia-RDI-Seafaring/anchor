@@ -252,7 +252,8 @@ async def _cell_bbox(
                 and c.get("row") == row
                 and c.get("col") == col
             ):
-                return _bbox(c.get("bbox"))
+                bbox = _bbox(c.get("bbox"))
+                return _within_row(bbox, c, cells) if bbox is not None else None
         return None
 
     if region is not None:
@@ -263,3 +264,40 @@ async def _cell_bbox(
     candidates = await store.get_page_candidates(slug, page) or []
     region_bbox = _bbox(region.get("bbox")) if region else None
     return pick(table_cells_from_items(candidates, region_bbox=region_bbox))
+
+
+def _within_row(bbox: list[float], cell: dict[str, Any], cells: Any) -> list[float]:
+    """The cell's box, no taller than its row.
+
+    Text boxes from the layout model carry the font's whole ascent and
+    descent, often taller than the row pitch of a dense table, so a cell's
+    box reaches into the rows above and below and a highlight lights two
+    values. The row's band runs halfway to the neighbouring rows' centres;
+    the box is clipped to it. The stored geometry is untouched: this is how
+    the place is shown, not what was extracted.
+    """
+    centres: dict[int, list[float]] = {}
+    for c in cells or []:
+        b = _bbox(c.get("bbox")) if isinstance(c, dict) else None
+        r = c.get("row") if isinstance(c, dict) else None
+        span = c.get("row_span", 1) if isinstance(c, dict) else 1
+        if b is None or not isinstance(r, int) or span not in (1, None):
+            continue
+        centres.setdefault(r, []).append((min(b[1], b[3]) + max(b[1], b[3])) / 2)
+    if len(centres) < 2:
+        return bbox
+    middle = {r: sorted(v)[len(v) // 2] for r, v in centres.items()}
+    rows = sorted(middle)
+    first = cell.get("row")
+    last = (cell.get("row_end") or first + 1) - 1 if isinstance(first, int) else first
+    if not isinstance(first, int) or first not in middle or last not in middle:
+        return bbox
+    i, j = rows.index(first), rows.index(last)
+    top, bottom = min(bbox[1], bbox[3]), max(bbox[1], bbox[3])
+    if i > 0:
+        top = max(top, (middle[rows[i - 1]] + middle[first]) / 2)
+    if j < len(rows) - 1:
+        bottom = min(bottom, (middle[last] + middle[rows[j + 1]]) / 2)
+    if bottom <= top:
+        return bbox
+    return [bbox[0], top, bbox[2], bottom]

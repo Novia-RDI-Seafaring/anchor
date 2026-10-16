@@ -13,15 +13,20 @@ default — independently of which project this server happens to be serving.
 """
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, HTTPException, Query
 
 from anchor.adapters.http.schemas import CreateProjectRequest, RenameProjectRequest
 from anchor.core.ids import InvalidProjectNameError
 from anchor.infra.environment import (
     Environment,
+    FolderProjectError,
     NoEnvironmentError,
     NoProjectError,
+    ProjectEnvMismatchError,
     ProjectNotEmptyError,
+    bind_folder_project,
     create_project,
     project_meta,
     remove_project,
@@ -48,7 +53,11 @@ async def list_projects(env: str | None = Query(None)):
     return {
         "environment": environment.name,
         "projects": [
-            {"name": name, "description": project_meta(environment, name).description}
+            {
+                "name": name,
+                "description": project_meta(environment, name).description,
+                "folder": str(environment.project_root(name)),
+            }
             for name in environment.list_project_names()
         ],
     }
@@ -59,6 +68,23 @@ async def create_project_endpoint(
     req: CreateProjectRequest, env: str | None = Query(None)
 ):
     environment = _resolve_initialized_env(env)
+    if req.folder is not None:
+        # A working folder from the caller: only one inside the user's home
+        # can become a project. Inline normalise-then-prefix check, so the
+        # path never reaches the filesystem unchecked.
+        home = os.path.realpath(os.path.expanduser("~"))
+        folder = os.path.realpath(os.path.normpath(req.folder))
+        if not folder.startswith(home + os.sep):
+            raise HTTPException(400, "folder must be inside your home folder")
+        try:
+            bound = bind_folder_project(
+                environment, folder, name=req.name or None, description=req.description,
+            )
+        except (FolderProjectError, ProjectEnvMismatchError, InvalidProjectNameError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {**bound, "environment": environment.name}
+    if not req.name:
+        raise HTTPException(400, "give a project name, or a folder")
     try:
         create_project(environment, req.name, description=req.description)
     except InvalidProjectNameError as exc:

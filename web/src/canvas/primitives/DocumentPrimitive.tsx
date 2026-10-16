@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Handle, Position, useUpdateNodeInternals, type NodeProps } from "@xyflow/react";
+import { Handle, Position, useConnection, useUpdateNodeInternals, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
 
 import { regionDropPayload } from "@/canvas/regionDrop";
@@ -105,6 +105,18 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   const slug = d.slug;
 
   const openPdf = useUiStore((s) => s.openPdf);
+  // A link being drawn from another card lights the whole document up, not
+  // only its regions: dropping on the card links to the document.
+  // Exactly one thing lights while a link is over this card, and it is what
+  // the link will join: a region when the pointer is on one (or the link has
+  // snapped to its socket), otherwise the whole document.
+  const linking = useConnection((c) => c.inProgress && c.fromNode.id !== id);
+  const snappedRegion = useConnection((c) =>
+    c.inProgress && c.toNode?.id === id && c.toHandle?.id?.startsWith("region:")
+      ? c.toHandle.id.slice("region:".length)
+      : null,
+  );
+  const [pointerOver, setPointerOver] = useState(false);
   const hoveredSourceRef = useUiStore((s) => s.hoveredSourceRef);
   const setHoveredSourceRef = useUiStore((s) => s.setHoveredSourceRef);
   const clearHoveredSourceRef = useUiStore((s) => s.clearHoveredSourceRef);
@@ -123,6 +135,8 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   const [pageMeta, setPageMeta] = useState<Record<number, DocumentPageGeometry>>({});
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [hoveredLocal, setHoveredLocal] = useState<string | null>(null);
+  const linkRegion = linking ? snappedRegion ?? hoveredLocal : null;
+  const linkTarget = linking && pointerOver && linkRegion === null;
   const [nowSeconds, setNowSeconds] = useState(() => Date.now() / 1000);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const updateNodeInternals = useUpdateNodeInternals();
@@ -238,19 +252,27 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
     ? status === "pending" ? "waiting" : "running"
     : `elapsed ${formatElapsed(elapsedSeconds)}`;
 
-  const { resolvedBbox, valueQuads, status: sourceStatus } = useSourceValueHighlight(
+  const { resolvedBbox, resolving, valueQuads, status: sourceStatus } = useSourceValueHighlight(
     slug, page, hoveredSourceRef, generation, isReady,
   );
 
+  // The mark last drawn, held while the next place is being looked up.
+  const heldHighlight = useRef<RegionHighlight | null>(null);
   const externalHighlight = useMemo<RegionHighlight | null>(() => {
     if (!hoveredSourceRef || !slug) return null;
     if (hoveredSourceRef.slug !== slug) return null;
     if (hoveredSourceRef.page !== page) return null;
+    // A ref naming a cell or an item is about to resolve to it. Falling back
+    // to its region meanwhile sent the mark out to the whole table and back
+    // in again; holding it where it was lets it fly straight to the cell.
+    // With nothing to hold, it appears once the place is known.
+    if (resolving && !hoveredSourceRef.bbox) return heldHighlight.current;
     return {
       regionId: resolvedBbox ? undefined : hoveredSourceRef.region_id,
       bbox: resolvedBbox ?? hoveredSourceRef.bbox,
     };
-  }, [hoveredSourceRef, slug, page, resolvedBbox]);
+  }, [hoveredSourceRef, slug, page, resolvedBbox, resolving]);
+  heldHighlight.current = externalHighlight;
 
   const sourceMarks = [];
   if (canScale && imgSize) {
@@ -272,12 +294,24 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
 
   return (
     <div
-      className={`w-80 rounded-lg border-2 text-sm shadow-sm transition ${cls} hover:shadow-md`}
+      className={`relative w-80 rounded-lg border-2 text-sm shadow-sm transition ${cls} hover:shadow-md ${linkTarget ? "ring-4 ring-sky-400 ring-offset-2" : ""}`}
+      data-testid="document-node"
+      data-link-target={linkTarget ? "true" : undefined}
+      onPointerEnter={() => setPointerOver(true)}
+      onPointerLeave={() => setPointerOver(false)}
     >
       <Handle type="target" position={Position.Left} className="canvas-node-socket" />
 
+      {/* Laid over the page, not in the card's flow: a note that came and
+            went with every hover pushed the page down and back, so the card
+            jumped as the reader moved between values. */}
       {sourceStatus ? (
-        <div role="status" className="px-3 py-1 text-xs text-amber-800">{sourceStatus}</div>
+        <div
+          role="status"
+          className="pointer-events-none absolute left-2 top-2 z-10 max-w-[calc(100%-1rem)] rounded bg-white/90 px-2 py-0.5 text-[11px] text-amber-800 shadow-sm"
+        >
+          {sourceStatus}
+        </div>
       ) : null}
 
       {/* Page viewport with overlay.
@@ -324,7 +358,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
             ? regionLayers.map(({ region: r, rid, rect }) => {
                 const { x: xpc, y: ypc, w: wpc, h: hpc } = rect;
                 const bbox = r.bbox as number[];
-                const isLocal = hoveredLocal === rid;
+                const isLocal = linking ? linkRegion === rid : hoveredLocal === rid;
                 const isExternal = matchesExternalHighlight(externalHighlight, rid, bbox);
                 const active = isLocal || isExternal;
                 const crops = (r as { crops?: { svg?: string | null } }).crops;

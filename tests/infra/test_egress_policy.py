@@ -164,3 +164,43 @@ def test_local_only_refuses_remote_embed_model(tmp_path, monkeypatch):
 
     with pytest.raises(EgressPolicyError, match="does not allow remote embedding"):
         resolve_egress_policy(config)
+
+
+def _with_env_file(config, tmp_path, text):
+    env_file = tmp_path / ".env"
+    env_file.write_text(text)
+    config._env_dotenv_path = env_file
+    return config
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["OPENAI_API_KEY=sk-file", "export OPENAI_API_KEY=sk-file", 'OPENAI_API_KEY="sk-file"'],
+)
+def test_public_openai_reads_a_plain_key_from_the_environment_file(tmp_path, monkeypatch, line):
+    # Agent apps started from the Dock never see the shell's key; the line
+    # copied from the shell profile into the env's .env must still work.
+    from anchor.infra.egress_policy import describe_credential
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
+    config = _with_env_file(
+        AnchorConfig(data_dir=tmp_path, provider="openai", _env_file=None), tmp_path, line + "\n",
+    )
+    policy = resolve_egress_policy(config)
+    assert policy.api_key == "sk-file" and policy.remote_clients_enabled is True
+    cred = describe_credential(config)
+    assert cred["present"] and cred["source"] == "env_file" and "hint" not in cred
+
+
+def test_a_custom_endpoint_ignores_a_plain_key_in_the_environment_file(tmp_path, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
+    config = _with_env_file(
+        AnchorConfig(
+            data_dir=tmp_path, provider="azure",
+            openai_base_url="https://x.openai.azure.com/openai/v1/", _env_file=None,
+        ),
+        tmp_path, "OPENAI_API_KEY=sk-personal\n",
+    )
+    assert resolve_egress_policy(config).api_key is None

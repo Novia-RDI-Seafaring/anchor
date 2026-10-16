@@ -55,7 +55,8 @@ remains the trust decision:
 - `local` and `harness` do not build an endpoint client, even if a key exists.
 - `ollama` needs no user key.
 - `openai`, `azure`, and `custom` use `ANCHOR_OPENAI_API_KEY` for their approved
-  endpoint. A bare `OPENAI_API_KEY` inside the environment `.env` is ignored.
+  endpoint. A bare `OPENAI_API_KEY` inside the environment `.env` counts only
+  for public `openai` with no custom base URL.
 
 ## On disk
 

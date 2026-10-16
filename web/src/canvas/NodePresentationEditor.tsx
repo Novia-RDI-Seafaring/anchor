@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { canvases } from "@/api/canvases";
-import { COMPACT_CARD_TYPES, collapseDirection, type StructureNode } from "@/canvas/subtrees";
+import { COMPACT_CARD_TYPES, collapseDirection, displayMode, type StructureNode } from "@/canvas/subtrees";
 
 export function NodePresentationEditor({ workspaceSlug, node }: { workspaceSlug: string; node: StructureNode }) {
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +27,7 @@ export function NodePresentationEditor({ workspaceSlug, node }: { workspaceSlug:
       {COMPACT_CARD_TYPES.has(node.node_type) ? <label className="flex items-center justify-between gap-2">
         Display
         <select aria-label="Node display" className="rounded border bg-white px-1 py-1"
-          value={node.data?.display_mode === "full" ? "full" : "compact"}
+          value={displayMode(node.node_type, node.data ?? {})}
           onChange={(event) => void update({ display_mode: event.target.value })}>
           <option value="compact">Compact</option><option value="full">Full</option>
         </select>

@@ -36,12 +36,12 @@ from collections.abc import Callable
 from contextlib import suppress
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from sse_starlette.sse import EventSourceResponse
 
-from intent_layer.actor import Actor, actor_scope, current_actor, set_current_actor
+from intent_layer.actor import Actor, actor_scope, current_actor, parse_actor, set_current_actor
 from intent_layer.adapters.mcp import act_payload
 from intent_layer.models import INTENT_KINDS
 from intent_layer.service import (
@@ -74,11 +74,42 @@ def create_router(get_intent_service: Callable[..., IntentService],
 
 
     def _actor_override(body: dict[str, Any] | None) -> None:
+        """``actor`` is ``{kind, label?, id?}`` or ``"kind[:label]"`` as on the CLI.
+
+        A malformed actor is a 400, not a quiet fall-back to the default:
+        attribution decides who may move which thread state, so a wrong
+        default is worse than an error.
+        """
         raw = (body or {}).get("actor")
-        if isinstance(raw, dict) and raw.get("kind"):
-            set_current_actor(Actor(**raw))
-        elif current_actor() is None:
-            set_current_actor(default_actor or Actor(kind="human", label="browser"))
+        if raw is None:
+            if current_actor() is None:
+                set_current_actor(default_actor or Actor(kind="human", label="browser"))
+            return
+        try:
+            if isinstance(raw, str):
+                actor = parse_actor(raw)
+            elif isinstance(raw, dict):
+                actor = Actor(**raw)
+            else:
+                raise ValueError("actor must be an object or a string")
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "invalid_actor",
+                    "message": "actor must be {kind, label?, id?} or 'kind[:label]' "
+                    "(kind: human, agent, system)",
+                },
+            ) from exc
+        set_current_actor(actor)
+
+
+    def _agent_reader() -> Actor | None:
+        """The request's actor when it is an agent reading its inbox. The
+        browser refetches the same routes to draw the board; that is not
+        an agent seeing anything."""
+        actor = current_actor()
+        return actor if actor is not None and actor.kind == "agent" else None
 
 
     def _not_found(intent_id: str, item_id: str | None = None) -> JSONResponse:
@@ -102,10 +133,15 @@ def create_router(get_intent_service: Callable[..., IntentService],
     @router.get("")
     async def list_pending(
         canvas: str | None = None,
+        include_stale: bool = False,
         intents: IntentService = Depends(get_intent_service),
     ):
-        """Pending intents for this project (oldest first), optionally per-canvas."""
-        pending = await intents.list_pending(canvas=canvas)
+        """Pending intents for this project (oldest first), optionally per-canvas.
+
+        Stale ones (every target deleted) are left out unless ``include_stale``."""
+        pending = await intents.list_pending(
+            canvas=canvas, include_stale=include_stale, reader=_agent_reader(),
+        )
         return {"intents": [i.to_dict() for i in pending], "count": len(pending)}
 
 
@@ -225,7 +261,7 @@ def create_router(get_intent_service: Callable[..., IntentService],
         intents: IntentService = Depends(get_intent_service),
     ):
         """One intent, the full record: targets, base_version, and every item."""
-        intent = await intents.get(intent_id)
+        intent = await intents.get(intent_id, reader=_agent_reader())
         if intent is None:
             return _not_found(intent_id)
         return {"intent": intent.to_dict()}

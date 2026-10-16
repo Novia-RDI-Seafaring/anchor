@@ -28,18 +28,22 @@ describe("what a dragged section becomes", () => {
     expect(p.data.source_doc_node_id).toBe("doc1");
   });
 
-  it("keeps a table a spec card, as before", () => {
+  it("makes a table a section card", () => {
     const p = regionDropPayload({
       slug: "lkh",
       page: 3,
       region: { id: "r2", kind: "table", title: "Pump specific measures (mm)", bbox: [55, 215, 552, 277] },
     })!;
-    expect(p.node_type).toBe("spec");
+    expect(p.node_type).toBe("section");
+    expect(p.data.kind).toBe("table");
     expect(p.data.source_region_id).toBe("r2");
     // Wide enough to read the table's picture, and no paragraph of it.
     expect(p.width).toBe(795);
     expect(p.data.width).toBe(795);
     expect(p.data.description).toBeUndefined();
+    // Nothing to fill and no search keywords on the card.
+    expect(p.data.rows).toBeUndefined();
+    expect(p.data.tags).toBeUndefined();
   });
 
   it("refuses a section with no box to point at", () => {

@@ -75,33 +75,44 @@ def _ctype(path: Path, fallback_ext: str) -> str:
     return guess or "application/octet-stream"
 
 
-def gold_skipped_note() -> dict[str, Any]:
+def gold_skipped_note(env_file: str | None = None) -> dict[str, Any]:
     """Machine- and human-readable note for a no-key gold skip (issue #226).
 
     ``ingest_pdf`` runs silver but cannot run the gold (region) stage when the
     environment has no provider/key wired (``region_extractor`` is None). The
     result then reads as a bland success with zero regions. This note makes the
-    skip discoverable and points at the two fixes: the offline harness ingest
-    path (no key, embeds locally) and the endpoint-key remedy. Kept as a small
-    pure helper so it can be unit-tested and reused across surfaces.
+    skip discoverable and points at the fixes: the key file (named by path,
+    since the usual cause is an agent app that never saw the shell's key), the
+    offline harness ingest path, and the text profile. Kept as a small pure
+    helper so it can be unit-tested and reused across surfaces.
     """
     from anchor.infra.providers import ANCHOR_KEY_VAR
 
+    target = env_file or "the environment's .env (next to its env.toml)"
     return {
         "gold_skipped": True,
         "reason": (
-            "Gold (region) extraction was skipped: this environment has no "
-            "vision provider/key wired, so only bronze/silver ran."
+            "Gold (region) extraction was skipped: no model key reached this "
+            "Anchor server, so only bronze/silver ran. The environment's vision "
+            "model is configured; its key is not visible."
         ),
-        "fix_offline": (
-            "Ingest key-free through the harness tools: ingest_begin -> "
-            "ingest_get_page -> ingest_submit_page -> ingest_finalize "
-            "(the agent reads pages, embeddings are computed locally, no key)."
+        "why": (
+            "Agent apps started from the Dock or Finder (Codex, Claude Desktop) "
+            "do not read your shell profile, so a key exported in ~/.zshrc or "
+            "~/.bashrc never reaches the Anchor server they launch."
         ),
         "fix_key": (
-            f"Or configure an endpoint: set {ANCHOR_KEY_VAR} in the "
-            "environment's .env (a plain OPENAI_API_KEY there is ignored), "
-            "then re-ingest. Run `anchor check` to verify the data zone + key."
+            f"Ask the user to put the line {ANCHOR_KEY_VAR}=<their key> in "
+            f"{target} (a plain OPENAI_API_KEY there counts only for public OpenAI). Do not ask "
+            "them to paste the key into the chat. Then start a new chat so the "
+            "server restarts, and re-ingest with force=true. `anchor check` "
+            "verifies the data zone + key."
+        ),
+        "fix_offline": (
+            "Or ingest key-free through the harness tools: ingest_begin -> "
+            "ingest_get_page -> ingest_submit_page -> ingest_finalize "
+            "(the agent reads pages, embeddings are computed locally, no key). "
+            "profile=\"text\" also works without a key but does not read figures."
         ),
     }
 
@@ -168,6 +179,7 @@ async def call_tool(
     ingest: IngestService, store: DocStore, name: str, args: dict[str, Any],
     *, synopsis: SynopsisService | None = None,
     ingest_session: IngestSessionService | None = None,
+    env_file: str | None = None,
 ) -> str:
     if name in _SESSION_TOOL_NAMES:
         if ingest_session is None:
@@ -199,7 +211,7 @@ async def call_tool(
             and ingest.region_extractor is None
             and not summary.get("skipped")
         ):
-            summary["note"] = gold_skipped_note()
+            summary["note"] = gold_skipped_note(env_file)
         return json.dumps(summary)
     if name == "list_documents":
         return json.dumps(await store.list_documents())

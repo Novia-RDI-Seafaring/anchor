@@ -117,8 +117,12 @@ export function foldedGraph(nodes: Record<string, StructureNode>, edges: Structu
 }
 
 export const COMPACT_CARD_TYPES = new Set(["fact", "note", "markdown", "spec"]);
+/** Cards open in full; one folds to its first line only when asked to. */
+export function displayMode(_nodeType: string, data: Record<string, unknown>): "compact" | "full" {
+  return data.display_mode === "compact" ? "compact" : "full";
+}
 export function compactDisplay(nodeType: string, data: Record<string, unknown>) {
-  return COMPACT_CARD_TYPES.has(nodeType) && data.display_mode !== "full";
+  return COMPACT_CARD_TYPES.has(nodeType) && displayMode(nodeType, data) === "compact";
 }
 
 export function cardSummary(data: Record<string, unknown>) {

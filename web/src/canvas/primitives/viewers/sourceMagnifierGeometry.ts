@@ -17,6 +17,15 @@ export function intersectRects(a: PixelRect, b: PixelRect): PixelRect {
   };
 }
 
+/**
+ * Whether a source is small enough on screen to need the lens. The lens
+ * centres a 2.5x crop on the source, so a source already larger than the lens
+ * (a whole drawing, a table) would show only a fragment of its middle.
+ */
+export function worthMagnifying(source: PixelRect): boolean {
+  return source.width > 0 && source.height > 0 && source.width <= WIDTH && source.height <= HEIGHT;
+}
+
 /** Fit beside the source, flipping at the page/viewport edge, never over it. */
 export function placeMagnifier(source: PixelRect, bounds: PixelRect): PixelRect | null {
   if (![source.left, source.top, source.width, source.height,

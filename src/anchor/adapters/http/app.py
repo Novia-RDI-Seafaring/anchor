@@ -307,9 +307,16 @@ def build_app(
         index = static_dir / "index.html"
         static_root = static_dir.resolve()
 
+        def app_page() -> FileResponse:
+            # The page names the bundle by its hash, so the bundle can be
+            # cached forever but the page must be asked for every time. A
+            # browser that kept an old page kept running the old app after
+            # an upgrade, with no error to show for it.
+            return FileResponse(index, headers={"Cache-Control": "no-cache"})
+
         @app.get("/")
         async def root() -> FileResponse:
-            return FileResponse(index)
+            return app_page()
 
         @app.get("/{full_path:path}")
         async def spa_fallback(full_path: str) -> FileResponse:
@@ -322,10 +329,10 @@ def build_app(
             try:
                 target.relative_to(static_root)
             except ValueError:
-                return FileResponse(index)
-            if target.is_file():
+                return app_page()
+            if target.is_file() and target != index.resolve():
                 return FileResponse(target)
-            return FileResponse(index)
+            return app_page()
 
         app.mount("/static", StaticFiles(directory=static_dir), name="static")
 

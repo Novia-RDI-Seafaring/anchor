@@ -5,6 +5,7 @@ import { GHOST_GROUNDS, PALETTE } from "./constants";
 import type { Sketch } from "./sketch";
 import type { Strike } from "./strikes";
 import { createStore } from "zustand/vanilla";
+import { awaitingVerdict, keptIds, revisionChain, stillOnBoard } from "./verdict";
 export { GHOST_GROUNDS, PALETTE } from "./constants";
 
 export type Note = {
@@ -172,7 +173,11 @@ type MarkupActions = {
   send: (snapshot: Queued, create: () => Promise<Intent>) => Promise<boolean>;
   settle: (intentId: string, judged: Set<string>, host: {
     get: (id: string) => Promise<Intent | null>;
-    resolve: (id: string, result: { verdict: string }) => Promise<unknown>;
+    resolve: (id: string, result: Record<string, unknown>) => Promise<unknown>;
+  }) => Promise<boolean>;
+  /** Take back a sent remark: resolved as withdrawn, and off the board. */
+  withdraw: (intentId: string, host: {
+    resolve: (id: string, result: Record<string, unknown>) => Promise<unknown>;
   }) => Promise<void>;
 };
 
@@ -184,6 +189,8 @@ const hasRemark = (state: MarkupState) =>
   state.marks.length > 0 || state.notes.some((note) => note.text.trim());
 
 /** One store per mounted overlay. Active toggles retain it; separate overlays never share it. */
+const JUDGED = "judged on the board";
+
 export function createMarkupStore() {
   return createStore<MarkupState & MarkupActions>()((set, get) => ({
     marks: [],
@@ -225,7 +232,9 @@ export function createMarkupStore() {
     writeAnswer: (value) => set((state) => ({ answering: typeof value === "function" ? value(state.answering) : value })),
     setMargin: (value) => set((state) => ({ marginDeg: typeof value === "function" ? value(state.marginDeg) : value })),
     keepSuggestion: (id) => {
+      const intent = get().filed.find((remark) => remark.intent?.items?.some((item) => item.id === id))?.intent;
       const kept = new Set(get().kept).add(id);
+      for (const one of revisionChain(intent, id)) kept.add(one);
       set({ kept });
       return kept;
     },
@@ -237,8 +246,7 @@ export function createMarkupStore() {
       filed: state.filed.map((remark) => {
         const intent = latest.find((intent) => intent?.id === remark.intentId);
         return intent ? { ...remark, intent } : remark;
-      }).filter((remark) => !remark.intent || remark.intent.status !== "resolved" ||
-        (remark.intent.items ?? []).some((item) => item.type === "suggestion" && item.state === "pending")),
+      }).filter((remark) => stillOnBoard(remark.intent, state.kept)),
     })),
     addMark: (mark) => set((state) => ({ marks: [...state.marks, mark] })),
     commitNote: (id) => set((state) => ({
@@ -340,12 +348,31 @@ export function createMarkupStore() {
     settle: async (intentId, judged, host) => {
       try {
         const intent = await host.get(intentId);
-        if (!intent || intent.status !== "pending") return;
-        const open = (intent.items ?? []).some((item) => item.type === "suggestion" &&
-          (item.state === "pending" || (item.state === "applied" &&
-            item.author.kind !== "human" && !judged.has(item.id))));
-        if (!open) await host.resolve(intentId, { verdict: "judged on the board" });
-      } catch { /* The next poll shows whatever state the server is in. */ }
+        if (!intent) return false;
+        const open = (intent.items ?? []).some((item) => item.type === "suggestion" && item.state === "pending") ||
+          awaitingVerdict(intent, judged).length > 0;
+        if (open) return false;
+        if (intent.result?.verdict === JUDGED) return true;
+        // Recorded on the thread, so a reload does not ask again. An agent
+        // may have resolved it already; its result is kept alongside.
+        const applied = (intent.items ?? []).filter((item) => item.type === "suggestion" && item.state === "applied");
+        const kept = [...new Set([...keptIds(intent), ...applied.map((item) => item.id).filter((id) => judged.has(id))])];
+        await host.resolve(intentId, { ...(intent.result ?? {}), verdict: JUDGED, kept });
+        return true;
+      } catch {
+        // The next poll shows whatever state the server is in.
+        return false;
+      }
+    },
+    withdraw: async (intentId, host) => {
+      // Sent is not final: a remark sent by mistake, or one nobody will now
+      // answer, is taken back from the board it was drawn on. The record
+      // stays, resolved as withdrawn, so an agent mid-way sees why.
+      await host.resolve(intentId, { withdrawn: true, verdict: "withdrawn by the asker" });
+      set((state) => ({
+        filed: state.filed.filter((remark) => remark.intentId !== intentId),
+        openFiled: state.openFiled === intentId ? null : state.openFiled,
+      }));
     },
   }));
 }

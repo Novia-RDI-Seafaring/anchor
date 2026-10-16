@@ -27,8 +27,8 @@ it("does not steal source controls, text, dialogs, or read-only canvases", () =>
   }
 });
 
-it("uses primary dragging for selection or hand panning while other tools keep alternate-button pan", () => {
-  expect(canvasNavigation("select", false, null)).toMatchObject({ hand: false, selectionOnDrag: true, panOnDrag: [1, 2] });
+it("pans on a background drag, leaves selection to Shift, and keeps alternate-button pan for armed tools", () => {
+  expect(canvasNavigation("select", false, null)).toMatchObject({ hand: false, selectionOnDrag: false, panOnDrag: true });
   expect(canvasNavigation("hand", false, null)).toMatchObject({ hand: true, selectionOnDrag: false, panOnDrag: true });
   expect(canvasNavigation("hand", true, null)).toMatchObject({ hand: false, selectionOnDrag: false, panOnDrag: true });
   expect(canvasNavigation("hand", false, "concept")).toMatchObject({ hand: false, selectionOnDrag: false, panOnDrag: [1, 2] });
@@ -62,4 +62,13 @@ it("prevents explicit per-node dragging in Hand and read-only modes", () => {
   const readOnly = canvasNavigation("select", true, null);
   expect(readOnly.nodesDraggable).toBe(false);
   expect(navigationNodes(nodes, readOnly)[0]?.draggable).toBe(false);
+});
+
+it("pans instead of moving a card while space is held", () => {
+  const nodes: { id: string; draggable?: boolean }[] = [{ id: "card" }];
+  const held = canvasNavigation("select", false, null, true);
+  expect(held.nodesDraggable).toBe(false);
+  expect(held.panOnDrag).toBe(true);
+  expect(navigationNodes(nodes, held)[0]?.draggable).toBe(false);
+  expect(canvasNavigation("select", false, null, false).nodesDraggable).toBe(true);
 });

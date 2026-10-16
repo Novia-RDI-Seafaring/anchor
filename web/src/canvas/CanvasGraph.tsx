@@ -1,4 +1,4 @@
-import {
+import { useKeyPress,
   Background,
   Controls,
   MiniMap,
@@ -8,6 +8,7 @@ import {
   applyNodeChanges,
   useReactFlow,
   type Connection,
+  type FinalConnectionState,
   type Edge as RfEdge,
   type EdgeChange,
   type Node as RfNode,
@@ -51,6 +52,7 @@ import {
 } from "@/canvas/PaintGhost";
 import { connectClick } from "@/canvas/connect";
 import { CONNECT_TOOL, INTENT_TOOL, nodeTypes } from "@/canvas/registry";
+import { loadViewport, saveViewport } from "@/canvas/viewportMemory";
 import { canvasNavigation, navigationNodes } from "@/canvas/canvasNavigation";
 import "./canvasNavigation.css";
 import { refreshWorkspaces } from "@/canvas/useWorkspacesList";
@@ -243,7 +245,17 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     if (selected && structure.hidden.has(selected)) useUiStore.getState().setSelectedNodeId(null);
   }, [detailNodeId, nodes, structure]);
   useEffect(() => { setDetailNodeId(null); setStructureError(null); }, [slug]);
-  const { screenToFlowPosition } = useReactFlow();
+  const { screenToFlowPosition, getZoom, setViewport } = useReactFlow();
+  // Come back to where this canvas was last looked at; only a canvas never
+  // opened in this browser fits everything into view.
+  const [initialViewport] = useState(() => loadViewport(slug));
+  const viewportSlug = useRef(slug);
+  useEffect(() => {
+    if (viewportSlug.current === slug) return;
+    viewportSlug.current = slug;
+    const saved = loadViewport(slug);
+    if (saved) void setViewport(saved);
+  }, [slug, setViewport]);
   const openPdf = useUiStore((s) => s.openPdf);
   const setHoveredSourceRef = useUiStore((s) => s.setHoveredSourceRef);
   const clearHoveredSourceRef = useUiStore((s) => s.clearHoveredSourceRef);
@@ -265,7 +277,8 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   // pen down the same way it would drop a shape.
   const armedTool = useUiStore((s) => s.armedTool);
   const navigationMode = useUiStore((s) => s.navigationMode);
-  const navigation = canvasNavigation(navigationMode, readOnly ?? false, armedTool);
+  const panKeyHeld = useKeyPress("Space");
+  const navigation = canvasNavigation(navigationMode, readOnly ?? false, armedTool, panKeyHeld);
   const handMode = navigation.hand;
   const armTool = useUiStore((s) => s.armTool);
   const disarmTool = useUiStore((s) => s.disarmTool);
@@ -746,6 +759,35 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   }, [readOnly, handMode, slug]);
 
   /**
+   * A link released on a document card, away from any socket, joins what
+   * was lit under the pointer: the region it is on, else the whole document.
+   * The card lights exactly one of those while the link is over it, so the
+   * drop must do what the light promised.
+   */
+  const onConnectEnd = useCallback((event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
+    if (readOnly || handMode || state.toNode || !state.fromNode) return;
+    const point = "changedTouches" in event ? event.changedTouches[0] : event;
+    if (!point) return;
+    const under = document.elementsFromPoint(point.clientX, point.clientY);
+    const nodeEl = under
+      .map((el) => el.closest<HTMLElement>(".react-flow__node"))
+      .find((el): el is HTMLElement => !!el && el.dataset.id !== state.fromNode!.id);
+    const target = nodeEl?.dataset.id;
+    if (!target || useCanvasStore.getState().nodes[target]?.node_type !== "document") return;
+    const region = under
+      .map((el) => el.closest<HTMLElement>("[data-region-handle-id]"))
+      .find((el): el is HTMLElement => !!el && nodeEl!.contains(el))
+      ?.dataset.regionHandleId ?? null;
+    const fromSource = state.fromHandle?.type !== "target";
+    onConnect({
+      source: fromSource ? state.fromNode.id : target,
+      target: fromSource ? target : state.fromNode.id,
+      sourceHandle: fromSource ? state.fromHandle?.id ?? null : null,
+      targetHandle: fromSource ? region : state.fromHandle?.id ?? null,
+    });
+  }, [readOnly, handMode, onConnect]);
+
+  /**
    * Find the topmost Area whose body contains the given canvas point.
    *
    * Used by `onNodeDrag` to telegraph "drop here to nest" via the Area's
@@ -905,6 +947,41 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     [findAreaAtPoint, slug],
   );
 
+  const settleUnderPreview = useCallback(
+    async (id: string, target: { left: number; top: number; width: number }) => {
+      const picture = () => {
+        const el = Array.from(document.querySelectorAll(".react-flow__node")).find(
+          (n) => n.getAttribute("data-id") === id,
+        );
+        const img = el?.querySelector("img");
+        return img && img.complete && img.naturalWidth > 0 ? img.getBoundingClientRect() : null;
+      };
+      const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
+      for (let attempt = 0; attempt < 30; attempt++) {
+        await wait(100);
+        const r = picture();
+        const node = useCanvasStore.getState().nodes[id];
+        if (!r || !node || r.width === 0) continue;
+        const zoom = getZoom() || 1;
+        const scale = target.width / r.width;
+        const width = (node.data as { width?: number } | undefined)?.width;
+        if (Math.abs(scale - 1) > 0.02 && typeof width === "number") {
+          // The picture shows narrower than the card (padding, centring):
+          // widen the card by what is missing, then measure again.
+          await canvases.patchNode(slug, id, { data: { width: Math.round(width + (target.width - r.width) / zoom) } });
+          continue;
+        }
+        const dx = (target.left - r.left) / zoom;
+        const dy = (target.top - r.top) / zoom;
+        if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
+          await canvases.patchNode(slug, id, { x: node.x + dx, y: node.y + dy });
+        }
+        return;
+      }
+    },
+    [slug, getZoom],
+  );
+
   const onDrop = useCallback(async (event: React.DragEvent) => {
     event.preventDefault();
     if (readOnly || handMode) return;
@@ -942,13 +1019,28 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     if (nodeSpecRaw) {
       event.preventDefault();
       try {
-        const spec = JSON.parse(nodeSpecRaw) as {
+        const parsed = JSON.parse(nodeSpecRaw) as {
           node_type: string;
           label?: string;
           width?: number;
           height?: number;
           data?: Record<string, unknown>;
+          /** Where a section's drag preview was held, and how wide it showed (screen px). */
+          __drop?: { grabX: number; grabY: number; width: number };
         };
+        const { __drop: held, ...spec } = parsed;
+        // A section carried from the viewer lands where its preview was let
+        // go, at the size it showed: the reader placed it by eye, so the
+        // pointer is not its corner and the card is not a default width.
+        if (held && held.width > 0) {
+          const corner = screenToFlowPosition({ x: event.clientX - held.grabX, y: event.clientY - held.grabY });
+          const right = screenToFlowPosition({ x: event.clientX - held.grabX + held.width, y: event.clientY });
+          const width = Math.round(right.x - corner.x);
+          flowPos.x = corner.x;
+          flowPos.y = corner.y;
+          spec.width = width;
+          spec.data = { ...(spec.data ?? {}), width };
+        }
 
         // Special path for sub-canvas tiles: the LeftToolRail tags the
         // payload with `__create_sub_canvas`. We provision a fresh child
@@ -977,6 +1069,17 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
           y: flowPos.y,
         })) as { event?: { payload?: { id?: string } } } | null;
         const newId = res?.event?.payload?.id;
+        // Then the picture inside the card is put where the preview was: a
+        // card has its own padding, title row and caption, and a section card
+        // centres its picture, so the card's corner is not the picture's.
+        // Measured on screen once it has rendered, rather than guessed.
+        if (newId && held && held.width > 0) {
+          void settleUnderPreview(newId, {
+            left: event.clientX - held.grabX,
+            top: event.clientY - held.grabY,
+            width: held.width,
+          });
+        }
         // Dropped inside a region: the region adopts it, so it travels
         // with the region afterwards. A region dropped on a region does not
         // nest (side-by-side groups are the common case).
@@ -1099,7 +1202,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         }
       }));
     }
-  }, [readOnly, handMode, slug, screenToFlowPosition, adoptIntoRegion]);
+  }, [readOnly, handMode, slug, screenToFlowPosition, adoptIntoRegion, settleUnderPreview]);
 
   // Armed-tool placement gesture. When `armedTool` is set, a click on the
   // pane places the shape at default size; a click-and-drag places it with
@@ -1150,6 +1253,8 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
     // select one mid-arm. A region is the exception: its body is the space
     // you draw into, so placing inside one has to work, and the new element
     // joins that region.
+    // An edge is selected, never placed on.
+    if (target.closest(".react-flow__edge")) return;
     const overId = (target.closest(".react-flow__node") as HTMLElement | null)?.dataset.id;
     if (overId) {
       const over = useCanvasStore.getState().nodes[overId];
@@ -1300,6 +1405,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       // tool is armed. Not for the pen: its surface sets its own cursor -- a
       // crosshair to draw, a hand over drawn ink -- and its buttons theirs.
       data-canvas-read-only={readOnly ? "true" : undefined}
+      data-armed-placing={armedTool && armedTool !== INTENT_TOOL && armedTool !== CONNECT_TOOL ? "" : undefined}
       onDragStartCapture={handMode ? (event) => event.preventDefault() : undefined}
       onDragOver={readOnly ? undefined : handMode ? (event) => {
         event.preventDefault();
@@ -1338,7 +1444,10 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
-        fitView
+        onConnectEnd={onConnectEnd}
+        fitView={!initialViewport}
+        defaultViewport={initialViewport ?? undefined}
+        onMoveEnd={(_, viewport) => saveViewport(slug, viewport)}
         nodesDraggable={navigation.nodesDraggable}
         // Keep containers below edges and every ordinary card above them,
         // including selected edges and edges attached to parented nodes.
@@ -1580,6 +1689,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       <CommentLasso
         active={commentMode}
         onExit={() => setCommentMode(false)}
+        onEnter={() => setCommentMode(true)}
         workspaceSlug={slug}
         boxes={Object.values(nodes).filter((n) => !structure.hidden.has(n.id)).map((n): LassoBox => {
           // The size ReactFlow measured is what the reader actually sees, so

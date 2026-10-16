@@ -34,6 +34,14 @@ or pass `project="pump-study"` on project-scoped calls. Before a session
 selection, omitted project arguments use `default`. `anchor use` affects CLI
 defaults only.
 
+An agent working in a folder (a Codex project, a repo) calls
+`create_project(folder="/abs/path")` at the start. It returns the project that
+folder already is, or sits inside, or makes the folder a project named after
+it, as `anchor init` would. Either way it becomes the session's default, so
+what the agent ingests stays with that folder. The server instructions tell
+agents to do this before ingesting. `list_projects` reports each project's
+`folder`.
+
 Call `list_projects` and `anchor_status` when data looks empty or wrong. Add a
 second named server to access another environment. See
 [Agent setup](../guides/agent-setup.md) and
@@ -74,7 +82,13 @@ families rather than listing every operation.
 ## Process a submitted canvas request
 
 1. Pull `list_pending_intents` for the project at the start of an ANCHOR task
-   and when prompted to check the inbox.
+   and when prompted to check the inbox. Intents whose every target was
+   deleted are stale and left out unless `include_stale` is set; each then
+   carries a `stale` reason, and the Intents panel offers to remove it.
+   The first agent read of each intent (`list_pending_intents`, `next_intent`,
+   `get_intent`, or the CLI equivalents) records `seen_at` and `seen_by`. The
+   board shows "seen by <agent>", or, after 30 seconds unread, says no agent
+   has read it and how to start one. The browser's own refetches do not count.
 2. Read the selected intent, its target objects, and relevant document evidence.
 3. Reply through `intent_add_item`. Ask a question and wait when requirements
    are unclear. For a small, plain change, `intent_act` posts and applies it

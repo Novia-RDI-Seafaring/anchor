@@ -8,15 +8,16 @@ import { CommentLasso } from "./CommentLasso";
 
 const flow = vi.hoisted(() => ({
   viewport: { x: 0, y: 0, zoom: 1 },
-  getViewport: vi.fn(), setViewport: vi.fn(), screenToFlowPosition: vi.fn(),
+  getViewport: vi.fn(), setViewport: vi.fn(), fitBounds: vi.fn(), screenToFlowPosition: vi.fn(),
 }));
 vi.mock("@xyflow/react", () => ({
   useReactFlow: () => flow,
   useViewport: () => flow.viewport,
+  useStoreApi: () => ({ getState: () => ({ width: 1000, height: 800 }) }),
 }));
 vi.mock("@/api/intents", () => ({
   INTENTS_CHANGED_EVENT: "anchor:intents-changed",
-  intents: { listPending: vi.fn(), get: vi.fn(), create: vi.fn(), answer: vi.fn(),
+  intents: { listAll: vi.fn(), get: vi.fn(), create: vi.fn(), answer: vi.fn(),
     addItem: vi.fn(), apply: vi.fn(), revert: vi.fn(), decline: vi.fn(), resolve: vi.fn() },
 }));
 
@@ -37,7 +38,7 @@ beforeEach(() => {
   flow.screenToFlowPosition.mockImplementation(({ x, y }) => ({
     x: (x - flow.viewport.x) / flow.viewport.zoom, y: (y - flow.viewport.y) / flow.viewport.zoom,
   }));
-  vi.mocked(intents.listPending).mockResolvedValue([]);
+  vi.mocked(intents.listAll).mockResolvedValue([]);
   vi.mocked(intents.get).mockResolvedValue(baseIntent());
   vi.mocked(intents.create).mockResolvedValue(baseIntent());
   vi.mocked(intents.answer).mockResolvedValue({} as ThreadItem);
@@ -52,15 +53,16 @@ afterEach(() => {
 async function mount() {
   const onExit = vi.fn();
   const onFiled = vi.fn();
+  const onEnter = vi.fn();
   const underHover = vi.fn();
   const view = (active: boolean) => <div className="react-flow">
     <button data-testid="underlying-node" onMouseEnter={underHover}>Pump</button>
-    <CommentLasso active={active} boxes={boxes} workspaceSlug="study" onExit={onExit} onFiled={onFiled} />
+    <CommentLasso active={active} boxes={boxes} workspaceSlug="study" onExit={onExit} onEnter={onEnter} onFiled={onFiled} />
   </div>;
   const result = render(view(true));
   const setActive = async (active: boolean) => { await act(async () => { result.rerender(view(active)); }); };
   await act(async () => {});
-  return { ...result, onExit, onFiled, underHover, setActive };
+  return { ...result, onExit, onEnter, onFiled, underHover, setActive };
 }
 function draw(points: [number, number][], surface = screen.getByTestId("comment-lasso-surface")) {
   const event = ([clientX, clientY]: [number, number]) => ({ clientX, clientY, button: 0, pointerId: 1 });
@@ -225,12 +227,170 @@ describe("CommentLasso interactions", () => {
     intent.items = [{ id: "change", type: "suggestion", author: { kind: "agent" },
       text: "Use the new limit", created_at: 2, state,
       ops: [{ type: "NodeUpdated", payload: { id: "pump", fields: { label: "Pump limit" } } }] }];
-    vi.mocked(intents.listPending).mockResolvedValue([intent]);
+    vi.mocked(intents.listAll).mockResolvedValue([intent]);
     vi.mocked(intents.get).mockResolvedValue(intent);
     await mount();
     const card = await screen.findByTestId(state === "pending" ? "comment-lasso-ghost-verdict" : "comment-lasso-ghost-applied");
     expect(card.textContent).toContain("Use the new limit");
     expect(card.textContent).toContain(state === "pending" ? "proposal" : "done");
+  });
+
+  it("still asks to keep a change the agent applied and then resolved, and records the keep", async () => {
+    const intent = { ...baseIntent(), status: "resolved", result: { built: "Org chart" } };
+    intent.items = [{ id: "change", type: "suggestion", author: { kind: "agent" },
+      text: "Added the org chart", created_at: 2, state: "applied",
+      ops: [{ type: "NodeUpdated", payload: { id: "pump", fields: { label: "Pump limit" } } }] }];
+    vi.mocked(intents.listAll).mockResolvedValue([intent]);
+    vi.mocked(intents.get).mockResolvedValue(intent);
+    await mount();
+    await screen.findByTestId("comment-lasso-ghost-applied");
+    fireEvent.click(screen.getByTestId("comment-lasso-keep"));
+    await waitFor(() => expect(intents.resolve).toHaveBeenCalledWith("ask", {
+      built: "Org chart", verdict: "judged on the board", kept: ["change"],
+    }));
+  });
+
+  it("marks the real cards a change touched until the reader keeps it", async () => {
+    const intent = baseIntent();
+    intent.items = [{ id: "change", type: "suggestion", author: { kind: "agent" },
+      text: "Renamed the pump", created_at: 2, state: "applied",
+      ops: [{ type: "NodeUpdated", payload: { id: "pump", fields: { label: "Pump limit" } } }],
+      undo_ops: [{ type: "NodeUpdated", payload: { id: "pump", fields: { label: "Old pump" } } }] }];
+    vi.mocked(intents.listAll).mockResolvedValue([intent]);
+    vi.mocked(intents.get).mockResolvedValue(intent);
+    await mount();
+    await screen.findByTestId("comment-lasso-ghost-applied");
+    const css = () => document.getElementById("anchor-change-marks")?.textContent ?? "";
+    await waitFor(() => expect(css()).toContain('.react-flow__node[data-id="pump"]'));
+    expect(css()).toContain('content: "Old pump"');
+    fireEvent.pointerEnter(screen.getByTestId("comment-lasso-ghost-applied"));
+    await waitFor(() => expect(css()).toContain("box-shadow"));
+    fireEvent.click(screen.getByTestId("comment-lasso-keep"));
+    await waitFor(() => expect(document.getElementById("anchor-change-marks")).toBeNull());
+  });
+
+  it("leaves intent mode once the last open remark is kept", async () => {
+    const intent = baseIntent();
+    intent.items = [{ id: "change", type: "suggestion", author: { kind: "agent" },
+      text: "Renamed the pump", created_at: 2, state: "applied", ops: [] }];
+    vi.mocked(intents.listAll).mockResolvedValue([intent]);
+    vi.mocked(intents.get).mockResolvedValue(intent);
+    const { onExit } = await mount();
+    fireEvent.click(await screen.findByTestId("comment-lasso-keep"));
+    await waitFor(() => expect(intents.resolve).toHaveBeenCalled());
+    await waitFor(() => expect(onExit).toHaveBeenCalledOnce());
+  });
+
+  it("stays in intent mode while another remark is still open", async () => {
+    const judged = baseIntent();
+    judged.items = [{ id: "change", type: "suggestion", author: { kind: "agent" },
+      text: "Renamed the pump", created_at: 2, state: "applied", ops: [] }];
+    const other = { ...baseIntent(), id: "other", items: [] };
+    vi.mocked(intents.listAll).mockResolvedValue([judged, other]);
+    vi.mocked(intents.get).mockImplementation(async (id) => (id === "other" ? other : judged));
+    const { onExit } = await mount();
+    fireEvent.click(await screen.findByTestId("comment-lasso-keep"));
+    await waitFor(() => expect(intents.resolve).toHaveBeenCalled());
+    await act(async () => {});
+    expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it("takes a reader with the pen down back to the remark when the agent answers", async () => {
+    const asked = { ...baseIntent(), payload: { text: "Check the pump", viewport: { x: -40, y: -20, zoom: 1.5 } } };
+    const answered = { ...asked, items: [{ id: "change", type: "suggestion" as const, author: { kind: "agent", label: "claude-code" },
+      text: "Renamed the pump", created_at: 2, state: "applied", ops: [] }] };
+    vi.mocked(intents.listAll).mockResolvedValue([asked]);
+    vi.mocked(intents.get).mockResolvedValue(asked);
+    const { onEnter, setActive } = await mount();
+    await waitFor(() => expect(intents.get).toHaveBeenCalled());
+    await setActive(false);
+    vi.mocked(intents.get).mockResolvedValue(answered);
+    await act(async () => { window.dispatchEvent(new Event("anchor:intents-changed")); });
+    await waitFor(() => expect(onEnter).toHaveBeenCalledOnce());
+    await setActive(true);
+    // The pump sits inside the view the remark was sent from, so that view
+    // comes back as it was.
+    await waitFor(() => expect(flow.setViewport).toHaveBeenCalledWith({ x: -40, y: -20, zoom: 1.5 }, expect.anything()));
+    expect(await screen.findByTestId("comment-lasso-keep")).toBeTruthy();
+  });
+
+  it("widens the view only as far as a change reaching outside it", async () => {
+    const asked = { ...baseIntent(), payload: { text: "Check the pump", viewport: { x: 5000, y: 5000, zoom: 1 } } };
+    const answered = { ...asked, items: [{ id: "change", type: "suggestion" as const, author: { kind: "agent" },
+      text: "Renamed the pump", created_at: 2, state: "applied", ops: [] }] };
+    vi.mocked(intents.listAll).mockResolvedValue([asked]);
+    vi.mocked(intents.get).mockResolvedValue(asked);
+    const { onEnter, setActive } = await mount();
+    await waitFor(() => expect(intents.get).toHaveBeenCalled());
+    await setActive(false);
+    vi.mocked(intents.get).mockResolvedValue(answered);
+    await act(async () => { window.dispatchEvent(new Event("anchor:intents-changed")); });
+    await waitFor(() => expect(onEnter).toHaveBeenCalledOnce());
+    await setActive(true);
+    await waitFor(() => expect(flow.fitBounds).toHaveBeenCalled());
+    expect(flow.setViewport).not.toHaveBeenCalledWith({ x: 5000, y: 5000, zoom: 1 }, expect.anything());
+  });
+
+  it("does not pull the reader back for an answer that was already waiting", async () => {
+    const intent = baseIntent();
+    intent.items = [{ id: "change", type: "suggestion", author: { kind: "agent" },
+      text: "Renamed the pump", created_at: 2, state: "applied", ops: [] }];
+    vi.mocked(intents.listAll).mockResolvedValue([intent]);
+    vi.mocked(intents.get).mockResolvedValue(intent);
+    const { onEnter, setActive } = await mount();
+    await screen.findByTestId("comment-lasso-keep");
+    await setActive(false);
+    await act(async () => { window.dispatchEvent(new Event("anchor:intents-changed")); });
+    await act(async () => {});
+    expect(onEnter).not.toHaveBeenCalled();
+  });
+
+  it("asks about a revision once, shows what was said, and keeps the change it revised", async () => {
+    const intent = baseIntent();
+    intent.items = [
+      { id: "first", type: "suggestion", author: { kind: "agent", label: "claude-code" },
+        text: "Added a joke", created_at: 2, state: "applied", ops: [] },
+      { id: "reply", type: "message", author: { kind: "human", label: "browser" },
+        text: "make it Markdown", created_at: 3, state: null },
+      { id: "second", type: "suggestion", author: { kind: "agent", label: "claude-code" },
+        text: "Made it Markdown", created_at: 4, state: "applied", ops: [], supersedes: "first" },
+    ];
+    vi.mocked(intents.listAll).mockResolvedValue([intent]);
+    vi.mocked(intents.get).mockResolvedValue(intent);
+    await mount();
+    const card = await screen.findByTestId("comment-lasso-ghost-applied");
+    expect(card.textContent).toContain("Made it Markdown");
+    expect(screen.getAllByTestId("comment-lasso-said").map((el) => [el.dataset.author, el.textContent]))
+      .toEqual([["human", "make it Markdown"]]);
+    expect(screen.getAllByTestId("comment-lasso-keep")).toHaveLength(1);
+    fireEvent.click(screen.getByTestId("comment-lasso-keep"));
+    await waitFor(() => expect(intents.resolve).toHaveBeenCalledWith("ask", expect.objectContaining({
+      kept: expect.arrayContaining(["first", "second"]),
+    })));
+  });
+
+  it("does not ask to keep a change the reader approved", async () => {
+    const intent = baseIntent();
+    intent.items = [{ id: "change", type: "suggestion", author: { kind: "agent" },
+      applied_by: { kind: "human", label: "browser" },
+      text: "Added the tree", created_at: 2, state: "applied", ops: [] }];
+    vi.mocked(intents.listAll).mockResolvedValue([intent]);
+    vi.mocked(intents.get).mockResolvedValue(intent);
+    await mount();
+    await waitFor(() => expect(intents.get).toHaveBeenCalled());
+    expect(screen.queryByTestId("comment-lasso-keep")).toBeNull();
+  });
+
+  it("leaves a resolved remark off the board once its change was kept", async () => {
+    const intent = { ...baseIntent(), status: "resolved",
+      result: { verdict: "judged on the board", kept: ["change"] } };
+    intent.items = [{ id: "change", type: "suggestion", author: { kind: "agent" },
+      text: "Added the org chart", created_at: 2, state: "applied", ops: [] }];
+    vi.mocked(intents.listAll).mockResolvedValue([intent]);
+    vi.mocked(intents.get).mockResolvedValue(intent);
+    await mount();
+    await waitFor(() => expect(intents.listAll).toHaveBeenCalled());
+    expect(screen.queryByTestId("comment-lasso-ghost-applied")).toBeNull();
   });
 
   it("reads a two-stroke cross as a strike, leaving a lone crossing as ordinary ink", async () => {
@@ -253,6 +413,8 @@ describe("CommentLasso interactions", () => {
       expect(intents.create).toHaveBeenCalledWith(expect.objectContaining({
         targets: ["pump", "motor"],
         strikes: [expect.objectContaining({ edge: "link", source: "pump", target: "motor" })],
+        // The ink itself goes too, so a reload redraws the cross as drawn.
+        ink: expect.objectContaining({ marks: [expect.anything(), expect.anything()] }),
       }));
     } finally { edge.remove(); }
   });
@@ -261,7 +423,7 @@ describe("CommentLasso interactions", () => {
     const intent = baseIntent();
     intent.items = [{ id: "question", type: "question", author: { kind: "agent" },
       text: "Which limit?", options: ["Nominal", "Maximum"], created_at: 2, state: "open" }];
-    vi.mocked(intents.listPending).mockResolvedValue([intent]);
+    vi.mocked(intents.listAll).mockResolvedValue([intent]);
     vi.mocked(intents.get).mockResolvedValue(intent);
     await mount();
     await screen.findByTestId("comment-lasso-ghost-question");

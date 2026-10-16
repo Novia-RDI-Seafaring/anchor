@@ -52,6 +52,9 @@ class ThreadHost(Protocol):
         raise NotImplementedError
     async def revert(self, context: ThreadContext, undo: list[dict[str, Any]]) -> dict[str, Any]:
         raise NotImplementedError
+    # Optional: ``async def stale_reason(self, targets) -> str | None``. A
+    # host that can tell its targets are gone returns why; one without it
+    # never reports an intent stale.
 
 
 class IntentStore(Protocol):
