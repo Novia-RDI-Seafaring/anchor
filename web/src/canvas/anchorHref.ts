@@ -31,6 +31,23 @@ import type { ResolvableRef } from "@/api/documents";
 
 export const ANCHOR_SCHEME = "anchor:";
 
+/** A canvas bibliography ID, distinct from a document/page locator. */
+export function parseReferenceHref(href: string | undefined | null): string | null {
+  if (!isAnchorHref(href)) return null;
+  const match = /^anchor:ref\/([^/?#\s]+)$/i.exec(href!.trim());
+  if (!match) return null;
+  try {
+    const id = decodeURIComponent(match[1]!);
+    return id && !/[\s/?#]/.test(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+export function formatReferenceHref(referenceId: string): string {
+  return `${ANCHOR_SCHEME}ref/${encodeURIComponent(referenceId)}`;
+}
+
 /** True for any href written in the `anchor:` scheme, valid or not. */
 export function isAnchorHref(href: string | undefined | null): boolean {
   return typeof href === "string" && href.trim().toLowerCase().startsWith(ANCHOR_SCHEME);

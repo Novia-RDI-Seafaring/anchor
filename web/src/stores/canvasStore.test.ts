@@ -34,6 +34,28 @@ beforeEach(() => {
 });
 
 describe("canvasStore.applyEvent", () => {
+  it("keeps the bibliography live and applies reference attachments without erasing data", () => {
+    const store = useCanvasStore.getState();
+    const ref = { id: "ref-1", source_ref: { slug: "datasheet", page: 1 }, created_by: "human", created_at: 1 };
+    store.setSnapshot({ slug: "w1", title: "", version: 1, nodes: [
+      { id: "n", node_type: "spec", data: { text: "Keep me", rows: [{ key: "P", value: "10", unit: "bar" }] } },
+    ], edges: [], metadata: { references: [ref] } });
+    expect(useCanvasStore.getState().references).toEqual([ref]);
+    store.applyEvent(evt({ type: "ReferenceUpdated", version: 2, payload: { reference_id: "ref-1", label: "Pressure" } }));
+    expect(useCanvasStore.getState().references[0]?.label).toBe("Pressure");
+    store.applyEvent(evt({ type: "ReferenceAttached", version: 3, payload: { node_id: "n", reference_id: "ref-1", source_ref: ref.source_ref, row_index: 0 } }));
+    expect(useCanvasStore.getState().nodes.n?.data).toEqual({ text: "Keep me", rows: [
+      { key: "P", value: "10", unit: "bar", reference_id: "ref-1", source_ref: ref.source_ref },
+    ] });
+    store.applyEvent(evt({ type: "ReferenceAttached", version: 4, payload: { node_id: "n", reference_id: "ref-1", source_ref: ref.source_ref, row_index: null } }));
+    expect(useCanvasStore.getState().nodes.n?.data?.reference_id).toBe("ref-1");
+    store.applyEvent(evt({ type: "ReferenceCreated", version: 5, payload: { reference: { ...ref, id: "ref-2" } } }));
+    store.applyEvent(evt({ type: "ReferenceRemoved", version: 6, payload: { reference_id: "ref-1" } }));
+    expect(useCanvasStore.getState().references.map((item) => item.id)).toEqual(["ref-2"]);
+    store.reset();
+    expect(useCanvasStore.getState().references).toEqual([]);
+  });
+
   it("NodeAdded inserts a node", () => {
     useCanvasStore.getState().applyEvent(
       evt({

@@ -23,11 +23,16 @@ import { useUiStore } from "@/stores/uiStore";
 export function SourceRefLink({
   workspaceSlug,
   refValue,
+  brokenReason,
+  quote,
   children,
 }: {
   workspaceSlug: string | undefined;
   /** Parsed ref, or `null` when the `anchor:` target was malformed. */
   refValue: ResolvableRef | null;
+  brokenReason?: string;
+  /** Stored source words can differ from the claim's display text. */
+  quote?: string;
   children?: React.ReactNode;
 }) {
   const openRef = useOpenSourceRef(workspaceSlug);
@@ -37,14 +42,14 @@ export function SourceRefLink({
 
   // Hover preview (#373), shared with the anchor buttons in a spec table so
   // both kinds of ref behave the same. See useRefHover.
-  const text = typeof children === "string" ? children : undefined;
+  const text = quote ?? (typeof children === "string" ? children : undefined);
   const { hoverProps, preview, cancelTimers } = useRefHover(workspaceSlug, refValue, text);
 
   if (!refValue) {
     return (
       <span
         className="cursor-help text-rose-600 line-through decoration-rose-300"
-        title="This source link names no document or no page, so it points nowhere."
+        title={brokenReason ?? "This source link names no document or no page, so it points nowhere."}
         data-testid="source-ref-broken"
       >
         {children}

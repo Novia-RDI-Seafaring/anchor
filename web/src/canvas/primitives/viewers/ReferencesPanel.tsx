@@ -5,8 +5,9 @@ import {
   REFERENCES_CHANGED_EVENT,
   references,
 } from "@/api/references";
-import type { Reference } from "@/stores/canvasStore";
+import { useCanvasStore, type Reference } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
+import { AttachReferenceDialog } from "./AttachReferenceDialog";
 
 /**
  * ReferencesPanel — the canvas bibliography, docked on the LEFT above the PDF
@@ -29,6 +30,12 @@ export function ReferencesPanel({ canvasSlug }: Props) {
   const [items, setItems] = useState<Reference[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [attaching, setAttaching] = useState<Reference | null>(null);
+  const selectedNodeId = useUiStore((state) => state.selectedNodeId);
+  const selectedNode = useCanvasStore((state) => state.slug === canvasSlug && selectedNodeId ? state.nodes[selectedNodeId] : undefined);
+  const liveReferences = useCanvasStore((state) => state.references);
+  const previousReferences = useRef(liveReferences);
   const openPdf = useUiStore((s) => s.openPdf);
   const activeReferenceId = useUiStore((s) => s.activeReferenceId);
   const setActiveReferenceId = useUiStore((s) => s.setActiveReferenceId);
@@ -58,6 +65,16 @@ export function ReferencesPanel({ canvasSlug }: Props) {
     window.addEventListener(REFERENCES_CHANGED_EVENT, onChanged);
     return () => window.removeEventListener(REFERENCES_CHANGED_EVENT, onChanged);
   }, [canvasSlug, refresh]);
+
+  // Agent and other-browser bibliography edits arrive on the canvas SSE stream.
+  useEffect(() => {
+    if (previousReferences.current === liveReferences) return;
+    previousReferences.current = liveReferences;
+    if (useCanvasStore.getState().slug === canvasSlug) void refresh();
+  }, [canvasSlug, liveReferences, refresh]);
+
+  const visibleItems = items.filter((ref) => [ref.label, ref.source_ref.slug, ref.source_ref.detail?.quote]
+    .some((value) => value?.toLowerCase().includes(query.trim().toLowerCase())));
 
   const openSource = useCallback(
     (ref: Reference) => {
@@ -118,6 +135,9 @@ export function ReferencesPanel({ canvasSlug }: Props) {
           click to open source
         </span>
       </div>
+      <input aria-label="Search references" type="search" value={query} onChange={(event) => setQuery(event.target.value)}
+        placeholder="Search references" className="mx-1.5 my-1 rounded border border-neutral-200 px-2 py-1 text-xs" />
+      <p className="px-2 pb-1 text-[10px] text-neutral-500">Select a canvas node, then choose Attach on a reference.</p>
       <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-1.5">
         {loading ? (
           <Hint text="loading references…" />
@@ -125,8 +145,8 @@ export function ReferencesPanel({ canvasSlug }: Props) {
           <div className="px-2 text-[10px] text-red-600">error: {error}</div>
         ) : items.length === 0 ? (
           <Hint text="no references yet — select source content and choose 'Make reference'" />
-        ) : (
-          items.map((ref) => (
+        ) : visibleItems.length === 0 ? <Hint text="No matching references." /> : (
+          visibleItems.map((ref) => (
             <ReferenceRow
               key={ref.id}
               reference={ref}
@@ -134,10 +154,14 @@ export function ReferencesPanel({ canvasSlug }: Props) {
               onOpen={() => openSource(ref)}
               onDelete={() => onDelete(ref)}
               onRename={(label) => onRename(ref, label)}
+              onAttach={() => setAttaching(ref)}
+              canAttach={!!selectedNode && !selectedNode.locked}
             />
           ))
         )}
       </div>
+      {attaching && selectedNodeId ? <AttachReferenceDialog key={`${attaching.id}:${selectedNodeId}`}
+        canvasSlug={canvasSlug} nodeId={selectedNodeId} reference={attaching} onClose={() => setAttaching(null)} /> : null}
     </div>
   );
 }
@@ -168,12 +192,16 @@ function ReferenceRow({
   onOpen,
   onDelete,
   onRename,
+  onAttach,
+  canAttach,
 }: {
   reference: Reference;
   active: boolean;
   onOpen: () => void;
   onDelete: () => void;
   onRename: (label: string) => void;
+  onAttach: () => void;
+  canAttach: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(reference.label ?? "");
@@ -270,7 +298,10 @@ function ReferenceRow({
             </div>
           ) : null}
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="flex shrink-0 flex-col items-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <button type="button" onClick={onAttach} disabled={!canAttach} aria-label="Attach reference"
+            title={canAttach ? "Attach to selected node, row, or text" : "Select an editable canvas node first"}
+            className="rounded px-1 text-[10px] text-sky-700 hover:bg-sky-100 disabled:opacity-40">Attach</button>
           <button
             type="button"
             onClick={() => {

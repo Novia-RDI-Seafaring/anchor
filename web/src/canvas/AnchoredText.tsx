@@ -2,7 +2,7 @@ import { Fragment, useMemo } from "react";
 import { useParams } from "react-router-dom";
 
 import { isAnchorHref, parseAnchorHref } from "@/canvas/anchorHref";
-import { SourceRefLink } from "@/canvas/SourceRefLink";
+import { CitationLink } from "@/canvas/CitationLink";
 
 /**
  * AnchoredText — plain text, except that `anchor:` links become anchors.
@@ -29,7 +29,7 @@ import { SourceRefLink } from "@/canvas/SourceRefLink";
  */
 
 /** `[text](target)` — target stops at whitespace or the closing paren. */
-const LINK_RE = /\[([^\]]*)\]\(([^)\s]+)\)/g;
+const LINK_RE = /\[((?:\\.|[^\]\\])*)\]\(([^)\s]+)\)/g;
 
 export function AnchoredText({
   text,
@@ -54,16 +54,16 @@ export function AnchoredText({
         typeof part === "string" ? (
           <Fragment key={i}>{part}</Fragment>
         ) : (
-          <SourceRefLink key={i} workspaceSlug={slug} refValue={part.ref}>
+          <CitationLink key={i} workspaceSlug={slug} href={part.href}>
             {part.text}
-          </SourceRefLink>
+          </CitationLink>
         ),
       )}
     </>
   );
 }
 
-type AnchorPart = { text: string; ref: ReturnType<typeof parseAnchorHref> };
+type AnchorPart = { text: string; href: string; ref: ReturnType<typeof parseAnchorHref> };
 
 /**
  * Split a string into literal runs and `anchor:` links, in order.
@@ -83,7 +83,7 @@ export function splitAnchorLinks(text: string): Array<string | AnchorPart> {
     const href = m[2] ?? "";
     if (!isAnchorHref(href)) continue;
     if (m.index > last) out.push(text.slice(last, m.index));
-    out.push({ text: label, ref: parseAnchorHref(href) });
+    out.push({ text: label.replace(/\\([\\[\]])/g, "$1"), href, ref: parseAnchorHref(href) });
     last = m.index + whole.length;
   }
   if (last < text.length) out.push(text.slice(last));
