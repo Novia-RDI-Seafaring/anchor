@@ -1,7 +1,7 @@
 import { NOTHING_SELECTED, PALETTE } from "./markupStore";
 import { useEffect, useEffectEvent } from "react";
 import type { MarkupModel } from "./types";
-import { clipboardKey, isTextEditing } from "@/shared/clipboard";
+import { clipboardKey, isTextEditing } from "../shared/clipboard";
 import { appendMarkup, captureMarkup, markupSelection, type MarkupFragment } from "./clipboard";
 
 let clipboard: { fragment: MarkupFragment; pastes: number } | null = null;
