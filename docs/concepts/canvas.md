@@ -19,11 +19,9 @@ resizing or connections. Shift-click or a selection box selects several objects.
 Drag empty canvas to pan the view. Shift-drag to draw a selection box. Click
 or drag an object to select or move it.
 
-Hand (`H`) is a view-only mode: dragging anywhere pans, and nothing moves,
-edits, pastes, or deletes. Press `H` again, click the hand, or press Escape to
-leave it. Middle-button and right-button dragging pan the view while a drawing
-tool is armed. Navigation keys leave text editors, source controls, and mark-up
-alone.
+Hold Space while dragging from a card to pan without moving it. Middle-button
+and right-button dragging pan the view while a drawing tool is armed.
+Navigation keys leave text editors, source controls, and mark-up alone.
 
 Double-click empty canvas to place a text element and start typing.
 Press Enter or click away to save, or Escape to cancel the current text edit.
