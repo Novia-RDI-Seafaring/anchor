@@ -63,6 +63,19 @@ async function renderTable(data: Record<string, unknown>, selected = false) {
 }
 
 describe("TablePrimitive row handles", () => {
+  it("names rows written with label or name, and shows a row's unit after its value", async () => {
+    // The shape agents actually write: a name under `label`, a number, a unit.
+    await renderTable({ rows: [
+      { label: "A — suction face to discharge axis", value: 80, unit: "mm" },
+      { name: "Maximum flow", value: "12 m³/h", unit: "m³/h" },
+    ] });
+    expect(screen.getByText("A — suction face to discharge axis")).toBeTruthy();
+    expect(screen.getByText("Maximum flow")).toBeTruthy();
+    expect(screen.getByText("mm")).toBeTruthy();
+    // A unit already in the value is not repeated.
+    expect(screen.queryAllByText("m³/h")).toHaveLength(0);
+  });
+
   it("shows no anchor for a ref that names no document, rather than a dead one", async () => {
     // A page with no document, on a card with no document either, cannot be
     // opened. The anchor used to render anyway and silently do nothing when
@@ -296,7 +309,9 @@ describe("TablePrimitive row handles", () => {
     fireEvent.click(screen.getByText("42"));
     fireEvent.change(screen.getByPlaceholderText("value"), { target: { value: "999999" } });
     fireEvent.blur(screen.getByPlaceholderText("value"));
-    expect(screen.getByText("Stale")).toBeTruthy();
+    // Stale is a state, not a word beside the anchor: the anchor's menu offers the fix.
+    expect(screen.getByLabelText("Evidence: Stale").getAttribute("data-evidence-status")).toBe("stale");
+    expect(screen.queryByText("Stale")).toBeNull();
     expect(screen.queryByTestId("spec-value-marker")).toBeNull();
     // Asking the server to look again now lives in the reference's own menu,
     // beside the reader's verdict, rather than as a second "Check" on the row.

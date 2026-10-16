@@ -154,3 +154,34 @@ it("deletes a line with its label when the label is picked out and deleted", asy
   expect(lines()).toBe(withBox);
   expect((screen.getAllByTestId("comment-lasso-note") as HTMLTextAreaElement[]).map((n) => n.value)).toEqual(["PX-5"]);
 });
+
+it("offers a label at the end of a line drawn out of a sent remark, either way", async () => {
+  const filed = { id: "r1", status: "pending", created_at: 1, targetIds: [], payload: {}, items: [] };
+  function SendingHost() {
+    const viewport = { x: 0, y: 0, zoom: 1 };
+    const host: OverlayHost = {
+      geometry: { boxes: [], viewport, getViewport: () => viewport, setViewport: vi.fn(),
+        screenToWorld: (p) => p, rowsOf: () => [], edgesOf: () => [] },
+      display: { labelOf: () => "", preview: () => ({ nodes: [], edges: [] }) },
+      thread: {
+        loadScoped: vi.fn(async () => []), get: vi.fn(async () => filed),
+        submit: vi.fn(async (remark: unknown) => ({ ...filed, payload: remark })),
+        subscribeChanged: vi.fn(() => () => {}),
+        addItem: vi.fn(), answer: vi.fn(), apply: vi.fn(), revert: vi.fn(), decline: vi.fn(), resolve: vi.fn(),
+      } as unknown as OverlayHost["thread"],
+    };
+    return <div style={{ position: "relative", width: 1000, height: 1000 }}><IntentOverlay active host={host} /></div>;
+  }
+  render(<SendingHost />); await act(async () => {});
+  draw([[300, 300], [500, 300], [500, 450], [300, 450], [300, 300]]);
+  const first = screen.getByTestId("comment-lasso-note");
+  fireEvent.change(first, { target: { value: "PX-10" } });
+  fireEvent.keyDown(first, { key: "Enter" });
+  await act(async () => { fireEvent.click(screen.getByTestId("comment-lasso-send")); });
+  // The box is on the board now, not in the remark being drawn. A line out
+  // of it to the left still gets somewhere to write.
+  draw([[320, 380], [250, 400], [180, 450], [120, 520]]);
+  const notes = screen.getAllByTestId("comment-lasso-note") as HTMLTextAreaElement[];
+  expect(notes.at(-1)!.value).toBe("");
+  expect(notes.at(-1)).toBe(document.activeElement);
+});

@@ -22,6 +22,8 @@ import { useUiStore } from "@/stores/uiStore";
 type Row = EvidenceRow & {
   key: string;
   value: string;
+  /** Shown after the value; the stored value is left as written. */
+  unit?: string;
   // Per-row provenance back to the source document. `region_id` is the link
   // the row-handle wiring relies on: when the user hovers a row, the spec
   // broadcasts hoveredSourceRef{slug, page, region_id, bbox}, the document
@@ -88,7 +90,9 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
     width?: number;
     height?: number;
   };
-  const canonicalRows = useMemo<Row[]>(() => d.rows ?? [], [d.rows]);
+  // A row's name is its `key`. Agents also write it as `label` or `name`;
+  // showing those rows nameless hid every value's meaning.
+  const canonicalRows = useMemo<Row[]>(() => (d.rows ?? []).map(namedRow), [d.rows]);
   const ph = placeholderState(d as Record<string, unknown> | undefined);
   // Placeholder mode forces dashed sky outline even if the user didn't pick
   // `data.dashed`. Filling the slot via `canvas_update_node` (placeholder:
@@ -431,6 +435,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                       rowIndex={i}
                       col="value"
                       value={r.value}
+                      suffix={typeof r.unit === "string" && r.unit.trim() && !String(r.value).trim().endsWith(r.unit.trim()) ? r.unit.trim() : undefined}
                       rowsLen={rows.length}
                       canEdit={canEdit}
                       // Grounded values get a yellow "marker pen" highlight on
@@ -444,13 +449,11 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                     />
                   </td>
                   <td className="relative w-20 px-2 text-xs text-neutral-400">
-                    {/* Only a status worth acting on earns a word. "Unverified"
-                        and "No evidence" were printed on every ungrounded row,
-                        which is most of them while a spec is being built: a
-                        column of grey labels that say nothing happened. The
-                        state is still readable -- verified rows are tinted and
-                        carry a tick, everything else is plain -- and the full
-                        wording stays in the tooltip. */}
+                    {/* No status words beside the anchor. "Unverified" and "No
+                        evidence" were printed on every ungrounded row, and
+                        "Stale" repeated what the anchor's menu offers to fix
+                        (Revalidate). Verified rows are tinted and carry a
+                        tick; the full wording stays in the tooltip. */}
                     <span
                       aria-label={`Evidence: ${evidenceLabel}`}
                       title={status === "verified" ? "Validated for this claim at the recorded source generation" :
@@ -458,7 +461,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                           status === "unverified" ? "Source link exists; this claim has not been verified." : "No source evidence"}
                       data-evidence-status={status}
                       className={`block text-[10px] ${status === "verified" ? "text-emerald-700" : "text-amber-800"}`}
-                    >{status === "verified" ? "✓" : status === "stale" ? evidenceLabel : ""}</span>
+                    >{status === "verified" ? "✓" : ""}</span>
                     {/* The chip wraps the anchor: hovering the anchor opens
                         the source AND the verdict menu, and the verdict sits
                         in the icon's corner, so the mark and the thing it
@@ -561,6 +564,14 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
  * commits and tabs to the next cell; Shift+Enter at the last row's value
  * appends a new row and focuses its key.
  */
+function namedRow(row: Row): Row {
+  if (!row || typeof row !== "object") return row;
+  if (typeof row.key === "string" && row.key.trim()) return row;
+  const loose = row as Row & { label?: unknown; name?: unknown };
+  const alias = [loose.label, loose.name].find((v): v is string => typeof v === "string" && v.trim() !== "");
+  return alias ? { ...row, key: alias } : row;
+}
+
 function RowCell({
   rowIndex,
   col,
@@ -572,7 +583,10 @@ function RowCell({
   setPendingFocus,
   onCommit,
   onAppendRow,
+  suffix,
 }: {
+  /** Muted text after the displayed value, e.g. its unit. Never edited here. */
+  suffix?: string;
   rowIndex: number;
   col: "key" | "value";
   value: string;
@@ -709,6 +723,7 @@ function RowCell({
       title={canEdit ? "click to edit" : undefined}
     >
       {value || <span className="italic text-neutral-300">{col === "key" ? "name" : "value"}</span>}
+      {value && suffix ? <span className="ml-1 text-neutral-500">{suffix}</span> : null}
     </span>
   );
 }

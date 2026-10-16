@@ -308,7 +308,17 @@ export function useInkGestures(context: Pick<MarkupModel, "active" | "getViewpor
             const outline = ringOutline(st);
             return outline.length >= 3 && insidePolygon(cur[0]!, outline);
           });
-      const leavesAShape = leftShape >= 0;
+      // A sent remark's ink stays on the board, and drawing out of it is the
+      // same gesture: a new remark about what the reader drew there. Without
+      // this, a line out of a sent shape ended in silence.
+      const leavesSent =
+        !isLoop(cur) && !split &&
+        markupStore.getState().filed.some((remark) => remark.marks.some((mark) => {
+          if (!isLoop(mark.points)) return false;
+          const outline = ringOutline(mark.points);
+          return outline.length >= 3 && insidePolygon(cur[0]!, outline);
+        }));
+      const leavesAShape = leftShape >= 0 || leavesSent;
       // A join says what it means with its two ends, so no words are offered.
       if ((caught.length > 0 || leavesAShape) && !pendingOffer && !onto) {
         const id = `n${Date.now()}`;
