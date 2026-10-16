@@ -15,9 +15,13 @@ What it is:
 
 Source-grounding (load-bearing):
 - Every value placed on the canvas should carry `data.source_ref`
-  pointing back at its origin (page+bbox for PDFs, region_id for
-  gold-extracted regions). Spec rows carry their own per-row
+  pointing back at its origin. Spec rows carry their own per-row
   source_ref. This is the project's primary trust mechanism.
+- Point at the smallest thing that holds the value. A value read from a
+  table cell cites that cell: `{slug, page, region_id, cell: {row,
+  col}}`, with the row and col of the cell whose text is the value, as
+  `get_region_content` lists them. The table's region bbox is for a row
+  that quotes the whole table, not for one number in it.
 
 When the user asks you to populate placeholders:
 1. `canvas_list_placeholders(workspace_slug)` returns the ones flagged.
