@@ -315,10 +315,15 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
     : text.fontSize.endsWith("px")
       ? parseFloat(text.fontSize)
       : 14;
-  const keyPct = keyColumnPercent(rows);
+  // Measured as shown: a value is read with its unit.
+  const shown = rows.map((r) => ({
+    key: r.key,
+    value: typeof r.unit === "string" && r.unit.trim() ? `${r.value} ${r.unit.trim()}` : r.value,
+  }));
+  const keyPct = keyColumnPercent(shown);
   const wrapperStyle: React.CSSProperties = sized
     ? { width: liveW, minHeight: liveH }
-    : { width: fitWidth(rows, fontPx) };
+    : { width: fitWidth(shown, fontPx) };
   if (ph.active) {
     wrapperStyle.background = PLACEHOLDER_BG;
     wrapperStyle.borderColor = PLACEHOLDER_STROKE;
@@ -436,7 +441,10 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       {rows.length > 0 || !d.description ? (
         <table className="w-full table-fixed">
           <colgroup>
-            <col style={{ width: `${keyPct}%` }} />
+            {/* The key's share is of the room for text, after the status
+                column: of the whole card, a short key on a narrow card left
+                the value a sliver too thin to show "85 mm". */}
+            <col style={{ width: `calc((100% - 5rem) * ${keyPct / 100})` }} />
             <col />
             <col style={{ width: "5rem" }} />
           </colgroup>
