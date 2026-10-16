@@ -4,6 +4,7 @@ import { previewCentre, previewOps } from "@/canvas/preview";
 import { changesOf, markChanges, removedEdgeEnds } from "@/canvas/changeMarks";
 import { stillOnBoard, type OverlayHost, type Intent as OverlayIntent } from "../../intent-overlay";
 import type { Box } from "@/canvas/lasso";
+import { IntentsSse } from "@/realtime/intentsSse";
 import { useAnchorGeometry } from "./AnchorGeometry";
 
 /** Preserve Anchor's public wire shape at the adapter boundary. */
@@ -52,8 +53,13 @@ export function useAnchorOverlayHost(workspaceSlug: string, boxes: Box[]): Overl
     decline: intents.decline,
     resolve: intents.resolve,
     subscribeChanged: (onChanged) => {
+      const sse = new IntentsSse({ onPending: onChanged });
       window.addEventListener(INTENTS_CHANGED_EVENT, onChanged);
-      return () => window.removeEventListener(INTENTS_CHANGED_EVENT, onChanged);
+      sse.connect();
+      return () => {
+        sse.disconnect();
+        window.removeEventListener(INTENTS_CHANGED_EVENT, onChanged);
+      };
     },
   }), [workspaceSlug]);
   return {

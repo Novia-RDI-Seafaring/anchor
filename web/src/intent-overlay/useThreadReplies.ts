@@ -25,10 +25,9 @@ export function useThreadReplies(context: Pick<MarkupModel, "host" | "markupStor
     };
   }, [host.thread, markupStore]);
 
-  // Asking after each filed remark: its thread is where the agent's
-  // progress, questions and proposal arrive. A push signal exists for the
-  // count of pending intents but not for a thread growing, so this polls,
-  // and refetches at once when anything in this window changes an intent.
+  // The host nudges reads for local mutations and available server push.
+  // Polling also catches independent writers, such as CLI or stdio MCP
+  // processes, which do not share the serving process's notification bus.
   useEffect(() => {
     if (filed.length === 0) return undefined;
     let cancelled = false;
