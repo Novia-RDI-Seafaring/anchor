@@ -6,7 +6,7 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
-from mcp.types import CallToolRequest, CallToolRequestParams
+from mcp.client import Client
 from typer.testing import CliRunner
 
 from anchor.adapters.cli.main import app as cli_app
@@ -44,12 +44,11 @@ def derive_via(transport, config, slug, locator, region, *, success=True, http_s
     server = build_mcp_server(bundle=runtime)
 
     async def invoke():
-        result = await server.request_handlers[CallToolRequest](CallToolRequest(
-            method="tools/call", params=CallToolRequestParams(name="derive_region", arguments={
+        async with Client(server) as client:
+            result = await client.call_tool("derive_region", {
                 "slug": slug, "parent_region_id": locator, "region": region,
-            }),
-        ))
-        return json.loads(result.root.content[0].text)
+            })
+        return json.loads(result.content[0].text)
 
     result = asyncio.run(invoke())
     assert ("error" not in result) == success, result

@@ -8,7 +8,7 @@ import json
 import pymupdf
 import pytest
 from fastapi.testclient import TestClient
-from mcp.types import CallToolRequest, CallToolRequestParams
+from mcp.client import Client
 from typer.testing import CliRunner
 
 from anchor.adapters.cli import documents as cli_documents
@@ -148,9 +148,9 @@ def test_real_px42_search_inspect_extract_and_cell_resolution_across_adapters(px
                     arguments.update({"select": {"regions": [locator]}, "shape": SHAPE})
                 elif operation == "resolve":
                     arguments["ref"] = ref
-                result = await server.request_handlers[CallToolRequest](CallToolRequest(method="tools/call",
-                    params=CallToolRequestParams(name=names[operation], arguments=arguments)))
-                output = json.loads(result.root.content[0].text)
+                async with Client(server) as client:
+                    result = await client.call_tool(names[operation], arguments)
+                output = json.loads(result.content[0].text)
                 assert "error" not in output, output
                 return output
             return asyncio.run(call())

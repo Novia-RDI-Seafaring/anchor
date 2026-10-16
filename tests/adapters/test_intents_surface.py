@@ -9,7 +9,7 @@ import json
 
 import pytest
 from fastapi.testclient import TestClient
-from mcp.types import CallToolRequest, CallToolRequestParams, ListToolsRequest
+from mcp.client import Client
 
 from anchor.adapters.http.app import build_app
 from anchor.adapters.mcp import tiering
@@ -132,19 +132,15 @@ def _home(monkeypatch, tmp_path):
 
 
 async def _advertised(server) -> list[str]:
-    handler = server.request_handlers[ListToolsRequest]
-    result = await handler(ListToolsRequest(method="tools/list"))
-    return sorted(t.name for t in result.root.tools)
+    async with Client(server) as client:
+        result = await client.list_tools()
+    return sorted(t.name for t in result.tools)
 
 
 async def _call(server, name: str, **arguments) -> str:
-    handler = server.request_handlers[CallToolRequest]
-    req = CallToolRequest(
-        method="tools/call",
-        params=CallToolRequestParams(name=name, arguments=arguments),
-    )
-    result = await handler(req)
-    return result.root.content[0].text
+    async with Client(server) as client:
+        result = await client.call_tool(name, arguments)
+    return result.content[0].text
 
 
 def test_intent_tools_are_in_core():

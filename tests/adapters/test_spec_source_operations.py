@@ -7,7 +7,7 @@ from copy import deepcopy
 
 import pytest
 from fastapi.testclient import TestClient
-from mcp.types import CallToolRequest, CallToolRequestParams
+from mcp.client import Client
 from typer.testing import CliRunner
 
 from anchor.adapters.cli.main import app as cli_app
@@ -55,15 +55,12 @@ class CanvasOperations:
             out = response.json()
         elif self.transport == "mcp":
             async def invoke():
-                result = await self.mcp.request_handlers[CallToolRequest](CallToolRequest(
-                    method="tools/call", params=CallToolRequestParams(
-                        name=f"canvas_{operation}_node", arguments={
+                async with Client(self.mcp) as client:
+                    result = await client.call_tool(f"canvas_{operation}_node", {
                             "workspace_slug": self.slug, **args,
                             **({"id": node_id} if node_id else {}),
-                        },
-                    ),
-                ))
-                return json.loads(result.root.content[0].text)
+                    })
+                return json.loads(result.content[0].text)
             out = asyncio.run(invoke())
             assert "error" not in out, out
         else:
