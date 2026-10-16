@@ -351,9 +351,10 @@ function readPersistedExplorerWidth(): number {
 }
 
 function readPersistedHoverPreviewMode(): HoverPreviewMode {
-  // "panel" is the default: a small crop beside the link is the cheaper
-  // gesture, and the full viewer on hover is the thing being tried out.
-  return readStorage(HOVER_PREVIEW_MODE_KEY) === "viewer" ? "viewer" : "panel";
+  // "viewer" is the default: a ref whose document is not on the canvas opens
+  // the full viewer with every place it points at lit, which is what the
+  // reader came to see. The small crop stays one press away in the header.
+  return readStorage(HOVER_PREVIEW_MODE_KEY) === "panel" ? "panel" : "viewer";
 }
 
 function readPersistedCollapsed(): boolean {
