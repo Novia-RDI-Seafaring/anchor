@@ -38,6 +38,10 @@ export function emitReferencesChanged(slug: string): void {
  * #147 (slice 1) and is NOT changed here — `update` edits only the label.
  */
 export const references = {
+  attach: (canvasSlug: string, referenceId: string, target: { node_id: string; row_index?: number }) =>
+    api.post<unknown>(
+      `/api/workspaces/${canvasSlug}/references/${referenceId}/attach`, target,
+    ),
   list: (canvasSlug: string) =>
     api.get<Reference[]>(`/api/workspaces/${canvasSlug}/references`),
   create: async (
