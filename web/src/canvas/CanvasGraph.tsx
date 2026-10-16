@@ -34,7 +34,6 @@ import { CommentLasso } from "@/canvas/CommentLasso";
 import { proposalSets } from "@/api/proposalSets";
 import { ProposalReview } from "@/canvas/ProposalReview";
 import type { Box as LassoBox } from "@/canvas/lasso";
-import { SelectionPanel } from "@/canvas/SelectionPanel";
 import { SelectionAskDialog } from "@/canvas/SelectionAskDialog";
 import { NodeDetailPanel } from "@/canvas/NodeDetailPanel";
 import { CanvasStructureContext, structuredNodeTypes } from "@/canvas/StructuredNode";
@@ -1742,7 +1741,6 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       {readOnly || handMode ? null : (
         <>
           <NodeContextToolbar workspaceSlug={slug} onAsk={armedTool ? undefined : askSelection} />
-          <SelectionPanel nodeIds={rfNodes.filter((node) => node.selected).map((node) => node.id)} onAsk={armedTool ? undefined : askSelection} />
           {selectionAsk?.workspaceSlug === slug ? <SelectionAskDialog key={slug} workspaceSlug={slug} targetIds={selectionAsk.targets} onClose={() => setSelectionAsk(null)} /> : null}
           <NodeContextMenu
             workspaceSlug={slug}

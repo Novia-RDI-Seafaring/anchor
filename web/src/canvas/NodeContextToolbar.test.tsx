@@ -25,3 +25,25 @@ it("offers Ask agent for a multi-selection without changing its node selection",
   expect(useUiStore.getState().selectedNodeId).toBe("pump");
   expect(Object.keys(useCanvasStore.getState().nodes)).toEqual(selected);
 });
+
+function selectOne(node_type: string, data: Record<string, unknown> = {}) {
+  useCanvasStore.setState({ nodes: { one: { id: "one", node_type, label: "One", x: 0, y: 0, data } }, edges: {} });
+  render(<ReactFlowProvider initialNodes={[{ id: "one", selected: true, position: { x: 0, y: 0 }, data: {} }]}>
+    <NodeContextToolbar workspaceSlug="study" onAsk={vi.fn()} />
+  </ReactFlowProvider>);
+}
+const chips = () => ["chip-fill", "chip-stroke", "chip-text", "chip-display"].filter((id) => screen.queryByTestId(id));
+
+it.each([
+  ["spec", {}, ["chip-fill", "chip-stroke", "chip-text", "chip-display"]],
+  ["concept", {}, ["chip-fill", "chip-stroke", "chip-text", "chip-display"]],
+  ["text", {}, ["chip-text"]],
+  ["document", { slug: "px" }, []],
+  ["image", {}, []],
+  ["section", {}, []],
+] as const)("shows a single %s only the controls that mean something for it", (type, data, expected) => {
+  selectOne(type, data);
+  expect(screen.getByTestId("node-context-toolbar")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Ask agent" })).toBeTruthy();
+  expect(chips()).toEqual(expected);
+});
