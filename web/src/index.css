@@ -152,11 +152,9 @@
      regions keep their own hit targets underneath the shared visual mark. */
   border-radius: 2px;
   background: rgba(250, 204, 21, 0.6);
-  /* Outline, not border. A border is drawn INSIDE the element, so on a mark
-     the size of one table cell it covered most of the value underneath -- the
-     thing the reader opened the mark to read. An outline is drawn outside the
-     box, costs no layout, and leaves the whole marked area showing through. */
-  outline: 1.25px solid rgba(161, 98, 7, 0.9);
+  /* No outline: a hard edge read as a box drawn on the page, and where it
+     sat a hair off the text it looked misaligned. The wash and its halo
+     are the mark. */
   /* The wash reaches a little past the box it marks. A pen does that, and on
      a one-cell mark the few extra pixels are the difference between findable
      and not. It grows from the SAME rectangle in every direction, so the mark

@@ -65,6 +65,8 @@ const RENDER_ZOOM_SETTLE_MS = 120;
 
 /** A page raster as it is on screen: its CSS size and the zoom it was drawn at. */
 type RenderedSize = { w: number; h: number; zoom: number };
+const SHOW_MAGNIFIER = false;
+
 /** Keep in step with `.anchor-mark-flying` in index.css. */
 const MARK_FLIGHT_MS = 340;
 /** Breathing room before a mark counts as out of sight rather than near the edge. */
@@ -540,7 +542,9 @@ export function PdfSourceView({
     bboxToRectOnPage,
   ]);
 
-  const magnifiable = markPlacements.filter(worthMagnifying);
+  // Off in the viewer: the lens sat over the rest of the page and could not
+  // be dismissed. Kept for a place where it helps, such as a small preview.
+  const magnifiable = SHOW_MAGNIFIER ? markPlacements.filter(worthMagnifying) : [];
   const magnifierMark = magnifiable.find((mark) => mark.key === magnifierTarget) ?? magnifiable[0];
   const magnifierPage = magnifierMark ? items.find((item) => item.page === magnifierMark.source.page) : undefined;
   const onMagnifierPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -586,21 +590,27 @@ export function PdfSourceView({
     return out;
   }, [highlightVisible, highlightAlso, items, pdfPageSizes, contentWidth]);
 
-  const markOnScreen = useRef(false);
-  const [markFlying, setMarkFlying] = useState(false);
+  // Decided while rendering, in the same frame as the mark's new place. Set
+  // from an effect, the class arrived a frame after the mark had already
+  // jumped, so there was nothing left to glide: the transition has to be on
+  // the element when its position changes, not after.
+  const flightKey = highlightPage && highlightBbox
+    ? `${highlightNonce ?? 0}|${highlightPage}|${highlightBbox.join(",")}` : null;
+  const lastFlightKey = useRef<string | null>(null);
+  const flyingUntil = useRef(0);
+  if (flightKey !== lastFlightKey.current) {
+    // A mark appearing for the first time has nowhere to fly from.
+    if (lastFlightKey.current && flightKey) flyingUntil.current = Date.now() + MARK_FLIGHT_MS;
+    lastFlightKey.current = flightKey;
+  }
+  const markFlying = Date.now() < flyingUntil.current;
+  const [, landed] = useState(0);
   useEffect(() => {
-    if (!highlightPage || !highlightBbox) {
-      markOnScreen.current = false;
-      return undefined;
-    }
-    if (!markOnScreen.current) {
-      markOnScreen.current = true;
-      return undefined;
-    }
-    setMarkFlying(true);
-    const id = window.setTimeout(() => setMarkFlying(false), MARK_FLIGHT_MS);
+    if (!markFlying) return undefined;
+    // Off again once it has landed, so a wheel zoom does not lag behind.
+    const id = window.setTimeout(() => landed((n) => n + 1), MARK_FLIGHT_MS + 20);
     return () => window.clearTimeout(id);
-  }, [highlightNonce, highlightPage, highlightBbox]);
+  }, [flightKey, markFlying]);
 
   // Text selection -> pending "Make reference" action on page `p`.
   const onPageMouseUp = useCallback(

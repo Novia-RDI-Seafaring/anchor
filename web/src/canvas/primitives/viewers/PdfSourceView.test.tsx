@@ -452,33 +452,33 @@ describe("PdfSourceView (continuous)", () => {
     );
   });
 
-  it("magnifies the first place, then follows the place under the pointer", async () => {
+  it("shows no magnifier over the page: the marks are enough", async () => {
     useUiStore.setState({ pdfZoom: 1 });
-    vi.stubGlobal("PointerEvent", MouseEvent);
     stubScroller();
-    const { rerender } = await renderViewer({
+    await renderViewer({
       highlightPage: 1, highlightBbox: [10, 20, 40, 60], highlightNonce: 1,
       highlightAlso: [{ page: 2, bbox: [10, 20, 40, 60], precision: "cell" }],
     });
-    const lensPage = () => screen.getByTestId("source-magnifier").getAttribute("data-page");
-    expect(lensPage()).toBe("1");
-    const second = screen.getAllByTestId("pdf-highlight")[1]!;
-    const pointer = { clientX: parseFloat(second.style.left) + 5,
-      clientY: parseFloat(second.style.top) + 5 };
-    const scroller = screen.getByTestId("pdf-scroller");
-    // Pointer observation leaves browser selection and dragging untouched.
-    expect(fireEvent.pointerMove(scroller, { ...pointer, buttons: 1 })).toBe(true);
-    expect(lensPage()).toBe("1");
-    expect(fireEvent.pointerMove(scroller, { ...pointer, buttons: 0 })).toBe(true);
-    expect(lensPage()).toBe("2");
-    fireEvent.pointerLeave(scroller);
-    expect(lensPage()).toBe("1");
-    fireEvent.pointerMove(scroller, { ...pointer, buttons: 0 });
-    expect(lensPage()).toBe("2");
-    await rerender({ highlightNonce: 2 });
-    expect(lensPage()).toBe("1");
-    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.getAllByTestId("pdf-highlight").length).toBeGreaterThan(0));
     expect(screen.queryByTestId("source-magnifier")).toBeNull();
+  });
+
+  it("puts the flying class on in the same render that moves the mark", async () => {
+    useUiStore.setState({ pdfZoom: 1 });
+    stubScroller();
+    const { rerender } = await renderViewer({ highlightPage: 1, highlightBbox: [10, 20, 40, 60], highlightNonce: 1 });
+    await waitFor(() => expect(screen.getAllByTestId("pdf-highlight").length).toBeGreaterThan(0));
+    const mark = screen.getAllByTestId("pdf-highlight")[0]!;
+    const before = mark.style.top;
+    const seen: string[] = [];
+    // Record the class at the moment the position changes, not after effects.
+    const observer = new MutationObserver(() => {
+      if (mark.style.top !== before) seen.push(mark.className);
+    });
+    observer.observe(mark, { attributes: true, attributeFilter: ["style", "class"] });
+    await rerender({ highlightBbox: [10, 120, 40, 160], highlightNonce: 2 });
+    observer.disconnect();
+    expect(seen[0]).toContain("anchor-mark-flying");
   });
 
   it("still draws the primary when an extra place has no geometry", async () => {
