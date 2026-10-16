@@ -23,6 +23,14 @@ from tests.fixtures.services import make_in_memory_services
 _CLEAR = ("ANCHOR_ENV", "ANCHOR_PROJECT", "ANCHOR_DATA_DIR")
 
 RENAME = [{"type": "NodeUpdated", "payload": {"id": "n1", "fields": {"label": "Pump A"}}}]
+MISSING_PARENT = [
+    *RENAME,
+    {"type": "NodeUpdated", "payload": {"id": "n1", "fields": {"parent": "missing"}}},
+]
+NEW_PARENT = [
+    {"type": "NodeAdded", "payload": {"id": "new-parent", "label": "New parent"}},
+    {"type": "NodeUpdated", "payload": {"id": "n1", "fields": {"parent": "new-parent"}}},
+]
 
 
 # -- HTTP -------------------------------------------------------------------- #
@@ -215,6 +223,33 @@ def test_http_apply_and_decline():
     assert last["author"]["kind"] == "human"
 
 
+def test_http_batch_updated_parent_refusal_is_atomic_and_new_parent_resolves():
+    client, services = _client()
+    intent = _ask(client)
+    before = client.get("/api/workspaces/cv/state").json()
+    before_events = asyncio.run(services.workspace.store.read_events("cv"))
+    item = client.post(f"/api/intents/{intent['id']}/items", json={
+        "type": "suggestion", "text": "Invalid parent", "ops": MISSING_PARENT,
+    }).json()["item"]
+    refused = client.post(f"/api/intents/{intent['id']}/items/{item['id']}/apply")
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"] == "apply_failed"
+    assert refused.json()["stale"] is True and refused.json()["failing_index"] == 1
+    assert refused.json()["reason"] == "parent 'missing' does not exist"
+    assert client.get("/api/workspaces/cv/state").json() == before
+    assert asyncio.run(services.workspace.store.read_events("cv")) == before_events
+    assert client.get(f"/api/intents/{intent['id']}").json()["intent"]["items"][-1]["state"] == "pending"
+
+    valid = client.post(f"/api/intents/{intent['id']}/items", json={
+        "type": "suggestion", "text": "New parent", "ops": NEW_PARENT,
+    }).json()["item"]
+    applied = client.post(f"/api/intents/{intent['id']}/items/{valid['id']}/apply")
+    assert applied.status_code == 200, applied.text
+    real_parent = applied.json()["applied"]["id_map"]["new-parent"]
+    state = client.get("/api/workspaces/cv/state").json()
+    assert next(node for node in state["nodes"] if node["id"] == "n1")["parent"] == real_parent
+
+
 # -- MCP --------------------------------------------------------------------- #
 @pytest.fixture
 def _home(monkeypatch, tmp_path):
@@ -324,6 +359,37 @@ async def test_mcp_thread_round_trip(_home):
     assert failed["failing_index"] == 0
 
 
+async def test_mcp_batch_updated_parent_refusal_is_atomic_and_new_parent_resolves(_home):
+    create_env("local")
+    create_project(env_mod.resolve_environment("local"), "pumps")
+    router = ProjectRouter(env_arg="local")
+    server = build_mcp_server(router=router)
+    bundle = router.bundle_for("pumps")
+    await bundle.workspace.create_workspace("cv")
+    await bundle.workspace.add_node("cv", id="n1", label="N1", x=0, y=0)
+    intent = (await _call(server, "intent_ask", project="pumps", workspace_slug="cv",
+                          text="Reparent", targets=["n1"]))["intent"]
+    before = await bundle.workspace.get_state("cv")
+    before_events = await bundle.workspace.store.read_events("cv")
+    item = (await _call(server, "intent_add_item", project="pumps", id=intent["id"],
+                        type="suggestion", text="Invalid parent", ops=MISSING_PARENT))["item"]
+    refused = await _call(server, "intent_apply", project="pumps", id=intent["id"], item_id=item["id"])
+    assert refused["error"] == "apply_failed"
+    assert refused["stale"] is True and refused["failing_index"] == 1
+    assert refused["reason"] == "parent 'missing' does not exist"
+    assert await bundle.workspace.get_state("cv") == before
+    assert await bundle.workspace.store.read_events("cv") == before_events
+    full = await _call(server, "get_intent", project="pumps", id=intent["id"])
+    assert full["intent"]["items"][-1]["state"] == "pending"
+
+    valid = (await _call(server, "intent_add_item", project="pumps", id=intent["id"],
+                         type="suggestion", text="New parent", ops=NEW_PARENT))["item"]
+    applied = await _call(server, "intent_apply", project="pumps", id=intent["id"], item_id=valid["id"])
+    real_parent = applied["applied"]["id_map"]["new-parent"]
+    state = await bundle.workspace.get_state("cv")
+    assert next(node for node in state["nodes"] if node["id"] == "n1")["parent"] == real_parent
+
+
 # -- CLI --------------------------------------------------------------------- #
 runner = CliRunner()
 
@@ -391,6 +457,36 @@ def test_cli_thread_round_trip(tmp_path):
     assert "not_pending" in bad.output
     missing = runner.invoke(cli_app, ["intent", "show", "ghost", "--data-dir", str(tmp_path)])
     assert missing.exit_code == 1 and "not_found" in missing.output
+
+
+def test_cli_batch_updated_parent_refusal_is_atomic_and_new_parent_resolves(tmp_path):
+    from anchor.adapters.cli.services import _build_canvas_runtime
+
+    runtime = _build_canvas_runtime(tmp_path)
+    asyncio.run(runtime.workspace.create_workspace("cv"))
+    asyncio.run(runtime.workspace.add_node("cv", id="n1", label="N1", x=0, y=0))
+    intent = _cli(["intent", "ask", "cv", "--text", "Reparent", "--target", "n1"], tmp_path)["intent"]
+    before = asyncio.run(runtime.workspace.get_state("cv"))
+    before_events = asyncio.run(runtime.workspace.store.read_events("cv"))
+    item = _cli(["intent", "add-item", intent["id"], "--type", "suggestion", "--text", "Invalid parent",
+                 "--ops", json.dumps(MISSING_PARENT)], tmp_path)["item"]
+    refused = runner.invoke(cli_app, ["intent", "apply", intent["id"], item["id"],
+                                      "--data-dir", str(tmp_path)])
+    assert refused.exit_code == 1, refused.output
+    error = json.loads(refused.output)
+    assert error["error"] == "apply_failed"
+    assert error["stale"] is True and error["failing_index"] == 1
+    assert error["reason"] == "parent 'missing' does not exist"
+    assert asyncio.run(runtime.workspace.get_state("cv")) == before
+    assert asyncio.run(runtime.workspace.store.read_events("cv")) == before_events
+    assert _cli(["intent", "show", intent["id"]], tmp_path)["intent"]["items"][-1]["state"] == "pending"
+
+    valid = _cli(["intent", "add-item", intent["id"], "--type", "suggestion", "--text", "New parent",
+                  "--ops", json.dumps(NEW_PARENT)], tmp_path)["item"]
+    applied = _cli(["intent", "apply", intent["id"], valid["id"]], tmp_path)
+    real_parent = applied["applied"]["id_map"]["new-parent"]
+    state = asyncio.run(runtime.workspace.get_state("cv"))
+    assert next(node for node in state["nodes"] if node["id"] == "n1")["parent"] == real_parent
 
 
 # -- placed messages reach every adapter (progress narrated on the canvas) -- #
