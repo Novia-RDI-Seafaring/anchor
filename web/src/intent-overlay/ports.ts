@@ -67,7 +67,12 @@ export type PreviewEdge = {
   from: Point | null;
   to: Point | null;
 };
-export type Preview = { nodes: PreviewNode[]; edges: PreviewEdge[] };
+export type Preview = {
+  nodes: PreviewNode[];
+  edges: PreviewEdge[];
+  /** The host skipped an operation because its target no longer exists. */
+  stale?: boolean;
+};
 export type Viewport = { x: number; y: number; zoom: number };
 export type OverlayHost = {
   geometry: {

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IntentOverlay, type Intent, type OverlayHost, type ThreadItem } from "./index";
@@ -36,7 +36,9 @@ function fixture(initial: Intent[] = []) {
   return { threadPort, unsubscribe, notify: () => changed(), replace: (value: Intent) => { current = value; } };
 }
 
-function Form({ api, active = true }: { api: ReturnType<typeof fixture>; active?: boolean }) {
+function Form({ api, active = true, stale = false, missingTarget = false }: {
+  api: ReturnType<typeof fixture>; active?: boolean; stale?: boolean; missingTarget?: boolean;
+}) {
   const ref = useRef<HTMLFormElement>(null);
   const [boxes, setBoxes] = useState<OverlayHost["geometry"]["boxes"]>([]);
   const [value, setValue] = useState("old@example.test");
@@ -47,7 +49,7 @@ function Form({ api, active = true }: { api: ReturnType<typeof fixture>; active?
       return { id: field.dataset.intentId!, x: (rect.left - 20) / 2, y: (rect.top - 10) / 2,
         width: rect.width / 2, height: rect.height / 2 };
     }));
-  }, []);
+  }, [missingTarget]);
   const host: OverlayHost = {
     geometry: { boxes, viewport, getViewport: () => viewport, setViewport: vi.fn(),
       screenToWorld: (p) => ({ x: (p.x - 20) / 2, y: (p.y - 10) / 2 }),
@@ -57,8 +59,8 @@ function Form({ api, active = true }: { api: ReturnType<typeof fixture>; active?
     display: {
       labelOf: (target) => target === id ? "Email" : "Maximum flow",
       // This is inert host output. The renderer does not inspect FieldSet.
-      preview: () => ({ nodes: [{ id, kind: "updated", x: 100, y: 100, width: 100, height: 80,
-        label: "Email", rows: [{ key: "address", value: "work@example.test" }] }], edges: [] }),
+      preview: () => ({ nodes: missingTarget ? [] : [{ id, kind: "updated", x: 100, y: 100, width: 100, height: 80,
+        label: "Email", rows: [{ key: "address", value: "work@example.test" }] }], edges: [], stale }),
     },
     thread: api.threadPort,
   };
@@ -76,8 +78,8 @@ function Form({ api, active = true }: { api: ReturnType<typeof fixture>; active?
     return suggestion;
   });
   return <div style={{ position: "relative", width: 1000, height: 1000 }}>
-    <form ref={ref}><label>Email<input aria-label="Email" data-intent-id={id} value={value}
-      onChange={(e) => setValue(e.target.value)} /></label></form>
+    <form ref={ref}>{missingTarget ? null : <label>Email<input aria-label="Email" data-intent-id={id} value={value}
+      onChange={(e) => setValue(e.target.value)} /></label>}</form>
     <IntentOverlay active={active} host={host} />
   </div>;
 }
@@ -222,16 +224,67 @@ describe("independent DOM intent overlay", () => {
     const api = fixture([thread([question, suggestion])]);
     const view = render(<Form api={api} />);
     await screen.findByTestId("comment-lasso-preview-node");
+    expect(within(screen.getByTestId("comment-lasso-ghost-verdict")).getByText("1 operation \u00b7 pending")).toBeTruthy();
+    expect(screen.queryByText("stale")).toBeNull();
     expect((screen.getByRole("textbox", { name: "Email" }) as HTMLInputElement).value).toBe("old@example.test");
     fireEvent.click(screen.getByRole("button", { name: "Work" }));
     expect(api.threadPort.answer).toHaveBeenCalledWith("request", "q", "Work");
     fireEvent.click(screen.getByTestId("comment-lasso-approve"));
     await screen.findByTestId("comment-lasso-revert");
+    expect(within(screen.getByTestId("comment-lasso-ghost-applied")).getByText("1 operation \u00b7 applied")).toBeTruthy();
     expect((screen.getByRole("textbox", { name: "Email" }) as HTMLInputElement).value).toBe("work@example.test");
     fireEvent.click(screen.getByTestId("comment-lasso-revert"));
     await waitFor(() => expect((screen.getByRole("textbox", { name: "Email" }) as HTMLInputElement).value).toBe("old@example.test"));
     view.unmount();
     expect(api.unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it("marks a pending suggestion stale while preserving comment and decline actions", async () => {
+    const api = fixture([thread([suggestion])]);
+    api.threadPort.decline = vi.fn(async () => {
+      const declined = { ...suggestion, state: "declined" };
+      api.replace(thread([declined])); api.notify(); return declined;
+    });
+    render(<Form api={api} stale />);
+    const verdict = await screen.findByTestId("comment-lasso-ghost-verdict");
+    expect(within(verdict).getByText("1 operation \u00b7 pending")).toBeTruthy();
+    expect(within(verdict).getByText("stale")).toBeTruthy();
+    const reply = within(verdict).getByTestId("comment-lasso-reply");
+    fireEvent.change(reply, { target: { value: "Please revise this" } });
+    fireEvent.keyDown(reply, { key: "Enter" });
+    expect(api.threadPort.addItem).toHaveBeenCalledWith("request", { type: "message", text: "Please revise this" });
+    fireEvent.click(within(verdict).getByTestId("comment-lasso-decline"));
+    await waitFor(() => expect(screen.queryByTestId("comment-lasso-ghost-verdict")).toBeNull());
+    fireEvent.click(within(screen.getByTestId("comment-lasso-filed")).getByRole("button"));
+    expect(screen.getByText(/1 operation \u00b7 declined/)).toBeTruthy();
+    expect(screen.queryByText("stale")).toBeNull();
+  });
+
+  it("shows stale feedback in the thread list after every scoped target disappears", async () => {
+    const multi = { ...suggestion, ops: [{ type: "FieldSet" }, { type: "FieldSet" }] };
+    const api = fixture([thread([multi])]);
+    const view = render(<Form api={api} />);
+    await screen.findByTestId("comment-lasso-ghost-verdict");
+    view.rerender(<Form api={api} stale missingTarget />);
+    await waitFor(() => expect(screen.queryByTestId("comment-lasso-ghost-verdict")).toBeNull());
+    const filed = screen.getByTestId("comment-lasso-filed");
+    expect(within(filed).getByText("stale proposal")).toBeTruthy();
+    fireEvent.click(within(filed).getByRole("button"));
+    expect(within(filed).getByText(/2 operations \u00b7 pending/)).toBeTruthy();
+    expect(within(filed).getByText("stale")).toBeTruthy();
+  });
+
+  it.each(["applied", "reverted", "superseded"])("does not mark %s history stale when targets later disappear", async (state) => {
+    const api = fixture([thread([suggestion])]);
+    const view = render(<Form api={api} stale />);
+    await screen.findByTestId("comment-lasso-ghost-verdict");
+    api.replace(thread([{ ...suggestion, state }]));
+    act(() => api.notify());
+    await waitFor(() => expect(screen.queryByTestId("comment-lasso-ghost-verdict")).toBeNull());
+    view.rerender(<Form api={api} stale missingTarget />);
+    expect(screen.queryByText("stale")).toBeNull();
+    fireEvent.click(within(screen.getByTestId("comment-lasso-filed")).getByRole("button"));
+    expect(within(screen.getByTestId("comment-lasso-filed")).getByText(new RegExp(`1 operation \u00b7 ${state}`))).toBeTruthy();
   });
 
   it("uses host-supplied row and edge geometry with unchanged two-stroke cross semantics", async () => {
