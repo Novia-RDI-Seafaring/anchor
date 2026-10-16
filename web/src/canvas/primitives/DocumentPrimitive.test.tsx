@@ -390,6 +390,15 @@ describe("DocumentPrimitive selector precision", () => {
       bbox: [275.658, 309.5777686, 364.85016902, 318.3747444],
       quad: [275.6579895019531, 308.6682434082031, 364.87298583984375, 318.630859375],
     },
+    {
+      // A range-table cell: the cell box hugs the digits, the text line
+      // reaches 1.8 pt below them.
+      label: "flow",
+      query: "12",
+      row: 1,
+      bbox: [135.634, 653.7878432, 146.035024, 660.284],
+      quad: [135.634, 653.1109008789062, 146.035024, 662.0772705078125],
+    },
   ];
 
   it.each(px42Values.flatMap((value) => ["bbox", "cell"].map((locator) => ({ ...value, locator }))))(
@@ -418,11 +427,31 @@ describe("DocumentPrimitive selector precision", () => {
     },
   );
 
+  it("holds the mark on the last cell while the next one is looked up, not on the whole table", async () => {
+    const first = [275.658, 285.6667686, 344.4547343, 294.4637444];
+    const resolveRef = vi.spyOn(documents, "resolveRef")
+      .mockResolvedValueOnce({ slug: "pump", page: 2, bbox: first, precision: "cell" })
+      .mockImplementationOnce(() => new Promise(() => {}));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => geometryFixture.gold_map }));
+    await renderDoc(READY_DOC);
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 2, region_id: "r3", cell: { row: 1, col: 1 } });
+    });
+    await loadSourceImage();
+    await waitFor(() => expect(screen.getByTestId("external-highlight")).toBeTruthy());
+    const before = screen.getByTestId("external-highlight").style.cssText;
+    await act(async () => {
+      useUiStore.getState().setHoveredSourceRef({ slug: "pump", page: 2, region_id: "r3", cell: { row: 3, col: 1 } });
+    });
+    await waitFor(() => expect(resolveRef).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId("external-highlight").style.cssText).toBe(before);
+  });
+
   it.each([
     { label: "left", quad: [8.99, 20, 30, 40] },
-    { label: "top", quad: [10, 18.99, 30, 40] },
+    { label: "top", quad: [10, 10, 30, 40] },
     { label: "right", quad: [10, 20, 31.01, 40] },
-    { label: "bottom", quad: [10, 20, 30, 41.01] },
+    { label: "bottom", quad: [10, 20, 30, 50] },
     { label: "empty", quad: [10, 20, 10, 40] },
     { label: "reversed", quad: [30, 20, 10, 40] },
     { label: "nonfinite", quad: [10, 20, Number.NaN, 40] },
