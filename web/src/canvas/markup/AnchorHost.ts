@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { intents, INTENTS_CHANGED_EVENT, type Intent } from "@/api/intents";
 import { previewCentre, previewOps } from "@/canvas/preview";
-import type { OverlayHost, Intent as OverlayIntent } from "../../intent-overlay";
+import { changesOf, markChanges, removedEdgeEnds } from "@/canvas/changeMarks";
+import { stillOnBoard, type OverlayHost, type Intent as OverlayIntent } from "../../intent-overlay";
 import type { Box } from "@/canvas/lasso";
 import { useAnchorGeometry } from "./AnchorGeometry";
 
@@ -32,8 +33,11 @@ const input: OverlayHost["input"] = {
 export function useAnchorOverlayHost(workspaceSlug: string, boxes: Box[]): OverlayHost {
   const geometry = useAnchorGeometry();
   const thread = useMemo<OverlayHost["thread"]>(() => ({
-    loadScoped: async () => (await intents.listPending())
-      .filter((intent) => intent.origin_canvas_id === workspaceSlug).map(toOverlayIntent),
+    // Open remarks, and resolved ones holding a change the reader has not
+    // yet kept or put back.
+    loadScoped: async () => (await intents.listAll())
+      .filter((intent) => intent.origin_canvas_id === workspaceSlug).map(toOverlayIntent)
+      .filter((intent) => intent.status !== "resolved" || stillOnBoard(intent, new Set())),
     get: async (id) => {
       const intent = await intents.get(id);
       return intent ? toOverlayIntent(intent) : null;
@@ -56,6 +60,8 @@ export function useAnchorOverlayHost(workspaceSlug: string, boxes: Box[]): Overl
     geometry: {
       boxes, viewport: geometry.viewport,
       getViewport: geometry.getViewport, setViewport: geometry.setViewport,
+      fitBounds: (rect, options) => geometry.fitBounds(rect, options),
+      paneSize: geometry.paneSize,
       screenToWorld: (point) => geometry.toFlow({ clientX: point.x, clientY: point.y }),
       rowsOf: geometry.rowsOf, edgesOf: geometry.edgesOf,
     },
@@ -74,6 +80,12 @@ export function useAnchorOverlayHost(workspaceSlug: string, boxes: Box[]): Overl
           })),
         };
       },
+      changes: (item) => {
+        if (!item.undo_ops) return null;
+        const { marks, removed } = changesOf(item.undo_ops, geometry.storeNodes, geometry.storeEdges);
+        return { marks, removed: { nodes: removed.nodes, edges: removedEdgeEnds(removed, geometry.storeNodes) } };
+      },
+      markChanges,
     },
     thread, input,
   };

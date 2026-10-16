@@ -6,4 +6,5 @@ export type MarkupProps = {
   workspaceSlug: string;
   onFiled?: () => void;
   onExit?: () => void;
+  onEnter?: () => void;
 };

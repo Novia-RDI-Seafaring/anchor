@@ -16,6 +16,10 @@ export type ThreadItem = {
   ops?: Record<string, unknown>[];
   supersedes?: string;
   applied_versions?: number[];
+  /** Who applied a suggestion: a person approving it, or its agent acting. */
+  applied_by?: { kind: string; label?: string | null; id?: string | null } | null;
+  /** Applied suggestion only: the ops that put the canvas back. */
+  undo_ops?: Record<string, unknown>[];
   place?: Place;
   options?: string[];
 };
@@ -42,7 +46,15 @@ export type Submission = {
   cuts?: Cut[];
   strikes?: Strike[];
   pointers?: Pointer[];
+  /** Where the remark was written, so "here" means somewhere. */
+  at?: Point;
+  /** The view when it was sent: the reply brings the reader back to it. */
+  viewport?: Viewport;
+  /** The ink as drawn, so a reload redraws the remark rather than its reading. */
+  ink?: Ink;
 };
+/** Strokes and their words as drawn; notes keep their own fields. */
+export type Ink = { marks: { points: Point[]; color: string }[]; notes: Record<string, unknown>[] };
 
 /** Apply/revert call the host; the renderer never executes ops. */
 export type ThreadPort = {
@@ -72,6 +84,15 @@ export type PreviewEdge = {
   to: Point | null;
 };
 export type Preview = { nodes: PreviewNode[]; edges: PreviewEdge[] };
+/**
+ * A real element an applied change touched, while the reader has not ruled
+ * on it. `was` is the label it had before a rename.
+ */
+export type ChangeMark = { id: string; element: "node" | "edge"; kind: "added" | "updated"; was?: string };
+/** What an applied change did: the elements it touched, and what it took away. */
+export type Changes = { marks: ChangeMark[]; removed: Preview };
+/** A mark as the host should draw it: in the remark's colour, stronger on hover. */
+export type ShownMark = ChangeMark & { color: string; strong: boolean };
 export type Viewport = { x: number; y: number; zoom: number };
 export type OverlayHost = {
   geometry: {
@@ -80,12 +101,20 @@ export type OverlayHost = {
     screenToWorld(point: Point): Point;
     getViewport(): Viewport;
     setViewport(viewport: Viewport, options?: { duration?: number }): unknown;
+    /** The size of the visible canvas in screen pixels. */
+    paneSize?(): { width: number; height: number } | null;
+    /** Bring a world rectangle into view. */
+    fitBounds?(rect: { x: number; y: number; width: number; height: number }, options?: { padding?: number; duration?: number }): unknown;
     rowsOf(targetId: string): RowBand[] | null;
     edgesOf(): EdgePath[];
   };
   display: {
     labelOf(targetId: string): string;
     preview(item: ThreadItem): Preview | null;
+    /** What an applied suggestion changed, read from its undo ops. */
+    changes?(item: ThreadItem): Changes | null;
+    /** Mark the real elements an applied change touched; [] clears them. */
+    markChanges?(marks: ShownMark[]): void;
     /**
      * What to tell the asker when no agent has read a remark: a prompt to
      * paste into their agent, and a shell command that reads the inbox.

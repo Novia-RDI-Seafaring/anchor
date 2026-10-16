@@ -1,8 +1,9 @@
 import "./styles.css";
 export { IntentOverlay } from "./IntentOverlay";
 export type { MarkupProps as IntentOverlayProps } from "./types";
-export type { OverlayHost, ThreadPort, Intent, ThreadItem, Submission, Preview, Viewport } from "./ports";
+export type { OverlayHost, ThreadPort, Intent, ThreadItem, Submission, Preview, Viewport, ChangeMark, Changes, ShownMark } from "./ports";
 export type { Box, Point, Rect } from "./lasso";
 export type { RowBand } from "./cuts";
 export type { EdgePath } from "./strikes";
 export { agentReach, readerName, UNHEARD_AFTER_S, type Reach } from "./reach";
+export { awaitingVerdict, stillOnBoard } from "./verdict";

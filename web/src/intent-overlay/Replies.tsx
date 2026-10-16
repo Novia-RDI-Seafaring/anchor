@@ -9,10 +9,50 @@ import { ReplyLine } from "./ReplyLine";
 import { splitGhostText } from "./replyModel";
 import { SentStatus } from "./SentStatus";
 import type { MarkupModel } from "./types";
+import { revisionChain, saidSince } from "./verdict";
+import type { Intent, ThreadItem } from "./ports";
+
+/** The first change a revision chain grew from: the conversation starts there. */
+function firstOf(intent: Intent | null | undefined, item: ThreadItem): ThreadItem {
+  const first = revisionChain(intent, item.id).at(-1);
+  return intent?.items?.find((it) => it.id === first) ?? item;
+}
+import { useEffect, useState } from "react";
 
 export function Replies({ model }: { model: Pick<MarkupModel, "ghosts" | "screen" | "viewport" | "answering" | "setAnswering" | "keepSuggestion" | "settle" | "withdraw" | "kept" | "written" | "reading" | "cutsReading" | "reset" | "host"> }) {
   const { ghosts, screen, viewport, answering, setAnswering, keepSuggestion, settle, withdraw, kept, written, reading, cutsReading, reset, host } = model;
+  // The keep card under the pointer: its elements are marked harder, so the
+  // reader sees exactly what keep and put back will touch.
+  const [hovered, setHovered] = useState<string | null>(null);
+  const shown = ghosts.flatMap(({ f, changes }) => (changes?.marks ?? []).map((m) => ({
+    ...m, color: f.color, strong: hovered === f.intentId,
+  })));
+  const shownKey = JSON.stringify(shown);
+  const markChanges = host.display.markChanges;
+  useEffect(() => {
+    if (!markChanges) return;
+    markChanges(JSON.parse(shownKey));
+  }, [markChanges, shownKey]);
+  useEffect(() => () => markChanges?.([]), [markChanges]);
   return (<>
+    {/* What an applied change took away: outlined where it stood, struck
+          through, so put it back has something to point at. */}
+    {ghosts.flatMap(({ f, changes }) =>
+      (changes?.removed.nodes ?? []).map((n) => {
+        const tl = screen({ x: n.x, y: n.y });
+        return (
+          <div
+            key={`rm-${f.intentId}-${n.id}`}
+            data-testid="comment-lasso-removed-node"
+            className="pointer-events-none absolute z-30 overflow-hidden px-2 py-1.5"
+            style={{ left: tl.x, top: tl.y, width: n.width * viewport.zoom, fontSize: 12 * viewport.zoom }}
+          >
+            <div className="text-[0.8em] uppercase tracking-wide" style={{ color: f.color }}>removed</div>
+            <div className="truncate text-neutral-500 line-through">{n.label}</div>
+          </div>
+        );
+      }),
+    )}
     {ghosts.flatMap(({ f, preview }) =>
       (preview?.nodes ?? []).map((n) => {
         const tl = screen({ x: n.x, y: n.y });
@@ -95,7 +135,9 @@ export function Replies({ model }: { model: Pick<MarkupModel, "ghosts" | "screen
           className="absolute z-30 flex w-64 -translate-x-1/2 flex-col items-center gap-1"
           style={{ left: foot.x, top: foot.y + 6 }}
         >
-          {status ? (
+          {/* Progress is news only until there is something to judge: then the
+                card says what was done, and the line above it is stale. */}
+          {status && !applied && !suggestion ? (
             <div className="flex items-center gap-1.5 text-[11px] text-neutral-600">
               {pending ? (
                 <span
@@ -174,6 +216,8 @@ export function Replies({ model }: { model: Pick<MarkupModel, "ghosts" | "screen
               className="pointer-events-auto w-full rounded-md border bg-white p-2 shadow-md"
               style={{ borderColor: f.color }}
               onPointerDown={(e) => e.stopPropagation()}
+              onPointerEnter={() => setHovered(f.intentId)}
+              onPointerLeave={() => setHovered((h) => (h === f.intentId ? null : h))}
             >
               {/* The change is on the canvas. The only question is whether it
                     stays, so that is the only question asked. */}
@@ -183,6 +227,29 @@ export function Replies({ model }: { model: Pick<MarkupModel, "ghosts" | "screen
               <div className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-neutral-600">
                 {applied.text.split("\n")[0]}
               </div>
+              {/* What was said since: the reader's replies, and the agent's
+                    answers to them, in the card where the verdict is made. */}
+              {saidSince(f.intent, firstOf(f.intent, applied)).map((it) => {
+                const mine = it.author.kind === "human";
+                return (
+                  <div key={it.id} className={`mt-1.5 flex ${mine ? "justify-end" : "justify-start"}`}>
+                    <div
+                      data-testid="comment-lasso-said"
+                      data-author={mine ? "human" : "agent"}
+                      className={`max-w-[85%] rounded-lg px-2 py-1 text-[11px] leading-snug ${
+                        mine ? "rounded-br-sm bg-neutral-100 text-neutral-800" : "rounded-bl-sm text-neutral-800"}`}
+                      style={mine ? undefined : { background: `color-mix(in srgb, ${f.color} 12%, white)` }}
+                    >
+                      {mine ? null : (
+                        <div className="text-[10px] font-medium" style={{ color: f.color }}>
+                          {it.author.label ?? "agent"}
+                        </div>
+                      )}
+                      {it.text}
+                    </div>
+                  </div>
+                );
+              })}
               <div className="mt-1.5 flex gap-1.5">
                 <button
                   type="button"

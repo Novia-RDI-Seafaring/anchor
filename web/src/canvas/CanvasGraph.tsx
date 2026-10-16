@@ -8,6 +8,7 @@ import {
   applyNodeChanges,
   useReactFlow,
   type Connection,
+  type FinalConnectionState,
   type Edge as RfEdge,
   type EdgeChange,
   type Node as RfNode,
@@ -747,6 +748,35 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   }, [readOnly, handMode, slug]);
 
   /**
+   * A link released on a document card, away from any socket, joins what
+   * was lit under the pointer: the region it is on, else the whole document.
+   * The card lights exactly one of those while the link is over it, so the
+   * drop must do what the light promised.
+   */
+  const onConnectEnd = useCallback((event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
+    if (readOnly || handMode || state.toNode || !state.fromNode) return;
+    const point = "changedTouches" in event ? event.changedTouches[0] : event;
+    if (!point) return;
+    const under = document.elementsFromPoint(point.clientX, point.clientY);
+    const nodeEl = under
+      .map((el) => el.closest<HTMLElement>(".react-flow__node"))
+      .find((el): el is HTMLElement => !!el && el.dataset.id !== state.fromNode!.id);
+    const target = nodeEl?.dataset.id;
+    if (!target || useCanvasStore.getState().nodes[target]?.node_type !== "document") return;
+    const region = under
+      .map((el) => el.closest<HTMLElement>("[data-region-handle-id]"))
+      .find((el): el is HTMLElement => !!el && nodeEl!.contains(el))
+      ?.dataset.regionHandleId ?? null;
+    const fromSource = state.fromHandle?.type !== "target";
+    onConnect({
+      source: fromSource ? state.fromNode.id : target,
+      target: fromSource ? target : state.fromNode.id,
+      sourceHandle: fromSource ? state.fromHandle?.id ?? null : null,
+      targetHandle: fromSource ? region : state.fromHandle?.id ?? null,
+    });
+  }, [readOnly, handMode, onConnect]);
+
+  /**
    * Find the topmost Area whose body contains the given canvas point.
    *
    * Used by `onNodeDrag` to telegraph "drop here to nest" via the Area's
@@ -1471,6 +1501,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onConnectEnd={onConnectEnd}
         fitView={!initialViewport}
         defaultViewport={initialViewport ?? undefined}
         onMoveEnd={(_, viewport) => saveViewport(slug, viewport)}
@@ -1715,6 +1746,7 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       <CommentLasso
         active={commentMode}
         onExit={() => setCommentMode(false)}
+        onEnter={() => setCommentMode(true)}
         workspaceSlug={slug}
         boxes={Object.values(nodes).filter((n) => !structure.hidden.has(n.id)).map((n): LassoBox => {
           // The size ReactFlow measured is what the reader actually sees, so

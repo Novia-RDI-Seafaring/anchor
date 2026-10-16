@@ -3,12 +3,13 @@ import {
   type Rect
 } from "./lasso";
 import { createMarkupStore } from "./markupStore";
+import { stillOnBoard } from "./verdict";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { MarkupModel } from "./types";
 
-export function useMarkupState(context: Pick<MarkupModel, "active" | "host">) {
-  const { active, host } = context;
+export function useMarkupState(context: Pick<MarkupModel, "active" | "host" | "onExit">) {
+  const { active, host, onExit } = context;
   const [markupStore] = useState(createMarkupStore);
 
   const {
@@ -60,7 +61,17 @@ export function useMarkupState(context: Pick<MarkupModel, "active" | "host">) {
 
   const panelDrag = useRef<{ startX: number; startY: number; x: number; y: number } | null>(null);
 
-  const settle = (intentId: string, judged: Set<string>) => markupStore.getState().settle(intentId, judged, host.thread);
+  const settle = async (intentId: string, judged: Set<string>) => {
+    const done = await markupStore.getState().settle(intentId, judged, host.thread);
+    if (!done) return;
+    // The last remark judged and nothing half-drawn: the pen goes down by
+    // itself, rather than leaving the reader in a mode with nothing to do.
+    const state = markupStore.getState();
+    const waiting = state.filed.some((remark) =>
+      remark.intentId !== intentId && stillOnBoard(remark.intent, state.kept));
+    const unsent = state.marks.length > 0 || state.notes.some((note) => note.text.trim()) || state.shelf.length > 0;
+    if (!waiting && !unsent) onExit?.();
+  };
   const withdraw = (intentId: string) => markupStore.getState().withdraw(intentId, host.thread);
 
   const drawing = useRef(false);

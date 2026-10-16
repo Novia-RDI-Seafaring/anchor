@@ -45,6 +45,9 @@ export type ThreadItem = {
   ops?: Record<string, unknown>[];
   supersedes?: string;
   applied_versions?: number[];
+  applied_by?: { kind: string; label?: string | null; id?: string | null } | null;
+  /** Applied suggestion only: the ops that put the canvas back. */
+  undo_ops?: Record<string, unknown>[];
   place?: Place;
   /** Question only: answers offered for one press; free text still answers. */
   options?: string[];
@@ -128,12 +131,21 @@ export const intents = {
      * out of one cell arrives as *which value*.
      */
     pointers?: unknown;
+    /** Where the remark was written, in canvas coordinates. */
+    at?: { x: number; y: number };
+    /** The view it was written in, for taking the reader back to it. */
+    viewport?: { x: number; y: number; zoom: number };
+    /** The ink as drawn, for redrawing the remark after a reload. */
+    ink?: unknown;
   }): Promise<Intent> => {
     const payload: Record<string, unknown> = { text: body.text };
     if (body.sketch) payload.sketch = body.sketch;
     if (body.cuts) payload.cuts = body.cuts;
     if (body.strikes) payload.strikes = body.strikes;
     if (body.pointers) payload.pointers = body.pointers;
+    if (body.at) payload.at = body.at;
+    if (body.viewport) payload.viewport = body.viewport;
+    if (body.ink) payload.ink = body.ink;
     if (body.nodeId) {
       payload.workspace_id = body.workspaceSlug;
       payload.node_id = body.nodeId;
