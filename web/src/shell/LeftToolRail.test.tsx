@@ -6,30 +6,15 @@ import { LeftToolRail } from "./LeftToolRail";
 beforeEach(() => useUiStore.setState({ armedTool: null, navigationMode: "select", selectedNodeId: null }));
 afterEach(cleanup);
 describe("canvas tool shortcuts", () => {
-  it("offers a Hand toggle, H/V and Escape, and resets navigation on a route change", () => {
+  it("offers no hand: a drag pans, so H does nothing and V puts a tool down", () => {
     const view = render(<LeftToolRail workspaceSlug="a" />);
-    // No pointer mode to pick: the canvas pans on a background drag and
-    // selects with Shift, so the hand is the only mode on the rail.
+    expect(view.queryByRole("button", { name: "Hand" })).toBeNull();
     expect(view.queryByRole("button", { name: "Select" })).toBeNull();
-    const hand = view.getByRole("button", { name: "Hand" });
-    expect(hand.getAttribute("aria-pressed")).toBe("false");
-    fireEvent.click(hand);
-    expect(useUiStore.getState().navigationMode).toBe("hand");
-    fireEvent.click(hand);
-    expect(useUiStore.getState().navigationMode).toBe("select");
-    fireEvent.keyDown(window, { key: "h" });
-    expect(useUiStore.getState().navigationMode).toBe("hand");
     fireEvent.keyDown(window, { key: "h" });
     expect(useUiStore.getState().navigationMode).toBe("select");
-    fireEvent.keyDown(window, { key: "h" });
+    act(() => useUiStore.setState({ armedTool: "concept" }));
     fireEvent.keyDown(window, { key: "v" });
-    expect(useUiStore.getState().navigationMode).toBe("select");
-    fireEvent.keyDown(window, { key: "h" });
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(useUiStore.getState().navigationMode).toBe("select");
-    fireEvent.click(hand);
-    view.rerender(<LeftToolRail workspaceSlug="b" />);
-    expect(useUiStore.getState().navigationMode).toBe("select");
+    expect(useUiStore.getState().armedTool).toBeNull();
   });
 
   it("keeps navigation keys in editors and source controls and preserves mark-up", () => {

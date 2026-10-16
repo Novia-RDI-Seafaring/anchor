@@ -25,6 +25,8 @@
  * "Style → Fill/Stroke" implementation shared a single anchor and the two
  * Radix Content layers collided.
  */
+import { NodePresentationEditor } from "@/canvas/NodePresentationEditor";
+import { COMPACT_CARD_TYPES } from "@/canvas/subtrees";
 import { useReactFlow, useStore } from "@xyflow/react";
 import {
   AlignCenterHorizontal,
@@ -164,11 +166,9 @@ export function NodeContextToolbar({ workspaceSlug, onAsk }: Props) {
   useEffect(() => { setConfirmingDelete(false); }, [selectedNodeIds.join(",")]);
 
   if (!screenBox || selectedNodeIds.length === 0) return null;
-  // With one element selected the SelectionPanel carries the same controls,
-  // open on the left. Two sets of colour chips for one element is clutter,
-  // so the floating toolbar steps aside and stays for multi-select, where
-  // the panel does not apply.
-  if (selectedNodeIds.length === 1) return null;
+  // One toolbar for one element or many, above what is selected: the
+  // controls sit where the reader is looking, not in a panel across the
+  // canvas, and each one appears only where it means something.
 
   const isMulti = selectedNodeIds.length > 1;
   const isTriPlus = selectedNodeIds.length >= 3;
@@ -177,6 +177,15 @@ export function NodeContextToolbar({ workspaceSlug, onAsk }: Props) {
   const firstId = selectedNodeIds[0];
   const singleNode = selectedNodeIds.length === 1 && firstId ? nodes[firstId] ?? null : null;
   const isDocument = singleNode?.node_type === "document";
+  const selectedTypes = selectedNodeIds.map((nid) => nodes[nid]?.node_type ?? "");
+  // Fill, stroke and text style what a card draws itself. A document, a
+  // picture or a section shows a page: there is nothing of its own to colour.
+  const showsPage = (t: string) => t === "document" || t === "image" || t === "section" || t === "canvas";
+  const isWords = (nid: string) => nodes[nid]?.node_type === "text" || nodes[nid]?.data?.role === "heading";
+  const canText = selectedTypes.length > 0 && selectedTypes.every((t) => !showsPage(t));
+  const canBox = canText && selectedNodeIds.every((nid) => !isWords(nid));
+  // How a card folds: only for a single card of a kind that can fold.
+  const canFold = !!singleNode && (COMPACT_CARD_TYPES.has(singleNode.node_type) || singleNode.node_type === "concept");
 
   // Chip visuals — derive from the first selected node's current `data`
   // so the chip itself reflects the live colour (Miro pattern). Multi-
@@ -269,7 +278,7 @@ export function NodeContextToolbar({ workspaceSlug, onAsk }: Props) {
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="flex items-center gap-1 rounded-md border border-neutral-200 bg-white px-1 py-1 shadow-md">
-        {onAsk ? <Button variant="ghost" size="sm" onClick={onAsk}>Ask agent</Button> : null}
+        {onAsk ? <Button variant="ghost" size="sm" className="whitespace-nowrap" onClick={onAsk}>Ask agent</Button> : null}
         {/* Organize ▾ — only when any selected node has an edge. Disabled
             for pure-multi selections without subtree semantics. */}
         {anySelectedHasEdges ? (
@@ -332,6 +341,7 @@ export function NodeContextToolbar({ workspaceSlug, onAsk }: Props) {
         {/* ────── Style chips ────── */}
         {/* Fill chip — square swatch tinted with current bg, falls back to
             transparent-checker visual when no fill is set. */}
+        {canBox ? (<>
         <Popover>
           <PopoverTrigger asChild>
             <button
@@ -380,8 +390,10 @@ export function NodeContextToolbar({ workspaceSlug, onAsk }: Props) {
             />
           </PopoverContent>
         </Popover>
+        </>) : null}
 
         {/* Text chip — letter A with a coloured underline tint (Miro's A̲). */}
+        {canText ? (
         <Popover>
           <PopoverTrigger asChild>
             <button
@@ -412,6 +424,29 @@ export function NodeContextToolbar({ workspaceSlug, onAsk }: Props) {
             />
           </PopoverContent>
         </Popover>
+        ) : null}
+
+        {/* Display chip — how this card folds: full or compact, and which
+            way its children run. Only for a card that can fold. */}
+        {canFold && singleNode ? (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                data-testid="chip-display"
+                aria-label="Display"
+                title="Display"
+                className="inline-flex h-6 items-center gap-1 rounded border border-neutral-300 bg-white px-1.5 text-[11px] text-neutral-700 transition hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-sky-500"
+              >
+                Display
+                <ChevronDown className="size-3 text-neutral-500" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="center" sideOffset={6} className="w-60">
+              <NodePresentationEditor workspaceSlug={workspaceSlug} node={singleNode} />
+            </PopoverContent>
+          </Popover>
+        ) : null}
 
         {/* Lock chip — toggles data.locked. */}
         <Button

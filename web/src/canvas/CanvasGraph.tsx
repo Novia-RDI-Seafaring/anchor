@@ -1,3 +1,4 @@
+import { isCanvasSelectAll } from "@/shared/clipboard";
 import { useKeyPress,
   Background,
   Controls,
@@ -34,7 +35,6 @@ import { CommentLasso } from "@/canvas/CommentLasso";
 import { proposalSets } from "@/api/proposalSets";
 import { ProposalReview } from "@/canvas/ProposalReview";
 import type { Box as LassoBox } from "@/canvas/lasso";
-import { SelectionPanel } from "@/canvas/SelectionPanel";
 import { SelectionAskDialog } from "@/canvas/SelectionAskDialog";
 import { NodeDetailPanel } from "@/canvas/NodeDetailPanel";
 import { CanvasStructureContext, structuredNodeTypes } from "@/canvas/StructuredNode";
@@ -392,6 +392,20 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
   const [edgeContextTarget, setEdgeContextTarget] = useState<EdgeContextMenuTarget | null>(null);
 
   // Navigation and markup put editing gestures and the selection down.
+  // Cmd/Ctrl+A selects every element on the canvas, not every word on the
+  // page. In intent mode the pen's overlay answers it with the drawing.
+  useEffect(() => {
+    if (readOnly || commentMode) return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      if (!isCanvasSelectAll(event)) return;
+      event.preventDefault();
+      window.getSelection()?.removeAllRanges();
+      setRfNodes((prev) => prev.map((n) => (n.selected ? n : { ...n, selected: true })));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [readOnly, commentMode]);
+
   useEffect(() => {
     if (!commentMode && !handMode) return;
     setRfNodes((prev) => (prev.some((n) => n.selected) ? prev.map((n) => (n.selected ? { ...n, selected: false } : n)) : prev));
@@ -1742,7 +1756,6 @@ function CanvasGraphInner({ slug, readOnly, presenceLabel }: Props) {
       {readOnly || handMode ? null : (
         <>
           <NodeContextToolbar workspaceSlug={slug} onAsk={armedTool ? undefined : askSelection} />
-          <SelectionPanel nodeIds={rfNodes.filter((node) => node.selected).map((node) => node.id)} onAsk={armedTool ? undefined : askSelection} />
           {selectionAsk?.workspaceSlug === slug ? <SelectionAskDialog key={slug} workspaceSlug={slug} targetIds={selectionAsk.targets} onClose={() => setSelectionAsk(null)} /> : null}
           <NodeContextMenu
             workspaceSlug={slug}

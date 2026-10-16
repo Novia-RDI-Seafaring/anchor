@@ -369,6 +369,15 @@ describe("CommentLasso interactions", () => {
     })));
   });
 
+  it("selects every mark of the remark with Cmd/Ctrl+A", async () => {
+    await mount();
+    draw([[50, 50], [120, 60], [180, 90]]);
+    draw([[300, 300], [360, 320], [420, 330]]);
+    expect(document.querySelectorAll("[data-selected]")).toHaveLength(0);
+    fireEvent.keyDown(document.body, { key: "a", metaKey: true });
+    expect(document.querySelectorAll("[data-selected]")).toHaveLength(2);
+  });
+
   it("does not ask to keep a change the reader approved", async () => {
     const intent = baseIntent();
     intent.items = [{ id: "change", type: "suggestion", author: { kind: "agent" },

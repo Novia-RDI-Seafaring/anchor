@@ -6,7 +6,9 @@ export type CanvasNavigationMode = "select" | "hand";
 export function navigationKey(event: KeyboardEvent): CanvasNavigationMode | null {
   if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || isTextEditing(event.target)) return null;
   const key = event.key.toLowerCase();
-  if (key !== "v" && key !== "h") return null;
+  // No H: there is no hand mode to switch to. A drag on the background
+  // pans, space-drag pans anywhere, and a drag on a card moves it.
+  if (key !== "v") return null;
   const target = event.target;
   if (target instanceof Element) {
     if (target.closest('[data-canvas-read-only="true"], [role="dialog"], [role="menu"]')) return null;
@@ -14,7 +16,7 @@ export function navigationKey(event: KeyboardEvent): CanvasNavigationMode | null
     if (target !== document.body && target !== document.documentElement && !rail
       && (!target.closest(".react-flow") || target.closest('button, a, [role="button"]'))) return null;
   } else if (target instanceof Node) return null;
-  return key === "h" ? "hand" : "select";
+  return "select";
 }
 
 /**

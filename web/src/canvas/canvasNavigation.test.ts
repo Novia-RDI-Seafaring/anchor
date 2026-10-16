@@ -12,11 +12,12 @@ function keyAt(target: EventTarget, key: string, options: KeyboardEventInit = {}
 it("owns only unmodified navigation keys on canvas or its rail", () => {
   document.body.innerHTML = '<div class="react-flow"><div class="react-flow__node" tabindex="0"></div></div><div role="toolbar" aria-label="Canvas tools"><button>Hand</button></div>';
   const node = document.querySelector(".react-flow__node")!;
-  expect(keyAt(window, "h")).toBe("hand");
-  expect(keyAt(node, "h")).toBe("hand");
+  // There is no hand mode: H is not a navigation key.
+  expect(keyAt(window, "h")).toBeNull();
+  expect(keyAt(node, "v")).toBe("select");
   expect(keyAt(document.querySelector("button")!, "v")).toBe("select");
   for (const modifier of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }, { shiftKey: true }]) {
-    expect(keyAt(node, "h", modifier)).toBeNull();
+    expect(keyAt(node, "v", modifier)).toBeNull();
   }
 });
 
