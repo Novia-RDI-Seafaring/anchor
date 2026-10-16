@@ -108,20 +108,41 @@ def _setting_enabled(value: Any) -> bool:
     return bool(value)
 
 
-def read_environment_dotenv(path: Path | None) -> dict[str, str]:
-    """Read an environment's private Anchor settings without global mutation."""
+def _dotenv_pairs(path: Path | None) -> dict[str, str]:
+    """Every ``KEY=value`` in a .env, tolerating a pasted ``export`` and quotes."""
     if path is None or not path.is_file():
         return {}
-    values: dict[str, str] = {}
+    pairs: dict[str, str] = {}
     for raw in path.read_text(encoding="utf-8", errors="ignore").splitlines():
         line = raw.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        key = key.strip()
-        if key.startswith("ANCHOR_"):
-            values[key.removeprefix("ANCHOR_").lower()] = value.strip()
-    return values
+        key = key.strip().removeprefix("export ").strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        pairs[key] = value
+    return pairs
+
+
+def read_environment_dotenv(path: Path | None) -> dict[str, str]:
+    """Read an environment's private Anchor settings without global mutation."""
+    return {
+        key.removeprefix("ANCHOR_").lower(): value
+        for key, value in _dotenv_pairs(path).items()
+        if key.startswith("ANCHOR_")
+    }
+
+
+def read_dotenv_openai_key(path: Path | None) -> str | None:
+    """A plain ``OPENAI_API_KEY`` in the environment's private .env.
+
+    Honoured only where the shell's ``OPENAI_API_KEY`` is: public OpenAI with
+    no custom endpoint. People copy the export line from their shell profile,
+    and for that provider it is the right credential.
+    """
+    return _dotenv_pairs(path).get("OPENAI_API_KEY", "").strip() or None
 
 
 def resolve_egress_policy(
@@ -187,7 +208,10 @@ def resolve_egress_policy(
     credential_source = "anchor" if configured_key else None
 
     if provider == "openai" and base_url is None and api_key is None:
-        api_key = (os.environ.get("OPENAI_API_KEY") or "").strip() or None
+        api_key = (
+            (os.environ.get("OPENAI_API_KEY") or "").strip()
+            or read_dotenv_openai_key(environment_dotenv_path(config))
+        )
         credential_source = "openai" if api_key else None
     elif provider == "ollama" and base_url is not None and api_key is None:
         # The SDK requires a non-empty key even though Ollama ignores it.
@@ -230,22 +254,23 @@ def describe_credential(config: AnchorConfig) -> dict[str, Any]:
     # Ollama runs with a local placeholder key, so only real endpoints need one.
     required = not config.local_only and provider in _SERVER_EGRESS_PROVIDERS - {"ollama"}
     dotenv_path = environment_dotenv_path(config)
-    env_file_has_key = bool(read_environment_dotenv(dotenv_path).get("openai_api_key"))
+    public_openai = provider == "openai" and not (config.openai_base_url or "").strip()
+    env_file_plain_key = public_openai and read_dotenv_openai_key(dotenv_path) is not None
+    env_file_anchor_key = bool(read_environment_dotenv(dotenv_path).get("openai_api_key"))
+    env_file_has_key = env_file_anchor_key or env_file_plain_key
     variable: str | None = None
     source: str | None = None
     if required:
         if os.environ.get(ANCHOR_KEY_VAR, "").strip():
             variable, source = ANCHOR_KEY_VAR, "process"
-        elif env_file_has_key:
+        elif env_file_anchor_key:
             variable, source = ANCHOR_KEY_VAR, "env_file"
         elif config.openai_api_key is not None:
             variable, source = ANCHOR_KEY_VAR, "config"
-        elif (
-            provider == "openai"
-            and not (config.openai_base_url or "").strip()
-            and os.environ.get("OPENAI_API_KEY", "").strip()
-        ):
+        elif public_openai and os.environ.get("OPENAI_API_KEY", "").strip():
             variable, source = "OPENAI_API_KEY", "process"
+        elif env_file_plain_key:
+            variable, source = "OPENAI_API_KEY", "env_file"
     info: dict[str, Any] = {
         "required": required,
         "present": source is not None,

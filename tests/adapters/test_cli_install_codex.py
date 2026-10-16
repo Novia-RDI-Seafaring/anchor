@@ -160,3 +160,14 @@ def test_privacy_zone_is_echoed(_paths):
     create_env("local", settings={"provider": "local"})
     result = runner.invoke(app, ["install", "codex", "--env", "local", "--yes"])
     assert "Data zone" in result.output
+
+
+def test_codex_install_flags_a_key_only_in_the_shell(_paths, monkeypatch):
+    # The Codex app is started from the Dock and never reads the shell profile.
+    monkeypatch.delenv("ANCHOR_OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-shell-only")
+    env = create_env("work", settings={"provider": "openai"})
+    result = runner.invoke(app, ["install", "codex", "--env", "work", "--yes"])
+    assert result.exit_code == 0, result.output
+    assert "only in this shell" in result.output
+    assert str(env.root / ".env") in result.output

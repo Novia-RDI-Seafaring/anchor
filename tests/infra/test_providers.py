@@ -50,8 +50,8 @@ def test_no_key_remedy_names_key_var_path_and_harness_fallback():
     assert ANCHOR_KEY_VAR == "ANCHOR_OPENAI_API_KEY"
     assert ANCHOR_KEY_VAR in blob
     assert "/home/me/.anchor/envs/work/.env" in blob
-    # A plain OPENAI_API_KEY there is ignored — the remedy must say so.
-    assert "OPENAI_API_KEY in that .env is ignored" in blob
+    # A plain OPENAI_API_KEY there is not an endpoint key — the remedy says so.
+    assert "OPENAI_API_KEY in that .env counts only for public OpenAI" in blob
     # The offline fallback: harness/local + the harness ingest tool chain.
     assert "--provider harness" in blob
     assert "ingest_begin" in blob

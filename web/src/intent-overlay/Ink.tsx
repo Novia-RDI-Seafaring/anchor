@@ -169,6 +169,38 @@ export function Ink({ model }: { model: Pick<MarkupModel, "remarkBlob" | "screen
         return [...edgeLines, ...cardOutlines];
       })}
 
+      {/* What an applied change removed, where it stood. Dashed and still:
+            gone, but put it back would bring it here. */}
+      {ghosts.flatMap(({ f, changes }) => {
+        if (!changes) return [];
+        const lines = changes.removed.edges.map((e) => {
+          if (!e.from || !e.to) return null;
+          const sa = screen(e.from);
+          const sb = screen(e.to);
+          return (
+            <line
+              key={`re-${f.intentId}-${e.id}`}
+              data-testid="comment-lasso-removed-edge"
+              x1={sa.x} y1={sa.y} x2={sb.x} y2={sb.y}
+              stroke={f.color} strokeWidth={2} strokeDasharray="4 6" strokeOpacity={0.6}
+            />
+          );
+        });
+        const boxes = changes.removed.nodes.map((n) => {
+          const tl = screen({ x: n.x, y: n.y });
+          return (
+            <rect
+              key={`rn-${f.intentId}-${n.id}`}
+              x={tl.x} y={tl.y}
+              width={n.width * viewport.zoom} height={n.height * viewport.zoom}
+              rx={8} fill="none" stroke={f.color} strokeOpacity={0.6}
+              strokeWidth={2} strokeDasharray="4 6"
+            />
+          );
+        });
+        return [...lines, ...boxes];
+      })}
+
       {/* Remarks set aside: on their own ground, faint, waiting for a
             tap. Unsent, so the ground is outlined rather than the ink
             faded to a ghost's. */}

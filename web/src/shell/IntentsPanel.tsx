@@ -16,6 +16,7 @@
 import { useState } from "react";
 
 import { intents, type Intent } from "@/api/intents";
+import { agentReach } from "@/intent-overlay";
 import { cn } from "@/lib/cn";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -214,6 +215,24 @@ function CreateIntentForm({
 // resolved rows show the resolution text when the record carries one.
 // ---------------------------------------------------------------------------
 
+/** Whether an agent has read this open intent yet, and what to do if not. */
+function ReachLine({ intent }: { intent: Intent }) {
+  const reach = agentReach(intent);
+  return (
+    <div
+      className={cn("mt-0.5 text-[10px]", reach.kind === "unheard" ? "text-amber-700" : "text-neutral-500")}
+      data-testid="intent-reach"
+      data-reach={reach.kind}
+    >
+      {reach.kind === "seen"
+        ? `Seen by ${reach.by} · ${reach.ago}`
+        : reach.kind === "waiting"
+          ? "Waiting for an agent to read the inbox"
+          : "No agent has read it yet. Ask yours to check the Anchor inbox, or run `anchor intents`."}
+    </div>
+  );
+}
+
 function IntentRow({
   intent,
   onDismiss,
@@ -222,6 +241,8 @@ function IntentRow({
   onDismiss?: () => void;
 }) {
   const isOpen = intent.status === "pending";
+  // Pending, but nothing left to act on: every element it pointed at is gone.
+  const stale = isOpen && intent.stale ? intent.stale : null;
   const nodeId = targetNodeId(intent);
   const resolution = isOpen ? null : resolutionText(intent);
   const when = isOpen
@@ -232,19 +253,22 @@ function IntentRow({
     <div
       className={cn(
         "group rounded border px-2 py-1.5 text-xs",
-        isOpen
-          ? "border-amber-200 bg-amber-50/50"
-          : "border-neutral-200 bg-white",
+        stale
+          ? "border-dashed border-neutral-300 bg-neutral-50"
+          : isOpen
+            ? "border-amber-200 bg-amber-50/50"
+            : "border-neutral-200 bg-white",
       )}
       data-testid="intent-row"
       data-intent-id={intent.id}
       data-status={intent.status}
+      data-stale={stale ? "" : undefined}
     >
       <div className="flex items-start gap-1.5">
         <span
           className={cn(
             "mt-1 inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-            isOpen ? "animate-pulse bg-amber-500" : "bg-green-500",
+            stale ? "bg-neutral-300" : isOpen ? "animate-pulse bg-amber-500" : "bg-green-500",
           )}
           aria-hidden="true"
         />
@@ -252,7 +276,7 @@ function IntentRow({
           <div
             className={cn(
               "break-words font-medium",
-              isOpen ? "text-neutral-800" : "text-neutral-500",
+              isOpen && !stale ? "text-neutral-800" : "text-neutral-500",
             )}
           >
             {intentTitle(intent)}
@@ -263,6 +287,12 @@ function IntentRow({
             {nodeId ? ` · node ${nodeId}` : ""}
             {when ? ` · ${when}` : ""}
           </div>
+          {isOpen && !stale ? <ReachLine intent={intent} /> : null}
+          {stale ? (
+            <div className="mt-0.5 break-words text-[10px] text-neutral-500" data-testid="intent-stale">
+              Stale: {stale}. No agent will pick it up; remove it.
+            </div>
+          ) : null}
           {resolution ? (
             <div
               className="mt-0.5 break-words text-[10px] italic text-neutral-400"
@@ -276,12 +306,16 @@ function IntentRow({
           <button
             type="button"
             onClick={onDismiss}
-            className="shrink-0 rounded px-1 text-[10px] text-neutral-400 opacity-0 transition-opacity hover:bg-red-100 hover:text-red-600 group-hover:opacity-100"
-            title="Dismiss (resolve without acting)"
-            aria-label="Dismiss intent"
+            className={cn(
+              "shrink-0 rounded px-1 text-[10px] transition-opacity hover:bg-red-100 hover:text-red-600",
+              // A stale one has nothing else to offer, so its way out shows.
+              stale ? "border border-neutral-300 text-neutral-600" : "text-neutral-400 opacity-0 group-hover:opacity-100",
+            )}
+            title={stale ? "Remove this stale intent" : "Dismiss (resolve without acting)"}
+            aria-label={stale ? "Remove stale intent" : "Dismiss intent"}
             data-testid="intent-dismiss"
           >
-            ✕
+            {stale ? "remove" : "✕"}
           </button>
         ) : null}
       </div>

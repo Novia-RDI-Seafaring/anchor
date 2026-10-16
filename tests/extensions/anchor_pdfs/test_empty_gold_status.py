@@ -45,7 +45,7 @@ class EmptyRegionExtractor:
     def __init__(self) -> None:
         self.calls = 0
 
-    async def extract_page(self, *, page_image, page_no, docling_items, model):
+    async def extract_page(self, *, page_image, page_no, docling_items, model, **_frame):
         self.calls += 1
         return []
 
@@ -62,7 +62,7 @@ class FlakyRegionExtractor:
         self.calls = 0
         self.passes = 0
 
-    async def extract_page(self, *, page_image, page_no, docling_items, model):
+    async def extract_page(self, *, page_image, page_no, docling_items, model, **_frame):
         self.calls += 1
         if page_no == 1:
             self.passes += 1

@@ -16,14 +16,16 @@ be toggled with `[` when you are not typing. Select a node for its context
 toolbar and properties, drag to move it, and use handles where supported for
 resizing or connections. Shift-click or a selection box selects several objects.
 
-Select (`V`) lets you move objects or drag empty canvas to select several.
-Hand (`H`) pans the view when you drag the canvas or an object. Hand does not
-move, edit, paste, or delete objects. Press `V` or Escape to return to Select,
-or choose a drawing tool. Middle-button and right-button dragging pan the view
-while another tool is active. Navigation keys leave text editors, source controls,
-and mark-up alone.
+Drag empty canvas to pan the view. Shift-drag to draw a selection box. Click
+or drag an object to select or move it.
 
-Double-click empty canvas in Select to place a text element and start typing.
+Hand (`H`) is a view-only mode: dragging anywhere pans, and nothing moves,
+edits, pastes, or deletes. Press `H` again, click the hand, or press Escape to
+leave it. Middle-button and right-button dragging pan the view while a drawing
+tool is armed. Navigation keys leave text editors, source controls, and mark-up
+alone.
+
+Double-click empty canvas to place a text element and start typing.
 Press Enter or click away to save, or Escape to cancel the current text edit.
 Double-click an existing shape to edit its label.
 

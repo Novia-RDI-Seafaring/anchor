@@ -25,7 +25,7 @@ export function editorAction(event: KeyboardEvent): EditorAction | null {
   return { type: "nudge", nodeId, dx: direction[0] * step, dy: direction[1] * step };
 }
 
-const INLINE_RENAME_TYPES = new Set(["concept", "entity", "funnel", "area", "text", "fact", "note", "markdown", "spec", "image", "canvas"]);
+const INLINE_RENAME_TYPES = new Set(["concept", "entity", "funnel", "area", "text", "fact", "note", "markdown", "spec", "section", "image", "canvas"]);
 export function supportsInlineRename(type: string) { return INLINE_RENAME_TYPES.has(type); }
 
 /** Stored coordinates are absolute. Moving a container moves each descendant once. */

@@ -7,10 +7,25 @@ import {
 import { describePointers, resolvePointers } from "./pointers";
 import { describeSketch, resolveSketch } from "./sketch";
 import { describeStrikes, resolveStrikes } from "./strikes";
-import { type Queued, type Stack } from "./markupStore";
+import { type Mark, type Note, type Queued, type Stack } from "./markupStore";
+import type { Ink } from "./ports";
 import { BLOB_PAD_PX } from "./constants";
 import { noteRect, rectCorners } from "./geometry";
 import type { MarkupModel } from "./types";
+
+/** The remark's ink, thinned so a long stroke does not weigh down the thread. */
+function inkOf(marks: Mark[], notes: Note[]): Ink {
+  const MAX = 96;
+  const thin = (points: Point[]) => {
+    const step = Math.max(1, Math.ceil(points.length / MAX));
+    const kept = points.filter((_, k) => k % step === 0 || k === points.length - 1);
+    return kept.map((p) => ({ x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 }));
+  };
+  return {
+    marks: marks.map((m) => ({ ...m, points: thin(m.points) })),
+    notes: notes.filter((n) => n.text.trim()).map(({ offered: _offered, ...n }) => n),
+  };
+}
 
 export function useStacks(context: Pick<MarkupModel, "markupStore" | "settledNotes" | "boxes" | "rowsOf" | "edgesOf" | "getViewport" | "surfaceRef" | "setViewport" | "setCurrent" | "setMarquee" | "sending" | "onFiled" | "ids" | "host">) {
   const { markupStore, settledNotes, boxes, rowsOf, edgesOf, getViewport, surfaceRef, setViewport, setCurrent, setMarquee, sending, onFiled, ids, host } = context;
@@ -111,9 +126,22 @@ export function useStacks(context: Pick<MarkupModel, "markupStore" | "settledNot
       // A struck edge's two ends are what the ask is about, so they are
       // targets too: the cross itself caught no card.
       const ends = q.strikes.flatMap((k) => [k.source, k.target]);
+      const corners = [...q.notes.map((n) => ({ x: n.x, y: n.y })), ...q.marks.flatMap((m) => m.points)];
+      const at = corners.length > 0 ? {
+        x: Math.round((Math.min(...corners.map((c) => c.x)) + Math.max(...corners.map((c) => c.x))) / 2),
+        y: Math.round((Math.min(...corners.map((c) => c.y)) + Math.max(...corners.map((c) => c.y))) / 2),
+      } : undefined;
+      const targetIds = Array.from(new Set([...q.ids, ...ends, ...pointers.map((pt) => pt.node)]));
+      // Written on open canvas and catching nothing: where it was written is
+      // all "here" can mean, so say it in the words an agent reads first.
+      const placed = targetIds.length === 0 && at ? `written on open canvas at ${at.x},${at.y}` : "";
+      const drawnAll = [drawn, placed].filter(Boolean).join("\n");
       const sent = await markupStore.getState().send(q, () => host.thread.submit({
-        text: !drawn ? q.text : q.text ? `${q.text}\n\n--- drawn ---\n${drawn}` : drawn,
-        targetIds: Array.from(new Set([...q.ids, ...ends, ...pointers.map((pt) => pt.node)])),
+        text: !drawnAll ? q.text : q.text ? `${q.text}\n\n--- drawn ---\n${drawnAll}` : drawnAll,
+        targetIds,
+        ...(at ? { at } : {}),
+        viewport: getViewport(),
+        ink: inkOf(q.marks, q.notes),
         ...(q.sketch.nodes.length > 0 ? { sketch: q.sketch } : {}),
         ...(q.cuts.length > 0 ? { cuts: q.cuts } : {}),
         ...(q.strikes.length > 0 ? { strikes: q.strikes } : {}),

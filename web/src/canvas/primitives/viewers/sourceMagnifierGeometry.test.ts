@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { PixelRect } from "@/lib/pdfHighlight";
 
-import { intersectRects, placeMagnifier } from "./sourceMagnifierGeometry";
+import { intersectRects, placeMagnifier, worthMagnifying } from "./sourceMagnifierGeometry";
 
 const page = { left: 0, top: 0, width: 600, height: 800 };
 
@@ -75,5 +75,19 @@ describe("source magnifier placement", () => {
       .toEqual({ left: 0, top: 750, width: 180, height: 50 });
     expect(intersectRects(page, { left: 700, top: 900, width: 20, height: 20 }))
       .toEqual({ left: 700, top: 900, width: 0, height: 0 });
+  });
+});
+
+describe("when the lens is worth showing", () => {
+  it("magnifies a value too small to read", () => {
+    expect(worthMagnifying({ left: 0, top: 0, width: 40, height: 14 })).toBe(true);
+  });
+
+  it("leaves a whole drawing alone, since the lens would show only its middle", () => {
+    expect(worthMagnifying({ left: 0, top: 0, width: 640, height: 320 })).toBe(false);
+  });
+
+  it("leaves a wide row alone", () => {
+    expect(worthMagnifying({ left: 0, top: 0, width: 600, height: 16 })).toBe(false);
   });
 });

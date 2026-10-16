@@ -73,6 +73,32 @@ def bind_verified_evidence(row: dict, validation: dict[str, Any]) -> dict:
     }}
 
 
+_ROW_NAME_ALIASES = ("label", "name")
+
+
+def name_rows_by_key(data: dict) -> dict:
+    """A row's name lives in ``key``; a row named ``label`` or ``name`` is moved there.
+
+    Rows written with another name field rendered with no name at all, and
+    the writer only found out by looking at the canvas. Only a row without
+    a usable ``key`` is touched, so an explicit key always wins.
+    """
+    rows = data.get("rows")
+    if not isinstance(rows, list):
+        return data
+    named = []
+    for row in rows:
+        if isinstance(row, dict) and not (isinstance(row.get("key"), str) and row["key"].strip()):
+            alias = next(
+                (a for a in _ROW_NAME_ALIASES if isinstance(row.get(a), str) and row[a].strip()),
+                None,
+            )
+            if alias is not None:
+                row = {"key": row[alias], **{k: v for k, v in row.items() if k not in ("key", alias)}}
+        named.append(row)
+    return {**data, "rows": named} if named != rows else data
+
+
 def consume_evidence_requests(data: dict) -> dict:
     rows = data.get("rows")
     if not isinstance(rows, list):

@@ -110,6 +110,21 @@ describe("IntentsPanel listing", () => {
     });
     expect(resolve).toHaveBeenCalledWith("i1", { dismissed: true });
   });
+
+  it("shows a stale intent greyed, with why and a visible remove", async () => {
+    const resolve = vi.spyOn(intentsApi.intents, "resolve").mockResolvedValue(
+      makeIntent({ status: "resolved" }),
+    );
+    renderPanel({ open: [makeIntent({ stale: "the element it points at was deleted" })] });
+    expect(screen.getByTestId("intent-row").hasAttribute("data-stale")).toBe(true);
+    expect(screen.getByTestId("intent-stale").textContent).toContain("the element it points at was deleted");
+    const remove = screen.getByRole("button", { name: "Remove stale intent" });
+    expect(remove.textContent).toBe("remove");
+    await act(async () => {
+      fireEvent.click(remove);
+    });
+    expect(resolve).toHaveBeenCalledWith("i1", { dismissed: true });
+  });
 });
 
 describe("IntentsPanel create form", () => {

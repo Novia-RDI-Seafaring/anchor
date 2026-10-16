@@ -3,6 +3,7 @@ import { Ink } from "./Ink";
 import { ArchivedNotes, LiveNotes } from "./NotesLayer";
 import { deriveMarkupRender } from "./renderModel";
 import { Replies } from "./Replies";
+import { useReplyReturn } from "./replyReturn";
 import { SelectionControls } from "./SelectionControls";
 import { Hotbar, Readout, SendRemark } from "./Stacks";
 import type { MarkupProps } from "./types";
@@ -29,6 +30,7 @@ export function IntentOverlay(props: MarkupProps) {
   const ink = useInkGestures(withStacks);
   const controls = { ...withStacks, ...ink };
   usePenInput(controls);
+  useReplyReturn({ active: props.active, filed: state.filed, kept: state.kept, boxes: geometry.boxes, host: props.host, onEnter: props.onEnter });
   if (!props.active) return null;
   const model = { ...controls, ...deriveMarkupRender(controls) };
   const { lifted } = model;

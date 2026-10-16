@@ -13,11 +13,43 @@ What it is:
   returns a self-correcting error.
 - You have HTTP/MCP/CLI parity for every operation. Pick MCP from here.
 
+Your working folder is your project (load-bearing):
+- If you work in a folder (your harness's project or workspace, a repo, a
+  case folder), call `create_project(folder=<its absolute path>)` once at
+  the start, before you ingest anything. It returns the project that folder
+  already is (or sits inside), or makes the folder a project named after it,
+  and makes it this session's default. What you ingest and draw then stays
+  with that folder, which is what the user expects.
+- Do not fall back to the environment's `default` project just because no
+  project was named. Use `default` only when there is no working folder.
+- If the user names a project, use theirs.
+- When you start the web app for the user, serve the same project:
+  `anchor serve --env <env> --project <that project>`. `server_info` tells
+  you whether one is already running for it, and at which URL.
+- Open the canvas once. If your harness can show a web page itself (an
+  in-app browser or preview), use that and do not also launch the system
+  browser; a "queued" reply from it means it is opening. Use the system
+  browser only when there is no in-app one.
+
+When an ingest comes back without gold:
+- An `ingest_pdf` result with `note.gold_skipped` means no model key reached
+  this server. The usual cause: the agent app was started from the Dock or
+  Finder and never read the shell profile that exports the key. Tell the
+  user that, and give them the exact file the note names. Never ask them to
+  paste the key into the chat, and do not write it yourself.
+- Do not report "no vision provider". The vision model is configured; only
+  its key is missing. Say which fallback you used (`profile="text"` reads no
+  figures) so the user knows to re-ingest with `force=true` once the key is in.
+
 Source-grounding (load-bearing):
 - Every value placed on the canvas should carry `data.source_ref`
-  pointing back at its origin (page+bbox for PDFs, region_id for
-  gold-extracted regions). Spec rows carry their own per-row
+  pointing back at its origin. Spec rows carry their own per-row
   source_ref. This is the project's primary trust mechanism.
+- Point at the smallest thing that holds the value. A value read from a
+  table cell cites that cell: `{slug, page, region_id, cell: {row,
+  col}}`, with the row and col of the cell whose text is the value, as
+  `get_region_content` lists them. The table's region bbox is for a row
+  that quotes the whole table, not for one number in it.
 
 When the user asks you to populate placeholders:
 1. `canvas_list_placeholders(workspace_slug)` returns the ones flagged.
@@ -32,20 +64,35 @@ If you're producing a snapshot of the canvas, use `canvas_snapshot(...,
 format: "inline")` so the host renders the image inline.
 
 Scoped asks (your inbox, load-bearing):
-- At the start of any Anchor task and whenever idle, call
-  `list_pending_intents`. Take one. Its `targets` name the canvas
+- The user can draw on a canvas and send you a remark. It waits in this
+  inbox; nothing pushes it into your chat. So read the inbox at the start
+  of EVERY turn in a session where Anchor is in use, not only on Anchor
+  tasks: `list_pending_intents`. It is cheap, and the board shows the user
+  "seen by <you>" once you have read a remark.
+- When you open or hand over a canvas, tell the user in one line that they
+  can mark things on it and send them to you, and that any message to you
+  (for example "check the board") makes you pick them up. Without that
+  line the user sends remarks into silence.
+- Take one pending intent at a time. Its `targets` name the canvas
   elements the ask is about; read them with `canvas_get_state` (filter by
   id) and `canvas_snapshot` if you want the picture.
-- Reply in the thread with `intent_add_item`. Ask a `question` when the
+- Reply in the thread. Ask a `question` with `intent_add_item` when the
   ask is ambiguous and wait (poll `get_intent` for the answer). Never edit
-  the targeted elements directly: propose a `suggestion` (staged ops plus
-  a rationale). Group dependent ops into one suggestion; keep independent
-  changes separate so partial approval is safe. A revision after feedback
-  is a new suggestion with `supersedes`.
-- For a small, plain change, use `intent_act` to post and apply it in one
-  call, leaving the human keep / revert controls. For a large, destructive,
-  or ambiguous change, stage a suggestion with `intent_add_item` or use
-  `intent_act` with `apply: false`, then wait for human review.
+  the targeted elements with the canvas tools: change them through the
+  thread.
+- Show the plan first. Before you change anything, post one `message`
+  per element you are about to add, with a `place` where it will land
+  ("adding PX-10 dimensions table"). Each shows on the board as a ghost
+  box, so the user sees how you read the ask while you work.
+- Then act with `intent_act`, passing those message ids as `done`: it applies your ops at
+  once and the user sees the real result with keep and put back beside it.
+  This is the default. Stage instead (`apply: false`, the user approves
+  before anything moves) only for a change that is large or hard to judge
+  by eye, such as removing elements or rewriting many rows. Group
+  dependent ops into one act; keep independent changes separate. A
+  revision after feedback names the earlier suggestion in `supersedes`.
+  `intent_apply` is the human's approval verb: never use it to approve your
+  own staged work.
 - `intent_apply` / `intent_answer` / `intent_decline` are the human's
   verbs. Do not use them to approve, answer, or decline your own staged work.
 - Post a `result` item when done, then `resolve_intent`.
@@ -97,6 +144,8 @@ Scoped-ask threads (#343):
   result. Ops: {type: NodeAdded|NodeUpdated|NodeRemoved|EdgeAdded|
   EdgeUpdated|EdgeRemoved, payload}. A NodeAdded/EdgeAdded `id` is a client
   id later ops in the batch may reference.
+- intent_act(id, text, ops, apply?) - the default way to make a change:
+  applies at once; the human keeps it or puts it back.
 - get_intent(id) - read one thread in full (states, answers).
 - intent_act(id, text, ops, apply?, done?, question?, result?, resolve?) -
   post and apply a small, plain change with keep / revert available. Use

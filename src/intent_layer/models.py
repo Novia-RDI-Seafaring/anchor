@@ -134,6 +134,10 @@ class ThreadItem(BaseModel):
     ops: list[dict[str, Any]] | None = None
     supersedes: str | None = None
     applied_versions: list[int] | None = None
+    #: Suggestion only: who applied it. A person approving it has judged it
+    #: already; an agent applying its own is still waiting for keep or put
+    #: back. Without it the board asked to keep what was just approved.
+    applied_by: Actor | None = None
     #: Where on the canvas this item belongs, ``{x, y, width?, height?}`` in
     #: canvas coordinates. Optional: most items are lines in a thread, not
     #: things on the board. The sketch that came in with the intent carries
@@ -164,6 +168,8 @@ class ThreadItem(BaseModel):
             d["supersedes"] = self.supersedes
         if self.applied_versions is not None:
             d["applied_versions"] = list(self.applied_versions)
+        if self.applied_by is not None:
+            d["applied_by"] = self.applied_by.model_dump()
         if self.place is not None:
             d["place"] = dict(self.place)
         if self.undo_ops is not None:
@@ -200,6 +206,11 @@ class ThreadItem(BaseModel):
             ),
             applied_versions=(
                 [int(v) for v in versions_raw] if isinstance(versions_raw, list) else None
+            ),
+            applied_by=(
+                Actor(**raw["applied_by"])
+                if isinstance(raw.get("applied_by"), dict) and raw["applied_by"].get("kind")
+                else None
             ),
             place=(dict(raw["place"]) if isinstance(raw.get("place"), dict) else None),
             undo_ops=(
@@ -243,6 +254,14 @@ class Intent(BaseModel):
     targets: list[JsonValue] = Field(default_factory=list)
     base_version: int | None = None
     items: list[ThreadItem] = Field(default_factory=list)
+    #: Why a pending intent can no longer be acted on, e.g. every element it
+    #: points at was deleted. Worked out by the host when the intent is read;
+    #: never persisted.
+    stale: str | None = Field(default=None, exclude=True)
+    #: When an agent's inbox read first returned this intent, and who read it.
+    #: Lets the asker tell "nobody is listening" from "seen, still working".
+    seen_at: float | None = None
+    seen_by: Actor | None = None
 
     @field_validator("targets", mode="before")
     @classmethod
@@ -269,6 +288,12 @@ class Intent(BaseModel):
             d["resolved_at"] = self.resolved_at
         if self.result is not None:
             d["result"] = self.result
+        if self.stale is not None:
+            d["stale"] = self.stale
+        if self.seen_at is not None:
+            d["seen_at"] = self.seen_at
+        if self.seen_by is not None:
+            d["seen_by"] = self.seen_by.model_dump()
         return d
 
     @classmethod
@@ -298,4 +323,10 @@ class Intent(BaseModel):
                 for i in (raw.get("items") or [])
                 if isinstance(i, dict)
             ],
+            seen_at=(float(raw["seen_at"]) if raw.get("seen_at") is not None else None),
+            seen_by=(
+                Actor(**raw["seen_by"])
+                if isinstance(raw.get("seen_by"), dict) and raw["seen_by"].get("kind")
+                else None
+            ),
         )

@@ -404,6 +404,7 @@ class IngestService:
                         workspace_id=publish_workspace_id,
                         record_activity=record_activity,
                         finish_stage=finish_stage,
+                        dpi=dpi,
                     )
                 region_count = gold.region_count
                 invalid_region_count = gold.invalid_region_count

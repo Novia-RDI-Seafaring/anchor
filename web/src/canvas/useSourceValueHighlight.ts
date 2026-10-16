@@ -8,12 +8,17 @@ function validBox(box: number[] | undefined): box is number[] {
 }
 
 function scopedTextQuad(box: number[], clip: number[]): number[] | null {
-  // PDF font metrics can extend slightly beyond Docling's text/cell box.
-  // Bound that difference in PDF points and keep the drawn mark in its locator.
-  const tolerance = 1;
-  if (!validBox(box)
-    || box[0]! < clip[0]! - tolerance || box[1]! < clip[1]! - tolerance
-    || box[2]! > clip[2]! + tolerance || box[3]! > clip[3]! + tolerance) return null;
+  // PDF font metrics extend beyond Docling's text/cell box, which hugs the
+  // glyphs: the text search returns the font's whole line box, ascender to
+  // descender. That bleed is vertical and grows with the type size -- a
+  // 9 pt line sits about 1.8 pt below its digits -- so above and below it is
+  // bounded by a share of the line's height, and sideways by a point.
+  // The drawn mark is still cut to the locator.
+  if (!validBox(box)) return null;
+  const across = 1;
+  const down = Math.max(1, 0.25 * (box[3]! - box[1]!));
+  if (box[0]! < clip[0]! - across || box[1]! < clip[1]! - down
+    || box[2]! > clip[2]! + across || box[3]! > clip[3]! + down) return null;
   const scoped = [
     Math.max(box[0]!, clip[0]!), Math.max(box[1]!, clip[1]!),
     Math.min(box[2]!, clip[2]!), Math.min(box[3]!, clip[3]!),
@@ -83,5 +88,7 @@ export function useSourceValueHighlight(
     : matches.length > 1 ? "Ambiguous source: multiple matching values."
     : matches.length === 0 ? "Exact source value not located."
     : null;
-  return { resolvedBbox, valueQuads: matches.length === 1 ? matches : [], status };
+  // Asked and not yet answered: the place is about to be known exactly.
+  const resolving = !!key && needsResolution && resolution?.key !== key;
+  return { resolvedBbox, resolving, valueQuads: matches.length === 1 ? matches : [], status };
 }

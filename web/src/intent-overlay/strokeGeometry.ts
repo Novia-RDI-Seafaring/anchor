@@ -35,6 +35,11 @@ export type Box = { id: string; x: number; y: number; width: number; height: num
 export const LOOP_CLOSE_RATIO = 0.35;
 /** Below this the stroke is a tap, not a gesture. */
 export const MIN_STROKE_PX = 6;
+/**
+ * Below this reach on screen, in pixels, a stroke is a mis-click or a
+ * wobble rather than a mark: about five times the ink's width.
+ */
+export const MIN_STROKE_REACH_PX = 12;
 
 /** Total length of the path, used to tell a tap from a stroke. */
 export function strokeLength(points: Point[]): number {

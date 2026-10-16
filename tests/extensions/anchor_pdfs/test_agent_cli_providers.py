@@ -32,7 +32,7 @@ from anchor.extensions.anchor_pdfs.infra.llm.agent_cli import (
 PNG = b"\x89PNG\r\n\x1a\nfake"
 REGION = {
     "id": "r1", "kind": "table", "title": "Motor sizes", "description": "kW per frame",
-    "bbox": [10, 20, 300, 120], "tags": ["motor"], "entities": ["IEC80"],
+    "member_item_ids": ["p2-i3"], "bbox": [10, 20, 300, 120], "tags": ["motor"], "entities": ["IEC80"],
 }
 
 
@@ -158,6 +158,7 @@ async def test_codex_regions_attach_the_image_and_read_the_last_message(fake_env
     assert regions == [{k: v for k, v in REGION.items() if k != "bbox"}]
     call = json.loads(log.read_text())
     argv = call["argv"]
+    assert "page 3" in argv[-1] and "member_item_ids" in argv[-1]
     assert argv[0] == "exec"
     assert Path(argv[argv.index("--image") + 1]).name == "page.png"
     assert Path(argv[argv.index("--output-schema") + 1]).name == "schema.json"
@@ -301,3 +302,16 @@ def test_providers_are_offered_without_a_key():
         provider = get_provider(key)
         assert provider is not None and provider.does_vision and not provider.base_url_required
     assert agent_cli.AGENT_CLIS.keys() == {"claude", "codex"}
+
+
+@pytest.mark.asyncio
+async def test_an_empty_member_list_falls_back_to_the_bbox(fake_env):
+    fake_env("claude", CLAUDE_OK, {"regions": [{**REGION, "member_item_ids": []}]})
+
+    regions = await AgentCliRegionExtractor(ClaudeCodeCli()).extract_page(
+        page_image=PNG, page_no=1, docling_items=[], model="sonnet",
+        page_size=[595.0, 842.0], dpi=150,
+    )
+
+    assert "member_item_ids" not in regions[0]
+    assert regions[0]["bbox"] == REGION["bbox"]

@@ -159,6 +159,14 @@ BUILTIN_NODE_TYPES: list[NodeType] = [
         "node-level data.source_ref. Extra keys allowed (no warning).",
     ),
     _producer(
+        "section",
+        "A section of a document (open shape): a table, text block or list "
+        "shown as the page cut to its bbox. data.source_ref = {slug, page, "
+        "bbox, region_id}; data.kind = the region kind (table, text, list, "
+        "...), shown with the page as a hint over the title. Made by dragging "
+        "a section out of a document. Extra keys allowed (no warning).",
+    ),
+    _producer(
         "document",
         "Ingested-PDF document card (open shape). data.slug = the document "
         "slug, data.page = current page. Extra keys allowed (no warning).",

@@ -152,5 +152,7 @@ export function useIntentsFeed(): IntentsFeed {
   }, [refresh]);
 
   const { open, resolved } = useMemo(() => splitIntents(items), [items]);
-  return { items, open, resolved, openCount: open.length, error, refresh };
+  // The badge counts work an agent can still do; a stale intent waits only
+  // for the reader to remove it.
+  return { items, open, resolved, openCount: open.filter((i) => !i.stale).length, error, refresh };
 }
