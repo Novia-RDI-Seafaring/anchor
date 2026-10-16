@@ -135,6 +135,7 @@ export function previewOps(
       const was = working[id];
       if (!was) { stale = true; continue; }
       const fields = (payload.fields ?? {}) as Record<string, unknown>;
+      if (fields.parent != null && !working[String(fields.parent)]) { stale = true; continue; }
       const next: NodeLike = {
         ...was,
         ...(fields.x != null ? { x: Number(fields.x) } : {}),

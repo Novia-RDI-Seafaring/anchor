@@ -267,6 +267,14 @@ class WorkspaceBatchOperations:
                 raise BatchApplyError(
                     index, f"node {payload['id']!r} does not exist", stale=True,
                 )
+            fields = payload.get("fields")
+            if cls is NodeUpdated and isinstance(fields, dict) and fields.get("parent") is not None:
+                fields = dict(fields)
+                parent = resolve(fields["parent"])
+                if not isinstance(parent, str) or parent not in sim.nodes:
+                    raise BatchApplyError(index, f"parent {parent!r} does not exist", stale=True)
+                fields["parent"] = parent
+                payload["fields"] = fields
         else:  # EdgeUpdated / EdgeRemoved
             payload["id"] = resolve(payload.get("id"))
             if payload["id"] not in sim.edges:

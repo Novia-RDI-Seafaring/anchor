@@ -176,4 +176,14 @@ describe("previewing a suggestion", () => {
     expect(previewOps([parent, { type: "NodeRemoved", payload: { id: "parent" } }, child], nodes).stale).toBe(true);
     expect(previewOps([{ ...child, payload: { ...child.payload, parent: "root" } }], nodes).stale).toBe(false);
   });
+
+  it("marks an updated missing parent stale and checks the evolving batch", () => {
+    const reparent = { type: "NodeUpdated", payload: { id: "dims", fields: { parent: "parent" } } };
+    expect(previewOps([reparent], nodes)).toEqual({ nodes: [], edges: [], stale: true });
+    const parent = { type: "NodeAdded", payload: { id: "parent", x: 0, y: 0 } };
+    expect(previewOps([parent, reparent], nodes).stale).toBe(false);
+    expect(previewOps([parent, { type: "NodeRemoved", payload: { id: "parent" } }, reparent], nodes).stale).toBe(true);
+    expect(previewOps([{ ...reparent, payload: { id: "dims", fields: { parent: "root" } } }], nodes).stale).toBe(false);
+    expect(previewOps([{ ...reparent, payload: { id: "dims", fields: { parent: null } } }], nodes).stale).toBe(false);
+  });
 });
