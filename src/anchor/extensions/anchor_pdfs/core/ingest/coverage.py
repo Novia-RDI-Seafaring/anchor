@@ -128,6 +128,21 @@ def _far_apart(a: dict[str, Any], b: dict[str, Any]) -> bool:
     return gap > _MAX_RUN_GAP
 
 
+def _outside_heading_flow(
+    heading: dict[str, Any], candidate: dict[str, Any]
+) -> bool:
+    """Reject a heading when reading order jumps above its block.
+
+    Late loose drawing labels can follow a table near the page bottom.
+    Their source order does not make that heading evidence for their
+    meaning. Missing geometry retains the legacy order.
+    """
+    frame, box = _bbox4(heading.get("bbox")), _bbox4(candidate.get("bbox"))
+    if frame is None or box is None:
+        return False
+    return box[3] < frame[1] - _CONTAIN_TOLERANCE
+
+
 def _next_region_index(regions: list[dict[str, Any]]) -> int:
     """Continue the per-page ``r{n}`` sequence after the highest authored id."""
     highest = 0
@@ -255,6 +270,7 @@ def synthesize_coverage_regions(
         return candidates[pos]
 
     heading: str | None = None
+    heading_item: dict[str, Any] | None = None
     pending_heading: dict[str, Any] | None = None  # uncovered heading awaiting a run
     run: list[int] = []
     run_chars = 0
@@ -292,11 +308,16 @@ def synthesize_coverage_regions(
         if label in HEADING_LABELS:
             flush_run()
             heading = _title_from_text(text, "") or None
+            heading_item = cand
             pending_heading = {**cand, "_pos": pos} if cid not in covered else None
             continue
 
         if label not in MEANINGFUL_LABELS:
             continue
+        if heading_item is not None and _outside_heading_flow(heading_item, cand):
+            flush_run()
+            heading = None
+            heading_item = None
         if cid in covered or _inside_authored_region(cand, regions):
             flush_run()
             continue
