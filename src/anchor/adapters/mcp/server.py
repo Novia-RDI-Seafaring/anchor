@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import jsonschema
 from mcp.server import Server, ServerRequestContext
 from mcp.types import (
     CallToolRequestParams,
@@ -492,11 +493,29 @@ def build_mcp_server(
     cad_names = {d["name"] for d in cad_defs}
     sysml_names = {d["name"] for d in sysml_defs} | getattr(sysml_handlers, "LEGACY_TOOL_NAMES", set())
 
+    # Advertising is tiered, but every callable tool needs the same input guard.
+    tool_schemas = {d["name"]: d["inputSchema"] for d in all_defs}
+    for alias, canonical in {
+        **fmu_handlers.LEGACY_TOOL_ALIASES, **sysml_handlers.LEGACY_TOOL_ALIASES,
+    }.items():
+        if canonical in tool_schemas:
+            tool_schemas[alias] = tool_schemas[canonical]
+
     async def call_tool(
         ctx: ServerRequestContext, params: CallToolRequestParams,
     ) -> CallToolResult:
         name = params.name
         arguments = params.arguments or {}
+        schema = tool_schemas.get(name)
+        if schema is not None:
+            try:
+                jsonschema.validate(instance=arguments, schema=schema)
+            except jsonschema.ValidationError as exc:
+                # SDK v1 rejected invalid arguments before our handler ran.
+                return CallToolResult(
+                    is_error=True,
+                    content=[TextContent(type="text", text=f"Input validation error: {exc.message}")],
+                )
         args = dict(arguments)
         # The activity log counts the call whatever happens to it: an agent's
         # cost is in calls, and a failed one cost a turn too. The project is
