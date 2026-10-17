@@ -147,6 +147,7 @@ def build_index(docling: dict[str, Any], *, filename: str = "", title: str = "")
     figures: list[dict[str, Any]] = []
 
     last_header_by_page: dict[int, tuple[str, list[str]]] = {}
+    headers_by_page: dict[int, list[dict[str, Any]]] = {}
     resolved_title = title
 
     for it in items:
@@ -167,12 +168,15 @@ def build_index(docling: dict[str, Any], *, filename: str = "", title: str = "")
             if "group_path" in it:
                 heading["group_path"] = it["group_path"]
             outline.append(heading)
+            headers_by_page.setdefault(page, []).append(heading)
             last_header_by_page[page] = (text, it.get("group_path", []))
             if not resolved_title:
                 resolved_title = text
 
         elif label == "table":
-            caption = _index_caption(it, groups, last_header_by_page.get(page))
+            caption = _index_caption(
+                it, groups, last_header_by_page.get(page), headers_by_page.get(page, []),
+            )
             header_row, first_col, shape = _summarize_table_cells(it.get("cells"))
             tables.append({
                 "id": f"t{len(tables) + 1}",
@@ -215,6 +219,7 @@ def _index_relationships(item: dict[str, Any]) -> dict[str, Any]:
 def _index_caption(
     item: dict[str, Any], groups: dict[str, dict[str, Any]],
     preceding_header: tuple[str, list[str]] | None,
+    preceding_headers: list[dict[str, Any]] | None = None,
 ) -> str:
     captions = item.get("captions", [])
     explicit = " ".join(
@@ -224,8 +229,17 @@ def _index_caption(
     )
     if explicit:
         return explicit
+    if item.get("label") == "table":
+        title = _table_title_row(item.get("cells"))
+        if title:
+            return title
     path = item.get("group_path", [])
-    if preceding_header and preceding_header[1] == path:
+    spatial_header = None
+    if preceding_headers is not None and "group_path" in item:
+        spatial_header = _spatial_table_header(item, preceding_headers)
+        if spatial_header:
+            return spatial_header
+    if spatial_header is None and preceding_header and preceding_header[1] == path:
         return preceding_header[0]
     for ref in reversed(path):
         group = groups.get(ref, {})
@@ -233,6 +247,77 @@ def _index_caption(
             return group["name"]
     # Legacy payloads have no tree metadata; retain their preceding-header fallback.
     return preceding_header[0] if preceding_header and "group_path" not in item else ""
+
+
+def _spatial_table_header(
+    item: dict[str, Any], headers: list[dict[str, Any]],
+) -> str | None:
+    """Use top-left geometry for tree-aware extracts; None keeps legacy fallback."""
+    bbox = _clean_bbox(item.get("bbox"))
+    if len(bbox) != 4 or not (bbox[0] < bbox[2] and bbox[1] < bbox[3]):
+        return None
+    candidates = [
+        header for header in headers
+        if header.get("group_path", []) == item.get("group_path", [])
+        and len(header["bbox"]) == 4
+        and header["bbox"][0] < header["bbox"][2]
+        and header["bbox"][1] < header["bbox"][3]
+    ]
+    if not candidates:
+        return None
+    above = [
+        header for header in candidates
+        if header["bbox"][3] <= bbox[1]
+        and max(header["bbox"][0], bbox[0]) < min(header["bbox"][2], bbox[2])
+    ]
+    if not above:
+        return ""
+    return min(above, key=lambda header: (
+        bbox[1] - header["bbox"][3], abs(bbox[0] - header["bbox"][0]),
+    ))["title"]
+
+
+def _table_title_row(cells: Any) -> str:
+    """Recognize a textual table-wide band above a complete multi-column body.
+
+    A lone unspanned cell can instead be a data row with a missing value.
+    Keep it as data, along with column headers and numeric spanning values.
+    This only supplies a caption; cell identities and geometry stay intact.
+    """
+    clean = _clean_table_cells(cells)
+    rows: dict[int, list[dict[str, Any]]] = {}
+    for cell in clean:
+        rows.setdefault(cell["row"], []).append(cell)
+    if len(rows) < 3 or sorted(rows) != list(range(len(rows))) or len(rows[0]) != 1:
+        return ""
+    first = rows[0][0]
+    text = first["text"].strip()
+    width = first.get("col_end", first.get("col_span", 1))
+    if (
+        first["col"] != 0 or not isinstance(width, int) or width < 2
+        or first.get("row_end", first.get("row_span", 1)) != 1
+        or first.get("row_span", 1) != 1
+        or first.get("col_span", width) != width
+        or first.get("column_header") or first.get("row_header")
+        or not any(char.isalpha() for char in text)
+        or any(char.isdigit() for char in text)
+    ):
+        return ""
+    for row, entries in rows.items():
+        if row == 0:
+            continue
+        if len(entries) != width or {cell["col"] for cell in entries} != set(range(width)):
+            return ""
+        if any(
+            cell.get("col_end", cell["col"] + 1) != cell["col"] + 1
+            or cell.get("col_span", 1) != 1
+            or cell.get("row_end", row + 1) != row + 1
+            or cell.get("row_span", 1) != 1
+            or not cell["text"].strip()
+            for cell in entries
+        ):
+            return ""
+    return text
 
 
 INDEX_CONTENT_FIELDS: tuple[str, ...] = ("cells",)
