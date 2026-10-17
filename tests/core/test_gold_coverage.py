@@ -6,6 +6,10 @@ covered in the session and keyed-ingest tests.
 """
 from __future__ import annotations
 
+from copy import deepcopy
+
+import pytest
+
 from anchor.extensions.anchor_pdfs.core.gold_ingest import GoldIngest
 from anchor.extensions.anchor_pdfs.core.ingest.coverage import (
     coverage_stats,
@@ -184,3 +188,85 @@ def test_a_run_breaks_where_reading_order_jumps_across_the_page():
     ]
     extra = synthesize_coverage_regions(1, cands, regions=[])
     assert [r["member_item_ids"] for r in extra] == [["p1-i15"], ["p1-i17", "p1-i18"]]
+
+
+def test_upward_jump_does_not_give_drawing_labels_a_later_heading():
+    cands = [
+        {"id": "p1-i0", "label": "section_header", "text": "Motor overview",
+         "bbox": [45, 539, 117, 546]},
+        {"id": "p1-i1", "label": "text", "text": "B", "bbox": [46, 145, 52, 151]},
+        {"id": "p1-i2", "label": "text", "text": "A", "bbox": [250, 70, 256, 76]},
+        {"id": "p1-i3", "label": "text", "text": "7", "bbox": [80, 210, 86, 216]},
+    ]
+    before = deepcopy(cands)
+    extra = synthesize_coverage_regions(1, cands, regions=[])
+
+    assert [r["title"] for r in extra] == ["B", "A", "7"]
+    assert [r["content"] for r in extra] == ["B", "A", "7"]
+    assert [r["member_item_ids"] for r in extra] == [["p1-i1"], ["p1-i2"], ["p1-i3"]]
+    assert [r["bbox"] for r in extra] == [c["bbox"] for c in cands[1:]]
+    assert coverage_stats(cands, extra)["uncovered_items"] == 0
+    assert cands == before
+
+
+@pytest.mark.parametrize("containment", [False, True], ids=["member", "bbox"])
+def test_covered_upward_jump_clears_heading_before_the_next_fallback(containment):
+    cands = [
+        {"id": "p1-i0", "label": "section_header", "text": "Lower section",
+         "bbox": [40, 500, 120, 510]},
+        {"id": "p1-i1", "label": "text", "text": "Covered drawing label",
+         "bbox": [40, 100, 120, 110]},
+        {"id": "p1-i2", "label": "text", "text": "Loose note",
+         "bbox": [40, 600, 200, 610]},
+    ]
+    authored = [{"id": "r1", "kind": "diagram", "title": "Existing diagram",
+                 "member_item_ids": ["p1-i0"] if containment else ["p1-i0", "p1-i1"]}]
+    if containment:
+        authored[0]["bbox"] = [35, 95, 125, 115]
+    before = deepcopy(authored)
+    extra = synthesize_coverage_regions(1, cands, authored)
+
+    assert len(extra) == 1
+    assert extra[0]["id"] == "r2"
+    assert extra[0]["title"] == "Loose note"
+    assert extra[0]["member_item_ids"] == ["p1-i2"]
+    assert extra[0]["bbox"] == cands[2]["bbox"]
+    assert authored == before
+    assert coverage_stats(cands, authored + extra)["uncovered_items"] == 0
+
+
+def test_upward_table_fallback_keeps_its_cells_and_geometry():
+    cands = _cands(("section_header", "Lower section"), ("table", ""))
+    cands[0]["bbox"] = [0, 500, 200, 515]
+    before = deepcopy(cands)
+    extra = synthesize_coverage_regions(1, cands, regions=[])
+
+    assert len(extra) == 1
+    assert extra[0]["kind"] == "table"
+    assert extra[0]["title"].startswith("Flow")
+    assert extra[0]["member_item_ids"] == ["p1-i1"]
+    assert extra[0]["bbox"] == cands[1]["bbox"]
+    assert [(c["text"], c["bbox"]) for c in extra[0]["cells"]] == [
+        (c["text"], c["bbox"]) for c in cands[1]["cells"]
+    ]
+    assert cands == before
+
+
+def test_downward_gap_retains_heading_and_member_bbox_union():
+    cands = _cands(("section_header", "Operating data"), ("text", "35 m3/h"))
+    cands[1]["bbox"] = [20, 600, 180, 615]
+    extra = synthesize_coverage_regions(1, cands, regions=[])
+
+    assert extra[0]["title"] == "Operating data"
+    assert extra[0]["member_item_ids"] == ["p1-i0", "p1-i1"]
+    assert extra[0]["bbox"] == [0, 100, 200, 615]
+
+
+def test_heading_without_geometry_retains_source_order_context():
+    cands = _cands(("section_header", "Operating data"), ("text", "35 m3/h"))
+    cands[0]["bbox"] = []
+    extra = synthesize_coverage_regions(1, cands, regions=[])
+
+    assert extra[0]["title"] == "Operating data"
+    assert extra[0]["member_item_ids"] == ["p1-i0", "p1-i1"]
+    assert extra[0]["bbox"] == cands[1]["bbox"]
