@@ -27,11 +27,12 @@ def test_wait_returns_an_ask_filed_while_waiting_through_another_service(tmp_pat
         async def file_later():
             await asyncio.sleep(0.2)
             with actor_scope(PERSON):
-                await theirs.enqueue("user_request", origin_canvas_id="pumps")
+                return await theirs.enqueue("user_request", origin_canvas_id="pumps")
 
         filer = asyncio.create_task(file_later())
         found = await mine.wait(reader=ME, timeout=3, poll=0.05)
-        await filer
+        filed = await filer
+        assert filed.origin_canvas_id == "pumps"
         assert found is not None and found.origin_canvas_id == "pumps"
         assert found.claimed_by == ME
 
