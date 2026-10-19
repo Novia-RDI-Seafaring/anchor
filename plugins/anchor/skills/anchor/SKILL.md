@@ -122,6 +122,9 @@ the canvas `base_version` at ask time, and `items` (the conversation).
   at the start of every turn in a session where Anchor is in use, and
   whenever you are idle: `list_pending_intents` (`anchor intents` on the
   CLI). Take one.
+- The canvas the user has open is the one they mean unless they name
+  another. With no `canvas` given, the inbox reads that canvas and counts
+  what waits elsewhere; report the rest in one line, not as a list.
 - When you open or hand over a canvas, tell the user in one line that they
   can mark things on it and send them to you, and that any message to you
   ("check the board") makes you pick them up. An intent

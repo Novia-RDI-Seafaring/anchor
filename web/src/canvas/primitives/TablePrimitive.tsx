@@ -9,6 +9,7 @@ import { placesFromAlso } from "@/canvas/sourceHighlight";
 import { currentEvidenceCheck, evidenceLabels, evidenceState, type EvidenceRow } from "@/canvas/evidence";
 import { refReview } from "@/canvas/refReview";
 import { RefReviewChip, refVerdict } from "@/canvas/RefReviewChip";
+import { useCanvasStore } from "@/stores/canvasStore";
 import { SourceAnchorButton } from "@/canvas/SourceAnchorButton";
 import { resolveText } from "@/canvas/colors";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
@@ -107,7 +108,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   // the canonical rows change from outside (SSE echo, remote agent edit).
   const [rows, setRows] = useState<Row[]>(canonicalRows);
   const [checkProgress, setCheckProgress] = useState<{
-    index: number; row: Row; phase: "running" | "failed";
+    index: number; row: Row; phase: "running" | "failed" | "done";
   } | null>(null);
   const checkRequest = useRef<symbol | null>(null);
   const latestCanonicalRows = useRef(canonicalRows);
@@ -130,7 +131,12 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   const persistRows = (next: Row[]) => {
     if (!workspaceSlug || useUiStore.getState().navigationMode === "hand") return;
     canvases
-      .patchNode(workspaceSlug, id, { data: { ...(d ?? {}), rows: next } })
+      // The stored data, not `d`: what the card renders also carries the
+      // node's title, and writing that back froze it into a hidden
+      // `data.label` that covered every later rename.
+      .patchNode(workspaceSlug, id, {
+        data: { ...(useCanvasStore.getState().nodes[id]?.data ?? {}), rows: next },
+      })
       .catch((err) => {
         // eslint-disable-next-line no-console
         console.error("row edit failed", err);
@@ -157,7 +163,8 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       }
       // An intervening SSE update owns the rows; a late response cannot undo it.
       if (latestCanonicalRows.current === before && latestRows.current === rows) setRows(savedRows);
-      setCheckProgress(null);
+      // The reader asked, so the answer shows under the row this once.
+      setCheckProgress({ index, row: savedRows[index], phase: "done" });
     } catch {
       if (checkRequest.current === token) setCheckProgress({ index, row, phase: "failed" });
     } finally {
@@ -458,6 +465,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
               const progress = checkProgress?.index === i && checkProgress.row.key === r.key
                 && checkProgress.row.value === r.value
                 && JSON.stringify(checkProgress.row.source_ref) === JSON.stringify(r.source_ref)
+                && (checkProgress.phase !== "done" || check)
                 ? checkProgress : null;
               return (
                 <Fragment key={`row-${i}`}>
@@ -523,7 +531,11 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                       <RefReviewChip
                         readOnly={handMode}
                         label={r.key || `row ${i + 1}`}
+                        claim={r.value || undefined}
                         review={refReview(r)}
+                        checkNote={check
+                          ? `Last check: ${check.status === "verified" ? "verified" : "not verified"}. ${check.message} ${check.next_step}`
+                          : undefined}
                         onRevalidate={
                           canEdit && status !== "verified" && checkProgress?.phase !== "running"
                             ? () => { void revalidateRow(i); }
@@ -561,11 +573,15 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                     />
                   </td>
                 </tr>
-                {progress || check ? (
+                {/* Only the check the reader just ran speaks under the row:
+                    in flight, failed, or its answer. What an earlier or an
+                    agent's check said lives in the anchor's menu, beside the
+                    reader's own verdict and note. */}
+                {progress ? (
                   <tr><td colSpan={3} className="px-3 pb-2 text-[10px] leading-snug text-neutral-600">
-                    <span role={progress?.phase === "failed" ? "alert" : "status"}>
-                      {progress ? progress.phase === "running" ? "Checking evidence..." :
-                        "Check request failed. Reload the table and try again; evidence was not confirmed." :
+                    <span role={progress.phase === "failed" ? "alert" : "status"}>
+                      {progress.phase === "running" ? "Checking evidence..." :
+                        progress.phase === "failed" ? "Check request failed. Reload the table and try again; evidence was not confirmed." :
                         check ? <>Check complete: {check.status === "verified" ? "Verified" : "Not verified"}. {check.message} {check.next_step}</> : null}
                     </span>
                   </td></tr>

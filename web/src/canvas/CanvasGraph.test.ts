@@ -79,3 +79,10 @@ it("keeps an explicit background below edges when its parent is an ordinary card
   expect(background.style?.zIndex).toBeLessThan(CANVAS_EDGE_Z_INDEX);
   expect(background.style?.zIndex).toBe(background.zIndex);
 });
+
+it("shows a renamed card's own label over a label left inside its data", () => {
+  const spec = { id: "spec", node_type: "spec", label: "PX-5", x: 0, y: 0, data: { label: "Max temp" } };
+  expect(toRfNode(spec, { spec }).data.label).toBe("PX-5");
+  const unnamed = { ...spec, label: "" };
+  expect(toRfNode(unnamed, { spec: unnamed }).data.label).toBe("Max temp");
+});

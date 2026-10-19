@@ -148,6 +148,35 @@ def _build_canvas_url(data_dir: Any, workspace_slug: str | None) -> dict[str, An
     }
 
 
+def _canvas_in_view(data_dir: Any) -> str | None:
+    """The one canvas a person has open in a browser, or ``None``."""
+    from anchor.infra.presence import fetch_viewing
+
+    viewing = fetch_viewing(Path(data_dir))
+    return viewing[0] if len(viewing) == 1 else None
+
+
+async def _scoped_inbox(intents: Any, canvas: str, text: str) -> str:
+    """Say which canvas an unnamed inbox read was scoped to, and what is elsewhere."""
+    scoped = _json.loads(text)
+    if not isinstance(scoped, dict) or not isinstance(scoped.get("intents"), list):
+        return text
+    here = {i.get("id") for i in scoped["intents"] if isinstance(i, dict)}
+    # No reader: counting the others must not mark them read.
+    elsewhere: dict[str, int] = {}
+    for intent in await intents.list_pending():
+        if intent.id not in here:
+            where = intent.origin_canvas_id or intent.target or "(no canvas)"
+            elsewhere[where] = elsewhere.get(where, 0) + 1
+    return _json.dumps({
+        **scoped,
+        "canvas": canvas,
+        "why": "No canvas was named, so this is the canvas open in the browser. "
+        "Pass `canvas` for another one.",
+        "elsewhere": elsewhere,
+    })
+
+
 def _served_projects(env_name: str) -> list[dict[str, Any]]:
     """Projects of ``env_name`` that a running ``anchor serve`` shows now."""
     from anchor.infra.serve_registry import list_serves
@@ -664,10 +693,17 @@ def build_mcp_server(
                 b = get_bundle(args.pop("project", None))
                 if b.intents is None:
                     raise RuntimeError("intent queue is not available")
+                inferred = None
+                if name == "list_pending_intents" and not args.get("canvas"):
+                    inferred = _canvas_in_view(b.config.data_dir)
+                    if inferred:
+                        args = {**args, "canvas": inferred}
                 text = await handlers_intents.call_tool(
                     b.intents, name, args, actor=_client_actor(ctx),
                     activity=ActivityLog(Path(b.config.data_dir)),
                 )
+                if inferred:
+                    text = await _scoped_inbox(b.intents, inferred, text)
             elif name in fmu_names:
                 b = get_bundle(args.pop("project", None))
                 if b.fmu is None:

@@ -288,6 +288,7 @@ def build_app(
     app.include_router(ingest_sessions.router)
     app.include_router(upload.router)
     app.include_router(sse.router)
+    app.include_router(sse.viewing_router)
     app.include_router(realtime.router)
     app.include_router(ingests.router)
     app.include_router(intents.router)
