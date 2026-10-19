@@ -14,7 +14,7 @@ from intent_layer.service import (
 )
 
 TOOL_NAMES = {
-    "list_pending_intents", "next_intent", "resolve_intent", "get_intent",
+    "list_pending_intents", "next_intent", "intents_wait", "resolve_intent", "get_intent",
     "intent_ask", "intent_add_item", "intent_update_item", "intent_answer",
     "intent_act", "intent_apply", "intent_revert", "intent_decline",
 }
@@ -34,6 +34,8 @@ def tool_definitions(*, target_schema: dict[str, Any] | None = None,
     schemas = {
         "list_pending_intents": ({"canvas": text, "include_stale": {"type": "boolean"}}, []),
         "next_intent": ({"canvas": text}, []),
+        "intents_wait": ({"canvas": text, "timeout_s": {"type": "number", "minimum": 0, "maximum": 120},
+                          "claim": {"type": "boolean"}}, []),
         "resolve_intent": ({**ident, "result": {"type": "object"}}, ["id"]),
         "get_intent": (ident, ["id"]),
         "intent_ask": ({"origin_canvas_id": text, "text": text,
@@ -88,6 +90,15 @@ async def _dispatch(intents: IntentService, name: str, args: dict[str, Any]) -> 
             reader=current_actor(),
         )
         return json.dumps({"intents": [i.to_dict() for i in pending]})
+    if name == "intents_wait":
+        timeout = min(120.0, max(0.0, float(args.get("timeout_s", 60) or 0)))
+        found = await intents.wait(
+            canvas=args.get("canvas"), reader=current_actor(), timeout=timeout,
+            claim=args.get("claim", True) is not False,
+        )
+        if found is None:
+            return json.dumps({"intent": None, "timed_out": True})
+        return json.dumps({"intent": found.to_dict()})
     if name == "next_intent":
         nxt = await intents.next(canvas=args.get("canvas"), reader=current_actor())
         return json.dumps({"intent": nxt.to_dict() if nxt is not None else None})

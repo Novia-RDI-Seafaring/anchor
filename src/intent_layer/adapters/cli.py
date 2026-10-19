@@ -54,6 +54,29 @@ def create_cli(get_service: Callable[[], IntentService], *,
     def next_intent(canvas: str | None = typer.Option(None, "--canvas")) -> None:
         run("next_intent", {"canvas": canvas})
 
+    @app.command("watch")
+    def watch(canvas: str | None = typer.Option(None, "--canvas"),
+              once: bool = typer.Option(False, "--once", help="Return after the first intent."),
+              timeout: float = typer.Option(60.0, "--timeout", help="Seconds per wait, at most 120."),
+              claim: bool = typer.Option(True, "--claim/--no-claim")) -> None:
+        """Print each intent that needs you as one JSON line, as it arrives.
+
+        Runs until stopped (Ctrl-C), or with --once until the first one. A
+        harness that can watch a command's output hears asks without polling.
+        """
+        while True:
+            body = json.loads(asyncio.run(call_tool(
+                get_service(), "intents_wait",
+                {"canvas": canvas, "timeout_s": timeout, "claim": claim}, actor=actor,
+            )))
+            if "error" in body:
+                typer.echo(json.dumps(body), err=True)
+                raise typer.Exit(1)
+            if body.get("intent") is not None:
+                typer.echo(json.dumps(body["intent"]))
+                if once:
+                    return
+
     @app.command("show")
     def show(intent_id: str) -> None:
         run("get_intent", {"id": intent_id})

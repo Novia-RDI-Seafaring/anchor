@@ -694,7 +694,7 @@ def build_mcp_server(
                 if b.intents is None:
                     raise RuntimeError("intent queue is not available")
                 inferred = None
-                if name == "list_pending_intents" and not args.get("canvas"):
+                if name in ("list_pending_intents", "intents_wait") and not args.get("canvas"):
                     inferred = _canvas_in_view(b.config.data_dir)
                     if inferred:
                         args = {**args, "canvas": inferred}
@@ -702,8 +702,10 @@ def build_mcp_server(
                     b.intents, name, args, actor=_client_actor(ctx),
                     activity=ActivityLog(Path(b.config.data_dir)),
                 )
-                if inferred:
+                if inferred and name == "list_pending_intents":
                     text = await _scoped_inbox(b.intents, inferred, text)
+                elif inferred:
+                    text = _json.dumps({**_json.loads(text), "canvas": inferred})
             elif name in fmu_names:
                 b = get_bundle(args.pop("project", None))
                 if b.fmu is None:

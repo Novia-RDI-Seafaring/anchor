@@ -262,6 +262,10 @@ class Intent(BaseModel):
     #: Lets the asker tell "nobody is listening" from "seen, still working".
     seen_at: float | None = None
     seen_by: Actor | None = None
+    #: The agent working on this intent, and until when. A listening agent
+    #: skips an intent another one holds, so two never act on the same ask.
+    claimed_by: Actor | None = None
+    claimed_until: float | None = None
 
     @field_validator("targets", mode="before")
     @classmethod
@@ -294,6 +298,9 @@ class Intent(BaseModel):
             d["seen_at"] = self.seen_at
         if self.seen_by is not None:
             d["seen_by"] = self.seen_by.model_dump()
+        if self.claimed_by is not None:
+            d["claimed_by"] = self.claimed_by.model_dump()
+            d["claimed_until"] = self.claimed_until
         return d
 
     @classmethod
@@ -323,6 +330,14 @@ class Intent(BaseModel):
                 for i in (raw.get("items") or [])
                 if isinstance(i, dict)
             ],
+            claimed_by=(
+                Actor(**raw["claimed_by"])
+                if isinstance(raw.get("claimed_by"), dict) and raw["claimed_by"].get("kind")
+                else None
+            ),
+            claimed_until=(
+                float(raw["claimed_until"]) if raw.get("claimed_until") is not None else None
+            ),
             seen_at=(float(raw["seen_at"]) if raw.get("seen_at") is not None else None),
             seen_by=(
                 Actor(**raw["seen_by"])

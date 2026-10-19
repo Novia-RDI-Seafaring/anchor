@@ -145,6 +145,26 @@ def create_router(get_intent_service: Callable[..., IntentService],
         return {"intents": [i.to_dict() for i in pending], "count": len(pending)}
 
 
+    @router.get("/wait")
+    async def wait(
+        canvas: str | None = None,
+        timeout_s: float = 60.0,
+        claim: bool = True,
+        intents: IntentService = Depends(get_intent_service),
+    ):
+        """Hold until an intent needs the calling agent, or ``timeout_s`` passes.
+
+        The long-poll the MCP ``intents_wait`` and ``intents watch`` use; at
+        most 120 seconds. Claims only for an agent caller."""
+        found = await intents.wait(
+            canvas=canvas, reader=_agent_reader(),
+            timeout=min(120.0, max(0.0, timeout_s)), claim=claim,
+        )
+        if found is None:
+            return {"intent": None, "timed_out": True}
+        return {"intent": found.to_dict()}
+
+
     @router.get("/all")
     async def list_all(
         canvas: str | None = None,
