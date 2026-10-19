@@ -120,6 +120,17 @@ CANVAS_URL_TOOL_DEFINITION = {
 }
 
 
+#: Said in the result, where it is acted on: agents read "localhost" as out
+#: of their reach and handed the link back, though the app's browser pane
+#: runs on this same machine, sometimes behind a tool loaded on demand.
+OPEN_NEXT = (
+    "Open this url now in the app's browser pane. It runs on this machine, so "
+    "a localhost address loads there; if your browser tool is not loaded yet, "
+    "load it first. Only when you have no browser at all, give the url to the "
+    "user."
+)
+
+
 def _build_canvas_url(data_dir: Any, workspace_slug: str | None) -> dict[str, Any]:
     """Where the user sees this project, from the serve bound to it."""
     from anchor.core.ids import validate_workspace_slug
@@ -145,6 +156,7 @@ def _build_canvas_url(data_dir: Any, workspace_slug: str | None) -> dict[str, An
         "project": info["project"],
         "running": True,
         "url": f"{serve['base_url']}/{path}",
+        "next": OPEN_NEXT,
     }
 
 
@@ -689,6 +701,13 @@ def build_mcp_server(
                     b.workspace, name, args,
                     actor=_client_actor(ctx), data_dir=Path(b.config.data_dir),
                 )
+                if name == "canvas_create_workspace":
+                    # A new canvas is made to be looked at: hand back where.
+                    made = _json.loads(text)
+                    if isinstance(made, dict) and "error" not in made:
+                        where = _build_canvas_url(b.config.data_dir, args.get("slug"))
+                        made.update({k: where[k] for k in ("url", "next", "start", "hint") if k in where})
+                        text = _json.dumps(made)
             elif name in intent_names:
                 b = get_bundle(args.pop("project", None))
                 if b.intents is None:

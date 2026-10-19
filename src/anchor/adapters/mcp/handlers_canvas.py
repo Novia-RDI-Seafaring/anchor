@@ -166,6 +166,30 @@ def _spec_rows_hint(node_type: str | None, data: dict[str, Any] | None) -> str |
     return None
 
 
+_UNSOURCED_NEXT = (
+    "These values point nowhere, so a reader cannot check them. Find each "
+    "in its document (locate_text or get_region_content give the region and, "
+    "in a table, the cell) and set the row's source_ref to {slug, page, "
+    "region_id, cell: {row, col}}. If you assumed a value rather than read "
+    "it, tell the user so."
+)
+
+
+def _unsourced(node: Any) -> dict[str, Any] | None:
+    """Rows on ``node`` that carry a value but no source, with how to fix it."""
+    data = getattr(node, "data", None) or {}
+    rows = data.get("rows") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        return None
+    bare = [
+        str(row.get("key") or f"row {i + 1}")
+        for i, row in enumerate(rows)
+        if isinstance(row, dict) and str(row.get("value") or "").strip()
+        and not row.get("source_ref")
+    ]
+    return {"rows": bare, "next": _UNSOURCED_NEXT} if bare else None
+
+
 async def call_tool(
     svc: WorkspaceService,
     name: str,
@@ -292,6 +316,9 @@ async def _dispatch_tool(
                 result["hint"] = hint
             if warning is not None:
                 result["warning"] = warning
+            unsourced = _unsourced(state.nodes.get(result["node_id"]))
+            if unsourced is not None:
+                result["unsourced"] = unsourced
             return json.dumps(result)
         if name == "canvas_node_types":
             return json.dumps(svc.node_types_schema(args.get("node_type")))
@@ -328,6 +355,9 @@ async def _dispatch_tool(
                 )
                 if warning is not None:
                     result["warning"] = warning
+                unsourced = _unsourced(state.nodes.get(node_id))
+                if unsourced is not None:
+                    result["unsourced"] = unsourced
             return json.dumps(result)
         if name == "canvas_remove_node":
             state, envelopes = await svc.remove_node(args["workspace_slug"], args["id"])

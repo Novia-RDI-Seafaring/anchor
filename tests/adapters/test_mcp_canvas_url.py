@@ -38,6 +38,7 @@ def test_canvas_url_names_the_start_page_or_one_canvas(data_dir):
         start = _build_canvas_url(data_dir, None)
         assert start["url"] == "http://127.0.0.1:8009/"
         assert start["project"] == "pumps"
+        assert "browser pane" in start["next"] and "load it first" in start["next"]
         assert _build_canvas_url(data_dir, "lkh")["url"] == "http://127.0.0.1:8009/c/lkh"
     finally:
         sr.unregister_serve(path)
