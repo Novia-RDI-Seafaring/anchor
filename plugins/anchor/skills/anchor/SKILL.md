@@ -167,6 +167,10 @@ The canvas has SSE. If a browser tab is open at the same time, the user
 sees your changes appear live. The server is authoritative and serialises
 commands per workspace, so you don't need to coordinate with the browser.
 
+When the user asks to see Anchor, the canvas or the UI, call `canvas_url`
+(`anchor canvas url` on the CLI) and open the address it returns. Never
+redraw a canvas as a picture or artifact of your own; that is not the canvas.
+
 ## Environments and projects
 
 An **environment** is a named config profile (provider, models, data zone) and
@@ -186,8 +190,9 @@ connected agent. Its model provider is outside Anchor's egress boundary. Never
 use a cloud-backed harness for content that is restricted to the local host.
 
 Over MCP, this server serves one environment. Project-scoped tools take an
-optional `project` argument; omit it for the default project. Use
-`list_projects` to see the options and `create_project` to make one. A
+optional `project` argument. When no project is named and you have no
+working folder, call `list_projects`; if there is more than one, ask the user
+which once, then `open_project` it. Use `create_project` to make one. A
 missing/unknown project returns a self-correcting error. You cannot cross to
 another environment from here; that is a separate named server.
 

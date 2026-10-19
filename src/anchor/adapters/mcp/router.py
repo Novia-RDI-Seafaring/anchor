@@ -59,6 +59,11 @@ class ProjectRouter:
         self._session_default: str | None = None
 
     # -- environment ------------------------------------------------------- #
+    @property
+    def session_default(self) -> str | None:
+        """The project ``open_project`` chose for this session, if any."""
+        return self._session_default
+
     def environment(self) -> Environment:
         return resolve_environment(self.env_arg)
 

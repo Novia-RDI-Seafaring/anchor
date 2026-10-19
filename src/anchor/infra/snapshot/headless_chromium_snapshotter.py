@@ -141,7 +141,18 @@ class HeadlessChromiumSnapshotter:
         target = slug_dir / f"{ts}.png"
 
         async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=True)
+            try:
+                browser = await pw.chromium.launch(headless=True)
+            except Exception as exc:  # noqa: BLE001
+                # Most often the browser was never downloaded. The picture is
+                # optional; the canvas itself is one URL away, so point there
+                # rather than leave the caller to improvise a stand-in.
+                raise RuntimeError(
+                    f"canvas_snapshot could not start a headless browser ({type(exc).__name__}), "
+                    f"so no picture was taken. To show the user the canvas, open {url} "
+                    f"or give them that URL; do not redraw it. To enable snapshots, run "
+                    f"`python -m playwright install chromium` with Anchor's Python."
+                ) from exc
             try:
                 ctx = await browser.new_context(viewport={"width": w, "height": h})
                 page = await ctx.new_page()

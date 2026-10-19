@@ -79,7 +79,7 @@ def _run(coro: Coroutine[Any, Any, Any]) -> Any:
         raise typer.Exit(code=1) from None
 
 
-def _canvas_url(slug: str, data_dir: Path | None = None) -> str:
+def _canvas_url(slug: str | None, data_dir: Path | None = None) -> str:
     """The web URL a canvas is viewed at: ``http://<host>:<port>/c/<slug>``.
 
     When a ``data_dir`` is given and a running ``anchor serve`` is actually
@@ -93,13 +93,14 @@ def _canvas_url(slug: str, data_dir: Path | None = None) -> str:
         from anchor.adapters.cli.common import resolve_serve_base_url
 
         base_url, _found = resolve_serve_base_url(data_dir)
-        return f"{base_url}/c/{slug}"
+        return f"{base_url}/c/{slug}" if slug else f"{base_url}/"
 
     from anchor.infra.config import AnchorConfig
 
     cfg = AnchorConfig()
     host = cfg.http_host if cfg.http_host not in ("0.0.0.0", "::") else "127.0.0.1"
-    return f"http://{host}:{cfg.http_port}/c/{slug}"
+    base_url = f"http://{host}:{cfg.http_port}"
+    return f"{base_url}/c/{slug}" if slug else f"{base_url}/"
 
 
 @canvas_app.command("list")
@@ -319,10 +320,12 @@ def canvas_review_proposal_set(
 
 @canvas_app.command("url")
 def canvas_url(
-    slug: str,
+    slug: str | None = typer.Argument(None, help="A canvas. Omit for the project's start page."),
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Print the web URL for a canvas (``http://<host>:<port>/c/<slug>``).
+
+    Without a slug, prints the project's start page, where every canvas is listed.
 
     Resolves the URL against a running ``anchor serve`` actually bound to this
     project's data dir, so the printed port is the real one (not a guessed
