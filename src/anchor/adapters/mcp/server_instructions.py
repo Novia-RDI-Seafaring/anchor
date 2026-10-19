@@ -73,6 +73,9 @@ Scoped asks (your inbox, load-bearing):
   of EVERY turn in a session where Anchor is in use, not only on Anchor
   tasks: `list_pending_intents`. It is cheap, and the board shows the user
   "seen by <you>" once you have read a remark.
+- The canvas the user has open is the one they mean unless they name
+  another. Report its remarks; sum up the rest in one line ("2 older
+  remarks on other canvases"), never as a list.
 - When you open or hand over a canvas, tell the user in one line that they
   can mark things on it and send them to you, and that any message to you
   (for example "check the board") makes you pick them up. Without that

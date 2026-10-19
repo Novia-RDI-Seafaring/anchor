@@ -88,6 +88,15 @@ class PresenceTracker:
         self._broadcast(workspace, exclude=client_id)
         return client_id, queue
 
+    def viewing(self) -> list[str]:
+        """Canvases a person has open in a browser now, latest opened first."""
+        latest = {
+            workspace: max(c["connected_at"] for c in conns.values() if c["kind"] == "human")
+            for workspace, conns in self._connections.items()
+            if any(c["kind"] == "human" for c in conns.values())
+        }
+        return sorted(latest, key=lambda w: latest[w], reverse=True)
+
     def disconnect(self, workspace: str, client_id: str) -> None:
         conns = self._connections.get(workspace)
         if not conns or client_id not in conns:
@@ -267,3 +276,25 @@ def fetch_presence(data_dir: Path, slug: str, *, timeout: float = 3.0) -> dict[s
         }
     data.setdefault("serve", base_url)
     return data
+
+
+def fetch_viewing(data_dir: Path, *, timeout: float = 3.0) -> list[str]:
+    """Canvases open in a browser on the serve bound to ``data_dir``.
+
+    Empty when no serve is up or it cannot be reached: then nobody is looking
+    at a canvas, and a caller falls back to whatever it does without one.
+    """
+    from anchor.infra.serve_registry import find_serve_for_data_dir
+
+    record = find_serve_for_data_dir(data_dir)
+    if record is None:
+        return []
+    try:
+        with urllib.request.urlopen(  # noqa: S310 - loopback serve from local registry
+            f"{record.base_url()}/api/presence/viewing", timeout=timeout,
+        ) as rsp:
+            data = json.loads(rsp.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError):
+        return []
+    viewing = data.get("viewing") if isinstance(data, dict) else None
+    return [w for w in viewing if isinstance(w, str)] if isinstance(viewing, list) else []

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import {
@@ -53,12 +53,33 @@ import {
 
 
 /** The menu's width: w-56 (224px) and its border. */
-const MENU_W = 226;
+const MENU_W = 224;
+/** Room the menu needs below the anchor before it opens above instead. */
+const MENU_H = 260;
+/** Room between anchor and menu, where the pointer sits. */
+const GAP = 8;
+/** How far the menu's edge reaches past the anchor's, so it reads as hung from it. */
+const OVERHANG = 6;
+
+export function menuPlacement(
+  anchor: { left: number; right: number; top: number; bottom: number },
+  view = { width: window.innerWidth, height: window.innerHeight },
+  width = MENU_W,
+): { left: number; top?: number; bottom?: number } {
+  const left = view.width - (anchor.left - OVERHANG) >= width + 8
+    ? anchor.left - OVERHANG
+    : Math.max(8, anchor.right + OVERHANG - width);
+  return view.height - anchor.bottom >= MENU_H + GAP
+    ? { left, top: anchor.bottom + GAP }
+    : { left, bottom: view.height - anchor.top + GAP };
+}
 
 export function RefReviewChip({
   review,
   onChange,
   onRevalidate,
+  checkNote,
+  claim,
   label,
   children,
   readOnly = false,
@@ -67,6 +88,12 @@ export function RefReviewChip({
   onChange: (state: RefVerdictName | null, note?: string) => void;
   /** Ask the SERVER to re-check the claim against its source, when offered. */
   onRevalidate?: () => void;
+  /** What the server's last check said about this claim, kept here rather
+   *  than under the row: "Not verified" is the usual outcome, not news. */
+  checkNote?: string;
+  /** The value being judged, shown beside its label so the menu says
+   *  exactly what is being checked. */
+  claim?: string;
   /** What is being judged, for the accessible name. */
   label: string;
   /** The anchor itself. */
@@ -78,6 +105,13 @@ export function RefReviewChip({
   const [note, setNote] = useState(review?.note ?? "");
   const [rect, setRect] = useState<DOMRect | null>(null);
   const groupRef = useRef<HTMLSpanElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  // Placed by its real width, so its edge lands on the anchor's edge.
+  const [menuW, setMenuW] = useState(MENU_W);
+  useLayoutEffect(() => {
+    const w = menuRef.current?.offsetWidth;
+    if (open && w && w !== menuW) setMenuW(w);
+  }, [open, menuW]);
   const openTimer = useRef<number | null>(null);
   const leaveTimer = useRef<number | null>(null);
 
@@ -88,11 +122,13 @@ export function RefReviewChip({
     if (t.current !== null) window.clearTimeout(t.current);
     t.current = null;
   };
-  /** Open at the pointer, the way a context menu does. */
-  const showAt = (x: number, y: number) => {
+  /** Open under the anchor it judges, so the row it belongs to stays readable. */
+  const show = () => {
+    const anchor = groupRef.current?.getBoundingClientRect();
+    if (!anchor) return;
     clearTimer(openTimer);
     clearTimer(leaveTimer);
-    setRect(new DOMRect(x, y, 0, 0));
+    setRect(anchor);
     setOpen(true);
   };
   const stay = () => {
@@ -190,7 +226,7 @@ export function RefReviewChip({
         e.preventDefault();
         e.stopPropagation();
         if (readOnly) return;
-        showAt(e.clientX, e.clientY);
+        show();
       }}
       onPointerDown={(e) => {
         if (e.button === 2) e.stopPropagation();
@@ -230,21 +266,35 @@ export function RefReviewChip({
             // Portalled: the row lives inside React Flow's transformed
             // viewport, where a fixed position resolves against the transform
             // and the menu would be scaled by the canvas zoom.
+            <>
+            {/* The pointer: a notch on the menu's edge right at the anchor,
+                so it is plain which row the menu judges. */}
+            {(() => {
+              const below = "top" in menuPlacement(rect, undefined, menuW);
+              return (
+                <div
+                  aria-hidden
+                  className={`pointer-events-none fixed z-[51] h-2.5 w-2.5 rotate-45 border-neutral-200 bg-white ${below ? "border-l border-t" : "border-b border-r"}`}
+                  style={{
+                    left: (rect.left + rect.right) / 2 - 5,
+                    ...(below ? { top: rect.bottom + GAP - 5 } : { top: rect.top - GAP - 5 }),
+                  }}
+                />
+              );
+            })()}
             <div
+              ref={menuRef}
               data-ref-review=""
               data-testid="ref-review-menu"
               role="menu"
               aria-label={`Source check for ${label}`}
               className="fixed z-50 w-56 overflow-hidden rounded-lg border border-neutral-200 bg-white py-1 text-[12px] text-neutral-800 shadow-xl"
               style={{
-                // At the pointer, like any context menu; opening to the left
-                // of it when the right has no room, so it never slides back
-                // over the anchor it belongs to.
-                left:
-                  window.innerWidth - (rect.right + 6) >= MENU_W + 8
-                    ? rect.right + 6
-                    : Math.max(8, rect.left - 6 - MENU_W),
-                top: Math.min(rect.top - 2, window.innerHeight - 190),
+                // Under the anchor, never over the row: its left edge on
+                // the anchor's left edge, or, with no room to the right, its
+                // right edge on the anchor's right edge. Above the anchor
+                // only when there is no room below.
+                ...menuPlacement(rect, undefined, menuW),
               }}
               onMouseEnter={stay}
               // The menu is portalled to the page, but React still bubbles its
@@ -275,8 +325,12 @@ export function RefReviewChip({
                 e.preventDefault();
               }}
             >
-              <div className="px-3 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-400">
-                Source check · {label}
+              <div className="px-3 pb-0.5 pt-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-400">
+                Source check
+              </div>
+              <div data-testid="ref-review-claim" className="px-3 pb-1.5 text-[12px] leading-snug text-neutral-800">
+                <span className="text-neutral-500">{label}</span>
+                {claim ? <> = <span className="font-medium">{claim}</span></> : null}
               </div>
               <MenuItem
                 testid="ref-review-accept"
@@ -340,6 +394,14 @@ export function RefReviewChip({
               </div>
               {/* The reader's verdict and the server's check are different
                   questions. This one asks the machine to look again. */}
+              {checkNote ? (
+                <>
+                  <div className="my-1 h-px bg-neutral-100" />
+                  <p data-testid="ref-review-check" className="max-w-[16rem] px-2 py-1 text-[10px] leading-snug text-neutral-500">
+                    {checkNote}
+                  </p>
+                </>
+              ) : null}
               {onRevalidate ? (
                 <>
                   <div className="my-1 h-px bg-neutral-100" />
@@ -359,7 +421,8 @@ export function RefReviewChip({
                   </MenuItem>
                 </>
               ) : null}
-            </div>,
+            </div>
+            </>,
             document.body,
           )
         : null}

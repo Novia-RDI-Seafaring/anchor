@@ -15,6 +15,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { canvases } from "@/api/canvases";
+import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 
 import { TablePrimitive } from "./TablePrimitive";
@@ -350,8 +351,11 @@ describe("TablePrimitive row handles", () => {
     expect(Boolean(screen.queryByTestId("spec-value-marker"))).toBe(status === "verified");
     expect(screen.getByRole("button", { name: "Open source page 1" })).toBeTruthy();
     view.unmount();
+    // Reloaded, the result is no longer news: it waits in the anchor's menu.
     await renderTable({ rows: [saved] }, true);
-    expect(screen.getByRole("status").textContent).toContain(message);
+    expect(screen.queryByText(/Check complete/)).toBeNull();
+    fireEvent.contextMenu(screen.getByTestId("ref-review-chip"));
+    expect(screen.getByTestId("ref-review-check").textContent).toContain(message);
   });
 
   it("distinguishes request failure from completed abstention and permits retry", async () => {
@@ -612,5 +616,19 @@ describe("saying whether a reference checks out", () => {
   it("does not offer a verdict where there is no reference to check", async () => {
     await renderTable({ rows: [{ key: "B", value: "87" }] });
     expect(screen.queryByTestId("ref-review-chip")).toBeNull();
+  });
+
+  it("adding a row does not freeze the card's title into its data", async () => {
+    const patch = vi.spyOn(canvases, "patchNode").mockResolvedValue({} as never);
+    const stored = { rows: [{ key: "Max flow", value: "12" }] };
+    useCanvasStore.setState((state) => ({ ...state, nodes: { ...state.nodes,
+      spec1: { id: "spec1", node_type: "spec", label: "Max temp", x: 0, y: 0, data: stored } } }));
+    // What the canvas hands the card carries the title for display.
+    await renderTable({ ...stored, label: "Max temp" }, true);
+    fireEvent.click(screen.getByTitle("add row"));
+    const sent = patch.mock.lastCall?.[2].data as Record<string, unknown>;
+    expect(sent.rows).toHaveLength(2);
+    expect("label" in sent).toBe(false);
+    patch.mockRestore();
   });
 });

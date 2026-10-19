@@ -6,7 +6,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { RefReviewChip } from "@/canvas/RefReviewChip";
+import { RefReviewChip, menuPlacement } from "@/canvas/RefReviewChip";
 import { scheduleTransientClose, TRANSIENT_CLOSE_MS } from "@/canvas/transientViewer";
 import { useUiStore } from "@/stores/uiStore";
 
@@ -209,5 +209,21 @@ describe("RefReviewChip and the source pane", () => {
     await wait(400);
     await wait(TRANSIENT_CLOSE_MS + 120);
     expect(useUiStore.getState().pdfViewer).not.toBeNull();
+  });
+});
+
+describe("menuPlacement", () => {
+  const view = { width: 1000, height: 800 };
+  it("opens under the anchor, reaching a little past its left edge, when there is room", () => {
+    expect(menuPlacement({ left: 500, right: 520, top: 100, bottom: 120 }, view))
+      .toEqual({ left: 494, top: 128 });
+  });
+  it("aligns right edges when the right side has no room", () => {
+    expect(menuPlacement({ left: 900, right: 920, top: 100, bottom: 120 }, view))
+      .toEqual({ left: 926 - 224, top: 128 });
+  });
+  it("opens above the anchor near the bottom of the view", () => {
+    expect(menuPlacement({ left: 500, right: 520, top: 700, bottom: 720 }, view))
+      .toEqual({ left: 494, bottom: 108 });
   });
 });

@@ -147,5 +147,18 @@ async def presence(slug: str, request: Request):
     return {"workspace": slug, "present": present}
 
 
+viewing_router = APIRouter(prefix="/api/presence", tags=["sse"])
+
+
+@viewing_router.get("/viewing")
+async def viewing(request: Request):
+    """Canvases a person has open in a browser now, latest opened first.
+
+    What an agent takes as "this canvas" when the user names none.
+    """
+    tracker = getattr(request.app.state, "presence", None)
+    return {"viewing": tracker.viewing() if tracker is not None else []}
+
+
 def _json(obj) -> str:
     return json.dumps(obj)

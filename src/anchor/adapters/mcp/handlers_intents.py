@@ -135,8 +135,10 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "reads as an agent doing nothing. A thread whose "
                 "latest item is your own `question` with state `open` is "
                 "still waiting on the human: skip it and come back later. "
-                "Pass `canvas` to see one canvas's view; omit it for the "
-                "project."
+                "Pass `canvas` to see one canvas's view. Omitted, it is the "
+                "canvas open in the browser when exactly one is, and the "
+                "result names it and counts what waits elsewhere; otherwise "
+                "the whole project."
             ),
             "inputSchema": {
                 "type": "object",

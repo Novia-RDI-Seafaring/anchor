@@ -191,7 +191,10 @@ export function toRfNode(
   return {
     id: n.id,
     position: { x: relX, y: relY },
-    data: { label: n.label, ...(n.data ?? {}) },
+    // The node's own label is the title; renaming writes there. A `label`
+    // an agent left inside `data` only stands in while the node has none,
+    // or it would hide every rename behind it.
+    data: { ...(n.data ?? {}), label: n.label || (n.data as { label?: unknown } | undefined)?.label },
     type: n.node_type,
     ...parentProps,
     zIndex,
