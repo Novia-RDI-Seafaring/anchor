@@ -37,3 +37,11 @@ def test_canvas_url_honors_configured_port(monkeypatch, tmp_path):
     monkeypatch.setenv("ANCHOR_HTTP_PORT", "9000")
     result = runner.invoke(app, ["canvas", "url", "x", "--data-dir", str(tmp_path)])
     assert "http://127.0.0.1:9000/c/x" in result.output
+
+
+def test_canvas_url_without_slug_prints_start_page(monkeypatch, tmp_path):
+    monkeypatch.delenv("ANCHOR_HTTP_PORT", raising=False)
+    monkeypatch.delenv("ANCHOR_HTTP_HOST", raising=False)
+    result = runner.invoke(app, ["canvas", "url", "--data-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "http://127.0.0.1:8002/" in result.output

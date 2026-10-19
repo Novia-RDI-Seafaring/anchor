@@ -50,6 +50,7 @@ CORE_STATUS_NAMES: set[str] = {
     "anchor_status",
     "anchor_extension_status",
     "server_info",
+    "canvas_url",
 }
 
 # The 90%-path document tools: ingest, list, read, and semantic search.

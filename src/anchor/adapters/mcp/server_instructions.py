@@ -21,11 +21,15 @@ Your working folder is your project (load-bearing):
   and makes it this session's default. What you ingest and draw then stays
   with that folder, which is what the user expects.
 - Do not fall back to the environment's `default` project just because no
-  project was named. Use `default` only when there is no working folder.
+  project was named. With no working folder (a chat app has none), call
+  `list_projects`. If there is more than one, ask the user which one once,
+  then `open_project` it and say which project you are in.
 - If the user names a project, use theirs.
-- When you start the web app for the user, serve the same project:
-  `anchor serve --env <env> --project <that project>`. `server_info` tells
-  you whether one is already running for it, and at which URL.
+- "Show me Anchor", "open the canvas", "show the UI": call `canvas_url`
+  (with a canvas name, or none for the project's start page) and open the
+  url it returns. Never redraw a canvas as a picture or artifact of your
+  own; that is not the canvas. If nothing serves the project yet,
+  `canvas_url` gives the `anchor serve` command to start.
 - Open the canvas once. If your harness can show a web page itself (an
   in-app browser or preview), use that and do not also launch the system
   browser; a "queued" reply from it means it is opening. Use the system

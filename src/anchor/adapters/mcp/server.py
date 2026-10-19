@@ -98,6 +98,91 @@ def _build_server_info(data_dir: Any) -> dict[str, Any]:
     }
 
 
+CANVAS_URL_TOOL_DEFINITION = {
+    "name": "canvas_url",
+    "description": (
+        "The address of Anchor's web app for this project, or of one canvas in "
+        "it. Call this when the user asks to see, open or show Anchor, the "
+        "canvas or the UI. Open the returned url in your in-app browser if you "
+        "have one, else give it to the user. Never redraw a canvas as a "
+        "picture or artifact of your own: it would not be the canvas."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "workspace_slug": {
+                "type": "string",
+                "description": "A canvas to open. Omit for the project's start page.",
+            },
+        },
+        "additionalProperties": False,
+    },
+}
+
+
+def _build_canvas_url(data_dir: Any, workspace_slug: str | None) -> dict[str, Any]:
+    """Where the user sees this project, from the serve bound to it."""
+    from anchor.core.ids import validate_workspace_slug
+
+    info = _build_server_info(data_dir)
+    serve = info["serve"]
+    if workspace_slug:
+        validate_workspace_slug(workspace_slug)
+    if not serve.get("running"):
+        return {
+            "env": info["env"],
+            "project": info["project"],
+            "running": False,
+            "start": f"anchor serve --env {info['env']} --project {info['project']}",
+            "hint": (
+                "No Anchor server shows this project yet. Start it with the "
+                "`start` command (it runs until stopped), then call canvas_url again."
+            ),
+        }
+    path = f"c/{workspace_slug}" if workspace_slug else ""
+    return {
+        "env": info["env"],
+        "project": info["project"],
+        "running": True,
+        "url": f"{serve['base_url']}/{path}",
+    }
+
+
+def _served_projects(env_name: str) -> list[dict[str, Any]]:
+    """Projects of ``env_name`` that a running ``anchor serve`` shows now."""
+    from anchor.infra.serve_registry import list_serves
+
+    out: list[dict[str, Any]] = []
+    for record in list_serves():
+        project = record.project
+        if record.env == env_name and project and all(p["project"] != project for p in out):
+            out.append({"project": project, "url": f"{record.base_url()}/"})
+    return out
+
+
+def _canvas_url_unnamed(router: Any, workspace_slug: str | None) -> dict[str, Any] | None:
+    """``canvas_url`` with no project named and none opened this session.
+
+    The user asking to see Anchor means the project on screen, not the
+    environment's default. When exactly one project of this environment is
+    being served, that is the one: open it for the session and return it.
+    When several are, the user has to say which. ``None`` falls back to the
+    default project.
+    """
+    served = _served_projects(router.environment().name)
+    if len(served) == 1:
+        router.open_project(served[0]["project"])
+        return {"session_default": served[0]["project"]}
+    if len(served) > 1:
+        return {
+            "running": True,
+            "choose": served,
+            "hint": "Several projects are being served. Ask the user which one, "
+            "then call canvas_url with that project.",
+        }
+    return None
+
+
 STATUS_TOOL_DEFINITION = {
     "name": "anchor_status",
     "description": (
@@ -430,6 +515,7 @@ def build_mcp_server(
     status_defs = [
         STATUS_TOOL_DEFINITION,
         SERVER_INFO_TOOL_DEFINITION,
+        CANVAS_URL_TOOL_DEFINITION,
         handlers_extensions.TOOL_DEFINITION,
     ]
     lifecycle_defs = LIFECYCLE_TOOL_DEFINITIONS if multiproject else []
@@ -543,6 +629,19 @@ def build_mcp_server(
             elif name == SERVER_INFO_TOOL_DEFINITION["name"]:
                 b = get_bundle(args.pop("project", None))
                 text = _json.dumps(_build_server_info(b.config.data_dir))
+            elif name == CANVAS_URL_TOOL_DEFINITION["name"]:
+                project = args.pop("project", None)
+                slug = args.get("workspace_slug")
+                picked = (
+                    _canvas_url_unnamed(router, slug)
+                    if router is not None and project is None and router.session_default is None
+                    else None
+                )
+                if picked is not None and "choose" in picked:
+                    text = _json.dumps(picked)
+                else:
+                    b = get_bundle(picked["session_default"] if picked else project)
+                    text = _json.dumps(_build_canvas_url(b.config.data_dir, slug))
             elif name == handlers_extensions.TOOL_NAME:
                 b = get_bundle(args.pop("project", None))
                 text = handlers_extensions.call_tool(
@@ -628,8 +727,10 @@ def build_mcp_server(
             )])
         return CallToolResult(content=[TextContent(type="text", text=text)])
 
+    from anchor import __version__
+
     return Server(
-        name=name, instructions=instructions,
+        name=name, version=__version__, instructions=instructions,
         on_list_resources=list_resources, on_read_resource=read_resource,
         on_list_tools=list_tools, on_call_tool=call_tool,
     )
