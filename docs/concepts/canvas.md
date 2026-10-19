@@ -19,9 +19,11 @@ resizing or connections. Shift-click or a selection box selects several objects.
 Drag empty canvas to pan the view. Shift-drag to draw a selection box. Click
 or drag an object to select or move it.
 
-Hold Space while dragging from a card to pan without moving it. Middle-button
-and right-button dragging pan the view while a drawing tool is armed.
-Navigation keys leave text editors, source controls, and mark-up alone.
+Hold Space and drag anywhere to pan: over a card, it pans instead of moving
+the card, and in mark-up it lifts the pen for as long as Space is held.
+Press `V` to put down an armed tool. While a tool is armed, middle-button and
+right-button dragging pan the view. These keys leave text editors and source
+controls alone.
 
 Double-click empty canvas to place a text element and start typing.
 Press Enter or click away to save, or Escape to cancel the current text edit.
