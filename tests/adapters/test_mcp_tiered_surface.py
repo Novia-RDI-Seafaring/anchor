@@ -73,7 +73,8 @@ async def test_base_single_project_advertises_core_not_full_surface(tmp_path):
     # the one write an agent makes after it knows what to do.
     # +1 for canvas_url: asked to show the canvas without it, a chat-app agent
     # redrew the canvas as its own picture instead of opening the real one.
-    assert len(names) <= 31  # canvas_list_workspaces enables canvas discovery.
+    # +1 for intents_wait: a listening agent calls it in a loop (#509).
+    assert len(names) <= 32  # canvas_list_workspaces enables canvas discovery.
     assert set(names) == set(tiering.CORE_NAMES) - tiering.CORE_LIFECYCLE_NAMES
     # No lifecycle tools in single-project mode.
     assert "create_environment" not in names
@@ -84,7 +85,7 @@ async def test_base_multiproject_advertises_core_plus_lifecycle(tmp_path):
     server, _ = _multiproject_server()
     names = await _advertised(server)
     # Multiproject includes list/create/open project and canvas discovery.
-    assert len(names) <= 34  # +1 for intent_act and +1 for canvas_url, as above
+    assert len(names) <= 35  # +1 each for intent_act, canvas_url and intents_wait, as above
     assert tiering.CORE_NAMES.issubset(set(names))
     # The long tail is gated out by default.
     for gated in ("fmu_inspect", "inspect", "sysml_render", "create_environment",

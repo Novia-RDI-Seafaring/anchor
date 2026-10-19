@@ -33,6 +33,7 @@ from intent_layer.timing import intent_timing
 TOOL_NAMES: set[str] = {
     "list_pending_intents",
     "next_intent",
+    "intents_wait",
     "resolve_intent",
     "get_intent",
     "intent_ask",
@@ -158,6 +159,31 @@ def tool_definitions() -> list[dict[str, Any]]:
             "inputSchema": {
                 "type": "object",
                 "properties": {"canvas": canvas_arg},
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "intents_wait",
+            "description": (
+                "Wait for the next intent that needs you, and take it. Holds "
+                "until one arrives (a new ask, an answer to your question, a "
+                "comment in your thread) or `timeout_s` passes (default 60, at "
+                "most 120), then returns {intent} or {intent: null, timed_out: "
+                "true}. A thread whose latest word is yours does not wake you, "
+                "and one another agent holds is skipped. The returned intent "
+                "is claimed for you (`claim`, default true) so another "
+                "listening agent leaves it alone. To keep listening, handle "
+                "it and call again; on a timeout, just call again. `canvas` "
+                "as for list_pending_intents: omitted, the canvas open in the "
+                "browser when exactly one is."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "canvas": canvas_arg,
+                    "timeout_s": {"type": "number", "minimum": 0, "maximum": 120},
+                    "claim": {"type": "boolean"},
+                },
                 "additionalProperties": False,
             },
         },

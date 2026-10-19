@@ -81,6 +81,9 @@ CORE_PDF_NAMES: set[str] = {
 CORE_INTENT_NAMES: set[str] = {
     "list_pending_intents",
     "next_intent",
+    # Listening without polling (#509): an agent left watching the board
+    # calls this in a loop, so it cannot sit behind a capability gate.
+    "intents_wait",
     "resolve_intent",
     "intent_add_item",
     # Narrating progress travels with adding the item: an agent that can post

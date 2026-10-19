@@ -21,6 +21,7 @@ hosts and transport wrappers own the meaning of those identifiers.
 """
 from __future__ import annotations
 
+import asyncio
 import math
 from collections.abc import Callable
 from copy import deepcopy
@@ -246,6 +247,44 @@ class IntentService:
         if pending:
             await self._note_seen(pending[:1], reader)
         return pending[0] if pending else None
+
+    async def wait(
+        self, *, canvas: str | None = None, reader: Actor | None = None,
+        timeout: float = 60.0, claim: bool = True, lease: float = 600.0,
+        poll: float = 0.5,
+    ) -> Intent | None:
+        """The oldest intent that needs ``reader`` now, waiting up to ``timeout``.
+
+        Unlike :meth:`next`, which answers at once, this holds until there is
+        something to do: a new ask, a reply to the agent's question, a
+        comment in a thread. A thread whose latest word is the agent's own
+        (an open question, a proposal awaiting a verdict) does not wake it,
+        and neither does one another agent has claimed. The store is re-read
+        every ``poll`` seconds, so an ask filed through another process is
+        seen within that. With ``claim`` the intent is held for ``reader``
+        for ``lease`` seconds; returns ``None`` on timeout.
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + max(0.0, timeout)
+        while True:
+            for intent in await self.list_pending(canvas=canvas):
+                if _needs_agent(intent) and not self._held_by_other(intent, reader):
+                    if claim and reader is not None:
+                        intent.claimed_by = reader
+                        intent.claimed_until = self._ts() + lease
+                        await self._store.replace(intent)
+                    await self._note_seen([intent], reader)
+                    return intent
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return None
+            await asyncio.sleep(min(poll, remaining))
+
+    def _held_by_other(self, intent: Intent, reader: Actor | None) -> bool:
+        held = intent.claimed_by
+        if held is None or intent.claimed_until is None or intent.claimed_until <= self._ts():
+            return False
+        return reader is None or (held.kind, held.id, held.label) != (reader.kind, reader.id, reader.label)
 
     async def get(self, intent_id: str, *, reader: Actor | None = None) -> Intent | None:
         intent = await self._store.get(intent_id)
@@ -641,3 +680,18 @@ __all__ = [
     "ThreadError",
     "UnknownIntentKindError",
 ]
+
+
+def _needs_agent(intent: Intent) -> bool:
+    """Whether the next move in this thread is the agent's.
+
+    A new ask, a person's word last, or the agent's question now answered.
+    The agent's own word last (a question still open, a proposal waiting for
+    its verdict, a progress note) means it is the person's turn.
+    """
+    if not intent.items:
+        return True
+    last = intent.items[-1]
+    if last.author.kind != "agent":
+        return True
+    return last.type == "question" and last.answer is not None
