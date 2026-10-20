@@ -119,7 +119,7 @@ def parse_place(text: str) -> dict[str, Any] | None:
 
 
 async def resolve_source_ref(
-    store: DocStore, slug: str, ref: dict[str, Any]
+    store: DocStore, slug: str, ref: dict[str, Any], *, renderer: Any = None,
 ) -> dict[str, Any] | None:
     """Return ``{slug, page, bbox, precision, ...selectors}`` or None.
 
@@ -129,8 +129,24 @@ async def resolve_source_ref(
     the evidence that IS there, which beats a highlight that never appears.
     """
     primary = await _resolve_one(store, slug, ref)
+    page = ref.get("page")
+    if primary is None and ref.get("quotes") and type(page) is int and page >= 1:
+        # A page and the words quoted from it are a place: the quotes say where.
+        primary = {"slug": slug, "page": page, "precision": "page"}
     if primary is None:
         return None
+    if ref.get("quotes") and renderer is not None:
+        # The quoted words, placed inside the place the ref names; a quote
+        # with boxes already saved is drawn as saved.
+        from anchor.extensions.anchor_pdfs.core.quotes import place_quotes, text_access
+
+        saved = [m for m in ref["quotes"] if isinstance(m, dict) and m.get("boxes")]
+        todo = [m for m in ref["quotes"] if not (isinstance(m, dict) and m.get("boxes"))]
+        locate, read = text_access(store, renderer, slug)
+        primary["quotes"] = saved + await place_quotes(
+            todo, page=primary["page"], clip=_bbox(primary.get("bbox")),
+            locate=locate, read=read,
+        )
     extras = ref.get("also")
     if not isinstance(extras, list):
         return primary

@@ -1,3 +1,4 @@
+import { boxesOnPage } from "@/canvas/quotes";
 import { useEffect, useState } from "react";
 
 import { canvases } from "@/api/canvases";
@@ -42,6 +43,7 @@ export function PageWithBboxViewer() {
   const viewerHighlightPage = viewer?.highlightPage;
   const viewerHighlightQuery = viewer?.highlightQuery;
   const viewerHighlightBbox = viewer?.highlightBbox;
+  const viewerQuotes = viewer?.highlightQuotes;
 
   async function sendRegionToCanvas(region: Region & { description?: string }) {
     if (!viewer?.workspaceSlug || !viewer?.documentNodeId) return;
@@ -122,6 +124,11 @@ export function PageWithBboxViewer() {
   // of the region rectangle. Only resolves on the page the highlight targets.
   // Empty result -> the region rectangle remains as the graceful fallback.
   useEffect(() => {
+    // Marked words are drawn where they were placed; nothing to search for.
+    if (viewerQuotes && viewerQuotes.length > 0) {
+      setValueQuads(viewerPage == null ? [] : boxesOnPage(viewerQuotes, viewerPage));
+      return;
+    }
     if (
       !viewerSlug
       || viewerPage == null
@@ -139,7 +146,7 @@ export function PageWithBboxViewer() {
     return () => {
       cancel = true;
     };
-  }, [viewerSlug, viewerPage, viewerHighlightQuery, viewerHighlightBbox, viewerHighlightPage, generation]);
+  }, [viewerSlug, viewerPage, viewerHighlightQuery, viewerHighlightBbox, viewerHighlightPage, viewerQuotes, generation]);
 
   const total = index?.document?.page_count ?? 0;
   useEffect(() => {

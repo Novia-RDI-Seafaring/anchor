@@ -82,6 +82,26 @@ point below a region:
 | `anchor:<slug>?page=3&region=r2` | one gold region |
 | `anchor:<slug>?page=3&item=p3-i0` | one silver item |
 | `anchor:<slug>?page=3&cell=4,1` | one table cell |
+| `...&quote=EPDM` | the printed words there |
+
+### Quote the printed words
+
+A ref says where a value comes from: the reader sees that place
+highlighted. `quote` says which words there carry the value: the reader
+sees them underlined. Quote one piece or several, repeating the parameter:
+`&quote=12&quote=m3/h`. Copy the words from the page text as printed (it
+may read `m3/h` where you would write `m³/h`). When they occur more than
+once in the place you cite, add the words just before or after them in the
+browser's text-fragment grammar: `quote=+140 °C (-,EPDM,-)` is "EPDM, after
+`+140 °C (`, before `)`".
+
+In a spec row the same thing is data: `source_ref.quotes: [{exact,
+prefix?, suffix?, page?}]`. The server finds the words when the row is
+saved and stores their `boxes`, so the underline is exact. A quote it
+cannot place comes back in the write result under `quotes.problems`, with
+what is printed there, so you can correct it. A quote on another page names
+its own `page`: one value can be shown in the table and on the drawing at
+once.
 
 A ref naming no document or no page renders struck through, so a pointer
 you got wrong is visible rather than silently reading as sourced.

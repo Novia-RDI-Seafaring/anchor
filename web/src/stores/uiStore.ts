@@ -1,6 +1,7 @@
+import type { RefQuotes } from "@/canvas/quotes";
 import { create } from "zustand";
 
-import type { ResolvedPlace } from "@/api/documents";
+import type { ResolvableRef, ResolvedPlace } from "@/api/documents";
 
 /**
  * How the shared source pane is surfaced:
@@ -15,6 +16,7 @@ export type PdfViewerMode = "dock" | "modal";
 
 /** How a hovered source ref answers "what is over there". */
 export type HoverPreviewMode = "panel" | "viewer";
+
 
 type PdfViewerState = {
   slug: string;             // document slug
@@ -41,6 +43,11 @@ type PdfViewerState = {
    * region-level highlight when the text cannot be located.
    */
   highlightQuery?: string;
+  /**
+   * The words the reference marks, already placed, per page. Drawn as they
+   * are, in place of searching for `highlightQuery`.
+   */
+  highlightQuotes?: { page: number; boxes: number[][] }[];
   /**
    * Bumped on every `openPdf` call so the viewer re-navigates and re-flashes
    * even when the target page/bbox is unchanged — i.e. an intentional re-click
@@ -93,6 +100,12 @@ type HoveredSourceRef = {
    * on the canvas lights them too, not only the source viewer.
    */
   places?: { page: number; bbox: number[] }[];
+  /** Every source of the card the reference sits on, for "all" highlighting. */
+  context?: ResolvableRef[];
+  /** Which of `context` this reference is (its `refKey`). */
+  activeKey?: string;
+  /** The words the reference marks; see `canvas/marks.ts`. */
+  quotes?: RefQuotes;
 } | null;
 
 type UiState = {
@@ -162,6 +175,7 @@ type UiState = {
       highlightBbox?: number[];
       highlightAlso?: ResolvedPlace[];
       highlightQuery?: string;
+      highlightQuotes?: { page: number; boxes: number[][] }[];
       /** Opened by a hover, so a mouse-out should take it away again. */
       transient?: boolean;
     },
@@ -188,6 +202,9 @@ type UiState = {
    */
   hoverPreviewMode: HoverPreviewMode;
   setHoverPreviewMode: (mode: HoverPreviewMode) => void;
+  /** The card's sources behind the open viewer, for "all" highlighting. */
+  sourceContext: { refs: ResolvableRef[]; active: string } | null;
+  setSourceContext: (context: { refs: ResolvableRef[]; active: string } | null) => void;
   /** True while the viewer is only being previewed, so leaving closes it. */
   pdfViewerPinned: boolean;
   /** Promote a hover-opened viewer to a pinned one (a click did it). */
@@ -379,6 +396,7 @@ export const useUiStore = create<UiState>((set) => ({
   explorerWidth: readPersistedExplorerWidth(),
   sourceClusterCollapsed: readPersistedCollapsed(),
   hoverPreviewMode: readPersistedHoverPreviewMode(),
+  sourceContext: null,
   pdfViewerPinned: false,
   hoveredSourceRef: null,
   armedTool: null,
@@ -419,6 +437,7 @@ export const useUiStore = create<UiState>((set) => ({
           highlightBbox: options?.highlightBbox,
           highlightAlso: options?.highlightAlso,
           highlightQuery: options?.highlightQuery,
+          highlightQuotes: options?.highlightQuotes,
           highlightPage: options?.highlightRegionId || options?.highlightBbox
             ? options?.page ?? 1
             : undefined,
@@ -432,6 +451,7 @@ export const useUiStore = create<UiState>((set) => ({
       };
     }),
   closePdf: () => set({ pdfViewer: null, pdfViewerPinned: false }),
+  setSourceContext: (context) => set({ sourceContext: context }),
   setHoverPreviewMode: (mode) => {
     persist(HOVER_PREVIEW_MODE_KEY, mode);
     set({ hoverPreviewMode: mode });

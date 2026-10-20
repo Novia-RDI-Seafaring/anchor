@@ -28,6 +28,7 @@ export function SourceAnchorButton({
   ariaLabel,
   size = 11,
   className = "",
+  context,
   children,
 }: {
   workspaceSlug: string | undefined;
@@ -40,11 +41,13 @@ export function SourceAnchorButton({
   ariaLabel?: string;
   size?: number;
   className?: string;
+  /** Every source of the card this anchor sits on, for "all" highlighting. */
+  context?: ResolvableRef[];
   children?: ReactNode;
 }) {
   const openRef = useOpenSourceRef(workspaceSlug, { documentNodeId });
   const pinViewer = useUiStore((s) => s.pinPdfViewer);
-  const { hoverProps, preview, cancelTimers } = useRefHover(workspaceSlug, refValue, query);
+  const { hoverProps, preview, cancelTimers } = useRefHover(workspaceSlug, refValue, query, context);
 
   return (
     <button
@@ -58,7 +61,7 @@ export function SourceAnchorButton({
       onClick={(e) => {
         e.stopPropagation();
         cancelTimers();
-        openRef(refValue, query);
+        openRef(refValue, query, { context });
         // A click is a commitment: the pane stays when the pointer leaves.
         pinViewer();
       }}

@@ -79,6 +79,7 @@ export function SourceRefLink({
           bbox: refValue.bbox,
           item_id: refValue.item_id,
           cell: refValue.cell,
+          quotes: refValue.quotes,
         });
         hoverProps.onMouseEnter();
       }}

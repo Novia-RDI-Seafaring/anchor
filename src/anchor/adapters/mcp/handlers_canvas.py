@@ -170,9 +170,34 @@ _UNSOURCED_NEXT = (
     "These values point nowhere, so a reader cannot check them. Find each "
     "in its document (locate_text or get_region_content give the region and, "
     "in a table, the cell) and set the row's source_ref to {slug, page, "
-    "region_id, cell: {row, col}}. If you assumed a value rather than read "
-    "it, tell the user so."
+    "region_id, cell: {row, col}}, with `quotes: [{exact}]` with the printed "
+    "words to underline. If you assumed a value rather than read it, tell the "
+    "user so."
 )
+
+_QUOTES_NEXT = (
+    "These quotes could not be placed. Copy `exact` from the page text as printed "
+    "(`text_here` shows what is there). When it occurs more than once, add the "
+    "words just before or after it as `prefix` / `suffix` (`candidates` shows "
+    "each occurrence with its surroundings), or narrow the ref to its cell or "
+    "paragraph."
+)
+
+
+def _quote_problems(node: Any) -> dict[str, Any] | None:
+    """Quotes on ``node``'s rows that the server could not place, and how to fix them."""
+    data = getattr(node, "data", None) or {}
+    rows = data.get("rows") if isinstance(data, dict) else None
+    if not isinstance(rows, list):
+        return None
+    bad = [
+        {"row": str(row.get("key") or f"row {i + 1}"), **quote}
+        for i, row in enumerate(rows)
+        if isinstance(row, dict) and isinstance(row.get("source_ref"), dict)
+        for quote in (row["source_ref"].get("quotes") or [])
+        if isinstance(quote, dict) and quote.get("problem")
+    ]
+    return {"problems": bad, "next": _QUOTES_NEXT} if bad else None
 
 
 def _unsourced(node: Any) -> dict[str, Any] | None:
@@ -319,6 +344,9 @@ async def _dispatch_tool(
             unsourced = _unsourced(state.nodes.get(result["node_id"]))
             if unsourced is not None:
                 result["unsourced"] = unsourced
+            quotes = _quote_problems(state.nodes.get(result["node_id"]))
+            if quotes is not None:
+                result["quotes"] = quotes
             return json.dumps(result)
         if name == "canvas_node_types":
             return json.dumps(svc.node_types_schema(args.get("node_type")))
@@ -358,6 +386,9 @@ async def _dispatch_tool(
                 unsourced = _unsourced(state.nodes.get(node_id))
                 if unsourced is not None:
                     result["unsourced"] = unsourced
+                quotes = _quote_problems(state.nodes.get(node_id))
+                if quotes is not None:
+                    result["quotes"] = quotes
             return json.dumps(result)
         if name == "canvas_remove_node":
             state, envelopes = await svc.remove_node(args["workspace_slug"], args["id"])

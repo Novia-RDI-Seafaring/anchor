@@ -165,6 +165,53 @@
   mix-blend-mode: multiply;
 }
 
+/* The marked words inside a washed place (its cell, its paragraph):
+   underlined in ballpoint blue just below the text, the way a reader marks a
+   passage in yellow and underlines the words that matter. The line sits
+   under the glyphs rather than over them, so nothing hides the text, and a
+   second wash on top of the first would only read as one muddy patch. */
+.anchor-mark.anchor-mark-underline {
+  background: none;
+  mix-blend-mode: normal;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* A word's box runs from the cap height down past the descenders. The line
+   starts just under the letters and reaches a little past the box, as thick
+   as a ballpoint stroke at that font size: all in proportion to the box. */
+.anchor-mark.anchor-mark-underline::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(88% + 1px);
+  height: 22%;
+  border-radius: 999px;
+  background: rgba(29, 64, 175, 0.85);
+  /* Drawn as a pen draws it: once the yellow has landed, each word in
+     reading order, left to right. --mark-i is the word's place in that order. */
+  transform: scaleX(0);
+  transform-origin: left center;
+  animation: anchor-underline 520ms cubic-bezier(0.45, 0, 0.25, 1) forwards;
+  animation-delay: calc(var(--underline-wait, 520ms) + var(--mark-i, 0) * 620ms);
+}
+
+/* "All" highlighting: every source of a card shown at once, the one the
+   reader is on fully, the rest faintly. Changing which is active fades
+   rather than moves. */
+.anchor-mark { transition: opacity 280ms ease; }
+.anchor-mark.anchor-mark-faint { opacity: 0.32; }
+/* An underline drawn once already is simply there. */
+.anchor-mark.anchor-mark-drawn::after { animation: none; transform: none; }
+
+@keyframes anchor-underline {
+  to { transform: scaleX(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anchor-mark.anchor-mark-underline::after { animation: none; transform: none; }
+}
+
 /* Moving from one ref to another, the mark travels and takes its new shape
    rather than blinking out here and in over there. Only switched on for the
    length of a move: a mark that appears for the first time has nowhere to fly

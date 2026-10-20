@@ -7,6 +7,7 @@ import { cancelTransientClose, scheduleTransientClose } from "@/canvas/transient
 import { requestViewerZoom, viewerAcceptsZoom } from "@/canvas/viewerZoom";
 import { documentCardInView, sectionInView, useOpenSourceRef } from "@/canvas/useOpenSourceRef";
 import { useUiStore } from "@/stores/uiStore";
+import { refKey } from "@/canvas/sourceContext";
 
 /**
  * useRefHover — hovering a source ref shows the source, wherever the ref is.
@@ -47,6 +48,8 @@ export function useRefHover(
   refValue: ResolvableRef | null | undefined,
   /** Text to highlight inside the region, when the caller has it. */
   query?: string,
+  /** Every source of the card the ref sits on, for "all" highlighting. */
+  context?: ResolvableRef[],
 ) {
   const openRef = useOpenSourceRef(workspaceSlug);
   const hoverMode = useUiStore((s) => s.hoverPreviewMode);
@@ -77,7 +80,7 @@ export function useRefHover(
       // open stays open when the pointer leaves, one a hover opened still goes
       // away. Either way the mark follows the pointer.
       if (useUiStore.getState().pdfViewer) {
-        openRef(refValue, query, { transient: true });
+        openRef(refValue, query, { transient: true, context });
         return;
       }
       // Nothing open, but the document is already on the canvas and visible:
@@ -87,7 +90,7 @@ export function useRefHover(
       // lights the value, so nothing else needs to open.
       if (sectionInView(refValue)) return;
       if (hoverMode === "viewer") {
-        openRef(refValue, query, { transient: true });
+        openRef(refValue, query, { transient: true, context });
       } else {
         setPreviewRect(rect);
       }
@@ -187,8 +190,12 @@ export function useRefHover(
           bbox: refValue.bbox,
           item_id: refValue.item_id,
           cell: refValue.cell,
+          quotes: refValue.quotes,
           query,
           ...(places.length > 0 ? { places } : {}),
+          // And the card's other sources, or "all" highlighting fell back to
+          // one travelling mark the moment the pointer reached the anchor.
+          ...(context?.length ? { context, activeKey: refKey(refValue) } : {}),
         });
       }
     },

@@ -44,3 +44,17 @@ def test_add_and_update_report_unsourced_rows():
         assert "unsourced" not in updated
 
     asyncio.run(run())
+
+
+def test_quotes_that_could_not_be_placed_come_back_with_how_to_fix_them():
+    from anchor.adapters.mcp.handlers_canvas import _quote_problems
+
+    node = _Node({"rows": [{"key": "Temperature", "value": "+140 °C", "source_ref": {
+        "slug": "px", "page": 2, "quotes": [
+            {"exact": "EPDM", "problem": "ambiguous", "candidates": ["a EPDM b", "c EPDM d"]},
+            {"exact": "+140", "boxes": [[1, 2, 3, 4]]},
+        ]}}]})
+    out = _quote_problems(node)
+    assert [p["exact"] for p in out["problems"]] == ["EPDM"]
+    assert out["problems"][0]["row"] == "Temperature"
+    assert "prefix" in out["next"]
