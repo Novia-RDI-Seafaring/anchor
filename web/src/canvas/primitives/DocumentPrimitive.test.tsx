@@ -155,7 +155,10 @@ describe("DocumentPrimitive click isolation", () => {
       // An exact text result is hidden while the next lookup is pending.
       // Geometry-only marks keep travelling without preserving stale evidence.
       if (i !== 1) expect(current).toBe(mark);
-      expect(current.classList.contains("anchor-mark-flying")).toBe(true);
+      // The words are underlined inside the place's wash, and an underline
+      // is drawn afresh at the next reference rather than slid there.
+      expect(current.classList.contains("anchor-mark-flying")).toBe(i !== 1);
+      if (i === 1) expect(current.classList.contains("anchor-mark-underline")).toBe(true);
       expect(current.style.top).not.toBe(tops[i]);
     });
   });
@@ -424,7 +427,8 @@ describe("DocumentPrimitive selector precision", () => {
       const valueMark = screen.getByTestId("value-quad");
       const sourceMark = screen.getByTestId("external-highlight");
       // The font box may bleed; the displayed word mark stays inside its locator.
-      expect(valueMark.style.cssText).toBe(sourceMark.style.cssText);
+      // Same box; the underline also carries its place in reading order.
+      expect(valueMark.style.cssText.replace(/ --mark-i: \d+;/, "")).toBe(sourceMark.style.cssText);
     },
   );
 

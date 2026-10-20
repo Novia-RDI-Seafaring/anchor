@@ -10,6 +10,8 @@ import { currentEvidenceCheck, evidenceLabels, evidenceState, type EvidenceRow }
 import { refReview } from "@/canvas/refReview";
 import { RefReviewChip, refVerdict } from "@/canvas/RefReviewChip";
 import { useCanvasStore } from "@/stores/canvasStore";
+import type { RefQuotes } from "@/canvas/quotes";
+import { refKey } from "@/canvas/sourceContext";
 import { SourceAnchorButton } from "@/canvas/SourceAnchorButton";
 import { resolveText } from "@/canvas/colors";
 import { PlaceholderChip } from "@/canvas/PlaceholderChip";
@@ -222,6 +224,9 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
       bbox: ref.bbox,
       item_id: ref.item_id,
       cell: ref.cell,
+      quotes: (ref as { quotes?: RefQuotes }).quotes,
+      context: rowRefs,
+      activeKey: refKey(normalizeRef(row.source_ref ?? d.source_ref)),
       // Carry the cell value so the document node can draw the value-precise
       // highlight inside the region, not just the region rectangle (#197).
       query: row.value || undefined,
@@ -260,6 +265,10 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
     };
   };
   const headerRef = normalizeRef(d.source_ref);
+  // Every row's source, for "all" highlighting: the viewer shows them at once.
+  const rowRefs = rows
+    .map((row) => normalizeRef(row.source_ref))
+    .filter((ref): ref is ResolvableRef => ref !== null);
 
   const cropRel = d.crops?.png ?? d.crops?.svg ?? null;
   const storedCropUrl = d.source_doc_slug && cropRel ? documents.cropUrl(d.source_doc_slug, cropRel) : null;
@@ -553,6 +562,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                           workspaceSlug={workspaceSlug}
                           documentNodeId={d.source_doc_node_id}
                           refValue={rowRef}
+                          context={rowRefs}
                           query={status === "verified" ? r.value || undefined : undefined}
                           title={`Open page ${rowRef.page} in viewer`}
                           ariaLabel={`Open source page ${rowRef.page}`}

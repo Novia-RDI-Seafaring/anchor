@@ -177,7 +177,8 @@ describe("TablePrimitive row handles", () => {
     await act(async () => {
       fireEvent.mouseEnter(row!);
     });
-    expect(useUiStore.getState().hoveredSourceRef).toEqual({
+    // It also carries the card's other sources, for "all" highlighting.
+    expect(useUiStore.getState().hoveredSourceRef).toMatchObject({
       slug: "alfa-laval-lkh",
       page: 2,
       region_id: "r9",

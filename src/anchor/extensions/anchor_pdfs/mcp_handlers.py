@@ -253,7 +253,7 @@ async def call_tool(
         ref = args.get("ref")
         if not isinstance(ref, dict):
             return json.dumps({"error": "ref must be an object"})
-        out = await resolve_source_ref(store, args["slug"], ref)
+        out = await resolve_source_ref(store, args["slug"], ref, renderer=ingest.renderer)
         return json.dumps(out) if out else json.dumps({"error": "unresolvable ref"})
     if name == "get_page_text":
         text = await store.get_page_text(args["slug"], int(args["page"]))

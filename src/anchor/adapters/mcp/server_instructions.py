@@ -33,7 +33,8 @@ Your working folder is your project (load-bearing):
 - Open the canvas once. If your harness can show a web page itself (an
   in-app browser or preview), use that and do not also launch the system
   browser; a "queued" reply from it means it is opening. Use the system
-  browser only when there is no in-app one.
+  browser only when there is no in-app one. Then say in one line what is
+  open; the user is looking at it.
 
 When an ingest comes back without gold:
 - An `ingest_pdf` result with `note.gold_skipped` means no model key reached
@@ -54,6 +55,11 @@ Source-grounding (load-bearing):
   col}}`, with the row and col of the cell whose text is the value, as
   `get_region_content` lists them. The table's region bbox is for a row
   that quotes the whole table, not for one number in it.
+- Quote the printed words that carry the value: `quotes: [{exact}]` on
+  the source_ref (or `&quote=` in an `anchor:` link), copied from the page
+  text. The reader sees the place highlighted and the quoted words
+  underlined, in a sentence as well as in a cell or on a drawing. Add
+  `prefix` / `suffix` (the words around) when the words repeat there.
 
 When the user asks you to populate placeholders:
 1. `canvas_list_placeholders(workspace_slug)` returns the ones flagged.

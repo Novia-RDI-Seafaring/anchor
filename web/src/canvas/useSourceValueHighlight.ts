@@ -1,3 +1,4 @@
+import { boxesOnPage, quoteBoxes, quoteProblem } from "@/canvas/quotes";
 import { useEffect, useState } from "react";
 
 import { documents, refHasSelector, type ResolvableRef, type ResolvedRef } from "@/api/documents";
@@ -39,7 +40,7 @@ export function useSourceValueHighlight(
   ready: boolean,
 ) {
   const key = ref && ref.slug === slug && ref.page === page
-    ? JSON.stringify([slug, page, generation, ref.region_id, ref.item_id, ref.cell, ref.bbox, ref.query])
+    ? JSON.stringify([slug, page, generation, ref.region_id, ref.item_id, ref.cell, ref.bbox, ref.query, ref.quotes])
     : null;
   const [resolution, setResolution] = useState<{ key: string; ref: ResolvedRef | null } | null>(null);
   const [located, setLocated] = useState<{ key: string; quads: number[][] } | null>(null);
@@ -79,6 +80,13 @@ export function useSourceValueHighlight(
     return () => { cancelled = true; };
   }, [key, slug, page, ready, precise, clip]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Marked words are drawn where they were placed, before any search: the
+  // writer said which words, so there is nothing to guess.
+  const placedQuotes = resolution?.key === key ? resolution.ref?.quotes : undefined;
+  const quoteQuads = ready && key ? boxesOnPage(quoteBoxes(ref?.quotes, ref?.page ?? page, placedQuotes), page) : [];
+  if (quoteQuads.length > 0) {
+    return { resolvedBbox, resolving: false, valueQuads: quoteQuads, status: quoteProblem(placedQuotes) };
+  }
   const matches = ready && key && located?.key === key && precise ? located.quads : [];
   const hasQuery = ready && !!key && !!ref?.query?.trim();
   const status = !hasQuery ? null

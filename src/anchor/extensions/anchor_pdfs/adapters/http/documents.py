@@ -126,7 +126,9 @@ async def resolve_ref_route(
     row: int | None = None,
     col: int | None = None,
     also: list[str] | None = Query(default=None),
+    quote: list[str] | None = Query(default=None),
     store: DocStore = Depends(get_doc_store),
+    ingest: IngestService = Depends(get_ingest_service),
 ):
     """Resolve a source_ref to the most precise stored evidence bbox.
 
@@ -151,7 +153,11 @@ async def resolve_ref_route(
         ref["cell"] = {"row": row, "col": col}
     if also:
         ref["also"] = list(also)
-    out = await resolve_source_ref(store, slug, ref)
+    if quote:
+        # Repeat ``quote`` for each piece of printed text, in the browser's
+        # text-fragment grammar: ``quote=EPDM`` or ``quote=+140 °C (-,EPDM,-)``.
+        ref["quotes"] = list(quote)
+    out = await resolve_source_ref(store, slug, ref, renderer=ingest.renderer)
     if out is None:
         raise HTTPException(404, "unresolvable ref")
     return out

@@ -66,3 +66,17 @@ class PdfRenderer(Protocol):
         Used to validate bboxes against page bounds and to migrate legacy
         bottom-left data (#281)."""
         raise NotImplementedError
+
+    async def page_text(
+        self,
+        pdf_path: Path,
+        page: int,
+        within_bbox: list[float] | None = None,
+    ) -> str:
+        """The page's text, or the text inside ``within_bbox``, in reading order.
+
+        What marking counts matches in: a match that wraps a line comes back
+        from :meth:`locate_text` as two rects, so rects alone cannot tell one
+        match from two.
+        """
+        raise NotImplementedError

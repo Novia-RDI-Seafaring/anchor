@@ -22,6 +22,8 @@ import { onViewerZoomRequest } from "@/canvas/viewerZoom";
 import type { SourceRef } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
 import { SourceMark } from "@/canvas/SourceMark";
+import { boxesOnPage } from "@/canvas/quotes";
+import { ContextMarks, useContextPlaces } from "@/canvas/sourceContext";
 
 import {
   buildRegionSourceRef,
@@ -89,6 +91,8 @@ type Props = {
    * scrolls to, because a reference has to land somewhere definite.
    */
   highlightAlso?: ResolvedPlace[];
+  /** The marked words, placed, per page: drawn as a marker over the text. */
+  highlightQuotes?: { page: number; boxes: number[][] }[];
   highlightPage?: number;
   /** Bumped by the store on each openPdf; forces re-navigation on a re-click. */
   highlightNonce?: number;
@@ -123,6 +127,7 @@ export function PdfSourceView({
   index,
   highlightBbox,
   highlightAlso,
+  highlightQuotes,
   highlightPage,
   highlightNonce,
   title,
@@ -494,6 +499,23 @@ export function PdfSourceView({
   // other way -- by position in the list, say -- and the two marks cross over
   // each other on screen, which says something untrue about what moved where.
   // The index disambiguates a reference that names two cells.
+  // Every source of the card the reader came from, the active one fully. It
+  // replaces the travelling mark, not the extra places; a ref with no card
+  // around it travels alone.
+  const sourceContext = useUiStore((s) => s.sourceContext);
+  const contextRefs = sourceContext?.refs.some((r) => r.slug === slug) ? sourceContext.refs : undefined;
+  const contextPlaces = useContextPlaces(contextRefs);
+  // Owned by "all" as soon as there is a card to show, even while its places
+  // are still being looked up, so nothing is underlined twice.
+  const showContext = highlightVisible && (contextRefs?.length ?? 0) > 0;
+  const contextBox = useCallback((page: number, bbox: number[]) => {
+    const item = items.find((it) => it.page === page);
+    const rect = bboxToRectOnPage(page, bbox);
+    if (!item || !rect) return null;
+    const pageLeft = Math.max(0, (contentWidth - item.width) / 2);
+    return { left: pageLeft + rect.left, top: item.top + rect.top, width: rect.width, height: rect.height };
+  }, [items, contentWidth, bboxToRectOnPage]);
+
   const markPlacements = useMemo(() => {
     if (!highlightVisible || !highlightPage || !highlightBbox) return [];
     const seen = new Map<string, number>();
@@ -518,9 +540,20 @@ export function PdfSourceView({
         height: rect.height,
       };
     };
-    const out = [];
-    const primary = place(highlightPage, highlightBbox, "primary");
+    const out: (NonNullable<ReturnType<typeof place>> & { order?: number })[] = [];
+    const marked = [...new Set((highlightQuotes ?? []).map((m) => m.page))]
+      .sort((a, b) => a - b)
+      .flatMap((pg) => boxesOnPage(highlightQuotes ?? [], pg).map((box) => ({ page: pg, box })));
+    const primary = showContext ? null : place(highlightPage, highlightBbox, "primary");
     if (primary) out.push(primary);
+    // The marked words, underlined inside the place's wash: a second wash on
+    // top of the first would only muddy it.
+    if (!showContext) marked.forEach(({ page, box }, order) => {
+      const mark = place(page, box, "underline");
+      // Keyed by place, so each new reference draws its underlines afresh
+      // rather than sliding old ones over.
+      if (mark) out.push({ ...mark, key: `underline:${page}:${box.join(",")}`, order });
+    });
     for (const extra of highlightAlso ?? []) {
       // A stroke is drawn by the overlay below, never as a box. That holds
       // even when its coordinates are unusable: the bounds of a line are a
@@ -537,6 +570,8 @@ export function PdfSourceView({
     highlightPage,
     highlightBbox,
     highlightAlso,
+    highlightQuotes,
+    showContext,
     items,
     contentWidth,
     bboxToRectOnPage,
@@ -1080,7 +1115,15 @@ export function PdfSourceView({
                   <polyline points={points} />
                 </svg>
               ))}
-              {markPlacements.map(({ key, source, ...box }) => (
+              {showContext ? (
+                <ContextMarks
+                  places={contextPlaces}
+                  active={sourceContext?.active}
+                  pages={items.map((it) => it.page)}
+                  toBox={contextBox}
+                />
+              ) : null}
+              {markPlacements.map(({ key, source, order, ...box }) => (
                 <SourceMark
                   // Stable, so every mark travels rather than blinking out and
                   // in. The key is the KIND, so a move pairs like with like:
@@ -1091,9 +1134,9 @@ export function PdfSourceView({
                   data-testid="pdf-highlight"
                   data-mark-kind={key}
                   data-source-page={source.page}
-                  className="z-10"
-                  flying={markFlying}
-                  box={box}
+                  className={key.startsWith("underline") ? "z-10 anchor-mark-underline" : "z-10"}
+                  flying={markFlying && !key.startsWith("underline")}
+                  box={key.startsWith("underline") ? { ...box, "--mark-i": order ?? 0 } as typeof box : box}
                 />
               ))}
               {doc && magnifierMark && magnifierPage && pdfPageSizes[magnifierPage.page] ? (

@@ -33,16 +33,25 @@ def tool_definitions() -> list[dict[str, Any]]:
                 "`data.body`. Call canvas_node_types for the full contract.\n"
                 "A `spec` node is a TABLE, not prose: put tabular facts in "
                 "`data.rows`, a list of {key, value, source_ref} objects, one "
-                "row per fact. `source_ref` is {slug, page, bbox?, region_id?} "
-                "grounding that row to its source page. Use `data.description` "
+                "row per fact. `source_ref` says where the value is printed, "
+                "as precisely as you can: {slug, page, region_id, cell: {row, "
+                "col}} for a table cell (get_region_content lists the cells), "
+                "item_id for a paragraph. Add `quotes: [{exact}]` with the "
+                "printed words that carry the value, copied from the page "
+                "text; add `prefix` / `suffix` (the words around) when they "
+                "repeat there. The server places the quotes and reports any "
+                "it cannot under `quotes.problems`. Use `data.description` "
                 "only for a short prose caption; do NOT pack multiple values "
                 "into it -- rows render as a clean table and each row stays "
                 "clickable back to its source, free text does not. "
                 'Example for "list every pump ID and diameter": '
                 '{"node_type": "spec", "label": "Pump diameters", "data": '
                 '{"rows": [{"key": "P-101", "value": "150 mm", "source_ref": '
-                '{"slug": "datasheet", "page": 3}}, {"key": "P-102", "value": '
-                '"200 mm", "source_ref": {"slug": "datasheet", "page": 3}}]}}.'
+                '{"slug": "datasheet", "page": 3, "region_id": "r2", "cell": '
+                '{"row": 1, "col": 1}, "quotes": [{"exact": "150"}]}}, {"key": '
+                '"P-102", "value": "200 mm", "source_ref": {"slug": '
+                '"datasheet", "page": 3, "region_id": "r2", "cell": {"row": 2, '
+                '"col": 1}, "quotes": [{"exact": "200"}]}}]}}.'
             ),
             "inputSchema": {
                 "type": "object",
