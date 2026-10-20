@@ -243,18 +243,23 @@ def resolve_project(
 ) -> ResolvedProject:
     """Resolve ``(environment, project)`` to a data dir + layered config.
 
-    With neither ``env`` nor ``project`` given, a project ``anchor.toml`` found
-    by walking up from the current directory wins (run Anchor inside a project
-    folder). A ``project`` that is a folder path (see
+    With no ``project`` given, a project ``anchor.toml`` found by walking up
+    from the current directory wins (run Anchor inside a project folder),
+    unless ``env`` names a different environment than the marker's. A ``project`` that is a folder path (see
     :func:`looks_like_project_path`) resolves that ``anchor init`` folder, the
     same way ``anchor-mcp --project <folder>`` does; its marker binds the
     environment, so an ``env`` naming a different one raises
     :class:`ProjectEnvMismatchError`. Otherwise resolve by name.
     """
-    if env is None and project is None:
+    if project is None:
+        # Inside a project folder its marker wins, also when ``env`` names the
+        # environment the marker is bound to: `--env openai` in an openai
+        # project folder means that folder, not the environment's default.
         root = _walk_up_for_project()
         if root is not None:
-            return resolve_project_folder(root)
+            resolved = resolve_project_folder(root)
+            if env is None or env == resolved.environment.name:
+                return resolved
     if project is not None and looks_like_project_path(project):
         resolved = resolve_project_folder(project)
         if env is not None and env != resolved.environment.name:

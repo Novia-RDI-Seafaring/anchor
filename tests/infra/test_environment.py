@@ -708,3 +708,19 @@ def test_legacy_shim_yields_to_real_default_project(tmp_path, monkeypatch):
     env = create_env("local")
     create_project(env, DEFAULT_PROJECT)  # real projects/default now exists
     assert env.project_dir(DEFAULT_PROJECT) == env.root / "projects" / "default" / ".anchor_data"
+
+
+def test_env_flag_naming_the_folders_env_keeps_the_folder(tmp_path, monkeypatch):
+    folder = _init_folder(tmp_path)
+    monkeypatch.chdir(folder)
+    env_name = resolve_project().environment.name
+    # `--env <the folder's env>` inside the folder means that folder, not the
+    # environment's default project.
+    assert resolve_project(env_name).data_dir == folder / ".anchor_data"
+
+
+def test_env_flag_naming_another_env_skips_the_folder(tmp_path, monkeypatch):
+    folder = _init_folder(tmp_path)
+    create_env("other", settings={"provider": "local"})
+    monkeypatch.chdir(folder)
+    assert resolve_project("other").data_dir != folder / ".anchor_data"

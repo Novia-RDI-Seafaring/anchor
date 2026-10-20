@@ -231,6 +231,7 @@ export function FilesExplorer({ workspaceSlug }: Props) {
                         hint={!documentsLoaded ? "Loading document details..." : documentsError
                           ? "Document details unavailable" : "Document unavailable in this project"}
                         onOpen={() => openSource(source)}
+                        gone={documentsLoaded && !documentsError ? leftBehind(source.slug, nodes, workspaceSlug) : undefined}
                       />
                     );
                   })
@@ -623,12 +624,67 @@ function DocumentItem({
   );
 }
 
-function MissingDocumentItem({ source, active, hint, onOpen }: {
+/** What on this canvas still points at a document the project no longer has. */
+function leftBehind(
+  slug: string,
+  nodes: Record<string, { node_type?: string; data?: Record<string, unknown> }>,
+  workspaceSlug: string,
+) {
+  const cards = Object.entries(nodes)
+    .filter(([, n]) => n.node_type === "document" && n.data?.slug === slug)
+    .map(([id]) => id);
+  const citing = Object.entries(nodes).filter(([id, n]) => !cards.includes(id)
+    && JSON.stringify(n.data ?? {}).match(new RegExp(`"slug":"${slug}"|anchor:(//)?${slug}\\?`))).length;
+  return { cards, citing, workspaceSlug };
+}
+
+function MissingDocumentItem({ source, active, hint, onOpen, gone }: {
   source: CanvasSource;
   active: boolean;
   hint: string;
   onOpen: () => void;
+  /** Set when the project is known not to have the document: what is left of it here. */
+  gone?: { cards: string[]; citing: number; workspaceSlug: string };
 }) {
+  const [explained, setExplained] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  if (gone && explained) {
+    const removeCards = () => {
+      setRemoving(true);
+      void Promise.all(gone.cards.map((id) => canvases.removeNode(gone.workspaceSlug, id).catch(() => null)))
+        .finally(() => setRemoving(false));
+    };
+    return (
+      <div
+        role="status"
+        data-testid="missing-document-explained"
+        className="rounded border border-amber-200 bg-amber-50 p-2 text-[11px] leading-snug text-neutral-800"
+      >
+        <div className="font-medium">{source.slug}</div>
+        <div className="mt-0.5 text-neutral-600">
+          This document is no longer in the project, so there is nothing to open.
+          {gone.cards.length ? ` ${gone.cards.length === 1 ? "A document card" : `${gone.cards.length} document cards`} on this canvas still show it.` : ""}
+          {gone.citing ? ` ${gone.citing} ${gone.citing === 1 ? "element cites" : "elements cite"} it; their source links point nowhere.` : ""}
+        </div>
+        <div className="mt-1.5 flex justify-end gap-1.5">
+          <button type="button" className="rounded px-2 py-0.5 text-neutral-600 hover:bg-white" onClick={() => setExplained(false)}>
+            Close
+          </button>
+          {gone.cards.length ? (
+            <button
+              type="button"
+              data-testid="missing-document-remove-cards"
+              disabled={removing}
+              className="rounded bg-neutral-800 px-2 py-0.5 font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+              onClick={removeCards}
+            >
+              {removing ? "Removing…" : gone.cards.length === 1 ? "Remove the card" : "Remove the cards"}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
   return (
     <button
       type="button"
@@ -636,7 +692,7 @@ function MissingDocumentItem({ source, active, hint, onOpen }: {
       data-slug={source.slug}
       data-active={active ? "true" : "false"}
       aria-current={active ? "true" : undefined}
-      onClick={onOpen}
+      onClick={gone ? () => setExplained(true) : onOpen}
       className={cn("flex w-full items-center gap-2 rounded border px-2 py-2 text-left",
         active ? "border-sky-300 bg-sky-50 ring-1 ring-sky-300" : "border-amber-200 bg-amber-50")}
     >

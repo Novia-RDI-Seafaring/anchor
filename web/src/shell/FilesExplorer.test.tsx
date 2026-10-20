@@ -473,3 +473,22 @@ describe("FilesExplorer delete", () => {
     expect(remove).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("FilesExplorer deleted source", () => {
+  it("explains a source the project no longer has and removes its card", async () => {
+    vi.spyOn(docsApi.documents, "list").mockResolvedValue([]);
+    vi.spyOn(cadApi.cad, "list").mockResolvedValue([]);
+    vi.spyOn(canvasesApi.canvases, "list").mockResolvedValue([]);
+    const remove = vi.spyOn(canvasesApi.canvases, "removeNode").mockResolvedValue({} as never);
+    useCanvasStore.setState((s) => ({ ...s, slug: "plant", nodes: {
+      card: { id: "card", node_type: "document", label: "PX", x: 0, y: 0, data: { slug: "gone-doc" } },
+    } }));
+
+    render(<FilesExplorer workspaceSlug="plant" />);
+    await waitFor(() => expect(screen.getByText("Document unavailable in this project")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("missing-document-item"));
+    expect(screen.getByTestId("missing-document-explained").textContent).toContain("no longer in the project");
+    fireEvent.click(screen.getByTestId("missing-document-remove-cards"));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("plant", "card"));
+  });
+});

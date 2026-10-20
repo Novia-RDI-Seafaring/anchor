@@ -105,6 +105,20 @@ you ingest and draw then stays with that folder. Do not fall back to the
 environment's `default` project just because nobody named one. If the user
 names a project, use theirs.
 
+Setting a folder up for the first time ("set up Anchor in this folder") is
+a CLI job: an MCP server serves one environment, so it cannot choose one.
+Unless the user already said which environment, ask first, because it
+decides where their documents are sent to be read. Run `anchor env list`
+and show each one's data zone, recommend the one that fits the material
+(confidential work wants a zone that stays on their machine or in their
+tenant), and offer a new one (`anchor env create`). Then run
+`anchor init --env <name>` in the folder.
+
+With a shell, keep to the CLI for the work as well (`anchor ingest`,
+`anchor serve`, the canvas commands): it works at once, where registering an
+MCP server means reloading the session. Use the MCP tools when a server for
+that environment is already connected.
+
 When you start the web app for the user, serve the same project:
 `anchor serve --env <env> --project <that project>`. `server_info` tells you
 whether one is already running for it, and at which URL.
