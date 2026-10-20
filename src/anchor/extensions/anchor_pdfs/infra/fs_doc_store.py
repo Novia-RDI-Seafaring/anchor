@@ -333,7 +333,12 @@ class FsDocStore:
         kept: list[str] = []
         # Not while an ingest writes it: that would leave half a document.
         async with self.ingest_lock(slug, wait=False):
-            legacy = await self.get_raw_pdf_path(slug)
+            try:
+                legacy = await self.get_raw_pdf_path(slug)
+            except (SourceIdentityError, UnsafeUploadError, ValueError):
+                # Ownership of an old shared original cannot be settled; it is
+                # only ever kept, so that never stops the delete.
+                legacy = None
             if legacy is not None and Path(legacy).parent == self.bronze:
                 # An original kept in the shared bronze folder by an older
                 # layout may belong to other documents too; leave it.

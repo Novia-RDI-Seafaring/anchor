@@ -633,8 +633,10 @@ function leftBehind(
   const cards = Object.entries(nodes)
     .filter(([, n]) => n.node_type === "document" && n.data?.slug === slug)
     .map(([id]) => id);
+  const s = slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const cites = new RegExp(`"slug":"${s}"|anchor:(//)?${s}\\?`);
   const citing = Object.entries(nodes).filter(([id, n]) => !cards.includes(id)
-    && JSON.stringify(n.data ?? {}).match(new RegExp(`"slug":"${slug}"|anchor:(//)?${slug}\\?`))).length;
+    && cites.test(JSON.stringify(n.data ?? {}))).length;
   return { cards, citing, workspaceSlug };
 }
 
