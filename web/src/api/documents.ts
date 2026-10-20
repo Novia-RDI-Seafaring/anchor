@@ -37,6 +37,17 @@ type RegionsResponse = { slug: string; pages: Record<string, Region[]> };
  * selectors point below the region (#242 P2): `item_id` names one silver
  * item (`p<page>-i<n>`), `cell` a `{row, col}` of a table.
  */
+/** One canvas citing a document, with counts of what on it does. */
+export type DocumentCitation = {
+  canvas: string;
+  title: string;
+  cards?: number;
+  rows?: number;
+  values?: number;
+  links?: number;
+  edges?: number;
+};
+
 export type ResolvableRef = {
   slug?: string;
   page?: number;
@@ -107,6 +118,12 @@ function normaliseRegion(region: Region): Region {
 
 export const documents = {
   list: () => api.get<DocumentSummary[]>("/api/documents"),
+  /** Which canvases cite a document, and what on each. */
+  citations: (slug: string) =>
+    api.get<{ slug: string; cited_by: DocumentCitation[] }>(`/api/documents/${encodeURIComponent(slug)}/citations`),
+  /** Delete a document and everything stored for it, cited or not. */
+  remove: (slug: string) =>
+    api.del<{ deleted: boolean; removed: string[] }>(`/api/documents/${encodeURIComponent(slug)}?force=true`),
   index: (slug: string) => api.get<DocumentIndex>(`/api/documents/${slug}/index`),
   regions: async (slug: string, page?: number): Promise<Region[]> => {
     const q = page !== undefined ? `?page=${page}` : "";

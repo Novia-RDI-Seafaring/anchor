@@ -22,6 +22,7 @@ import asyncio
 import hashlib
 import json
 import os
+import shutil
 import time
 from contextlib import asynccontextmanager
 from copy import copy
@@ -320,6 +321,37 @@ class FsDocStore:
                 pass
             except OSError:
                 raise
+
+    async def delete_document(self, slug: str) -> dict[str, Any]:
+        layers = {
+            name: self._base_dir(root, slug)
+            for name, root in (("original", self.bronze), ("pages", self.silver), ("regions", self.gold))
+        }
+        if not any(path.exists() for path in layers.values()):
+            raise KeyError(slug)
+        removed: list[str] = []
+        kept: list[str] = []
+        # Not while an ingest writes it: that would leave half a document.
+        async with self.ingest_lock(slug, wait=False):
+            legacy = await self.get_raw_pdf_path(slug)
+            if legacy is not None and Path(legacy).parent == self.bronze:
+                # An original kept in the shared bronze folder by an older
+                # layout may belong to other documents too; leave it.
+                kept.append(Path(legacy).name)
+            for name, path in layers.items():
+                if path.is_symlink():
+                    path.unlink()
+                    removed.append(name)
+                elif path.exists():
+                    await asyncio.to_thread(shutil.rmtree, path)
+                    removed.append(name)
+            status = assert_within(self.ingest_status / f"{slug}.json", self.ingest_status)
+            if status.is_file():
+                status.unlink()
+                removed.append("ingest status")
+        self._pinned.pop(slug, None)
+        self._published.pop(slug, None)
+        return {"slug": slug, "removed": removed, "kept": kept}
 
     async def list_documents(self) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []

@@ -704,6 +704,34 @@ def pdf(
     _emit_bytes(path, copy_to=copy_to, out=out, label=f"{slug} pdf")
 
 
+def delete_document(
+    slug: str = typer.Argument(..., help="Document slug."),
+    force: bool = typer.Option(False, "--force", help="Delete even when canvases cite it."),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Delete a document and everything stored for it from the project.
+
+    Refuses while canvases cite it, listing them; --force deletes anyway and
+    leaves those cards and rows with source links that point nowhere.
+    """
+    from anchor.adapters.cli.services import _build_canvas_runtime
+    from anchor.adapters.document_delete import delete_document as run_delete
+    from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
+
+    runtime = _build_canvas_runtime(data_dir)
+    try:
+        out = asyncio.run(run_delete(runtime.workspace, runtime.doc_store, slug, force=force))
+    except KeyError:
+        typer.echo(f"error: no document {slug!r} in this project", err=True)
+        raise typer.Exit(code=1) from None
+    except IngestLockHeld:
+        typer.echo(f"error: {slug!r} is being ingested; delete it when that finishes", err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(json.dumps(out, indent=2))
+    if not out["deleted"]:
+        raise typer.Exit(code=1)
+
+
 def register_document_commands(app: typer.Typer) -> None:
     """Attach root document commands without changing their public names."""
     app.command()(ingest)
@@ -713,6 +741,7 @@ def register_document_commands(app: typer.Typer) -> None:
     app.command()(search)
     app.command("derive-region")(derive_region)
     app.command("remove-region")(remove_region)
+    app.command("delete-document")(delete_document)
     app.command("resolve-ref")(resolve_ref)
     app.command()(extract)
     app.command()(embed)
