@@ -86,8 +86,10 @@ def test_http_delete_refuses_a_cited_document_and_forces_it():
     refused = client.delete("/api/documents/doc")
     assert refused.status_code == 409
     assert refused.json()["detail"]["cited_by"][0]["cards"] == 1
-    assert client.delete("/api/documents/doc?force=true").json()["deleted"] is True
-    assert client.delete("/api/documents/doc").status_code == 404
+    forced = client.delete("/api/documents/doc?force=true")
+    assert forced.json()["deleted"] is True
+    gone = client.delete("/api/documents/doc")
+    assert gone.status_code == 404
 
 
 def test_mcp_delete_document_is_advertised_as_destructive():
@@ -96,3 +98,23 @@ def test_mcp_delete_document_is_advertised_as_destructive():
     assert DELETE_DOCUMENT_TOOL_DEFINITION["annotations"]["destructiveHint"] is True
     assert "confirm" in DELETE_DOCUMENT_TOOL_DEFINITION["description"]
     json.dumps(DELETE_DOCUMENT_TOOL_DEFINITION)
+
+
+def test_cli_intent_watch_returns_a_waiting_ask(tmp_path):
+    from typer.testing import CliRunner
+
+    from anchor.adapters.cli.main import app
+    from anchor.infra.stores.fs_intent_store import FsIntentStore
+    from intent_layer.actor import Actor, actor_scope
+    from intent_layer.service import IntentService
+    from intent_layer.signals import MemoryPendingSignals
+    from tests.intent_layer.form_host import FormHost
+
+    data_dir = tmp_path / ".anchor_data"
+    # The same store the CLI opens for this data dir.
+    service = IntentService(FsIntentStore(data_dir), MemoryPendingSignals(), host=FormHost())
+    with actor_scope(Actor(kind="human", label="browser")):
+        asyncio.run(service.enqueue("user_request", origin_canvas_id="pumps"))
+    out = CliRunner().invoke(app, ["intent", "watch", "--once", "--timeout", "2", "--data-dir", str(data_dir)])
+    assert out.exit_code == 0, out.output
+    assert json.loads(out.output.strip().splitlines()[-1])["origin_canvas_id"] == "pumps"

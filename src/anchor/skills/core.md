@@ -116,10 +116,37 @@ and show each one's data zone, recommend the one that fits the material
 tenant), and offer a new one (`anchor env create`). Then run
 `anchor init --env <name>` in the folder.
 
-With a shell, keep to the CLI for the work as well (`anchor ingest`,
-`anchor serve`, the canvas commands): it works at once, where registering an
-MCP server means reloading the session. Use the MCP tools when a server for
-that environment is already connected.
+With a shell, keep to the CLI for the work as well: it works at once, where
+registering an MCP server means reloading the session. Use the MCP tools when
+a server for that environment is already connected. Both write to the same
+project, and both show up live in an open canvas.
+
+## MCP or CLI: the same operations
+
+Every operation has both forms. This skill names the MCP tools; on the CLI
+use the column on the right. Run inside a project folder, CLI commands use
+that folder's project; elsewhere pass `--data-dir` or `--env`/`--project`.
+
+| Task | MCP tool | CLI |
+| --- | --- | --- |
+| Environments | (one per server) | `anchor env list`, `anchor env create` |
+| Set up a folder | `create_project(folder=...)` | `anchor init --env <name>` |
+| Check the setup | `anchor_status`, `server_info` | `anchor check` |
+| Ingest a PDF | `ingest_pdf` | `anchor ingest <pdf>` |
+| Find in documents | `search_documents`, `locate_text` | `anchor search`, `anchor locate-text` |
+| Read a region | `get_region_content` | `anchor region-content` |
+| Delete a document | `delete_document` | `anchor delete-document <slug>` |
+| Open the canvas | `canvas_url` | `anchor serve`, then `anchor canvas url <slug>` |
+| Canvases | `canvas_create_workspace`, `canvas_list_workspaces` | `anchor canvas create`, `anchor canvas list` |
+| Read a canvas | `canvas_get_state`, `canvas_changes` | `anchor canvas state`, `anchor canvas changes` |
+| Edit a canvas | `canvas_add_node`, `canvas_update_node`, `canvas_remove_node` | `anchor canvas add-node`, `update-node`, `remove-node` |
+| Edges | `canvas_add_edge`, `canvas_remove_edge` | `anchor canvas add-edge`, `remove-edge` |
+| Group what you add | `canvas_propose_set` | `anchor canvas propose-set` |
+| The inbox | `list_pending_intents` | `anchor intents` |
+| Wait for the next ask | `intents_wait` | `anchor intent watch` |
+| Reply, act, close | `intent_add_item`, `intent_act`, `resolve_intent` | `anchor intent add-item`, `act`, `resolve` |
+
+`anchor <command> --help` gives each command's arguments.
 
 When you start the web app for the user, serve the same project:
 `anchor serve --env <env> --project <that project>`. `server_info` tells you
@@ -131,7 +158,9 @@ A user can select elements on a canvas and ask something about them. That
 creates a **thread**: an intent with `targets` (`[{workspace_id, node_id}]`),
 the canvas `base_version` at ask time, and `items` (the conversation).
 
-- Remarks wait in the inbox; nothing pushes them into your chat. Read it
+- Remarks wait in the inbox; nothing pushes them into your chat. A reply the
+  user writes in a thread (a comment in the keep card, an answer to your
+  question) wakes it again, even after you closed the thread. Read it
   at the start of every turn in a session where Anchor is in use, and
   whenever you are idle: `list_pending_intents` (`anchor intents` on the
   CLI). Take one.

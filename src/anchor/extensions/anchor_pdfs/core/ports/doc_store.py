@@ -72,7 +72,7 @@ class DocStore(Protocol):
         regions, crops, embeddings and every generation. Returns what was
         removed. Raises ``IngestLockHeld`` while the document is being
         ingested, and ``KeyError`` for a slug the store does not hold."""
-        ...
+        raise NotImplementedError
 
     async def list_documents(self) -> list[dict[str, Any]]:
         raise NotImplementedError

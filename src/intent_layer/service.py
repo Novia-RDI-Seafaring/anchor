@@ -411,6 +411,11 @@ class IntentService:
             options=clean_options,
         )
         intent.items.append(item)
+        if intent.status == RESOLVED and item.author.kind != "agent":
+            # A person writing in a closed thread ("almost, make it wider")
+            # has handed the agent another turn: back in its inbox.
+            intent.status = PENDING
+            intent.resolved_at = None
         await self._store.replace(intent)
         await self._signal_pending(intent.origin_canvas_id)
         return intent, item

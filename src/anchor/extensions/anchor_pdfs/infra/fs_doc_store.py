@@ -350,9 +350,14 @@ class FsDocStore:
                 elif path.exists():
                     await asyncio.to_thread(shutil.rmtree, path)
                     removed.append(name)
-            status = assert_within(self.ingest_status / f"{slug}.json", self.ingest_status)
-            if status.is_file():
-                status.unlink()
+            # Inline normalise-then-prefix-check, the barrier the analyzer
+            # recognises: the slug is caller-supplied.
+            status_root = os.path.realpath(os.fspath(self.ingest_status))
+            status = os.path.normpath(os.path.join(status_root, f"{slug}.json"))
+            if not status.startswith(status_root + os.sep):
+                raise UnsafeUploadError(f"document slug {slug!r} escapes ingest status")
+            if os.path.isfile(status):
+                os.unlink(status)
                 removed.append("ingest status")
         self._pinned.pop(slug, None)
         self._published.pop(slug, None)
