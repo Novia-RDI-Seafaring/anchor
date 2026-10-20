@@ -1,6 +1,6 @@
 """Filesystem-backed IngestSessionStore.
 
-Layout (mirrors the proposal in docs/proposals/harness-driven-ingestion.md):
+Layout (see docs/concepts/on-disk-substrate.md, Staging):
 
     <data_dir>/staging/ingest/<session_id>/
         session.json
