@@ -189,6 +189,16 @@ async def _scoped_inbox(intents: Any, canvas: str, text: str) -> str:
     })
 
 
+def _adopt_served_project(router: Any) -> None:
+    """Open the one project of this environment being served, if exactly one is."""
+    try:
+        served = _served_projects(router.environment().name)
+    except Exception:  # noqa: BLE001 -- no environment, nothing to adopt
+        return
+    if len(served) == 1:
+        router.open_project(served[0]["project"])
+
+
 def _served_projects(env_name: str) -> list[dict[str, Any]]:
     """Projects of ``env_name`` that a running ``anchor serve`` shows now."""
     from anchor.infra.serve_registry import list_serves
@@ -644,6 +654,12 @@ def build_mcp_server(
                     content=[TextContent(type="text", text=f"Input validation error: {exc.message}")],
                 )
         args = dict(arguments)
+        # No project named and none chosen yet: the one on the user's screen.
+        # A canvas made in an unserved default project is a canvas nobody can
+        # see, and the agent then makes it again and explains the detour.
+        if router is not None and not args.get("project") and router.session_default is None \
+                and name not in lifecycle_names:
+            _adopt_served_project(router)
         # The activity log counts the call whatever happens to it: an agent's
         # cost is in calls, and a failed one cost a turn too. The project is
         # read before the handlers pop it from the arguments.

@@ -563,7 +563,7 @@ class IngestService:
             resolve_source_ref,
         )
 
-        return await resolve_source_ref(self.store, slug, ref)
+        return await resolve_source_ref(self.store, slug, ref, renderer=self.renderer)
 
     async def derive_region(
         self, slug: str, parent_region_id: str, region: dict[str, Any]

@@ -1,3 +1,4 @@
+import { ContextMarks, useContextPlaces } from "@/canvas/sourceContext";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Handle, Position, useConnection, useUpdateNodeInternals, type NodeProps } from "@xyflow/react";
 import { useParams } from "react-router-dom";
@@ -216,7 +217,12 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   // The page is served as soon as the PDF is on disk, long before ingestion
   // finishes, and the explorer already shows it. Only the regions and marks
   // drawn over it wait for ingestion.
+  // A page asked for before it is rendered fails; asking again shortly finds
+  // it. Hiding it for good on the first failure left a freshly dropped PDF a
+  // blank card until the canvas was reloaded.
+  const [imageTry, setImageTry] = useState(0);
   const coverUrl = slug ? documents.pageImageUrl(slug, page, generation) : null;
+  useEffect(() => { setImageTry(0); }, [coverUrl, status]);
   useEffect(() => {
     const image = imgRef.current;
     // A cached image can finish before this effect, or remain loaded while
@@ -275,21 +281,37 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   }, [hoveredSourceRef, slug, page, resolvedBbox, resolving]);
   heldHighlight.current = externalHighlight;
 
+  // Every source of the hovered card at once, the row the reader is on
+  // strong. A ref with no card around it (a link in prose) travels alone.
+  const contextRefs = hoveredSourceRef?.slug === slug ? hoveredSourceRef?.context : undefined;
+  const contextPlaces = useContextPlaces(contextRefs);
+  // Owned by "all" as soon as there is a card to show, even while its places
+  // are still being looked up: the travelling highlight drawing in the gap
+  // would underline the words twice.
+  const showContext = (contextRefs?.length ?? 0) > 0;
+
   const sourceMarks = [];
-  if (canScale && imgSize) {
+  if (canScale && imgSize && !showContext) {
     const mainBbox = externalHighlight?.bbox ?? (externalHighlight?.regionId
       ? regions.find((r, idx) => ((r as { id?: string }).id ?? `r${idx}`) === externalHighlight.regionId)?.bbox
       : undefined);
     const candidates = [
       ...(mainBbox ? [{ key: "main", testId: "external-highlight", bbox: mainBbox }] : []),
-      ...valueQuads.map((bbox, i) => ({ key: `value-${i}`, testId: "value-quad", bbox })),
+      // The words themselves: underlined inside the place's wash, or washed
+      // on their own when there is no place to stand in.
+      ...valueQuads.map((bbox, i) => ({
+        // Keyed by place, so a new reference draws its underlines afresh.
+        key: `value-${i}-${bbox.join(",")}`, testId: "value-quad", bbox, underline: Boolean(mainBbox), order: i,
+      })),
       ...(hoveredSourceRef && hoveredSourceRef.slug === slug ? (hoveredSourceRef.places ?? [])
         .map((place, i) => ({ key: `also-${i}`, testId: "also-place", ...place }))
         .filter((place) => place.page === page) : []),
     ];
-    for (const { key, testId, bbox } of candidates) {
-      const rect = bboxToImageRect(bbox, pageW, pageH, 100, 100);
-      if (rect) sourceMarks.push({ key, testId, rect });
+    for (const candidate of candidates) {
+      const rect = bboxToImageRect(candidate.bbox, pageW, pageH, 100, 100);
+      const underline = "underline" in candidate && candidate.underline === true;
+      const order = "order" in candidate ? candidate.order : 0;
+      if (rect) sourceMarks.push({ key: candidate.key, testId: candidate.testId, rect, underline, order });
     }
   }
 
@@ -332,7 +354,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
       {coverUrl ? (
         <div className="relative overflow-hidden rounded-t-md bg-neutral-100 cursor-move">
           <img
-            key={coverUrl}
+            key={`${coverUrl}#${imageTry}`}
             ref={imgRef}
             src={coverUrl}
             alt={d.filename ?? "document"}
@@ -346,6 +368,8 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
             }}
             onError={(e) => {
               (e.currentTarget as HTMLImageElement).style.display = "none";
+              // Not there yet: try again while the card is on screen.
+              if (imageTry < 40) window.setTimeout(() => setImageTry((n) => n + 1), 1500);
             }}
           />
           {/* Single-layer region overlay: each region is one absolutely-
@@ -456,11 +480,27 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
                 );
               })
             : null}
-          {sourceMarks.map(({ key, testId, rect }) => (
+          {showContext && canScale && imgSize ? (
+            <ContextMarks
+              places={contextPlaces}
+              active={hoveredSourceRef?.activeKey}
+              pages={[page]}
+              toBox={(_pg, bbox) => {
+                const r = bboxToImageRect(bbox, pageW, pageH, 100, 100);
+                return r ? { left: `${r.x}%`, top: `${r.y}%`, width: `${r.w}%`, height: `${r.h}%` } : null;
+              }}
+            />
+          ) : null}
+          {sourceMarks.map(({ key, testId, rect, underline, order }) => (
             <SourceMark
               key={key}
               data-testid={testId}
-              box={{ left: `${rect.x}%`, top: `${rect.y}%`, width: `${rect.w}%`, height: `${rect.h}%` }}
+              className={underline ? "anchor-mark-underline" : ""}
+              flying={!underline}
+              box={{
+                left: `${rect.x}%`, top: `${rect.y}%`, width: `${rect.w}%`, height: `${rect.h}%`,
+                ...(underline ? { "--mark-i": order } as Record<string, number> : {}),
+              }}
             />
           ))}
         </div>
@@ -530,7 +570,12 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
           document
         </div>
         <div className="truncate font-medium text-neutral-900">
-          {d.label ?? d.filename ?? "untitled"}
+          {/* The card was named after the file when it was dropped; the
+              document's own title replaces that once ingestion has read it,
+              unless someone has renamed the card. */}
+          {(!d.label || d.label === d.filename) && index?.document.title
+            ? index.document.title
+            : d.label ?? d.filename ?? "untitled"}
         </div>
         <div className="flex items-center justify-between text-xs text-neutral-500">
           <span>

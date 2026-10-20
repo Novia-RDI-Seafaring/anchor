@@ -104,3 +104,23 @@ def test_unnamed_project_with_nothing_served_falls_back(tmp_path):
 
     router, _ = _two_projects(tmp_path)
     assert _canvas_url_unnamed(router, None) is None
+
+
+def test_an_unnamed_call_adopts_the_one_served_project(tmp_path):
+    from anchor.adapters.mcp.server import _adopt_served_project
+
+    router, dirs = _two_projects(tmp_path)
+    path = sr.register_serve(host="127.0.0.1", port=8009, data_dir=dirs["valves"], started_at="t")
+    try:
+        _adopt_served_project(router)
+        assert router.session_default == "valves"
+    finally:
+        sr.unregister_serve(path)
+
+
+def test_nothing_is_adopted_when_no_project_is_served(tmp_path):
+    from anchor.adapters.mcp.server import _adopt_served_project
+
+    router, _ = _two_projects(tmp_path)
+    _adopt_served_project(router)
+    assert router.session_default is None

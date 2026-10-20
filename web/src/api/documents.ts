@@ -1,3 +1,4 @@
+import { quoteParams, type Quote, type RefQuotes } from "@/canvas/quotes";
 import { api, BACKEND_URL } from "./client";
 
 export type DocumentSummary = {
@@ -52,6 +53,8 @@ export type ResolvableRef = {
    * which is where the viewer scrolls; these are only drawn.
    */
   also?: string[];
+  /** The words to light there, one or more. See `canvas/marks.ts`. */
+  quotes?: RefQuotes;
 };
 
 /** Answer of `GET /api/documents/{slug}/resolve-ref` (#242 P2b). */
@@ -66,6 +69,8 @@ export type ResolvedRef = {
   cell?: { row: number; col: number };
   /** The extra places, each resolved on its own terms with its own precision. */
   also?: ResolvedPlace[];
+  /** The ref's marks, placed: each with its boxes, or why it could not be. */
+  quotes?: Quote[];
 };
 
 /** One resolved place. The primary answer has the same shape plus `also`. */
@@ -97,6 +102,8 @@ export function refHasSelector(ref: ResolvableRef | null | undefined): boolean {
   // Extra places only exist in the resolver's answer, so a ref naming any
   // must ask for it even when its own selectors would not have.
   if ((ref.also?.length ?? 0) > 0) return true;
+  // So do words still to be placed: only the server can find them.
+  if (quoteParams(ref.quotes).length > 0) return true;
   return typeof ref.cell?.row === "number" && typeof ref.cell?.col === "number";
 }
 
@@ -136,6 +143,7 @@ export const documents = {
     // Only the compact form travels in a URL; a place given as a page box
     // is drawn as it is by the caller and would arrive as "[object Object]".
     for (const place of ref.also ?? []) if (typeof place === "string") params.append("also", place);
+    for (const quote of quoteParams(ref.quotes)) params.append("quote", quote);
     try {
       const rsp = await api.get<ResolvedRef>(
         `/api/documents/${slug}/resolve-ref?${params.toString()}`,

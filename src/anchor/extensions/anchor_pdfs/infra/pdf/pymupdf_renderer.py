@@ -48,6 +48,27 @@ class PymupdfPdfRenderer:
             _locate_text_sync, pdf_path, page, query, within_bbox
         )
 
+    async def page_text(
+        self,
+        pdf_path: Path,
+        page: int,
+        within_bbox: list[float] | None = None,
+    ) -> str:
+        return await asyncio.to_thread(_page_text_sync, pdf_path, page, within_bbox)
+
+
+def _page_text_sync(pdf_path: Path, page_no: int, within_bbox: list[float] | None) -> str:
+    import pymupdf
+
+    with pymupdf.open(pdf_path) as doc:
+        if page_no < 1 or page_no > doc.page_count:
+            return ""
+        page = doc[page_no - 1]
+        clip = _clip_rect(within_bbox) if within_bbox is not None else None
+        if clip is not None and (clip.width <= 1e-6 or clip.height <= 1e-6):
+            clip = None
+        return page.get_text("text", clip=clip)
+
 
 def _render_pages_sync(pdf_path: Path, dpi: int) -> dict[int, bytes]:
     import pymupdf

@@ -27,6 +27,7 @@
  * broken rather than quietly printing the words as if nothing were meant
  * by them. A pointer an agent got wrong should be visible.
  */
+import { formatQuote } from "@/canvas/quotes";
 import type { ResolvableRef } from "@/api/documents";
 
 export const ANCHOR_SCHEME = "anchor:";
@@ -91,6 +92,10 @@ export function parseAnchorHref(href: string | undefined | null): ResolvableRef 
   const also = params.getAll("also").map((v) => v.trim()).filter(Boolean);
   if (also.length > 0) ref.also = also;
 
+  // The words to light, repeated: `&quote=EPDM&quote=+140 °C (-,EPDM,-)`.
+  const quotes = params.getAll("quote").filter((v) => v.trim() !== "");
+  if (quotes.length > 0) ref.quotes = quotes;
+
   return ref;
 }
 
@@ -101,6 +106,7 @@ export function formatAnchorHref(ref: ResolvableRef): string {
   if (ref.region_id) params.set("region", ref.region_id);
   if (ref.item_id) params.set("item", ref.item_id);
   for (const place of ref.also ?? []) params.append("also", place);
+  for (const quote of ref.quotes ?? []) params.append("quote", typeof quote === "string" ? quote : formatQuote(quote));
   if (typeof ref.cell?.row === "number" && typeof ref.cell?.col === "number") {
     params.set("cell", `${ref.cell.row},${ref.cell.col}`);
   }

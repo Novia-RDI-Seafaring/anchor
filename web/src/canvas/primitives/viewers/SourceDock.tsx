@@ -308,6 +308,7 @@ export function SourceDock() {
           index={shown.index}
           highlightBbox={shownViewer.highlightBbox}
           highlightAlso={shownViewer.highlightAlso}
+          highlightQuotes={shownViewer.highlightQuotes}
           highlightPage={shownViewer.highlightPage}
           highlightNonce={shownViewer.nonce}
           title={docTitle}

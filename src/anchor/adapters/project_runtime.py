@@ -96,9 +96,12 @@ class ProjectRuntime:
 def bind_workspace_sources(workspace: WorkspaceService, doc_store: DocStore | None) -> None:
     """Shared composition for normal runtimes and explicit-service HTTP apps."""
     from anchor.extensions.anchor_pdfs.core.node_data import PdfNodeDataPreparer
+    from anchor.extensions.anchor_pdfs.infra.pdf.pymupdf_renderer import PymupdfPdfRenderer
 
     if doc_store is not None:
-        workspace.bind_node_data_preparer(PdfNodeDataPreparer(doc_store))
+        workspace.bind_node_data_preparer(
+            PdfNodeDataPreparer(doc_store, renderer=PymupdfPdfRenderer()),
+        )
 
 
 def build_ingest_service(

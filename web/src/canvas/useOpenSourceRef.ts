@@ -11,6 +11,8 @@
  * caller doesn't already know it, so the viewer opens beside the right
  * card on the canvas.
  */
+import { refKey } from "@/canvas/sourceContext";
+import { quoteBoxes, type Quote } from "@/canvas/quotes";
 import { useCallback } from "react";
 
 import {
@@ -33,8 +35,9 @@ export function useOpenSourceRef(
   ref: ResolvableRef | null | undefined,
   /** Text to highlight inside the region, when the caller has it. */
   query?: string,
-  /** `transient: true` marks a hover-opened pane, which a mouse-out closes. */
-  opts?: { transient?: boolean },
+  /** `transient: true` marks a hover-opened pane, which a mouse-out closes.
+   *  `context`: every source of the card the ref sits on, for "all" highlighting. */
+  opts?: { transient?: boolean; context?: ResolvableRef[] },
 ) => void {
   const openPdf = useUiStore((s) => s.openPdf);
   const knownNodeId = options?.documentNodeId;
@@ -42,6 +45,9 @@ export function useOpenSourceRef(
     (ref, query, opts) => {
       const slug = ref?.slug;
       if (!slug || !ref?.page) return;
+      useUiStore.getState().setSourceContext(
+        opts?.context?.length ? { refs: opts.context, active: refKey(ref) } : null,
+      );
       // Extra places written as page boxes need no resolving, and the
       // resolver's query string cannot carry them: drawn as they are, beside
       // whatever the server resolves.
@@ -49,8 +55,9 @@ export function useOpenSourceRef(
         (ref as { also?: unknown }).also,
         ref.page,
       ).map((pl) => ({ page: pl.page, bbox: pl.bbox, precision: "bbox" as const }));
-      const open = (page: number, bbox?: number[], resolvedAlso?: ResolvedPlace[]) => {
+      const open = (page: number, bbox?: number[], resolvedAlso?: ResolvedPlace[], resolvedQuotes?: Quote[]) => {
         const also = [...(resolvedAlso ?? []), ...boxed];
+        const quotes = quoteBoxes(ref.quotes, ref.page ?? page, resolvedQuotes);
         return openPdf(slug, {
           page,
           workspaceSlug,
@@ -60,6 +67,7 @@ export function useOpenSourceRef(
           // The primary place is what we scroll to; these are drawn beside it.
           highlightAlso: also.length > 0 ? also : undefined,
           highlightQuery: query,
+          highlightQuotes: quotes.length > 0 ? quotes : undefined,
           transient: opts?.transient,
         });
       };
@@ -73,7 +81,7 @@ export function useOpenSourceRef(
         void documents
           .resolveRef(slug, ref)
           .then((resolved) =>
-            open(resolved?.page ?? fallbackPage, resolved?.bbox ?? ref.bbox, resolved?.also),
+            open(resolved?.page ?? fallbackPage, resolved?.bbox ?? ref.bbox, resolved?.also, resolved?.quotes),
           );
         return;
       }
