@@ -13,7 +13,7 @@
  *      handler is untouched: `application/x-anchor-node` for documents + CAD,
  *      `application/x-anchor-canvas-link` for canvases.
  */
-import { FileText } from "lucide-react";
+import { FileText, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { cad, type CadModel } from "@/api/cad";
@@ -23,7 +23,7 @@ import {
 } from "@/api/canvases";
 import { ReferencesPanel } from "@/canvas/primitives/viewers/ReferencesPanel";
 import { useOpenSourceRef } from "@/canvas/useOpenSourceRef";
-import { documents, type DocumentSummary } from "@/api/documents";
+import { documents, type DocumentCitation, type DocumentSummary } from "@/api/documents";
 import { cn } from "@/lib/cn";
 import { useCanvasStore } from "@/stores/canvasStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -231,6 +231,7 @@ export function FilesExplorer({ workspaceSlug }: Props) {
                         hint={!documentsLoaded ? "Loading document details..." : documentsError
                           ? "Document details unavailable" : "Document unavailable in this project"}
                         onOpen={() => openSource(source)}
+                        gone={documentsLoaded && !documentsError ? leftBehind(source.slug, nodes, workspaceSlug) : undefined}
                       />
                     );
                   })
@@ -383,6 +384,11 @@ function DocumentItem({
 }) {
   const [imgError, setImgError] = useState(false);
   const [previewVisible, setPreviewVisible] = useState(false);
+  // Deleting: asked first, with where the document is cited.
+  const [confirming, setConfirming] = useState<DocumentCitation[] | "loading" | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [gone, setGone] = useState(false);
   const [previewImgError, setPreviewImgError] = useState(false);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -408,8 +414,39 @@ function DocumentItem({
     setPreviewVisible(false);
   };
 
+  const askDelete = () => {
+    setDeleteError(null);
+    setConfirming("loading");
+    documents.citations(doc.slug)
+      .then((r) => setConfirming(r.cited_by))
+      .catch(() => setConfirming([]));
+  };
+  const confirmDelete = () => {
+    setDeleting(true);
+    documents.remove(doc.slug)
+      .then(() => setGone(true))
+      .catch((e: unknown) => {
+        setDeleteError(String(e).includes("409")
+          ? "It is being ingested. Delete it when that finishes."
+          : "Could not delete it.");
+      })
+      .finally(() => setDeleting(false));
+  };
+
+  if (gone) return null;
+
   return (
-    <div className="relative">
+    <div className="group/doc relative">
+      <button
+        type="button"
+        data-testid="document-delete"
+        aria-label={`Delete ${doc.title || doc.filename}`}
+        title="Delete from the project"
+        onClick={(e) => { e.stopPropagation(); askDelete(); }}
+        className="absolute right-1.5 top-1.5 z-10 rounded p-1 text-neutral-400 opacity-0 hover:bg-red-50 hover:text-red-600 focus:opacity-100 group-hover/doc:opacity-100"
+      >
+        <Trash2 size={13} aria-hidden="true" />
+      </button>
       <div
         draggable
         role="button"
@@ -490,6 +527,62 @@ function DocumentItem({
         </div>
       </div>
 
+      {confirming !== null ? (
+        <div
+          role="alertdialog"
+          aria-label={`Delete ${doc.title || doc.filename}?`}
+          data-testid="document-delete-confirm"
+          className="mt-1 rounded border border-red-200 bg-red-50 p-2 text-[11px] leading-snug text-neutral-800"
+        >
+          <div className="font-medium">Delete {doc.title || doc.filename}?</div>
+          <div className="mt-0.5 text-neutral-600">
+            This removes the PDF and everything extracted from it. It cannot be undone.
+          </div>
+          {confirming === "loading" ? (
+            <div className="mt-1 text-neutral-500">Checking where it is cited…</div>
+          ) : confirming.length > 0 ? (
+            <div className="mt-1">
+              <div>Cited on:</div>
+              <ul className="ml-3 list-disc">
+                {confirming.map((c) => (
+                  <li key={c.canvas}>
+                    {c.title}: {[
+                      c.cards ? `${c.cards} ${c.cards === 1 ? "card" : "cards"}` : null,
+                      c.rows ? `${c.rows} ${c.rows === 1 ? "row" : "rows"}` : null,
+                      c.values ? `${c.values} ${c.values === 1 ? "value" : "values"}` : null,
+                      c.links ? `${c.links} ${c.links === 1 ? "link" : "links"}` : null,
+                      c.edges ? `${c.edges} ${c.edges === 1 ? "edge" : "edges"}` : null,
+                    ].filter(Boolean).join(", ")}
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-0.5 text-neutral-600">
+                They stay on their canvases; their source links will point nowhere.
+              </div>
+            </div>
+          ) : null}
+          {deleteError ? <div className="mt-1 text-red-700" role="alert">{deleteError}</div> : null}
+          <div className="mt-1.5 flex justify-end gap-1.5">
+            <button
+              type="button"
+              className="rounded px-2 py-0.5 text-neutral-600 hover:bg-white"
+              onClick={() => setConfirming(null)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              data-testid="document-delete-confirm-button"
+              disabled={confirming === "loading" || deleting}
+              className="rounded bg-red-600 px-2 py-0.5 font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              onClick={confirmDelete}
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* Hover preview popover */}
       {previewVisible ? (
         <div
@@ -531,12 +624,69 @@ function DocumentItem({
   );
 }
 
-function MissingDocumentItem({ source, active, hint, onOpen }: {
+/** What on this canvas still points at a document the project no longer has. */
+function leftBehind(
+  slug: string,
+  nodes: Record<string, { node_type?: string; data?: Record<string, unknown> }>,
+  workspaceSlug: string,
+) {
+  const cards = Object.entries(nodes)
+    .filter(([, n]) => n.node_type === "document" && n.data?.slug === slug)
+    .map(([id]) => id);
+  const s = slug.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const cites = new RegExp(`"slug":"${s}"|anchor:(//)?${s}\\?`);
+  const citing = Object.entries(nodes).filter(([id, n]) => !cards.includes(id)
+    && cites.test(JSON.stringify(n.data ?? {}))).length;
+  return { cards, citing, workspaceSlug };
+}
+
+function MissingDocumentItem({ source, active, hint, onOpen, gone }: {
   source: CanvasSource;
   active: boolean;
   hint: string;
   onOpen: () => void;
+  /** Set when the project is known not to have the document: what is left of it here. */
+  gone?: { cards: string[]; citing: number; workspaceSlug: string };
 }) {
+  const [explained, setExplained] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  if (gone && explained) {
+    const removeCards = () => {
+      setRemoving(true);
+      void Promise.all(gone.cards.map((id) => canvases.removeNode(gone.workspaceSlug, id).catch(() => null)))
+        .finally(() => setRemoving(false));
+    };
+    return (
+      <div
+        role="status"
+        data-testid="missing-document-explained"
+        className="rounded border border-amber-200 bg-amber-50 p-2 text-[11px] leading-snug text-neutral-800"
+      >
+        <div className="font-medium">{source.slug}</div>
+        <div className="mt-0.5 text-neutral-600">
+          This document is no longer in the project, so there is nothing to open.
+          {gone.cards.length ? ` ${gone.cards.length === 1 ? "A document card" : `${gone.cards.length} document cards`} on this canvas still show it.` : ""}
+          {gone.citing ? ` ${gone.citing} ${gone.citing === 1 ? "element cites" : "elements cite"} it; their source links point nowhere.` : ""}
+        </div>
+        <div className="mt-1.5 flex justify-end gap-1.5">
+          <button type="button" className="rounded px-2 py-0.5 text-neutral-600 hover:bg-white" onClick={() => setExplained(false)}>
+            Close
+          </button>
+          {gone.cards.length ? (
+            <button
+              type="button"
+              data-testid="missing-document-remove-cards"
+              disabled={removing}
+              className="rounded bg-neutral-800 px-2 py-0.5 font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+              onClick={removeCards}
+            >
+              {removing ? "Removing…" : gone.cards.length === 1 ? "Remove the card" : "Remove the cards"}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
   return (
     <button
       type="button"
@@ -544,7 +694,7 @@ function MissingDocumentItem({ source, active, hint, onOpen }: {
       data-slug={source.slug}
       data-active={active ? "true" : "false"}
       aria-current={active ? "true" : undefined}
-      onClick={onOpen}
+      onClick={gone ? () => setExplained(true) : onOpen}
       className={cn("flex w-full items-center gap-2 rounded border px-2 py-2 text-left",
         active ? "border-sky-300 bg-sky-50 ring-1 ring-sky-300" : "border-amber-200 bg-amber-50")}
     >

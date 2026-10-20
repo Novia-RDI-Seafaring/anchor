@@ -178,6 +178,18 @@ class MemoryDocStore:
         finally:
             lock.release()
 
+    async def delete_document(self, slug: str) -> dict[str, Any]:
+        removed = False
+        for value in list(vars(self).values()):
+            if not isinstance(value, dict):
+                continue
+            for key in [k for k in value if k == slug or (isinstance(k, tuple) and k and k[0] == slug)]:
+                del value[key]
+                removed = True
+        if not removed:
+            raise KeyError(slug)
+        return {"slug": slug, "removed": ["original", "pages", "regions"], "kept": []}
+
     async def list_documents(self) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         seen: set[str] = set()

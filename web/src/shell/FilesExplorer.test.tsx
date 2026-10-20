@@ -451,3 +451,44 @@ describe("FilesExplorer proposals tab (#359)", () => {
     });
   });
 });
+
+describe("FilesExplorer delete", () => {
+  it("asks first, names where the document is cited, then deletes it", async () => {
+    vi.spyOn(docsApi.documents, "list").mockResolvedValue([makeDoc()]);
+    vi.spyOn(cadApi.cad, "list").mockResolvedValue([]);
+    vi.spyOn(canvasesApi.canvases, "list").mockResolvedValue([]);
+    vi.spyOn(docsApi.documents, "citations").mockResolvedValue({
+      slug: "pump-leaflet", cited_by: [{ canvas: "pumps", title: "Pumps", cards: 1, rows: 3 }],
+    });
+    const remove = vi.spyOn(docsApi.documents, "remove").mockResolvedValue({ deleted: true, removed: [] });
+
+    renderFiles();
+    await waitFor(() => expect(screen.getByText("Pump Leaflet")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("document-delete"));
+    // Nothing is deleted on the first click.
+    expect(remove).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText("Pumps: 1 card, 3 rows")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("document-delete-confirm-button"));
+    await waitFor(() => expect(screen.queryByText("Pump Leaflet")).toBeNull());
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("FilesExplorer deleted source", () => {
+  it("explains a source the project no longer has and removes its card", async () => {
+    vi.spyOn(docsApi.documents, "list").mockResolvedValue([]);
+    vi.spyOn(cadApi.cad, "list").mockResolvedValue([]);
+    vi.spyOn(canvasesApi.canvases, "list").mockResolvedValue([]);
+    const remove = vi.spyOn(canvasesApi.canvases, "removeNode").mockResolvedValue({} as never);
+    useCanvasStore.setState((s) => ({ ...s, slug: "plant", nodes: {
+      card: { id: "card", node_type: "document", label: "PX", x: 0, y: 0, data: { slug: "gone-doc" } },
+    } }));
+
+    render(<FilesExplorer workspaceSlug="plant" />);
+    await waitFor(() => expect(screen.getByText("Document unavailable in this project")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("missing-document-item"));
+    expect(screen.getByTestId("missing-document-explained").textContent).toContain("no longer in the project");
+    fireEvent.click(screen.getByTestId("missing-document-remove-cards"));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("plant", "card"));
+  });
+});

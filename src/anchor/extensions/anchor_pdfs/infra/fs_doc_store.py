@@ -22,6 +22,7 @@ import asyncio
 import hashlib
 import json
 import os
+import shutil
 import time
 from contextlib import asynccontextmanager
 from copy import copy
@@ -320,6 +321,47 @@ class FsDocStore:
                 pass
             except OSError:
                 raise
+
+    async def delete_document(self, slug: str) -> dict[str, Any]:
+        layers = {
+            name: self._base_dir(root, slug)
+            for name, root in (("original", self.bronze), ("pages", self.silver), ("regions", self.gold))
+        }
+        if not any(path.exists() for path in layers.values()):
+            raise KeyError(slug)
+        removed: list[str] = []
+        kept: list[str] = []
+        # Not while an ingest writes it: that would leave half a document.
+        async with self.ingest_lock(slug, wait=False):
+            try:
+                legacy = await self.get_raw_pdf_path(slug)
+            except (SourceIdentityError, UnsafeUploadError, ValueError):
+                # Ownership of an old shared original cannot be settled; it is
+                # only ever kept, so that never stops the delete.
+                legacy = None
+            if legacy is not None and Path(legacy).parent == self.bronze:
+                # An original kept in the shared bronze folder by an older
+                # layout may belong to other documents too; leave it.
+                kept.append(Path(legacy).name)
+            for name, path in layers.items():
+                if path.is_symlink():
+                    path.unlink()
+                    removed.append(name)
+                elif path.exists():
+                    await asyncio.to_thread(shutil.rmtree, path)
+                    removed.append(name)
+            # Inline normalise-then-prefix-check, the barrier the analyzer
+            # recognises: the slug is caller-supplied.
+            status_root = os.path.realpath(os.fspath(self.ingest_status))
+            status = os.path.normpath(os.path.join(status_root, f"{slug}.json"))
+            if not status.startswith(status_root + os.sep):
+                raise UnsafeUploadError(f"document slug {slug!r} escapes ingest status")
+            if os.path.isfile(status):
+                os.unlink(status)
+                removed.append("ingest status")
+        self._pinned.pop(slug, None)
+        self._published.pop(slug, None)
+        return {"slug": slug, "removed": removed, "kept": kept}
 
     async def list_documents(self) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []

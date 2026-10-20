@@ -7,7 +7,7 @@ import { regionDropPayload } from "@/canvas/regionDrop";
 import { sectionDragImage } from "@/canvas/sectionDragImage";
 import { BACKEND_URL } from "@/api/client";
 import { documents, type Region } from "@/api/documents";
-import { useDocumentIndex } from "@/api/useDocumentIndex";
+import { useDocumentIndexState } from "@/api/useDocumentIndex";
 import { bboxToImageRect, sameBbox } from "@/lib/bbox";
 import { parseDocumentPageGeometry, type DocumentPageGeometry } from "@/lib/documentPageGeometry";
 import { useUiStore } from "@/stores/uiStore";
@@ -131,7 +131,7 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
   // source ref broadcast by a selected referencing node (#187). A transient
   // hover flip never touches it, so hover-out always reverts here.
   const restingPage = useRef(1);
-  const index = useDocumentIndex(slug, isReady);
+  const { index, missing: documentMissing } = useDocumentIndexState(slug, isReady);
   const generation = index?.document.generation?.id;
   const [regions, setRegions] = useState<Region[]>([]);
   const [pageMeta, setPageMeta] = useState<Record<number, DocumentPageGeometry>>({});
@@ -351,7 +351,19 @@ export function DocumentPrimitive({ id, data }: NodeProps) {
           element is `nodrag` so pointer events on the cover image don't
           fire region drags, but they still propagate to the wrapper for
           node move. */}
-      {coverUrl ? (
+      {documentMissing ? (
+        // The project no longer has this document. Say so, rather than show a
+        // page the browser still has cached and pass for a live source.
+        <div
+          data-testid="document-missing"
+          className="flex flex-col items-center justify-center gap-1 rounded-t-md bg-amber-50 px-4 py-8 text-center text-xs text-amber-900"
+        >
+          <span className="font-medium">Deleted from this project</span>
+          <span className="text-amber-800">
+            This card, and any values citing this document, point nowhere now.
+          </span>
+        </div>
+      ) : coverUrl ? (
         <div className="relative overflow-hidden rounded-t-md bg-neutral-100 cursor-move">
           <img
             key={`${coverUrl}#${imageTry}`}

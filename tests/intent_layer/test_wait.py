@@ -76,3 +76,20 @@ def test_mcp_intents_wait_reports_a_timeout(tmp_path):
         _service(tmp_path), "intents_wait", {"timeout_s": 0.1}, actor=ME,
     )))
     assert body == {"intent": None, "timed_out": True}
+
+
+def test_a_reply_after_the_agent_closed_the_thread_reopens_it(tmp_path):
+    async def run():
+        service = _service(tmp_path)
+        with actor_scope(PERSON):
+            intent = await service.enqueue("user_request", origin_canvas_id="pumps")
+        await service.resolve(intent.id, {"done": True})
+        with actor_scope(ME):
+            await service.add_item(intent.id, type="message", text="a closing note")
+        assert await service.wait(reader=ME, timeout=0.1, poll=0.05) is None
+        with actor_scope(PERSON):
+            await service.add_item(intent.id, type="message", text="almost, make it wider")
+        found = await service.wait(reader=ME, timeout=0.1, poll=0.05)
+        assert found is not None and found.id == intent.id
+
+    asyncio.run(run())

@@ -234,6 +234,30 @@ def _canvas_url_unnamed(router: Any, workspace_slug: str | None) -> dict[str, An
     return None
 
 
+DELETE_DOCUMENT_TOOL_DEFINITION = {
+    "name": "delete_document",
+    "description": (
+        "Delete a document and everything stored for it (original, pages, "
+        "regions, crops, embeddings) from the project. Destructive and not "
+        "undoable: only when the user asked, and confirm with them first. "
+        "When canvases cite the document it is not deleted: the answer lists "
+        "them under `cited_by`. Tell the user; with their go-ahead pass "
+        "`force` to delete anyway (their cards and rows stay, with source "
+        "links that point nowhere)."
+    ),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "slug": {"type": "string", "description": "The document's slug."},
+            "force": {"type": "boolean", "description": "Delete even when canvases cite it."},
+        },
+        "required": ["slug"],
+        "additionalProperties": False,
+    },
+    "annotations": {"destructiveHint": True, "idempotentHint": False},
+}
+
+
 STATUS_TOOL_DEFINITION = {
     "name": "anchor_status",
     "description": (
@@ -567,6 +591,7 @@ def build_mcp_server(
         STATUS_TOOL_DEFINITION,
         SERVER_INFO_TOOL_DEFINITION,
         CANVAS_URL_TOOL_DEFINITION,
+        DELETE_DOCUMENT_TOOL_DEFINITION,
         handlers_extensions.TOOL_DEFINITION,
     ]
     lifecycle_defs = LIFECYCLE_TOOL_DEFINITIONS if multiproject else []
@@ -686,6 +711,20 @@ def build_mcp_server(
             elif name == SERVER_INFO_TOOL_DEFINITION["name"]:
                 b = get_bundle(args.pop("project", None))
                 text = _json.dumps(_build_server_info(b.config.data_dir))
+            elif name == DELETE_DOCUMENT_TOOL_DEFINITION["name"]:
+                from anchor.adapters.document_delete import delete_document
+                from anchor.extensions.anchor_pdfs.core.ports.doc_store import IngestLockHeld
+
+                b = get_bundle(args.pop("project", None))
+                try:
+                    text = _json.dumps(await delete_document(
+                        b.workspace, b.doc_store, args["slug"], force=bool(args.get("force")),
+                    ))
+                except KeyError:
+                    text = _json.dumps({"error": "not_found", "slug": args["slug"]})
+                except IngestLockHeld:
+                    text = _json.dumps({"error": "ingesting", "slug": args["slug"],
+                                        "next": "Delete it when the ingest finishes."})
             elif name == CANVAS_URL_TOOL_DEFINITION["name"]:
                 project = args.pop("project", None)
                 slug = args.get("workspace_slug")

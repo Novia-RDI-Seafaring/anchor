@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from anchor.adapters.http.routers import (
+    documents_delete,
     edges,
     ingests,
     intents,
@@ -292,6 +293,7 @@ def build_app(
     app.include_router(realtime.router)
     app.include_router(ingests.router)
     app.include_router(intents.router)
+    app.include_router(documents_delete.router)
     app.include_router(status.router)
     app.include_router(whoami.router)
     if cad_service is not None:

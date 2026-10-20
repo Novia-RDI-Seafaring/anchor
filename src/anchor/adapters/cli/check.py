@@ -151,18 +151,18 @@ def check(
         source = f"from --project {project_dir.parent / PROJECT_MARKER_FILENAME}"
     elif project_flag is not None:
         source = "from --project"
-    elif env_flag is None and marker_root is not None:
+    elif marker_root is not None and project_dir == marker_root / ".anchor_data":
         source = f"from {marker_root / PROJECT_MARKER_FILENAME}"
     elif os.environ.get(PROJECT_VAR):
         source = "from ANCHOR_PROJECT"
     elif get_use().get("project"):
         source = "from `anchor use`"
     elif marker_root is not None:
-        # A cwd anchor.toml exists but --env was given, which resolves by
-        # name and skips the marker. Say so instead of silently diverging.
+        # A cwd anchor.toml bound to another environment than --env names is
+        # skipped. Say so instead of silently diverging.
         source = (
             "env default — cwd "
-            f"{marker_root / PROJECT_MARKER_FILENAME} ignored because --env was given"
+            f"{marker_root / PROJECT_MARKER_FILENAME} is bound to another environment"
         )
     else:
         source = "no anchor.toml here — commands in this folder use the env default"

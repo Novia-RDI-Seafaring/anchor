@@ -171,6 +171,32 @@ def intent_next(
     )
 
 
+@intent_app.command("watch")
+def intent_watch(
+    canvas: str | None = typer.Option(None, "--canvas", "-c"),
+    once: bool = typer.Option(False, "--once", help="Return after the first intent."),
+    timeout: float = typer.Option(60.0, "--timeout", help="Seconds per wait, at most 120."),
+    claim: bool = typer.Option(True, "--claim/--no-claim"),
+    data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
+) -> None:
+    """Print each intent that needs you as one JSON line, as it arrives.
+
+    The CLI side of MCP ``intents_wait``: holds until an ask needs the caller
+    (a new one, an answer to its question, a comment in its thread) and claims
+    it, so a second listener skips it. Runs until stopped (Ctrl-C), or with
+    --once until the first one. A harness that can watch a command's output
+    hears asks without polling.
+    """
+    svc = _intent_service(data_dir)
+    wait = min(120.0, max(0.0, timeout))
+    while True:
+        found = asyncio.run(svc.wait(canvas=canvas, reader=current_actor(), timeout=wait, claim=claim))
+        if found is not None:
+            typer.echo(json.dumps(found.to_dict()))
+            if once:
+                return
+
+
 @intent_app.command("resolve")
 def intent_resolve(
     intent_id: str = typer.Argument(..., help="The intent id to resolve."),
