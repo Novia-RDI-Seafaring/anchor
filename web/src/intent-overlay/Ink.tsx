@@ -7,9 +7,11 @@ import {
 import { GHOST_GROUNDS } from "./markupStore";
 import { GHOST_H, GHOST_W, INK } from "./constants";
 import type { MarkupModel } from "./types";
+import { answeredCards } from "./answeredCards";
 
 export function Ink({ model }: { model: Pick<MarkupModel, "remarkBlob" | "screen" | "ground" | "ghosts" | "openFiled" | "viewport" | "shelf" | "blobOf" | "hoverShelf" | "notes" | "lineFrom" | "notePos" | "calledOut" | "dropOn" | "boxes" | "ink" | "ids" | "marks" | "paths" | "selected" | "all" | "hoveredStroke" | "surfaceRef" | "lifted" | "onPointerDown" | "onPointerMove" | "onPointerUp" | "onClick" | "onDoubleClick"> }) {
   const { remarkBlob, screen, ground, ghosts, openFiled, viewport, shelf, blobOf, hoverShelf, notes, lineFrom, notePos, calledOut, dropOn, boxes, ink, ids, marks, paths, selected, all, hoveredStroke, surfaceRef, lifted, onPointerDown, onPointerMove, onPointerUp, onClick, onDoubleClick } = model;
+  const cards = answeredCards(ghosts, boxes, screen, viewport.zoom);
   return (<>
     <svg
       data-testid="comment-lasso-ink"
@@ -38,6 +40,15 @@ export function Ink({ model }: { model: Pick<MarkupModel, "remarkBlob" | "screen
       {/* Filed remarks. Fainter than the pile: they are no longer the
             reader's to change, they are the agent's to answer. Each keeps
             its shape so the answer has somewhere to land. */}
+      {/* The cards an answer placed are what the reader came to read: the
+            remark's ink keeps out of them. */}
+      {cards.length ? (
+        <mask id="intent-overlay-answered" maskUnits="userSpaceOnUse">
+          <rect x={-1e6} y={-1e6} width={2e6} height={2e6} fill="white" />
+          {cards.map((c, i) => <rect key={i} x={c.x} y={c.y} width={c.w} height={c.h} rx={10} fill="black" />)}
+        </mask>
+      ) : null}
+      <g mask={cards.length ? "url(#intent-overlay-answered)" : undefined}>
       {ghosts.map(({ f, blob, suggestion }, i) => (
         <g key={`ghost-${f.intentId}`} data-testid="comment-lasso-ghost">
           {/* Each remark in flight on its own ground. Two remarks in the
@@ -87,6 +98,7 @@ export function Ink({ model }: { model: Pick<MarkupModel, "remarkBlob" | "screen
           )}
         </g>
       ))}
+      </g>
 
       {/* Ghost nodes: what the agent says it is about to add, drawn where
             it will go. Grey and dotted while planned; the one being worked on

@@ -42,9 +42,9 @@ from anchor.core.workspace.align import Anchor, Axis
 from anchor.core.workspace.builtin_node_types import builtin_node_type_registry
 from anchor.core.workspace.changes import fold_changes, last_touched_by
 from anchor.core.workspace.evidence import (
-    consume_evidence_requests,
+    drop_row_checks,
+    keep_people_verdicts,
     name_rows_by_key,
-    prepare_evidence_patch,
 )
 from anchor.core.workspace.layout import NodeLike, find_free_position
 from anchor.core.workspace.node_types import NodeTypeRegistry
@@ -800,10 +800,13 @@ class WorkspaceService:
         return cmd
 
     async def _prepare_node_data(self, data: dict, previous: dict | None) -> dict:
-        data = prepare_evidence_patch(name_rows_by_key(data), previous)
+        data = drop_row_checks(name_rows_by_key(data))
+        actor = current_actor()
+        if actor is not None and actor.kind != "human":
+            data = keep_people_verdicts(data, previous)
         if self._node_data_preparer is not None:
             data = await self._node_data_preparer(data, previous)
-        return consume_evidence_requests(data)
+        return data
 
     def _envelope(
         self,

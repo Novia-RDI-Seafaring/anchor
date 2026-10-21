@@ -119,7 +119,7 @@ using `anchor serve-info`, `list_projects`, and `anchor_status`.
 - [Connect an agent](./docs/guides/agent-setup.md)
 - [Manual agent configuration](./docs/guides/agent-configuration.md)
 - [CLI reference](./docs/reference/cli.md) and [MCP reference](./docs/reference/mcp.md)
-- [Claim and evidence states](./docs/concepts/claim-evidence.md)
+- [Checking a reference](./docs/concepts/claim-evidence.md)
 - [Architecture](./docs/concepts/architecture.md)
 
 ## Extensions and limits
@@ -139,10 +139,9 @@ Producer manifests can be discovered and registered through `anchor extensions`.
 Registration alone does not launch or proxy an external producer's MCP server.
 See [Extensions and OIP](./docs/concepts/extensions-and-oip.md).
 
-A source link supports review. Automated Verified status reflects a stored
-key/value evidence match, not engineering correctness. Changes can leave a row
-Unverified or Stale, and a reference may open a whole page rather than an exact
-value. Inspect the source and its operating conditions.
+A source link supports review; it is not proof. A reference may open a whole
+page rather than an exact value. Inspect the source and its operating
+conditions, then record your verdict on the row's anchor.
 
 The HTTP server is unauthenticated and binds to `127.0.0.1` by default. Keep it
 on loopback, or provide authentication through your own deployment layer before

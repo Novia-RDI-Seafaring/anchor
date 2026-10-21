@@ -44,7 +44,7 @@ Put a citation in a node's `data.source_ref` or in each spec row's
 and opens the shared viewer at the cited page and region. A document card or
 an evidence edge to a hub card is not required. Existing cards still render,
 and an explicit anchored evidence edge remains useful when the line itself
-communicates something. A citation does not grant Verified status by itself.
+communicates something. A citation alone does not make a row match its source.
 
 ### Say it in Markdown when it has structure
 
@@ -238,7 +238,8 @@ between two claims is a line, not an argument.
 **Mark what you assumed.** Anything you filled in yourself, rather than
 read out of a document, is the first thing the human must check. Give
 assumptions their own colour and put them where they will be seen, not
-in a footnote.
+in a footnote. This is for a canvas you compose. When you answer a remark,
+add only what was asked; a caveat goes in the thread, not on a new card.
 
 ### Say what each card is: `data.role`
 
@@ -373,7 +374,15 @@ to its card with an evidence edge (`data.kind = "evidence"`), the same as
 a human would draw. Without it the reader cannot see where the table came
 from without opening each row.
 
-Editing a row's `key` or `value` marks its evidence `stale`: the claim is
-no longer the one that was checked against the page. That is not an
-error. Send the row again with `revalidate_evidence: true` to have it
-checked against its `source_ref`; a match turns it `verified` again.
+### Check every value before you write it; the person confirms it
+
+Read the cited cell before you put a value in a row, quote the printed
+words, and make sure the key, the value and its unit are the ones on the
+page. The person reviewing your work relies on that care: they confirm a
+reference from the anchor's menu, which stores the row's `review`, and
+they should find it right. That confirmation is theirs to give. Never set
+or change a row's `review`, and never tell the user a row is verified;
+say what you checked and where.
+
+When something does not fit, say so plainly. Never rename a key or reword
+a value to make a row look consistent with its source.

@@ -77,8 +77,6 @@ export function menuPlacement(
 export function RefReviewChip({
   review,
   onChange,
-  onRevalidate,
-  checkNote,
   claim,
   label,
   children,
@@ -86,11 +84,6 @@ export function RefReviewChip({
 }: {
   review: RefReview | null;
   onChange: (state: RefVerdictName | null, note?: string) => void;
-  /** Ask the SERVER to re-check the claim against its source, when offered. */
-  onRevalidate?: () => void;
-  /** What the server's last check said about this claim, kept here rather
-   *  than under the row: "Not verified" is the usual outcome, not news. */
-  checkNote?: string;
   /** The value being judged, shown beside its label so the menu says
    *  exactly what is being checked. */
   claim?: string;
@@ -392,35 +385,6 @@ export function RefReviewChip({
                   className="w-full rounded border border-neutral-200 px-2 py-1 text-[11px] outline-none focus:border-neutral-400"
                 />
               </div>
-              {/* The reader's verdict and the server's check are different
-                  questions. This one asks the machine to look again. */}
-              {checkNote ? (
-                <>
-                  <div className="my-1 h-px bg-neutral-100" />
-                  <p data-testid="ref-review-check" className="max-w-[16rem] px-2 py-1 text-[10px] leading-snug text-neutral-500">
-                    {checkNote}
-                  </p>
-                </>
-              ) : null}
-              {onRevalidate ? (
-                <>
-                  <div className="my-1 h-px bg-neutral-100" />
-                  <MenuItem
-                    testid="ref-review-revalidate"
-                    checked={false}
-                    color="rgb(115,115,115)"
-                    glyph="↻"
-                    onClick={() => {
-                      onRevalidate();
-                      setOpen(false);
-                    }}
-                    ariaLabel={`Revalidate evidence for ${label}`}
-                    action
-                  >
-                    Re-check against the source
-                  </MenuItem>
-                </>
-              ) : null}
             </div>
             </>,
             document.body,

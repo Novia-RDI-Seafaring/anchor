@@ -53,6 +53,26 @@ def _inverse_data(patch: Any, was: Any) -> Any:
     return out
 
 
+def _named(ops: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Give every added node and edge a client id, so put back can find it.
+
+    The batch reports the id it minted only for an op that named one. An
+    edge added without an id was out of reach of the undo, and put back
+    failed on it.
+    """
+    out = []
+    for index, op in enumerate(ops):
+        payload = op.get("payload") if isinstance(op, dict) else None
+        if (
+            isinstance(payload, dict)
+            and op.get("type") in ("NodeAdded", "EdgeAdded")
+            and not (isinstance(payload.get("id"), str) and payload["id"])
+        ):
+            op = {**op, "payload": {**payload, "id": f"_unnamed-op-{index}"}}
+        out.append(op)
+    return out
+
+
 def _undo_for(
     before: dict[str, Any],
     ops: list[dict[str, Any]],
@@ -233,6 +253,7 @@ class AnchorThreadHost:
         self.ensure_available("apply")
         assert self._workspace is not None
         slug = self._canvas(context)
+        ops = _named(ops)
         # Snapshot and batch application remain separate, as before this seam.
         before = await self._workspace.get_state(slug)
         try:

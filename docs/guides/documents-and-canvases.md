@@ -95,8 +95,7 @@ highlight. Browsing a project document does not add it to the canvas's sources.
 Keep provenance on the node or row itself. Neither a document card nor an edge
 to a document hub is needed to open or review that citation. Explicit anchored
 evidence edges remain available when the line is useful, such as a connection
-from a spec row to a crop image. A source citation still needs validated claim
-evidence to earn a Verified row state.
+from a spec row to a crop image.
 
 Open a document in the source dock and choose **Contents** beside **Pages**.
 Headings are nested by level; extracted tables and figures have separate lists.
@@ -235,8 +234,7 @@ references from another canvas are not searched. Deleting an entry leaves the
 copied source locator on already attached nodes and table rows intact.
 
 Attaching a reference replaces that target's current source link. It does not
-record Accept or Reject or mark the claim Verified; inspect and check the
-source as described below.
+record a verdict; inspect and check the source as described below.
 
 ## Inspect and maintain row evidence
 
@@ -249,32 +247,20 @@ readable when the page is zoomed out. For a reference with several boxes, move
 the pointer over a box to magnify that place. Escape dismisses the highlight
 and magnifier together.
 
-### Evidence status and source review
-
-The row's evidence state reports the automatic check:
-
-| Row state | Meaning |
-| --- | --- |
-| Verified | ANCHOR's automatic checker matched the row's claim to its cited source. |
-| Stale | The claim or evidence changed and needs a fresh check. |
-| Unverified | A source link exists, but automatic verification has not succeeded. The value may still be correct. |
-| No evidence | The row has no source reference. |
+### Record your verdict
 
 Right-click the row's anchor icon to record your judgment of its source link.
-Choose **Checked, right** (Accept) or **Checked, wrong** (Reject), with an optional
-note. Accept does not make a row Verified. **Re-check against the source** runs
-the automatic checker again and reports its progress and result. If the checker
-abstains, its explanation tells you what to inspect or correct. A request failure
-is reported separately.
+Choose **Checked, right** or **Checked, wrong**, with an optional note. The
+verdict shows as ✓ or ✕ in the anchor's corner.
 
-Verify units, conditions, and pump model yourself. A row can be Verified yet
-deserve **Checked, wrong** because its cited value belongs to the wrong pump
-model. Automatic matching and your engineering judgment answer different
-questions. The anchor menu records a row's source-reference verdict; accepting
-or rejecting a whole node or a change in **Proposals** is a separate action.
+Check units, conditions, and pump model yourself. A value can be printed in
+the cited cell and still belong to the wrong pump model. The verdict is yours:
+an agent's write never sets or changes it. It stays while the row makes the
+same claim from the same source, and is dropped when the value or source
+changes. Accepting or rejecting a whole node or a change in **Proposals** is a
+separate action.
 
-Editing a value can keep its citation while changing its evidence state. See
-[Claim and evidence](../concepts/claim-evidence.md) and
+See [Checking a reference](../concepts/claim-evidence.md) and
 [Source resolution](../concepts/spec-source-resolution.md).
 
 ## Continue later

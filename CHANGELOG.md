@@ -9,6 +9,31 @@ next version section on tag.
 
 ## [Unreleased]
 
+### Removed
+
+- The automatic claim check on spec rows. A row no longer carries
+  `evidence` (verified, stale, unverified), and `revalidate_evidence` is
+  gone. The green tick looked like a person's verdict and it was not one.
+  A write that still sends either field has it dropped. Ref placement
+  stays: quotes, cells found from quotes, and snapping a ref to its
+  key/value pair.
+
+### Fixed
+
+- A verdict on a reference is a person's. An agent's write can neither
+  set nor change a row's `review`; a verdict a person left stays on an
+  agent rewrite of the same claim and goes when the claim changes. An
+  agent applying its own change through the act flow stamps no
+  "accepted".
+- Put back removes an edge or node that the change added without an id.
+  It used to fail on it.
+- Remark ink no longer covers the cards that answered it. The blob,
+  leaders and handwriting are cut out around them.
+- Agents answering a remark add what was asked and nothing more, and
+  reply in one short line. `intent_act` returns a `next` hint saying so.
+- The skill tells an agent in a project folder to pass `project` on MCP
+  calls, since the MCP server does not know the folder.
+
 ### Fixed
 
 - `anchor serve --project <folder>` works. The CLI's `--project` used to take a

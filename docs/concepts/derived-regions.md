@@ -26,7 +26,7 @@ same operation can derive another child without a special provenance parser.
 it does not replace the canonical locator or supply missing geometry. Producer
 payload fields remain available under `data`. An ambiguous derivation returns
 the candidate pages, and an omitted child ID receives the next free page ID.
-A valid region source is not a verified canvas claim (G7 still applies).
+A valid region source places a reference; it is not a verdict on the claim.
 
 A supplied child ID can update an existing derived record on the parent's
 page. It cannot replace an original gold region on that page. Choose a

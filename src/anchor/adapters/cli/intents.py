@@ -348,7 +348,7 @@ def intent_act(
     data_dir: Path = typer.Option(DEFAULT_DATA_DIR, "--data-dir", "-d"),
 ) -> None:
     """Act, then ask, in one call: suggest, apply, mark statuses done, ask."""
-    from intent_layer.adapters.mcp import act_payload
+    from intent_layer.adapters.mcp import ACT_NEXT, act_payload
 
     question = None
     if ask:
@@ -368,7 +368,7 @@ def intent_act(
             resolve=resolve,
         )
     )
-    typer.echo(json.dumps(act_payload(out), indent=2))
+    typer.echo(json.dumps({**act_payload(out), "next": ACT_NEXT}, indent=2))
 
 
 @intent_app.command("update-item")

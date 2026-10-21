@@ -46,12 +46,11 @@ Click the source anchor beside a row. Inspect the PDF in the source dock:
    text can pin a more precise box to the row.
 4. Correct the table or ask the agent to revise it when the claim is wrong.
 
-Rows distinguish **Verified**, **Unverified**, **Stale**, and **No evidence**.
-Verified means ANCHOR matched the row's key and value to stored validated
-evidence. It is not an engineering approval. A substantive edit can make a
-previously verified row stale while keeping its source link. Use the row's
-**Check** action to request revalidation against the current stored evidence.
-See [Claim and evidence](../concepts/claim-evidence.md) for the matching limits.
+When you have looked, right-click the row's anchor and choose **Checked,
+right** or **Checked, wrong**, with a note if it helps. The verdict shows in
+the anchor's corner. It is yours: an agent cannot set or change it, and it is
+dropped when the row's value or source changes. See
+[Checking a reference](../concepts/claim-evidence.md).
 
 ## Make a request on the canvas
 

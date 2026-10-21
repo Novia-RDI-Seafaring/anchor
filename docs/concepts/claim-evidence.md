@@ -1,90 +1,50 @@
-# Claim evidence
+# Checking a reference
 
-A row's `source_ref` is an audit link, not a grounding verdict. The table shows
-four states, with visible and accessible text:
+A row's `source_ref` says where its value is printed. Anchor places that
+reference as precisely as it can. Whether the reference is right is a
+person's call, made from the row's anchor.
 
-| State | Meaning |
-| --- | --- |
-| Verified | The producer validated this key/value and source at the recorded generation. |
-| Unverified | A link exists without an authoritative binding to this claim. |
-| Stale | The claim or validated source changed, or revalidation no longer succeeds. |
-| No evidence | No row source is present. |
+## Where a reference points
 
-Only Verified uses the green value background and grounded hover marker.
-Stale and unverified citations remain clickable. Historical rows without
-binding metadata default to Unverified; startup does not rewrite them.
+On every write, the server places each row's reference without judging it:
 
-## Binding and ownership
+- Each quote (`source_ref.quotes`) gets the boxes of its words on the page.
+- A row that quotes words inside a table gets the cell that holds them.
+- A row whose key and value form one printed key/value pair in the cited
+  table gets that pair's cell.
 
-`WorkspaceService` discards caller-supplied evidence verdicts and carries only
-the previous persisted binding through generic write preparation. A row's
-optional `evidence` contains `status`, normalized `claim` (`key`, `value`), the
-validated `source_ref`, and producer `validation`. Absence means unverified
-when a source exists. This is deterministic claim identity, not proof of truth.
+Nothing else changes. A reference that cannot be placed stays as written.
 
-Normalization is exactly G2's matching contract: collapse whitespace, lowercase
-keys, preserve value case. No numeric equivalence, unit conversion or fuzzy
-matching is performed. Non-string values cannot obtain PDF verification.
+## What the writer is told
 
-The PDF preparer alone issues new verification after the existing G2 matcher
-finds one G1-certified pair within the caller's source scope. The validation
-records `producer`, `slug`, `generation_id`, `source_sha256`, `table_digest`,
-`key_cell_id` and `value_cell_id`. The source metadata and cells come from the
-same pinned document view. Legacy certified gold without generation/source
-metadata records null identities; no historical identity is guessed.
+When quoted words cannot be placed, the write result says why in
+`quotes.problems`:
 
-On create, valid source-aware rows can become verified. Invalid or ambiguous
-sources remain unverified. On update, an unchanged binding stays verified
-when current strict validation succeeds. Substantive edits retain the link
-and become stale. Supplying different valid source evidence may verify a new
-claim. Reverting text alone does not restore verification.
+- the words are not on the cited page,
+- they are not in the cited cell or region,
+- they appear more than once, so the place is ambiguous.
 
-## Deliberate revalidation
+Agents check each value against the cited cell before writing it: the key,
+the complete value and its unit as printed. A problem in the result means the
+reference points at the wrong place. Fix the reference. Never reword a key or
+value to make it fit.
 
-Select the spec, open a row source's context menu, and choose **Re-check against
-the source**. The row shows checking progress followed by its completed result.
-HTTP, MCP and CLI use the
-same existing update operation: send the row list with `revalidate_evidence:
-true` on the desired row. The server consumes this request flag; it is not
-persisted. Success replaces the binding; abstention keeps stale/unverified status.
-Do not send `evidence.status = verified` as an instruction.
+## The person's verdict
 
-The resulting row includes server-owned `evidence.check` with `status`, `code`,
-`message` and `next_step`, bound to the checked `claim` and `source_ref`. The
-existing update response and saved state expose the same diagnostic in every
-adapter. Reasons distinguish unavailable sources, mismatched printed keys or
-complete values, missing certified pairs, ambiguity, and conflicting locators.
-A precise cell link without a certified key/value pair still cannot verify a
-claim. Inspect that source manually. A failed request is shown separately and
-does not establish a completed check. Editing the checked claim or source
-removes its old result; caller-supplied check results cannot grant verification.
+Right-click a row's anchor to judge its reference. Choose **Checked, right**
+or **Checked, wrong**, with an optional note. The verdict is stored on the row
+as `review` (`state`, `by`, `at`, `note`) and shows in the anchor's corner as
+✓ or ✕.
 
-For example, PATCH `/api/workspaces/demo/nodes/spec-id` with:
+Only a person's write sets or changes `review`. An agent's write leaves it as
+it was. The verdict stays while the row makes the same claim from the same
+source. It is dropped when the key, the value or the source changes, because
+it was about the old one.
 
-```json
-{"data":{"rows":[{"key":"Pressure","value":"42","source_ref":{"slug":"doc","page":1,"region_id":"pressure"},"revalidate_evidence":true}]}}
-```
+Accepting or rejecting a whole node or a proposal is a separate action.
 
-The same `data` object is accepted by MCP `canvas_update_node` and CLI
-`anchor canvas update-node demo spec-id --data <json>`. Rows are whole-list
-replacements, so include every row to retain. Revalidation has no second matcher.
+## Older canvases
 
-## Persistence, edits and limits
-
-Claim and evidence status are stored in one workspace event/snapshot before
-SSE publication. Optimistic table rendering checks the claim binding immediately,
-so the edited value cannot borrow the old green presentation while awaiting SSE.
-Native text-input undo/redo edits the draft only. There is no public committed
-canvas undo/redo command. Exact trusted snapshot/event restoration restores the
-whole claim/evidence pair without inferring validity from visible text; a normal
-update containing copied old metadata must pass strict revalidation again.
-
-Rows have no required stable ID. Positional comparison is conservative and may
-require revalidation after reordering; verification cannot transfer to another
-claim or link. File-backed workspace locks retain their existing single-process
-scope. A document replacement does not scan or invalidate every canvas globally.
-The next relevant mutation detects changed generation evidence; untouched rows
-show verification at the recorded generation, not a live global truth guarantee.
-Publication can occur after a pinned read and before a canvas write. G7 does not
-add a cross-document transaction, repair old claims, or implement G8 or later
-findings.
+Rows written before this change may carry an `evidence` object from an
+automatic check Anchor no longer runs. It is ignored, and the next write to
+the row removes it. A `revalidate_evidence` flag in a write is dropped.

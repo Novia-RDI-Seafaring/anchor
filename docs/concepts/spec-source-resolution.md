@@ -10,8 +10,8 @@ claim bindings for sourced rows.
 HTTP service composition uses the same binding helper. HTTP, MCP and CLI do
 not orchestrate source matching. A workspace cannot be rebound to another
 store; applications must construct a separate runtime for another corpus.
-Without a producer preparer, workspace mutation can invalidate a binding but
-cannot issue a new verified verdict.
+Without a producer preparer, rows are stored as written and no reference is
+placed.
 
 The PDF preparer consumes explicit success results from `resolve_spec_row_sources`.
 The compatibility `enrich_spec_row_source_refs` interface delegates to that same
@@ -53,7 +53,6 @@ document publication and canvas writes. The next operation selects the then
 current generation. Source identity remains slug-owned and hash-addressed;
 filename has no authority in matching.
 
-Unchanged enrichment output is not a verified-grounding verdict. The explicit
-validation result supports the [claim evidence contract](claim-evidence.md).
-Historical links stay unverified until deliberately validated. Substantive
-claim edits retain the link but invalidate the old binding.
+Placing a reference is not a verdict on it. An unplaced reference stays as
+written. Whether a reference is right is recorded by a person; see
+[Checking a reference](claim-evidence.md).

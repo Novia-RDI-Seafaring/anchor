@@ -130,7 +130,7 @@ nav:
     - Extensions and OIP: concepts/extensions-and-oip.md
     - On-disk substrate: concepts/on-disk-substrate.md
     - Canvas: concepts/canvas.md
-    - Claim and evidence: concepts/claim-evidence.md
+    - Checking a reference: concepts/claim-evidence.md
     - Source resolution: concepts/spec-source-resolution.md
     - PDF page geometry: concepts/document-page-geometry.md
     - Document generations: concepts/document-generations.md
