@@ -7,7 +7,6 @@ import { intents, INTENTS_CHANGED_EVENT, type Intent } from "@/api/intents";
 import { AnchoredText } from "@/canvas/AnchoredText";
 import { NodePresentationEditor } from "@/canvas/NodePresentationEditor";
 import { SourceAnchorButton } from "@/canvas/SourceAnchorButton";
-import { evidenceLabels, evidenceState } from "@/canvas/evidence";
 import { markdownComponents, urlTransform } from "@/canvas/shapes/MarkdownNode";
 import { useOpenSourceRef } from "@/canvas/useOpenSourceRef";
 import { useCanvasStore } from "@/stores/canvasStore";
@@ -108,7 +107,6 @@ export function NodeDetailPanel({ workspaceSlug, nodeId, onClose, readOnly = fal
             <th className="w-2/5 break-words py-2 pr-2 text-left font-medium">{String(row.key ?? "")}</th>
             <td className="break-words py-2">{String(row.value ?? "")}
               <div className="mt-1 flex items-center gap-1 text-[10px] text-neutral-500">
-                <span>{evidenceLabels[evidenceState(row)]}</span>
                 {ref?.page ? <SourceAnchorButton workspaceSlug={workspaceSlug} refValue={ref}
                   ariaLabel={`Open source for ${String(row.key ?? `row ${index + 1}`)}`} query={String(row.value ?? "")}
                   className="h-5 w-5 border border-sky-200" /> : null}

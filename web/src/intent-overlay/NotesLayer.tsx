@@ -6,6 +6,7 @@ import { NOTHING_SELECTED } from "./markupStore";
 import { HOST_INSET_PX, INK, NOTE_FONT_PX, NOTE_H, NOTE_LEAD_GAP_PX, NOTE_W } from "./constants";
 import { FaintNote, FloatingNote, HostedNote } from "./Notes";
 import type { MarkupModel } from "./types";
+import { answeredCards, outsideCards } from "./answeredCards";
 import { appendMarkup, captureMarkup } from "./clipboard";
 
 export function LiveNotes({ model }: { model: Pick<MarkupModel, "notes" | "strokes" | "notePos" | "screen" | "viewport" | "setNotes" | "editing" | "markupStore" | "setEditing" | "growHost" | "lineFrom" | "calledOut" | "setSelected" | "setActiveLabel" | "labelDrag" | "toFlow" | "moveLabel" | "activeLabel" | "removeLabel" | "boxes" | "settledNotes"> }) {
@@ -131,8 +132,10 @@ export function LiveNotes({ model }: { model: Pick<MarkupModel, "notes" | "strok
   </>);
 }
 
-export function ArchivedNotes({ model }: { model: Pick<MarkupModel, "shelf" | "screen" | "viewport" | "filed"> }) {
-  const { shelf, screen, viewport, filed } = model;
+export function ArchivedNotes({ model }: { model: Pick<MarkupModel, "shelf" | "screen" | "viewport" | "filed" | "ghosts" | "boxes"> }) {
+  const { shelf, screen, viewport, filed, ghosts, boxes } = model;
+  // A filed remark's words keep out of the cards its answer placed.
+  const clip = outsideCards(answeredCards(ghosts, boxes, screen, viewport.zoom));
   return (<>
     {shelf.flatMap((st) =>
       st.notes.map((n) => (
@@ -145,16 +148,18 @@ export function ArchivedNotes({ model }: { model: Pick<MarkupModel, "shelf" | "s
         />
       )),
     )}
-    {filed.flatMap((f) =>
-      f.notes.map((n) => (
-        <FaintNote
-          key={`${f.intentId}-${n.id}`}
-          note={n}
-          strokes={f.marks.map((m) => m.points)}
-          screen={screen}
-          zoom={viewport.zoom}
-        />
-      )),
-    )}
+    <div className="pointer-events-none absolute inset-0 z-30" style={clip ? { clipPath: clip } : undefined}>
+      {filed.flatMap((f) =>
+        f.notes.map((n) => (
+          <FaintNote
+            key={`${f.intentId}-${n.id}`}
+            note={n}
+            strokes={f.marks.map((m) => m.points)}
+            screen={screen}
+            zoom={viewport.zoom}
+          />
+        )),
+      )}
+    </div>
   </>);
 }

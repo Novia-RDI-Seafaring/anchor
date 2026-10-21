@@ -21,7 +21,8 @@ nothing:
    ``remove_node`` does (attributed to ``system``).
 
 Elements the batch creates are stamped ``data.review = {state: "accepted",
-by: <approver>, at}``: approval *is* the review.
+by: <approver>, at}`` when a person approved the batch: approval *is* the
+review. An agent applying its own change stamps nothing.
 """
 from __future__ import annotations
 
@@ -172,7 +173,10 @@ class WorkspaceBatchOperations:
         sim = state
         id_map: dict[str, str] = {}
         planned: list[tuple[BaseModel, Actor | None]] = []
-        stamp = accepted_review(approver, self._clock.now())
+        # Approval is the review only when a person approved. An agent that
+        # applies its own change (the act flow) has not had it reviewed: what
+        # it creates carries no verdict until a person gives one.
+        stamp = accepted_review(approver, self._clock.now()) if approver.kind == "human" else None
         for index, op in enumerate(ops):
             cmd = self._build(index, op, sim, id_map, None if restore else stamp, keep_ids=restore)
             try:

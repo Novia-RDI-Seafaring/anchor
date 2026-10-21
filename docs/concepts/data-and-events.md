@@ -24,8 +24,8 @@ handles. A spec table stores rows inside node data, with per-row source links
 and producer-issued evidence binding when available.
 
 Use `canvas_node_types` or `anchor canvas node-types` to inspect renderer data
-contracts. Public source resolution and [claim evidence](claim-evidence.md)
-rules are part of preparing those writes, not a separate frontend-only verdict.
+contracts. Source resolution and [reference placement](claim-evidence.md)
+are part of preparing those writes, not a separate frontend step.
 
 ## Mutation path
 

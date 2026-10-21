@@ -87,7 +87,8 @@ user which file to edit; never ask for the key in chat or write it yourself.
   Sources dock lists the referenced documents and opens their evidence.
   Document cards and evidence edges are optional presentation. An explicit
   `anchored` evidence edge still requires `data.kind = "evidence"` and
-  `data.source_ref`; a citation alone does not grant Verified status.
+  `data.source_ref`. Check each value against the cited cell before you
+  write it; the person confirms the reference, never you.
 - **Slug naming.** Document slugs are filename-derived (lowercase,
   hyphenated). Canvas slugs are user-chosen, e.g. `pump-analysis`.
 - **Don't re-ingest.** `list_documents()` first; if the slug exists with
@@ -117,9 +118,12 @@ tenant), and offer a new one (`anchor env create`). Then run
 `anchor init --env <name>` in the folder.
 
 With a shell, keep to the CLI for the work as well: it works at once, where
-registering an MCP server means reloading the session. Use the MCP tools when
-a server for that environment is already connected. Both write to the same
-project, and both show up live in an open canvas.
+registering an MCP server means reloading the session, and in a folder with
+an `anchor.toml` it uses that folder's project without being told. An MCP
+server does not know which folder you are in. If you use its tools from a
+project folder, pass `project` with the name in that `anchor.toml`, or the
+server may pick another project. Both write to the same project, and both
+show up live in an open canvas.
 
 ## MCP or CLI: the same operations
 
@@ -164,6 +168,13 @@ the canvas `base_version` at ask time, and `items` (the conversation).
   at the start of every turn in a session where Anchor is in use, and
   whenever you are idle: `list_pending_intents` (`anchor intents` on the
   CLI). Take one.
+- The change is the reply. Add what was asked, nothing more: no extra
+  cards for explanations, caveats or summaries. A caveat that matters goes
+  in the thread with the change (`intent_act` `text`, shown on the keep
+  card), or as one short line in chat. In chat, be extremely brief: one
+  line, short words ("PX-5 limits added, p.2. Temp range series-wide.").
+  Never repeat what the canvas shows: no tables, no values, no recap of
+  the ask. No progress notes between tool calls.
 - The canvas the user has open is the one they mean unless they name
   another. With no `canvas` given, the inbox reads that canvas and counts
   what waits elsewhere; report the rest in one line, not as a list.

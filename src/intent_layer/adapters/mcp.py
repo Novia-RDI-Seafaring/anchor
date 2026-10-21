@@ -20,6 +20,13 @@ TOOL_NAMES = {
 }
 
 
+
+#: What the asker reads is the board, so the chat answer stays one line.
+ACT_NEXT = (
+    "The board shows the change. Reply in chat in one short line at most; "
+    "do not repeat values, tables or the ask, and add no cards to explain it."
+)
+
 def tool_definitions(*, target_schema: dict[str, Any] | None = None,
                      op_schema: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Inbox tools. Hosts may document their opaque target/operation values."""
@@ -166,7 +173,7 @@ async def _dispatch(intents: IntentService, name: str, args: dict[str, Any]) -> 
                 result=args.get("result"),
                 resolve=bool(args.get("resolve")),
             )
-            return json.dumps(act_payload(out))
+            return json.dumps({**act_payload(out), "next": ACT_NEXT})
         if name == "intent_apply":
             intent, item, applied = await intents.apply_suggestion(
                 args["id"], args["item_id"],

@@ -124,7 +124,7 @@ def test_existing_update_operations_share_strict_resolution(
         )
         response = TestClient(app).patch("/api/workspaces/g2/nodes/spec", json=fields)
         assert response.status_code == 200, response.text
-        output = response.json()
+        response.json()
     elif adapter == "mcp":
         server = build_mcp_server(bundle=runtime)
 
@@ -137,7 +137,7 @@ def test_existing_update_operations_share_strict_resolution(
             assert "error" not in out, out
             return out
 
-        output = asyncio.run(update())
+        asyncio.run(update())
     else:
         args = [
             "canvas",
@@ -153,27 +153,14 @@ def test_existing_update_operations_share_strict_resolution(
             args += ["--parent", "area"]
         result = CliRunner().invoke(cli_app, args)
         assert result.exit_code == 0, result.output
-        output = json.loads(result.output)
+        json.loads(result.output)
 
     # Reopen persistence through a fresh runtime, including CLI's separate process model.
     reopened = build_project_runtime(config, profile=RuntimeProfile.CANVAS)
     state = asyncio.run(reopened.workspace.get_state("g2"))
     spec = next(node for node in state["nodes"] if node["id"] == "spec")
     actual = deepcopy(spec["data"])
-    evidence = actual["rows"][0].pop("evidence", {})
+    # A request to check again is dropped; no row carries a server verdict.
+    assert "evidence" not in actual["rows"][0]
     assert actual == expected
-    assert (evidence.get("status") == "verified") == (case in {"exact", "inferred"})
-    if check_requested:
-        code = {
-            "missing": "source_unavailable", "wrong_key": "key_mismatch",
-            "wrong_value": "value_mismatch", "conflicting_bbox": "locator_mismatch",
-            "ambiguous": "ambiguous_pair", "uncertified": "no_certified_pair",
-            "exact": "verified", "inferred": "verified",
-        }[case]
-        assert evidence["check"]["code"] == code
-        assert evidence["check"]["next_step"]
-        assert evidence["check"]["source_ref"] == actual["rows"][0]["source_ref"]
-        assert f'"code": "{code}"' in json.dumps(output)
-    else:
-        assert "check" not in evidence
     assert spec.get("parent") == ("area" if mixed_parent else None)

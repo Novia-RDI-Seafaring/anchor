@@ -99,7 +99,8 @@ When the user drops a PDF and asks for specs on the canvas:
 6. The Sources dock shows those documents automatically. Place a `document`
    card or an explicit `anchored` evidence edge only when useful for the
    presentation; neither is required for a source citation. A citation alone
-   does not establish a validated claim binding or Verified row status.
+   does not replace reading the cell: check the value against it before
+   you write it. The person confirms the reference, never you.
 
 ### Common errors
 

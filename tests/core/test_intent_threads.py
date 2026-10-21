@@ -687,12 +687,12 @@ async def test_revert_refuses_what_it_should():
     assert exc.value.code == "no_undo"
 
 
-async def test_revert_puts_back_the_checks_and_verdicts_it_found():
+async def test_revert_puts_back_the_verdicts_it_found():
     """Putting a change back leaves the card as it was, verdicts and all.
 
-    Evidence normally refuses verdicts a caller sends, so writing the old
-    rows back used to leave every row stale. The way back is the server's
-    own record of the card, so it is restored as it was.
+    An agent's write never carries a reader's verdict, so writing the old
+    rows back would lose it. The way back is the server's own record of the
+    card, so it is restored as it was.
     """
     from copy import deepcopy
 
@@ -713,7 +713,6 @@ async def test_revert_puts_back_the_checks_and_verdicts_it_found():
     before = await ws.get_state("cv")
     spec_before = deepcopy(next(n for n in before["nodes"] if n["id"] == "spec")["data"])
     aside_before = deepcopy(next(n for n in before["nodes"] if n["id"] == "aside")["data"])
-    assert spec_before["rows"][0]["evidence"]["status"] == "verified"
 
     with actor_scope(HUMAN):
         intent = await svc.enqueue("user_request", origin_canvas_id="cv", payload={"text": "add +1"},
@@ -729,17 +728,50 @@ async def test_revert_puts_back_the_checks_and_verdicts_it_found():
         _, item = await svc.add_item(intent.id, type="suggestion", text="+1", ops=ops)
         _, item, _ = await svc.apply_suggestion(intent.id, item.id)
     mid = await ws.get_state("cv")
-    assert next(n for n in mid["nodes"] if n["id"] == "spec")["data"]["rows"][0]["evidence"]["status"] == "stale"
+    assert "review" not in next(n for n in mid["nodes"] if n["id"] == "spec")["data"]["rows"][0]
 
     with actor_scope(HUMAN):
         await svc.revert_suggestion(intent.id, item.id)
     after = await ws.get_state("cv")
     nodes = {n["id"]: n for n in after["nodes"]}
-    # The card exactly as it was: the verified check, the reader's verdict,
+    # The card exactly as it was: the placed reference, the reader's verdict,
     # and no trace of the key the change added.
     assert nodes["spec"]["data"] == spec_before
     # A removed element comes back with its own verdict, not a fresh "accepted".
     assert nodes["aside"]["data"] == aside_before
+
+
+async def test_an_agent_acting_on_its_own_change_stamps_no_verdict():
+    """Approval is the review only when a person approved.
+
+    In the act flow the agent applies its own change before anyone has looked
+    at it, so what it creates must not arrive marked accepted.
+    """
+    svc, ws, _bus, _clock = _services()
+    intent = await _thread(svc, ws)
+    with actor_scope(AGENT):
+        await svc.act(intent.id, text="added", ops=[
+            {"type": "NodeAdded", "payload": {"id": "c1", "label": "New", "x": 0, "y": 0}},
+        ])
+    state = await ws.get_state("cv")
+    added = next(n for n in state["nodes"] if n["label"] == "New")
+    assert "review" not in (added.get("data") or {})
+
+
+async def test_put_back_removes_elements_added_without_an_id():
+    svc, ws, _bus, _clock = _services()
+    intent = await _thread(svc, ws)
+    before = await ws.get_state("cv")
+    with actor_scope(AGENT):
+        out = await svc.act(intent.id, text="added", ops=[
+            {"type": "NodeAdded", "payload": {"label": "New", "x": 0, "y": 0}},
+            {"type": "EdgeAdded", "payload": {"source": "n1", "target": "n2"}},
+        ])
+    with actor_scope(HUMAN):
+        await svc.revert_suggestion(intent.id, out["suggestion"].id)
+    after = await ws.get_state("cv")
+    assert {n["id"] for n in after["nodes"]} == {n["id"] for n in before["nodes"]}
+    assert {e["id"] for e in after["edges"]} == {e["id"] for e in before["edges"]}
 
 
 # -- act, then ask, in one call --------------------------------------------- #

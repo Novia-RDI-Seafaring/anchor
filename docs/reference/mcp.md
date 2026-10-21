@@ -122,10 +122,12 @@ provides different source precision; use the most precise supported locator
 available. PDF boxes use points, a top-left origin, and
 `[left, top, right, bottom]`.
 
-A row citation does not grant Verified status by itself. The server matches
-claims to stored validated evidence; caller-supplied evidence verdicts do not
-establish a binding. Rows are whole-list replacements on update, so include all
-rows to retain. See [Claim and evidence](../concepts/claim-evidence.md) and
+Check each value against the cited cell before writing it. Quote the printed
+words in `source_ref.quotes`; the result's `quotes.problems` says when they are
+not found, not in the cited place, or ambiguous. A row's `review` is a person's
+verdict and an agent's write never sets or changes it. Rows are whole-list
+replacements on update, so include all rows to retain. See
+[Checking a reference](../concepts/claim-evidence.md) and
 [Source resolution](../concepts/spec-source-resolution.md).
 
 ## Transport and snapshot limits

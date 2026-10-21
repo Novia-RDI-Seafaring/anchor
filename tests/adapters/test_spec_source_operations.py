@@ -1,4 +1,4 @@
-"""Create and update use one evidence contract through real adapter operations."""
+"""Create and update place a row's source the same way through every adapter."""
 from __future__ import annotations
 
 import asyncio
@@ -139,9 +139,7 @@ def test_create_update_strict_evidence_matrix(transport, reverse, case, tmp_path
     node_id = ops.call("add", data)
     created = ops.read(node_id)
     assert without_evidence(created) == expected
-    assert (created["rows"][0].get("evidence", {}).get("status") == "verified") == (
-        case in {"precise", "inferred", "new_origin"}
-    )
+    assert "evidence" not in created["rows"][0]
     ops.call("update", data, node_id)
     assert ops.read(node_id) == created
     # Sending the persisted, resolved data back is idempotent too.

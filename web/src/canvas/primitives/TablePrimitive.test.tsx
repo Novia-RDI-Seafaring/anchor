@@ -86,18 +86,6 @@ describe("TablePrimitive row handles", () => {
     expect(screen.queryByRole("button", { name: /Open source page/ })).toBeNull();
   });
 
-  it("labels a historical source as unverified, not grounded", async () => {
-    await renderTable({
-      source_doc_slug: "doc",
-      rows: [{ key: "Pressure", value: "42", source_ref: { page: 1 } }],
-    });
-    expect(screen.queryByTestId("spec-value-marker")).toBeNull();
-    // Readable to a screen reader and on hover, but not printed: a column of
-    // grey "Unverified" labels on every ungrounded row says nothing happened.
-    expect(screen.getByLabelText("Evidence: Unverified").textContent).toBe("");
-    expect(screen.queryByText("Unverified")).toBeNull();
-    expect(screen.getByRole("button", { name: "Open source page 1" })).toBeTruthy();
-  });
   it("renders a row-handle carrier on every row, ids encoding the row key", async () => {
     await renderTable({
       label: "Operating limits (LKH-5)",
@@ -265,10 +253,7 @@ describe("TablePrimitive row handles", () => {
       label: "Mixed grounding",
       source_doc_slug: "lkh",
       rows: [
-        { key: "Grounded", value: "600 kPa", source_ref: { page: 2, region_id: "r4" }, evidence: {
-          status: "verified", claim: { key: "grounded", value: "600 kPa" },
-          source_ref: { page: 2, region_id: "r4" }, validation: { producer: "anchor_pdfs" },
-        } },
+        { key: "Grounded", value: "600 kPa", source_ref: { page: 2, region_id: "r4" } },
         { key: "Plain", value: "no source" },
       ],
     });
@@ -279,121 +264,6 @@ describe("TablePrimitive row handles", () => {
     expect(markers[0]!.textContent).toBe("600 kPa");
     expect(markers[0]!.className).toContain("group-hover/tr:bg-yellow-200");
     expect(screen.getByText("no source").getAttribute("data-testid")).toBeNull();
-  });
-
-  it("keeps every evidence state legible and stale citations clickable", async () => {
-    const source_ref = { slug: "doc", page: 1, region_id: "pressure" };
-    const evidence = { status: "verified", claim: { key: "pressure", value: "42" },
-      source_ref, validation: { producer: "anchor_pdfs" } };
-    await renderTable({ rows: [
-      { key: "Pressure", value: "42", source_ref, evidence },
-      { key: "Pressure", value: "999999", source_ref, evidence },
-      { key: "Historical", value: "21", source_ref },
-      { key: "Unfilled", value: "" },
-    ] });
-    for (const label of ["Verified", "Stale", "Unverified", "No evidence"]) {
-      expect(screen.getByLabelText(`Evidence: ${label}`)).toBeTruthy();
-    }
-    expect(screen.getAllByTestId("spec-value-marker")).toHaveLength(1);
-    fireEvent.click(screen.getAllByRole("button", { name: "Open source page 1" })[1]!);
-    // Region-only ref: resolved to its box first (#385), so the open is async.
-    await waitFor(() =>
-      expect(useUiStore.getState().pdfViewer).toMatchObject({ slug: "doc", page: 1 }),
-    );
-  });
-
-  it("removes verified presentation immediately on edit and requests deliberate revalidation", async () => {
-    const patch = vi.spyOn(canvases, "patchNode").mockResolvedValue({} as never);
-    const source_ref = { slug: "doc", page: 1 };
-    await renderTable({ rows: [{ key: "Pressure", value: "42", source_ref,
-      evidence: { status: "verified", claim: { key: "pressure", value: "42" },
-        source_ref, validation: { producer: "anchor_pdfs" } },
-    }] }, true);
-    fireEvent.click(screen.getByText("42"));
-    fireEvent.change(screen.getByPlaceholderText("value"), { target: { value: "999999" } });
-    fireEvent.blur(screen.getByPlaceholderText("value"));
-    // Stale is a state, not a word beside the anchor: the anchor's menu offers the fix.
-    expect(screen.getByLabelText("Evidence: Stale").getAttribute("data-evidence-status")).toBe("stale");
-    expect(screen.queryByText("Stale")).toBeNull();
-    expect(screen.queryByTestId("spec-value-marker")).toBeNull();
-    // Asking the server to look again now lives in the reference's own menu,
-    // beside the reader's verdict, rather than as a second "Check" on the row.
-    fireEvent.contextMenu(screen.getByTestId("ref-review-chip"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Revalidate evidence for Pressure" }));
-    expect(patch.mock.lastCall?.[2].data).toMatchObject({ rows: [{
-      key: "Pressure", value: "999999", source_ref, revalidate_evidence: true,
-    }] });
-    patch.mockRestore();
-  });
-
-  it.each(["verified", "unverified"] as const)("shows running and completed %s checks with source links intact", async (status) => {
-    const source_ref = { slug: "doc", page: 1 };
-    const claim = { key: "pressure", value: "42" };
-    const row = { key: "Pressure", value: "42", source_ref };
-    let finish!: (value: unknown) => void;
-    const patch = vi.spyOn(canvases, "patchNode").mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
-    const view = await renderTable({ rows: [row] }, true);
-    fireEvent.contextMenu(screen.getByTestId("ref-review-chip"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Revalidate evidence for Pressure" }));
-    expect(screen.getByText("Checking evidence...")).toBeTruthy();
-    expect(screen.queryByTestId("spec-value-marker")).toBeNull();
-    expect(patch).toHaveBeenCalledTimes(1);
-    const message = status === "verified" ? "Matched the printed key and complete value." : "The complete value differs from the printed value.";
-    const saved = { ...row, evidence: { status, claim, source_ref,
-      ...(status === "verified" ? { validation: { producer: "anchor_pdfs" } } : {}),
-      check: { status, code: status === "verified" ? "verified" : "value_mismatch", message,
-        next_step: "Inspect the complete printed value and units.", claim, source_ref },
-    } };
-    await act(async () => { finish({ state: { nodes: [{ id: "spec1", data: { rows: [saved] } }] } }); });
-    expect(screen.queryByText("Checking evidence...")).toBeNull();
-    expect(screen.getByRole("status").textContent).toContain(`Check complete: ${status === "verified" ? "Verified" : "Not verified"}`);
-    expect(screen.getByRole("status").textContent).toContain(message);
-    expect(screen.getByRole("status").textContent).toContain("Inspect the complete printed value and units.");
-    expect(Boolean(screen.queryByTestId("spec-value-marker"))).toBe(status === "verified");
-    expect(screen.getByRole("button", { name: "Open source page 1" })).toBeTruthy();
-    view.unmount();
-    // Reloaded, the result is no longer news: it waits in the anchor's menu.
-    await renderTable({ rows: [saved] }, true);
-    expect(screen.queryByText(/Check complete/)).toBeNull();
-    fireEvent.contextMenu(screen.getByTestId("ref-review-chip"));
-    expect(screen.getByTestId("ref-review-check").textContent).toContain(message);
-  });
-
-  it("distinguishes request failure from completed abstention and permits retry", async () => {
-    const patch = vi.spyOn(canvases, "patchNode").mockRejectedValue(new Error("offline"));
-    await renderTable({ rows: [{ key: "Pressure", value: "42", source_ref: { slug: "doc", page: 1 } }] }, true);
-    fireEvent.contextMenu(screen.getByTestId("ref-review-chip"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Revalidate evidence for Pressure" }));
-    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Check request failed. Reload"));
-    expect(screen.queryByText(/Check complete/)).toBeNull();
-    expect(screen.queryByTestId("spec-value-marker")).toBeNull();
-    expect(screen.getByRole("button", { name: "Open source page 1" })).toBeTruthy();
-    fireEvent.contextMenu(screen.getByTestId("ref-review-chip"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Revalidate evidence for Pressure" }));
-    await waitFor(() => expect(patch).toHaveBeenCalledTimes(2));
-  });
-
-  it("cannot overwrite a claim edited while a check response was pending", async () => {
-    const source_ref = { slug: "doc", page: 1 };
-    const row = { key: "Pressure", value: "42", source_ref };
-    let finish!: (value: unknown) => void;
-    vi.spyOn(canvases, "patchNode").mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }))
-      .mockResolvedValue({});
-    await renderTable({ rows: [row] }, true);
-    fireEvent.contextMenu(screen.getByTestId("ref-review-chip"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Revalidate evidence for Pressure" }));
-    fireEvent.click(screen.getByText("42"));
-    fireEvent.change(screen.getByPlaceholderText("value"), { target: { value: "999" } });
-    fireEvent.blur(screen.getByPlaceholderText("value"));
-    const claim = { key: "pressure", value: "42" };
-    await act(async () => { finish({ state: { nodes: [{ id: "spec1", data: { rows: [{ ...row,
-      evidence: { status: "verified", claim, source_ref, validation: {}, check: {
-        status: "verified", code: "verified", message: "Matched", next_step: "Inspect", claim, source_ref,
-      } },
-    }] } }] } }); });
-    expect(screen.getByText("999")).toBeTruthy();
-    expect(screen.queryByText(/Check complete/)).toBeNull();
-    expect(screen.queryByTestId("spec-value-marker")).toBeNull();
   });
 
   // --- #242 P2c: highlight through the resolver (closes #274) -------------

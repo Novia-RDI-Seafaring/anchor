@@ -32,7 +32,7 @@ choose. A local project folder does not imply that the connected model is local.
 | Use a working folder or keep several projects | [Environments and projects](guides/environments-and-projects.md) |
 | Upload documents, create canvases, and inspect row sources | [Documents and canvases](guides/documents-and-canvases.md) |
 | Connect Codex, Claude, Cursor, or another MCP client | [Agent setup](guides/agent-setup.md) and [manual configuration](guides/agent-configuration.md) |
-| Understand Verified, Unverified, and Stale rows | [Claim and evidence](concepts/claim-evidence.md) |
+| Check a row's reference and record your verdict | [Checking a reference](concepts/claim-evidence.md) |
 | Script operations or discover agent tools | [CLI reference](reference/cli.md) and [MCP reference](reference/mcp.md) |
 | Understand storage and service boundaries | [Projects](concepts/projects.md), [architecture](concepts/architecture.md), and [on-disk substrate](concepts/on-disk-substrate.md) |
 

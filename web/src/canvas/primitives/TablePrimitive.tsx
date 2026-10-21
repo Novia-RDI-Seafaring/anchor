@@ -2,11 +2,10 @@ import { Handle, NodeResizer, Position, type NodeProps } from "@xyflow/react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
-import { canvases, type CanvasState } from "@/api/canvases";
+import { canvases } from "@/api/canvases";
 import { documents, type ResolvableRef } from "@/api/documents";
 import { PictureHighlightBoxes, usePictureHighlights } from "@/canvas/PictureHighlights";
 import { placesFromAlso } from "@/canvas/sourceHighlight";
-import { currentEvidenceCheck, evidenceLabels, evidenceState, type EvidenceRow } from "@/canvas/evidence";
 import { refReview } from "@/canvas/refReview";
 import { RefReviewChip, refVerdict } from "@/canvas/RefReviewChip";
 import { useCanvasStore } from "@/stores/canvasStore";
@@ -22,7 +21,7 @@ import { fitWidth, keyColumnPercent } from "@/canvas/specLayout";
 import { useLiveResize } from "@/canvas/useLiveResize";
 import { useUiStore } from "@/stores/uiStore";
 
-type Row = EvidenceRow & {
+type Row = {
   key: string;
   value: string;
   /** Shown after the value; the stored value is left as written. */
@@ -109,18 +108,6 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
   // Local working copy of rows so cell edits feel snappy. Replaced when
   // the canonical rows change from outside (SSE echo, remote agent edit).
   const [rows, setRows] = useState<Row[]>(canonicalRows);
-  const [checkProgress, setCheckProgress] = useState<{
-    index: number; row: Row; phase: "running" | "failed" | "done";
-  } | null>(null);
-  const checkRequest = useRef<symbol | null>(null);
-  const latestCanonicalRows = useRef(canonicalRows);
-  latestCanonicalRows.current = canonicalRows;
-  const latestRows = useRef(rows);
-  latestRows.current = rows;
-  useEffect(() => {
-    setCheckProgress(null);
-    return () => { checkRequest.current = null; };
-  }, [workspaceSlug, id]);
   // Track which row index is "pending focus" so the cell can grab focus
   // after the new row mounts. -1 means no pending focus.
   const [pendingFocus, setPendingFocus] = useState<{ row: number; col: "key" | "value" } | null>(
@@ -143,35 +130,6 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
         // eslint-disable-next-line no-console
         console.error("row edit failed", err);
       });
-  };
-
-  const revalidateRow = async (index: number) => {
-    if (!workspaceSlug || checkRequest.current || useUiStore.getState().navigationMode === "hand") return;
-    const row = rows[index];
-    if (!row) return;
-    const token = Symbol();
-    checkRequest.current = token;
-    const before = latestCanonicalRows.current;
-    setCheckProgress({ index, row, phase: "running" });
-    try {
-      const result = await canvases.patchNode(workspaceSlug, id, { data: {
-        rows: rows.map((item, i) => i === index ? { ...item, revalidate_evidence: true } : item),
-      } }) as { state?: CanvasState };
-      if (checkRequest.current !== token) return;
-      const node = result?.state?.nodes?.find((item) => item.id === id);
-      const savedRows = (node?.data as { rows?: Row[] } | undefined)?.rows;
-      if (!savedRows?.[index] || !currentEvidenceCheck(savedRows[index])) {
-        throw new Error("The server returned no evidence check result");
-      }
-      // An intervening SSE update owns the rows; a late response cannot undo it.
-      if (latestCanonicalRows.current === before && latestRows.current === rows) setRows(savedRows);
-      // The reader asked, so the answer shows under the row this once.
-      setCheckProgress({ index, row: savedRows[index], phase: "done" });
-    } catch {
-      if (checkRequest.current === token) setCheckProgress({ index, row, phase: "failed" });
-    } finally {
-      if (checkRequest.current === token) checkRequest.current = null;
-    }
   };
 
   const commitRow = (index: number, col: "key" | "value", next: string) => {
@@ -467,15 +425,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
           <tbody>
             {rows.map((r, i) => {
               const hid = rowHandleId(i, r);
-              const status = evidenceState(r);
-              const evidenceLabel = evidenceLabels[status];
               const rowRef = normalizeRef(r.source_ref);
-              const check = currentEvidenceCheck(r);
-              const progress = checkProgress?.index === i && checkProgress.row.key === r.key
-                && checkProgress.row.value === r.value
-                && JSON.stringify(checkProgress.row.source_ref) === JSON.stringify(r.source_ref)
-                && (checkProgress.phase !== "done" || check)
-                ? checkProgress : null;
               return (
                 <Fragment key={`row-${i}`}>
                 <tr
@@ -500,7 +450,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                       onAppendRow={() => appendRow("key")}
                     />
                   </td>
-                  <td className={`min-w-0 px-3 py-1 text-neutral-900 ${status === "verified" ? "bg-emerald-50/80" : ""}`}>
+                  <td className="min-w-0 px-3 py-1 text-neutral-900">
                     <RowCell
                       rowIndex={i}
                       col="value"
@@ -511,7 +461,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                       // Grounded values get a yellow "marker pen" highlight on
                       // row hover, so the eye lands on the exact value while the
                       // source node highlights where it came from (issue #145).
-                      marker={status === "verified"}
+                      marker={!!rowRef}
                       pendingFocus={pendingFocus}
                       setPendingFocus={setPendingFocus}
                       onCommit={(v) => commitRow(i, "value", v)}
@@ -519,19 +469,6 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                     />
                   </td>
                   <td className="relative w-20 px-2 text-xs text-neutral-400">
-                    {/* No status words beside the anchor. "Unverified" and "No
-                        evidence" were printed on every ungrounded row, and
-                        "Stale" repeated what the anchor's menu offers to fix
-                        (Revalidate). Verified rows are tinted and carry a
-                        tick; the full wording stays in the tooltip. */}
-                    <span
-                      aria-label={`Evidence: ${evidenceLabel}`}
-                      title={status === "verified" ? "Validated for this claim at the recorded source generation" :
-                        status === "stale" ? "Claim or evidence changed. Revalidate before relying on this citation." :
-                          status === "unverified" ? "Source link exists; this claim has not been verified." : "No source evidence"}
-                      data-evidence-status={status}
-                      className={`block text-[10px] ${status === "verified" ? "text-emerald-700" : "text-amber-800"}`}
-                    >{status === "verified" ? "✓" : ""}</span>
                     {/* The chip wraps the anchor: hovering the anchor opens
                         the source AND the verdict menu, and the verdict sits
                         in the icon's corner, so the mark and the thing it
@@ -542,14 +479,6 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                         label={r.key || `row ${i + 1}`}
                         claim={r.value || undefined}
                         review={refReview(r)}
-                        checkNote={check
-                          ? `Last check: ${check.status === "verified" ? "verified" : "not verified"}. ${check.message} ${check.next_step}`
-                          : undefined}
-                        onRevalidate={
-                          canEdit && status !== "verified" && checkProgress?.phase !== "running"
-                            ? () => { void revalidateRow(i); }
-                            : undefined
-                        }
                         onChange={(state, note) =>
                           persistRows(
                             rows.map((row, j) =>
@@ -563,7 +492,7 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                           documentNodeId={d.source_doc_node_id}
                           refValue={rowRef}
                           context={rowRefs}
-                          query={status === "verified" ? r.value || undefined : undefined}
+                          query={r.value || undefined}
                           title={`Open page ${rowRef.page} in viewer`}
                           ariaLabel={`Open source page ${rowRef.page}`}
                           className="h-5 w-5"
@@ -583,19 +512,6 @@ export function TablePrimitive({ id, data, selected }: NodeProps) {
                     />
                   </td>
                 </tr>
-                {/* Only the check the reader just ran speaks under the row:
-                    in flight, failed, or its answer. What an earlier or an
-                    agent's check said lives in the anchor's menu, beside the
-                    reader's own verdict and note. */}
-                {progress ? (
-                  <tr><td colSpan={3} className="px-3 pb-2 text-[10px] leading-snug text-neutral-600">
-                    <span role={progress.phase === "failed" ? "alert" : "status"}>
-                      {progress.phase === "running" ? "Checking evidence..." :
-                        progress.phase === "failed" ? "Check request failed. Reload the table and try again; evidence was not confirmed." :
-                        check ? <>Check complete: {check.status === "verified" ? "Verified" : "Not verified"}. {check.message} {check.next_step}</> : null}
-                    </span>
-                  </td></tr>
-                ) : null}
                 </Fragment>
               );
             })}

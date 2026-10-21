@@ -89,13 +89,13 @@ and reconstructs their content from stored items or selected table cells.
 
 A table row's source reference resolves against that document view. Cell, item,
 region, and explicit-box references offer different precision. A page-only
-reference opens a page. Automated evidence binding checks a claim against stored
-validated evidence; a citation alone does not establish a Verified row.
+reference opens a page. The server places a row's reference on its cell or
+quoted words but does not judge it. A person records whether it is right.
 
 See [Document generations](document-generations.md),
 [Page geometry](document-page-geometry.md),
 [Source resolution](spec-source-resolution.md), and
-[Claim and evidence](claim-evidence.md).
+[Checking a reference](claim-evidence.md).
 
 ## Provider boundary
 

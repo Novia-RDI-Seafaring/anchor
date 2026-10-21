@@ -57,13 +57,12 @@ points, a top-left origin, and `[left, top, right, bottom]`.
 
 Click a row's source anchor to open the PDF dock. It highlights a precise
 locator when one resolves, or opens the cited page otherwise. Selecting source
-text can attach a more precise box. A source link makes the claim inspectable;
-it does not confer Verified status by itself.
+text can attach a more precise box. A source link makes the claim inspectable.
 
-Rows distinguish Verified, Unverified, Stale, and No evidence. Editing a claim
-can preserve the link while making its binding stale. Use **Check** to request
-revalidation against stored evidence. See [Claim and evidence](claim-evidence.md)
-and [Source resolution](spec-source-resolution.md).
+Right-click the anchor to record whether the reference is right. The verdict
+shows in the anchor's corner, and only a person sets it. See
+[Checking a reference](claim-evidence.md) and
+[Source resolution](spec-source-resolution.md).
 
 ## Headings, folding, and details
 
