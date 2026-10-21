@@ -9,611 +9,136 @@ next version section on tag.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-21
+
+### Highlights
+
+- Ask an agent about what you selected. Draw or write a remark on the canvas, the agent acts on it, and you keep the change or put it back on the real board.
+- An agent can wait for the next ask (`intents_wait`) instead of polling, and it reads the canvas you have open.
+- A reference can quote the printed words. The viewer highlights the place in yellow and underlines the words in blue.
+- References attach to spec rows, text and nodes, and a source opens on hover, in a panel or the full viewer.
+- Prose cards: a `markdown` node and `anchor:` links in every card with text.
+- Gold extraction can run through your own Claude or ChatGPT plan, with no API key.
+- Delete a document from a project, after Anchor says what cites it.
+
+### Breaking
+
+- Spec rows no longer carry `evidence` (verified, stale, unverified), and `revalidate_evidence` is gone. A write that sends either field has it dropped. Code that read `row.evidence` gets nothing.
+- An agent's write can no longer set or change a row's `review`. A verdict is a person's.
+- An agent applying its own change through `intent_act` no longer stamps `data.review = accepted`. Only a person approving does.
+- New environments embed with `bekko-a25m` instead of `bge-small-en-v1.5`. Existing environments keep the model they recorded. To switch an existing one, set `embed_model` and run `anchor embed --overwrite` (#485).
+
+### Added
+
+- Agents act on a remark and the reader judges the result on the real canvas: keep it, or put it back. `intent_act` posts the change, applies it and asks in one call (HTTP `POST /api/intents/{id}/act`, MCP `intent_act`, CLI `anchor intent act`). Every request and tool call is logged to `activity.jsonl`, which gives a timing summary per intent (#493, #527).
+- `intents_wait` holds until an ask needs the agent, and claims it (#547).
+- Ask agents about the current selection from the canvas (#519).
+- The mark-up pen: draw the ask on the canvas, send it, and watch the answer land (#399).
+- A source ref can quote the words that carry its value: `quotes: [{exact, prefix?, suffix?, page?}]`, or `quote=` in an `anchor:` link. The server places each quote and stores its boxes. A quote it cannot place comes back with what is printed there. The viewer and the document card highlight the place and underline the quoted words (#549).
+- One reference may point at more than one place, and the viewer lights every place it points at (#399).
+- Stored citations attach to nodes, rows and text (#536).
+- Delete a document from the project. Anchor first says what cites it (#551).
+- Two new gold providers, `claude` and `codex`, run page polish and gold regions through the agent CLI the user is signed in to. No API key is needed. They count as egress, so local-only environments never use them (#488).
+- A grounded text-only gold profile (#453).
+- Silver candidate overlay PNGs (#455).
+- PDF contents navigation in the viewer (#419).
+- Clone elements with the clipboard and Alt-drag (#451).
+- Saved editor keyboard shortcuts (#468).
+- Create text by double-clicking the empty canvas (#484).
+- Fold subtrees and inspect compact grounded cards (#457).
+- The document dock is derived from the canvas's source citations (#454).
+- A fictional pump datasheet to test and demonstrate with (#489).
+- The intent layer is its own package with a host-driven React overlay, and an independent form example shows it outside Anchor (#430, #431, #432, #437, #439).
+- `list_entities(slug)` says what a document is about: every entity its gold regions name, with counts and pages. MCP `list_entities`, HTTP `GET /api/documents/{slug}/entities`, CLI `anchor entities <slug>`.
+- `data.role` names the part a card plays in an argument: `question`, `criterion`, `option`, `evidence`, `assumption`, `decision`, `rejected`, `open`. Any element can carry one and renders a small chip with the word. An unlisted word is stored, warned about, and renders no chip.
+- `canvas_propose_set` attaches a non-blocking `hint` when a set of eight or more members contains no `area`.
+- `get_crop` and `get_page_image` default to `format="inline"`, so the harness shows the image instead of a file path. `path` and `base64` remain.
+- `get_document_index` returns a map of the document. Table cell content is omitted by default; `include_content` brings it back on all three adapters.
+- Prose on the canvas can point at its source. A link whose target is `anchor:<slug>?page=3&region=r2` renders as the words plus an anchor glyph and opens that place. `item`, `cell` and `bbox` work too. A ref that names no document or page renders struck through.
+- A `markdown` node: a card whose body is Markdown, rendered as rich text from `data.text`. Press `M` or take it from the toolbar. Raw HTML is escaped.
+- Resizing a text element scales the words, as in Excalidraw. The size is written on release as `data.font_px`.
+- Excalidraw-style editing. Each tool prints its shortcut letter and pressing it arms the tool. A `text` element renders words alone, with no border or background.
+- A connector tool. Arm it, click the element the connector starts from, then the one it ends at. Escape puts it away.
+- The canvas text scale runs to poster size: `xs` to `3xl`. The heading grows with the body from `lg` up, and spec tables follow the same setting.
+- Proposal sets: an agent groups what it added with a `reason`, and a person accepts or rejects the batch in one write (closes #359). Reaches HTTP, MCP and CLI; the web UI has a Proposals tab.
+- The PDF viewer zooms with Cmd/Ctrl+scroll and trackpad pinch, centred on the pointer (closes #354).
+- Scoped-ask threads (closes #343): an intent can be anchored to a canvas selection and carry a conversation of messages, questions, suggestions and results. Approving a suggestion applies its ops all-or-nothing.
+- The intents queue is visible in the web UI, live, with an unread badge (closes #323).
+- Live canvas presence: the header shows who is on this canvas now, humans and recently writing agents.
+- `canvas_changes(workspace_slug, since_version)` folds the event log into one net entry per element, grouped by actor (closes #325). The web UI shows a "While you were away" panel.
+- Review states on canvas nodes: `data.review = {state: "proposed" | "accepted" | "rejected", by?, at?}`, opt-in per workspace with `review_mode` (closes #324).
+- Hovering a source ref shows the source (closes #373). `panel` shows a crop of the page around the place. `viewer` fades the full source pane in on the left and away when the pointer leaves, unless the ref was clicked. The mode is switchable from the canvas header and persists per browser.
+- The source pane fades in and honours `prefers-reduced-motion`.
+
+### Changed
+
+- The low-level MCP server runs on the MCP Python SDK v2 (#537).
+- The local embedder runs on onnxruntime instead of sentence-transformers. The `sentence-transformers` dependency and the `local-embed` extra are gone, and `anchor models prefetch` fetches the ONNX graph and tokenizer (#337).
+- New derived regions are stored in knowledge (#470).
+- A selected card's controls float above it and show only what applies to that kind of card (#529).
+- The canvas toolbar is a vertical rail down the left edge.
+- The source viewer opens over the page instead of sharing the row with the files explorer, so the pages get real room and the canvas never reflows.
+- A spec card's columns follow its rows, so values read in full (#493).
+- `canvas_create_workspace` says what a canvas is for.
+- The canvas skill teaches composition, not just extraction: `area` containers, a titled `text` element, colour for state, a dominant conclusion.
+- Agents answering a remark add what was asked and nothing more, and reply in one short line. `intent_act` returns a `next` hint saying so.
+- The skill tells an agent in a project folder to pass `project` on MCP calls, since the MCP server does not know the folder.
+- With no project named and none chosen, MCP calls use the one project of the environment being served, not an unserved default.
+
 ### Removed
 
-- The automatic claim check on spec rows. A row no longer carries
-  `evidence` (verified, stale, unverified), and `revalidate_evidence` is
-  gone. The green tick looked like a person's verdict and it was not one.
-  A write that still sends either field has it dropped. Ref placement
-  stays: quotes, cells found from quotes, and snapping a ref to its
-  key/value pair.
+- The automatic claim check on spec rows, with its Verified / Stale marks and the request to check again. The green tick looked like a person's verdict and it was not one. Ref placement stays: quotes, cells found from quotes, and snapping a ref to its key/value pair.
+- The Hand tool. A drag on the background pans and Space-drag pans anywhere (#529).
+- The PDF magnifier on highlighted values (#527).
 
 ### Fixed
 
-- A verdict on a reference is a person's. An agent's write can neither
-  set nor change a row's `review`; a verdict a person left stays on an
-  agent rewrite of the same claim and goes when the claim changes. An
-  agent applying its own change through the act flow stamps no
-  "accepted".
-- Put back removes an edge or node that the change added without an id.
-  It used to fail on it.
-- Remark ink no longer covers the cards that answered it. The blob,
-  leaders and handwriting are cut out around them.
-- Agents answering a remark add what was asked and nothing more, and
-  reply in one short line. `intent_act` returns a `next` hint saying so.
-- The skill tells an agent in a project folder to pass `project` on MCP
-  calls, since the MCP server does not know the folder.
-
-### Fixed
-
-- `anchor serve --project <folder>` works. The CLI's `--project` used to take a
-  project name only, so a folder path failed with an invalid-name error while
-  `anchor-mcp --project <folder>` accepted the same path. `serve`, `check` and
-  `serve-info` now take a name or the path to an `anchor init` folder: anything
-  with a slash, or starting with `.` or `~`, is a path, and so is a bare word
-  that names an `anchor init` folder in the current directory. The folder's
-  `anchor.toml` picks the environment and the project name, and its config
-  layers the same way as running inside the folder. A folder without an
-  `anchor.toml` is reported in one line as not an `anchor init` project, and
-  an `--env` that contradicts the folder's marker is an error rather than a
-  silent switch of data zone. Plain names behave as before.
-
-- A hover-opened source pane can actually be read. In `viewer` hover mode the
-  pane opens on the left edge while the link that opened it sits out in the
-  canvas, so reading it means travelling to it -- and travelling means leaving
-  the link, which closed the pane before the pointer arrived. It flashed and
-  vanished, which reads as the viewer being broken. The close timer is shared
-  now, so entering the pane cancels it and leaving starts it again: the pane
-  goes away when the pointer is on neither the link nor the pane. The delay is
-  600ms rather than a debounce, because it measures a journey across the
-  canvas, not a twitch. A pinned pane is still never closed by a hover.
-
-### Fixed
-
-- The source viewer stops moving things that should not move. Two separate
-  animations were fighting the reader. The pane slid in from the left, which
-  drags the PAGES across the screen, and a reader watching a page travel is
-  reading nothing; it now fades, opacity only, in and out. And opening at a
-  source ref smooth-scrolled to the target page, so you watched the pages in
-  between stream past on the way to the evidence; that jump is instant now, as
-  is a thumbnail or toolbar jump, since in both cases the reader has already
-  decided where they are going. With the viewer opening on hover the scroll
-  animation replayed on every link the pointer touched, which is what made it
-  grating.
-
-- The pane fades out rather than vanishing. It used to unmount the instant the
-  viewer state cleared, which is fine for a deliberate close and jarring when
-  a pointer drifting off a link takes half the screen with it. It is held for
-  the length of the fade and stops accepting clicks while it leaves.
-
-### Added
-
-- Two ways to answer "what is at the other end of this link", switchable from
-  the canvas header so the same board can be judged under each rather than
-  argued about. `panel` (default) shows a small crop beside the link.
-  `viewer` fades the full source pane in on the left and fades it away again
-  when the pointer leaves -- unless the ref was clicked, which pins it. A pane
-  opened any other way is never closed by a passing hover. The choice persists
-  per browser.
-
-- A real entrance animation for the source pane. The shadcn components here
-  use `animate-in` / `fade-in`, which come from a Tailwind animation plugin
-  that is not installed, so those classes were inert. A pane that opens on
-  hover has to arrive softly or sweeping a paragraph of links strobes the left
-  half of the screen, so the fade is a keyframe in the stylesheet, and it
-  honours `prefers-reduced-motion`.
-
-
-- Hovering a source ref shows the source (closes #373). It used to do two weak
-  things: a native tooltip reading "Open <ref>", and lighting up the region in
-  a document card IF one happened to be placed, open and visible. Otherwise a
-  reader learned nothing about what was at the other end without clicking,
-  which navigates away from the sentence they were reading. A panel now shows
-  a crop of the page around the referenced place with that place boxed inside,
-  so it reads as a located excerpt rather than a floating picture. A cell or
-  item selector is resolved first, so the box lands on the value rather than
-  the section holding it. Opens to the right of the link, flips left when it
-  would overflow, clamps vertically, and dismisses on leave, scroll and
-  Escape. An open delay stops panels strobing as the cursor sweeps a
-  paragraph; a close delay lets the pointer travel onto the panel. Rendered
-  through a portal, because `position: fixed` inside React Flow's transformed
-  viewport resolves against that transform and was scaling the panel with the
-  canvas zoom.
-
-### Fixed
-
-- Clicking a region-only source ref highlights the region instead of just
-  opening the page (closes #385). Resolution was gated on `refHasSelector`,
-  which is true only for a cell or item, so the commonest shape an `anchor:`
-  link writes -- `?page=2&region=r9`, which carries no bbox -- fell through to
-  "open the page with nothing marked". The same gap is why the hover preview
-  had nothing to crop.
-
-### Changed
-
-- The canvas toolbar is a vertical rail down the left edge again. As a
-  horizontal bar centred at the top it competed with the canvas title and the
-  page chrome, and it sat away from the left edge where the hand already is.
-  Vertical also scales: registering another producer adds a row instead of
-  eating width the canvas needs. Groups stack, dividers run across the rail,
-  tooltips open to the right rather than downward onto the next tile, and the
-  armed-tool hint moved to the bottom, where it does not cover the spot the
-  user is about to click.
-
-
-- The source viewer slides in over the page instead of sharing the row with
-  the files explorer. It was an in-flow flex sibling, so opening a document
-  squeezed both sides: the canvas reflowed, and the PDF got a fraction of
-  whatever was left between the explorer and the board. On a laptop that left
-  the pages too narrow to read, which is the entire reason to open them. The
-  pane is now a left-anchored overlay whose width is a share of the viewport,
-  so it can cover the explorer and the pages get real room (648px rather than
-  536px at the default ratio on a 1440px window, and it drags to 85% of the
-  viewport rather than 70%). The canvas underneath never reflows when the
-  viewer opens or closes.
-
-### Fixed
-
-- A document card previews the exact thing a ref points at. A spec row whose
-  `source_ref` carries a `cell` selector opened the source dock on that one
-  cell, while the document card on the canvas drew a box around the whole
-  section -- two surfaces disagreeing about the same reference. The click path
-  resolved selectors through `resolve_source_ref` (precedence cell > item >
-  region > bbox); the hover broadcast dropped them, so the card only ever knew
-  the region. `hoveredSourceRef` now carries `item_id` and `cell`, every
-  broadcaster passes them, and the card resolves a selector-bearing ref to the
-  tight bbox. The region rectangle stays the fallback when resolution fails,
-  so the preview never shows nothing.
-
-
-- The source highlight stays up instead of fading after four seconds. Clicking
-  a source ref means "check this value against the page it came from", and
-  checking means reading the card, reading the page and looking back. The
-  highlight was built as a "you landed here" flash, so it left exactly when it
-  was needed. It now persists until another ref replaces it or Escape
-  dismisses it.
-
-- The PDF viewer no longer outlines every region at once. A dashed sky-blue
-  rect was painted over each gold region whenever a canvas was open, which
-  turned a four-page leaflet into a page of dashed boxes and competed with the
-  source highlight for the reader's attention -- the one mark they opened the
-  viewer to see. The outline is now drawn only for the region under the
-  cursor. The rects stay in the DOM, so click-to-make-a-reference and the
-  right-click hit-test are unchanged; only the stroke is conditional.
-
-### Added
-
-- `list_entities(slug)` says what a document is ABOUT: every entity its gold
-  regions name, with counts and the pages each appears on. An agent's picture
-  of the corpus came from `list_documents`, which returns a slug, a title and
-  a page count, so a four-page leaflet describing thirteen pump models read as
-  one document called "Alfa Laval LKH" -- and an agent that checked the
-  smallest model reported it as "the only pump in the corpus". The extraction
-  knew all thirteen; nothing in the read surface would say so. Parity across
-  MCP `list_entities`, HTTP `GET /api/documents/{slug}/entities` and
-  `anchor entities <slug>`, advertised by default because a signal pointing at
-  an unreachable tool is the bug this release also fixes. Nothing is ranked
-  away: a top-N "covers" preview would have to break the tie between a real
-  model and a letter from a pump-code legend, and any rule invented for that
-  misleads the way the silence did.
-
-- `data.role` names the part a card plays in an argument: `question`,
-  `criterion`, `option`, `evidence`, `assumption`, `decision`, `rejected`,
-  `open`. Any element can carry one and renders a small chip saying so.
-  A canvas that lays out a decision is made of cards playing known parts --
-  the parts design-rationale work has named for fifty years, IBIS as
-  question / idea / argument and Toulmin as claim / grounds / warrant /
-  rebuttal -- and without a way to say which is which a reader gets a pile
-  of boxes. These are roles rather than shapes (a decision and a rejected
-  option are the same card with different standing), so this is one
-  optional field on existing types rather than eight new node types,
-  mirroring `data.review` (#324): small closed vocabulary, any element, a
-  badge, never blocking a write. An unlisted word is stored, warned about,
-  and renders no chip. The chip always shows the word and not only a
-  colour, so it survives a zoomed-out board and a colour-blind reader. The
-  canvas skill documents the vocabulary, uses it in the worked decision
-  example, and gains a section on pushing bulk detail into a sub-canvas so
-  the parent stays readable at the zoom someone opens it at.
-
-### Fixed
-
-- `canvas_propose_set` is advertised by default. The skill instructs every
-  agent to finish a multi-element write with it, and it was gated behind the
-  `canvas_advanced` capability, whose note claimed gated tools were "callable
-  by name right now". That is true of this server, which dispatches by name,
-  and false of MCP hosts, which can call only what is in `tools/list`; no
-  `tools/list_changed` notification exists, so a gated tool never becomes
-  reachable mid-session. An agent following the skill could not do what the
-  skill told it to. The note now says plainly that a listed tool is
-  dispatchable but not advertised. The rest of the batch surface stays gated
-  and is not needed to follow the skill: a verdict is stamped onto each member
-  as `data.review`, which `canvas_get_state` already returns, and the skill
-  says so instead of sending agents to a gated call.
-
-- `canvas_snapshot` explains a refused connection instead of surfacing a raw
-  Playwright trace. It returned `Page.goto: net::ERR_CONNECTION_REFUSED at
-  http://127.0.0.1:8031/c/...`, which names what failed and nothing about the
-  fix. The snapshotter drives a browser against a running `anchor serve`, a
-  precondition no other canvas tool has, so it now says that and points at
-  `anchor serve-info` for which serves are up and what each is bound to.
-
-- `anchor:` source links now resolve in every text-bearing card, not only
-  in `markdown`. `SourceRefLink` was imported by `MarkdownNode` alone, so a
-  link written in a `text`, `fact` or `note` element arrived on the canvas
-  as literal square brackets. The only way to write one sentence with
-  provenance was to reach for a `markdown` card, which quietly made the
-  simple cards the tier where claims go unanchored -- backwards for an
-  application whose whole point is that a claim points at its evidence. A
-  new `AnchoredText` renderer resolves `anchor:` links and leaves
-  everything else exactly as typed: `**bold**` still stays asterisks in a
-  `fact`, because formatting is what distinguishes a `markdown` card and
-  collapsing that would reformat every card already on a canvas. Non-anchor
-  links stay literal too, since an http link in a plain card is not a
-  provenance claim.
-
-### Changed
-
-- `canvas_create_workspace` says what a canvas is for. Its description was
-  "Create a new workspace folder", which told an agent nothing at the one
-  moment it is about to compose something. It now names the two jobs a
-  canvas does and, when the user asked a question rather than asked for
-  data, points at `area` containers, a titled `text` element, colour for
-  state and a dominant conclusion.
-
-
-- The canvas skill teaches composition, not just extraction. Asked a
-  question ("compare these pumps so I can pick one"), an agent would answer
-  with every spec table it had extracted, dropped on an empty board: all the
-  evidence present, the argument invisible. The skill explains why. It
-  specifies grounding in depth -- a worked JSON example for `spec` rows, an
-  explicit "do NOT pack values into `data.description`", and a runtime hint
-  steering prose into rows -- and said nothing at all about arranging an
-  answer. The words `area`, `tone`, `bg_color`, layout, column and legend
-  appeared zero times. The `area` node type, which is the grouping
-  primitive, was missing from the node-type shortlist, while `concept` and
-  `entity` were described as being "for grouping" when they are small
-  labelled shapes with no container behaviour. `canvas.md` now adds `area`
-  to the shortlist, corrects `concept` / `entity`, and carries two new
-  sections: one naming the two jobs a canvas does (a place to keep what a
-  document says, versus a case someone has to act on) and one on composing
-  the second so it can be read -- enclose rather than place, state the
-  reading order in a `text` element, spend colour on state and declare the
-  convention, make the conclusion the biggest thing, say what you rejected,
-  label the edges that carry reasoning, and mark what you assumed. A second
-  worked example lays out a decision canvas end to end.
-
-### Added
-
-- `canvas_propose_set` attaches a non-blocking `hint` when a set of eight or
-  more members contains no `area`, the mirror of the existing spec-rows
-  nudge: that one steers values into rows, this one steers an answer into a
-  shape a reviewer can read. A flat set is still a valid set; only the next
-  call is steered. An `area` drawn earlier, outside the proposed set, does
-  not count.
-
-
-- `get_crop` and `get_page_image` hand back an image an agent can actually
-  look at. Both defaulted to `format="path"`, so a request to see a chart
-  returned a filesystem path; the only way to turn that into pixels was for
-  the agent to open the file itself, which leaves the adapter surface and, in
-  a sandboxed harness, raises a read-permission prompt mid-task. `base64` was
-  no better: the bytes came back inside a JSON text blob the harness renders
-  as text, so the model still could not see the image and paid for it in
-  tokens. The MCP server already promotes a result carrying `_mcp_image_b64`
-  to an `ImageContent` block, which `canvas_snapshot` used but no document
-  tool did. `_byte_envelope` now understands `format="inline"` and emits that
-  marker for image content types, and both viewing tools default to it, so
-  the harness displays the crop. `path` and `base64` remain for callers that
-  want the file or the raw bytes, and non-image content (`get_pdf`, SVG)
-  keeps its previous behaviour. `ingest_get_page` nests its envelope under
-  `image`, where the top-level marker cannot be promoted, so it downgrades
-  `inline` to `base64` rather than return an unviewable blob. The PDF skill
-  now tells agents to look at a region with `get_crop` instead of reading
-  files under `.anchor_data/`. HTTP already served crop bytes directly and
-  the CLI already prints a path a shell user can open, so MCP was the only
-  adapter whose native form was wrong.
-
-
-- `get_document_index` returns a map of the document, not the document.
-  Table cell content is now omitted by default: on a four-page datasheet
-  the index was 56,991 characters, of which 87% was cell text, which
-  overflowed an MCP host's result budget and pushed the agent into reading
-  the spilled JSON off disk instead of using the API. The map form of that
-  same document is 7,333 characters and keeps every field that identifies a
-  table (`caption`, `shape`, `header_row`, `first_column_values`) as well as
-  its address (`page`, `bbox`), so tables that share a caption -- eight of
-  the twelve on that datasheet are captioned "OPERATING DATA" -- are still
-  told apart. Read a table's content with `get_page_text(slug, page)` or,
-  on a gold document, `inspect_region`. The previous payload is available
-  with the new `include_content` switch, which reaches all three adapters:
-  MCP `get_document_index(slug, include_content=true)`, HTTP
-  `GET /api/documents/{slug}/index?include_content=true`, and CLI
-  `anchor index <slug> --include-content`. Callers that read the index only
-  for `document` or `outline` (`get_gold_map`, `get_raw_pdf_path`) now move
-  less data; `migrate bbox-origin`, which rewrites `index.json`, reads the
-  unabridged form so a migration cannot drop cells. Related: #240 tracks the
-  caption inference that makes captions repeat in the first place.
-
-### Added
-
-- Prose on the canvas can point at its source. A Markdown card writes an
-  ordinary link whose target is `anchor:<slug>?page=3&region=r2` and it
-  renders as the words plus an anchor glyph; clicking opens that document
-  at that page with the region highlighted, the same landing a spec row
-  gives. `item`, `cell` and `bbox` work too, matching `source_ref` field
-  for field. A ref that names no document or no page renders struck
-  through, so a pointer an agent got wrong is visible instead of reading
-  as sourced prose. The inline ref is a reader's pointer, not an evidence
-  edge — the edge remains the reviewable claim.
-
-- A `markdown` node: a card whose body is Markdown, rendered as rich
-  text. Headings, lists, tables, code blocks, links and blockquotes all
-  render, GitHub-flavoured, from `data.text` — the same body key the
-  other cards use. It fills the gap between a `note`, which holds one
-  remark as plain prose, and a `spec` table, which holds rows of
-  source-linked values: an explanation with parts. Press `M` or take it
-  from the toolbar; double-click the body to edit the source in place,
-  where Enter breaks the line and Cmd/Ctrl+Enter saves. Every size in
-  the rendered body is relative, so the card's text size scales its
-  headings, code and tables together. Raw HTML in the source is escaped
-  rather than rendered.
-
-- Resizing a text element scales the words, as in Excalidraw: drag a
-  corner and the font grows with the box instead of the same words
-  re-wrapping in a bigger frame. The size is live during the drag and
-  written once on release as `data.font_px`, a size between the buckets
-  that wins over `text_size`.
-
-- Canvas editing moves toward the Excalidraw model, asked for by name.
-  The toolbar is one horizontal row centred at the top, each tool prints
-  its shortcut letter, and pressing that letter arms it (`R` rectangle,
-  `O` circle, `D` diamond, `F` container, `T` text, `N` note, `A`
-  connector). A `text` element renders words alone, no border and no
-  background, so a title, a caption or a paragraph is not one more card;
-  it honours the full text scale, so a heading is a text element at `2xl`.
-  Selecting an element opens a properties panel on the left with fill,
-  stroke and text controls always visible rather than hidden behind chips;
-  a text element shows only the text controls, since it has no box to
-  colour. The floating selection toolbar stays for multi-select.
-
-- A connector tool in the canvas toolbar. Connections attach to whole
-  elements, and since the connection dots came off there was no way to
-  draw one from the toolbar: you had to select an element and use its
-  quick-connect overlay. Arm the connector, click the element the
-  connector starts from, then the one it ends at. It stays armed so
-  several can be drawn in a row, clicking the same element twice cancels,
-  and Escape puts the tool away.
-
-- Canvas text scale runs to poster size. `data.text_size` was `sm`, `md`,
-  `lg`, capping the body at 16px, and an element's heading was pinned at
-  11px whatever the body did, so a canvas read on a shared screen forced
-  everyone to zoom in and lose the overview. The scale is now `xs`, `sm`,
-  `md`, `lg`, `xl`, `2xl`, `3xl` (~40px), the heading grows with the body
-  from `lg` up so an element scales as one piece, spec tables honour the
-  same setting, and the text picker offers all seven with each button drawn
-  at its own size. The skill tells agents to pick the size for the zoom the
-  canvas will be read at.
-
-- Proposal sets: review what an agent added in one go as one thing
-  (closes #359). Review states are per element, so a batch of thirty-five
-  grounded nodes was thirty-five verdicts with nothing recording which of
-  them belonged together or why. An agent now draws, then groups what it
-  added with a required `reason`; the set lives in the canvas's
-  `metadata.proposal_sets` and names its members, so grouping costs one
-  event and an element's `data` stays about the element. A human rules on
-  the batch in one write: accepting or rejecting stamps `data.review` on
-  every member (with `except_ids` for "accept all but these"), and
-  rejecting with `discard` removes the members instead, cascading their
-  edges, which is the clean undo for a batch nobody wants. Reaches all
-  three adapters: `POST|GET /api/workspaces/{slug}/proposal-sets` and
-  `.../{id}/members|review`, the `canvas_propose_set`,
-  `canvas_add_to_proposal_set`, `canvas_list_proposal_sets` and
-  `canvas_review_proposal_set` MCP tools, and `anchor canvas
-  propose-set|add-to-set|proposal-sets|review-set`. In the web UI a
-  Proposals tab in the left explorer lists the sets with why each was
-  proposed and by whom, gives one Accept all / Reject all per batch, asks
-  before discarding, and rings a set's elements on the canvas while you
-  hover its row.
-
-- PDF viewer zooms with Cmd/Ctrl+scroll and trackpad pinch (closes #354).
-  The zoom centres on the pointer, so the spot under the cursor stays put,
-  and the gesture no longer zooms the whole browser page. Plain scrolling
-  still moves through pages. Pages re-render at the new scale once the
-  gesture settles, and the last render is scaled in the meantime, so a
-  fast pinch stays smooth on long documents. With focus in the viewer,
-  Cmd/Ctrl + `=` / `-` / `0` zoom in, zoom out and reset.
-
-- Scoped-ask threads, backend half (closes #343, part of #345): an
-  intent can now be anchored to a canvas selection and carry a
-  conversation. `Intent` gains three additive fields, `targets`
-  (`[{workspace_id, node_id}]`), `base_version` (the origin canvas's
-  version when the ask was made, recorded server-side) and `items`, an
-  append-only list of typed thread items: `message`, `question`
-  (`open` -> `answered`), `suggestion` (`pending` -> `applied` /
-  `declined` / `superseded`) and `result`. Item `author` is the request's
-  actor, never client-supplied. A suggestion is a staged batch of canvas
-  ops in the event vocabulary (`NodeAdded` ... `EdgeRemoved`); approving
-  it applies the batch all-or-nothing under the workspace lock through the
-  normal write path (SSE, attribution, event log), with the suggestion's
-  author as actor, the item id as `causation_id`, client ids on
-  `NodeAdded` / `EdgeAdded` mapped to real ids for later ops, and every
-  created element stamped `data.review = {state: "accepted", by:
-  <approver>}`. A batch with one bad op applies nothing and reports the
-  failing index and reason; ops naming an element that no longer exists
-  fail as `stale`. Declining records the comment as a message item. New
-  operations reach HTTP (`POST /api/intents` accepts `targets`, `GET
-  /api/intents/{id}`, `POST /api/intents/{id}/items`, `.../items/{item}/
-  answer|apply|decline`), MCP (`intent_add_item` in the core set;
-  `get_intent`, `intent_ask`, `intent_answer`, `intent_apply`,
-  `intent_decline` under the new `intent_threads` capability) and the CLI
-  (`anchor intent ask|show|add-item|answer|apply|decline`), enforced by
-  operation descriptors. Old intent records load unchanged. The skill and
-  tool descriptions tell agents to drain the inbox first, never edit
-  targeted elements directly, stage suggestions, ask when ambiguous, and
-  post a result before resolving.
-
-- The intents queue is visible in the web UI (closes #323, part 2 of
-  #321): a new Intents tab in the left files explorer lists the project's
-  open intents live (SSE `intent_pending` signal plus an 8s polling
-  fallback that catches agents resolving over stdio MCP / CLI from other
-  processes) with a collapsed "recently resolved" section that shows each
-  record's resolution text. The panel authors free-text intents via the
-  new additive `user_request` kind — its payload carries the text plus,
-  when the user attaches the selected canvas node as the target, the same
-  `{workspace_id, node_id}` node-ref shape `drop_to_ingest` uses — and can
-  dismiss an open intent (resolve with `{dismissed: true}`). An unread
-  badge on the tab counts open intents from any tab, so a canvas file-drop
-  in a harness project surfaces immediately. The kind is recognized across
-  HTTP / MCP / CLI unchanged (adapter parity via the existing enqueue /
-  list / resolve surfaces). (#332)
-
-- Live canvas presence (deferred half of #322, part of #321): the canvas
-  header now shows who is on this canvas right now. Every SSE subscriber
-  to `GET /api/workspaces/{slug}/events` registers itself with an actor
-  kind and label (optional `?actor_kind=&actor_label=`, default
-  `human`/"browser"; the `/m/:id` monitor view registers as
-  `human`/"monitor"), and each join or leave broadcasts a `presence`
-  event carrying the full current roster, so clients stay stateless.
-  Agents hold no SSE connection, so a write carrying an `agent` actor
-  counts as presence too: the author stays on the roster for 90 seconds
-  past its last write, marked `via: "writes"`. The same roster reads back
-  through `GET /api/workspaces/{slug}/presence`, the `canvas_presence`
-  MCP tool (`canvas_advanced` tier), and `anchor canvas presence <slug>`.
-  Presence is ephemeral, in-memory state of one `anchor serve` process:
-  nothing is persisted, and a second serve sees its own clients only.
-
-- Canvas catch-up diff + persisted attribution (closes #325, part 4 of
-  #321): a new read operation `canvas_changes(workspace_slug,
-  since_version | since_ts)` folds the durable event log server-side into
-  `{from_version, to_version, groups}` — one net entry per element
-  (repeated updates collapse; add+remove inside the window nets to
-  nothing), grouped by the responsible actor (#322), with events recorded
-  before attribution grouped under `actor: null`. Labels resolve from the
-  final state where the element survives, else from the event payload. No
-  storage change; a slug with no canvas behind it is reported as not
-  found rather than auto-created, since a read-only summary should not
-  bring a canvas into being. Exposed with adapter parity as
-  `GET /api/workspaces/{slug}/changes?since_version=`, the
-  `canvas_changes` MCP tool (canvas_advanced tier), and `anchor canvas
-  changes <slug> --since-version N`, enforced by an operation descriptor.
-  A whole-log fold additionally carries `touched` — per surviving node,
-  the last actor to touch it — which the web inspector's "edited by" chip
-  now falls back to for nodes not touched this session (fetched lazily on
-  first selection, deferring PR #330's session-only limitation). The web
-  UI remembers the last-seen version per canvas (localStorage) and shows
-  a dismissible "While you were away" panel when a canvas re-opens ahead
-  of it; clicking an entry selects and centers the node if it still
-  exists. Replay/scrubbing stays out of scope.
-
-- Review states on canvas nodes (closes #324, part 3 of #321): the
-  documented convention `data.review = {state: "proposed" | "accepted" |
-  "rejected", by?, at?}` gives the human half of the delegation loop an
-  object to act on. Opt-in per workspace via `metadata.review_mode`
-  (default off — existing flows are untouched), settable through
-  `PATCH /api/workspaces/{slug}` (`review_mode`), the
-  `canvas_set_review_mode` MCP tool, and `anchor canvas review-mode
-  <slug> --on/--off`. With the flag on, nodes created by an `agent` actor
-  (#322) are stamped `{state: "proposed", by: <actor>, at}` server-side
-  unless the caller supplied its own `review` object. The web UI badges
-  proposed nodes and offers one-click Accept / Reject in the selection
-  toolbar (a plain update-node patch recording the human in `by`);
-  rejected nodes render dimmed with the badge rather than hidden. A
-  malformed `review` object on add-node/update-node surfaces the
-  standard non-blocking `warning`; the write always succeeds. Backed by
-  a new additive `WorkspaceMetadataUpdated` event (deep-merge patch
-  semantics, `None` deletes), which older readers skip on replay.
-
-### Changed
-
-- The local embedder runs on onnxruntime instead of sentence-transformers:
-  the same `BAAI/bge-small-en-v1.5` weights (384-d, unit-norm) the web
-  client already uses, so documents embedded before the switch record the
-  same `embed_model` and stay searchable without re-embedding. The
-  `sentence-transformers` dependency and the unused `local-embed` extra are
-  gone, one embedder is shared per project instead of one per ingest
-  service, and `anchor models prefetch` now fetches the ONNX graph and
-  tokenizer. (#337)
-
-### Fixed
-
-- The canvas no longer drops a node's other fields when one of them
-  changes. The browser replaced a node's `data` with whatever a patch
-  carried, while the server merges it, so a write that set one key (a font
-  size, a review verdict) wiped the rest locally until the page was
-  reloaded. It now merges the way the backend does, nested objects
-  included, with `null` deleting a key.
-
-- A text element's selection box hugs its words. It carried a default
-  width and kept whatever width a resize ended at, so a short word sat in
-  a frame several times its size. A width is now set only deliberately, to
-  wrap a paragraph at a chosen measure, and resizing writes the font size
-  alone.
-
-- Placing a text element and typing now works, and the words are edited
-  where they sit. Nothing was focused after placing, so what you typed went
-  nowhere: a text element has no label, and only label editors claimed the
-  focus a new element carries, while ReactFlow focused the node wrapper a
-  frame later and took the caret back. The editor also drew a bordered
-  input box over the canvas instead of letting you write in place; it is
-  now transparent, borderless, and the same size and colour as the words.
-
-- Regions behave like containers again. Selecting one used to raise it
-  above its contents and hide them, because ReactFlow lifts a selected
-  node; layer order is the canvas's decision, not selection's. Elements
-  were also clamped inside whichever region owned them, so dragging one to
-  a neighbouring region snapped it back and looked like it had jumped into
-  the wrong region; a child now moves with its region but can leave it.
-  An element placed or dropped inside a region joins that region, and with
-  a tool armed a click inside a region places there instead of being
-  swallowed as a click on the region.
-
-- Dragging from one element to another with the connector tool armed moved
-  the element instead of drawing a connector. Elements stay put while the
-  connector is armed, a dashed preview follows the pointer, and releasing
-  over another element joins the two. Click then click still works.
-
-- A region's title and subtitle ignored `text_size` and stayed at 10px.
-  A canvas composed of labelled regions, which is how you explain
-  something without drawing a tree, had headings nobody could read zoomed
-  out. Both now follow the region's text size, as every other element
-  does.
-
-- A canvas element set wide but not tall kept its default width. Width and
-  height only applied together, so prose at a large text size could not be
-  given room without also pinning a height. They are independent now.
-
-- Clicking a row anchor, a document region, or a file no longer looks dead
-  when the left source panel is collapsed. Opening a document set the
-  viewer state, but the collapsed cluster does not render the viewer at
-  all, so nothing appeared; the section was only highlighted when the
-  viewer happened to be open already. Opening a document in the dock now
-  reveals the panel. The modal quick-look path is unchanged.
-
-- Canvas elements no longer show connection dots. Every element (shapes,
-  cards, spec tables and their rows, document regions) drew small
-  sockets at fixed points, which read as the only places a connector
-  could attach and invited per-row, per-point wiring that did not match
-  how edges work: connections attach to the whole element. The handles
-  stay in the DOM so edges still register, but they are invisible and
-  never take the pointer; new connections come from the quick-connect
-  overlay on a selected element, dropped onto another element. SysML
-  block ports are modelled ports and stay visible.
-- A spec table's header anchor now appears only when some row lacks its
-  own reference. When every row is grounded, each row's anchor opens its
-  source, and the card-level anchor was a redundant second way in.
-
-- Spec table rows no longer spill past the card's right edge. The rows
-  table used automatic layout, so one long key or value set the whole
-  table's width wider than the fixed-width card and the value column,
-  anchor buttons and row sockets rendered outside the border. The table
-  is now fixed-layout at the card width (key column 45%, value column
-  the rest, a pinned 2.25rem column for the anchor button and socket) and
-  long cells truncate with an ellipsis; resizing the card still controls
-  the column widths.
-
-- `search_documents` no longer times out over MCP on Windows. The
-  embedder's first `import numpy` ran on a worker thread, where loading
-  numpy's bundled OpenBLAS DLL deadlocked under the Windows loader lock; the
-  stdio server now preloads numpy on the main thread, and a search returns
-  in about a second instead of hitting the 30 s timeout. (#334, #337)
-- Environments that forbid server egress now pin Hugging Face offline for
-  every such provider, not only `local_only` / `local`. A `harness`
-  environment previously contacted huggingface.co on every model load.
-  `HF_HUB_OFFLINE=0` and `anchor models prefetch` still work. (#335, #337)
-- Cold-boot replay now applies `ReferenceRemoved` and `ReferenceUpdated`
-  events: both were missing from the replay type map, so a bibliography
-  deletion or caption edit newer than the snapshot was silently dropped
-  when state was rebuilt from `events.jsonl`. (#324)
+- MCP tool arguments are validated again before dispatch, as they were before the SDK v2 move. A call whose arguments do not match the tool's schema gets an input error and changes nothing (#539).
+- A verdict on a reference is a person's. A verdict a person left stays on an agent rewrite of the same claim and goes when the claim changes.
+- Put back removes an edge or node that the change added without an id. It used to fail on it.
+- Remark ink no longer covers the cards that answered it.
+- Anchors land on their cell, titles stick, and the inbox reads the open canvas (#546).
+- `canvas_url` opens the project on screen, not a redrawn copy (#545). The canvas opens without being asked twice, and unsourced values are named (#548).
+- Cmd/Ctrl+A selects the canvas, not the page's text (#529).
+- Table values cite and light their cell (#526).
+- Stale pending suggestions are marked (#524). Batch updates check parent references (#530).
+- The intent overlay refreshes threads on server signals (#533).
+- `anchor init` folders are accepted for `--project` (#492). `anchor serve --project <folder>` works for `serve`, `check` and `serve-info`.
+- Read-only operations work without a model key (#487).
+- Ingest: Docling reading order and structure are preserved (#421, #447), stale fallback headings are cleared (#541), silver captions are grounded in table layout (#542), region tags and entities are indexed (#458), and atomic session writes retry (#520).
+- Source regions are protected from derived id collisions (#467), source integrity and raster geometry are enforced (#383), and SVG crops honour region bounds (#442).
+- The browser multiplexes updates over one SSE connection (#444).
+- Windows: transient atomic replacements retry (#461), and serve probes process liveness without signals (#441).
+- `anchor serve` keeps its port unless walking is requested (#443).
+- The MCP server advertises project and canvas discovery tools (#416).
+- Canvas: nested drags keep absolute positions (#465), edges draw below opaque cards (#463), document region handles re-measure (#466), specific hover regions win (#522), and source anchors are revealed on both scroll axes (#448).
+- A hover-opened source pane can be reached. The close timer is shared between the link and the pane.
+- The source viewer fades instead of sliding, and jumps to a source instead of scrolling past every page.
+- Clicking a region-only source ref highlights the region (closes #385).
+- A document card previews the exact cell or item a ref points at.
+- The source highlight stays up until another ref replaces it or Escape dismisses it.
+- The PDF viewer outlines only the region under the cursor.
+- `canvas_propose_set` is advertised by default.
+- `canvas_snapshot` explains a refused connection and points at `anchor serve-info`.
+- `anchor:` links resolve in every text-bearing card, not only in `markdown`.
+- The canvas merges a node's data patch the way the server does, instead of replacing it.
+- A text element's selection box hugs its words. Placing a text element and typing works, editing in place.
+- Regions behave like containers: selecting one no longer hides its contents, and a child can leave its region.
+- Dragging between elements with the connector armed draws a connector instead of moving the element.
+- A region's title and subtitle follow `text_size`.
+- Width and height of a canvas element are independent.
+- Opening a document reveals a collapsed source panel.
+- Canvas elements no longer show connection dots; connections attach to the whole element.
+- A spec table's header anchor appears only when some row lacks its own reference.
+- Spec table rows stay inside the card.
+- `search_documents` no longer times out over MCP on Windows (#334, #337).
+- Environments that forbid server egress pin Hugging Face offline for every such provider (#335, #337).
+- Cold-boot replay applies `ReferenceRemoved` and `ReferenceUpdated` events (#324).
+
+### Security
+
+- Path-injection barriers at the remaining store path builders (#342).
+- Patched the sharp librsvg audit finding (#440).
 
 ## [0.4.0] - 2026-09-09
 
@@ -1204,7 +729,10 @@ flagged by the pre-release review.
 - Snapshot output paths and the SPA static catch-all both apply
   resolve-and-contain checks.
 
-[Unreleased]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.5...HEAD
+[Unreleased]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.8...v0.3.0
 [0.2.5]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/Novia-RDI-Seafaring/anchor/compare/v0.2.2...v0.2.3
