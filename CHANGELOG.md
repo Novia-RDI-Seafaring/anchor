@@ -137,6 +137,9 @@ next version section on tag.
 
 ### Security
 
+- Anchor requires certifi 2026.10.19 or newer. Older bundles trust the emSign
+  intermediates whose private keys leaked in October 2026, which lets anyone
+  holding them intercept Anchor's model and download traffic.
 - Path-injection barriers at the remaining store path builders (#342).
 - Patched the sharp librsvg audit finding (#440).
 
