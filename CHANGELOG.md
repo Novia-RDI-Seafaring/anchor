@@ -137,6 +137,12 @@ next version section on tag.
 
 ### Security
 
+- Anchor requires certifi 2026.10.19 or newer. Older bundles trust the emSign
+  intermediates whose private keys leaked in October 2026, which lets anyone
+  holding them intercept Anchor's model and download traffic.
+- Anchor requires Pillow 13.0 or newer, which fixes heap overflows and
+  out-of-bounds reads in its JPEG, TIFF and PDF decoders. Pillow 13 needs
+  docling 2.142, so ingestion moves to that docling release.
 - Path-injection barriers at the remaining store path builders (#342).
 - Patched the sharp librsvg audit finding (#440).
 
