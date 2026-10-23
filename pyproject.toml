@@ -33,6 +33,9 @@ dependencies = [
     # 2026.10.19 drops the emSign CAs whose intermediate keys leaked
     # (October 2026). Every TLS call Anchor makes trusts this bundle.
     "certifi>=2026.10.19",
+    # 13.0 fixes heap overflows and out-of-bounds reads in the JPEG, TIFF and
+    # PDF decoders; Anchor decodes page and crop images from documents.
+    "pillow>=13.0.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "aiofiles>=24.1.0",
