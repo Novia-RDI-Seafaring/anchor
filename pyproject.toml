@@ -42,7 +42,8 @@ dependencies = [
     "typer>=0.12.0",
     "sse-starlette>=2.1.0",
     "trimesh>=4.0",
-    "playwright>=1.59.0",
+    # 1.64.1 bundles Node 24.22.1, past the Brotli decoder flaw (CVE-2026-111497).
+    "playwright>=1.64.1",
     "questionary>=2.1.1",
     "onnxruntime>=1.27.0",
     "tokenizers>=0.20",

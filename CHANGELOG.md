@@ -143,6 +143,15 @@ next version section on tag.
 - Anchor requires Pillow 13.0 or newer, which fixes heap overflows and
   out-of-bounds reads in its JPEG, TIFF and PDF decoders. Pillow 13 needs
   docling 2.142, so ingestion moves to that docling release.
+- Anchor requires Playwright 1.64.1 or newer. Older releases bundle a Node.js
+  with the Brotli decoder flaw (CVE-2026-111497); 1.64.1 bundles Node 24.22.1.
+- filelock 4.2.4 and setuptools 84.2 in the lockfile, for the filelock
+  lock-file symlink advisories and a setuptools path escape on Windows.
+- The web bundle takes fflate 0.6.11 and 0.8.3, which stop a malformed ZIP
+  from hanging the 3D viewer. Build tools move past advisories in vitest,
+  brace-expansion and @babel/core.
+- Every GitHub Action is pinned to a commit, so a moved tag cannot change
+  what builds and publishes a release. CI builds on Node 24.
 - Path-injection barriers at the remaining store path builders (#342).
 - Patched the sharp librsvg audit finding (#440).
 
